@@ -53,6 +53,20 @@ const ocrUsageLogSchema = new mongoose.Schema({
     enum: ['NONE', 'OCR_DISABLED', 'DOC_TYPE_NOT_ALLOWED', 'MONTHLY_QUOTA_EXCEEDED'],
     default: 'NONE',
   },
+  // Phase H6 — Claude AI fallback spend-cap gate. When the monthly AI_SPEND_CAPS
+  // cap is reached, Vision still runs (and the parser still extracts) but the
+  // Claude classifier/field-completion step is skipped. Independent from
+  // skipped_reason so entities can tell "Vision + AI both blocked" apart from
+  // "Vision ran, AI blocked by budget".
+  ai_skipped_reason: {
+    type: String,
+    enum: ['NONE', 'SPEND_CAP_EXCEEDED'],
+    default: 'NONE',
+  },
+  // Phase H6 — $USD cost of Claude calls invoked during this OCR call.
+  // Summed by spendCapService.getCurrentMonthSpend() for AI Budget enforcement.
+  // 0 when AI fallback was not invoked (rule-based parser sufficed).
+  cost_usd: { type: Number, default: 0, min: 0 },
   timestamp: { type: Date, default: Date.now },
 }, {
   timestamps: false,

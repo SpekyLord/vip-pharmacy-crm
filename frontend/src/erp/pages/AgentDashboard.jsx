@@ -11,7 +11,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { ROLES } from '../../constants/roles';
 import api from '../../services/api';
 import messageService from '../../services/messageInboxService';
-import { Bot, CheckCircle, AlertTriangle, XCircle, Clock, TrendingUp, Calendar, ShieldAlert, DollarSign, FileSearch, Package, CreditCard, FileWarning, Camera, MapPin, Zap } from 'lucide-react';
+import { Bot, CheckCircle, AlertTriangle, XCircle, Clock, TrendingUp, Calendar, ShieldAlert, DollarSign, FileSearch, Package, CreditCard, FileWarning, Camera, MapPin, Zap, Wallet, LineChart, ShoppingBag, CalendarClock, Users, Database, PackageCheck, Rocket, Target, TrendingDown, BarChart3 } from 'lucide-react';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError, showSuccess } from '../utils/errorToast';
 
@@ -71,23 +71,54 @@ const pageStyles = `
   @media(max-width: 768px) { .agd-main { padding: 16px; } .agd-cards { grid-template-columns: 1fr; } }
 `;
 
-const AGENT_CONFIG = {
-  // Paid agents (Claude AI)
-  smart_collection:   { label: 'Smart Collection',      icon: DollarSign,  color: '#2563eb', schedule: 'Weekdays 7:00 AM', type: 'AI' },
-  performance_coach:  { label: 'BDM Performance Coach', icon: TrendingUp,  color: '#6366f1', schedule: 'Mon 6:00 AM',      type: 'AI' },
-  bir_filing:         { label: 'BIR Filing Review',     icon: FileSearch,  color: '#0891b2', schedule: '15th monthly 9 AM', type: 'AI' },
-  visit_planner:      { label: 'Smart Visit Planner',   icon: Calendar,    color: '#10b981', schedule: 'Sun 6:00 PM',       type: 'AI' },
-  engagement_decay:   { label: 'Engagement Decay',      icon: ShieldAlert, color: '#ef4444', schedule: 'Mon 7:00 AM',       type: 'AI' },
-  org_intelligence:   { label: 'Org Intelligence',      icon: TrendingUp,  color: '#0d9488', schedule: 'Mon 5:30 AM',       type: 'AI' },
-  // Free agents (rule-based)
-  expense_anomaly:    { label: 'Expense Anomaly',       icon: FileWarning, color: '#f59e0b', schedule: 'Daily 6:00 AM',     type: 'Free' },
-  inventory_reorder:  { label: 'Inventory Reorder',     icon: Package,     color: '#8b5cf6', schedule: 'Daily 6:30 AM',     type: 'Free' },
-  credit_risk:        { label: 'Credit Risk Scoring',   icon: CreditCard,  color: '#ec4899', schedule: 'Sun 11:00 PM',      type: 'Free' },
-  document_expiry:    { label: 'Document Expiry',       icon: Clock,       color: '#64748b', schedule: 'Daily 7:30 AM',     type: 'Free' },
-  visit_compliance:   { label: 'Visit Compliance',      icon: MapPin,      color: '#14b8a6', schedule: 'Wed + Fri',         type: 'Free' },
-  photo_audit:        { label: 'Photo Audit',           icon: Camera,      color: '#a855f7', schedule: 'Daily 8:30 AM',     type: 'Free' },
-  system_integrity:   { label: 'System Integrity',     icon: ShieldAlert, color: '#0f766e', schedule: 'Mon 5:00 AM',       type: 'Free' },
+// ─────────────────────────────────────────────────────────────────────
+// Phase G8 — AGENT_CONFIG is now display metadata ONLY.
+//
+// The list of agents rendered on this page comes from the backend registry
+// via GET /erp/agents/registry (which reads agentRegistry.AGENT_DEFINITIONS).
+// This map provides icon/color/schedule-copy per known key. Keys not in this
+// map fall back to DEFAULT_META so a newly-registered agent auto-surfaces
+// without a frontend code change (Rule #3 — no hardcoded list of agents).
+// ─────────────────────────────────────────────────────────────────────
+const AGENT_META = {
+  // Claude AI agents (paid)
+  smart_collection:   { icon: DollarSign,  color: '#2563eb', schedule: 'Weekdays 7:00 AM' },
+  performance_coach:  { icon: TrendingUp,  color: '#6366f1', schedule: 'Mon 6:00 AM' },
+  bir_filing:         { icon: FileSearch,  color: '#0891b2', schedule: '15th monthly 9 AM' },
+  visit_planner:      { icon: Calendar,    color: '#10b981', schedule: 'Sun 6:00 PM' },
+  engagement_decay:   { icon: ShieldAlert, color: '#ef4444', schedule: 'Mon 7:00 AM' },
+  org_intelligence:   { icon: TrendingUp,  color: '#0d9488', schedule: 'Mon 5:30 AM' },
+  daily_briefing:     { icon: Zap,         color: '#6366f1', schedule: 'Weekdays 7:00 AM' },
+  // Rule-based FREE agents
+  expense_anomaly:    { icon: FileWarning, color: '#f59e0b', schedule: 'Daily 6:00 AM' },
+  inventory_reorder:  { icon: Package,     color: '#8b5cf6', schedule: 'Daily 6:30 AM' },
+  credit_risk:        { icon: CreditCard,  color: '#ec4899', schedule: 'Sun 11:00 PM' },
+  document_expiry:    { icon: Clock,       color: '#64748b', schedule: 'Daily 7:30 AM' },
+  visit_compliance:   { icon: MapPin,      color: '#14b8a6', schedule: 'Wed + Fri' },
+  photo_audit:        { icon: Camera,      color: '#a855f7', schedule: 'Daily 8:30 AM' },
+  system_integrity:   { icon: ShieldAlert, color: '#0f766e', schedule: 'Mon 5:00 AM' },
+  // Sales Goal (Phase SG-Q2 W2/W3, SG-4, SG-5)
+  kpi_snapshot:       { icon: Target,        color: '#0ea5e9', schedule: 'Monthly day 1 5 AM' },
+  kpi_variance:       { icon: TrendingDown,  color: '#f43f5e', schedule: 'Monthly day 2 6 AM' },
+  kpi_variance_digest:{ icon: BarChart3,     color: '#f97316', schedule: 'Mon 7:00 AM' },
+  dispute_sla:        { icon: AlertTriangle, color: '#b91c1c', schedule: 'Daily 6:30 AM' },
+  // Phase G8 — 8 new rule-based agents
+  treasury:              { icon: Wallet,        color: '#0369a1', schedule: 'Weekdays 5:30 AM' },
+  fpa_forecast:          { icon: LineChart,     color: '#6d28d9', schedule: 'Mon 6:00 AM' },
+  procurement_scorecard: { icon: ShoppingBag,   color: '#9333ea', schedule: 'Tue 7:00 AM' },
+  compliance_calendar:   { icon: CalendarClock, color: '#0d9488', schedule: 'Mon 5:00 AM' },
+  internal_audit_sod:    { icon: Users,         color: '#be123c', schedule: 'Wed 8:00 AM' },
+  data_quality:          { icon: Database,      color: '#0284c7', schedule: 'Daily 9:00 AM' },
+  fefo_audit:            { icon: PackageCheck,  color: '#dc2626', schedule: 'Daily 7:30 AM' },
+  expansion_readiness:   { icon: Rocket,        color: '#7c3aed', schedule: '1st of month 10 AM' },
 };
+const DEFAULT_META = { icon: Bot, color: '#64748b', schedule: 'Scheduled' };
+
+// Humanise backend AGENT_KEYS that have no pretty label.
+// Registry already provides `label` — this is just a fallback.
+function prettifyKey(k) {
+  return String(k).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 const CAT_LABELS = { ai_coaching: 'Coaching', ai_schedule: 'Schedule', ai_alert: 'Alert' };
 const CAT_CSS = { ai_coaching: 'coaching', ai_schedule: 'schedule', ai_alert: 'alert' };
@@ -111,6 +142,11 @@ export default function AgentDashboard() {
   const [loading, setLoading] = useState(true);
   const [msgTab, setMsgTab] = useState('all');
   const [runningAgent, setRunningAgent] = useState(null);
+  // Phase G8 — agent list sourced from backend registry (no hardcoded list).
+  // Each entry: { key, label, type: 'AI'|'FREE' }. UI metadata joined from
+  // AGENT_META keyed by `key`, with DEFAULT_META fallback so unknown keys
+  // still render (new agents auto-appear on the dashboard).
+  const [registry, setRegistry] = useState([]);
 
   const isPresidentOrAdmin = [ROLES.PRESIDENT, ROLES.ADMIN].includes(user?.role);
 
@@ -130,14 +166,16 @@ export default function AgentDashboard() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [statsRes, runsRes, msgRes] = await Promise.all([
+      const [statsRes, runsRes, msgRes, regRes] = await Promise.all([
         api.get('/erp/agents/runs/stats'),
         api.get('/erp/agents/runs?limit=10'),
-        messageService.getAll({ category: 'ai_coaching,ai_schedule,ai_alert', limit: 20 })
+        messageService.getAll({ category: 'ai_coaching,ai_schedule,ai_alert', limit: 20 }),
+        api.get('/erp/agents/registry'),
       ]);
       setStats(statsRes.data?.data || null);
       setRuns(runsRes.data?.data || []);
       setMessages(msgRes.data || []);
+      setRegistry(Array.isArray(regRes.data?.data) ? regRes.data.data : []);
     } catch (err) {
       console.error('[AgentDashboard]', err.message);
     }
@@ -168,14 +206,18 @@ export default function AgentDashboard() {
                 <span style={{ fontSize: 11, fontWeight: 500, color: '#64748b', background: '#f1f5f9', padding: '2px 8px', borderRadius: 4 }}>Requires ANTHROPIC_API_KEY</span>
               </h2>
               <div className="agd-cards">
-                {Object.entries(AGENT_CONFIG).filter(([, c]) => c.type === 'AI').map(([key, cfg]) => {
-                  const Icon = cfg.icon;
-                  const agent = stats?.agents?.find(a => a._id === key);
+                {registry.filter((r) => r.type === 'AI').map((r) => {
+                  const meta = AGENT_META[r.key] || DEFAULT_META;
+                  const Icon = meta.icon;
+                  const color = meta.color;
+                  const schedule = meta.schedule;
+                  const label = r.label || prettifyKey(r.key);
+                  const agent = stats?.agents?.find((a) => a._id === r.key);
                   return (
-                    <div className="agd-card" key={key}>
-                      <div className="agd-card-accent" style={{ background: cfg.color }} />
+                    <div className="agd-card" key={r.key}>
+                      <div className="agd-card-accent" style={{ background: color }} />
                       <div className="agd-card-header">
-                        <h3><Icon style={{ color: cfg.color }} /> {cfg.label}</h3>
+                        <h3><Icon style={{ color }} /> {label}</h3>
                         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                           <span style={{ fontSize: 9, fontWeight: 700, color: '#6366f1', background: '#e0e7ff', padding: '1px 6px', borderRadius: 4 }}>AI</span>
                           {agent ? <StatusBadge status={agent.last_status} /> : <span className="agd-badge" style={{ background: '#f1f5f9', color: '#64748b' }}>Awaiting run</span>}
@@ -193,14 +235,14 @@ export default function AgentDashboard() {
                         </div>
                       )}
                       <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: 11, color: '#94a3b8' }}><Clock style={{ width: 12, height: 12, verticalAlign: 'middle' }} /> {cfg.schedule}</span>
+                        <span style={{ fontSize: 11, color: '#94a3b8' }}><Clock style={{ width: 12, height: 12, verticalAlign: 'middle' }} /> {schedule}</span>
                         {isPresidentOrAdmin && (
                           <button
-                            onClick={() => handleRunNow(key)}
+                            onClick={() => handleRunNow(r.key)}
                             disabled={!!runningAgent}
-                            style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid #dbe4f0', background: runningAgent === key ? '#f1f5f9' : '#fff', color: runningAgent === key ? '#94a3b8' : cfg.color, cursor: runningAgent ? 'not-allowed' : 'pointer' }}
+                            style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid #dbe4f0', background: runningAgent === r.key ? '#f1f5f9' : '#fff', color: runningAgent === r.key ? '#94a3b8' : color, cursor: runningAgent ? 'not-allowed' : 'pointer' }}
                           >
-                            {runningAgent === key ? 'Running...' : 'Run Now'}
+                            {runningAgent === r.key ? 'Running...' : 'Run Now'}
                           </button>
                         )}
                       </div>
@@ -215,14 +257,18 @@ export default function AgentDashboard() {
                 <span style={{ fontSize: 11, fontWeight: 500, color: '#64748b', background: '#f1f5f9', padding: '2px 8px', borderRadius: 4 }}>Always active</span>
               </h2>
               <div className="agd-cards">
-                {Object.entries(AGENT_CONFIG).filter(([, c]) => c.type === 'Free').map(([key, cfg]) => {
-                  const Icon = cfg.icon;
-                  const agent = stats?.agents?.find(a => a._id === key);
+                {registry.filter((r) => r.type === 'FREE' || r.type === 'Free').map((r) => {
+                  const meta = AGENT_META[r.key] || DEFAULT_META;
+                  const Icon = meta.icon;
+                  const color = meta.color;
+                  const schedule = meta.schedule;
+                  const label = r.label || prettifyKey(r.key);
+                  const agent = stats?.agents?.find((a) => a._id === r.key);
                   return (
-                    <div className="agd-card" key={key}>
-                      <div className="agd-card-accent" style={{ background: cfg.color }} />
+                    <div className="agd-card" key={r.key}>
+                      <div className="agd-card-accent" style={{ background: color }} />
                       <div className="agd-card-header">
-                        <h3><Icon style={{ color: cfg.color }} /> {cfg.label}</h3>
+                        <h3><Icon style={{ color }} /> {label}</h3>
                         <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                           <span style={{ fontSize: 9, fontWeight: 700, color: '#10b981', background: '#dcfce7', padding: '1px 6px', borderRadius: 4 }}>FREE</span>
                           {agent ? <StatusBadge status={agent.last_status} /> : <span className="agd-badge" style={{ background: '#f1f5f9', color: '#64748b' }}>Awaiting run</span>}
@@ -240,14 +286,14 @@ export default function AgentDashboard() {
                         </div>
                       )}
                       <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span style={{ fontSize: 11, color: '#94a3b8' }}><Clock style={{ width: 12, height: 12, verticalAlign: 'middle' }} /> {cfg.schedule}</span>
+                        <span style={{ fontSize: 11, color: '#94a3b8' }}><Clock style={{ width: 12, height: 12, verticalAlign: 'middle' }} /> {schedule}</span>
                         {isPresidentOrAdmin && (
                           <button
-                            onClick={() => handleRunNow(key)}
+                            onClick={() => handleRunNow(r.key)}
                             disabled={!!runningAgent}
-                            style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid #dbe4f0', background: runningAgent === key ? '#f1f5f9' : '#fff', color: runningAgent === key ? '#94a3b8' : cfg.color, cursor: runningAgent ? 'not-allowed' : 'pointer' }}
+                            style={{ fontSize: 11, fontWeight: 600, padding: '3px 10px', borderRadius: 6, border: '1px solid #dbe4f0', background: runningAgent === r.key ? '#f1f5f9' : '#fff', color: runningAgent === r.key ? '#94a3b8' : color, cursor: runningAgent ? 'not-allowed' : 'pointer' }}
                           >
-                            {runningAgent === key ? 'Running...' : 'Run Now'}
+                            {runningAgent === r.key ? 'Running...' : 'Run Now'}
                           </button>
                         )}
                       </div>

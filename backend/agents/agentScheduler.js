@@ -72,6 +72,35 @@ function initAgentScheduler() {
   cron.schedule('30 6 * * *', () => triggerScheduled('dispute_sla', 'Dispute SLA Escalator'), { timezone: TIMEZONE });
   console.log('[AgentScheduler]   ✓ #DSP Dispute SLA - daily 6:30 AM');
 
+  // ── Phase G8 (P2-1 to P2-8) — 8 rule-based scheduled agents ────────────
+  // All FREE (rule-based) — no ANTHROPIC_API_KEY dependency. Individual AI
+  // toggles live on per-agent lookup rows (TREASURY_AGENT_AI_MODE,
+  // FPA_FORECAST_AI_MODE). Toggling a lookup to 'ai' adds a Claude narrative
+  // inside the agent — the cron itself is unchanged.
+  cron.schedule('30 5 * * 1-5', () => triggerScheduled('treasury', 'Treasury & Cash Flow'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #T Treasury - weekdays 5:30 AM');
+
+  cron.schedule('0 6 * * 1', () => triggerScheduled('fpa_forecast', 'FP&A Rolling Forecast'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #F FP&A Forecast - Monday 6:00 AM');
+
+  cron.schedule('0 7 * * 2', () => triggerScheduled('procurement_scorecard', 'Procurement Scorecard'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #PR Procurement Scorecard - Tuesday 7:00 AM');
+
+  cron.schedule('0 5 * * 1', () => triggerScheduled('compliance_calendar', 'Compliance Deadline Calendar'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #CC Compliance Calendar - Monday 5:00 AM');
+
+  cron.schedule('0 8 * * 3', () => triggerScheduled('internal_audit_sod', 'Internal Audit / SoD'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #SA Internal Audit/SoD - Wednesday 8:00 AM');
+
+  cron.schedule('0 9 * * *', () => triggerScheduled('data_quality', 'Data Quality'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #DQ Data Quality - daily 9:00 AM');
+
+  cron.schedule('30 7 * * *', () => triggerScheduled('fefo_audit', 'FEFO Audit'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #FE FEFO Audit - daily 7:30 AM');
+
+  cron.schedule('0 10 1 * *', () => triggerScheduled('expansion_readiness', 'Expansion Readiness'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #EX Expansion Readiness - 1st of month 10:00 AM');
+
   const hasAiKey = !!process.env.ANTHROPIC_API_KEY;
 
   if (hasAiKey) {

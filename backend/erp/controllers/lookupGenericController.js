@@ -1182,6 +1182,13 @@ const SEED_DEFAULTS = {
           "For any write action, use a write_confirm tool so the user reviews before executing. " +
           "Respect entity scoping — never leak data across entities. " +
           "Pharmaceutical context: VIP is parent; subsidiaries like MG AND CO. access via transfer pricing. " +
+          "Phase G8 capabilities you can invoke: " +
+          "Secretary — CREATE_TASK, LIST_OVERDUE_ITEMS, DRAFT_DECISION_BRIEF, DRAFT_ANNOUNCEMENT, WEEKLY_SUMMARY. " +
+          "HR — SUGGEST_KPI_TARGETS, DRAFT_COMP_ADJUSTMENT, AUDIT_SELF_RATINGS, RANK_PEOPLE, RECOMMEND_HR_ACTION " +
+          "(the last always returns a recommendation only — never auto-executes). " +
+          "Background ops signals (Treasury cash, FP&A forecast, Procurement scorecard, Compliance deadlines, " +
+          "SoD/internal audit, Data Quality, FEFO expiry, Expansion readiness) run as scheduled agents and post " +
+          "to the inbox — use SEARCH_DOCUMENTS or SUMMARIZE_MODULE if the user asks about their output. " +
           "If a user request can't be served by an enabled tool, say so and suggest the closest option.",
         // Cmd+K quick-mode addendum — appended to system_prompt when the request
         // arrives with mode='quick' (CommandPalette).
@@ -1480,6 +1487,326 @@ const SEED_DEFAULTS = {
         confirmation_template: 'Open new {{module}} form pre-filled with these values?',
         entity_scoped: true,
         rate_limit_per_min: 20,
+      },
+    },
+
+    // ─────────────────────────────────────────────────────────────────────
+    // Phase G8 (P2-10 through P2-19) — HR + Secretary Copilot tools (10 new)
+    //
+    // All 10 pay-per-use. Each row defines the json_schema Claude sees, the
+    // handler_key in copilotToolRegistry.js, and the role gate. Adding a new
+    // tool = add one row here + register one handler + verify:copilot-wiring
+    // grows from 25 to 35 passes. All write_confirm tools route through
+    // existing controllers (Rule #20) — never bypass gateApproval.
+    // ─────────────────────────────────────────────────────────────────────
+
+    // ── Secretary tools (5) ──
+    {
+      code: 'CREATE_TASK',
+      label: 'Create a task',
+      metadata: {
+        tool_type: 'write_confirm',
+        handler_key: 'createTask',
+        json_schema: {
+          name: 'create_task',
+          description: 'Creates a task in the Task collection for the current user or an assignee. Returns a draft first; user confirms before save.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              title: { type: 'string', description: 'Short task title (≤200 chars).' },
+              description: { type: 'string', description: 'Optional longer description.' },
+              assignee_user_id: { type: 'string', description: 'Optional user id to assign to. Omit = assign to self.' },
+              due_date: { type: 'string', description: 'Optional ISO date (YYYY-MM-DD) or "friday" / "next week" — the handler normalises relative dates.' },
+              priority: { type: 'string', description: 'low | normal | high | urgent. Default normal.' },
+            },
+            required: ['title'],
+          },
+        },
+        allowed_roles: ['president', 'ceo', 'admin', 'finance', 'contractor'],
+        description_for_claude: 'Use when the user says "remind me to", "add a task", "create a task to". Always returns a draft — user confirms before the task is saved.',
+        confirmation_template: 'Create task "{{title}}" due {{due_date}} for {{assignee_name}}?',
+        entity_scoped: true,
+        rate_limit_per_min: 20,
+      },
+    },
+    {
+      code: 'LIST_OVERDUE_ITEMS',
+      label: 'List overdue items',
+      metadata: {
+        tool_type: 'read',
+        handler_key: 'listOverdueItems',
+        json_schema: {
+          name: 'list_overdue_items',
+          description: 'Returns overdue tasks AND overdue approval requests for the current user (or all, if privileged). Sorted by how late they are.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              scope: { type: 'string', description: 'tasks | approvals | both (default both)' },
+              assignee: { type: 'string', description: 'me (default) | all (privileged only)' },
+              limit: { type: 'integer' },
+            },
+          },
+        },
+        allowed_roles: ['president', 'ceo', 'admin', 'finance', 'contractor'],
+        description_for_claude: 'Use when the user asks "what\'s overdue", "what\'s late", "what\'s on my plate". Aggregates overdue tasks + overdue approval requests.',
+        confirmation_template: '',
+        entity_scoped: true,
+        rate_limit_per_min: 30,
+      },
+    },
+    {
+      code: 'DRAFT_DECISION_BRIEF',
+      label: 'Draft a 1-page decision brief',
+      metadata: {
+        tool_type: 'read',
+        handler_key: 'draftDecisionBrief',
+        json_schema: {
+          name: 'draft_decision_brief',
+          description: 'Generates a concise decision brief (1 page) on a subject. Internally uses SEARCH_DOCUMENTS to gather facts then synthesises a Background / Options / Recommendation structure.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              subject: { type: 'string', description: 'Free-text subject, e.g. "transfer pricing for MG AND CO."' },
+              modules: { type: 'array', items: { type: 'string' }, description: 'Optional list of module keys to scope the fact-gathering search.' },
+            },
+            required: ['subject'],
+          },
+        },
+        allowed_roles: ['president', 'ceo'],
+        description_for_claude: 'Use when the user asks for a "brief", "memo", "1-pager", "background on", or "decision on". Returns a read-only document — no writes.',
+        confirmation_template: '',
+        entity_scoped: true,
+        rate_limit_per_min: 6,
+      },
+    },
+    {
+      code: 'DRAFT_ANNOUNCEMENT',
+      label: 'Draft a broadcast announcement',
+      metadata: {
+        tool_type: 'write_confirm',
+        handler_key: 'draftAnnouncement',
+        json_schema: {
+          name: 'draft_announcement',
+          description: 'Drafts a broadcast MessageInbox announcement scoped by recipient role + optional entity. Returns a draft first; user picks scope and confirms before send.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              scope_type: { type: 'string', description: 'by_role (broadcast to all users in a role) | by_entity (users in a specific entity, all roles) | both (role ∩ entity)' },
+              recipient_role: { type: 'string', description: 'admin | finance | contractor | president — required when scope_type includes by_role.' },
+              target_entity_id: { type: 'string', description: 'Entity id to scope by — required when scope_type includes by_entity.' },
+              subject: { type: 'string' },
+              body: { type: 'string' },
+              priority: { type: 'string', description: 'normal | important | high. Default normal.' },
+            },
+            required: ['subject', 'body', 'scope_type'],
+          },
+        },
+        allowed_roles: ['president', 'ceo', 'admin'],
+        description_for_claude: 'Use when the user asks to "broadcast", "announce", "notify everyone", or "send to all BDMs". Always returns a draft with recipient count preview.',
+        confirmation_template: 'Broadcast "{{subject}}" to {{recipient_count}} recipient(s) ({{scope_summary}})?',
+        entity_scoped: true,
+        rate_limit_per_min: 5,
+      },
+    },
+    {
+      code: 'WEEKLY_SUMMARY',
+      label: 'Weekly ops summary',
+      metadata: {
+        tool_type: 'read',
+        handler_key: 'weeklySummary',
+        json_schema: {
+          name: 'weekly_summary',
+          description: 'Rolls up key weekly ops signals: approval throughput, sales vs collections, top anomalies, overdue tasks, agent alerts. Read-only.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              week_offset: { type: 'integer', description: '0 = this week (default), -1 = last week, etc.' },
+            },
+          },
+        },
+        allowed_roles: ['president', 'ceo'],
+        description_for_claude: 'Use when the user asks "how was the week", "weekly summary", "last week\'s numbers".',
+        confirmation_template: '',
+        entity_scoped: true,
+        rate_limit_per_min: 6,
+      },
+    },
+
+    // ── HR tools (5) ──
+    {
+      code: 'SUGGEST_KPI_TARGETS',
+      label: 'Suggest KPI targets for a person',
+      metadata: {
+        tool_type: 'write_confirm',
+        handler_key: 'suggestKpiTargets',
+        json_schema: {
+          name: 'suggest_kpi_targets',
+          description: 'Proposes KPI targets for a specific person based on peer performance (same role + same entity by default). Returns a draft target list — user confirms before writing to SalesGoalTarget DRAFT.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              person_id: { type: 'string', description: 'PeopleMaster id to set targets for.' },
+              period: { type: 'string', description: 'Period code (e.g. 2026-Q3).' },
+              peer_scope: { type: 'string', description: 'same_role_same_entity (default) | same_role_all_entities — lookup-configurable' },
+            },
+            required: ['person_id', 'period'],
+          },
+        },
+        allowed_roles: ['president', 'ceo', 'admin'],
+        description_for_claude: 'Use when the user asks "suggest KPI for X" or "propose Q3 targets for Y". Always returns a draft — user confirms before the SalesGoalTarget DRAFT is created.',
+        confirmation_template: 'Create DRAFT SalesGoalTargets for {{person_name}} ({{period}}) with these numbers?',
+        entity_scoped: true,
+        rate_limit_per_min: 10,
+      },
+    },
+    {
+      code: 'DRAFT_COMP_ADJUSTMENT',
+      label: 'Draft compensation adjustment',
+      metadata: {
+        tool_type: 'write_confirm',
+        handler_key: 'draftCompAdjustment',
+        json_schema: {
+          name: 'draft_comp_adjustment',
+          description: 'Drafts a compensation adjustment (salary/allowance) for a person. Returns a draft — user confirms before the PersonComp update endpoint is called (which goes through gateApproval).',
+          input_schema: {
+            type: 'object',
+            properties: {
+              person_id: { type: 'string' },
+              component: { type: 'string', description: 'base_salary | allowance | bonus_plan — must match a PersonComp component code' },
+              new_amount: { type: 'number' },
+              effective_date: { type: 'string', description: 'ISO date' },
+              reason: { type: 'string', description: 'Human-readable rationale written to the audit trail.' },
+            },
+            required: ['person_id', 'component', 'new_amount', 'effective_date'],
+          },
+        },
+        allowed_roles: ['president', 'ceo'],
+        description_for_claude: 'Use when the user asks to "adjust salary", "give a raise", "change allowance". Always write_confirm — PersonComp update routes through gateApproval.',
+        confirmation_template: 'Adjust {{component}} for {{person_name}} to ₱{{new_amount}} effective {{effective_date}}?',
+        entity_scoped: true,
+        rate_limit_per_min: 10,
+      },
+    },
+    {
+      code: 'AUDIT_SELF_RATINGS',
+      label: 'Audit self-ratings vs performance',
+      metadata: {
+        tool_type: 'read',
+        handler_key: 'auditSelfRatings',
+        json_schema: {
+          name: 'audit_self_ratings',
+          description: 'Compares KPI self-ratings against actual performance snapshots and flags variance (self-rated HIGH but actuals LOW, or vice versa).',
+          input_schema: {
+            type: 'object',
+            properties: {
+              period: { type: 'string' },
+              person_id: { type: 'string', description: 'Optional — omit to audit all people with self-ratings this period.' },
+            },
+            required: ['period'],
+          },
+        },
+        allowed_roles: ['president', 'ceo', 'admin'],
+        description_for_claude: 'Use when the user asks "who is over-rating themselves" or "check self-ratings against actuals".',
+        confirmation_template: '',
+        entity_scoped: true,
+        rate_limit_per_min: 10,
+      },
+    },
+    {
+      code: 'RANK_PEOPLE',
+      label: 'Rank people by composite performance',
+      metadata: {
+        tool_type: 'read',
+        handler_key: 'rankPeople',
+        json_schema: {
+          name: 'rank_people',
+          description: 'Ranks active people by a composite of KPI attainment, collections discipline, variance history, and engagement signals. Returns ranked list with rationale.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              role: { type: 'string', description: 'Optional person_type code to restrict to a role (e.g. BDM).' },
+              period: { type: 'string' },
+              direction: { type: 'string', description: 'top (default) | bottom' },
+              limit: { type: 'integer' },
+            },
+            required: ['period'],
+          },
+        },
+        allowed_roles: ['president', 'ceo', 'admin'],
+        description_for_claude: 'Use when the user asks "rank BDMs", "top 5 performers", "worst performers".',
+        confirmation_template: '',
+        entity_scoped: true,
+        rate_limit_per_min: 10,
+      },
+    },
+    {
+      code: 'RECOMMEND_HR_ACTION',
+      label: 'Recommend HR action for a person',
+      metadata: {
+        tool_type: 'read',
+        handler_key: 'recommendHrAction',
+        json_schema: {
+          name: 'recommend_hr_action',
+          description: 'Returns an HR action recommendation for one person (coach | warn | PIP | manage_out | promote | no_action) with supporting signals. Bluntness level comes from HR_ACTION_BLUNTNESS lookup (conservative | balanced | blunt). Always human-reviewed — never auto-executed.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              person_id: { type: 'string' },
+              period: { type: 'string', description: 'Period to evaluate against (e.g. 2026-Q2).' },
+            },
+            required: ['person_id', 'period'],
+          },
+        },
+        allowed_roles: ['president', 'ceo'],
+        description_for_claude: 'Use when the user asks "what should I do about X" or "recommendation on Y". Read-only — outputs a recommendation, never writes. Flags HR/legal sign-off needed for serious actions.',
+        confirmation_template: '',
+        entity_scoped: true,
+        rate_limit_per_min: 10,
+      },
+    },
+  ],
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Phase G8 (P2-20 through P2-22) — AI toggle + HR bluntness lookups
+  //
+  // Three lookup categories that let subscribers flip individual agent AI
+  // modes without a code change. Defaults ship as rule-based / balanced so
+  // no entity is surprised with Claude bills on day one.
+  // ─────────────────────────────────────────────────────────────────────
+  TREASURY_AGENT_AI_MODE: [
+    {
+      code: 'DEFAULT',
+      label: 'Treasury Agent AI Mode',
+      metadata: {
+        value: 'rule', // 'rule' (free, rule-based) | 'ai' (Claude-assisted)
+        description:
+          'Treasury & Cash Flow agent execution mode. rule = pure aggregation over bank accounts + upcoming PRF/CALF; ' +
+          'ai = append a Claude-generated narrative on risks and suggested transfers. AI mode counts against AI_SPEND_CAPS.',
+      },
+    },
+  ],
+  FPA_FORECAST_AI_MODE: [
+    {
+      code: 'DEFAULT',
+      label: 'FP&A Forecast Agent AI Mode',
+      metadata: {
+        value: 'rule',
+        description:
+          'FP&A Rolling Forecast agent execution mode. rule = quarter-pacing + variance drivers from SalesLine/Collection; ' +
+          'ai = add a Claude-generated scenario-projection commentary. AI mode counts against AI_SPEND_CAPS.',
+      },
+    },
+  ],
+  HR_ACTION_BLUNTNESS: [
+    {
+      code: 'DEFAULT',
+      label: 'HR Recommendation Bluntness',
+      metadata: {
+        value: 'balanced', // 'conservative' | 'balanced' | 'blunt'
+        description:
+          'Tone profile for RECOMMEND_HR_ACTION output. conservative = only coaching/warning ever suggested (manage_out is flagged as "needs HR review" even for worst cases); ' +
+          'balanced = default; includes manage_out as an option but always flags requires_hr_legal_review=true. ' +
+          'blunt = same options, less hedging — still always flags HR/legal review. No setting ever auto-executes an HR action.',
       },
     },
   ],

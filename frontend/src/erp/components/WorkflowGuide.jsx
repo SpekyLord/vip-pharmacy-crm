@@ -717,6 +717,23 @@ const WORKFLOW_GUIDES = {
     ],
     tip: 'Fund modes, statuses, expense categories, and transaction types are lookup-driven — manage them in Control Center > Lookup Tables (PETTY_CASH_FUND_TYPE, PETTY_CASH_FUND_STATUS, PETTY_CASH_EXPENSE_CATEGORY). President Delete — for anyone granted accounting.reverse_posted in Access Templates (baseline: President only; delegable to CFO/Finance without a code change via ERP_DANGER_SUB_PERMISSIONS). Per-transaction SAP Storno: POSTED txn is marked VOIDED, its journal entry is reversed, and the fund balance flips back in a single atomic session. Fund delete is gated by the same danger sub-perm — the old hardcoded president-only check was removed so subsidiaries can delegate via the template editor. All actions logged to ErpAuditLog.',
   },
+  // Phase G8 (P2-9) — Tasks page guide (Secretary Copilot backing UI).
+  'tasks': {
+    title: 'My Tasks',
+    steps: [
+      'Capture anything you need to do — personal follow-ups, delegated work, reminders',
+      'Add task with a title, optional description, due date, and priority',
+      'Change status from the table: OPEN → IN_PROGRESS → DONE (or BLOCKED / CANCELLED)',
+      'Switch scope to see what you created vs what\'s assigned to you; privileged roles can switch to "All entity tasks"',
+      'Filter by status or toggle "Overdue only" to focus on what\'s slipping',
+      'Or say "create a task to sign rent renewal Friday" to the Copilot — it drafts + confirms + saves',
+    ],
+    next: [
+      { label: 'AI Agents', path: '/erp/agent-dashboard' },
+      { label: 'Control Center', path: '/erp/control-center' },
+    ],
+    tip: 'Tasks are entity-scoped — every row carries the entity you\'re working in. Switching entity (president/CEO) shows a different task list. No approval gate — tasks are productivity, not finance.',
+  },
   'consignment-aging': {
     title: 'Consignment Aging',
     steps: [

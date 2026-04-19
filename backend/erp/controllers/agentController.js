@@ -3,23 +3,15 @@ const AgentRun = require('../models/AgentRun');
 const AgentConfig = require('../models/AgentConfig');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { startManualAgentRun } = require('../../agents/agentExecutor');
+// Phase G8 — registry is the SINGLE source of truth for agent keys. Removing
+// the old AGENT_MODULES hardcoded map (which silently dropped new agents like
+// kpi_snapshot, daily_briefing, and the 8 Phase G8 agents from /run, /config,
+// and the dashboard). Everything now flows from agentRegistry.AGENT_DEFINITIONS.
+const { AGENT_DEFINITIONS, AGENT_KEYS, getAgentDefinition } = require('../../agents/agentRegistry');
 
-// Agent key -> module path mapping
-const AGENT_MODULES = {
-  expense_anomaly: '../../agents/expenseAnomalyAgent',
-  inventory_reorder: '../../agents/inventoryReorderAgent',
-  credit_risk: '../../agents/creditRiskAgent',
-  document_expiry: '../../agents/documentExpiryAgent',
-  visit_compliance: '../../agents/visitComplianceAgent',
-  photo_audit: '../../agents/photoAuditAgent',
-  smart_collection: '../../agents/smartCollectionAgent',
-  bir_filing: '../../agents/birFilingAgent',
-  performance_coach: '../../agents/performanceCoachAgent',
-  visit_planner: '../../agents/visitPlannerAgent',
-  engagement_decay: '../../agents/engagementDecayAgent',
-  org_intelligence: '../../agents/orgIntelligenceAgent',
-  system_integrity: '../../agents/systemIntegrityAgent',
-};
+function isKnownAgent(agentKey) {
+  return !!getAgentDefinition(agentKey);
+}
 
 /**
  * Agent Intelligence Controller - serves agent run history, stats, and on-demand triggers.
@@ -84,7 +76,7 @@ exports.getStats = catchAsync(async (req, res) => {
 exports.runAgent = catchAsync(async (req, res) => {
   const { agentKey } = req.params;
 
-  if (!AGENT_MODULES[agentKey]) {
+  if (!isKnownAgent(agentKey)) {
     return res.status(400).json({ success: false, message: `Unknown agent: ${agentKey}` });
   }
 
@@ -114,8 +106,10 @@ exports.runAgent = catchAsync(async (req, res) => {
 exports.getConfig = catchAsync(async (req, res) => {
   const configs = await AgentConfig.find().sort({ agent_key: 1 }).lean();
 
-  // Merge with known agents to show all agents even if no config exists
-  const merged = Object.entries(AGENT_MODULES).map(([key]) => {
+  // Merge with agentRegistry so every registered agent is surfaced even when
+  // no AgentConfig row exists yet (subsidiaries onboarded after new agents
+  // ship still see them). Single source of truth: agentRegistry.AGENT_KEYS.
+  const merged = AGENT_KEYS.map((key) => {
     const existing = configs.find((config) => config.agent_key === key);
     return existing || { agent_key: key, enabled: true, schedule: null, notify_roles: [ROLES.PRESIDENT] };
   });
@@ -123,11 +117,24 @@ exports.getConfig = catchAsync(async (req, res) => {
   res.json({ success: true, data: merged });
 });
 
+// Phase G8 — Expose the agent registry so the frontend AgentDashboard renders
+// every registered agent dynamically (no hardcoded list on either side).
+// Returns { key, label, type } for each agent. UI metadata (icon, color, cron
+// description) stays in the frontend as a lookup keyed by agent key, with a
+// safe default for unknown keys so a new backend agent automatically surfaces.
+exports.getRegistry = catchAsync(async (req, res) => {
+  const items = AGENT_KEYS.map((key) => {
+    const def = AGENT_DEFINITIONS[key];
+    return { key, label: def.label, type: def.type };
+  });
+  res.json({ success: true, data: items });
+});
+
 exports.updateConfig = catchAsync(async (req, res) => {
   const { agentKey } = req.params;
   const { enabled, notify_roles } = req.body;
 
-  if (!AGENT_MODULES[agentKey]) {
+  if (!isKnownAgent(agentKey)) {
     return res.status(400).json({ success: false, message: `Unknown agent: ${agentKey}` });
   }
 

@@ -5024,3 +5024,108 @@ The Q2-eval gap brief listed four items. Only Gap 1 (period-lock middleware) was
 - **`PERIOD_LOCKABLE_MODULES` lookup category** — to remove the enum entirely, swap the schema enum for a custom validator that reads the lookup. Migration is non-breaking. Useful for plugin-style subsidiaries that want to lock additional custom modules. Skipped here per Rule #3 carve-out for immutable code identifiers.
 - **`GET /api/erp/period-locks/modules` endpoint** — to remove frontend `MODULE_LABELS` hardcoding and let subscribers customize labels. Skipped here.
 - **Wiring-check script** that fails CI if any `periodLockCheck('X')` argument is not in `PeriodLock.module` enum — would have caught O1+O2 earlier. Worth Phase SG-Q2 W5.
+
+---
+
+## PHASE H6 — SALES OCR (BDM Field Scanning) + OCR AI Spend-Cap 🚧 IN PROGRESS (April 19, 2026)
+
+**Owner**: Gregg (President) • **Priority**: High • **Effort**: ~18.5d • **Target cost**: ~$25-55/mo at steady state (1,320 scans/mo)
+
+### Goal
+
+BDMs scan CSI / Collection Receipt / Delivery Receipt (sampling + consignment variants) / Bank Deposit Slip / Check on their phone in the field instead of typing. Each scan creates a DRAFT in the correct target model; BDM reviews on their phone; submit routes through `gateApproval()` per Rule #20. Same smart-OCR pipeline that handles Expenses (Google Vision → rule-based parser → Claude field-completion → master-data resolver → vendor auto-learn) — just extended to sales doc types and new parsers for bank slip + check.
+
+### Two governance gaps fixed up front
+
+| ID | Gap | Fix | Status |
+|---|---|---|---|
+| P1-1 | `ocrAutoFillAgent.classifyWithClaude` bypassed `AI_SPEND_CAPS` | Wire `enforceSpendCap('OCR')` into the agent; pass `entityId` via processor context; catch 429 in processor and record `ai_skipped_reason: 'SPEND_CAP_EXCEEDED'` | ✅ |
+| P1-2 | `OcrUsageLog.cost_usd` did not exist → OCR spend invisible in AI Budget total | Add `cost_usd` + `ai_skipped_reason` fields; populate from `processor.ai_cost_usd`; `spendCapService` already aggregates `$cost_usd` so no further work there | ✅ |
+
+Both shipped as a single standalone commit before any sales-OCR volume lands.
+
+### Deliverables (remaining)
+
+| # | Item | Effort | Depends on |
+|---|---|---|---|
+| P1-3 | Extend smart OCR Claude-fallback to sales doc types (CSI/CR/DR/BANK_SLIP/CHECK in `CRITICAL_FIELDS_BY_DOC`) | 1d | P1-1 |
+| P1-4 | Parsers: `bankSlipParser.js`, `checkParser.js`, `drRouter.js` (sampling vs consignment marker) | 5d | P1-3 |
+| P1-5 | Missing DRAFT models: `SamplingLog`, `Deposit`, `CheckReceived` (only 3 — `SalesLine`, `Collection`, `ConsignmentTracker` already exist in `backend/erp/models/`) | 2d | — |
+| P1-6 | Add `BANK_SLIP` + `CHECK` to existing `OcrSettings.ALL_DOC_TYPES` and to the existing `ErpOcrSettingsPanel` chip grid (no new panel) | 0.5d | P1-5 |
+| P1-7 | `/api/erp/sales-ocr/*` endpoints — one per doc type, each wraps `processOcr` + creates correct DRAFT record via `gateApproval()` + `periodLockCheck(module)` | 3d | P1-4, P1-5 |
+| P1-8 | Mobile `SalesDocScanner.jsx` (camera, preview, retry, 360px-verified) | 2d | — |
+| P1-9 | Six review forms (CSIReviewForm, CRReviewForm, DRSamplingReviewForm, DRConsignmentReviewForm, BankSlipReviewForm, CheckReviewForm) — pre-filled editable fields | 3d | P1-7 |
+| P1-10 | `/erp/scan` route + Sidebar link + WorkflowGuide banner | 1d | P1-8, P1-9 |
+| P1-11 | Integrity — `verify:copilot-wiring` + `verify:rejection-wiring` stay ✓; vite build ✓; Expense OCR regression fixture; 10-doc UAT on BDM phone | 1d | all |
+
+### Architectural decisions (locked)
+
+1. **Reuse existing 5-layer pipeline** — no new adapter, no new OCR tier. Google Vision is already the primary engine; adding sales docs = adding parsers + extending `CRITICAL_FIELDS_BY_DOC` + registering doc types in `OcrSettings.ALL_DOC_TYPES`.
+2. **One reusable mobile scanner component** (`SalesDocScanner.jsx`) — doc type selected before capture; the scanner is agnostic. Review forms are the only per-doc-type UI.
+3. **DR routing via marker detection** — single `drParser` still does the raw parse; a `drRouter.js` wrapper inspects extracted text for `SAMPLING|SAMPLE|FREE\s*SAMPLE` (→ SamplingLog) vs `CONSIGNMENT|CONSIGN` (→ ConsignmentTracker). Ambiguous → defaults to ConsignmentTracker (the more common case) with `review_required: true`.
+4. **AI_SPEND_CAPS stays opt-in** — existing entities will NOT start enforcing a cap just because H6 landed. Seed default is `is_active: false`. President opts in via Control Center → AI Budget.
+5. **BDM authority** — BDMs can CREATE scanned DRAFTS; POSTING still routes through `gateApproval()` per Rule #20 (Default-Roles Gate from Phase G4, Authority Matrix from Phase 29 if enabled).
+6. **Banners everywhere** — new `/erp/scan` page gets a `WorkflowGuide` entry; Control Center OCR panel already has its own helper text (no change needed).
+
+### Subscription-readiness
+
+- `OcrSettings` is already per-entity. H6 only adds two new doc types to `ALL_DOC_TYPES` — every existing subscriber inherits them (defaulting to ENABLED; admin can untick chips in OCR Settings to restrict).
+- `AI_SPEND_CAPS.MONTHLY` lookup row governs spend. Per-feature overrides via `metadata.feature_overrides.OCR` for entities that want a separate OCR-only cap.
+- No hardcoded sample markers, no hardcoded parser thresholds, no hardcoded check/bank field positions.
+
+### Integrity guarantees
+
+- **Zero regressions in Expense OCR** — additive changes only. Existing `OR` and `GAS_RECEIPT` flows untouched; the spend-cap gate applies to them too (closes the same Phase G7 gap symmetrically), which is a correctness gain.
+- **Rule #2 end-to-end wiring** — every new doc type must be wired across: `OcrSettings.ALL_DOC_TYPES` → `ocrProcessor.PARSERS` → `ocrProcessor.SUPPORTED_DOC_TYPES` → `salesOcrController.DRAFT_CREATORS` → `salesOcrRoutes` → `SalesDocScanner` doc-type chip → review form component. Missing any one = orphaned enum.
+- **Rule #3 lookup-driven** — sample marker keywords, handwriting confidence thresholds, and per-BDM daily cap all configurable via Lookup.
+- **Rule #20 gateApproval** — every DRAFT creation endpoint wraps submit/post in `gateApproval(module)` + `periodLockCheck(module)`. No bypass.
+- **Rule #21 entity from `req.entityId`** — never from client body. New endpoints follow the existing `ocrController` pattern.
+
+### Common gotchas (H6 — reference)
+
+- Sales docs don't need expense classification. Don't add CSI/CR/DR to `EXPENSE_DOC_TYPES` — that would run COA classification on receipts with no vendor. Only add them to `CRITICAL_FIELDS_BY_DOC` so field-completion runs.
+- Multi-entity letterheads share the same scanner (VIP Inc. TIN `744-251-498-00000`; MG AND CO. TIN `010-824-240-00000`). Entity resolver must match TIN from the letterhead text → `Entity.tin_number` before assigning the DRAFT to an entity. If the TIN doesn't match any known entity, fall back to `req.entityId` (the BDM's working entity) with `review_required: true`.
+- Expiry date formats observed in the wild: `17/06/2027`, `11/2027`, `09/20/28`, `01-2027`, `08/2028`. Parser must handle MM/YY, MM/YYYY, DD/MM/YYYY, and MM-YYYY.
+- CR settlement box lists CSI#s being paid as line items — `Collection.line_items[]` must accept partial-payment rows (amount < CSI total).
+- Check MICR line (bottom of check) is the most reliable source for check number + routing number + account number; when Vision reads it cleanly the regex parse is HIGH confidence without Claude fallback.
+
+## Phase G8 — Agents + Copilot Expansion ✅ (April 19, 2026)
+
+### Goal
+Close the Phase 2 scope from `HANDOFF-phase-agents-copilot.md`: a proper `Task` collection, 8 new rule-based scheduled agents, and 10 new Copilot tools (5 Secretary + 5 HR), plus 3 AI toggle lookups that let subscribers flip individual agents to Claude-assisted narrative without a code change.
+
+### Delivered (22 items)
+- **Task model + UI**: `backend/erp/models/Task.js`, `taskController.js`, `taskRoutes.js`; `frontend/src/erp/pages/TasksPage.jsx`, route `/erp/tasks`, Sidebar link under Administration, WorkflowGuide `'tasks'` entry.
+- **8 scheduled agents** registered in `agentRegistry.js` + cron in `agentScheduler.js`:
+  - `treasury` (weekdays 5:30 AM), `fpa_forecast` (Mon 6 AM), `procurement_scorecard` (Tue 7 AM), `compliance_calendar` (Mon 5 AM), `internal_audit_sod` (Wed 8 AM), `data_quality` (daily 9 AM), `fefo_audit` (daily 7:30 AM), `expansion_readiness` (monthly, 1st at 10 AM).
+- **10 Copilot tools** in `copilotToolRegistry.js` + matching rows in `COPILOT_TOOLS` lookup:
+  - Secretary: CREATE_TASK, LIST_OVERDUE_ITEMS, DRAFT_DECISION_BRIEF, DRAFT_ANNOUNCEMENT, WEEKLY_SUMMARY.
+  - HR: SUGGEST_KPI_TARGETS, DRAFT_COMP_ADJUSTMENT, AUDIT_SELF_RATINGS, RANK_PEOPLE, RECOMMEND_HR_ACTION.
+- **3 AI-toggle lookups** seeded: `TREASURY_AGENT_AI_MODE` (`rule`), `FPA_FORECAST_AI_MODE` (`rule`), `HR_ACTION_BLUNTNESS` (`balanced`).
+- **PRESIDENT_COPILOT** `system_prompt` updated — names the new tools so Claude routes natural-language questions to the right handler.
+- **Prep fix (Phase H6 P1-1 carry-over)**: `ocrAutoFillAgent.classifyWithClaude` now re-throws the 429 from `enforceSpendCap` so `ocrProcessor` can record `ai_skipped_reason: 'SPEND_CAP_EXCEEDED'` instead of silently returning `null`.
+
+### Integrity results
+- `npm run verify:copilot-wiring` → **35/35 passes, 0 errors, 0 warnings** (was 25/25 pre-G8).
+- `npm run verify:rejection-wiring` → **20 modules verified, 0 warnings** (unchanged).
+- `node -c` clean on every modified file.
+
+### Subscription-readiness (Rule #3)
+| Config | Lookup / Source | Default |
+|---|---|---|
+| Treasury AI mode | `TREASURY_AGENT_AI_MODE.DEFAULT.metadata.value` | `rule` |
+| FP&A AI mode | `FPA_FORECAST_AI_MODE.DEFAULT.metadata.value` | `rule` |
+| HR recommendation bluntness | `HR_ACTION_BLUNTNESS.DEFAULT.metadata.value` | `balanced` |
+| BDM graduation threshold | `EXPANSION_READINESS_CONFIG.DEFAULT.metadata.bdm_graduation_monthly_sales_min` | ₱500,000 |
+| BDM graduation months required | `EXPANSION_READINESS_CONFIG.DEFAULT.metadata.bdm_graduation_months_required` | 3 |
+| Compliance deadlines | `COMPLIANCE_DEADLINES.*` (optional override) | 6 baseline PH deadlines |
+| Tool visibility per role | `COPILOT_TOOLS.<code>.metadata.allowed_roles` | per tool |
+| Monthly AI budget cap | `AI_SPEND_CAPS.MONTHLY` | `is_active: false` (opt-in) |
+
+### Common gotchas (G8)
+- **Task routes skip erpAccessCheck.** Productivity collection, every ERP-auth user can maintain their own. Privileged scope (`?scope=all`) gated by role check inside the controller — Rule #21 enforced.
+- **DRAFT_ANNOUNCEMENT respects entity scope for non-privileged callers.** Even if Claude passes `target_entity_id`, non-privileged recipients fall back to `ctx.entityId`. Privileged users (president/ceo/admin) can broadcast to a specific other entity when they have multi-entity access.
+- **RECOMMEND_HR_ACTION never writes.** It returns a recommendation payload only. All action tiers above `coach` set `requires_hr_legal_review=true`. Conservative bluntness downgrades `manage_out` to `PIP`. Execute side is manual — the president issues a warning / PIP / separation via the existing People / Payroll flows after reading the recommendation.
+- **Rule-based first.** Treasury + FP&A agents produce a useful body purely from SQL aggregations. The AI toggle only APPENDS a short narrative — never replaces the numbers. Flipping the toggle to `ai` counts Claude calls against `AI_SPEND_CAPS` for that entity.
+- **Internal Audit + Data Quality dual-route notifications** use two separate `notify()` calls (PRESIDENT + ALL_ADMINS). The second call uses `channels: ['in_app']` only, so finance / admin don't also receive the email — email always goes to the primary (PRESIDENT) route.
+- **verify:copilot-wiring baseline is now 35/35.** Any new tool added after G8 that forgets to register a handler will fail CI. Don't regress this.

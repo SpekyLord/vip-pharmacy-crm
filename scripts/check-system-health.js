@@ -174,47 +174,71 @@ function checkAgentEnums() {
 
   const startIssues = issues;
 
-  // AgentRun enum
-  const agentRunContent = fs.readFileSync(path.join(ERP_MODELS, 'AgentRun.js'), 'utf-8');
-  const runEnumMatch = agentRunContent.match(/enum:\s*\[([^\]]+)\]/);
-  const runKeys = runEnumMatch ? runEnumMatch[1].match(/'([^']+)'/g).map(s => s.replace(/'/g, '')) : [];
+  // AgentRun / AgentConfig legacy enum capture — only for back-compat. After
+  // Phase G8 both schemas dropped the enum on agent_key. If an enum is still
+  // present, scope the match to the `agent_key: { ... }` block so we don't
+  // capture the `status` or `trigger_source` enums by accident.
+  function extractAgentKeyEnum(filePath) {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const block = content.match(/agent_key:\s*\{([\s\S]*?)\}/);
+    if (!block) return [];
+    const enumMatch = block[1].match(/enum:\s*\[([^\]]+)\]/);
+    if (!enumMatch) return [];
+    return (enumMatch[1].match(/'([^']+)'/g) || []).map((s) => s.replace(/'/g, ''));
+  }
+  const runKeys = extractAgentKeyEnum(path.join(ERP_MODELS, 'AgentRun.js'));
+  const configKeys = extractAgentKeyEnum(path.join(ERP_MODELS, 'AgentConfig.js'));
 
-  // AgentConfig enum
-  const agentConfigContent = fs.readFileSync(path.join(ERP_MODELS, 'AgentConfig.js'), 'utf-8');
-  const configEnumMatch = agentConfigContent.match(/enum:\s*\[([^\]]+)\]/);
-  const configKeys = configEnumMatch ? configEnumMatch[1].match(/'([^']+)'/g).map(s => s.replace(/'/g, '')) : [];
-
-  // agentController AGENT_MODULES
-  const controllerContent = fs.readFileSync(path.join(ERP_CONTROLLERS, 'agentController.js'), 'utf-8');
-  const moduleKeys = [];
-  const modRe = /(\w+):\s*['"]\.\.\/\.\.\/agents\//g;
+  // Phase G8 — agentRegistry is now the single source of truth for agent keys.
+  // The old hardcoded maps in agentController / AgentDashboard / AgentSettings
+  // are gone; this health check now validates the enum definitions against
+  // AGENT_DEFINITIONS in agentRegistry.js.
+  const registryPath = path.join(__dirname, '..', 'backend', 'agents', 'agentRegistry.js');
+  const registryContent = fs.existsSync(registryPath) ? fs.readFileSync(registryPath, 'utf-8') : '';
+  const registryKeys = [];
+  // Match `agent_key_name: { key: 'agent_key_name', ... }` rows inside AGENT_DEFINITIONS.
+  const regRe = /^\s+(\w+):\s*\{\s*key:\s*['"](\w+)['"],/gm;
   let m;
-  while ((m = modRe.exec(controllerContent)) !== null) moduleKeys.push(m[1]);
+  while ((m = regRe.exec(registryContent)) !== null) registryKeys.push(m[1]);
 
-  // AgentDashboard AGENT_CONFIG
+  // Frontend display-metadata maps (not the source of truth anymore — the lists
+  // of rendered agents come from the backend registry). We still audit that
+  // every registry key has a friendly schedule entry so the UI doesn't render
+  // "Scheduled" fallback for known agents. Missing schedule = warning, not error.
   const dashPath = path.join(PAGES_DIR, 'AgentDashboard.jsx');
   const dashContent = fs.existsSync(dashPath) ? fs.readFileSync(dashPath, 'utf-8') : '';
   const dashKeys = [];
-  const dashRe = /(\w+):\s*\{\s*label:/g;
-  while ((m = dashRe.exec(dashContent)) !== null) dashKeys.push(m[1]);
+  // Scope to the AGENT_META block so we don't match object-shape lines elsewhere.
+  const metaBlockMatch = dashContent.match(/const\s+AGENT_META\s*=\s*\{([\s\S]*?)\n\};/);
+  if (metaBlockMatch) {
+    const dashRe = /^\s+(\w+):\s*\{\s*icon:\s*\w+,\s*color:/gm;
+    while ((m = dashRe.exec(metaBlockMatch[1])) !== null) dashKeys.push(m[1]);
+  }
 
-  // AgentSettings AGENT_META
   const settingsPath = path.join(PAGES_DIR, 'AgentSettings.jsx');
   const settingsContent = fs.existsSync(settingsPath) ? fs.readFileSync(settingsPath, 'utf-8') : '';
   const settingsKeys = [];
-  const setRe = /(\w+):\s*\{\s*label:/g;
-  while ((m = setRe.exec(settingsContent)) !== null) settingsKeys.push(m[1]);
+  // Scope to the AGENT_SCHEDULE block only to avoid matching unrelated
+  // string-value keys like `module:`, `doc_ref:`, `reason:` elsewhere in the file.
+  const scheduleBlockMatch = settingsContent.match(/const\s+AGENT_SCHEDULE\s*=\s*\{([\s\S]*?)\};/);
+  if (scheduleBlockMatch) {
+    const setRe = /^\s+(\w+):\s*['"][^'"]*['"],/gm;
+    let m2;
+    while ((m2 = setRe.exec(scheduleBlockMatch[1])) !== null) settingsKeys.push(m2[1]);
+  }
 
-  const allSources = {
-    'AgentRun enum': new Set(runKeys),
-    'AgentConfig enum': new Set(configKeys),
-    'agentController MODULES': new Set(moduleKeys),
-    'AgentDashboard CONFIG': new Set(dashKeys),
-    'AgentSettings META': new Set(settingsKeys),
-  };
+  // Empty enums = no schema constraint (Phase G8 removed them in favour of
+  // controller-level validation via agentRegistry). Skip empty sources so the
+  // audit doesn't false-positive every registry key as "missing from enum".
+  const allSources = {};
+  if (runKeys.length) allSources['AgentRun enum'] = new Set(runKeys);
+  if (configKeys.length) allSources['AgentConfig enum'] = new Set(configKeys);
+  allSources['agentRegistry (source of truth)'] = new Set(registryKeys);
+  if (dashKeys.length) allSources['AgentDashboard schedule meta'] = new Set(dashKeys);
+  if (settingsKeys.length) allSources['AgentSettings schedule meta'] = new Set(settingsKeys);
 
-  // Union of all keys
-  const allKeys = new Set([...runKeys, ...configKeys, ...moduleKeys, ...dashKeys, ...settingsKeys]);
+  // Union of all keys across all sources
+  const allKeys = new Set([...runKeys, ...configKeys, ...registryKeys, ...dashKeys, ...settingsKeys]);
 
   for (const key of allKeys) {
     const missingFrom = [];

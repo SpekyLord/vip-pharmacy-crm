@@ -917,6 +917,13 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     if (hasModule('approvals')) {
       adminItems.push({ path: '/erp/approvals', label: 'Approvals', icon: ClipboardCheck, badge: approvalCount || null });
     }
+    // Phase G8 (P2-9) — Tasks: available to ALL ERP users (not only management).
+    // Placed inside Administration so it sorts alphabetically with other cross-
+    // cutting tools; the "All entity tasks" scope is gated at the backend by
+    // isPrivileged(role), so contractors won't see other people's tasks.
+    if (ROLE_SETS.ERP_ALL.includes(role)) {
+      adminItems.push({ path: '/erp/tasks', label: 'My Tasks', icon: ClipboardCheck });
+    }
     if (ROLE_SETS.MANAGEMENT.includes(role)) {
       adminItems.push({ path: '/erp/agent-dashboard', label: 'AI Agents', icon: Activity });
       adminItems.push({ path: '/erp/control-center', label: 'Control Center', icon: Settings });
