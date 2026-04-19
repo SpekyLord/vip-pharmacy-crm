@@ -9,7 +9,7 @@
  *
  * SLA breaches are visible inline (red badge) — written by disputeSlaAgent.
  */
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -356,7 +356,7 @@ export default function DisputeCenter() {
                 </div>
                 {resolveForm.outcome === 'APPROVED' && showResolve.artifact_type === 'payout' && (
                   <div style={{ background: '#fef3c7', border: '1px solid #fcd34d', padding: 10, borderRadius: 8, fontSize: 12 }}>
-                    Approving will cascade-reverse the linked IncentivePayout's accrual journal (SAP Storno) and flip the payout to REVERSED. Period locks still apply.
+                    Approving will cascade-reverse the linked IncentivePayout&apos;s accrual journal (SAP Storno) and flip the payout to REVERSED. Period locks still apply.
                   </div>
                 )}
                 <div className="dsp-actions" style={{ marginTop: 12, justifyContent: 'flex-end' }}>

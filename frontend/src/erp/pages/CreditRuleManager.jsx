@@ -14,7 +14,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
-import { ROLE_SETS, ROLES } from '../../constants/roles';
+import { ROLE_SETS } from '../../constants/roles';
 import useSalesGoals from '../hooks/useSalesGoals';
 import { useLookupBatch } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -208,7 +208,7 @@ export default function CreditRuleManager() {
         <main className="crm-main">
           <div className="crm-header">
             <h1>Credit Rules</h1>
-            <p>SAP-Commissions-pattern credit-assignment engine. Rules apply automatically on every sale post; absent any rule, full credit goes to the sale's BDM (legacy fallback).</p>
+            <p>SAP-Commissions-pattern credit-assignment engine. Rules apply automatically on every sale post; absent any rule, full credit goes to the sale&apos;s BDM (legacy fallback).</p>
           </div>
 
           <WorkflowGuide pageKey="credit-rule-manager" />
