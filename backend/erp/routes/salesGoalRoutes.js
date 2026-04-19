@@ -17,6 +17,7 @@ router.get('/plans/:id', c.getPlanById);
 router.post('/plans', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.createPlan);
 router.put('/plans/:id', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.updatePlan);
 router.post('/plans/:id/activate', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.activatePlan);
+router.post('/plans/:id/reopen', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.reopenPlan);
 router.post('/plans/:id/close', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.closePlan);
 
 // ═══ Targets ═══
