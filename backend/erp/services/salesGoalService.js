@@ -9,6 +9,11 @@ const Lookup = require('../models/Lookup');
 const SalesGoalTarget = require('../models/SalesGoalTarget');
 const KpiSnapshot = require('../models/KpiSnapshot');
 const ActionItem = require('../models/ActionItem');
+const PeopleMaster = require('../models/PeopleMaster');
+const CompProfile = require('../models/CompProfile');
+const IncentivePayout = require('../models/IncentivePayout');
+const SalesGoalPlan = require('../models/SalesGoalPlan');
+const mongoose = require('mongoose');
 
 /**
  * Sales Goal Service — Phase 28
@@ -54,6 +59,75 @@ async function getIncentiveTiers(entityId) {
       text_color: e.metadata?.text_color ?? '',
     }))
     .sort((a, b) => b.attainment_min - a.attainment_min); // highest first
+}
+
+// Hard-coded fallback used only when both the DB entries are missing AND the
+// lazy-seed write fails (e.g. read-only secondary). Keeps the dashboard
+// renderable on day zero — admins can override per-entity via Control Center.
+const STATUS_PALETTE_FALLBACK = [
+  { code: 'ON_TRACK',         label: 'On Track', bar_color: '#22c55e', bg_color: '#dcfce7', text_color: '#166534', sort_order: 1 },
+  { code: 'NEEDS_ATTENTION',  label: 'At Risk',  bar_color: '#f59e0b', bg_color: '#fef3c7', text_color: '#92400e', sort_order: 2 },
+  { code: 'AT_RISK',          label: 'Behind',   bar_color: '#ef4444', bg_color: '#fee2e2', text_color: '#991b1b', sort_order: 3 },
+];
+
+/**
+ * Read STATUS_PALETTE Lookup entries — colors + labels for attainment buckets
+ * (ON_TRACK / NEEDS_ATTENTION / AT_RISK). Lazy-seeds per entity on first read so
+ * a fresh subsidiary dashboard renders without an admin opening Control Center
+ * first. Mirrors the SALES_GOAL_ELIGIBLE_ROLES lazy-seed pattern in
+ * salesGoalController.autoEnrollEligibleBdms().
+ */
+async function getStatusPalette(entityId) {
+  let entries = await Lookup.find({
+    entity_id: entityId,
+    category: 'STATUS_PALETTE',
+    is_active: true,
+  }).lean();
+
+  if (entries.length === 0 && entityId) {
+    try {
+      const ops = STATUS_PALETTE_FALLBACK.map(p => ({
+        updateOne: {
+          filter: { entity_id: entityId, category: 'STATUS_PALETTE', code: p.code },
+          update: {
+            $setOnInsert: {
+              label: p.label,
+              sort_order: p.sort_order,
+              is_active: true,
+              metadata: {
+                bar_color: p.bar_color,
+                bg_color: p.bg_color,
+                text_color: p.text_color,
+                sort_order: p.sort_order,
+              },
+            },
+          },
+          upsert: true,
+        },
+      }));
+      await Lookup.bulkWrite(ops, { ordered: false });
+      entries = await Lookup.find({
+        entity_id: entityId,
+        category: 'STATUS_PALETTE',
+        is_active: true,
+      }).lean();
+    } catch (err) {
+      console.error('[salesGoal] STATUS_PALETTE lazy-seed failed:', err.message);
+      // Serve the fallback unmodified so the dashboard still renders.
+      return STATUS_PALETTE_FALLBACK.map(p => ({ ...p }));
+    }
+  }
+
+  return entries
+    .map(e => ({
+      code: e.code,
+      label: e.label,
+      bar_color: e.metadata?.bar_color ?? '',
+      bg_color: e.metadata?.bg_color ?? '',
+      text_color: e.metadata?.text_color ?? '',
+      sort_order: e.metadata?.sort_order ?? e.sort_order ?? 0,
+    }))
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
 }
 
 /**
@@ -227,12 +301,171 @@ async function getAutoKpiValue(kpiCode, entityId, bdmId, startDate, endDate) {
   }
 }
 
+// ═══ Incentive Accrual (Phase SG-Q2 W2) ═══
+
+/**
+ * Apply CompProfile.incentive_cap to a proposed tier_budget.
+ *
+ * Cap only bites when:
+ *   - profile.incentive_type === 'CASH'  (in-kind / commission tracked elsewhere)
+ *   - profile.incentive_cap > 0          (0 or missing = no cap)
+ *
+ * Returns `{ capped, uncapped }`. `capped` is what lands on IncentivePayout.
+ * tier_budget; `uncapped` is what the tier originally offered so the ledger
+ * row can surface "₱X reduced to ₱Y by cap" for transparency.
+ */
+async function applyIncentiveCap(personId, entityId, tierBudget) {
+  const uncapped = Number(tierBudget) || 0;
+  if (!personId) return { capped: uncapped, uncapped };
+  const profile = await CompProfile.getActiveProfile(personId);
+  if (!profile) return { capped: uncapped, uncapped };
+  if (profile.incentive_type !== 'CASH') return { capped: uncapped, uncapped };
+  const cap = Number(profile.incentive_cap) || 0;
+  if (cap <= 0) return { capped: uncapped, uncapped };
+  return { capped: Math.min(uncapped, cap), uncapped };
+}
+
+/**
+ * Upsert an IncentivePayout row for a qualified tier + post the accrual journal.
+ *
+ * Idempotency: upsert keyed by (plan_id, bdm_id, period, period_type, program_code).
+ * Re-running computeBdmSnapshot for the same period MUST NOT create a duplicate
+ * accrual or duplicate journal. If an existing row is already APPROVED/PAID/REVERSED,
+ * we leave it alone (authority has taken over the lifecycle). Only ACCRUED rows
+ * get their tier_budget / attainment_pct refreshed on re-compute.
+ *
+ * If the journal post fails we DELETE the just-created ACCRUED row (or leave the
+ * existing one unchanged) so no payout exists without its backing journal — the
+ * ledger and payout ledger stay in lockstep. Failure is logged; the outer snapshot
+ * continues (we don't want one BDM's ledger issue to halt the whole batch).
+ *
+ * Params
+ *  - entityId, plan, bdmId, personId, period, periodType
+ *  - incentiveRow: the computed entry from snap.incentive_status[0] (first program);
+ *                  must have tier_code, tier_label, tier_budget, attainment_pct,
+ *                  qualified (bool)
+ *  - userId: who triggered the snapshot (credited as created_by on fresh rows)
+ *
+ * Returns the IncentivePayout document (or null when nothing to do).
+ */
+async function accrueIncentive({
+  entityId, plan, bdmId, personId, period, periodType,
+  incentiveRow, userId,
+}) {
+  if (!incentiveRow || !incentiveRow.qualified || !incentiveRow.tier_code) return null;
+  if (!bdmId) return null;                              // no user ⇒ nowhere to attribute
+  const rawBudget = Number(incentiveRow.tier_budget) || 0;
+  if (rawBudget <= 0) return null;                       // zero-budget tiers (Participant) — skip ledger noise
+
+  // CompProfile cap enforcement (Phase SG-Q2 W2 item 12).
+  const { capped, uncapped } = await applyIncentiveCap(personId, entityId, rawBudget);
+  if (capped <= 0) return null;
+
+  const upsertKey = {
+    plan_id: plan._id,
+    bdm_id: bdmId,
+    period,
+    period_type: periodType,
+    program_code: incentiveRow.program_code || '',
+  };
+
+  // Idempotency: once a row exists for this (plan, bdm, period, period_type,
+  // program) key, we never auto-mutate the backing journal. Reasons:
+  //   - APPROVED/PAID/REVERSED → authority has taken over the lifecycle.
+  //   - ACCRUED, same numbers    → nothing to do.
+  //   - ACCRUED, different tier  → auto-updating would require reversing the
+  //     old JE AND posting a new one to keep expense in sync with tier_budget.
+  //     Doing that silently inside a batch snapshot recompute is unsafe (no
+  //     audit visibility). Instead we log a warning; admin reverses the
+  //     ACCRUED row via the ledger UI, then the next compute re-accrues at
+  //     the new tier. This matches the SAP Commissions "events are immutable"
+  //     philosophy and keeps the ledger in lockstep with the payout row.
+  const existing = await IncentivePayout.findOne(upsertKey).lean();
+  if (existing) {
+    if (existing.status === 'ACCRUED'
+        && (Number(existing.tier_budget) !== capped
+            || existing.tier_code !== incentiveRow.tier_code)) {
+      console.warn(
+        `[accrueIncentive] Tier/budget drift on ACCRUED payout ${existing._id} `
+        + `(${existing.tier_code} ₱${existing.tier_budget} → ${incentiveRow.tier_code} ₱${capped}). `
+        + `Skipping auto-update — admin must reverse this payout + recompute to adopt the new tier.`
+      );
+    }
+    return existing;
+  }
+
+  // ── Post the accrual JE FIRST so we can link journal_id on the upsert. ──
+  // If the JE post fails we throw so the snapshot txn rolls back (or, when
+  // called outside a txn, we simply skip the payout).
+  let journal;
+  try {
+    // Resolve a BDM label once for the JE description
+    const person = personId ? await PeopleMaster.findById(personId).select('full_name bdm_code').lean() : null;
+    const bdmLabel = person ? `${person.full_name}${person.bdm_code ? ` (${person.bdm_code})` : ''}` : 'BDM';
+
+    // Build a pseudo payout object so journalFromIncentive has enough context.
+    // The real IncentivePayout row is upserted after so we can store the JE id.
+    const pseudo = {
+      _id: existing?._id || new mongoose.Types.ObjectId(),
+      entity_id: entityId,
+      plan_id: plan._id,
+      bdm_id: bdmId,
+      period,
+      tier_code: incentiveRow.tier_code,
+      tier_label: incentiveRow.tier_label || incentiveRow.tier_code,
+      tier_budget: capped,
+    };
+    const { postAccrualJournal } = require('./journalFromIncentive');
+    journal = await postAccrualJournal(pseudo, plan.reference, bdmLabel, userId || null);
+  } catch (err) {
+    console.error('[salesGoal.accrueIncentive] JE post failed — payout NOT created:', err.message);
+    return null;
+  }
+
+  const doc = await IncentivePayout.findOneAndUpdate(
+    upsertKey,
+    {
+      $set: {
+        entity_id: entityId,
+        plan_id: plan._id,
+        bdm_id: bdmId,
+        person_id: personId || null,
+        fiscal_year: plan.fiscal_year,
+        period,
+        period_type: periodType,
+        program_code: incentiveRow.program_code || '',
+        tier_code: incentiveRow.tier_code,
+        tier_label: incentiveRow.tier_label || incentiveRow.tier_code,
+        tier_budget: capped,
+        uncapped_budget: uncapped,
+        attainment_pct: Number(incentiveRow.attainment_pct) || 0,
+        sales_target: Number(incentiveRow.qualifying_amount) || 0,
+        sales_actual: Number(incentiveRow.actual_amount) || 0,
+        status: 'ACCRUED',
+        journal_id: journal._id,
+        journal_number: journal.je_number,
+      },
+      $setOnInsert: {
+        created_by: userId || null,
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+
+  return doc;
+}
+
 // ═══ Snapshot Computation ═══
 
 /**
  * Compute KPI snapshot for a single BDM in a period.
+ *
+ * @param {Object} [options]
+ * @param {String|ObjectId} [options.userId] — triggers incentive accrual attribution
+ * @param {Boolean} [options.accrueIncentives=true] — set false to skip accrual
+ *   (e.g. historical re-computes). Default behavior is to accrue on YTD qualifications.
  */
-async function computeBdmSnapshot(entityId, plan, bdmId, personId, territoryId, period, periodType) {
+async function computeBdmSnapshot(entityId, plan, bdmId, personId, territoryId, period, periodType, options = {}) {
   const isYTD = periodType === 'YTD';
   const config = await getGoalConfig(entityId);
   const fiscalStart = config.FISCAL_START_MONTH;
@@ -358,7 +591,7 @@ async function computeBdmSnapshot(entityId, plan, bdmId, personId, territoryId, 
   const actionsCompleted = await ActionItem.countDocuments({ plan_id: plan._id, bdm_id: bdmId, status: 'DONE' });
 
   // Upsert snapshot
-  return KpiSnapshot.findOneAndUpdate(
+  const snapshot = await KpiSnapshot.findOneAndUpdate(
     { entity_id: entityId, plan_id: plan._id, bdm_id: bdmId, period, period_type: periodType },
     {
       $set: {
@@ -382,23 +615,61 @@ async function computeBdmSnapshot(entityId, plan, bdmId, personId, territoryId, 
     },
     { upsert: true, new: true }
   );
+
+  // ── Phase SG-Q2 W2 — Incentive accrual trigger ───────────────────────────
+  // Only accrue on YTD snapshots. Monthly snapshots drive coaching / alerts;
+  // accruing monthly would double-count (YTD already includes the month).
+  // Accrual is best-effort: failures are logged inside accrueIncentive, the
+  // outer snapshot still returns so the dashboard renders.
+  if (periodType === 'YTD' && options.accrueIncentives !== false && incentiveStatus[0]) {
+    await accrueIncentive({
+      entityId,
+      plan,
+      bdmId,
+      personId,
+      period,
+      periodType,
+      incentiveRow: incentiveStatus[0],
+      userId: options.userId || null,
+    });
+  }
+
+  return snapshot;
 }
 
 /**
  * Compute snapshots for all BDMs in a plan.
+ * Filters out targets whose PeopleMaster record is_active=false — deactivated
+ * BDMs do not belong in leaderboards, incentive tiers, or projected-budget math.
+ *
+ * @param {Object} [options] — forwarded to computeBdmSnapshot (userId, accrueIncentives)
  */
-async function computeAllSnapshots(plan, period, periodType) {
+async function computeAllSnapshots(plan, period, periodType, options = {}) {
   const targets = await SalesGoalTarget.find({
     plan_id: plan._id,
     target_type: 'BDM',
     status: 'ACTIVE',
   }).lean();
 
+  // SG-Q2 W1 — resolve active PeopleMaster once, then filter targets. Targets
+  // with no person_id still run (legacy data / direct-user-only enrollment);
+  // targets whose person_id points to an inactive person are skipped.
+  const personIds = targets.map(t => t.person_id).filter(Boolean);
+  let activePersonIds = new Set();
+  if (personIds.length > 0) {
+    const activePeople = await PeopleMaster.find({
+      _id: { $in: personIds },
+      is_active: true,
+    }).select('_id').lean();
+    activePersonIds = new Set(activePeople.map(p => p._id.toString()));
+  }
+
   const results = [];
   for (const t of targets) {
     if (!t.bdm_id) continue;
+    if (t.person_id && !activePersonIds.has(t.person_id.toString())) continue;
     const snap = await computeBdmSnapshot(
-      t.entity_id, plan, t.bdm_id, t.person_id, t.territory_id, period, periodType
+      t.entity_id, plan, t.bdm_id, t.person_id, t.territory_id, period, periodType, options
     );
     results.push({
       bdm_id: t.bdm_id,
@@ -455,10 +726,13 @@ async function getIncentiveBudgetAdvisor(entityId, plan) {
 module.exports = {
   getGoalConfig,
   getIncentiveTiers,
+  getStatusPalette,
   computeIncentiveTier,
   computeProjectedTier,
   computeBdmSnapshot,
   computeAllSnapshots,
   getAutoKpiValue,
   getIncentiveBudgetAdvisor,
+  applyIncentiveCap,
+  accrueIncentive,
 };

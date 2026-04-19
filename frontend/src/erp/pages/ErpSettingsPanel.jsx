@@ -44,6 +44,8 @@ const COA_LABELS = {
   LOANS_PAYABLE: 'Loans Payable', OWNER_CAPITAL: 'Owner Capital', OWNER_DRAWINGS: 'Owner Drawings',
   SALES_REVENUE: 'Sales Revenue', SERVICE_REVENUE: 'Service Revenue', INTEREST_INCOME: 'Interest Income',
   COGS: 'COGS', BDM_COMMISSION: 'BDM Commission', PARTNER_REBATE: 'Partner Rebate',
+  // Phase SG-Q2 W2 — Sales Goal incentive accrual/settlement pair
+  INCENTIVE_EXPENSE: 'Incentive Expense', INCENTIVE_ACCRUAL: 'Incentive Accrual Payable',
   PER_DIEM: 'Per Diem', TRANSPORT: 'Transport', SPECIAL_TRANSPORT: 'Special Transport',
   OTHER_REIMBURSABLE: 'Other Reimbursable', FUEL_GAS: 'Fuel & Gas',
   INVENTORY_WRITEOFF: 'Inventory Write-Off', INVENTORY_ADJ_GAIN: 'Inventory Adj Gain',

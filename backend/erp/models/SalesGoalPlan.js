@@ -67,15 +67,26 @@ const salesGoalPlanSchema = new mongoose.Schema({
   // Incentive programs attached to this plan
   incentive_programs: [incentiveProgramSchema],
 
+  // Reference number — populated on first activation via generateSalesGoalNumber().
+  // Format: SG-{ENTITY_SHORT}{YYMM}-{NNN}. Persistent across reopen/close so the
+  // plan keeps one audit identifier for its whole lifecycle.
+  reference: { type: String, trim: true, default: '' },
+
   // Approval
   approved_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   approved_at: { type: Date },
+  reopened_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  reopened_at: { type: Date },
+  closed_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  closed_at: { type: Date },
 
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 }, {
   timestamps: true,
   collection: 'erp_sales_goal_plans',
 });
+
+salesGoalPlanSchema.index({ entity_id: 1, reference: 1 });
 
 // One plan per entity per fiscal year
 salesGoalPlanSchema.index({ entity_id: 1, fiscal_year: 1 }, { unique: true });

@@ -1300,36 +1300,38 @@ const WORKFLOW_GUIDES = {
     steps: [
       'President creates the annual Sales Goal Plan from the Setup page',
       'Define growth drivers (Hospital Accreditation, Pharmacy/CSR, etc.) with KPI definitions',
-      'Assign per-entity and per-BDM sales targets',
-      'Activate the plan — targets become visible to BDMs',
-      'Click "Compute KPIs" to refresh KPI snapshots from live ERP data',
-      'Monitor the BDM leaderboard, incentive tiers, and driver progress',
+      'Assign per-entity and per-BDM sales targets — or let activation auto-enroll every active BDM from People Master',
+      'Activate the plan — reference number (SG-{ENTITY}{YYMM}-###) is stamped and targets go visible to BDMs',
+      'Click "Compute KPIs" to refresh KPI snapshots from live ERP data (President/Finance only; others are routed through the Approval Hub)',
+      'Monitor the BDM leaderboard, incentive tiers, and driver progress — deactivated BDMs are hidden automatically',
     ],
     next: [
       { label: 'Goal Setup', path: '/erp/sales-goals/setup' },
       { label: 'Incentive Tracker', path: '/erp/sales-goals/incentives' },
+      { label: 'Approval Hub', path: '/erp/approvals' },
       { label: 'My Goals', path: '/erp/sales-goals/my' },
     ],
-    tip: 'BDMs see only their own goals. President and delegates with FULL sales_goals access see all BDMs.',
+    tip: 'BDMs see only their own goals. President and delegates with FULL sales_goals access see all BDMs. Non-authorized compute/activate actions route through the Approval Hub (HTTP 202) — check there if a button silently "succeeded" with no data refresh. Status colors (green/amber/red bars + badges) are driven by the STATUS_PALETTE Lookup — rebrand per entity from Control Center → Lookup Tables.',
   },
 
   salesGoalSetup: {
     title: 'Sales Goal Plan Setup',
     steps: [
-      'Before creating a plan — seed Lookup categories (GROWTH_DRIVER, KPI_CODE, INCENTIVE_TIER) from Control Center → Lookup Tables',
+      'Before creating a plan — seed Lookup categories (GROWTH_DRIVER, KPI_CODE, INCENTIVE_TIER, STATUS_PALETTE, SALES_GOAL_ELIGIBLE_ROLES) from Control Center → Lookup Tables. STATUS_PALETTE auto-seeds on first dashboard load if missing.',
       'Fill in Plan Details: fiscal year, plan name, baseline revenue, target revenue, and collection target %',
       'Add Growth Drivers — select driver codes from Lookup GROWTH_DRIVER, then add KPI definitions using codes from Lookup KPI_CODE',
       'Set Entity Targets — the sum should match the plan target revenue (over-allocation is allowed as an execution buffer)',
-      'Set BDM Targets — the sum under each entity should match the entity target (check the validation message)',
+      'Set BDM Targets manually OR rely on auto-enrollment at activation (creates a target row for every active PeopleMaster person whose person_type is in SALES_GOAL_ELIGIBLE_ROLES)',
       'Define Incentive Programs (optional) — choose whether each program uses tiered rewards',
-      'Activate the plan — all targets move from DRAFT to ACTIVE and become visible to BDMs on the dashboard',
+      'Activate the plan — reference number assigned, all targets go ACTIVE, eligible BDMs auto-enrolled, audit entry written. Non-authorized submitters are held in the Approval Hub.',
     ],
     next: [
       { label: 'Goal Dashboard', path: '/erp/sales-goals' },
       { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
       { label: 'Access Templates', path: '/erp/control-center?section=access-templates' },
+      { label: 'Approval Hub', path: '/erp/approvals' },
     ],
-    tip: 'Assign sales_goals: FULL access to an OM via Access Templates so they can help manage goals.',
+    tip: 'To extend auto-enrollment to new sales roles (SALES_REP, SALES_MANAGER, TERRITORY_MANAGER, etc.) add the person_type code to the SALES_GOAL_ELIGIBLE_ROLES lookup — zero code change. Re-activating an existing plan is idempotent (only missing BDMs are added).',
   },
 
   salesGoalBdmView: {
@@ -1337,6 +1339,7 @@ const WORKFLOW_GUIDES = {
     steps: [
       'Review your annual sales target and current YTD attainment',
       'Check your incentive tier — see the budget you\'ve earned and what\'s needed for the next tier',
+      'Open the "My Payouts" tab to see your earned incentives — accrued, awaiting approval, paid, or reversed',
       'Monitor monthly sales trends to identify patterns and momentum',
       'Review KPIs per growth driver — these indicate the health of your territory',
       'Create action items to drive each growth driver (accreditation, formulary listing, MD engagement)',
@@ -1345,9 +1348,32 @@ const WORKFLOW_GUIDES = {
     next: [
       { label: 'Goal Dashboard', path: '/erp/sales-goals' },
       { label: 'Incentive Tracker', path: '/erp/sales-goals/incentives' },
+      { label: 'Payout Ledger', path: '/erp/incentive-payouts' },
       { label: 'My Sales', path: '/erp/sales' },
     ],
-    tip: 'Complete action items consistently — they drive the KPIs that determine your incentive tier.',
+    tip: 'Complete action items consistently — they drive the KPIs that determine your incentive tier. Your target appears automatically once the president activates the annual plan; no manual enrollment is needed. Payouts accrue automatically once YTD attainment hits a tier threshold — the amount posts to the GL as Incentive Expense DR / Incentive Accrual CR, capped by your CompProfile if CASH-type + cap is set.',
+  },
+
+  // ═══ Phase SG-Q2 W2 — Incentive Payout Ledger ═══
+
+  incentivePayoutLedger: {
+    title: 'Incentive Payout Ledger',
+    steps: [
+      'Payouts are created automatically when a BDM qualifies for a tier during YTD KPI snapshot computation',
+      'Each ACCRUED row has a linked journal entry (DR Incentive Expense / CR Incentive Accrual) — audit-visible, period-locked',
+      'Finance/President reviews accrued payouts and clicks "Approve" to lock the amount (no JE posted at approval)',
+      'Click "Pay" on an APPROVED (or ACCRUED) payout → settlement JE posts (DR Incentive Accrual / CR funding COA) and status → PAID',
+      'If a payout is wrong (miscalculated, tier changed, dispute upheld), click "Reverse" with a reason — a SAP-Storno reversal JE posts and status → REVERSED',
+      'Filter by BDM, period, status, or fiscal year. Use the "Payable" view for payroll-batch consumption.',
+    ],
+    next: [
+      { label: 'Goal Dashboard', path: '/erp/sales-goals' },
+      { label: 'Incentive Tracker', path: '/erp/sales-goals/incentives' },
+      { label: 'Approval Hub', path: '/erp/approvals' },
+      { label: 'Period Locks', path: '/erp/period-locks' },
+      { label: 'ERP Settings (COA)', path: '/erp/settings' },
+    ],
+    tip: 'Accrual/settlement/reversal COA codes come from Settings.COA_MAP.INCENTIVE_EXPENSE / INCENTIVE_ACCRUAL — subscriber-configurable via ERP Settings (validated against Chart of Accounts). Approve/Pay/Reverse are gated by gateApproval(module: INCENTIVE_PAYOUT, category: FINANCIAL) — non-authorized submitters are routed to the Approval Hub (HTTP 202). Reversal posts into the CURRENT period (SAP Storno); if the current period is locked, unlock it first. Sub-permissions: sales_goals.payout_view / payout_approve / payout_pay / payout_reverse — delegate via Access Templates.',
   },
 
   kpiLibrary: {

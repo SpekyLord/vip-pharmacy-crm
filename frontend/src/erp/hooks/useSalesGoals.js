@@ -40,6 +40,15 @@ export default function useSalesGoals() {
   // Manual KPI
   const enterManualKpi = (data) => api.post('/sales-goals/kpi/manual', data);
 
+  // ── Phase SG-Q2 W2 — Incentive Payouts ────────────────────────────────
+  const getPayouts = (params) => api.get('/incentive-payouts', { params });
+  const getPayout = (id) => api.get(`/incentive-payouts/${id}`);
+  const getMyPayouts = (params) => api.get('/incentive-payouts/mine', { params });
+  const getPayablePayouts = (params) => api.get('/incentive-payouts/payable', { params });
+  const approvePayout = (id, data) => api.post(`/incentive-payouts/${id}/approve`, data || {});
+  const payPayout = (id, data) => api.post(`/incentive-payouts/${id}/pay`, data || {});
+  const reversePayout = (id, data) => api.post(`/incentive-payouts/${id}/reverse`, data || {});
+
   return {
     ...api,
     getPlans, getPlan, createPlan, updatePlan, activatePlan, reopenPlan, closePlan,
@@ -48,5 +57,7 @@ export default function useSalesGoals() {
     getGoalDashboard, getBdmGoalDetail, getDriverSummary, getIncentiveBoard,
     getActions, getMyActions, createAction, updateAction, completeAction,
     enterManualKpi,
+    getPayouts, getPayout, getMyPayouts, getPayablePayouts,
+    approvePayout, payPayout, reversePayout,
   };
 }

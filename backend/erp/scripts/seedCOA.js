@@ -57,6 +57,7 @@ const COA_TEMPLATE = [
   { account_code: '2210', account_name: 'PhilHealth Payable', account_type: 'LIABILITY', account_subtype: 'Gov Payable', normal_balance: 'CREDIT' },
   { account_code: '2220', account_name: 'Pag-IBIG Payable', account_type: 'LIABILITY', account_subtype: 'Gov Payable', normal_balance: 'CREDIT' },
   { account_code: '2230', account_name: 'Withholding Tax Payable', account_type: 'LIABILITY', account_subtype: 'Tax Payable', normal_balance: 'CREDIT' },
+  { account_code: '2160', account_name: 'Incentive Accrual Payable', account_type: 'LIABILITY', account_subtype: 'Other', normal_balance: 'CREDIT' },
   { account_code: '2250', account_name: 'Interest Payable', account_type: 'LIABILITY', account_subtype: 'Other', normal_balance: 'CREDIT' },
   { account_code: '2300', account_name: 'Loans Payable', account_type: 'LIABILITY', account_subtype: 'Loan', normal_balance: 'CREDIT' },
   { account_code: '2301', account_name: 'SBC Credit Card Payable', account_type: 'LIABILITY', account_subtype: 'CC Payable', normal_balance: 'CREDIT' },
@@ -81,6 +82,7 @@ const COA_TEMPLATE = [
   // ──── 5000-5500: Cost of Sales ────
   { account_code: '5000', account_name: 'Cost of Goods Sold', account_type: 'EXPENSE', account_subtype: 'COGS', normal_balance: 'DEBIT' },
   { account_code: '5100', account_name: 'BDM Commission', account_type: 'EXPENSE', account_subtype: 'COGS', normal_balance: 'DEBIT' },
+  { account_code: '5150', account_name: 'Incentive Expense — Sales Goal', account_type: 'EXPENSE', account_subtype: 'COGS', normal_balance: 'DEBIT' },
   { account_code: '5200', account_name: 'Profit Share / Partner Rebate', account_type: 'EXPENSE', account_subtype: 'COGS', normal_balance: 'DEBIT' },
   { account_code: '5300', account_name: "Partners' Insurance", account_type: 'EXPENSE', account_subtype: 'COGS', normal_balance: 'DEBIT' },
   { account_code: '5400', account_name: 'Food Cost', account_type: 'EXPENSE', account_subtype: 'COGS', normal_balance: 'DEBIT' },

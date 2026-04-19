@@ -50,6 +50,8 @@ const COA_NAMES = {
   COGS: 'Cost of Goods Sold',
   BDM_COMMISSION: 'BDM Commission',
   PARTNER_REBATE: 'Partner Rebate Expense',
+  INCENTIVE_EXPENSE: 'Incentive Expense',
+  INCENTIVE_ACCRUAL: 'Incentive Accrual Payable',
   PER_DIEM: 'Per Diem Expense',
   TRANSPORT: 'Transport Expense',
   SPECIAL_TRANSPORT: 'Special Transport Expense',

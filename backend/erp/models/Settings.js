@@ -84,6 +84,11 @@ const settingsSchema = new mongoose.Schema({
     COGS:                { type: String, default: '5000' },
     BDM_COMMISSION:      { type: String, default: '5100' },
     PARTNER_REBATE:      { type: String, default: '5200' },
+    // Phase SG-Q2 W2 — Sales Goal tier-incentive accrual/settlement pair.
+    // DR INCENTIVE_EXPENSE on tier qualification, CR INCENTIVE_ACCRUAL.
+    // Settlement reverses the accrual against the funding COA (cash/bank/card).
+    INCENTIVE_EXPENSE:   { type: String, default: '5150' },
+    INCENTIVE_ACCRUAL:   { type: String, default: '2160' },
     PER_DIEM:            { type: String, default: '6100' },
     TRANSPORT:           { type: String, default: '6150' },
     SPECIAL_TRANSPORT:   { type: String, default: '6160' },

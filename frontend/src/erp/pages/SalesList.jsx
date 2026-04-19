@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import Pagination from '../../components/common/Pagination';
@@ -10,6 +10,7 @@ import useEntities from '../hooks/useEntities';
 import useErpSubAccess from '../hooks/useErpSubAccess';
 import EntityBadge from '../components/EntityBadge';
 import PresidentReverseModal from '../components/PresidentReverseModal';
+import RejectionBanner from '../components/RejectionBanner';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -219,6 +220,7 @@ const pageStyles = `
 
 export default function SalesList() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const sales = useSales();
   const { getEntityById } = useEntities();
   const { hasSubPermission } = useErpSubAccess();
@@ -521,6 +523,19 @@ export default function SalesList() {
                 <div style={{ marginTop: 12, textAlign: 'right' }}>
                   <strong>Invoice Total: P{selectedSale.invoice_total?.toLocaleString()}</strong>
                   <br /><span style={{ fontSize: 12, color: 'var(--erp-muted)' }}>VAT: P{selectedSale.total_vat?.toFixed(2)} | Net: P{selectedSale.total_net_of_vat?.toFixed(2)}</span>
+                </div>
+
+                <div style={{ marginTop: 12 }}>
+                  <RejectionBanner
+                    row={selectedSale}
+                    moduleKey="SALES"
+                    variant="page"
+                    docLabel={selectedSale.invoice_number || selectedSale.csi_no}
+                    onResubmit={(row) => {
+                      setSelectedSale(null);
+                      navigate(`/erp/sales/entry?edit=${row._id}`);
+                    }}
+                  />
                 </div>
 
                 {selectedSale.validation_errors?.length > 0 && (

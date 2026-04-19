@@ -66,10 +66,34 @@ function tierStyle(tier, colorMap) {
   return { ...c, border: c.bg };
 }
 
-function attainColor(pctVal, config) {
-  if (config?.attainment_green && pctVal >= config.attainment_green) return '#22c55e';
-  if (config?.attainment_yellow && pctVal >= config.attainment_yellow) return '#f59e0b';
-  return '#ef4444';
+// Lookup-driven STATUS_PALETTE — codes match the buckets emitted by
+// salesGoalController (ON_TRACK / NEEDS_ATTENTION / AT_RISK). Subscribers
+// re-brand bar/badge colors per entity from Control Center → Lookup Tables.
+const NEUTRAL_PALETTE_BAR = '#9ca3af';
+
+function statusBucket(attPct, config) {
+  if (attPct >= (config?.attainment_green ?? 90)) return 'ON_TRACK';
+  if (attPct >= (config?.attainment_yellow ?? 70)) return 'NEEDS_ATTENTION';
+  return 'AT_RISK';
+}
+
+function buildPaletteMap(palette) {
+  const map = {};
+  for (const p of palette || []) {
+    if (!p?.code) continue;
+    map[p.code.toUpperCase()] = {
+      bar: p.bar_color || NEUTRAL_PALETTE_BAR,
+      bg: p.bg_color || '#f3f4f6',
+      text: p.text_color || '#374151',
+      label: p.label || p.code,
+    };
+  }
+  return map;
+}
+
+function attainColor(pctVal, config, paletteMap) {
+  const code = statusBucket(pctVal, config);
+  return paletteMap?.[code]?.bar || NEUTRAL_PALETTE_BAR;
 }
 
 export default function IncentiveTracker() {
@@ -96,6 +120,7 @@ export default function IncentiveTracker() {
   const fiscalYear = board?.plan?.fiscal_year || new Date().getFullYear();
   const config = board?.config || {};
   const colorMap = buildTierColorMap(tiers);
+  const paletteMap = buildPaletteMap(board?.palette);
 
   // Fiscal year countdown: months remaining in FY
   const now = new Date();
@@ -210,7 +235,7 @@ export default function IncentiveTracker() {
                     <tbody>
                       {leaderboard.map((row, i) => {
                         const att = row.attainment_pct || 0;
-                        const color = attainColor(att, config);
+                        const color = attainColor(att, config, paletteMap);
                         const ts = tierStyle(row.current_tier, colorMap);
                         const pts = tierStyle(row.projected_tier, colorMap);
                         return (

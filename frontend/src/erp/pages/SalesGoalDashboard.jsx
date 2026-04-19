@@ -9,7 +9,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useSalesGoals from '../hooks/useSalesGoals';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError, showSuccess } from '../utils/errorToast';
+import { showError, showSuccess, showApprovalPending, isApprovalPending } from '../utils/errorToast';
 
 const php = (n) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(n || 0);
 const pct = (n) => `${(n || 0).toFixed(1)}%`;
@@ -59,10 +59,43 @@ const pageStyles = `
   @media(max-width: 768px) { .sgd-main { padding: 12px; } .sgd-row { flex-direction: column; } }
 `;
 
-function statusColor(attPct, config) {
-  if (attPct >= config?.attainment_green) return '#22c55e';
-  if (attPct >= config?.attainment_yellow) return '#f59e0b';
-  return '#ef4444';
+// Bucket attainment % into a STATUS_PALETTE code using GOAL_CONFIG thresholds.
+// Codes match the bucket emitted by salesGoalController.getGoalDashboard().
+function statusBucket(attPct, config) {
+  if (attPct >= (config?.attainment_green ?? 90)) return 'ON_TRACK';
+  if (attPct >= (config?.attainment_yellow ?? 70)) return 'NEEDS_ATTENTION';
+  return 'AT_RISK';
+}
+
+// Lookup-driven STATUS_PALETTE: built from dashboard.palette (Control Center →
+// Lookup Tables). Neutral grey fallback so an unseeded entity / new status
+// code still renders without a crash.
+const NEUTRAL_PALETTE = { bar: '#9ca3af', bg: '#f3f4f6', text: '#374151', label: '' };
+
+function buildPaletteMap(palette) {
+  const map = {};
+  for (const p of palette || []) {
+    if (!p?.code) continue;
+    map[p.code.toUpperCase()] = {
+      bar: p.bar_color || NEUTRAL_PALETTE.bar,
+      bg: p.bg_color || NEUTRAL_PALETTE.bg,
+      text: p.text_color || NEUTRAL_PALETTE.text,
+      label: p.label || p.code,
+    };
+  }
+  return map;
+}
+
+// Resolve palette by either the server-emitted lowercase status (`on_track`)
+// or the bucket code (`ON_TRACK`). Falls back to neutral grey for unknowns.
+function paletteFor(code, paletteMap) {
+  const key = String(code || '').toUpperCase();
+  return paletteMap[key] || { ...NEUTRAL_PALETTE, label: key || NEUTRAL_PALETTE.label };
+}
+
+// Convenience: resolve palette directly from attainment %.
+function paletteForAttainment(attPct, config, paletteMap) {
+  return paletteFor(statusBucket(attPct, config), paletteMap);
 }
 
 // tierColorMap built from API tiers data (Lookup-driven, not hardcoded)
@@ -90,6 +123,8 @@ export default function SalesGoalDashboard() {
   const [dashboard, setDashboard] = useState(null);
   const [sortField, setSortField] = useState('rank');
   const [sortDir, setSortDir] = useState('asc');
+  // Phase SG-Q2 W2 — payout summary widget (YTD accrued / paid / pending)
+  const [payoutSummary, setPayoutSummary] = useState(null);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -100,17 +135,34 @@ export default function SalesGoalDashboard() {
     setLoading(false);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadDashboard(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const loadPayoutSummary = useCallback(async () => {
+    try {
+      // useErpApi unwraps to HTTP body → res is { success, data: [...], summary: {...} }
+      const res = await sg.getPayouts({ fiscal_year: String(new Date().getFullYear()) });
+      setPayoutSummary(res?.summary || null);
+    } catch {
+      setPayoutSummary(null);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { loadDashboard(); loadPayoutSummary(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleComputeSnapshots = useCallback(async () => {
     if (!dashboard?.plan?._id) return;
     setComputing(true);
     try {
       const res = await sg.computeSnapshots({ plan_id: dashboard.plan._id });
-      const count = res?.data?.count ?? res?.count ?? res?.data?.data?.length ?? 0;
-      await loadDashboard();
-      showSuccess(count ? `Computed ${count} BDM snapshot${count === 1 ? '' : 's'}` : 'KPIs computed');
-    } catch (err) { showError(err, 'Failed to compute KPI snapshots'); }
+      if (isApprovalPending(res)) {
+        showApprovalPending('KPI compute sent for approval.');
+      } else {
+        const count = res?.data?.count ?? res?.count ?? res?.data?.data?.length ?? 0;
+        await loadDashboard();
+        showSuccess(count ? `Computed ${count} BDM snapshot${count === 1 ? '' : 's'}` : 'KPIs computed');
+      }
+    } catch (err) {
+      if (isApprovalPending(null, err)) showApprovalPending('KPI compute sent for approval.');
+      else showError(err, 'Failed to compute KPI snapshots');
+    }
     setComputing(false);
   }, [dashboard?.plan?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -136,6 +188,7 @@ export default function SalesGoalDashboard() {
   const config = dashboard?.config || {};
   const entityTargets = dashboard?.entity_targets || [];
   const drivers = plan?.growth_drivers || [];
+  const paletteMap = buildPaletteMap(dashboard?.palette);
 
   const baselineRevenue = plan?.baseline_revenue || 0;
   const targetRevenue = plan?.target_revenue || 0;
@@ -242,7 +295,7 @@ export default function SalesGoalDashboard() {
                           <div className="sgd-entity-bar-track">
                             <div className="sgd-entity-bar-fill" style={{
                               width: `${Math.min(attain, 100)}%`,
-                              background: statusColor(attain, config)
+                              background: paletteForAttainment(attain, config, paletteMap).bar
                             }} />
                           </div>
                           <div className="sgd-entity-nums">
@@ -270,7 +323,7 @@ export default function SalesGoalDashboard() {
                 </div>
                 <div className="sgd-card">
                   <div className="sgd-card-label">Attainment %</div>
-                  <div className="sgd-card-value" style={{ color: statusColor(summary.overall_attainment_pct || 0, config) }}>
+                  <div className="sgd-card-value" style={{ color: paletteForAttainment(summary.overall_attainment_pct || 0, config, paletteMap).bar }}>
                     {pct(summary.overall_attainment_pct)}
                   </div>
                 </div>
@@ -278,6 +331,21 @@ export default function SalesGoalDashboard() {
                   <div className="sgd-card-label">Collection Rate %</div>
                   <div className="sgd-card-value">{pct(summary.collection_rate_pct)}</div>
                 </div>
+                {payoutSummary ? (
+                  <Link to="/erp/incentive-payouts" className="sgd-card" style={{ textDecoration: 'none', cursor: 'pointer' }}>
+                    <div className="sgd-card-label">Incentive Ledger (YTD)</div>
+                    <div className="sgd-card-value" style={{ color: '#16a34a' }}>{php((payoutSummary.paid || 0))}</div>
+                    <div className="sgd-card-sub">
+                      Accrued {php((payoutSummary.accrued || 0))} · Approved {php((payoutSummary.approved || 0))} · {payoutSummary.count} row(s)
+                    </div>
+                  </Link>
+                ) : (
+                  <Link to="/erp/incentive-payouts" className="sgd-card" style={{ textDecoration: 'none', cursor: 'pointer' }}>
+                    <div className="sgd-card-label">Incentive Ledger</div>
+                    <div className="sgd-card-value" style={{ color: 'var(--erp-muted)' }}>—</div>
+                    <div className="sgd-card-sub">Open payout ledger →</div>
+                  </Link>
+                )}
               </div>
 
               {/* Growth Drivers */}
@@ -344,9 +412,10 @@ export default function SalesGoalDashboard() {
                     </thead>
                     <tbody>
                       {sortedLeaderboard().map((row, i) => {
-                        const attColor = statusColor(row.sales_attainment_pct || 0, config);
+                        // Resolve palette: server emits row.status (lowercase) — fall back to threshold bucket if missing.
+                        const bucket = row.status ? row.status : statusBucket(row.sales_attainment_pct || 0, config);
+                        const statusPal = paletteFor(bucket, paletteMap);
                         const tc = tierColor(row.incentive_tier, buildTierColorMap(dashboard?.tiers));
-                        const statusLabelMap = { on_track: 'On Track', needs_attention: 'At Risk', at_risk: 'Behind' };
                         return (
                           <tr key={row.bdm_id || i}>
                             <td className="num">{row.rank || i + 1}</td>
@@ -358,7 +427,7 @@ export default function SalesGoalDashboard() {
                             <td>{row.territory || '-'}</td>
                             <td className="num">{php(row.sales_target)}</td>
                             <td className="num">{php(row.sales_actual)}</td>
-                            <td className="num" style={{ color: attColor, fontWeight: 600 }}>
+                            <td className="num" style={{ color: statusPal.bar, fontWeight: 600 }}>
                               {pct(row.sales_attainment_pct)}
                             </td>
                             <td>
@@ -368,10 +437,10 @@ export default function SalesGoalDashboard() {
                             </td>
                             <td>
                               <span className="sgd-badge" style={{
-                                background: attColor + '18',
-                                color: attColor
+                                background: statusPal.bg,
+                                color: statusPal.text
                               }}>
-                                {statusLabelMap[row.status] || (row.sales_attainment_pct >= 100 ? 'On Track' : row.sales_attainment_pct >= 80 ? 'At Risk' : 'Behind')}
+                                {statusPal.label || bucket}
                               </span>
                             </td>
                           </tr>
