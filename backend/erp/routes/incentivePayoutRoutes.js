@@ -27,6 +27,13 @@ router.get('/mine', erpAccessCheck('sales_goals', 'VIEW'), c.myPayouts);
 // non-privileged callers can only ever see their own statement).
 router.get('/statement', erpAccessCheck('sales_goals', 'VIEW'), c.getCompensationStatement);
 router.get('/statement/print', erpAccessCheck('sales_goals', 'VIEW'), c.printCompensationStatement);
+// Phase SG-4 #23 ext — BDM statement archive (per-period rollup) + admin
+// mass-dispatch on period close. Archive is read-only (BDM-scoped via
+// _resolveStatementScope); dispatch is gated by the FULL access + the
+// gateApproval('INCENTIVE_PAYOUT', 'STATEMENT_DISPATCH') call inside the
+// controller, so authority controls who can mass-mail BDMs.
+router.get('/statement/archive', erpAccessCheck('sales_goals', 'VIEW'), c.getStatementArchive);
+router.post('/statements/dispatch', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'payout_approve'), c.dispatchStatementsForPeriod);
 router.get('/:id', erpAccessCheck('sales_goals', 'VIEW'), c.getPayoutById);
 router.get('/', erpAccessCheck('sales_goals', 'VIEW'), c.listPayouts);
 

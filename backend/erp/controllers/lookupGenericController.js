@@ -285,12 +285,17 @@ const SEED_DEFAULTS = {
     { code: 'ATTENDANCE_RATE', label: 'Attendance Rate %', metadata: { unit: '%', direction: 'higher_better', computation: 'manual', functional_roles: ['ALL'], description: 'Percentage of scheduled work days attended' } },
     { code: 'TASK_COMPLETION', label: 'Task Completion Rate %', metadata: { unit: '%', direction: 'higher_better', computation: 'manual', functional_roles: ['ALL'], description: 'Percentage of assigned tasks completed on or before deadline' } },
   ],
+  // Phase SG-5 #25 — accelerator_factor per tier (commission multiplier).
+  // Defaults to 1.0 on every seed row so existing accruals keep the same math.
+  // Admins opt a tier into acceleration via Control Center → Lookup Tables →
+  // INCENTIVE_TIER → set metadata.accelerator_factor (e.g. 1.25 for 125% payout
+  // at Platinum). salesGoalService.applyTierAccelerator clamps negatives to 1.0.
   INCENTIVE_TIER: [
-    { code: 'TIER_1', label: 'Platinum', metadata: { attainment_min: 100, budget_per_bdm: 150000, reward_description: '', sort_order: 1, bg_color: '#fef3c7', text_color: '#92400e' } },
-    { code: 'TIER_2', label: 'Gold', metadata: { attainment_min: 90, budget_per_bdm: 80000, reward_description: '', sort_order: 2, bg_color: '#fef9c3', text_color: '#854d0e' } },
-    { code: 'TIER_3', label: 'Silver', metadata: { attainment_min: 80, budget_per_bdm: 50000, reward_description: '', sort_order: 3, bg_color: '#f1f5f9', text_color: '#475569' } },
-    { code: 'TIER_4', label: 'Bronze', metadata: { attainment_min: 70, budget_per_bdm: 30000, reward_description: '', sort_order: 4, bg_color: '#fed7aa', text_color: '#9a3412' } },
-    { code: 'TIER_5', label: 'Participant', metadata: { attainment_min: 50, budget_per_bdm: 15000, reward_description: '', sort_order: 5, bg_color: '#dbeafe', text_color: '#1e40af' } },
+    { code: 'TIER_1', label: 'Platinum', metadata: { attainment_min: 100, budget_per_bdm: 150000, accelerator_factor: 1.0, reward_description: '', sort_order: 1, bg_color: '#fef3c7', text_color: '#92400e' } },
+    { code: 'TIER_2', label: 'Gold', metadata: { attainment_min: 90, budget_per_bdm: 80000, accelerator_factor: 1.0, reward_description: '', sort_order: 2, bg_color: '#fef9c3', text_color: '#854d0e' } },
+    { code: 'TIER_3', label: 'Silver', metadata: { attainment_min: 80, budget_per_bdm: 50000, accelerator_factor: 1.0, reward_description: '', sort_order: 3, bg_color: '#f1f5f9', text_color: '#475569' } },
+    { code: 'TIER_4', label: 'Bronze', metadata: { attainment_min: 70, budget_per_bdm: 30000, accelerator_factor: 1.0, reward_description: '', sort_order: 4, bg_color: '#fed7aa', text_color: '#9a3412' } },
+    { code: 'TIER_5', label: 'Participant', metadata: { attainment_min: 50, budget_per_bdm: 15000, accelerator_factor: 1.0, reward_description: '', sort_order: 5, bg_color: '#dbeafe', text_color: '#1e40af' } },
   ],
   // Phase 28 — Status palette for sales-goal attainment buckets.
   // Codes match the bucket emitted by salesGoalController.getGoalDashboard()
@@ -361,6 +366,11 @@ const SEED_DEFAULTS = {
     // Category=FINANCIAL — moves money (DR Incentive Expense / CR Incentive Accrual),
     // settlement debits the accrual and credits cash/bank. Default roles president/finance.
     { code: 'INCENTIVE_PAYOUT', label: 'Incentive Payout Lifecycle', metadata: { category: 'FINANCIAL' } },
+    // Phase SG-4 #24 — Incentive dispute lifecycle (file → take-review →
+    // resolve → close). Operational (no money moves on file/take/close;
+    // RESOLVED_APPROVED may cascade a reversal but that hits INCENTIVE_PAYOUT
+    // which has its own gate).
+    { code: 'INCENTIVE_DISPUTE', label: 'Incentive Dispute Workflow', metadata: { category: 'OPERATIONAL' } },
   ],
   // Phase 30 — PersonDetail dropdowns (migrated from hardcoded arrays)
   CIVIL_STATUS: ['SINGLE', 'MARRIED', 'WIDOWED', 'SEPARATED'],
@@ -823,6 +833,12 @@ const SEED_DEFAULTS = {
     // Approve/Pay/Reverse route through gateApproval — default president/finance only.
     // Subscribers: set metadata.roles = null for open-post (anyone with payout_process can pay).
     { code: 'INCENTIVE_PAYOUT', label: 'Incentive Payouts', metadata: { roles: ['president', 'finance'], description: 'Approve, pay, and reverse Sales Goal incentive payouts (Accrued → Approved → Paid → Reversed)' } },
+    // Phase SG-4 #24 — Incentive dispute workflow gate. BDMs can FILE (no
+    // gate, just an authenticated request); take-review / resolve / close go
+    // through gateApproval. Default roles cover finance + president; admin
+    // gets it via Access Templates. Subscribers can null this to let any
+    // qualified user resolve disputes (e.g. a People Ops manager).
+    { code: 'INCENTIVE_DISPUTE', label: 'Incentive Disputes', metadata: { roles: ['president', 'finance', 'admin'], description: 'Take review on filed disputes, resolve them (approved or denied), and close. Filing itself requires no gate.' } },
   ],
   // Phase SG-Q2 — Period lock modules. UI (Period Locks page) reads this to render
   // toggle rows per module. Each code becomes a lockable unit. Subscribers can add
@@ -850,6 +866,103 @@ const SEED_DEFAULTS = {
   // zero code change required. Codes MUST exactly match PERSON_TYPE lookup codes.
   SALES_GOAL_ELIGIBLE_ROLES: [
     { code: 'BDM', label: 'BDM (Business Development Manager)', metadata: { description: 'Primary field sales role. Seeded as default enrollment target.' } },
+  ],
+
+  // Phase SG-4 #22 — Credit rule presets. Each row is a starter template that
+  // appears in the CreditRuleManager dropdown so admins don't have to invent
+  // common rule shapes from scratch. Subscribers add their own rows freely.
+  // Metadata schema (rendered into a CreditRule on "Use template"):
+  //   priority: number — execution order (lower = earlier)
+  //   conditions: { territory_codes?, product_codes?, customer_codes?, hospital_codes? }
+  //   credit_pct: number (0-100)  — share of the sale that goes to the matched BDM
+  //   description: string
+  CREDIT_RULE_TEMPLATES: [
+    {
+      code: 'TERRITORY_PRIMARY',
+      label: 'Territory Primary BDM (100%)',
+      metadata: {
+        priority: 100,
+        conditions: { territory_codes: [], product_codes: [], customer_codes: [], hospital_codes: [] },
+        credit_pct: 100,
+        description: 'Default — full credit goes to the BDM whose territory the sale belongs to.',
+      },
+    },
+    {
+      code: 'PRODUCT_SPLIT',
+      label: 'Product specialist split (70/30)',
+      metadata: {
+        priority: 50,
+        conditions: { product_codes: [] },
+        credit_pct: 70,
+        description: '70% to the BDM credited on the sale, 30% reserved for a product specialist (configure a sibling rule with the specialist BDM and the same product list).',
+      },
+    },
+    {
+      code: 'KEY_ACCOUNT_OVERRIDE',
+      label: 'Key account override (100% to account owner)',
+      metadata: {
+        priority: 25,
+        conditions: { customer_codes: [], hospital_codes: [] },
+        credit_pct: 100,
+        description: 'Full credit goes to the named account owner regardless of territory. Use for strategic hospital relationships.',
+      },
+    },
+  ],
+
+  // Phase SG-4 #23 ext — Compensation statement template overrides per entity.
+  // Already used by incentivePayoutController.printCompensationStatement —
+  // SG-4 promotes the schema to a stable lookup so admins can edit brand
+  // chrome from Control Center without touching code or templates.
+  // Code = field name in the rendered HTML; metadata.value = override.
+  // (Pre-existing rows from SG-Q2 W3 follow-ups continue to work — this is a
+  // documented re-seed of defaults for new subsidiaries.)
+  COMP_STATEMENT_TEMPLATE: [
+    { code: 'HEADER_TITLE',    label: 'Compensation Statement', metadata: { value: 'Compensation Statement' } },
+    { code: 'HEADER_SUBTITLE', label: 'Earned commission breakdown', metadata: { value: 'Earned commission breakdown for the period' } },
+    { code: 'DISCLAIMER',      label: 'Disclaimer', metadata: { value: 'This statement reflects the system-of-record snapshot as of the issue date. Disputes must be raised in writing within 30 days via the Dispute Center.' } },
+    { code: 'SIGNATORY_LINE',  label: 'Signatory line', metadata: { value: 'Authorized by Finance' } },
+    { code: 'SIGNATORY_TITLE', label: 'Signatory title', metadata: { value: 'Compensation & Benefits Lead' } },
+    { code: 'EMAIL_ON_PERIOD_CLOSE', label: 'Auto-email statement when period closes', metadata: { value: 'true', enabled: true, description: 'When true, finalized statements are emailed to BDMs on the period-close trigger.' } },
+  ],
+
+  // Phase SG-5 #27 — Cooldown window (days) before the same
+  // (plan, bdm, kpi, severity) breach is allowed to re-fire. Prevents
+  // kpiVarianceAgent spamming persistent low performers every run. A single
+  // GLOBAL row is enough; admins may add per-severity rows (WARNING / CRITICAL)
+  // if they want tighter cadence on criticals. Zero (0) disables dedup for
+  // that severity — every breach fires.
+  VARIANCE_ALERT_COOLDOWN_DAYS: [
+    { code: 'GLOBAL', label: 'Default cooldown for all KPIs + severities', metadata: { days: 7, description: 'Skip re-firing the same breach within this many days.' } },
+  ],
+
+  // Phase SG-5 #27 — Digest aggregation window (days) for the weekly digest
+  // agent (#VD). One GLOBAL row per entity — admins tighten (e.g. daily) or
+  // loosen (bi-weekly) as needed. The cron runs Monday 07:00 Manila; changing
+  // this value does not change the cron, only what date range is pulled on
+  // each run.
+  VARIANCE_ALERT_DIGEST_WINDOW_DAYS: [
+    { code: 'GLOBAL', label: 'Rolling window for weekly variance digest', metadata: { days: 7, description: 'kpiVarianceDigestAgent pulls alerts fired in this window.' } },
+  ],
+
+  // Phase SG-4 #24 — Dispute SLA per stage (days). Drives auto-escalation
+  // in disputeSlaAgent. Per-entity overrides supported. When no row exists
+  // for a stage, the agent uses 7 days as the floor.
+  DISPUTE_SLA_DAYS: [
+    { code: 'OPEN',          label: 'Open (BDM filed, awaiting reviewer pickup)', metadata: { sla_days: 3, escalate_to_role: 'finance', description: 'Reviewer must take ownership within N days or escalate to finance.' } },
+    { code: 'UNDER_REVIEW',  label: 'Under review (reviewer working it)',          metadata: { sla_days: 7, escalate_to_role: 'president', description: 'Reviewer must resolve or kick to president within N days.' } },
+    { code: 'RESOLVED_APPROVED', label: 'Approved (awaiting finance posting)',    metadata: { sla_days: 5, escalate_to_role: 'finance', description: 'Finance must post the corrective journal within N days.' } },
+    { code: 'RESOLVED_DENIED',   label: 'Denied (awaiting BDM acknowledgement)',  metadata: { sla_days: 14, escalate_to_role: 'president', description: 'BDM may appeal within N days; otherwise auto-closed.' } },
+  ],
+
+  // Phase SG-4 #24 — Dispute typology. Drives the "Reason" dropdown in
+  // DisputeCenter and informs which artifact (payout / credit) the dispute
+  // attaches to. Subscribers can add types without code change.
+  INCENTIVE_DISPUTE_TYPE: [
+    { code: 'WRONG_TIER',       label: 'Wrong tier qualified', metadata: { artifact: 'payout', description: 'BDM believes they qualified for a higher tier than was credited.' } },
+    { code: 'MISSING_CREDIT',   label: 'Missing sales credit', metadata: { artifact: 'credit', description: 'BDM believes a sale was credited to the wrong person or not credited at all.' } },
+    { code: 'CAP_DISPUTE',      label: 'CompProfile cap dispute', metadata: { artifact: 'payout', description: 'Cap reduced the payout; BDM believes the cap was applied incorrectly.' } },
+    { code: 'PERIOD_MISMATCH',  label: 'Period mismatch', metadata: { artifact: 'payout', description: 'Sale was attributed to the wrong period.' } },
+    { code: 'OTHER',            label: 'Other (free-text)',  metadata: { artifact: 'payout', description: 'Catch-all for issues that don\'t fit the standard types.' } },
   ],
 
   // Phase G3 — Editable fields per module in the Universal Approval Hub (quick-edit for typo fixes)

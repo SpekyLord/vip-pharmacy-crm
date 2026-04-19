@@ -32,6 +32,9 @@ const AGENT_META = {
   visit_compliance:   { label: 'Visit Compliance',      schedule: 'Wed + Fri',       type: 'Free' },
   photo_audit:        { label: 'Photo Audit',           schedule: 'Daily 8:30 AM',   type: 'Free' },
   system_integrity:   { label: 'System Integrity',     schedule: 'Mon 5:00 AM',     type: 'Free' },
+  kpi_snapshot:       { label: 'KPI Snapshot & Incentive Accrual', schedule: 'Monthly day 1 5:00 AM', type: 'Free' },
+  kpi_variance:       { label: 'KPI Variance Alerts',   schedule: 'Monthly day 2 6:00 AM', type: 'Free' },
+  dispute_sla:        { label: 'Dispute SLA Escalator', schedule: 'Daily 6:30 AM',   type: 'Free' },
 };
 
 const NOTIFY_OPTIONS = [...ROLE_SETS.MANAGEMENT];
@@ -216,7 +219,8 @@ function AiCoworkContent() {
     if (!isPresident) return;
     setSaving(row._id);
     try {
-      await api.put(`/erp/lookup-values/${row._id}`, { is_active: !row.is_active });
+      // Route is PUT /lookup-values/:category/:id — category is required
+      await api.put(`/erp/lookup-values/AI_COWORK_FEATURES/${row._id}`, { is_active: !row.is_active });
       setFeatures(prev => prev.map(f => f._id === row._id ? { ...f, is_active: !row.is_active } : f));
       invalidateAiCoworkCache();
       showSuccess(`${row.label} ${!row.is_active ? 'enabled' : 'disabled'}`);
@@ -230,7 +234,7 @@ function AiCoworkContent() {
     if (!editing || !isPresident) return;
     setSaving(editing._id);
     try {
-      await api.put(`/erp/lookup-values/${editing._id}`, {
+      await api.put(`/erp/lookup-values/AI_COWORK_FEATURES/${editing._id}`, {
         metadata: editing.metadata,
         label: editing.label,
       });
@@ -455,7 +459,8 @@ function CopilotToolsContent() {
     if (!isPresident) return;
     setSaving(row._id);
     try {
-      await api.put(`/erp/lookup-values/${row._id}`, { is_active: !row.is_active });
+      // Route is PUT /lookup-values/:category/:id — category is required
+      await api.put(`/erp/lookup-values/COPILOT_TOOLS/${row._id}`, { is_active: !row.is_active });
       setTools((prev) => prev.map((t) => (t._id === row._id ? { ...t, is_active: !row.is_active } : t)));
       showSuccess(`${row.label} ${!row.is_active ? 'enabled' : 'disabled'}`);
     } catch (err) { showError(err, 'Could not toggle tool'); }
@@ -466,7 +471,7 @@ function CopilotToolsContent() {
     if (!editing || !isPresident) return;
     setSaving(editing._id);
     try {
-      await api.put(`/erp/lookup-values/${editing._id}`, {
+      await api.put(`/erp/lookup-values/COPILOT_TOOLS/${editing._id}`, {
         metadata: editing.metadata,
         label: editing.label,
       });
@@ -637,7 +642,8 @@ function AiBudgetContent() {
     setSaving(true);
     const next = { ...row, ...patch };
     try {
-      await api.put(`/erp/lookup-values/${row._id}`, {
+      // Route is PUT /lookup-values/:category/:id — category is required
+      await api.put(`/erp/lookup-values/AI_SPEND_CAPS/${row._id}`, {
         is_active: next.is_active,
         metadata: next.metadata,
       });

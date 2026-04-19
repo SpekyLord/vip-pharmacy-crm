@@ -13,6 +13,7 @@ const { catchAsync } = require('../../middleware/errorHandler');
 const { safeXlsxRead } = require('../../utils/safeXlsxRead');
 const XLSX = require('xlsx');
 const salesGoalService = require('../services/salesGoalService');
+const incentivePlanService = require('../services/incentivePlanService');
 const { gateApproval } = require('../services/approvalService');
 const { checkPeriodOpen } = require('../utils/periodLock');
 const { generateSalesGoalNumber } = require('../services/docNumbering');
@@ -292,6 +293,16 @@ exports.createPlan = catchAsync(async (req, res) => {
     entity_id: entityId,
     created_by: req.user._id,
   });
+
+  // Phase SG-4 #21 — auto-create the IncentivePlan header (versioning).
+  // Best-effort: header creation never blocks plan create. Failure here is
+  // logged and lazily retried on next read/save via ensureHeader().
+  try {
+    await incentivePlanService.ensureHeader(plan, { persist: true });
+  } catch (err) {
+    console.warn('[createPlan] ensureHeader skipped:', err.message);
+  }
+
   res.status(201).json({ success: true, data: plan, message: 'Sales goal plan created' });
 });
 
@@ -358,6 +369,13 @@ exports.activatePlan = catchAsync(async (req, res) => {
       // requiring an admin to open Control Center first. Non-fatal; the agent
       // also has in-memory defaults as a final safety net.
       await salesGoalService.ensureKpiVarianceGlobalThreshold(plan.entity_id, session);
+
+      // Phase SG-4 #21 — sync the IncentivePlan header so it points at this
+      // newly-activated version and mark any prior version as superseded.
+      // Header is the single source of truth (O(1) via the unique index on
+      // {entity_id, fiscal_year}). Idempotent. Wrapped in the same transaction
+      // so a failure rolls back the activation.
+      await incentivePlanService.syncHeaderOnActivation(plan, { session });
 
       await ErpAuditLog.logChange([{
         entity_id: plan.entity_id,
@@ -440,6 +458,9 @@ exports.reopenPlan = catchAsync(async (req, res) => {
         changed_by: req.user._id,
         note: `Reopened plan ${plan.reference || plan.plan_name}`,
       }], { session });
+
+      // Phase SG-4 #21 — keep header status in sync (mirrors current version).
+      await incentivePlanService.syncHeaderOnLifecycleChange(plan, { session });
     });
   } finally {
     session.endSession();
@@ -504,6 +525,11 @@ exports.closePlan = catchAsync(async (req, res) => {
         changed_by: req.user._id,
         note: `Closed plan ${plan.reference || plan.plan_name}`,
       }], { session });
+
+      // Phase SG-4 #21 — mirror CLOSED onto the header (only if this plan is
+      // still the header's current version — header doesn't follow superseded
+      // versions).
+      await incentivePlanService.syncHeaderOnLifecycleChange(plan, { session });
     });
   } finally {
     session.endSession();
@@ -1360,6 +1386,10 @@ exports.getIncentiveBoard = catchAsync(async (req, res) => {
     label: t.label,
     budget: t.budget_per_bdm,
     budget_per_bdm: t.budget_per_bdm,
+    // SG-5 #25 — expose accelerator so the Incentive Tracker can render
+    // the multiplier badge + effective (accelerated) payout preview.
+    accelerator_factor: t.accelerator_factor ?? 1.0,
+    effective_budget: Math.round((Number(t.budget_per_bdm) || 0) * (Number(t.accelerator_factor) || 1.0)),
     attainment_min: t.attainment_min,
     bdm_count: tierCountByCode.get(t.code) || 0,
     bg_color: t.bg_color,
@@ -1529,6 +1559,114 @@ exports.enterManualKpi = catchAsync(async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SG-4 #21 — Plan versioning endpoints.
+//
+// Versioning is opt-in: pre-SG-4 plans continue working as v1 (lazy header
+// backfill). New endpoints add the ability to spawn v2, v3, ... when mid-year
+// revisions happen — historical KpiSnapshot/IncentivePayout rows stay tied to
+// the version that was active when they were written.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// GET /sales-goals/plans/:id/versions — list every version of the logical plan
+// owned by the same IncentivePlan header. Used by the SalesGoalSetup UI to
+// render a version-history strip + "active" badge.
+exports.listPlanVersions = catchAsync(async (req, res) => {
+  const plan = await SalesGoalPlan.findById(req.params.id);
+  if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
+
+  // Lazy-backfill the header if missing (legacy row).
+  const { header } = await incentivePlanService.ensureHeader(plan, { persist: true });
+  const versions = await incentivePlanService.listVersions(header._id);
+
+  res.json({
+    success: true,
+    data: {
+      header: {
+        _id: header._id,
+        entity_id: header.entity_id,
+        fiscal_year: header.fiscal_year,
+        plan_name: header.plan_name,
+        current_version_no: header.current_version_no,
+        current_version_id: header.current_version_id,
+        status: header.status,
+      },
+      versions,
+    },
+  });
+});
+
+// POST /sales-goals/plans/:id/new-version — mint v(N+1) copying from the
+// supplied basis plan id. Body may override any of: { plan_name,
+// baseline_revenue, target_revenue, collection_target_pct, growth_drivers,
+// incentive_programs, effective_from }.
+//
+// Gated by gateApproval('SALES_GOAL_PLAN', 'PLAN_NEW_VERSION') — non-authorized
+// submitters routed to Approval Hub. New version starts in DRAFT — operator
+// must POST /activate separately, which is *also* gated. Two gates by design
+// because creating a draft is reversible (delete) but activation supersedes
+// the prior version's effective range.
+exports.createNewVersion = catchAsync(async (req, res) => {
+  const basis = await SalesGoalPlan.findById(req.params.id);
+  if (!basis) return res.status(404).json({ success: false, message: 'Basis plan not found' });
+
+  // Only the latest version may be the basis (refused inside the service too,
+  // but cheap to pre-check here for a clearer error).
+  const { header } = await incentivePlanService.ensureHeader(basis, { persist: true });
+  const latestNewer = await SalesGoalPlan.findOne({
+    incentive_plan_id: header._id,
+    version_no: { $gt: basis.version_no || 1 },
+  }).select('version_no').lean();
+  if (latestNewer) {
+    return res.status(400).json({
+      success: false,
+      message: `Cannot create new version from v${basis.version_no || 1} — v${latestNewer.version_no} already exists`,
+    });
+  }
+
+  const gated = await gateApproval({
+    entityId: basis.entity_id,
+    module: 'SALES_GOAL_PLAN',
+    docType: 'PLAN_NEW_VERSION',
+    docId: basis._id,
+    docRef: basis.reference || `${basis.plan_name} FY${basis.fiscal_year}`,
+    amount: basis.target_revenue || 0,
+    description: `Create new version (v${(basis.version_no || 1) + 1}) of ${basis.plan_name} FY${basis.fiscal_year}`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
+  let newPlan;
+  try {
+    newPlan = await incentivePlanService.createNewVersion({
+      basisPlanId: basis._id,
+      body: req.body || {},
+      userId: req.user._id,
+    });
+  } catch (err) {
+    return res.status(400).json({ success: false, message: err.message });
+  }
+
+  await ErpAuditLog.logChange({
+    entity_id: basis.entity_id,
+    log_type: 'STATUS_CHANGE',
+    target_ref: newPlan._id.toString(),
+    target_model: 'SalesGoalPlan',
+    field_changed: 'version_no',
+    old_value: String(basis.version_no || 1),
+    new_value: String(newPlan.version_no),
+    changed_by: req.user._id,
+    note: `Created new plan version v${newPlan.version_no} from v${basis.version_no || 1} (${basis.reference || basis.plan_name})`,
+  });
+
+  res.status(201).json({
+    success: true,
+    data: newPlan,
+    message: `Plan v${newPlan.version_no} created in DRAFT — activate to supersede v${basis.version_no || 1}`,
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SG-3R — President-Reverse on a Sales Goal plan.
 //
 // Reuses `buildPresidentReverseHandler('SALES_GOAL_PLAN')` — the same factory
@@ -1540,3 +1678,260 @@ exports.enterManualKpi = catchAsync(async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const { buildPresidentReverseHandler } = require('../services/documentReversalService');
 exports.presidentReversePlan = buildPresidentReverseHandler('SALES_GOAL_PLAN');
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SG-5 #26 — What-if / scenario modeling endpoint.
+//
+// POST /sales-goals/plans/:id/simulate
+// Body: { target_revenue_override?, baseline_override?, driver_weight_overrides?,
+//         tier_attainment_overrides? }
+//
+// Pure read + compute — no DB writes, no journal post, no approval gate. Any
+// user with sales_goals VIEW can exercise the modeler; privileged roles see
+// all BDMs in the output while contractors see only themselves (scope-filter
+// applied post-compute so the math is always full-company).
+// ─────────────────────────────────────────────────────────────────────────────
+exports.simulatePlan = catchAsync(async (req, res) => {
+  const plan = await SalesGoalPlan.findById(req.params.id).lean();
+  if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
+
+  // Enforce entity scope — even president/admin are pinned to their current
+  // req.entityId unless they switched context via the entity switcher.
+  if (!req.isPresident && String(plan.entity_id) !== String(req.entityId)) {
+    return res.status(403).json({ success: false, message: 'Plan is in a different entity' });
+  }
+
+  const overrides = req.body || {};
+  const result = await salesGoalService.simulatePlanSnapshots(plan, overrides);
+
+  // BDM scoping (Rule #21 alignment): contractors see only their own row.
+  const canSeeAll = req.isPresident || req.isAdmin || req.isFinance;
+  const rows = canSeeAll
+    ? result.rows
+    : result.rows.filter(r => String(r.bdm_id) === String(req.user._id));
+
+  res.json({
+    success: true,
+    data: {
+      plan: {
+        _id: plan._id,
+        plan_name: plan.plan_name,
+        fiscal_year: plan.fiscal_year,
+        reference: plan.reference || '',
+        status: plan.status,
+      },
+      plan_overrides: result.plan_overrides,
+      drivers: result.drivers,
+      rows,
+      summary: canSeeAll
+        ? result.summary
+        : {
+          // BDM-scoped summary only reflects their own row.
+          bdm_count: rows.length,
+          current: {
+            total_incentive_budget: rows.reduce((s, r) => s + r.tier_budget_current, 0),
+            total_actual_revenue: rows.reduce((s, r) => s + r.sales_actual, 0),
+            attainment_pct: rows[0]?.attainment_current || 0,
+          },
+          scenario: {
+            total_incentive_budget: rows.reduce((s, r) => s + r.tier_budget_scenario, 0),
+            total_actual_revenue: rows.reduce((s, r) => s + r.sales_actual, 0),
+            attainment_pct: rows[0]?.attainment_scenario || 0,
+          },
+          diff: {
+            total_incentive_budget: rows.reduce((s, r) => s + r.budget_delta, 0),
+          },
+        },
+      config: result.config,
+      tiers: result.tiers,
+    },
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SG-5 #28 — Year-over-Year / Quarter-over-Quarter trending endpoint.
+//
+// GET /sales-goals/trending?fiscal_year=&bdm_id=&kpi_code=
+//
+// Joins the current fiscal year's YTD KpiSnapshot with prior fiscal year(s) by
+// (bdm_id, kpi_code) so the dashboard can render a "2025 vs 2026" comparison.
+// Plan-version-aware (SG-4 #21): snapshots are keyed by plan_id which in turn
+// belongs to a specific IncentivePlan version, so YoY comparisons implicitly
+// use each year's active version at the time the snapshot was written.
+//
+// Output structure:
+//   {
+//     fiscal_year_current: 2026,
+//     fiscal_year_prior:   2025,
+//     company: { revenue: {current, prior, delta_pct}, attainment: {...} },
+//     per_bdm: [{ bdm_id, name, current_revenue, prior_revenue, delta_pct,
+//                 current_attainment, prior_attainment, kpi_trends: [...] }],
+//     per_kpi: [{ kpi_code, kpi_label, current_avg, prior_avg, delta_pct }],
+//   }
+// ─────────────────────────────────────────────────────────────────────────────
+exports.getTrending = catchAsync(async (req, res) => {
+  const fiscalYear = Number(req.query.fiscal_year) || new Date().getFullYear();
+  const priorYear = fiscalYear - 1;
+  const entityId = req.entityId;
+
+  const canSeeAll = req.isPresident || req.isAdmin || req.isFinance;
+  const bdmScope = canSeeAll && req.query.bdm_id
+    ? req.query.bdm_id
+    : (canSeeAll ? null : req.user._id);
+
+  // Snapshots for both years — YTD only (annual roll-up is the comparable unit).
+  const match = {
+    entity_id: new mongoose.Types.ObjectId(entityId),
+    period_type: 'YTD',
+    fiscal_year: { $in: [fiscalYear, priorYear] },
+  };
+  if (bdmScope) match.bdm_id = new mongoose.Types.ObjectId(bdmScope);
+
+  const snapshots = await KpiSnapshot.find(match)
+    .populate('person_id', 'full_name bdm_code is_active')
+    .lean();
+
+  // Bucket by (bdm_id, fiscal_year)
+  const byBdm = new Map();
+  for (const s of snapshots) {
+    if (s.person_id && s.person_id.is_active === false) continue;
+    const bdmKey = String(s.bdm_id || '');
+    if (!byBdm.has(bdmKey)) {
+      byBdm.set(bdmKey, {
+        bdm_id: s.bdm_id,
+        name: s.person_id?.full_name || 'Unknown',
+        bdm_code: s.person_id?.bdm_code || '',
+        years: new Map(),
+      });
+    }
+    byBdm.get(bdmKey).years.set(s.fiscal_year, s);
+  }
+
+  const filterKpiCode = req.query.kpi_code ? String(req.query.kpi_code).toUpperCase() : null;
+
+  // Per-BDM rows
+  const perBdm = [];
+  let companyCurrent = 0;
+  let companyPrior = 0;
+  let companyCurrentAtt = 0;
+  let companyPriorAtt = 0;
+  let companyCurrentCount = 0;
+  let companyPriorCount = 0;
+
+  for (const { bdm_id, name, bdm_code, years } of byBdm.values()) {
+    const cur = years.get(fiscalYear);
+    const prior = years.get(priorYear);
+
+    const curRev = Number(cur?.sales_actual) || 0;
+    const priorRev = Number(prior?.sales_actual) || 0;
+    const curAtt = Number(cur?.sales_attainment_pct) || 0;
+    const priorAtt = Number(prior?.sales_attainment_pct) || 0;
+
+    companyCurrent += curRev;
+    companyPrior += priorRev;
+    if (cur) { companyCurrentAtt += curAtt; companyCurrentCount++; }
+    if (prior) { companyPriorAtt += priorAtt; companyPriorCount++; }
+
+    // Per-KPI comparison — joined by kpi_code across both years
+    const curKpiMap = new Map();
+    for (const d of (cur?.driver_kpis || [])) {
+      for (const k of (d.kpis || [])) {
+        if (filterKpiCode && String(k.kpi_code).toUpperCase() !== filterKpiCode) continue;
+        curKpiMap.set(String(k.kpi_code).toUpperCase(), k);
+      }
+    }
+    const priorKpiMap = new Map();
+    for (const d of (prior?.driver_kpis || [])) {
+      for (const k of (d.kpis || [])) {
+        if (filterKpiCode && String(k.kpi_code).toUpperCase() !== filterKpiCode) continue;
+        priorKpiMap.set(String(k.kpi_code).toUpperCase(), k);
+      }
+    }
+    const allKpiCodes = new Set([...curKpiMap.keys(), ...priorKpiMap.keys()]);
+    const kpiTrends = [];
+    for (const code of allKpiCodes) {
+      const curK = curKpiMap.get(code);
+      const priorK = priorKpiMap.get(code);
+      kpiTrends.push({
+        kpi_code: code,
+        kpi_label: curK?.kpi_label || priorK?.kpi_label || code,
+        current_value: Number(curK?.actual_value) || 0,
+        prior_value: Number(priorK?.actual_value) || 0,
+        current_attainment: Number(curK?.attainment_pct) || 0,
+        prior_attainment: Number(priorK?.attainment_pct) || 0,
+      });
+    }
+
+    perBdm.push({
+      bdm_id,
+      name,
+      bdm_code,
+      current_revenue: curRev,
+      prior_revenue: priorRev,
+      revenue_delta: curRev - priorRev,
+      revenue_delta_pct: priorRev > 0 ? Math.round(((curRev - priorRev) / priorRev) * 1000) / 10 : 0,
+      current_attainment: curAtt,
+      prior_attainment: priorAtt,
+      attainment_delta: curAtt - priorAtt,
+      kpi_trends: kpiTrends,
+    });
+  }
+
+  // Aggregate per-KPI across BDMs
+  const perKpiMap = new Map();
+  for (const row of perBdm) {
+    for (const k of row.kpi_trends) {
+      if (!perKpiMap.has(k.kpi_code)) {
+        perKpiMap.set(k.kpi_code, {
+          kpi_code: k.kpi_code,
+          kpi_label: k.kpi_label,
+          current_sum: 0, prior_sum: 0,
+          current_count: 0, prior_count: 0,
+        });
+      }
+      const agg = perKpiMap.get(k.kpi_code);
+      if (k.current_value || k.current_attainment) { agg.current_sum += k.current_value; agg.current_count++; }
+      if (k.prior_value || k.prior_attainment) { agg.prior_sum += k.prior_value; agg.prior_count++; }
+    }
+  }
+  const perKpi = [...perKpiMap.values()].map(a => {
+    const curAvg = a.current_count > 0 ? a.current_sum / a.current_count : 0;
+    const priorAvg = a.prior_count > 0 ? a.prior_sum / a.prior_count : 0;
+    return {
+      kpi_code: a.kpi_code,
+      kpi_label: a.kpi_label,
+      current_avg: Math.round(curAvg * 100) / 100,
+      prior_avg: Math.round(priorAvg * 100) / 100,
+      delta_pct: priorAvg > 0 ? Math.round(((curAvg - priorAvg) / priorAvg) * 1000) / 10 : 0,
+    };
+  });
+
+  res.json({
+    success: true,
+    data: {
+      fiscal_year_current: fiscalYear,
+      fiscal_year_prior: priorYear,
+      company: {
+        revenue: {
+          current: companyCurrent,
+          prior: companyPrior,
+          delta_pct: companyPrior > 0 ? Math.round(((companyCurrent - companyPrior) / companyPrior) * 1000) / 10 : 0,
+        },
+        attainment: {
+          current: companyCurrentCount > 0 ? Math.round((companyCurrentAtt / companyCurrentCount) * 10) / 10 : 0,
+          prior: companyPriorCount > 0 ? Math.round((companyPriorAtt / companyPriorCount) * 10) / 10 : 0,
+        },
+        bdm_count_current: companyCurrentCount,
+        bdm_count_prior: companyPriorCount,
+      },
+      per_bdm: perBdm,
+      per_kpi: perKpi,
+    },
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SG-5 #27 — Variance Alert Center endpoints.
+// Implemented in backend/erp/controllers/varianceAlertController.js (sibling
+// file) to keep controller sizes manageable. Exports re-declared there.
+// ─────────────────────────────────────────────────────────────────────────────

@@ -30,6 +30,20 @@ router.post('/plans/:id/close', erpAccessCheck('sales_goals', 'FULL'), erpSubAcc
 // danger sub-perm, never inherited from FULL). President bypasses automatically.
 router.post('/plans/:id/president-reverse', erpSubAccessCheck('accounting', 'reverse_posted'), c.presidentReversePlan);
 
+// Phase SG-4 #21 — Plan versioning. Read versions (any module viewer);
+// create new version gated by plan_manage + Default-Roles Gate inside the
+// controller (gateApproval('SALES_GOAL_PLAN', 'PLAN_NEW_VERSION')).
+router.get('/plans/:id/versions', c.listPlanVersions);
+router.post('/plans/:id/new-version', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.createNewVersion);
+
+// Phase SG-5 #26 — What-if / scenario simulation (no DB writes, no approval
+// gate). VIEW is sufficient; contractors see only their own row in the output.
+router.post('/plans/:id/simulate', c.simulatePlan);
+
+// Phase SG-5 #28 — YoY / QoQ trending. Joins prior-fiscal-year YTD snapshots
+// by (bdm_id, kpi_code) so the Goal Dashboard can render a side-by-side chart.
+router.get('/trending', c.getTrending);
+
 // ═══ Targets ═══
 router.get('/targets', c.getTargets);
 router.get('/targets/mine', c.getMyTarget);

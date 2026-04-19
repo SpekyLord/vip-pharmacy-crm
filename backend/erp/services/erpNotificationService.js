@@ -31,6 +31,8 @@ const {
   salesGoalPlanLifecycleTemplate,
   tierReachedTemplate,
   kpiVarianceAlertTemplate,
+  // Phase SG-4 #23 ext
+  compensationStatementReadyTemplate,
 } = require('../../templates/erpEmails');
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -912,6 +914,85 @@ const notifyKpiVariance = async ({ entityId, bdmId, bdmLabel, fiscalYear, period
   }
 };
 
+/**
+ * Compensation Statement Ready — Phase SG-4 #23 ext.
+ *
+ * Targets a single BDM (their email + in-app inbox + SMS opt-in). Reads
+ * COMP_STATEMENT_TEMPLATE lookup overrides (HEADER_TITLE / DISCLAIMER /
+ * EMAIL_ON_PERIOD_CLOSE) so admins can customize brand chrome without code.
+ *
+ * The EMAIL_ON_PERIOD_CLOSE row's `metadata.enabled` flag (defaults to true
+ * when missing) gates whether the email actually sends — admins can mute
+ * the mass-send while still allowing the BDM to view the statement on demand.
+ */
+const notifyCompensationStatement = async ({
+  entityId,
+  bdmId,
+  bdmName,
+  fiscalYear,
+  period,
+  totals,
+}) => {
+  try {
+    if (!entityId || !bdmId) return;
+    const entityName = await resolveEntityName(entityId);
+
+    // Template overrides — entity-scoped lookup, optional.
+    let templateOverrides = {};
+    let emailEnabled = true;
+    try {
+      const tplRows = await Lookup.find({
+        entity_id: entityId,
+        category: 'COMP_STATEMENT_TEMPLATE',
+        is_active: true,
+      }).lean();
+      for (const r of tplRows) {
+        const value = (r.metadata && r.metadata.value) || r.label || '';
+        templateOverrides[r.code] = value;
+        if (r.code === 'EMAIL_ON_PERIOD_CLOSE') {
+          // Strict opt-out: only when explicitly disabled (string 'false' or
+          // metadata.enabled === false) do we skip the email.
+          if (r.metadata?.enabled === false) emailEnabled = false;
+          if (typeof value === 'string' && value.toLowerCase() === 'false') emailEnabled = false;
+        }
+      }
+    } catch (lookupErr) {
+      console.warn('[notifyCompensationStatement] template lookup unavailable:', lookupErr.message);
+    }
+    if (!emailEnabled) return;
+
+    // Recipient is the BDM only (per-BDM statement). dispatchMultiChannel
+    // handles email + in-app + SMS-opt-in via NotificationPreference.
+    // BDMs without an associated User record are skipped.
+    const userRows = await User.find({ _id: bdmId, isActive: true })
+      .select('_id name email phone')
+      .lean();
+    if (!userRows.length) return;
+
+    const appBaseUrl = process.env.FRONTEND_URL || '';
+
+    await dispatchMultiChannel(userRows, {
+      templateFn: compensationStatementReadyTemplate,
+      templateData: {
+        bdmName: bdmName || 'BDM',
+        fiscalYear,
+        period,
+        entityName,
+        totals,
+        appBaseUrl,
+        templateOverrides,
+      },
+      emailType: 'ERP_COMP_STATEMENT_READY',
+      category: 'compensationAlerts',
+      entityId,
+      inAppCategory: 'compensation',
+      inAppPriority: 'normal',
+    });
+  } catch (err) {
+    console.error('notifyCompensationStatement failed:', err.message);
+  }
+};
+
 module.exports = {
   notifyDocumentPosted,
   notifyDocumentReopened,
@@ -922,6 +1003,8 @@ module.exports = {
   notifySalesGoalPlanLifecycle,
   notifyTierReached,
   notifyKpiVariance,
+  // Phase SG-4 #23 ext
+  notifyCompensationStatement,
   // Exported for testing / advanced use
   findManagementRecipients,
   findNotificationRecipients,

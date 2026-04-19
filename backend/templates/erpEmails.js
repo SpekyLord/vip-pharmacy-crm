@@ -369,6 +369,123 @@ const kpiVarianceAlertTemplate = ({
   return { subject, html: baseLayout(subject, body), text };
 };
 
+/**
+ * KPI Variance Weekly Digest — Phase SG-5 #27.
+ *
+ * Sent to each people-manager once per digest window (default 7 days) with a
+ * roll-up of every VarianceAlert fired for their direct reports. The recipient
+ * is the reports_to user (resolved via PeopleMaster). Complements the
+ * kpiVarianceAlertTemplate (per-event email) by smoothing bursts into a single
+ * Monday summary.
+ */
+const kpiVarianceDigestTemplate = ({
+  recipientName,
+  managerName,
+  entityName,
+  windowDays,
+  alerts,   // [{ bdm_name, kpi_label, severity, actual, target, deviation_pct, period }]
+  bdmCount,
+}) => {
+  const critical = (alerts || []).filter(a => a.severity === 'critical');
+  const warning = (alerts || []).filter(a => a.severity === 'warning');
+  const subject = `VIP ERP - KPI Variance Digest (${alerts?.length || 0} alert${(alerts?.length || 0) === 1 ? '' : 's'}) [${entityName}]`;
+
+  const rows = (alerts || []).slice(0, 50).map(a => `
+    <tr>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;">${a.bdm_name}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;">${a.kpi_label || a.kpi_code}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;">${a.period}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-variant-numeric:tabular-nums;">${a.actual || 0}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-variant-numeric:tabular-nums;">${a.target || 0}</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;font-variant-numeric:tabular-nums;color:${a.severity === 'critical' ? '#991b1b' : '#92400e'};">${(Number(a.deviation_pct) || 0).toFixed(1)}%</td>
+      <td style="padding:6px 8px;border-bottom:1px solid #eee;">${statusBadge(a.severity === 'critical' ? 'REJECTED' : 'OVERDUE')}</td>
+    </tr>`).join('');
+
+  const body = `
+    <h2 style="margin:0 0 16px;color:#1f2937;font-size:20px;">Weekly KPI Variance Digest</h2>
+    <p style="margin:0 0 12px;color:#4b5563;font-size:15px;">Hi ${recipientName || managerName || 'Manager'},</p>
+    <p style="margin:0 0 20px;color:#4b5563;font-size:15px;">
+      Over the past <strong>${windowDays} day${windowDays === 1 ? '' : 's'}</strong>, <strong>${bdmCount}</strong>
+      BDM${bdmCount === 1 ? '' : 's'} reporting to you logged
+      ${critical.length > 0 ? `<strong style="color:#991b1b;">${critical.length} critical</strong>` : ''}${critical.length > 0 && warning.length > 0 ? ' and ' : ''}${warning.length > 0 ? `<strong style="color:#92400e;">${warning.length} warning</strong>` : ''}
+      KPI deviation${(alerts?.length || 0) === 1 ? '' : 's'}.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th style="padding:6px 8px;text-align:left;background:#f3f4f6;font-size:11px;color:#374151;">BDM</th>
+          <th style="padding:6px 8px;text-align:left;background:#f3f4f6;font-size:11px;color:#374151;">KPI</th>
+          <th style="padding:6px 8px;text-align:left;background:#f3f4f6;font-size:11px;color:#374151;">Period</th>
+          <th style="padding:6px 8px;text-align:right;background:#f3f4f6;font-size:11px;color:#374151;">Actual</th>
+          <th style="padding:6px 8px;text-align:right;background:#f3f4f6;font-size:11px;color:#374151;">Target</th>
+          <th style="padding:6px 8px;text-align:right;background:#f3f4f6;font-size:11px;color:#374151;">Deviation</th>
+          <th style="padding:6px 8px;text-align:left;background:#f3f4f6;font-size:11px;color:#374151;">Severity</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <p style="margin:0 0 0;color:#6b7280;font-size:13px;">
+      Tune thresholds and cooldown windows in <strong>Control Center → Lookup Tables</strong>
+      (<code>KPI_VARIANCE_THRESHOLDS</code>, <code>VARIANCE_ALERT_COOLDOWN_DAYS</code>,
+      <code>VARIANCE_ALERT_DIGEST_WINDOW_DAYS</code>). Open the
+      <strong>Variance Alert Center</strong> to acknowledge or resolve specific alerts.
+    </p>`;
+
+  const text = `Hi ${recipientName || managerName || 'Manager'},\n\nOver the past ${windowDays} days, ${bdmCount} BDM(s) reporting to you logged ${critical.length} critical and ${warning.length} warning KPI deviations.\n\n${(alerts || []).slice(0, 50).map(a => `- ${a.bdm_name} — ${a.kpi_label || a.kpi_code} (${a.period}): actual ${a.actual}, target ${a.target}, deviation ${(Number(a.deviation_pct) || 0).toFixed(1)}% (${a.severity})`).join('\n')}\n\nEntity: ${entityName}\n`;
+
+  return { subject, html: baseLayout(subject, body), text };
+};
+
+/**
+ * Compensation Statement Ready — Phase SG-4 #23 ext.
+ *
+ * Sent to a BDM when their per-period statement is finalized (typically when
+ * the period closes). Lookup-driven brand chrome via COMP_STATEMENT_TEMPLATE
+ * (HEADER_TITLE, DISCLAIMER, etc.) is rendered inside the printable HTML;
+ * the email itself is intentionally minimal — a deep link into the BDM's
+ * own My Compensation tab does the heavy lifting.
+ */
+const compensationStatementReadyTemplate = ({
+  recipientName,
+  bdmName,
+  fiscalYear,
+  period,
+  entityName,
+  totals,        // { earned, paid, accrued, count }
+  appBaseUrl,    // from env (FRONTEND_URL) or empty string
+  templateOverrides = {}, // COMP_STATEMENT_TEMPLATE rows keyed by code
+}) => {
+  const headerTitle = templateOverrides.HEADER_TITLE || 'Compensation Statement';
+  const subject = `VIP ERP - ${headerTitle} ready (${period}) [${entityName}]`;
+  const link = appBaseUrl
+    ? `${appBaseUrl.replace(/\/$/, '')}/erp/sales-goals/my?tab=compensation&fiscal_year=${fiscalYear}&period=${encodeURIComponent(period || '')}`
+    : '';
+  const fmt = (n) => `₱${Math.round(Number(n) || 0).toLocaleString('en-PH')}`;
+
+  const body = `
+    <h2 style="margin:0 0 16px;color:#1f2937;font-size:20px;">${headerTitle} ${statusBadge('APPROVED')}</h2>
+    <p style="margin:0 0 16px;color:#4b5563;font-size:15px;">Hi ${recipientName},</p>
+    <p style="margin:0 0 24px;color:#4b5563;font-size:15px;">
+      Your ${headerTitle.toLowerCase()} for <strong>${period || `FY${fiscalYear}`}</strong> is now available.
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+      <tr><td style="padding:8px 0;color:#6b7280;font-size:14px;">BDM</td><td style="padding:8px 0;font-size:14px;color:#1f2937;">${bdmName}</td></tr>
+      <tr><td style="padding:8px 0;color:#6b7280;font-size:14px;">Period</td><td style="padding:8px 0;font-size:14px;color:#1f2937;">${period || `FY${fiscalYear}`}</td></tr>
+      <tr><td style="padding:8px 0;color:#6b7280;font-size:14px;">Earned (YTD)</td><td style="padding:8px 0;font-size:14px;color:#1f2937;">${fmt(totals?.earned)}</td></tr>
+      <tr><td style="padding:8px 0;color:#6b7280;font-size:14px;">Paid (YTD)</td><td style="padding:8px 0;font-size:14px;color:#1f2937;">${fmt(totals?.paid)}</td></tr>
+      <tr><td style="padding:8px 0;color:#6b7280;font-size:14px;">Currently Accrued</td><td style="padding:8px 0;font-size:14px;color:#1f2937;">${fmt(totals?.accrued)}</td></tr>
+      <tr><td style="padding:8px 0;color:#6b7280;font-size:14px;">Entity</td><td style="padding:8px 0;font-size:14px;color:#1f2937;">${entityName}</td></tr>
+    </table>
+    ${link ? `<p style="margin:0 0 24px;"><a href="${link}" style="background:#2563eb;color:#fff;padding:10px 18px;text-decoration:none;border-radius:6px;font-size:14px;">Open My Compensation</a></p>` : ''}
+    <p style="margin:24px 0 0;color:#6b7280;font-size:12px;font-style:italic;">
+      ${templateOverrides.DISCLAIMER || 'This statement reflects the system-of-record snapshot as of the issue date. Disputes must be raised in writing within 30 days via the Dispute Center.'}
+    </p>`;
+
+  const text = `Hi ${recipientName},\n\nYour ${headerTitle.toLowerCase()} for ${period || `FY${fiscalYear}`} is ready.\n\nEarned (YTD): ${fmt(totals?.earned)}\nPaid (YTD): ${fmt(totals?.paid)}\nAccrued: ${fmt(totals?.accrued)}\n\n${link ? `Open: ${link}\n` : ''}Entity: ${entityName}\n`;
+
+  return { subject, html: baseLayout(subject, body), text };
+};
+
 module.exports = {
   documentPostedTemplate,
   documentReopenedTemplate,
@@ -379,4 +496,8 @@ module.exports = {
   salesGoalPlanLifecycleTemplate,
   tierReachedTemplate,
   kpiVarianceAlertTemplate,
+  // Phase SG-5 #27
+  kpiVarianceDigestTemplate,
+  // Phase SG-4 #23 ext
+  compensationStatementReadyTemplate,
 };

@@ -2924,3 +2924,133 @@ The briefing prompt is the lookup row `PRESIDENT_DAILY_BRIEFING.metadata.user_te
 - **Daily briefing prerequisites**: Both `PRESIDENT_COPILOT` AND `PRESIDENT_DAILY_BRIEFING` rows must be `is_active` for an entity, AND a User with role=president/ceo must exist with that entity in their `entity_id` or `entity_ids`. Otherwise the briefing skips that entity (logged in `key_findings`).
 - **Spend cap cache**: `spendCapService` caches the cap decision for 60s per `(entity_id, feature_code)` key. After raising/lowering a cap, the change applies on next cache miss (≤60s). Lookup CRUD endpoints don't currently bust the cache — call `invalidateSpendCapCache(entityId)` from a custom hook if you need instant propagation.
 
+
+
+---
+
+## Phase SG-4 — Sales Goal Commercial-Grade Features (April 19, 2026)
+
+Closes Section D items 21, 22, 23 (extensions), and 24 from `dreamy-skipping-cookie.md`. Brings VIP Sales Goal to commercial parity with SAP Commissions, SuiteCommissions, Workday ICM, and Oracle Fusion ICM. Net new: plan versioning, credit-rule engine, dispute workflow, comp statement extensions.
+
+### Plan versioning architecture (#21)
+
+```
+IncentivePlan (header — one per (entity_id, fiscal_year))
+  ├─ current_version_no
+  ├─ current_version_id ──→ SalesGoalPlan vN (the active version)
+  └─ status (mirrors current version)
+
+SalesGoalPlan v1 ←─supersedes_plan_id─ SalesGoalPlan v2 ←─supersedes_plan_id─ v3 (current)
+   effective_to=v2.effective_from         effective_to=v3.effective_from        effective_to=null
+
+KpiSnapshot.plan_id  → ALWAYS the version that was active at compute time (never re-pointed)
+IncentivePayout.plan_id → SAME (historical accruals stay tied to v1 even after v2 activates)
+```
+
+**Backward compat**: existing pre-SG-4 plans without `incentive_plan_id` are lazy-backfilled by `incentivePlanService.ensureHeader()` on first save/read. The one-time migration `node backend/scripts/migrateSalesGoalVersioning.js` drops the legacy `{entity_id,fiscal_year}` UNIQUE index and replaces it with `{entity_id,fiscal_year,version_no}` UNIQUE so multiple versions per FY can coexist. Old API endpoints (`getPlans`, `activatePlan`, `closePlan`, `reopenPlan`) work unchanged.
+
+### Credit rule engine (#22, SAP Commissions pattern)
+
+```
+salesController.postSaleRow(saleLine, userId)
+  ├── 1. TransactionEvent created
+  ├── 2. SERVICE_INVOICE / OPENING_AR shortcut
+  ├── 3. Inventory deduction
+  ├── 4. SalesLine.status = 'POSTED'
+  ├── 5. Document attachments link
+  ├── 6. Auto-journal (revenue + COGS)
+  ├── 7. CSI markUsed
+  └── 8. **NEW**: creditRuleEngine.assign(saleLine, { userId })  ← non-blocking
+        ├── buildContext(saleLine) → product_codes, customer_code, territory_id, etc.
+        ├── Load active CreditRule rows for entity, sorted by priority asc
+        ├── For each matched rule: append SalesCredit (source='rule') until total = 100%
+        └── Residual → SalesCredit (source='fallback', credit_bdm_id=saleLine.bdm_id)
+
+Idempotent: re-running deletes existing source∈{rule,fallback} rows and rewrites them.
+Manual + reversal rows survive engine re-runs (audit trail discipline).
+
+Failure mode: errors logged to ErpAuditLog as 'CREDIT_RULE_ERROR'; sale post is NEVER reverted.
+```
+
+**Important**: SG-4 produces SalesCredit rows but consumers (KpiSnapshot, IncentivePayout accrual) still read `sale.bdm_id`. SG-5 will migrate snapshot computation to read SalesCredit so credit-split rules drive accruals.
+
+### Dispute workflow state machine (#24, Oracle Fusion pattern)
+
+```
+                       (gateApproval at every transition — INCENTIVE_DISPUTE module)
+
+[file]  → OPEN ──(takeReview)──→ UNDER_REVIEW ──(resolve APPROVED)──→ RESOLVED_APPROVED
+                                              ──(resolve DENIED)────→ RESOLVED_DENIED
+        (filer can self-cancel: OPEN → CLOSED)            ↓                  ↓
+                                                       (close)            (close)
+                                                          ↓                  ↓
+                                                       CLOSED  ←──────  CLOSED
+
+RESOLVED_APPROVED side-effects (cascade reversal):
+  - artifact_type='payout'  → reverseAccrualJournal(payout.journal_id) + payout.status=REVERSED
+  - artifact_type='credit'  → append SalesCredit row (source='reversal', negative amount)
+
+SLA agent (#DSP daily 06:30):
+  for each non-CLOSED dispute:
+    if days_in_current_state >= DISPUTE_SLA_DAYS[state].sla_days:
+      append sla_breaches[] entry (idempotent — once per state-change cycle)
+      dispatch escalation to filer + reports_to + escalate_to_role + presidents
+      NEVER auto-transition (Rule #20)
+```
+
+### Comp statement extensions (#23 ext, Workday ICM pattern)
+
+```
+COMP_STATEMENT_TEMPLATE lookup (per-entity, admin-editable in Control Center):
+  HEADER_TITLE / HEADER_SUBTITLE / DISCLAIMER / SIGNATORY_LINE / SIGNATORY_TITLE
+  EMAIL_ON_PERIOD_CLOSE.metadata.enabled (true|false) — gates the mass email
+
+GET /incentive-payouts/statement/archive?bdm_id=&from_year=&to_year=
+  → aggregated rollup per (fiscal_year, period) for the BDM's "Past Statements" tab
+  → BDMs see only their own (Rule #21 — no silent privileged self-id fallback)
+
+POST /incentive-payouts/statements/dispatch { period: "2026-03", entity_id?: }
+  → gateApproval('INCENTIVE_PAYOUT', 'STATEMENT_DISPATCH')
+  → for each distinct bdm_id with payouts in the period:
+       compose totals via _composeStatement (same as single-statement endpoint)
+       notifyCompensationStatement → email + in-app + SMS opt-in
+  → idempotent at email layer (EmailLog dedup)
+```
+
+### Lookup categories added (Phase SG-4)
+
+| Category | Purpose | Per-entity? | Lazy-seed? |
+|---|---|---|---|
+| `CREDIT_RULE_TEMPLATES` | Starter shapes for CreditRule (TERRITORY_PRIMARY, PRODUCT_SPLIT, KEY_ACCOUNT_OVERRIDE) | yes | yes (on first read) |
+| `COMP_STATEMENT_TEMPLATE` | Admin-editable brand chrome (HEADER_TITLE, DISCLAIMER, etc.) + EMAIL_ON_PERIOD_CLOSE toggle | yes | yes (on first read) |
+| `DISPUTE_SLA_DAYS` | Per-state SLA (sla_days, escalate_to_role) | yes | yes (on first agent run) |
+| `INCENTIVE_DISPUTE_TYPE` | Typology dropdown driving artifact resolution (payout vs credit) | yes | yes (on first read) |
+| `MODULE_DEFAULT_ROLES.INCENTIVE_DISPUTE` | gateApproval default-roles gate for dispute lifecycle | yes | yes |
+| `APPROVAL_MODULE.INCENTIVE_DISPUTE` | Approval Hub registry entry | yes | yes |
+
+All categories are entity-scoped, lazy-seeded on first miss (Rule #19 cache busting + Rule #20 lookup-driven posture). Subscribers tune via Control Center → Lookup Tables, zero code changes.
+
+**Note on plan-version state**: there is intentionally **no** `ACTIVE_PLAN_VERSION` lookup. An earlier draft mirrored `IncentivePlan.current_version_id` into a Lookup row for an O(1) "fast path", but that mixed operational state into the configuration table. The IncentivePlan header is itself O(1) via the unique index on `{entity_id, fiscal_year}`, and admins shouldn't see a row in Control Center → Lookup Tables that the runtime overwrites on every plan activation. Source of truth: `IncentivePlan.findOne({entity_id, fiscal_year}).current_version_id`. Do **not** reintroduce a lookup mirror.
+
+### gateApproval routing (Phase SG-4 additions)
+
+| Module | docType | Caller | Default roles |
+|---|---|---|---|
+| `SALES_GOAL_PLAN` | `PLAN_NEW_VERSION` | `salesGoalController.createNewVersion` | president, finance |
+| `INCENTIVE_PAYOUT` | `STATEMENT_DISPATCH` | `incentivePayoutController.dispatchStatementsForPeriod` | president, finance |
+| `INCENTIVE_DISPUTE` | `DISPUTE_TAKE_REVIEW` | `incentiveDisputeController.takeReview` | president, finance, admin |
+| `INCENTIVE_DISPUTE` | `DISPUTE_RESOLVE` | `incentiveDisputeController.resolveDispute` | president, finance, admin |
+| `INCENTIVE_DISPUTE` | `DISPUTE_CLOSE` | `incentiveDisputeController.closeDispute` | president, finance, admin |
+
+Filing a dispute (`POST /incentive-disputes`) is NOT gated — it's a request, not a posting. Filer cancellation (`POST /incentive-disputes/:id/cancel`) is also not gated (filer withdraws their own request).
+
+### Common gotchas (Phase SG-4)
+
+- **Migration is required on existing databases.** `node backend/scripts/migrateSalesGoalVersioning.js` MUST be run once before SG-4 deployment. Without it, any attempt to create v2 of an existing plan errors with `E11000 duplicate key` because the legacy `{entity_id,fiscal_year}` UNIQUE index is still active. Fresh installs are unaffected (mongoose autoIndex creates only the composite).
+- **Engine never reverts a sale.** `creditRuleEngine.assign()` is wrapped in try/catch inside `postSaleRow`. If the engine fails for any reason (lookup fetch error, DB hiccup), the sale still posts. Failure logged to ErpAuditLog with `target_model='SalesCredit'`. Re-run via `POST /credit-rules/reassign/:saleLineId`.
+- **APPROVED dispute ≠ payment denied.** Resolving a dispute as APPROVED on a payout cascades a `reverseAccrualJournal()`, which respects period locks. If the payout's accrual period is locked, the reversal will fail and the dispute still moves to RESOLVED_APPROVED — but with no `reversal_journal_id`. Admin must manually reverse from the Payout Ledger after unlocking the period.
+- **Disputes are NOT in the rejection-banner system.** Disputes have their own state machine (OPEN/UNDER_REVIEW/RESOLVED_*/CLOSED), not the gateApproval REJECTED status. The G6 RejectionBanner does not render on the Dispute Center page — by design. SLA breach badges are the visual analog.
+- **Credit rules vs sales attribution**: SG-4 introduces SalesCredit but does NOT yet drive incentive accrual math. Snapshot computation still reads `sale.bdm_id`. Until SG-5, credit-split rules are auditable but advisory. Communicate this to subscribers — a 70/30 split rule today produces a SalesCredit ledger but the BDM listed on the sale still gets the full incentive accrual.
+- **Plan versioning + KpiTemplate**: Editing a KpiTemplate row never cascades to existing plans (SG-3R immutability discipline). Versioning gives admins a clean path to apply template changes — create v2 of a plan with `template_id` in the body, copy/edit the structure, activate v2 to supersede v1.
+- **disputeSlaAgent breach idempotency**: A breach row is appended only when no breach exists for the current state since the last `state_changed_at`. If a dispute transitions to UNDER_REVIEW and back to OPEN (not a current-flow path but theoretically possible via direct DB edit), the breach clock resets — desired behavior because the new state-change effectively gives the chain a fresh chance.
+- **Sidebar visibility for Dispute Center**: visible to ALL users with `sales_goals` VIEW (BDMs need to file). Reviewer actions inside the page are gated by `isPrivileged` check + sub-perm check + `gateApproval` — non-reviewers see only their own disputes filtered server-side (Rule #21).

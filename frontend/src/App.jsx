@@ -189,6 +189,12 @@ const IncentiveTracker = lazyRetry(() => import('./erp/pages/IncentiveTracker'))
 const IncentivePayoutLedger = lazyRetry(() => import('./erp/pages/IncentivePayoutLedger'));
 // Phase SG-3R — KPI Template Library (reusable plan defaults)
 const KpiTemplateManager = lazyRetry(() => import('./erp/pages/KpiTemplateManager'));
+// Phase SG-4 #22, #24 — Credit Rules + Dispute Center
+const CreditRuleManager = lazyRetry(() => import('./erp/pages/CreditRuleManager'));
+const DisputeCenter = lazyRetry(() => import('./erp/pages/DisputeCenter'));
+// Phase SG-5 #26, #27 — Scenario Planner + Variance Alert Center
+const ScenarioPlanner = lazyRetry(() => import('./erp/pages/ScenarioPlanner'));
+const VarianceAlertCenter = lazyRetry(() => import('./erp/pages/VarianceAlertCenter'));
 
 // Phase G7 — President's Copilot + Cmd+K palette (ERP-only, role-gated by lookup)
 const PresidentCopilot = lazyRetry(() => import('./erp/components/PresidentCopilot'));
@@ -809,6 +815,14 @@ function App() {
           <Route path="/erp/incentive-payouts" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales_goals"><IncentivePayoutLedger /></ProtectedRoute>} />
           {/* Phase SG-3R — KPI Template Library */}
           <Route path="/erp/kpi-templates" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.PRESIDENT]} requiredErpModule="sales_goals"><KpiTemplateManager /></ProtectedRoute>} />
+          {/* Phase SG-4 #22 — Credit Rules (admin-only); BDMs view their own credits via the Goal Dashboard */}
+          <Route path="/erp/credit-rules" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.PRESIDENT, ROLES.FINANCE]} requiredErpModule="sales_goals"><CreditRuleManager /></ProtectedRoute>} />
+          {/* Phase SG-4 #24 — Dispute Center (everyone with sales_goals VIEW; reviewer actions gated by sub-perm + gateApproval) */}
+          <Route path="/erp/disputes" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales_goals"><DisputeCenter /></ProtectedRoute>} />
+          {/* Phase SG-5 #26 — Scenario Planner (admin/finance/president only) */}
+          <Route path="/erp/sales-goals/scenario" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.PRESIDENT, ROLES.FINANCE]} requiredErpModule="sales_goals"><ScenarioPlanner /></ProtectedRoute>} />
+          {/* Phase SG-5 #27 — Variance Alert Center (all with sales_goals VIEW; contractor scoped to own) */}
+          <Route path="/erp/variance-alerts" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales_goals"><VarianceAlertCenter /></ProtectedRoute>} />
 
           {/* Orphaned page direct routes — redirect to Control Center with correct section */}
           <Route path="/erp/agent-settings" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><AgentSettingsRedirect /></ProtectedRoute>} />

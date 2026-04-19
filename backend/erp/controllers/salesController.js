@@ -241,6 +241,18 @@ const postSaleRow = async (row, userId, opts = {}) => {
       }
     }
 
+    // 8. Phase SG-4 #22 — Credit rule assignment. Produces SalesCredit rows
+    //    (audit trail of who-earns-what). Always non-blocking: a sale that
+    //    posts but fails credit assignment will fall back to sale.bdm_id @
+    //    100% on the next engine run, and the failure is logged via
+    //    ErpAuditLog. Never reverses the sale itself.
+    try {
+      const { assign: assignCredits } = require('../services/creditRuleEngine');
+      await assignCredits(row, { userId });
+    } catch (ceErr) {
+      console.error('Credit rule assignment failed (non-blocking):', row.doc_ref || row._id, ceErr.message);
+    }
+
     return { eventId };
   } finally {
     await session.endSession();

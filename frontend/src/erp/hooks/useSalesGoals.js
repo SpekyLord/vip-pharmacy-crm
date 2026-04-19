@@ -68,6 +68,55 @@ export default function useSalesGoals() {
   // ── Phase SG-3R — President-Reverse on a Sales Goal plan ───────────────
   const presidentReversePlan = (id, data) => api.post(`/sales-goals/plans/${id}/president-reverse`, data || {});
 
+  // ── Phase SG-4 #21 — Plan versioning ───────────────────────────────────
+  // Returns { header, versions[] } where versions are SalesGoalPlan rows
+  // sorted newest-first. Header.current_version_id points at the active row.
+  const listPlanVersions = (planId) => api.get(`/sales-goals/plans/${planId}/versions`);
+  // Mints v(N+1). Body may override baseline_revenue / target_revenue /
+  // collection_target_pct / growth_drivers / incentive_programs /
+  // effective_from. New version starts in DRAFT — caller must POST /activate
+  // separately (also gated). The basis must be the latest version.
+  const createNewPlanVersion = (basisPlanId, body) => api.post(`/sales-goals/plans/${basisPlanId}/new-version`, body || {});
+
+  // ── Phase SG-4 #22 — Credit Rules (SAP Commissions pattern) ────────────
+  const listCreditRules = (params) => api.get('/credit-rules', { params });
+  const getCreditRule = (id) => api.get(`/credit-rules/${id}`);
+  const createCreditRule = (data) => api.post('/credit-rules', data);
+  const updateCreditRule = (id, data) => api.put(`/credit-rules/${id}`, data);
+  const deactivateCreditRule = (id) => api.del(`/credit-rules/${id}`);
+  // Read-only ledger of SalesCredit rows (audit trail of credit assignments).
+  // BDMs see only their own credits; admins/finance/president see all.
+  const listSalesCredits = (params) => api.get('/credit-rules/ledger/credits', { params });
+  // Re-run the engine for a specific posted sale (admin tool).
+  const reassignSaleCredits = (saleLineId) => api.post(`/credit-rules/reassign/${saleLineId}`);
+
+  // ── Phase SG-4 #23 ext — Compensation Statement Archive + Dispatch ────
+  const getCompStatementArchive = (params) => api.get('/incentive-payouts/statement/archive', { params });
+  const dispatchCompStatements = (data) => api.post('/incentive-payouts/statements/dispatch', data || {});
+
+  // ── Phase SG-5 #26 — What-if / scenario simulator (no DB writes) ───────
+  // Body accepts any of: target_revenue_override, baseline_override,
+  // driver_weight_overrides {driver_code→weight_pct},
+  // tier_attainment_overrides {bdm_id→attainment_pct}.
+  const simulatePlan = (planId, overrides) => api.post(`/sales-goals/plans/${planId}/simulate`, overrides || {});
+
+  // ── Phase SG-5 #28 — YoY / QoQ trending (prior vs current fiscal year) ─
+  const getTrending = (params) => api.get('/sales-goals/trending', { params });
+
+  // ── Phase SG-5 #27 — Variance Alert Center (persisted alerts + digest) ─
+  const listVarianceAlerts = (params) => api.get('/variance-alerts', { params });
+  const getVarianceAlertStats = (params) => api.get('/variance-alerts/stats', { params });
+  const resolveVarianceAlert = (id, data) => api.post(`/variance-alerts/${id}/resolve`, data || {});
+
+  // ── Phase SG-4 #24 — Incentive Disputes (Oracle Fusion workflow) ───────
+  const listDisputes = (params) => api.get('/incentive-disputes', { params });
+  const getDispute = (id) => api.get(`/incentive-disputes/${id}`);
+  const fileDispute = (data) => api.post('/incentive-disputes', data);
+  const takeReviewDispute = (id, data) => api.post(`/incentive-disputes/${id}/take-review`, data || {});
+  const resolveDispute = (id, data) => api.post(`/incentive-disputes/${id}/resolve`, data || {});
+  const closeDispute = (id, data) => api.post(`/incentive-disputes/${id}/close`, data || {});
+  const cancelDispute = (id, data) => api.post(`/incentive-disputes/${id}/cancel`, data || {});
+
   // ── Phase SG-Q2 W3 — Compensation Statement (BDM-facing) ───────────────
   // Returns { bdm, plan, entity, fiscal_year, period, summary, periods, tier, rows }
   // BDMs see only their own; finance/admin/president pass ?bdm_id=. The print
@@ -105,5 +154,19 @@ export default function useSalesGoals() {
     listKpiTemplates, getKpiTemplate, createKpiTemplate, updateKpiTemplate,
     deleteKpiTemplate, deleteKpiTemplateSet,
     importTargets, presidentReversePlan,
+    // Phase SG-4 #21
+    listPlanVersions, createNewPlanVersion,
+    // Phase SG-4 #22
+    listCreditRules, getCreditRule, createCreditRule, updateCreditRule,
+    deactivateCreditRule, listSalesCredits, reassignSaleCredits,
+    // Phase SG-4 #23 ext
+    getCompStatementArchive, dispatchCompStatements,
+    // Phase SG-4 #24
+    listDisputes, getDispute, fileDispute,
+    takeReviewDispute, resolveDispute, closeDispute, cancelDispute,
+    // Phase SG-5 #26, #27, #28
+    simulatePlan,
+    getTrending,
+    listVarianceAlerts, getVarianceAlertStats, resolveVarianceAlert,
   };
 }

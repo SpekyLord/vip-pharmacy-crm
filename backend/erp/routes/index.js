@@ -59,6 +59,23 @@ router.use('/kpi-templates', erpAccessCheck('sales_goals'), require('./kpiTempla
 // erpAccessCheck('sales_goals', ...) since payouts are derived from plans.
 router.use('/incentive-payouts', require('./incentivePayoutRoutes'));
 
+// ═══ Phase SG-4 #22 — Credit Rules (SAP Commissions pattern) ═══
+// Engine runs inside salesController.postSaleRow on every sale post.
+// These routes expose CRUD on rules + read-only credit ledger to admins.
+router.use('/credit-rules', require('./creditRuleRoutes'));
+
+// ═══ Phase SG-4 #24 — Incentive Disputes (Oracle Fusion workflow pattern) ═══
+// Multi-stage dispute flow with SLA escalation. Each transition routes
+// through gateApproval('INCENTIVE_DISPUTE'). Background agent (#DSP) walks
+// the SLA clock daily.
+router.use('/incentive-disputes', require('./incentiveDisputeRoutes'));
+
+// ═══ Phase SG-5 #27 — Variance Alert Center (persisted KPI variance alerts) ═══
+// Coaching signal: list / resolve alerts produced by kpiVarianceAgent. Not
+// a financial document — no gateApproval; BDMs resolve their own, managers
+// resolve their direct reports', admin/finance/president resolve any.
+router.use('/variance-alerts', require('./varianceAlertRoutes'));
+
 // ═══ Phase 28 — Approval Workflow (Authority Matrix) ═══
 router.use('/approvals', require('./approvalRoutes'));
 

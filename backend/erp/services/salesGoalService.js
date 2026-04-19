@@ -41,6 +41,13 @@ async function getGoalConfig(entityId) {
 
 /**
  * Read INCENTIVE_TIER Lookup entries, sorted by attainment_min descending.
+ *
+ * SG-5 #25 — surfaces `accelerator_factor` (per-tier commission multiplier).
+ * Absent metadata → 1.0 (no multiplier, backward compatible). Admins opt a tier
+ * into acceleration by setting metadata.accelerator_factor > 1 in Control
+ * Center → Lookup Tables; `applyTierAccelerator()` below folds it into the
+ * accrued tier_budget. Zero-hardcoding: default factor lives here only because
+ * a Lookup write failure must not crash incentive accrual.
  */
 async function getIncentiveTiers(entityId) {
   const entries = await Lookup.find({
@@ -54,11 +61,47 @@ async function getIncentiveTiers(entityId) {
       label: e.label,
       attainment_min: e.metadata?.attainment_min ?? 0,
       budget_per_bdm: e.metadata?.budget_per_bdm ?? 0,
+      accelerator_factor: normalizeAcceleratorFactor(e.metadata?.accelerator_factor),
       reward_description: e.metadata?.reward_description ?? '',
       bg_color: e.metadata?.bg_color ?? '',
       text_color: e.metadata?.text_color ?? '',
     }))
     .sort((a, b) => b.attainment_min - a.attainment_min); // highest first
+}
+
+/**
+ * Coerce lookup accelerator_factor into a safe multiplier:
+ *   - missing / null / non-numeric → 1.0 (no-op)
+ *   - < 0 → 1.0 (negative would invert commissions; reject defensively)
+ *   - >= 0 → as-is (0 is legal, lets admins explicitly freeze a tier's payout)
+ *
+ * Explicit null/undefined guard avoids the `Number(null) === 0` coercion trap —
+ * we only trust an explicitly supplied 0 (e.g. Number(0), "0"), never an
+ * absent value that coerces to 0.
+ */
+function normalizeAcceleratorFactor(raw) {
+  if (raw === null || raw === undefined || raw === '') return 1.0;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return 1.0;
+  return n;
+}
+
+/**
+ * Apply a tier's accelerator factor to its budget.
+ * Returns `{ accelerated_budget, accelerator_factor, base_budget }`.
+ * Ledger rows should store both values so admins can see the multiplier's
+ * contribution (transparency — mirrors the `uncapped_budget` pattern in
+ * applyIncentiveCap).
+ */
+function applyTierAccelerator(tier) {
+  if (!tier) return { accelerated_budget: 0, accelerator_factor: 1.0, base_budget: 0 };
+  const factor = normalizeAcceleratorFactor(tier.accelerator_factor);
+  const base = Number(tier.budget_per_bdm) || 0;
+  return {
+    accelerated_budget: Math.round(base * factor),
+    accelerator_factor: factor,
+    base_budget: base,
+  };
 }
 
 // Hard-coded fallback used only when both the DB entries are missing AND the
@@ -676,6 +719,12 @@ async function computeBdmSnapshot(entityId, plan, bdmId, personId, territoryId, 
       projectedTier = computeProjectedTier(actualAmount, qualifyingAmount, monthsElapsed, 12, tiers);
     }
 
+    // SG-5 #25 — Commission accelerator applied to tier budget.
+    // Base budget is preserved in the ledger on IncentivePayout.uncapped_budget
+    // (set inside accrueIncentive via applyIncentiveCap); the accelerated
+    // amount is what gets written to tier_budget + journaled.
+    const currentAccel = applyTierAccelerator(currentTier);
+    const projectedAccel = applyTierAccelerator(projectedTier);
     incentiveStatus.push({
       program_code: prog.program_code,
       qualifying_amount: qualifyingAmount,
@@ -683,10 +732,13 @@ async function computeBdmSnapshot(entityId, plan, bdmId, personId, territoryId, 
       attainment_pct: attainmentPct,
       tier_code: currentTier?.code || '',
       tier_label: currentTier?.label || '',
-      tier_budget: currentTier?.budget_per_bdm || 0,
+      tier_budget: currentAccel.accelerated_budget,
+      tier_base_budget: currentAccel.base_budget,
+      tier_accelerator_factor: currentAccel.accelerator_factor,
       projected_tier_code: projectedTier?.code || '',
       projected_tier_label: projectedTier?.label || '',
-      projected_tier_budget: projectedTier?.budget_per_bdm || 0,
+      projected_tier_budget: projectedAccel.accelerated_budget,
+      projected_tier_accelerator_factor: projectedAccel.accelerator_factor,
       qualified: attainmentPct >= 100,
     });
   }
@@ -828,6 +880,215 @@ async function getIncentiveBudgetAdvisor(entityId, plan) {
   };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// SG-5 #26 — What-if / scenario modeling
+//
+// `simulatePlanSnapshots(plan, overrides)` returns projected snapshots +
+// incentive accrual forecast WITHOUT persisting to the DB. The input `plan`
+// is used read-only; overrides are applied in-memory. Re-uses the same
+// computeIncentiveTier / applyTierAccelerator / applyIncentiveCap math so
+// scenarios match production accrual behavior one-for-one.
+//
+// Overrides (all optional; unspecified = use current plan value):
+//   target_revenue_override   — replaces plan.target_revenue (number, PHP)
+//   baseline_override         — replaces plan.baseline_revenue (number, PHP)
+//   driver_weight_overrides   — { [driver_code]: weight_pct }
+//   tier_attainment_overrides — { [bdm_id]: attainment_pct } — force a BDM's
+//                               incentive attainment% irrespective of live sales
+//
+// Returns `{ current, scenario, diff, plan_overrides }` — side-by-side totals
+// per BDM (tier, tier_budget, accelerator) plus aggregate company-level
+// revenue / attainment projections.
+//
+// Design notes:
+//   - No DB writes. Safe to call from any role with plan VIEW.
+//   - Each BDM snapshot is read once (YTD period for current fiscal_year) then
+//     the scenario row is derived in-memory. If no snapshot exists yet, the
+//     scenario falls back to the BDM's SalesGoalTarget.
+//   - Incentive cap still applied (CompProfile.incentive_cap) so the forecast
+//     reflects what would actually be accrued.
+// ═══════════════════════════════════════════════════════════════════════════
+async function simulatePlanSnapshots(plan, overrides = {}) {
+  if (!plan) throw new Error('simulatePlanSnapshots: plan is required');
+  const entityId = plan.entity_id;
+  const fiscalYear = plan.fiscal_year;
+
+  const tiers = await getIncentiveTiers(entityId);
+  const config = await getGoalConfig(entityId);
+
+  // Coerce overrides
+  const targetRevOverride = Number(overrides.target_revenue_override);
+  const baselineOverride = Number(overrides.baseline_override);
+  const driverWeights = overrides.driver_weight_overrides || {};
+  const tierAttOverrides = overrides.tier_attainment_overrides || {};
+
+  const scenarioTargetRevenue = Number.isFinite(targetRevOverride) && targetRevOverride > 0
+    ? targetRevOverride
+    : Number(plan.target_revenue) || 0;
+  const scenarioBaseline = Number.isFinite(baselineOverride) && baselineOverride >= 0
+    ? baselineOverride
+    : Number(plan.baseline_revenue) || 0;
+
+  // Scale factor applied to each BDM's sales_target when the company target is
+  // overridden (proportional distribution). If the current plan target is 0 we
+  // skip scaling — nothing to scale from.
+  const baseTarget = Number(plan.target_revenue) || 0;
+  const targetScale = (baseTarget > 0 && scenarioTargetRevenue > 0)
+    ? scenarioTargetRevenue / baseTarget
+    : 1.0;
+
+  // Pull ACTIVE BDM targets + their latest YTD snapshot (if any)
+  const targets = await SalesGoalTarget.find({
+    plan_id: plan._id,
+    target_type: 'BDM',
+    status: 'ACTIVE',
+  }).populate('person_id', 'full_name bdm_code is_active').lean();
+
+  const personIds = targets.map(t => t.person_id?._id).filter(Boolean);
+  const activeTargets = targets.filter(t => !t.person_id || t.person_id.is_active !== false);
+
+  const snapshotRows = await KpiSnapshot.find({
+    plan_id: plan._id,
+    period_type: 'YTD',
+    period: String(fiscalYear),
+  }).lean();
+  const snapByBdm = new Map(snapshotRows.map(s => [String(s.bdm_id), s]));
+
+  let scenarioTotalBudget = 0;
+  let currentTotalBudget = 0;
+  let scenarioActualRevenue = 0;
+  let currentActualRevenue = 0;
+
+  const rows = [];
+  for (const t of activeTargets) {
+    const bdmKey = String(t.bdm_id || '');
+    const snap = bdmKey ? snapByBdm.get(bdmKey) : null;
+
+    const currentAttainment = Number(snap?.sales_attainment_pct) || 0;
+    const currentActual = Number(snap?.sales_actual) || 0;
+    const currentTargetVal = Number(t.sales_target) || 0;
+
+    const scenarioTargetVal = Math.round(currentTargetVal * targetScale);
+    // Apply per-BDM attainment override if supplied; otherwise preserve actual.
+    const overrideAtt = Number(tierAttOverrides[bdmKey]);
+    const scenarioAttainment = Number.isFinite(overrideAtt) && overrideAtt >= 0
+      ? overrideAtt
+      // Scaling the target changes the attainment % against the new target
+      // (actual stays the same — we're not asking "what if I sold more", we're
+      // asking "what if the bar was set here"). If target_scale is 1.0 the
+      // attainment is unchanged.
+      : (scenarioTargetVal > 0 ? Math.round((currentActual / scenarioTargetVal) * 100) : 0);
+
+    const currentTier = computeIncentiveTier(currentAttainment, tiers);
+    const scenarioTier = computeIncentiveTier(scenarioAttainment, tiers);
+    const currentAccel = applyTierAccelerator(currentTier);
+    const scenarioAccel = applyTierAccelerator(scenarioTier);
+
+    // Incentive cap forecast — apply the same CompProfile.incentive_cap math
+    // that would fire in production. Skipped when no person_id (legacy rows).
+    let currentCapped = currentAccel.accelerated_budget;
+    let scenarioCapped = scenarioAccel.accelerated_budget;
+    if (t.person_id?._id) {
+      const curCap = await applyIncentiveCap(t.person_id._id, entityId, currentAccel.accelerated_budget);
+      currentCapped = curCap.capped;
+      const scCap = await applyIncentiveCap(t.person_id._id, entityId, scenarioAccel.accelerated_budget);
+      scenarioCapped = scCap.capped;
+    }
+
+    currentTotalBudget += currentCapped;
+    scenarioTotalBudget += scenarioCapped;
+    currentActualRevenue += currentActual;
+    scenarioActualRevenue += currentActual;
+
+    rows.push({
+      bdm_id: t.bdm_id,
+      bdm_name: t.person_id?.full_name || t.target_label || 'BDM',
+      bdm_code: t.person_id?.bdm_code || '',
+      sales_target_current: currentTargetVal,
+      sales_target_scenario: scenarioTargetVal,
+      sales_actual: currentActual,
+      attainment_current: currentAttainment,
+      attainment_scenario: scenarioAttainment,
+      tier_current: currentTier?.label || '',
+      tier_scenario: scenarioTier?.label || '',
+      tier_budget_current: currentCapped,
+      tier_budget_scenario: scenarioCapped,
+      accelerator_current: currentAccel.accelerator_factor,
+      accelerator_scenario: scenarioAccel.accelerator_factor,
+      budget_delta: scenarioCapped - currentCapped,
+      attainment_delta: scenarioAttainment - currentAttainment,
+    });
+  }
+
+  // Company-level driver overrides: report the new weights + recomputed driver
+  // target pool. We don't re-run auto KPI calculations (that would require live
+  // queries and defeat the "fast dry-run" goal); surfacing the weight change is
+  // enough for a forecast. Admins rerun "Compute KPIs" after the plan is edited
+  // if they want the full refresh.
+  const scenarioDrivers = (plan.growth_drivers || []).map(d => {
+    const currentWeight = Number(d.weight_pct) || 0;
+    const override = Number(driverWeights[d.driver_code]);
+    const scenarioWeight = Number.isFinite(override) && override >= 0 ? override : currentWeight;
+    return {
+      driver_code: d.driver_code,
+      driver_label: d.driver_label || d.driver_code,
+      weight_current: currentWeight,
+      weight_scenario: scenarioWeight,
+      revenue_share_current: Math.round((currentWeight / 100) * (Number(plan.target_revenue) || 0)),
+      revenue_share_scenario: Math.round((scenarioWeight / 100) * scenarioTargetRevenue),
+    };
+  });
+
+  const totalWeightScenario = scenarioDrivers.reduce((sum, d) => sum + d.weight_scenario, 0);
+
+  return {
+    plan_overrides: {
+      target_revenue_current: Number(plan.target_revenue) || 0,
+      target_revenue_scenario: scenarioTargetRevenue,
+      baseline_current: Number(plan.baseline_revenue) || 0,
+      baseline_scenario: scenarioBaseline,
+      target_scale: Math.round(targetScale * 10000) / 10000,
+      total_weight_scenario: totalWeightScenario,
+      weight_warning: totalWeightScenario !== 100,
+    },
+    rows,
+    drivers: scenarioDrivers,
+    summary: {
+      bdm_count: rows.length,
+      current: {
+        total_incentive_budget: currentTotalBudget,
+        total_actual_revenue: currentActualRevenue,
+        attainment_pct: (Number(plan.target_revenue) || 0) > 0
+          ? Math.round((currentActualRevenue / plan.target_revenue) * 100)
+          : 0,
+      },
+      scenario: {
+        total_incentive_budget: scenarioTotalBudget,
+        total_actual_revenue: scenarioActualRevenue,
+        attainment_pct: scenarioTargetRevenue > 0
+          ? Math.round((scenarioActualRevenue / scenarioTargetRevenue) * 100)
+          : 0,
+      },
+      diff: {
+        total_incentive_budget: scenarioTotalBudget - currentTotalBudget,
+      },
+    },
+    config: {
+      attainment_green: config.ATTAINMENT_GREEN,
+      attainment_yellow: config.ATTAINMENT_YELLOW,
+      attainment_red: config.ATTAINMENT_RED,
+    },
+    tiers: tiers.map(t => ({
+      code: t.code,
+      label: t.label,
+      attainment_min: t.attainment_min,
+      budget_per_bdm: t.budget_per_bdm,
+      accelerator_factor: t.accelerator_factor,
+      effective_budget: Math.round(t.budget_per_bdm * t.accelerator_factor),
+    })),
+  };
+}
+
 module.exports = {
   getGoalConfig,
   getIncentiveTiers,
@@ -842,4 +1103,9 @@ module.exports = {
   getIncentiveBudgetAdvisor,
   applyIncentiveCap,
   accrueIncentive,
+  applyTierAccelerator,
+  normalizeAcceleratorFactor,
+  fiscalYearRange,
+  monthRange,
+  simulatePlanSnapshots,
 };
