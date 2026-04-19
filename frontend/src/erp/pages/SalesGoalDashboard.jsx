@@ -325,7 +325,7 @@ export default function SalesGoalDashboard() {
                       {computing ? 'Computing...' : 'Compute KPIs now'}
                     </button>
                     <div style={{ marginTop: 8, fontSize: 12 }}>
-                      Or <Link to="/erp/sales-goals/setup" style={{ color: 'var(--erp-accent)' }}>add BDM targets</Link> first if you haven't.
+                      Or <Link to="/erp/sales-goals/setup" style={{ color: 'var(--erp-accent)' }}>add BDM targets</Link> first if you haven&apos;t.
                     </div>
                   </div>
                 ) : (
