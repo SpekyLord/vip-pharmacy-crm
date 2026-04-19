@@ -164,6 +164,12 @@ export default function SalesGoalSetup() {
   const [entityTargets, setEntityTargets] = useState([]);
   const [bdmTargets, setBdmTargets] = useState([]);
 
+  // Phase SG-3R — KPI Template picker + "use driver defaults". Declared before
+  // savePlan() because it references these in its payload + deps array.
+  const [templateSets, setTemplateSets] = useState([]);
+  const [templateChoice, setTemplateChoice] = useState('');
+  const [useDriverDefaults, setUseDriverDefaults] = useState(false);
+
   const loadPlans = useCallback(async (preserveId) => {
     setLoading(true);
     try {
@@ -285,12 +291,8 @@ export default function SalesGoalSetup() {
     }
   }, [selectedPlanId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── Phase SG-3R — KPI Template picker + "use driver defaults" ──────────
+  // ─── Phase SG-3R — KPI Template picker loader (state declared up-top) ──
   // Only applied on NEW plan create. Server ignores these keys on update.
-  const [templateSets, setTemplateSets] = useState([]);
-  const [templateChoice, setTemplateChoice] = useState('');           // template_name or ''
-  const [useDriverDefaults, setUseDriverDefaults] = useState(false);
-
   useEffect(() => {
     let cancelled = false;
     (async () => {
