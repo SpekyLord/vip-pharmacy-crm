@@ -85,6 +85,19 @@ const taskSchema = new mongoose.Schema(
     source_module: { type: String, trim: true, default: null },
     source_doc_id: { type: mongoose.Schema.Types.ObjectId, default: null },
 
+    // ── Phase G10 — Task ↔ KPI / Goal alignment (2026 POA) ───────────────
+    // All optional; legacy (G8 / G9) tasks remain valid without touching
+    // these fields. Validated against per-entity Lookup rows
+    // (GROWTH_DRIVER + KPI_CODE) in the controller — unknown codes are
+    // rejected so Gantt + Revenue Bridge queries never hit orphaned values.
+    growth_driver_code: { type: String, trim: true, uppercase: true, default: null, index: true },
+    kpi_code:           { type: String, trim: true, uppercase: true, default: null, index: true },
+    goal_period:        { type: String, trim: true, default: null },   // '2026' | '2026-Q1' | '2026-01'
+    milestone_label:    { type: String, trim: true, maxlength: 120, default: null },
+    start_date:         { type: Date, default: null },                 // Gantt bar start; falls back to createdAt
+    kpi_ref_id:         { type: mongoose.Schema.Types.ObjectId, default: null },  // optional KpiSnapshot._id
+    responsibility_tags:[{ type: String, trim: true, uppercase: true }],          // ['BDM','PRESIDENT','EBDM','OM']
+
     // Completion trail
     completed_at: { type: Date, default: null },
     completed_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
@@ -92,6 +105,12 @@ const taskSchema = new mongoose.Schema(
     // Track when a task was first surfaced to the assignee for SLA tooling.
     // Set by the CREATE_TASK handler after push notification is dispatched.
     notified_at: { type: Date, default: null },
+
+    // Phase G9.R1 — taskOverdueAgent dedup. Set on every overdue notification
+    // so the daily cron does not spam the same assignee. Cooldown window
+    // (TASK_OVERDUE_COOLDOWN_DAYS lookup, default 1d) compares now() against
+    // this timestamp before firing notifyTaskEvent({ event: 'overdue' }).
+    last_overdue_notify_at: { type: Date, default: null, index: true },
   },
   { timestamps: true, collection: 'erp_tasks' }
 );
@@ -101,6 +120,8 @@ taskSchema.index({ entity_id: 1, assignee_user_id: 1, status: 1, due_date: 1 });
 taskSchema.index({ entity_id: 1, created_by: 1, status: 1, createdAt: -1 });
 // LIST_OVERDUE_ITEMS scans by due_date < now AND status in {OPEN, IN_PROGRESS}
 taskSchema.index({ entity_id: 1, status: 1, due_date: 1 });
+// Phase G10 — Gantt grouping + driver/period filters
+taskSchema.index({ entity_id: 1, growth_driver_code: 1, goal_period: 1, status: 1 });
 
 taskSchema.statics.TASK_STATUSES = TASK_STATUSES;
 taskSchema.statics.TASK_PRIORITIES = TASK_PRIORITIES;

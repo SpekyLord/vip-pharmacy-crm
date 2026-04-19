@@ -57,6 +57,23 @@ const REJECTION_FOOTER_NOTE = 'If an approver rejects this document, a red banne
 
 // ── Complete BDM workflow guide config ──
 const WORKFLOW_GUIDES = {
+  // ── Phase G9.R7 — Unified Operational Inbox ──
+  'inbox': {
+    title: 'Unified Operational Inbox',
+    steps: [
+      'Approvals folder = every pending decision routed to you. Approve/Reject in-place — the row delegates to the canonical approval handler (no parallel paths, Rule #20).',
+      'Tasks folder = your assigned tasks with the mini-editor (status / due date / reassign). Hit "Open full page" for the Gantt / Kanban / bulk-ops view at /erp/tasks.',
+      'AI Agents folder = findings from rule-based agents (KPI variance, daily briefing, OCR, task overdue) — actionable items show [Resolve], passive ones show [Acknowledge].',
+      'Approval threads stay together by ApprovalRequest._id — request, decision and reopen events fold into one conversation. Look here before re-opening a posted document.',
+      'Compose to send a direct message or broadcast — gated by messaging.* sub-permissions and the per-entity MESSAGE_ACCESS_ROLES matrix (Control Center → Lookup Tables to edit).',
+    ],
+    next: [
+      { label: 'Approval Hub', path: '/erp/approvals' },
+      { label: 'My Tasks', path: '/erp/tasks' },
+      { label: 'AI Agents', path: '/erp/agent-dashboard' },
+    ],
+    tip: 'Channels (email / in-app / SMS) are kill-switched per entity via NOTIFICATION_CHANNELS lookup. Per-user opt-in lives on the user\'s NotificationPreference. Disabling IN_APP for the entity hides ALL future inbox writes — existing rows stay visible.',
+  },
   'erp-dashboard': {
     title: 'Your Daily Workflow',
     steps: [
@@ -719,20 +736,23 @@ const WORKFLOW_GUIDES = {
   },
   // Phase G8 (P2-9) — Tasks page guide (Secretary Copilot backing UI).
   'tasks': {
-    title: 'My Tasks',
+    title: 'Tasks — POA-aligned workspace',
     steps: [
-      'Capture anything you need to do — personal follow-ups, delegated work, reminders',
-      'Add task with a title, optional description, due date, and priority',
-      'Change status from the table: OPEN → IN_PROGRESS → DONE (or BLOCKED / CANCELLED)',
-      'Switch scope to see what you created vs what\'s assigned to you; privileged roles can switch to "All entity tasks"',
-      'Filter by status or toggle "Overdue only" to focus on what\'s slipping',
+      'Create a task and (optionally) tag it with a Growth Driver + KPI + Goal Period so it lands in the right POA pipeline',
+      'Use the [List] tab for day-to-day triage — advanced filters (driver, KPI, period, assignee, date range, text search) narrow the view; the checkboxes enable bulk ops (change status / priority / delete)',
+      'Switch to [Gantt] to see timeline bars grouped by the 5 POA drivers (Hospital Accreditation, Product Inclusion, Inventory Optimization, Demand Pull, Price Increase) with revenue-band chips and a Today marker',
+      'Switch to [Kanban] to drag cards between OPEN → IN_PROGRESS → BLOCKED → DONE → CANCELLED — drops save instantly and sync the inbox TASKS folder',
+      'Switch to [Revenue Bridge] for the POA summary — % done per driver against the PHP 10M increment goal',
+      'Owners (responsibility tags like BDM / PRESIDENT / EBDM / OM) render as chips in every view and in the mini-editor — add or remove them without leaving the row',
+      'Bulk reassigning many tasks to one person? The inbox will roll them up into one summary row once the per-assignee count exceeds the TASK_BULK_NOTIFY_THRESHOLD lookup (default 5)',
       'Or say "create a task to sign rent renewal Friday" to the Copilot — it drafts + confirms + saves',
     ],
     next: [
       { label: 'AI Agents', path: '/erp/agent-dashboard' },
       { label: 'Control Center', path: '/erp/control-center' },
+      { label: 'Inbox (TASKS folder)', path: '/inbox' },
     ],
-    tip: 'Tasks are entity-scoped — every row carries the entity you\'re working in. Switching entity (president/CEO) shows a different task list. No approval gate — tasks are productivity, not finance.',
+    tip: 'Growth drivers, KPI codes, owner tags, and bulk-notify threshold are all editable via Control Center → Lookups — no code deploy needed. Tasks remain entity-scoped and outside the approval gate (productivity, not finance).',
   },
   'consignment-aging': {
     title: 'Consignment Aging',

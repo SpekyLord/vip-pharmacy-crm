@@ -134,11 +134,20 @@ Keep it concise, specific, and actionable. Use real names and numbers from the d
 
     const digest = response.content[0]?.text || 'Unable to generate digest.';
 
-    // Send message to President
-    const presidents = await User.find({ role: ROLES.PRESIDENT }).select('_id').lean();
+    // Send message to President.
+    // Phase G9.R2 — also pull entity_id so the row is properly scoped in the
+    // unified inbox; folder=AI_AGENT_REPORTS surfaces it under "AI Agents".
+    // Cross-entity org-intelligence digest goes to each president scoped to
+    // their own primary entity (so list endpoints filtered by entity still
+    // see it). Presidents without entity_id get null — visible to them via
+    // cross-entity privilege.
+    const presidents = await User.find({ role: ROLES.PRESIDENT })
+      .select('_id entity_id entity_ids').lean();
     const messageIds = [];
 
     for (const pres of presidents) {
+      const presEntityId = pres.entity_id
+        || (Array.isArray(pres.entity_ids) && pres.entity_ids.length > 0 ? pres.entity_ids[0] : null);
       const msg = await MessageInbox.create({
         recipientUserId: pres._id,
         recipientRole: ROLES.PRESIDENT,
@@ -148,6 +157,8 @@ Keep it concise, specific, and actionable. Use real names and numbers from the d
         priority: 'normal',
         senderName: 'Org Intelligence Agent',
         senderRole: 'system',
+        entity_id: presEntityId,
+        folder: 'AI_AGENT_REPORTS',
       });
       messageIds.push(msg._id);
     }

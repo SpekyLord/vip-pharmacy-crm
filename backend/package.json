@@ -13,7 +13,9 @@
     "startup:check": "node scripts/startupCheck.js",
     "seed": "node scripts/seedData.js",
     "verify:rejection-wiring": "node scripts/verifyRejectionWiring.js",
-    "verify:copilot-wiring": "node scripts/verifyCopilotWiring.js"
+    "verify:copilot-wiring": "node scripts/verifyCopilotWiring.js",
+    "verify:inbox-wiring": "node scripts/verifyInboxWiring.js",
+    "verify:task-kpi-wiring": "node scripts/verifyTaskKpiWiring.js"
   },
   "keywords": [
     "pharmacy",

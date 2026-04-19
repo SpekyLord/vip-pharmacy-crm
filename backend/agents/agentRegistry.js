@@ -31,6 +31,10 @@ const AGENT_DEFINITIONS = {
   data_quality:          { key: 'data_quality',          label: 'Data Quality',                   modulePath: './dataQualityAgent',           type: 'FREE' },
   fefo_audit:            { key: 'fefo_audit',            label: 'FEFO / Expiry Audit',            modulePath: './fefoAuditAgent',             type: 'FREE' },
   expansion_readiness:   { key: 'expansion_readiness',   label: 'Expansion Readiness',            modulePath: './expansionReadinessAgent',    type: 'FREE' },
+  // Phase G9.R1 — Task Overdue Notifier (FREE; no AI)
+  // Walks every active entity for overdue tasks (status OPEN/IN_PROGRESS/BLOCKED, due_date < now)
+  // and pushes `notifyTaskEvent({ event: 'overdue' })` per task. Cooldown via TASK_OVERDUE_COOLDOWN_DAYS lookup.
+  task_overdue:          { key: 'task_overdue',          label: 'Task Overdue Notifier',          modulePath: './taskOverdueAgent',           type: 'FREE' },
 };
 
 const AGENT_KEYS = Object.keys(AGENT_DEFINITIONS);

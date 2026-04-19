@@ -481,6 +481,11 @@ const SEED_DEFAULTS = {
     // (template CRUD). Kept separate so admins can grant template-edit without
     // bundling it with another functional module.
     { code: 'ERP_ACCESS', label: 'ERP Access', metadata: { key: 'erp_access', short_label: 'Access', sort_order: 14 } },
+    // Phase G9.R3 — Unified Operational Inbox messaging module.
+    // Sub-permissions gate two-way DM, broadcast, cross-entity send, and
+    // impersonate-reply. Default-roles fallback in MESSAGE_ACCESS_ROLES
+    // lookup (per-entity). President always bypasses.
+    { code: 'MESSAGING', label: 'Messaging / Inbox', metadata: { key: 'messaging', short_label: 'Inbox', sort_order: 15 } },
   ],
   ERP_SUB_PERMISSION: [
     // Sales
@@ -583,6 +588,14 @@ const SEED_DEFAULTS = {
     // Phase 3c — ERP Access governance (delegating the delegator is intentionally NOT here —
     // user access GET/SET is still admin/president-only; only template-delete is delegable.)
     { code: 'ERP_ACCESS__TEMPLATE_DELETE', label: 'Delete ERP Access Template (DANGER)', metadata: { module: 'erp_access', key: 'template_delete', sort_order: 1 } },
+    // Phase G9.R3 — Messaging / Inbox sub-permissions. President always bypasses.
+    // Defaults (MODULE_DEFAULT_ROLES.MESSAGING) grant DM-any to admin/finance/president,
+    // broadcast to admin/president, DM-direct-reports to contractor.
+    { code: 'MESSAGING__DM_ANY_ROLE',       label: 'Direct-message any role',                              metadata: { module: 'messaging', key: 'dm_any_role',       sort_order: 1 } },
+    { code: 'MESSAGING__DM_DIRECT_REPORTS', label: 'Direct-message your direct reports',                   metadata: { module: 'messaging', key: 'dm_direct_reports', sort_order: 2 } },
+    { code: 'MESSAGING__BROADCAST',         label: 'Broadcast to a role group (no specific recipient)',    metadata: { module: 'messaging', key: 'broadcast',         sort_order: 3 } },
+    { code: 'MESSAGING__CROSS_ENTITY',      label: 'Send messages across entities',                        metadata: { module: 'messaging', key: 'cross_entity',      sort_order: 4 } },
+    { code: 'MESSAGING__IMPERSONATE_REPLY', label: 'Reply on behalf of another sender (admin tool)',       metadata: { module: 'messaging', key: 'impersonate_reply', sort_order: 5 } },
   ],
   // Phase 3a — Danger sub-permissions that require EXPLICIT grant.
   // Even users with module-level FULL access do NOT inherit these keys — the
@@ -858,6 +871,13 @@ const SEED_DEFAULTS = {
     // gets it via Access Templates. Subscribers can null this to let any
     // qualified user resolve disputes (e.g. a People Ops manager).
     { code: 'INCENTIVE_DISPUTE', label: 'Incentive Disputes', metadata: { roles: ['president', 'finance', 'admin'], description: 'Take review on filed disputes, resolve them (approved or denied), and close. Filing itself requires no gate.' } },
+    // Phase G9.R3 — Default-Roles fallback for Messaging module sub-permissions.
+    // Used when a user has no Access Template grant for `messaging.*` sub-perms;
+    // the inbox controller checks whether req.user.role ∈ metadata.roles before
+    // allowing DM/broadcast. Set metadata.roles = null to open-message
+    // (anyone can DM anyone). Combine with MESSAGE_ACCESS_ROLES lookup for
+    // per-role can_dm_roles / can_broadcast / can_cross_entity rules.
+    { code: 'MESSAGING', label: 'Messaging / Inbox', metadata: { roles: ['president', 'ceo', 'admin', 'finance', 'contractor', 'employee'], description: 'Allow this role to use the unified Inbox. Per-role DM matrix lives in MESSAGE_ACCESS_ROLES; sub-perm grants in ERP_SUB_PERMISSION (messaging.*).' } },
   ],
   // Phase SG-Q2 — Period lock modules. UI (Period Locks page) reads this to render
   // toggle rows per module. Each code becomes a lockable unit. Subscribers can add
@@ -1460,6 +1480,35 @@ const SEED_DEFAULTS = {
         allowed_roles: ['president', 'ceo', 'admin'],
         description_for_claude: 'Use when the user asks to send a message to a BDM or staff member.',
         confirmation_template: 'Send to {{recipient_name}}: "{{subject}}"?',
+        entity_scoped: true,
+        rate_limit_per_min: 10,
+      },
+    },
+    {
+      // Phase G9.R8 — Reply to an existing inbox message via Copilot.
+      // Routes through messageInboxController.replyToMessage so threading,
+      // entity scoping, and audience guards are enforced exactly once
+      // (Rule #20: never reimplement the reply path).
+      code: 'DRAFT_REPLY_TO_MESSAGE',
+      label: 'Draft a reply to an inbox message',
+      metadata: {
+        tool_type: 'write_confirm',
+        handler_key: 'draftReplyToMessage',
+        json_schema: {
+          name: 'draft_reply_to_message',
+          description: 'Drafts a reply to an existing MessageInbox row. Returns the draft for confirmation; on execute, posts via the canonical /messages/:id/reply endpoint so the reply is threaded with the parent.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              message_id: { type: 'string', description: 'Parent MessageInbox _id to reply to.' },
+              body:       { type: 'string', description: 'Reply text (max 5000 chars).' },
+            },
+            required: ['message_id', 'body'],
+          },
+        },
+        allowed_roles: ['president', 'ceo', 'admin', 'finance', 'contractor'],
+        description_for_claude: 'Use when the user asks Claude to reply to a notification or message they already received. The Copilot will offer the draft for confirmation; the user clicks Execute to send.',
+        confirmation_template: 'Send reply to "{{parent_title}}"?',
         entity_scoped: true,
         rate_limit_per_min: 10,
       },

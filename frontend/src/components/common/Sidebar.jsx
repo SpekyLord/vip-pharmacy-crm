@@ -667,7 +667,7 @@ const sidebarStyles = `
  */
 import { ROLES, ROLE_SETS, isAdminLike as isAdminLikeRole, isPresidentLike } from '../../constants/roles';
 
-const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount = 0 } = {}) => {
+const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount = 0, unreadCount = 0 } = {}) => {
   const hasModule = (mod) => {
     if (isPresidentLike(role)) return true;
     if (role === ROLES.ADMIN && (!erpAccess || !erpAccess.enabled)) return true;
@@ -913,6 +913,14 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
   // ── Administration — inserted at top, right after ERP Home ──
   {
     const adminItems = [];
+    // Phase G9.R6 — Unified Inbox visible to every ERP user. Badge is fed by
+    // the shared inbox unread count (set on the BDM/employee role earlier in
+    // this file via fetchUnreadCount). Backend gates compose/reply via
+    // messaging.* sub-perms + MESSAGE_ACCESS_ROLES matrix; visibility here
+    // does NOT grant write — only read access to a user's own inbox.
+    if (ROLE_SETS.ERP_ALL.includes(role)) {
+      adminItems.push({ path: '/inbox', label: 'Inbox', icon: Inbox, badge: unreadCount || null });
+    }
     // Approvals: lookup-driven via ERP_MODULE 'approvals' (not hardcoded to MANAGEMENT)
     if (hasModule('approvals')) {
       adminItems.push({ path: '/erp/approvals', label: 'Approvals', icon: ClipboardCheck, badge: approvalCount || null });
@@ -965,6 +973,8 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
             items: [
               { path: '/admin', label: 'Dashboard', icon: LayoutDashboard },
               { path: '/admin/activity', label: 'Activity', icon: Activity },
+              // Phase G9.R6 — Unified Inbox in CRM admin sidebar.
+              { path: '/inbox', label: 'Inbox', icon: Inbox, badge: unreadCount || null },
             ],
           },
           {
@@ -1032,8 +1042,8 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
   }
 };
 
-const getErpMenuConfig = (role, erpAccess = null, approvalCount = 0) => {
-  const erpSections = getErpSection(role, erpAccess, { includeHomeOnly: true, approvalCount });
+const getErpMenuConfig = (role, erpAccess = null, approvalCount = 0, unreadCount = 0) => {
+  const erpSections = getErpSection(role, erpAccess, { includeHomeOnly: true, approvalCount, unreadCount });
   const sections = erpSections || [{ title: null, collapsible: false, items: [{ path: '/erp', label: 'ERP Home', icon: Briefcase }] }];
   const isAdminLike = isAdminLikeRole(role);
 
@@ -1052,7 +1062,7 @@ const getErpMenuConfig = (role, erpAccess = null, approvalCount = 0) => {
 
 const getMenuConfig = (role, unreadCount = 0, erpAccess = null, pathname = '', approvalCount = 0) => {
   if (pathname.startsWith('/erp')) {
-    return getErpMenuConfig(role, erpAccess, approvalCount);
+    return getErpMenuConfig(role, erpAccess, approvalCount, unreadCount);
   }
 
   const crmRole = isAdminLikeRole(role) ? ROLES.ADMIN : ROLES.CONTRACTOR;
@@ -1077,25 +1087,17 @@ const Sidebar = () => {
   const [approvalCount, setApprovalCount] = useState(0);
   const navRef = useRef(null);
 
-  // Fetch unread message count for employee role
+  // Fetch unread message count — Phase G9.R6 uses the lightweight /counts
+  // endpoint (cached server-side) so the bell is cheap to refresh on the
+  // 30-second poll. Available to ALL authenticated roles, not just BDMs.
   const fetchUnreadCount = useCallback(async () => {
-    if (user?.role !== ROLES.CONTRACTOR) return;
+    if (!user?._id) return;
     try {
-      const res = await messageService.getAll({ limit: 100 });
-      const messages = res.data || res.messages || [];
-      const count = messages.filter((m) => {
-        // Match the robust readBy check from EMP_InboxPage
-        const isReadByMe = Array.isArray(m.readBy) && user._id
-          ? m.readBy.some((entry) => {
-              const readById = typeof entry === 'object'
-                ? (entry.userId ?? entry._id ?? entry.id)
-                : entry;
-              return readById && String(readById) === String(user._id);
-            })
-          : false;
-        return !isReadByMe && !m.read;
-      }).length;
-      setUnreadCount(count);
+      const res = await messageService.getCounts();
+      const c = res?.data || {};
+      // Sidebar badge mirrors the navbar bell: prefer action-required count
+      // when present (more urgent), fall back to plain unread.
+      setUnreadCount(Number(c.action_required || c.unread || 0));
     } catch {
       // silently fail — badge just won't show
     }

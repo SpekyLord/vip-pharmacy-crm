@@ -101,6 +101,12 @@ function initAgentScheduler() {
   cron.schedule('0 10 1 * *', () => triggerScheduled('expansion_readiness', 'Expansion Readiness'), { timezone: TIMEZONE });
   console.log('[AgentScheduler]   ✓ #EX Expansion Readiness - 1st of month 10:00 AM');
 
+  // Phase G9.R1 — Task Overdue Notifier. Weekdays 06:15 Manila — fires after
+  // Treasury (05:30) and before Inventory Reorder (06:30) so the morning
+  // briefing window (07:00 weekdays) sees a fully-stamped overdue list.
+  cron.schedule('15 6 * * 1-5', () => triggerScheduled('task_overdue', 'Task Overdue Notifier'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #TO Task Overdue - weekdays 6:15 AM');
+
   const hasAiKey = !!process.env.ANTHROPIC_API_KEY;
 
   if (hasAiKey) {
