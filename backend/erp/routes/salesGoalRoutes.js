@@ -1,7 +1,13 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const { erpAccessCheck, erpSubAccessCheck } = require('../middleware/erpAccessCheck');
 const c = require('../controllers/salesGoalController');
+
+// Phase SG-3R — xlsx upload for /targets/import (in-memory, 5 MB cap,
+// single-file). The handler validates MIME/extension itself to keep route
+// wiring simple and avoid multer fileFilter overhead for a tiny admin feature.
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 /**
  * Sales Goal Routes — Phase 28
@@ -17,13 +23,35 @@ router.get('/plans/:id', c.getPlanById);
 router.post('/plans', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.createPlan);
 router.put('/plans/:id', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.updatePlan);
 router.post('/plans/:id/activate', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.activatePlan);
+router.post('/plans/:id/reopen', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.reopenPlan);
 router.post('/plans/:id/close', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.closePlan);
+// Phase SG-3R — President-Reverse (SAP Storno cascade to targets, snapshots,
+// IncentivePayouts, journals). Gated by accounting.reverse_posted (baseline
+// danger sub-perm, never inherited from FULL). President bypasses automatically.
+router.post('/plans/:id/president-reverse', erpSubAccessCheck('accounting', 'reverse_posted'), c.presidentReversePlan);
+
+// Phase SG-4 #21 — Plan versioning. Read versions (any module viewer);
+// create new version gated by plan_manage + Default-Roles Gate inside the
+// controller (gateApproval('SALES_GOAL_PLAN', 'PLAN_NEW_VERSION')).
+router.get('/plans/:id/versions', c.listPlanVersions);
+router.post('/plans/:id/new-version', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.createNewVersion);
+
+// Phase SG-5 #26 — What-if / scenario simulation (no DB writes, no approval
+// gate). VIEW is sufficient; contractors see only their own row in the output.
+router.post('/plans/:id/simulate', c.simulatePlan);
+
+// Phase SG-5 #28 — YoY / QoQ trending. Joins prior-fiscal-year YTD snapshots
+// by (bdm_id, kpi_code) so the Goal Dashboard can render a side-by-side chart.
+router.get('/trending', c.getTrending);
 
 // ═══ Targets ═══
 router.get('/targets', c.getTargets);
 router.get('/targets/mine', c.getMyTarget);
 router.post('/targets', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.createTarget);
 router.post('/targets/bulk', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.bulkCreateTargets);
+// Phase SG-3R — Excel import endpoint. Mounted BEFORE /targets/:id so
+// the string literal "import" is never captured as a param.
+router.post('/targets/import', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), upload.single('file'), c.importTargets);
 router.put('/targets/:id', erpAccessCheck('sales_goals', 'FULL'), erpSubAccessCheck('sales_goals', 'plan_manage'), c.updateTarget);
 
 // ═══ KPI Snapshots ═══

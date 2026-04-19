@@ -53,7 +53,7 @@ async function run() {
 
     for (const item of stockLevels) {
       const productName = item.product ? `${item.product.brand_name} ${item.product.dosage_strength || ''}`.trim() : String(item._id.product_id);
-      const warehouseName = item.warehouse?.name || String(item._id.warehouse_id || 'Unknown');
+      const warehouseName = item.warehouse?.warehouse_name || 'Unknown warehouse';
       const stock = item.current_stock;
 
       if (stock <= 0) {

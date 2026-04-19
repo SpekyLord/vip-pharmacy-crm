@@ -17,7 +17,7 @@ const {
   overridePerdiemDay, applyPerdiemOverride, getSmerCrmMdCounts, getSmerCrmVisitDetail,
   // Car Logbook
   createCarLogbook, updateCarLogbook, getCarLogbookList, getCarLogbookById, deleteDraftCarLogbook,
-  validateCarLogbook, submitCarLogbook, reopenCarLogbook,
+  validateCarLogbook, submitCarLogbook, reopenCarLogbook, getSmerDailyByDate,
   // Expenses (ORE/ACCESS)
   createExpense, updateExpense, getExpenseList, getExpenseById, deleteDraftExpense,
   validateExpenses, submitExpenses, reopenExpenses,
@@ -31,7 +31,9 @@ const {
   // Revolving Fund
   getRevolvingFundAmount,
   // Per Diem Config
-  getPerdiemConfig
+  getPerdiemConfig,
+  // President Reversal (lookup-driven sub-permission: accounting.reverse_posted)
+  presidentReverseExpense, presidentReversePrfCalf
 } = require('../controllers/expenseController');
 
 const router = express.Router();
@@ -62,6 +64,7 @@ router.post('/smer/:id/apply-override', applyPerdiemOverride);
 // ═══ Car Logbook ═══
 router.post('/car-logbook', createCarLogbook);
 router.get('/car-logbook', getCarLogbookList);
+router.get('/car-logbook/smer-destination/:date', getSmerDailyByDate);
 router.post('/car-logbook/validate', validateCarLogbook);
 router.post('/car-logbook/submit', periodLockCheck('EXPENSE'), submitCarLogbook);
 router.post('/car-logbook/reopen', periodLockCheck('EXPENSE'), reopenCarLogbook);
@@ -83,6 +86,11 @@ router.get('/ore-access/:id', getExpenseById);
 router.put('/ore-access/:id', updateExpense);
 router.delete('/ore-access/:id', deleteDraftExpense);  // DRAFT only
 
+// President-only reverse (lookup-driven: accounting.reverse_posted; baseline = President).
+// DRAFT/ERROR/VALID → hard delete; POSTED/DELETION_REQUESTED → SAP Storno (journals reversed,
+// deletion_event_id set). Reversal entries land in current open period.
+router.post('/ore-access/:id/president-reverse', erpSubAccessCheck('accounting', 'reverse_posted'), presidentReverseExpense);
+
 // ═══ PRF / CALF ═══
 // BDMs can post CALF (liquidation) and personal PRF. Partner rebate PRF still requires Finance.
 // Re-open requires admin/finance/president.
@@ -96,5 +104,13 @@ router.post('/prf-calf/reopen', periodLockCheck('EXPENSE'), roleCheck('admin', '
 router.get('/prf-calf/:id', getPrfCalfById);
 router.put('/prf-calf/:id', periodLockCheck('EXPENSE'), updatePrfCalf);
 router.delete('/prf-calf/:id', deleteDraftPrfCalf);  // DRAFT only
+
+// President-only reverse for CALF / PRF (lookup-driven: accounting.reverse_posted).
+// Controller auto-dispatches to CALF or PRF handler based on doc.doc_type so the
+// frontend only needs one URL per module (matches Sales/Collection ergonomics).
+// CALF: clears linked_expense_id calf refs on non-POSTED expenses, reverses liquidation JE.
+// PRF:  clears rebate_prf_id on linked Collection, reverses rebate JE.
+// Dependent-doc blocker (checkCalfDependents/checkPrfDependents) runs first.
+router.post('/prf-calf/:id/president-reverse', erpSubAccessCheck('accounting', 'reverse_posted'), presidentReversePrfCalf);
 
 module.exports = router;

@@ -34,6 +34,7 @@ const ResetPasswordPage = lazyRetry(() => import('./pages/ResetPasswordPage'));
 const PrivacyPolicyPage = lazyRetry(() => import('./pages/PrivacyPolicyPage'));
 const TermsOfServicePage = lazyRetry(() => import('./pages/TermsOfServicePage'));
 const DataDeletionPage = lazyRetry(() => import('./pages/DataDeletionPage'));
+const DataDeletionStatusPage = lazyRetry(() => import('./pages/DataDeletionStatusPage'));
 
 // BDM pages
 const EmployeeDashboard = lazyRetry(() => import('./pages/employee/EmployeeDashboard'));
@@ -164,6 +165,9 @@ const AgentDashboard = lazyRetry(() => import('./erp/pages/AgentDashboard'));
 // Phase 28 — Approval Workflow
 const ApprovalManager = lazyRetry(() => import('./erp/pages/ApprovalManager'));
 
+// Phase 31 — President Reversal Console (cross-module SAP Storno dispatch)
+const PresidentReversalsPage = lazyRetry(() => import('./erp/pages/PresidentReversalsPage'));
+
 // Phase 31 — Functional Role Assignments
 const RoleAssignmentManager = lazyRetry(() => import('./erp/pages/RoleAssignmentManager'));
 
@@ -181,11 +185,46 @@ const SalesGoalDashboard = lazyRetry(() => import('./erp/pages/SalesGoalDashboar
 const SalesGoalSetup = lazyRetry(() => import('./erp/pages/SalesGoalSetup'));
 const SalesGoalBdmView = lazyRetry(() => import('./erp/pages/SalesGoalBdmView'));
 const IncentiveTracker = lazyRetry(() => import('./erp/pages/IncentiveTracker'));
+// Phase SG-Q2 W2 — Incentive Payout Ledger (accrued → approved → paid → reversed)
+const IncentivePayoutLedger = lazyRetry(() => import('./erp/pages/IncentivePayoutLedger'));
+// Phase SG-3R — KPI Template Library (reusable plan defaults)
+const KpiTemplateManager = lazyRetry(() => import('./erp/pages/KpiTemplateManager'));
+// Phase SG-4 #22, #24 — Credit Rules + Dispute Center
+const CreditRuleManager = lazyRetry(() => import('./erp/pages/CreditRuleManager'));
+const DisputeCenter = lazyRetry(() => import('./erp/pages/DisputeCenter'));
+// Phase SG-5 #26, #27 — Scenario Planner + Variance Alert Center
+const ScenarioPlanner = lazyRetry(() => import('./erp/pages/ScenarioPlanner'));
+const VarianceAlertCenter = lazyRetry(() => import('./erp/pages/VarianceAlertCenter'));
+
+// Phase G7 — President's Copilot + Cmd+K palette (ERP-only, role-gated by lookup)
+const PresidentCopilot = lazyRetry(() => import('./erp/components/PresidentCopilot'));
+const CommandPalette   = lazyRetry(() => import('./erp/components/CommandPalette'));
 
 // Standalone routes redirect to ControlCenter with the right section param
 const AgentSettingsRedirect = () => <Navigate to="/erp/control-center?section=agent-settings" replace />;
 const EntityManagerRedirect = () => <Navigate to="/erp/control-center?section=entities" replace />;
 const LookupManagerRedirect = () => <Navigate to="/erp/control-center?section=lookups" replace />;
+
+// Phase G7 — Mount Copilot widget + Cmd+K palette only on ERP routes so the
+// chunks aren't downloaded on /admin or /bdm pages. Components themselves also
+// guard with useLocation + lookup-driven role gate, but the path check here
+// avoids the network round-trip entirely on non-ERP pages.
+//
+// Wrapped in its OWN Suspense with a null fallback so the floating widget
+// chunks loading in the background don't block the ERP page from rendering
+// (parent Suspense's fallback would otherwise hide the page until both chunks
+// resolve). On chunk error, the ErrorBoundary higher up catches it without
+// nuking navigation.
+const ErpAddons = () => {
+  const location = useLocation();
+  if (!location.pathname.startsWith('/erp')) return null;
+  return (
+    <Suspense fallback={null}>
+      <PresidentCopilot />
+      <CommandPalette />
+    </Suspense>
+  );
+};
 
 // Redirect legacy /employee/* paths to /bdm/*
 const EmployeeRedirect = () => {
@@ -214,6 +253,7 @@ function App() {
           <Route path="/privacy" element={<PrivacyPolicyPage />} />
           <Route path="/terms" element={<TermsOfServicePage />} />
           <Route path="/data-deletion" element={<DataDeletionPage />} />
+          <Route path="/data-deletion/status/:code" element={<DataDeletionStatusPage />} />
 
           {/* Employee Routes */}
           <Route
@@ -753,6 +793,9 @@ function App() {
           <Route path="/erp/approvals" element={<ProtectedRoute requiredErpModule="approvals"><ApprovalManager /></ProtectedRoute>} />
           <Route path="/erp/role-assignments" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><RoleAssignmentManager /></ProtectedRoute>} />
 
+          {/* Phase 31 — President Reversal Console (gated by accounting.reversal_console + accounting.reverse_posted) */}
+          <Route path="/erp/president/reversals" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><PresidentReversalsPage /></ProtectedRoute>} />
+
           {/* Phase 32 — KPI Self-Rating & Performance Review */}
           <Route path="/erp/kpi-library" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><KpiLibrary /></ProtectedRoute>} />
           <Route path="/erp/self-rating" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL}><KpiSelfRating /></ProtectedRoute>} />
@@ -768,6 +811,18 @@ function App() {
           <Route path="/erp/sales-goals/bdm/:bdmId" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales_goals"><SalesGoalBdmView /></ProtectedRoute>} />
           <Route path="/erp/sales-goals/my" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales_goals"><SalesGoalBdmView /></ProtectedRoute>} />
           <Route path="/erp/sales-goals/incentives" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales_goals"><IncentiveTracker /></ProtectedRoute>} />
+          {/* Phase SG-Q2 W2 — Incentive Payout Ledger */}
+          <Route path="/erp/incentive-payouts" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales_goals"><IncentivePayoutLedger /></ProtectedRoute>} />
+          {/* Phase SG-3R — KPI Template Library */}
+          <Route path="/erp/kpi-templates" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.PRESIDENT]} requiredErpModule="sales_goals"><KpiTemplateManager /></ProtectedRoute>} />
+          {/* Phase SG-4 #22 — Credit Rules (admin-only); BDMs view their own credits via the Goal Dashboard */}
+          <Route path="/erp/credit-rules" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.PRESIDENT, ROLES.FINANCE]} requiredErpModule="sales_goals"><CreditRuleManager /></ProtectedRoute>} />
+          {/* Phase SG-4 #24 — Dispute Center (everyone with sales_goals VIEW; reviewer actions gated by sub-perm + gateApproval) */}
+          <Route path="/erp/disputes" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales_goals"><DisputeCenter /></ProtectedRoute>} />
+          {/* Phase SG-5 #26 — Scenario Planner (admin/finance/president only) */}
+          <Route path="/erp/sales-goals/scenario" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.PRESIDENT, ROLES.FINANCE]} requiredErpModule="sales_goals"><ScenarioPlanner /></ProtectedRoute>} />
+          {/* Phase SG-5 #27 — Variance Alert Center (all with sales_goals VIEW; contractor scoped to own) */}
+          <Route path="/erp/variance-alerts" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales_goals"><VarianceAlertCenter /></ProtectedRoute>} />
 
           {/* Orphaned page direct routes — redirect to Control Center with correct section */}
           <Route path="/erp/agent-settings" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><AgentSettingsRedirect /></ProtectedRoute>} />
@@ -783,6 +838,13 @@ function App() {
           {/* 404 catch-all */}
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
+        {/* Phase G7 — Floating Copilot widget + Cmd+K palette. ErpAddons wrapper
+            checks the path BEFORE rendering the lazy chunks so non-ERP pages
+            never download these bundles. Components themselves also guard via
+            lookup-driven PRESIDENT_COPILOT.allowed_roles (role gate in backend
+            /status response). Mounted at App level so the chat persists across
+            ERP page navigation. */}
+        <ErpAddons />
       </Suspense>
     </ErrorBoundary>
   );

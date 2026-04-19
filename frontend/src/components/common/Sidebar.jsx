@@ -724,7 +724,13 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     ];
     // Sub-permission gated (access-template driven, not shown to contractors by default)
     if (hasSub('inventory', 'transfers')) invItems.push({ path: '/erp/transfers', label: 'Transfers', icon: ArrowLeftRight });
-    if (hasSub('inventory', 'csi_booklets')) invItems.push({ path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen });
+    // CSI Booklets: contractors see the full management page; BDMs get the
+    // "My CSI" read-only view (same route, page auto-detects permission).
+    if (hasSub('inventory', 'csi_booklets')) {
+      invItems.push({ path: '/erp/csi-booklets', label: 'CSI Booklets', icon: BookOpen });
+    } else {
+      invItems.push({ path: '/erp/csi-booklets', label: 'My CSI', icon: BookOpen });
+    }
     if (hasSub('inventory', 'office_supplies')) invItems.push({ path: '/erp/office-supplies', label: 'Office Supplies', icon: Package });
     if (hasSub('inventory', 'collaterals')) invItems.push({ path: '/erp/collaterals', label: 'Collaterals', icon: Layers });
     if (isAdmin) invItems.push({ path: '/erp/dr', label: 'DR / Consignment', icon: Truck });
@@ -777,15 +783,38 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     sections.push({ title: 'Reports', collapsible: true, defaultOpen: false, items: repItems });
   }
 
-  // ── Sales Goals & KPI (Phase 28) ────────────────────────────────────────
+  // ── Sales Goals & KPI (Phase 28 + SG-Q2 W2 — Incentive Payouts) ──────────
   if (hasModule('sales_goals')) {
     const goalItems = [
       { path: '/erp/sales-goals', label: 'Goal Dashboard', icon: Target },
       { path: '/erp/sales-goals/incentives', label: 'Incentive Tracker', icon: Trophy },
+      // Payout Ledger — VIEW sufficient so BDMs can see their own rows;
+      // Approve/Pay/Reverse actions are gated per-row by sub-perm + gateApproval.
+      { path: '/erp/incentive-payouts', label: 'Payout Ledger', icon: DollarSign },
     ];
+    // Phase SG-Q2 W3 follow-up — direct sidebar entry for the BDM-self
+    // compensation statement. BDMs land on `/erp/sales-goals/my` (auto-scopes
+    // to themselves in the controller — Rule #21). Privileged users can still
+    // reach any BDM via `/erp/sales-goals/bdm/:bdmId`.
+    if (role === ROLES.CONTRACTOR) {
+      goalItems.push({ path: '/erp/sales-goals/my?tab=compensation', label: 'My Compensation', icon: Wallet });
+    }
     if (isAdmin) {
       goalItems.push({ path: '/erp/sales-goals/setup', label: 'Goal Setup', icon: Settings });
+      // Phase SG-3R — admin-only KPI Template Library (reusable plan defaults)
+      goalItems.push({ path: '/erp/kpi-templates', label: 'KPI Templates', icon: Target });
+      // Phase SG-4 #22 — Credit Rule Manager (admin-only audit/admin tool)
+      goalItems.push({ path: '/erp/credit-rules', label: 'Credit Rules', icon: Scale });
+      // Phase SG-5 #26 — What-if scenario planner (admin/finance/president only)
+      goalItems.push({ path: '/erp/sales-goals/scenario', label: 'Scenario Planner', icon: Activity });
     }
+    // Phase SG-4 #24 — Dispute Center is visible to everyone with sales_goals
+    // VIEW (BDMs file disputes; reviewers act on them — page renders the right
+    // controls per role).
+    goalItems.push({ path: '/erp/disputes', label: 'Dispute Center', icon: AlertTriangle });
+    // Phase SG-5 #27 — Variance Alert Center (all with sales_goals VIEW; BDMs
+    // scoped to own alerts via controller Rule #21).
+    goalItems.push({ path: '/erp/variance-alerts', label: 'Variance Alerts', icon: AlertTriangle });
     goalItems.sort((a, b) => a.label.localeCompare(b.label));
     sections.push({ title: 'Sales Goals', collapsible: true, defaultOpen: false, items: goalItems });
   }
@@ -889,6 +918,10 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     if (ROLE_SETS.MANAGEMENT.includes(role)) {
       adminItems.push({ path: '/erp/agent-dashboard', label: 'AI Agents', icon: Activity });
       adminItems.push({ path: '/erp/control-center', label: 'Control Center', icon: Settings });
+      // Phase 31 — Reversal Console (cross-module SAP Storno).
+      // Visibility = MANAGEMENT role; backend enforces sub-permission gating
+      // (accounting.reversal_console / accounting.reverse_posted).
+      adminItems.push({ path: '/erp/president/reversals', label: 'Reversal Console', icon: AlertTriangle });
       if (isAdmin) {
         adminItems.push({ path: '/erp/customers', label: 'Customers', icon: Users });
         adminItems.push({ path: '/erp/hospitals', label: 'Hospitals', icon: Stethoscope });
@@ -1041,9 +1074,18 @@ const Sidebar = () => {
     try {
       const res = await messageService.getAll({ limit: 100 });
       const messages = res.data || res.messages || [];
-      const count = messages.filter(
-        (m) => !m.readBy?.includes(user._id) && !m.read
-      ).length;
+      const count = messages.filter((m) => {
+        // Match the robust readBy check from EMP_InboxPage
+        const isReadByMe = Array.isArray(m.readBy) && user._id
+          ? m.readBy.some((entry) => {
+              const readById = typeof entry === 'object'
+                ? (entry.userId ?? entry._id ?? entry.id)
+                : entry;
+              return readById && String(readById) === String(user._id);
+            })
+          : false;
+        return !isReadByMe && !m.read;
+      }).length;
       setUnreadCount(count);
     } catch {
       // silently fail — badge just won't show

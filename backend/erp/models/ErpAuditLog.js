@@ -12,7 +12,14 @@ const erpAuditLogSchema = new mongoose.Schema({
   },
   log_type: {
     type: String,
-    enum: ['SALES_EDIT', 'PRICE_CHANGE', 'ITEM_CHANGE', 'DELETION', 'REOPEN', 'STATUS_CHANGE'],
+    // Phase G7: COPILOT_TOOL_CALL, AI_BUDGET_CHANGE, AI_COWORK_CONFIG_CHANGE added so
+    // the President's Copilot, spend-cap edits, and AI Cowork prompt edits all
+    // persist in the audit ledger instead of failing silently.
+    enum: [
+      'SALES_EDIT', 'PRICE_CHANGE', 'ITEM_CHANGE', 'DELETION', 'REOPEN',
+      'STATUS_CHANGE', 'PRESIDENT_REVERSAL',
+      'COPILOT_TOOL_CALL', 'AI_BUDGET_CHANGE', 'AI_COWORK_CONFIG_CHANGE',
+    ],
     required: true
   },
   target_ref: { type: String },

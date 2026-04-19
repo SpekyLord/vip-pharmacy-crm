@@ -8,9 +8,12 @@ import { useAuth } from '../../hooks/useAuth';
 import { isAdminLike } from '../../constants/roles';
 import useCollections from '../hooks/useCollections';
 import useHospitals from '../hooks/useHospitals';
+import useErpSubAccess from '../hooks/useErpSubAccess';
+import PresidentReverseModal from '../components/PresidentReverseModal';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 import { showError, showSuccess, showApprovalPending } from '../utils/errorToast';
 
 const STATUS_COLORS = {
@@ -75,10 +78,13 @@ export default function Collections() {
   const { user } = useAuth();
   const coll = useCollections();
   const { hospitals } = useHospitals();
+  const { hasSubPermission } = useErpSubAccess();
+  const canPresidentReverse = hasSubPermission('accounting', 'reverse_posted');
   const [data, setData] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 0 });
   const [filters, setFilters] = useState({ status: '', hospital_id: '' });
   const [selected, setSelected] = useState(null);
+  const [reverseTarget, setReverseTarget] = useState(null);
   const [loading, setLoading] = useState(false);
   const isAdmin = isAdminLike(user?.role);
 
@@ -126,6 +132,18 @@ export default function Collections() {
   const handleDeleteDraft = async (id) => {
     if (!window.confirm('Delete this draft collection?')) return;
     try { await coll.deleteDraft(id); loadData(pagination.page); } catch (err) { showError(err, 'Could not delete collection'); }
+  };
+  const handlePresidentReverse = async ({ reason, confirm }) => {
+    if (!reverseTarget) return;
+    try {
+      const res = await coll.presidentReverseCollection(reverseTarget._id, { reason, confirm });
+      setReverseTarget(null);
+      showSuccess(res?.message || 'Collection reversed');
+      loadData(pagination.page);
+    } catch (err) {
+      showError(err, 'Could not reverse collection');
+      throw err;
+    }
   };
   const viewDetail = async (id) => {
     try { const res = await coll.getCollectionById(id); if (res?.data) setSelected(res.data); } catch (err) { console.error('[Collections] load error:', err.message); }
@@ -177,12 +195,27 @@ export default function Collections() {
                     <td style={{ color: '#7c3aed' }}>{c.total_partner_rebates ? `P${c.total_partner_rebates.toFixed(2)}` : '—'}</td>
                     <td>{c.settled_csis?.length || 0}</td>
                     <td style={{ fontSize: 11 }}>{c.petty_cash_fund_id ? <span className="badge" style={{ background: '#fef3c7', color: '#92400e' }}>PC: {c.petty_cash_fund_id.fund_code}</span> : c.bank_account_id ? <span className="badge" style={{ background: '#dbeafe', color: '#1e40af' }}>{c.bank_account_id.bank_name}</span> : '—'}</td>
-                    <td><span className="badge" style={{ background: sc.bg, color: sc.text }}>{c.status}</span></td>
+                    <td>
+                      <span className="badge" style={{ background: sc.bg, color: sc.text }}>{c.status}</span>
+                      <div style={{ marginTop: 4 }}>
+                        <RejectionBanner row={c} moduleKey="COLLECTION" variant="row" />
+                      </div>
+                    </td>
                     <td onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {(c.status === 'DRAFT' || c.status === 'ERROR') && <button className="btn btn-sm btn-primary" onClick={() => handleValidate([c._id])}>Validate</button>}
                       {c.status === 'DRAFT' && <button className="btn btn-sm" style={{ border: '1px solid #ef4444', color: '#ef4444', background: '#fff' }} onClick={() => handleDeleteDraft(c._id)}>Del</button>}
                       {c.status === 'VALID' && <button className="btn btn-sm btn-success" onClick={() => handleSubmit(c._id)}>Submit</button>}
                       {c.status === 'POSTED' && isAdmin && <button className="btn btn-sm btn-warning" onClick={() => handleReopen(c._id)}>Re-open</button>}
+                      {canPresidentReverse && !c.deletion_event_id && (
+                        <button
+                          className="btn btn-sm"
+                          style={{ background: '#7f1d1d', color: '#fff' }}
+                          title="President: delete & reverse this collection (SAP Storno for POSTED; hard-delete for DRAFT/VALID/ERROR)"
+                          onClick={() => setReverseTarget(c)}
+                        >
+                          President Delete
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );
@@ -201,6 +234,9 @@ export default function Collections() {
                       <div className="coll-card-sub">{new Date(c.cr_date).toLocaleDateString('en-PH')}</div>
                     </div>
                     <span className="badge" style={{ background: sc.bg, color: sc.text }}>{c.status}</span>
+                  </div>
+                  <div style={{ marginTop: 6 }}>
+                    <RejectionBanner row={c} moduleKey="COLLECTION" variant="row" />
                   </div>
                   <div className="coll-card-grid">
                     <div className="coll-card-item">
@@ -225,6 +261,16 @@ export default function Collections() {
                     {c.status === 'DRAFT' && <button className="btn btn-sm" style={{ border: '1px solid #ef4444', color: '#ef4444', background: '#fff' }} onClick={() => handleDeleteDraft(c._id)}>Del</button>}
                     {c.status === 'VALID' && <button className="btn btn-sm btn-success" onClick={() => handleSubmit(c._id)}>Submit</button>}
                     {c.status === 'POSTED' && isAdmin && <button className="btn btn-sm btn-warning" onClick={() => handleReopen(c._id)}>Re-open</button>}
+                    {canPresidentReverse && !c.deletion_event_id && (
+                      <button
+                        className="btn btn-sm"
+                        style={{ background: '#7f1d1d', color: '#fff' }}
+                        title="President: delete & reverse this collection (SAP Storno for POSTED; hard-delete for DRAFT/VALID/ERROR)"
+                        onClick={() => setReverseTarget(c)}
+                      >
+                        President Delete
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -237,6 +283,15 @@ export default function Collections() {
           </div>
           {pagination.pages > 1 && <Pagination currentPage={pagination.page} totalPages={pagination.pages} onPageChange={loadData} />}
 
+          {reverseTarget && (
+            <PresidentReverseModal
+              docLabel={`CR #${reverseTarget.cr_no || '—'} · ₱${(reverseTarget.cr_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} · ${reverseTarget.status}`}
+              docStatus={reverseTarget.status}
+              onConfirm={handlePresidentReverse}
+              onClose={() => setReverseTarget(null)}
+            />
+          )}
+
           {selected && (
             <div className="detail-modal" onClick={() => setSelected(null)}>
               <div className="detail-panel" onClick={e => e.stopPropagation()}>
@@ -244,6 +299,16 @@ export default function Collections() {
                   <h2>CR# {selected.cr_no}</h2>
                   <button onClick={() => setSelected(null)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer' }}>&times;</button>
                 </div>
+                <RejectionBanner
+                  row={selected}
+                  moduleKey="COLLECTION"
+                  variant="page"
+                  docLabel={`CR# ${selected.cr_no}`}
+                  onResubmit={(row) => {
+                    setSelected(null);
+                    handleValidate([row._id]);
+                  }}
+                />
                 <p><strong>Hospital / Customer:</strong> {selected.hospital_id?.hospital_name || selected.customer_id?.customer_name || '—'}</p>
                 <p><strong>Date:</strong> {new Date(selected.cr_date).toLocaleDateString('en-PH')}</p>
                 <p><strong>Amount:</strong> P{(selected.cr_amount || 0).toFixed(2)}</p>

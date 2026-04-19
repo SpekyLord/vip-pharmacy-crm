@@ -13,10 +13,13 @@ export default function useSales() {
   const reopenSales = (saleIds) => api.post('/sales/reopen', { sale_ids: saleIds });
   const requestDeletion = (id) => api.post(`/sales/${id}/request-deletion`, {});
   const approveDeletion = (id, reason) => api.post(`/sales/${id}/approve-deletion`, { reason });
+  const presidentReverseSale = (id, { reason, confirm }) =>
+    api.post(`/sales/${id}/president-reverse`, { reason, confirm });
 
   return {
     ...api,
     getSales, getSaleById, createSale, updateSale, deleteDraft,
-    validateSales, submitSales, reopenSales, requestDeletion, approveDeletion
+    validateSales, submitSales, reopenSales, requestDeletion, approveDeletion,
+    presidentReverseSale,
   };
 }

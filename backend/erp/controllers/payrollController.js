@@ -9,6 +9,7 @@ const {
 } = require('../services/payslipCalc');
 const { journalFromPayroll, resolveFundingCoa } = require('../services/autoJournal');
 const { createAndPostJournal } = require('../services/journalEngine');
+const ErpAuditLog = require('../models/ErpAuditLog');
 const { notifyPayrollPosted } = require('../services/erpNotificationService');
 
 // BDMs use Income Reports, not payroll — excluded from GENERATOR_MAP
@@ -65,6 +66,11 @@ const getPayrollStaging = catchAsync(async (req, res) => {
     filter.status = req.query.status;
   } else {
     filter.status = { $in: ['COMPUTED', 'REVIEWED', 'APPROVED'] };
+  }
+
+  // Phase 6 — hide reversed rows by default; opt-in via ?include_reversed=true.
+  if (req.query.include_reversed !== 'true') {
+    filter.deletion_event_id = { $exists: false };
   }
 
   const payslips = await Payslip.find(filter)
@@ -159,6 +165,13 @@ const postPayroll = catchAsync(async (req, res) => {
         await createAndPostJournal(fullPs.entity_id, jeData);
       } catch (jeErr) {
         console.error('Auto-journal failed for payslip:', ps._id, jeErr.message);
+        ErpAuditLog.logChange({
+          entity_id: fullPs.entity_id, log_type: 'LEDGER_ERROR',
+          target_ref: ps._id?.toString(), target_model: 'JournalEntry',
+          field_changed: 'auto_journal', new_value: jeErr.message,
+          changed_by: req.user._id,
+          note: `Auto-journal failed for payslip ${fullPs.employee_name || ps._id}`
+        }).catch(() => {});
       }
     } catch (err) {
       errors.push({ payslip_id: ps._id, error: err.message });
@@ -254,6 +267,12 @@ const computeThirteenthMonth = catchAsync(async (req, res) => {
   });
 });
 
+// President-only: SAP Storno reversal for a POSTED Payslip. Reverses the linked
+// payroll JE (basic/allowances/SSS/PH/Pag-IBIG/WHT). Older payslips without
+// event_id fall back to JE lookup by source_module='PAYROLL' + period match.
+const { buildPresidentReverseHandler } = require('../services/documentReversalService');
+const presidentReversePayslip = buildPresidentReverseHandler('PAYSLIP');
+
 module.exports = {
   computePayroll,
   getPayrollStaging,
@@ -261,6 +280,7 @@ module.exports = {
   approvePayslip,
   postPayroll,
   getPayslip,
+  presidentReversePayslip,
   getPayslipHistory,
   computeThirteenthMonth,
 };

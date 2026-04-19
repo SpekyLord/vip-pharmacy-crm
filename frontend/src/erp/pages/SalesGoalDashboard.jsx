@@ -9,7 +9,9 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useSalesGoals from '../hooks/useSalesGoals';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError } from '../utils/errorToast';
+import { showError, showSuccess, showApprovalPending, isApprovalPending } from '../utils/errorToast';
+// Phase SG-5 #28 — YoY / QoQ trending chart (existing Recharts dep; no new lib)
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts';
 
 const php = (n) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(n || 0);
 const pct = (n) => `${(n || 0).toFixed(1)}%`;
@@ -57,12 +59,58 @@ const pageStyles = `
   .sgd-sort-btn:hover { color: var(--erp-accent); }
   .loading { text-align: center; padding: 40px; color: var(--erp-muted); }
   @media(max-width: 768px) { .sgd-main { padding: 12px; } .sgd-row { flex-direction: column; } }
+  /* Phase SG-Q2 W3 — 360px phone breakpoint */
+  @media(max-width: 360px) {
+    .sgd-main { padding: 8px; }
+    .sgd-header h1 { font-size: 18px; }
+    .sgd-card { padding: 14px; min-width: 0; }
+    .sgd-card-value { font-size: 18px; }
+    .sgd-progress-panel, .sgd-panel { padding: 14px; }
+    .sgd-entity-grid { grid-template-columns: 1fr; }
+    .sgd-driver-card { min-width: 0; }
+    .sgd-table th, .sgd-table td { padding: 6px; font-size: 11px; }
+    .sgd-section-title, .sgd-panel h3 { font-size: 13px; }
+    .sgd-btn { width: 100%; padding: 10px 14px; }
+  }
 `;
 
-function statusColor(attPct, config) {
-  if (attPct >= config?.attainment_green) return '#22c55e';
-  if (attPct >= config?.attainment_yellow) return '#f59e0b';
-  return '#ef4444';
+// Bucket attainment % into a STATUS_PALETTE code using GOAL_CONFIG thresholds.
+// Codes match the bucket emitted by salesGoalController.getGoalDashboard().
+function statusBucket(attPct, config) {
+  if (attPct >= (config?.attainment_green ?? 90)) return 'ON_TRACK';
+  if (attPct >= (config?.attainment_yellow ?? 70)) return 'NEEDS_ATTENTION';
+  return 'AT_RISK';
+}
+
+// Lookup-driven STATUS_PALETTE: built from dashboard.palette (Control Center →
+// Lookup Tables). Neutral grey fallback so an unseeded entity / new status
+// code still renders without a crash.
+const NEUTRAL_PALETTE = { bar: '#9ca3af', bg: '#f3f4f6', text: '#374151', label: '' };
+
+function buildPaletteMap(palette) {
+  const map = {};
+  for (const p of palette || []) {
+    if (!p?.code) continue;
+    map[p.code.toUpperCase()] = {
+      bar: p.bar_color || NEUTRAL_PALETTE.bar,
+      bg: p.bg_color || NEUTRAL_PALETTE.bg,
+      text: p.text_color || NEUTRAL_PALETTE.text,
+      label: p.label || p.code,
+    };
+  }
+  return map;
+}
+
+// Resolve palette by either the server-emitted lowercase status (`on_track`)
+// or the bucket code (`ON_TRACK`). Falls back to neutral grey for unknowns.
+function paletteFor(code, paletteMap) {
+  const key = String(code || '').toUpperCase();
+  return paletteMap[key] || { ...NEUTRAL_PALETTE, label: key || NEUTRAL_PALETTE.label };
+}
+
+// Convenience: resolve palette directly from attainment %.
+function paletteForAttainment(attPct, config, paletteMap) {
+  return paletteFor(statusBucket(attPct, config), paletteMap);
 }
 
 // tierColorMap built from API tiers data (Lookup-driven, not hardcoded)
@@ -90,6 +138,11 @@ export default function SalesGoalDashboard() {
   const [dashboard, setDashboard] = useState(null);
   const [sortField, setSortField] = useState('rank');
   const [sortDir, setSortDir] = useState('asc');
+  // Phase SG-Q2 W2 — payout summary widget (YTD accrued / paid / pending)
+  const [payoutSummary, setPayoutSummary] = useState(null);
+  // Phase SG-5 #28 — YoY / QoQ trending data
+  const [trending, setTrending] = useState(null);
+  const [trendingLoading, setTrendingLoading] = useState(false);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
@@ -100,15 +153,49 @@ export default function SalesGoalDashboard() {
     setLoading(false);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadDashboard(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const loadPayoutSummary = useCallback(async () => {
+    try {
+      // useErpApi unwraps to HTTP body → res is { success, data: [...], summary: {...} }
+      const res = await sg.getPayouts({ fiscal_year: String(new Date().getFullYear()) });
+      setPayoutSummary(res?.summary || null);
+    } catch {
+      setPayoutSummary(null);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Phase SG-5 #28 — YoY / QoQ trending fetch. Silent failure: an entity with
+  // no prior-year snapshots simply shows an empty-state message instead of a
+  // console error.
+  const loadTrending = useCallback(async () => {
+    setTrendingLoading(true);
+    try {
+      const fiscalYear = new Date().getFullYear();
+      const res = await sg.getTrending({ fiscal_year: String(fiscalYear) });
+      setTrending(res?.data || null);
+    } catch {
+      setTrending(null);
+    }
+    setTrendingLoading(false);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { loadDashboard(); loadPayoutSummary(); loadTrending(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleComputeSnapshots = useCallback(async () => {
     if (!dashboard?.plan?._id) return;
     setComputing(true);
     try {
-      await sg.computeSnapshots({ plan_id: dashboard.plan._id });
-      await loadDashboard();
-    } catch (err) { showError(err, 'Failed to compute KPI snapshots'); }
+      const res = await sg.computeSnapshots({ plan_id: dashboard.plan._id });
+      if (isApprovalPending(res)) {
+        showApprovalPending('KPI compute sent for approval.');
+      } else {
+        const count = res?.data?.count ?? res?.count ?? res?.data?.data?.length ?? 0;
+        await loadDashboard();
+        showSuccess(count ? `Computed ${count} BDM snapshot${count === 1 ? '' : 's'}` : 'KPIs computed');
+      }
+    } catch (err) {
+      if (isApprovalPending(null, err)) showApprovalPending('KPI compute sent for approval.');
+      else showError(err, 'Failed to compute KPI snapshots');
+    }
     setComputing(false);
   }, [dashboard?.plan?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -134,10 +221,11 @@ export default function SalesGoalDashboard() {
   const config = dashboard?.config || {};
   const entityTargets = dashboard?.entity_targets || [];
   const drivers = plan?.growth_drivers || [];
+  const paletteMap = buildPaletteMap(dashboard?.palette);
 
   const baselineRevenue = plan?.baseline_revenue || 0;
   const targetRevenue = plan?.target_revenue || 0;
-  const actualRevenue = summary?.sales_ytd || 0;
+  const actualRevenue = summary?.total_sales_actual || 0;
   const maxBar = Math.max(targetRevenue, actualRevenue) * 1.1 || 1;
   const actualPct = Math.min((actualRevenue / maxBar) * 100, 100);
   const targetPct = Math.min((targetRevenue / maxBar) * 100, 100);
@@ -226,13 +314,21 @@ export default function SalesGoalDashboard() {
                   <div className="sgd-entity-grid">
                     {entityTargets.map((et, i) => {
                       const attain = et.sales_target ? ((et.actual || 0) / et.sales_target) * 100 : 0;
+                      const displayName = et.entity_name || `Entity ${i + 1}`;
                       return (
                         <div key={et._id || i} className="sgd-entity-card">
-                          <div className="sgd-entity-name">{et.entity_name || et.entity_id || `Entity ${i + 1}`}</div>
+                          <div className="sgd-entity-name">
+                            {displayName}{et.short_name ? ` (${et.short_name})` : ''}
+                            {et.is_inactive && (
+                              <span style={{ marginLeft: 6, fontSize: 10, padding: '2px 6px', borderRadius: 8, background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>
+                                INACTIVE
+                              </span>
+                            )}
+                          </div>
                           <div className="sgd-entity-bar-track">
                             <div className="sgd-entity-bar-fill" style={{
                               width: `${Math.min(attain, 100)}%`,
-                              background: statusColor(attain, config)
+                              background: paletteForAttainment(attain, config, paletteMap).bar
                             }} />
                           </div>
                           <div className="sgd-entity-nums">
@@ -251,23 +347,38 @@ export default function SalesGoalDashboard() {
               <div className="sgd-row">
                 <div className="sgd-card">
                   <div className="sgd-card-label">Sales YTD vs Target</div>
-                  <div className="sgd-card-value">{php(summary.sales_ytd)}</div>
+                  <div className="sgd-card-value">{php(summary.total_sales_actual)}</div>
                   <div className="sgd-card-sub">Target: {php(targetRevenue)}</div>
                 </div>
                 <div className="sgd-card">
                   <div className="sgd-card-label">Collections YTD</div>
-                  <div className="sgd-card-value">{php(summary.collections_ytd)}</div>
+                  <div className="sgd-card-value">{php(summary.total_collections_actual)}</div>
                 </div>
                 <div className="sgd-card">
                   <div className="sgd-card-label">Attainment %</div>
-                  <div className="sgd-card-value" style={{ color: statusColor(summary.attainment_pct || 0, config) }}>
-                    {pct(summary.attainment_pct)}
+                  <div className="sgd-card-value" style={{ color: paletteForAttainment(summary.overall_attainment_pct || 0, config, paletteMap).bar }}>
+                    {pct(summary.overall_attainment_pct)}
                   </div>
                 </div>
                 <div className="sgd-card">
                   <div className="sgd-card-label">Collection Rate %</div>
                   <div className="sgd-card-value">{pct(summary.collection_rate_pct)}</div>
                 </div>
+                {payoutSummary ? (
+                  <Link to="/erp/incentive-payouts" className="sgd-card" style={{ textDecoration: 'none', cursor: 'pointer' }}>
+                    <div className="sgd-card-label">Incentive Ledger (YTD)</div>
+                    <div className="sgd-card-value" style={{ color: '#16a34a' }}>{php((payoutSummary.paid || 0))}</div>
+                    <div className="sgd-card-sub">
+                      Accrued {php((payoutSummary.accrued || 0))} · Approved {php((payoutSummary.approved || 0))} · {payoutSummary.count} row(s)
+                    </div>
+                  </Link>
+                ) : (
+                  <Link to="/erp/incentive-payouts" className="sgd-card" style={{ textDecoration: 'none', cursor: 'pointer' }}>
+                    <div className="sgd-card-label">Incentive Ledger</div>
+                    <div className="sgd-card-value" style={{ color: 'var(--erp-muted)' }}>—</div>
+                    <div className="sgd-card-sub">Open payout ledger →</div>
+                  </Link>
+                )}
               </div>
 
               {/* Growth Drivers */}
@@ -276,17 +387,25 @@ export default function SalesGoalDashboard() {
                   <h3 className="sgd-section-title">Growth Drivers</h3>
                   <div className="sgd-row">
                     {drivers.map((d, i) => {
-                      const mid = ((d.revenue_target_min || 0) + (d.revenue_target_max || 0)) / 2 || 1;
-                      const driverActual = d.actual || 0;
-                      const driverPct = Math.min((driverActual / mid) * 100, 100);
+                      const minVal = Number(d.revenue_target_min) || 0;
+                      const maxVal = Number(d.revenue_target_max) || 0;
+                      const hasTargetRange = minVal > 0 || maxVal > 0;
+                      const mid = hasTargetRange ? ((minVal + maxVal) / 2 || 1) : 1;
+                      const driverActual = Number(d.actual) || 0;
+                      const driverPct = hasTargetRange ? Math.min((driverActual / mid) * 100, 100) : 0;
                       return (
                         <div key={d.driver_code || i} className="sgd-driver-card">
                           <div className="sgd-driver-label">{d.driver_label || d.driver_code}</div>
                           <div className="sgd-driver-range">
-                            {php(d.revenue_target_min)} - {php(d.revenue_target_max)}
+                            {hasTargetRange
+                              ? `${php(minVal)} - ${php(maxVal)}`
+                              : 'No target range set'}
                           </div>
                           <div className="sgd-driver-bar-track">
                             <div className="sgd-driver-bar-fill" style={{ width: `${driverPct}%` }} />
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--erp-muted)', marginTop: 4 }}>
+                            Actual: {php(driverActual)}{hasTargetRange ? ` (${driverPct.toFixed(1)}%)` : ''}
                           </div>
                         </div>
                       );
@@ -300,7 +419,15 @@ export default function SalesGoalDashboard() {
                 <h3>BDM Leaderboard</h3>
                 {(dashboard?.leaderboard || []).length === 0 ? (
                   <div style={{ textAlign: 'center', padding: 20, color: 'var(--erp-muted)', fontSize: 13 }}>
-                    No BDM data available. Assign targets and compute snapshots first.
+                    <div style={{ marginBottom: 10 }}>
+                      No BDM snapshots yet. Once BDM targets are assigned, click the button below to roll up their YTD sales, attainment, and incentive tier.
+                    </div>
+                    <button className="sgd-btn" onClick={handleComputeSnapshots} disabled={computing}>
+                      {computing ? 'Computing...' : 'Compute KPIs now'}
+                    </button>
+                    <div style={{ marginTop: 8, fontSize: 12 }}>
+                      Or <Link to="/erp/sales-goals/setup" style={{ color: 'var(--erp-accent)' }}>add BDM targets</Link> first if you haven&apos;t.
+                    </div>
                   </div>
                 ) : (
                   <table className="sgd-table">
@@ -309,17 +436,19 @@ export default function SalesGoalDashboard() {
                         <SortTh field="rank">Rank</SortTh>
                         <SortTh field="name">Name</SortTh>
                         <SortTh field="territory">Territory</SortTh>
-                        <SortTh field="target">Target</SortTh>
-                        <SortTh field="actual">Actual</SortTh>
-                        <SortTh field="attainment_pct">Attainment %</SortTh>
-                        <SortTh field="tier">Tier</SortTh>
+                        <SortTh field="sales_target">Target</SortTh>
+                        <SortTh field="sales_actual">Actual</SortTh>
+                        <SortTh field="sales_attainment_pct">Attainment %</SortTh>
+                        <SortTh field="incentive_tier">Tier</SortTh>
                         <th style={{ padding: '8px 10px', fontWeight: 600, fontSize: 13, background: 'var(--erp-accent-soft)' }}>Status</th>
                       </tr>
                     </thead>
                     <tbody>
                       {sortedLeaderboard().map((row, i) => {
-                        const attColor = statusColor(row.attainment_pct || 0, config);
-                        const tc = tierColor(row.tier, buildTierColorMap(dashboard?.tiers));
+                        // Resolve palette: server emits row.status (lowercase) — fall back to threshold bucket if missing.
+                        const bucket = row.status ? row.status : statusBucket(row.sales_attainment_pct || 0, config);
+                        const statusPal = paletteFor(bucket, paletteMap);
+                        const tc = tierColor(row.incentive_tier, buildTierColorMap(dashboard?.tiers));
                         return (
                           <tr key={row.bdm_id || i}>
                             <td className="num">{row.rank || i + 1}</td>
@@ -329,22 +458,22 @@ export default function SalesGoalDashboard() {
                               </Link>
                             </td>
                             <td>{row.territory || '-'}</td>
-                            <td className="num">{php(row.target)}</td>
-                            <td className="num">{php(row.actual)}</td>
-                            <td className="num" style={{ color: attColor, fontWeight: 600 }}>
-                              {pct(row.attainment_pct)}
+                            <td className="num">{php(row.sales_target)}</td>
+                            <td className="num">{php(row.sales_actual)}</td>
+                            <td className="num" style={{ color: statusPal.bar, fontWeight: 600 }}>
+                              {pct(row.sales_attainment_pct)}
                             </td>
                             <td>
                               <span className="sgd-tier-badge" style={{ background: tc.bg, color: tc.color }}>
-                                {row.tier || 'N/A'}
+                                {row.incentive_tier || 'N/A'}
                               </span>
                             </td>
                             <td>
                               <span className="sgd-badge" style={{
-                                background: attColor + '18',
-                                color: attColor
+                                background: statusPal.bg,
+                                color: statusPal.text
                               }}>
-                                {row.status || (row.attainment_pct >= 100 ? 'On Track' : row.attainment_pct >= 80 ? 'At Risk' : 'Behind')}
+                                {statusPal.label || bucket}
                               </span>
                             </td>
                           </tr>
@@ -352,6 +481,84 @@ export default function SalesGoalDashboard() {
                       })}
                     </tbody>
                   </table>
+                )}
+              </div>
+
+              {/* Phase SG-5 #28 — Year-over-Year / QoQ trending */}
+              <div className="sgd-panel">
+                <h3>Year-over-Year Trending{trending ? ` (FY ${trending.fiscal_year_current} vs FY ${trending.fiscal_year_prior})` : ''}</h3>
+                {trendingLoading && <div className="loading">Loading trending data…</div>}
+                {!trendingLoading && (!trending || (trending.per_bdm || []).length === 0) && (
+                  <div style={{ textAlign: 'center', padding: 20, color: 'var(--erp-muted)', fontSize: 13 }}>
+                    Trending needs at least one prior-fiscal-year YTD snapshot to render. Close the current fiscal year and let next year&apos;s snapshots populate to unlock this chart.
+                  </div>
+                )}
+                {!trendingLoading && trending && (trending.per_bdm || []).length > 0 && (
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 12 }}>
+                      <div className="sgd-card">
+                        <div className="sgd-card-label">Revenue {trending.fiscal_year_current}</div>
+                        <div className="sgd-card-value">{php(trending.company?.revenue?.current || 0)}</div>
+                        <div className="sgd-card-sub">
+                          vs {php(trending.company?.revenue?.prior || 0)} ({trending.company?.revenue?.prior > 0 ? `${trending.company.revenue.delta_pct > 0 ? '+' : ''}${trending.company.revenue.delta_pct}%` : '—'})
+                        </div>
+                      </div>
+                      <div className="sgd-card">
+                        <div className="sgd-card-label">Avg Attainment</div>
+                        <div className="sgd-card-value">{pct(trending.company?.attainment?.current || 0)}</div>
+                        <div className="sgd-card-sub">Prior: {pct(trending.company?.attainment?.prior || 0)}</div>
+                      </div>
+                      <div className="sgd-card">
+                        <div className="sgd-card-label">BDMs (cur / prior)</div>
+                        <div className="sgd-card-value">
+                          {trending.company?.bdm_count_current || 0} / {trending.company?.bdm_count_prior || 0}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ width: '100%', height: 280 }}>
+                      <ResponsiveContainer>
+                        <BarChart data={(trending.per_bdm || []).slice(0, 12).map(r => ({
+                          name: r.name || '—',
+                          [`FY${trending.fiscal_year_prior}`]: r.prior_revenue,
+                          [`FY${trending.fiscal_year_current}`]: r.current_revenue,
+                        }))}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                          <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-20} textAnchor="end" height={60} />
+                          <YAxis tickFormatter={(v) => Intl.NumberFormat('en-PH', { notation: 'compact' }).format(v || 0)} tick={{ fontSize: 11 }} />
+                          <Tooltip formatter={(v) => php(v)} />
+                          <Legend />
+                          <Bar dataKey={`FY${trending.fiscal_year_prior}`} fill="#94a3b8" />
+                          <Bar dataKey={`FY${trending.fiscal_year_current}`} fill="#2563eb" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                    {(trending.per_kpi || []).length > 0 && (
+                      <div style={{ marginTop: 16, overflowX: 'auto' }}>
+                        <table className="sgd-table">
+                          <thead>
+                            <tr>
+                              <th>KPI (company avg)</th>
+                              <th className="num">FY {trending.fiscal_year_prior}</th>
+                              <th className="num">FY {trending.fiscal_year_current}</th>
+                              <th className="num">Δ %</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(trending.per_kpi || []).slice(0, 20).map(k => (
+                              <tr key={k.kpi_code}>
+                                <td>{k.kpi_label}</td>
+                                <td className="num">{Number(k.prior_avg || 0).toLocaleString()}</td>
+                                <td className="num">{Number(k.current_avg || 0).toLocaleString()}</td>
+                                <td className="num" style={{ color: k.delta_pct > 0 ? '#166534' : k.delta_pct < 0 ? '#991b1b' : 'var(--erp-muted)', fontWeight: 600 }}>
+                                  {k.delta_pct > 0 ? '+' : ''}{k.delta_pct}%
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
 
@@ -363,7 +570,7 @@ export default function SalesGoalDashboard() {
                     {(() => {
                       const tiers = {};
                       (dashboard?.leaderboard || []).forEach(b => {
-                        const t = b.tier || 'Participant';
+                        const t = b.incentive_tier || 'Participant';
                         if (!tiers[t]) tiers[t] = 0;
                         tiers[t]++;
                       });

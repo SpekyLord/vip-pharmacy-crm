@@ -77,7 +77,10 @@ const getProductStreakDetail = catchAsync(async (req, res) => {
   const { getProductStreakDetail: getDetail } = require('../services/profitShareEngine');
   // BDMs can only query their own streak; admin/finance/president can query any
   const canViewOther = req.isAdmin || req.isFinance || req.isPresident;
-  const bdmId = (canViewOther && req.query.bdm_id) ? req.query.bdm_id : req.bdmId;
+  const bdmId = canViewOther ? (req.query.bdm_id || null) : req.bdmId;
+  if (!bdmId) {
+    return res.status(400).json({ success: false, message: 'bdm_id is required' });
+  }
   const data = await getDetail(req.entityId, bdmId, req.params.period);
   res.json({ success: true, data });
 });

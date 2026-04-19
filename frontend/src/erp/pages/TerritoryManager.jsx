@@ -9,6 +9,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import { ROLE_SETS } from '../../constants/roles';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 
@@ -46,6 +47,10 @@ const EMPTY_FORM = { territory_code: '', territory_name: '', region: '', is_acti
 export function TerritoryManagerContent() {
   const { user } = useAuth();
   const canEdit = ROLE_SETS.MANAGEMENT.includes(user?.role);
+  // Phase 3c — territory delete gated by Tier 2 lookup-only master.territory_delete.
+  // Mirrors backend territoryRoutes /:id DELETE. Edit/Create remain canEdit-gated.
+  const { hasSubPermission } = useErpSubAccess();
+  const canDeleteTerritory = hasSubPermission('master', 'territory_delete');
 
   const [territories, setTerritories] = useState([]);
   const [allUsers, setAllUsers] = useState([]);
@@ -156,7 +161,9 @@ export function TerritoryManagerContent() {
                   {canEdit && (
                     <td style={{ whiteSpace: 'nowrap' }}>
                       <button className="btn btn-sm btn-outline" onClick={() => openEdit(t)} style={{ marginRight: 4 }}>Edit</button>
-                      <button className="btn btn-sm btn-danger" onClick={() => handleDelete(t._id)}>Delete</button>
+                      {canDeleteTerritory && (
+                        <button className="btn btn-sm btn-danger" onClick={() => handleDelete(t._id)}>Delete</button>
+                      )}
                     </td>
                   )}
                 </tr>

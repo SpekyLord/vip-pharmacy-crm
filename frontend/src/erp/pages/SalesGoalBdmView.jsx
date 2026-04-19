@@ -3,7 +3,7 @@
  * Shows attainment ring, incentive tier, monthly trend, driver KPIs, and action items.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -70,14 +70,80 @@ const pageStyles = `
   .bdv-btn-sm { padding: 4px 10px; font-size: 12px; }
   .bdv-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .loading { text-align: center; padding: 40px; color: var(--erp-muted); }
-  @media(max-width: 768px) { .bdv-main { padding: 12px; } .bdv-row { flex-direction: column; } }
+  /* Phase SG-Q2 W3 — Tab strip + compensation summary cards */
+  .bdv-tabs { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 2px solid var(--erp-border); }
+  .bdv-tab { padding: 10px 18px; background: transparent; border: none; border-bottom: 3px solid transparent; margin-bottom: -2px; font-size: 13px; font-weight: 600; color: var(--erp-muted); cursor: pointer; transition: color 0.15s, border-color 0.15s; }
+  .bdv-tab:hover { color: var(--erp-text); }
+  .bdv-tab.active { color: var(--erp-accent, #2563eb); border-bottom-color: var(--erp-accent, #2563eb); }
+  .bdv-summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+  .bdv-summary-card { background: var(--erp-panel, #fff); border: 1px solid var(--erp-border); border-radius: 12px; padding: 14px 16px; }
+  .bdv-summary-card.earned { border-left: 3px solid #1f2937; }
+  .bdv-summary-card.accrued { border-left: 3px solid #2563eb; background: #eff6ff; }
+  .bdv-summary-card.paid { border-left: 3px solid #16a34a; background: #f0fdf4; }
+  .bdv-summary-card.adjusted { border-left: 3px solid #dc2626; background: #fef2f2; }
+  .bdv-summary-label { font-size: 10px; font-weight: 600; text-transform: uppercase; color: var(--erp-muted); letter-spacing: 0.05em; }
+  .bdv-summary-value { font-size: 20px; font-weight: 700; color: var(--erp-text); margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .bdv-comp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .bdv-comp-table th { padding: 8px; text-align: left; background: var(--erp-accent-soft, #eef2ff); font-weight: 600; color: var(--erp-text); font-size: 12px; }
+  .bdv-comp-table td { padding: 8px; border-top: 1px solid var(--erp-border); color: var(--erp-text); }
+  .bdv-comp-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .bdv-print-btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: var(--erp-accent, #2563eb); color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .bdv-print-btn:hover { background: #1d4ed8; }
+  .bdv-comp-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 10px; }
+  .bdv-comp-empty { padding: 28px; text-align: center; color: var(--erp-muted); font-size: 13px; }
+  @media(max-width: 768px) { .bdv-main { padding: 12px; } .bdv-row { flex-direction: column; } .bdv-summary-grid { grid-template-columns: repeat(2, 1fr); } .bdv-tab { padding: 8px 12px; font-size: 12px; } }
+  @media(max-width: 360px) {
+    .bdv-main { padding: 8px; }
+    .bdv-header h1 { font-size: 18px; }
+    .bdv-profile { padding: 12px; gap: 10px; }
+    .bdv-card, .bdv-panel { padding: 14px; min-width: 0; }
+    .bdv-ring { width: 96px; height: 96px; }
+    .bdv-ring svg { width: 96px; height: 96px; }
+    .bdv-ring-pct { font-size: 20px; }
+    .bdv-summary-grid { grid-template-columns: 1fr; gap: 8px; }
+    .bdv-summary-value { font-size: 18px; }
+    .bdv-tabs { overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+    .bdv-tab { white-space: nowrap; padding: 8px 10px; font-size: 11px; flex-shrink: 0; }
+    .bdv-form-row { flex-direction: column; }
+    .bdv-form-row input, .bdv-form-row select, .bdv-btn { width: 100%; }
+    .bdv-comp-table th, .bdv-comp-table td { padding: 6px 4px; font-size: 11px; }
+    .bdv-comp-toolbar { flex-direction: column; align-items: stretch; }
+    .bdv-print-btn { width: 100%; justify-content: center; }
+  }
 `;
 
-// Colors from Lookup config (database-driven, not hardcoded)
-function attainColor(pctVal, config) {
-  if (config?.attainment_green && pctVal >= config.attainment_green) return '#22c55e';
-  if (config?.attainment_yellow && pctVal >= config.attainment_yellow) return '#f59e0b';
-  return '#ef4444';
+// Lookup-driven STATUS_PALETTE — codes match the buckets emitted by
+// salesGoalController (ON_TRACK / NEEDS_ATTENTION / AT_RISK). Subscribers
+// re-brand bar/badge colors per entity from Control Center → Lookup Tables.
+const NEUTRAL_PALETTE = { bar: '#9ca3af', bg: '#f3f4f6', text: '#374151', label: '' };
+
+function statusBucket(attPct, config) {
+  if (attPct >= (config?.attainment_green ?? 90)) return 'ON_TRACK';
+  if (attPct >= (config?.attainment_yellow ?? 70)) return 'NEEDS_ATTENTION';
+  return 'AT_RISK';
+}
+
+function buildPaletteMap(palette) {
+  const map = {};
+  for (const p of palette || []) {
+    if (!p?.code) continue;
+    map[p.code.toUpperCase()] = {
+      bar: p.bar_color || NEUTRAL_PALETTE.bar,
+      bg: p.bg_color || NEUTRAL_PALETTE.bg,
+      text: p.text_color || NEUTRAL_PALETTE.text,
+      label: p.label || p.code,
+    };
+  }
+  return map;
+}
+
+function paletteFor(code, paletteMap) {
+  const key = String(code || '').toUpperCase();
+  return paletteMap[key] || { ...NEUTRAL_PALETTE, label: key || NEUTRAL_PALETTE.label };
+}
+
+function attainColor(pctVal, config, paletteMap) {
+  return paletteFor(statusBucket(pctVal, config), paletteMap).bar;
 }
 
 function buildTierColorMap(tiers) {
@@ -105,6 +171,7 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 
 export default function SalesGoalBdmView() {
   const { bdmId } = useParams();
+  const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const sg = useSalesGoals();
 
@@ -113,8 +180,24 @@ export default function SalesGoalBdmView() {
   const [expandedDrivers, setExpandedDrivers] = useState({});
   const [actionForm, setActionForm] = useState({ title: '', driver_code: '', priority: 'MEDIUM', due_date: '' });
   const [savingAction, setSavingAction] = useState(false);
+  // Phase SG-Q2 W2 — My Payouts section
+  const [payouts, setPayouts] = useState([]);
+  // Phase SG-Q2 W3 — Compensation tab + statement. `?tab=compensation` query
+  // param lets the sidebar "My Compensation" entry land on the right tab.
+  const initialTab = searchParams.get('tab') === 'compensation' ? 'compensation' : 'performance';
+  const [activeTab, setActiveTab] = useState(initialTab); // 'performance' | 'compensation'
+  // Re-sync when the query param changes (user clicks the sidebar entry while
+  // already mounted on this page — useState's initial value would not re-fire).
+  useEffect(() => {
+    const qTab = searchParams.get('tab');
+    if (qTab === 'compensation' || qTab === 'performance') setActiveTab(qTab);
+  }, [searchParams]);
+  const [statement, setStatement] = useState(null);
+  const [statementLoading, setStatementLoading] = useState(false);
+  const fiscalYear = new Date().getFullYear();
 
   const effectiveId = bdmId || user?._id || user?.id;
+  const isSelfView = !bdmId || String(bdmId) === String(user?._id || user?.id);
 
   const loadDetail = useCallback(async () => {
     if (!effectiveId) return;
@@ -127,6 +210,63 @@ export default function SalesGoalBdmView() {
   }, [effectiveId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadDetail(); }, [effectiveId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Phase SG-Q2 W2 — pull payouts for the effective BDM (self-view uses /mine,
+  // admin viewing another BDM uses the filtered ledger endpoint).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!effectiveId) return;
+      try {
+        const res = isSelfView
+          ? await sg.getMyPayouts({})
+          : await sg.getPayouts({ bdm_id: effectiveId });
+        if (cancelled) return;
+        // useErpApi unwraps to HTTP body → res is { success, data: [...] }
+        const data = res?.data || [];
+        setPayouts(Array.isArray(data) ? data : []);
+      } catch {
+        if (!cancelled) setPayouts([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [effectiveId, isSelfView]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Phase SG-Q2 W3 — Compensation Statement (lazy: only loaded when the tab opens
+  // for the first time, and refreshed if the BDM changes). Self-view passes no
+  // bdm_id (backend uses req.user._id); admin views pass the explicit one.
+  useEffect(() => {
+    if (activeTab !== 'compensation') return;
+    let cancelled = false;
+    (async () => {
+      if (!effectiveId) return;
+      setStatementLoading(true);
+      try {
+        const params = { fiscal_year: fiscalYear };
+        if (!isSelfView) params.bdm_id = effectiveId;
+        const res = await sg.getCompensationStatement(params);
+        if (!cancelled) setStatement(res?.data || null);
+      } catch (err) {
+        if (!cancelled) {
+          showError(err, 'Failed to load compensation statement');
+          setStatement(null);
+        }
+      } finally {
+        if (!cancelled) setStatementLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTab, effectiveId, isSelfView, fiscalYear]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Print handler — opens the printable HTML in a new tab; user clicks "Print /
+  // Save as PDF" to produce the PDF (uses the same browser-print pattern as
+  // sales receipts). Cookie-based auth carries over to the new window.
+  const handlePrintStatement = useCallback(() => {
+    const params = { fiscal_year: fiscalYear };
+    if (!isSelfView) params.bdm_id = effectiveId;
+    const url = sg.compensationStatementPrintUrl(params);
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }, [effectiveId, isSelfView, fiscalYear]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleDriver = (code) => {
     setExpandedDrivers(prev => ({ ...prev, [code]: !prev[code] }));
@@ -162,17 +302,19 @@ export default function SalesGoalBdmView() {
   const incentive = ytdSnap?.incentive_status?.[0] || {};
   const monthly = detail?.monthlyHistory || [];
   const drivers = ytdSnap?.driver_kpis || [];
+  const planDrivers = detail?.plan?.growth_drivers || [];
   const actions = detail?.actions || [];
   const goalConfig = detail?.config || {};
   const colorMap = buildTierColorMap(detail?.tiers);
+  const paletteMap = buildPaletteMap(detail?.palette);
 
   const attainPct = ytdSnap.sales_attainment_pct || 0;
-  const ringColor = attainColor(attainPct, goalConfig);
+  const ringColor = attainColor(attainPct, goalConfig, paletteMap);
   const ringRadius = 50;
   const ringCircumference = 2 * Math.PI * ringRadius;
   const ringOffset = ringCircumference - (Math.min(attainPct, 100) / 100) * ringCircumference;
 
-  const maxMonthly = Math.max(...monthly.map(m => Math.max(m.sales_actual || 0, m.sales_target || 0)), 1);
+  const maxMonthly = Math.max(...monthly.map(m => Math.max(m.actual || 0, m.target || 0)), 1);
 
   const tc = tierColorStyle(incentive.tier_label, colorMap);
 
@@ -209,6 +351,32 @@ export default function SalesGoalBdmView() {
           )}
 
           {!loading && detail && (
+            <>
+              {/* Phase SG-Q2 W3 — Tab strip (Performance | My Compensation) */}
+              <div className="bdv-tabs" role="tablist">
+                <button
+                  type="button"
+                  role="tab"
+                  className={`bdv-tab ${activeTab === 'performance' ? 'active' : ''}`}
+                  aria-selected={activeTab === 'performance'}
+                  onClick={() => setActiveTab('performance')}
+                >
+                  Performance
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  className={`bdv-tab ${activeTab === 'compensation' ? 'active' : ''}`}
+                  aria-selected={activeTab === 'compensation'}
+                  onClick={() => setActiveTab('compensation')}
+                >
+                  My Compensation
+                </button>
+              </div>
+            </>
+          )}
+
+          {!loading && detail && activeTab === 'performance' && (
             <>
               {/* Profile Header */}
               <div className="bdv-profile">
@@ -258,11 +426,11 @@ export default function SalesGoalBdmView() {
                 <div className="bdv-card bdv-tier-card">
                   <h4>Incentive Tier</h4>
                   <div className="bdv-tier-badge" style={{ background: tc.bg, color: tc.color }}>
-                    {incentive.current_tier || 'Participant'}
+                    {incentive.tier_label || 'Participant'}
                   </div>
-                  <div className="bdv-tier-detail">Budget Earned: {php(incentive.budget_earned)}</div>
-                  {incentive.projected_tier && (
-                    <div className="bdv-tier-detail">Projected: {incentive.projected_tier}</div>
+                  <div className="bdv-tier-detail">Budget Earned: {php(incentive.tier_budget)}</div>
+                  {incentive.projected_tier_label && (
+                    <div className="bdv-tier-detail">Projected: {incentive.projected_tier_label}</div>
                   )}
                   {incentive.amount_to_next_tier > 0 && (
                     <div className="bdv-next-tier">
@@ -320,18 +488,18 @@ export default function SalesGoalBdmView() {
                               <p style={{ color: 'var(--erp-muted)', fontSize: 12, margin: 0 }}>No KPIs defined for this driver.</p>
                             )}
                             {(d.kpis || []).map((kpi, ki) => {
-                              const kpiPct = kpi.target_value ? ((kpi.actual || 0) / kpi.target_value) * 100 : 0;
+                              const kpiPct = kpi.target_value ? ((kpi.actual_value || 0) / kpi.target_value) * 100 : 0;
                               return (
                                 <div key={kpi.kpi_code || ki} className="bdv-kpi-row">
-                                  <span className="bdv-kpi-name">{kpi.kpi_name || kpi.kpi_code}</span>
+                                  <span className="bdv-kpi-name">{kpi.kpi_label || kpi.kpi_code}</span>
                                   <div className="bdv-kpi-track">
                                     <div className="bdv-kpi-fill" style={{
                                       width: `${Math.min(kpiPct, 100)}%`,
-                                      background: attainColor(kpiPct, goalConfig)
+                                      background: attainColor(kpiPct, goalConfig, paletteMap)
                                     }} />
                                   </div>
                                   <span className="bdv-kpi-nums">
-                                    {kpi.actual || 0} / {kpi.target_value || 0} {kpi.unit || ''}
+                                    {kpi.actual_value || 0} / {kpi.target_value || 0} {kpi.unit || ''}
                                   </span>
                                 </div>
                               );
@@ -343,6 +511,45 @@ export default function SalesGoalBdmView() {
                   })}
                 </div>
               )}
+
+              {/* Phase SG-Q2 W2 — My Payouts */}
+              <div className="bdv-panel">
+                <h3>My Incentive Payouts</h3>
+                {payouts.length === 0 ? (
+                  <p style={{ color: 'var(--erp-muted)', fontSize: 13, margin: 0 }}>
+                    No payouts yet. Hit a tier threshold on your YTD attainment and a payout will be accrued automatically.{' '}
+                    <Link to="/erp/incentive-payouts" style={{ color: 'var(--erp-accent, #2563eb)' }}>Open Payout Ledger →</Link>
+                  </p>
+                ) : (
+                  <>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', background: 'var(--erp-accent-soft, #eef2ff)' }}>Period</th>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', background: 'var(--erp-accent-soft, #eef2ff)' }}>Tier</th>
+                          <th style={{ textAlign: 'right', padding: '6px 8px', background: 'var(--erp-accent-soft, #eef2ff)' }}>Amount</th>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', background: 'var(--erp-accent-soft, #eef2ff)' }}>Status</th>
+                          <th style={{ textAlign: 'left', padding: '6px 8px', background: 'var(--erp-accent-soft, #eef2ff)' }}>Paid</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {payouts.map(p => (
+                          <tr key={p._id} style={{ borderTop: '1px solid var(--erp-border)' }}>
+                            <td style={{ padding: '6px 8px' }}>{p.period}</td>
+                            <td style={{ padding: '6px 8px' }}>{p.tier_label || p.tier_code}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{php(p.tier_budget)}</td>
+                            <td style={{ padding: '6px 8px' }}>{p.status}</td>
+                            <td style={{ padding: '6px 8px' }}>{p.paid_at ? new Date(p.paid_at).toLocaleDateString() : '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <div style={{ marginTop: 8 }}>
+                      <Link to="/erp/incentive-payouts" style={{ color: 'var(--erp-accent, #2563eb)', fontSize: 12 }}>See full ledger →</Link>
+                    </div>
+                  </>
+                )}
+              </div>
 
               {/* Action Items */}
               <div className="bdv-panel">
@@ -381,12 +588,18 @@ export default function SalesGoalBdmView() {
                     onChange={e => setActionForm(f => ({ ...f, title: e.target.value }))}
                     style={{ flex: 2 }}
                   />
-                  <input
-                    type="text" placeholder="Driver code"
+                  <select
                     value={actionForm.driver_code}
                     onChange={e => setActionForm(f => ({ ...f, driver_code: e.target.value }))}
                     style={{ flex: 1 }}
-                  />
+                  >
+                    <option value="">— Driver (optional) —</option>
+                    {planDrivers.map(d => (
+                      <option key={d.driver_code} value={d.driver_code}>
+                        {d.driver_code}{d.driver_label ? ` — ${d.driver_label}` : ''}
+                      </option>
+                    ))}
+                  </select>
                   <select value={actionForm.priority} onChange={e => setActionForm(f => ({ ...f, priority: e.target.value }))}>
                     <option value="LOW">Low</option>
                     <option value="MEDIUM">Medium</option>
@@ -402,6 +615,171 @@ export default function SalesGoalBdmView() {
                   </button>
                 </div>
               </div>
+            </>
+          )}
+
+          {/* Phase SG-Q2 W3 — My Compensation tab */}
+          {!loading && detail && activeTab === 'compensation' && (
+            <>
+              <WorkflowGuide pageKey="salesGoalCompensation" />
+
+              <div className="bdv-comp-toolbar">
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 16, color: 'var(--erp-text)' }}>
+                    Fiscal Year {fiscalYear} Compensation Statement
+                  </h3>
+                  <p style={{ margin: '2px 0 0', color: 'var(--erp-muted)', fontSize: 12 }}>
+                    Live read of your incentive ledger. Print to PDF for your records.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  className="bdv-print-btn"
+                  onClick={handlePrintStatement}
+                  disabled={!effectiveId}
+                  title="Open the printable statement — use the browser Print menu to save as PDF"
+                >
+                  <span aria-hidden="true">🖨</span> Print / Save as PDF
+                </button>
+              </div>
+
+              {statementLoading && <div className="loading">Loading statement…</div>}
+
+              {!statementLoading && statement && (
+                <>
+                  <div className="bdv-summary-grid">
+                    <div className="bdv-summary-card earned">
+                      <div className="bdv-summary-label">Earned</div>
+                      <div className="bdv-summary-value">{php(statement.summary?.earned)}</div>
+                    </div>
+                    <div className="bdv-summary-card accrued">
+                      <div className="bdv-summary-label">Accrued (pending)</div>
+                      <div className="bdv-summary-value">{php(statement.summary?.accrued)}</div>
+                    </div>
+                    <div className="bdv-summary-card paid">
+                      <div className="bdv-summary-label">Paid</div>
+                      <div className="bdv-summary-value">{php(statement.summary?.paid)}</div>
+                    </div>
+                    <div className="bdv-summary-card adjusted">
+                      <div className="bdv-summary-label">Adjustments</div>
+                      <div className="bdv-summary-value">{php(statement.summary?.adjusted)}</div>
+                    </div>
+                  </div>
+
+                  {statement.tier && (
+                    <div className="bdv-row">
+                      <div className="bdv-card">
+                        <h4>YTD Attainment</h4>
+                        <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--erp-text)' }}>
+                          {pct(statement.tier.sales_attainment_pct)}
+                        </div>
+                        <div style={{ color: 'var(--erp-muted)', fontSize: 12, marginTop: 4 }}>
+                          {php(statement.tier.sales_actual)} of {php(statement.tier.sales_target)}
+                        </div>
+                      </div>
+                      <div className="bdv-card">
+                        <h4>Current Tier</h4>
+                        <div style={{ fontSize: 18, fontWeight: 700 }}>
+                          {statement.tier.current_tier_label || statement.tier.current_tier_code || 'Participant'}
+                        </div>
+                        <div style={{ color: 'var(--erp-muted)', fontSize: 12, marginTop: 4 }}>
+                          Budget: {php(statement.tier.current_tier_budget)}
+                        </div>
+                      </div>
+                      <div className="bdv-card">
+                        <h4>Projected Tier (FY-end)</h4>
+                        <div style={{ fontSize: 18, fontWeight: 700 }}>
+                          {statement.tier.projected_tier_label || statement.tier.projected_tier_code || '—'}
+                        </div>
+                        <div style={{ color: 'var(--erp-muted)', fontSize: 12, marginTop: 4 }}>
+                          Projected: {php(statement.tier.projected_tier_budget)}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="bdv-panel">
+                    <h3>By Period</h3>
+                    {(statement.periods || []).length === 0 ? (
+                      <div className="bdv-comp-empty">No qualifying periods in FY {fiscalYear}.</div>
+                    ) : (
+                      <table className="bdv-comp-table">
+                        <thead>
+                          <tr>
+                            <th>Period</th>
+                            <th>Type</th>
+                            <th className="num">Earned</th>
+                            <th className="num">Accrued</th>
+                            <th className="num">Paid</th>
+                            <th className="num">Adjusted</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {statement.periods.map(p => (
+                            <tr key={`${p.period}-${p.period_type}`}>
+                              <td>{p.period}</td>
+                              <td style={{ color: 'var(--erp-muted)', fontSize: 11 }}>{p.period_type || ''}</td>
+                              <td className="num">{php(p.earned)}</td>
+                              <td className="num" style={{ color: '#1e40af' }}>{php(p.accrued)}</td>
+                              <td className="num" style={{ color: '#166534' }}>{php(p.paid)}</td>
+                              <td className="num" style={{ color: '#991b1b' }}>{php(p.adjusted)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+
+                  <div className="bdv-panel">
+                    <h3>Detail Ledger</h3>
+                    {(statement.rows || []).length === 0 ? (
+                      <div className="bdv-comp-empty">
+                        No incentive ledger entries for FY {fiscalYear} yet. Hit a tier threshold and a payout will accrue automatically.
+                      </div>
+                    ) : (
+                      <table className="bdv-comp-table">
+                        <thead>
+                          <tr>
+                            <th>Period</th>
+                            <th>Tier</th>
+                            <th className="num">Amount</th>
+                            <th className="num">Attain%</th>
+                            <th>Status</th>
+                            <th>Accrual JE</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {statement.rows.map(r => (
+                            <tr key={r._id}>
+                              <td>{r.period}</td>
+                              <td>
+                                {r.tier_label || r.tier_code}
+                                {Number(r.uncapped_budget) > Number(r.tier_budget) ? (
+                                  <span title={`Uncapped: ${php(r.uncapped_budget)} — reduced by CompProfile cap`} style={{ color: 'var(--erp-muted)', fontSize: 10, marginLeft: 4 }}>⚠ capped</span>
+                                ) : null}
+                              </td>
+                              <td className="num">{php(r.tier_budget)}</td>
+                              <td className="num">{(Number(r.attainment_pct) || 0).toFixed(1)}%</td>
+                              <td>{r.status}</td>
+                              <td style={{ fontSize: 11 }}>
+                                {r.journal_id?.je_number || r.journal_number || '—'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </>
+              )}
+
+              {!statementLoading && !statement && (
+                <div className="bdv-panel">
+                  <p style={{ color: 'var(--erp-muted)', fontSize: 13, margin: 0 }}>
+                    No statement data available. The plan may not be active for FY {fiscalYear}, or no payouts have accrued yet.
+                  </p>
+                </div>
+              )}
             </>
           )}
         </main>

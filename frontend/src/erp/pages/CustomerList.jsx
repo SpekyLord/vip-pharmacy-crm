@@ -4,6 +4,7 @@ import Sidebar from '../../components/common/Sidebar';
 import useCustomers from '../hooks/useCustomers';
 import usePeople from '../hooks/usePeople';
 import { useAuth } from '../../hooks/useAuth';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import SelectField from '../../components/common/Select';
 import { useLookupBatch } from '../hooks/useLookups';
 import { showError, showSuccess } from '../utils/errorToast';
@@ -130,6 +131,10 @@ export function CustomerListContent() {
   const { user } = useAuth();
   const customers = useCustomers();
   const { getAsUsers } = usePeople();
+  // Phase 3c — deactivate gated by Tier 2 lookup-only master.customer_deactivate.
+  // Mirrors backend customerRoutes /:id/deactivate.
+  const { hasSubPermission } = useErpSubAccess();
+  const canDeactivate = hasSubPermission('master', 'customer_deactivate');
   const { data: lookups } = useLookupBatch(['CUSTOMER_TYPE', 'SALE_TYPE', 'VAT_TYPE']);
   const CUSTOMER_TYPES = ['ALL', ...(lookups.CUSTOMER_TYPE || []).map(o => o.code)];
   const SALE_TYPES = (lookups.SALE_TYPE || []).map(o => o.code);
@@ -403,7 +408,7 @@ export function CustomerListContent() {
                       <div style={{ display: 'flex', gap: 4 }}>
                         <button className="btn btn-sm btn-ghost" onClick={() => openEdit(cust)}>Edit</button>
                         <button className="btn btn-sm btn-ghost" style={{ color: '#16a34a' }} onClick={() => setTagModal(cust)}>Tag</button>
-                        {(cust.status || 'ACTIVE') === 'ACTIVE' && (
+                        {(cust.status || 'ACTIVE') === 'ACTIVE' && canDeactivate && (
                           <button className="btn btn-sm btn-danger" onClick={() => handleDeactivate(cust._id)}>Deactivate</button>
                         )}
                       </div>
@@ -463,7 +468,7 @@ export function CustomerListContent() {
                   <div className="cust-card-actions">
                     <button className="btn btn-sm btn-ghost" onClick={() => openEdit(cust)} style={{ flex: 1 }}>Edit</button>
                     <button className="btn btn-sm btn-ghost" style={{ flex: 1, color: '#16a34a' }} onClick={() => setTagModal(cust)}>Tag</button>
-                    {(cust.status || 'ACTIVE') === 'ACTIVE' && (
+                    {(cust.status || 'ACTIVE') === 'ACTIVE' && canDeactivate && (
                       <button className="btn btn-sm btn-danger" onClick={() => handleDeactivate(cust._id)} style={{ flex: 1 }}>Deactivate</button>
                     )}
                   </div>

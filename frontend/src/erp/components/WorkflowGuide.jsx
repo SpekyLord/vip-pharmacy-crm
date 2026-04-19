@@ -42,6 +42,19 @@ const styles = `
   }
 `;
 
+// ── Phase G6.9 — Pages whose document workflow includes Approval Hub rejection ──
+// Each page key here renders the shared "Rejected? See banner above" footer note.
+// Source-of-truth: MODULE_REJECTION_CONFIG seed in backend/erp/controllers/lookupGenericController.js.
+// Adding a new module = adding the page key here AND seeding MODULE_REJECTION_CONFIG.
+const PAGES_WITH_REJECTION_FLOW = new Set([
+  'sales-entry', 'collections', 'smer', 'car-logbook', 'expenses', 'prf-calf',
+  'grn-entry', 'payslip-view', 'kpi-rating', 'income', 'my-income',
+  'purchase-orders', 'journal-entries', 'bank-reconciliation', 'transfer-orders',
+  'ic-settlement', 'sales-goal-setup', 'sales-goal-bdm', 'incentive-payout-ledger',
+  'petty-cash',
+]);
+const REJECTION_FOOTER_NOTE = 'If an approver rejects this document, a red banner with the reason will appear on this page. Click Fix & Resubmit to edit and re-send for approval — your data is preserved.';
+
 // ── Complete BDM workflow guide config ──
 const WORKFLOW_GUIDES = {
   'erp-dashboard': {
@@ -66,9 +79,11 @@ const WORKFLOW_GUIDES = {
       'Select sale type: CSI (credit), Cash Receipt (cash), or Service Invoice (services)',
       'Select the hospital/customer and set the invoice date',
       'CSI/Cash Receipt: add line items — product, quantity, price. Service Invoice: enter description + total.',
+      'CSI only: the CSI # input shows your available booklet numbers (if you have an allocation). This is a monitoring hint — you can still type any number, but posting an unknown number will raise a yellow audit warning.',
       'For Cash Receipt or Service Invoice with CASH payment: optionally select a Petty Cash Fund to deposit cash directly',
-      'Save as DRAFT, then Validate to check for errors',
-      'Post to finalize — CSI creates AR; Cash Receipt/Service Invoice with fund creates direct petty cash deposit instead of AR',
+      'Save as DRAFT, then Validate to check for errors. Red = must fix before posting. Yellow = informational (e.g. CSI number outside your allocation) — will NOT block posting.',
+      'Post to finalize — CSI creates AR; Cash Receipt/Service Invoice with fund creates direct petty cash deposit instead of AR. Posted CSI numbers are auto-marked "used" in your booklet allocation.',
+      'Re-open a POSTED sale to correct it — reverses stock, petty-cash deposit, and journal entries (SAP Storno). The consumed CSI number returns to your available pool. Blocked if a POSTED Collection already settled this CSI; reopen the collection first to release it.',
     ],
     next: [
       { label: 'View All Sales', path: '/erp/sales' },
@@ -76,7 +91,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Collect Payment', path: '/erp/collections' },
       { label: 'Petty Cash', path: '/erp/petty-cash' },
     ],
-    tip: 'CSI sales always create AR (collect via Collections). Cash Receipt and Service Invoice with CASH payment can route directly to a Petty Cash Fund — bypassing AR and auto-creating a deposit on posting. Only ACTIVE funds with REVOLVING or DEPOSIT_ONLY mode are available.',
+    tip: 'CSI sales always create AR (collect via Collections). Cash Receipt and Service Invoice with CASH payment can route directly to a Petty Cash Fund — bypassing AR and auto-creating a deposit on posting. Only ACTIVE funds with REVOLVING or DEPOSIT_ONLY mode are available. Re-opening a CSI that a Collection already settled is blocked to keep AR and GL balanced — reopen the Collection first.',
   },
   'sales-list': {
     title: 'Sales Management',
@@ -86,13 +101,15 @@ const WORKFLOW_GUIDES = {
       'VALID — passed checks, ready to post',
       'POSTED — finalized, AR created, appears in reports',
       'Opening AR — pre-live-date entries skip stock deduction (AR only, no COGS)',
+      'Re-open — reverses stock, consignment, petty cash deposit, and journal entries (SAP Storno). Blocked if CSI is already settled by a POSTED Collection — reopen the collection first to release the CSI.',
+      'President Delete — for the President (or anyone granted accounting.reverse_posted in Access Templates): one-click delete of bad rows. POSTED rows trigger SAP Storno (reversal entries in current period; original kept for audit); DRAFT/ERROR rows are hard-deleted. All actions logged.',
     ],
     next: [
       { label: 'Create New Sale', path: '/erp/sales/entry' },
       { label: 'Collect Payment', path: '/erp/collections' },
       { label: 'View AR Aging', path: '/erp/collections/ar' },
     ],
-    tip: 'Post valid sales promptly. Unposted sales do not count in MTD targets or P&L. When Authority Matrix is enabled, posting may require approval — check the Approval Hub for pending items. Use the Source filter to view Opening AR entries separately.',
+    tip: 'Post valid sales promptly. Unposted sales do not count in MTD targets or P&L. Posting routes through the Approval Hub for users not in MODULE_DEFAULT_ROLES.SALES (lookup-driven, per-entity). When Authority Matrix is enabled, additional escalation rules can layer on top. Use the Source filter to view Opening AR entries separately. To re-open a POSTED CSI that has already been collected, first reopen the Collection that settles it — only unsettled CSIs are reopenable. Stuck on an ERROR row? The President can delete + reverse it from this list.',
   },
   'my-stock': {
     title: 'Inventory Overview',
@@ -140,13 +157,13 @@ const WORKFLOW_GUIDES = {
       { label: 'Generate SOA', path: '/erp/collections/soa' },
       { label: 'Petty Cash', path: '/erp/petty-cash' },
     ],
-    tip: 'Overdue accounts (>30 days) are flagged. Cash payments routed to a Petty Cash Fund auto-create a POSTED deposit on submission and auto-void on reopen. Only ACTIVE funds that accept deposits (REVOLVING or DEPOSIT_ONLY mode) are available.',
+    tip: 'Overdue accounts (>30 days) are flagged. Cash payments routed to a Petty Cash Fund auto-create a POSTED deposit on submission and auto-void on reopen. Only ACTIVE funds that accept deposits (REVOLVING or DEPOSIT_ONLY mode) are available. President Delete — for the President (or anyone granted accounting.reverse_posted in Access Templates): one-click delete of bad CRs. POSTED rows trigger SAP Storno (reverses collection + CWT + commission journals, deletes VAT/CWT ledger entries, voids petty cash deposit, decrements fund balance — all in a single transaction; original kept for audit). DRAFT/VALID/ERROR rows hard-delete. All actions logged.',
   },
   'collection-session': {
     title: 'Recording a Collection',
     steps: [
-      'Select the customer/hospital',
-      'Choose which invoices (CSIs) are being paid',
+      'Select the customer/hospital (auto-filled when you arrive here via the AR Aging "Collect" button)',
+      'Choose which invoices (CSIs) are being paid (the CSI you clicked from AR Aging is pre-selected; add more if the same CR settles multiple invoices)',
       'Enter the payment mode (Cash, Check, Bank Transfer, GCash)',
       'Choose payment destination — Petty Cash Fund (ACTIVE, deposit-enabled) or Bank Account',
       'Enter amount received — can be partial or full payment',
@@ -156,7 +173,7 @@ const WORKFLOW_GUIDES = {
       { label: 'View All Collections', path: '/erp/collections' },
       { label: 'View AR Aging', path: '/erp/collections/ar' },
     ],
-    tip: 'CWT is auto-computed if applicable. When routed to a petty cash fund, a POSTED deposit is auto-created on submission and auto-voided on reopen. The fund must be ACTIVE and accept deposits (REVOLVING or DEPOSIT_ONLY).',
+    tip: 'Collections support both hospital and customer targets — the system validates CSIs and AR balance for whichever entity type is used. Opening AR (pre-go-live) CSIs are fully collectable. CWT is auto-computed if applicable. When routed to a petty cash fund, a POSTED deposit is auto-created on submission and auto-voided on reopen. The fund must be ACTIVE and accept deposits (REVOLVING or DEPOSIT_ONLY). Arriving from AR Aging? The hospital and invoice are pre-filled — entity/BDM scope is still enforced by the backend so out-of-scope URLs resolve to an empty form. Role visibility: President/admin/finance see every BDM\'s open CSIs for the selected hospital by default (use the BDM filter to narrow); BDMs see only their own.',
   },
   'ar-aging': {
     title: 'Accounts Receivable Aging',
@@ -164,18 +181,20 @@ const WORKFLOW_GUIDES = {
       'Review outstanding balances by customer and age bracket',
       'Current (0-30 days), Overdue (31-60), Critical (60+)',
       'Prioritize collection on oldest receivables first',
+      'Click "Collect" on a hospital row to open the Collection form with the hospital pre-filled; click "Collect" on a specific CSI (expanded detail) to also pre-select that invoice',
       'Generate SOA for customers with high balances',
     ],
     next: [
       { label: 'Collect Payment', path: '/erp/collections/session' },
       { label: 'Generate SOA', path: '/erp/collections/soa' },
     ],
-    tip: 'High AR aging affects your collection rate and profit sharing eligibility.',
+    tip: 'High AR aging affects your collection rate and profit sharing eligibility. The "Collect" quick-action deep-links to the Collection form with the hospital (and optionally the specific invoice) pre-selected — posting logic, authority gating, and journal entries still run through the single Collections workflow so the ledger stays consistent across entities and subscribers. Role visibility: President/admin/finance see all BDMs\' CSIs across the working entity by default (use the BDM filter to scope); BDMs see only their own.',
   },
   'expenses': {
     title: 'Recording Expenses (ORE / ACCESS)',
     steps: [
-      'Choose expense type: ORE (reimbursable) or ACCESS (company-funded)',
+      'Choose expense type: ORE (reimbursable from revolving fund) or ACCESS (company-funded)',
+      'For transport: use "Transport — P2P" (jeepney/bus/tricycle) or "Transport — Grab/Taxi" categories. Receipt is optional for transport.',
       'Use the OCR scanner to auto-extract receipt data, or enter manually',
       'Select category — COA code auto-resolves from vendor/keyword classification',
       'Attach receipt photo as proof (batch upload available for bulk OR processing)',
@@ -188,17 +207,18 @@ const WORKFLOW_GUIDES = {
       { label: 'PRF / CALF', path: '/erp/prf-calf' },
       { label: 'COA Settings', path: '/erp/settings' },
     ],
-    tip: 'Expenses with COA 6900 (Misc) are BLOCKED from posting — map to correct account first. ACCESS expenses with non-cash payment auto-create a CALF. CALF must be POSTED before expense can post. COA codes are configurable in Settings → COA Mapping.',
+    tip: 'Expenses with COA 6900 (Misc) are BLOCKED from posting — map to correct account first. ACCESS expenses with non-cash payment auto-create a CALF. CALF must be POSTED before expense can post. COA codes are configurable in Settings → COA Mapping. OCR scanning is optional — if it fails or is disabled, the photo still uploads as proof and you fill the form manually. President Delete — for the President (or anyone granted accounting.reverse_posted in Access Templates): one-click delete of bad expense rows. POSTED/DELETION_REQUESTED → SAP Storno (reverses expense + CALF-link clear + journal entries; original kept for audit). DRAFT/VALID/ERROR → hard delete. Blocked if a POSTED CALF still references the row; reverse the CALF first. All actions logged.',
   },
   'smer': {
     title: 'SMER (Sales/Marketing Expense Report)',
     steps: [
-      'Select the period/cycle and your name',
+      'Select the period/cycle — SMER is submitted once per cycle (C1: 1st-15th, C2: 16th-end of month)',
+      'Click "Pull from CRM" to auto-fill MD counts and areas visited from your logged visits',
       'Fill in each day\'s activity type (Office/Field/Other/NO_WORK)',
-      'Select "NO_WORK" for days the BDM did not work — per diem is automatically zero, MD count is disabled',
-      'Enter expense amounts per category (Mobile, Internet, Meals, etc.)',
-      'System auto-computes Per Diem based on MD count and your per-person thresholds',
-      'Validate and Post to generate expense journal entries',
+      'Per Diem too low? Click the [+] button to request an override — you can do this anytime while the SMER is still DRAFT, no need to wait for submit',
+      'Select "NO_WORK" for days you did not work — per diem is automatically zero, no overrides allowed',
+      'Transport, ORE, and other cash expenses → enter in Expenses (ORE) for mobile-friendly input. These flow into your income automatically.',
+      'When all days are filled → Save → Validate → Submit to post per diem journal entries',
     ],
     next: [
       { label: 'Record Car Logbook', path: '/erp/car-logbook' },
@@ -206,17 +226,18 @@ const WORKFLOW_GUIDES = {
       { label: 'View Reports', path: '/erp/reports' },
       { label: 'People (CompProfile)', path: '/erp/people' },
     ],
-    tip: 'Per diem thresholds are per-person (CompProfile). Full=0 + Half=0 means always FULL per diem for all activities. Full=8 + Half=3 means MD count from CRM drives the tier. Use the "+" button beside per diem to request an override — BDMs submit requests that go to the Approval Hub for admin/president approval. Once approved, the override applies automatically. Rejected requests can be retried. Travel advance auto-populates from CompProfile revolving fund (or global default). "NO_WORK" days do NOT count as working days and cannot have overrides.',
+    tip: 'SMER is submitted per cycle (every ~15 days), not daily. You can save your SMER as DRAFT and update it daily — submit when the cycle ends. Per diem override: click [+] beside any day to request FULL or HALF tier with a reason. Overrides go to the Approval Hub immediately (even while SMER is DRAFT). Once approved, the override applies automatically. Per diem thresholds are per-person (CompProfile). "NO_WORK" days do NOT count as working days and cannot have overrides.',
   },
   'car-logbook': {
     title: 'Car Logbook',
     steps: [
-      'Enter the date and your vehicle details',
-      'Scan odometer photo using OCR for accurate reading',
-      'Add fuel entries: station, fuel type, liters, cost',
-      'Check CALF indicators — non-cash fuel entries show pending/linked CALF status per entry',
-      'System computes mileage and fuel efficiency automatically',
-      'Validate and Post — journal posts to FUEL_GAS COA code (configurable in Settings)',
+      'Select period and cycle — all days (including weekends) are shown in a grid',
+      'Fill in Start KM and End KM for each day — use [S] and [E] buttons to scan odometer photos via OCR',
+      'Destination is auto-filled from your SMER entry for that date — you can edit it manually',
+      'Click the Fuel cell to expand and add fuel entries: station, liters, ₱/L, payment mode',
+      'Use "Scan Receipt" to OCR gas receipts — station, liters, and price are auto-extracted. If OCR fails the photo still attaches; just type the values in.',
+      'Non-cash fuel entries require CALF — create in PRF/CALF before submitting',
+      'Rows auto-save when you move to the next row. Validate → Submit to post journal entries.',
     ],
     next: [
       { label: 'Record SMER', path: '/erp/smer' },
@@ -224,12 +245,12 @@ const WORKFLOW_GUIDES = {
       { label: 'PRF / CALF', path: '/erp/prf-calf' },
       { label: 'Fuel Efficiency', path: '/erp/fuel-efficiency' },
     ],
-    tip: 'Non-cash fuel entries (fleet card, GCash, card) show per-entry CALF status: "CALF (N)" = pending, "CALF OK" = all linked. Hover the badge to see which stations need CALF. Posting is blocked until all CALF documents are POSTED.',
+    tip: 'Weekends are included so no odometer days are missed. The * indicator means unsaved changes — rows save automatically on blur. Non-cash fuel entries show CALF status per entry. Posting is blocked until all CALF documents are POSTED. COA code for fuel is configurable in Settings.',
   },
   'prf-calf': {
     title: 'PRF / CALF',
     steps: [
-      'PRF (Partner Rebate Form) — record partner rebate payments',
+      'PRF (Partner Rebate Form) — record partner rebate payments. Rebates accumulate from collections; BDM creates PRF when ready to pay partner.',
       'CALF (Cash Advance Liquidation) — liquidate cash advances against expenses',
       'For PRF: enter partner details, rebate amount, payment mode',
       'For CALF: link to related expenses — system validates all linked line IDs belong to the expense',
@@ -241,7 +262,7 @@ const WORKFLOW_GUIDES = {
       { label: 'View Sales', path: '/erp/sales' },
       { label: 'COA Settings', path: '/erp/settings' },
     ],
-    tip: 'CALF validates that linked expense line IDs actually belong to the referenced expense entry. Document numbers auto-generate from Territory + date + sequence — if generation fails, check Territory setup for the BDM. All COA codes are admin-configurable in Settings.',
+    tip: 'Partner rebates follow accrual basis — journal entry (DR 5200 PARTNER_REBATE, CR funding) is created only when PRF is posted, not when the collection is recorded. CALF validates that linked expense line IDs actually belong to the referenced expense entry. Document numbers auto-generate from Territory + date + sequence — if generation fails, check Territory setup for the BDM. All COA codes are admin-configurable in Settings. President Delete — for the President (or anyone granted accounting.reverse_posted in Access Templates): one-click delete of bad PRF/CALF rows. POSTED → SAP Storno (CALF: clears calf_id on non-POSTED expenses; PRF: clears rebate_prf_id on the linked Collection; reverses the associated JE). Blocked if a POSTED downstream doc still depends on it (e.g., POSTED expense funded by this CALF, or an IncomeReport that auto-deducted this CALF — reverse those first). Controller auto-picks CALF vs PRF handler from the row\'s doc_type. All actions logged.',
   },
   'collaterals': {
     title: 'Marketing Collaterals',
@@ -263,14 +284,14 @@ const WORKFLOW_GUIDES = {
       'Create a transfer order to move stock between warehouses',
       'Select source warehouse, target warehouse, and products',
       'Subsidiary entities can browse parent company products — configurable via PRODUCT_CATALOG_ACCESS lookup',
-      'Enter quantities to transfer',
+      'Enter quantities to transfer — each order is assigned a human-readable ref at save time: ICT-{ENTITY}{MMDDYY}-{NNN} (e.g. ICT-VIP041826-001)',
       'Validate and Post — updates inventory in both warehouses',
     ],
     next: [
       { label: 'Receive Transfer', path: '/erp/transfers/receive' },
       { label: 'View Inventory', path: '/erp/my-stock' },
     ],
-    tip: 'Inter-company transfers (between entities) use transfer prices set by the president. Subsidiary product catalog access is lookup-driven.',
+    tip: 'Inter-company transfers (between entities) use transfer prices set by the president. Subsidiary product catalog access is lookup-driven. Transfer refs use the source entity\'s short_name as the code (admin-editable in Entity management, cache-busted on rename) — subsidiaries get their own prefix without a code change, matching JE/CALF/PO numbering. Legacy transfers created before the numbering rollout show their original ICT-YYYYMMDD-NNN format; new transfers use the unified format.',
   },
   'transfers-receive': {
     title: 'Receiving Stock Transfers',
@@ -479,17 +500,19 @@ const WORKFLOW_GUIDES = {
   'approval-manager': {
     title: 'Universal Approval Hub',
     steps: [
+      'Governing principle: "Any person can CREATE, but authority POSTS." Submitters validate; the Hub posts.',
       'All Pending tab: see EVERY transaction across the ERP that needs your attention — approve, post, or reject inline.',
       'Module filter: narrow by Sales, Collections, SMER, Car Logbook, Expenses, PRF/CALF, Income, Deductions, GRN, Payroll, KPI, etc.',
       'Sub-permissions: your assigned approval sub-permissions control which modules you see. Admin might handle Sales + GRN, finance handles Expenses + Payroll. President sees everything. Configure in Control Center → ERP Access Templates → Approvals sub-permissions.',
-      'Posting modules (Sales, Collections, SMER, Car Logbook, Expenses, PRF/CALF): documents in VALID status appear here — click Post to transition to POSTED.',
+      'Posting modules (Sales, Collections, SMER, Car Logbook, Expenses, PRF/CALF, Banking, Journal, Petty Cash, IC Transfer, Purchasing): documents in VALID status appear here — click Post to transition to POSTED.',
       'Approval modules (Income, Deductions, GRN, Payroll, KPI): multi-step review/approve workflows.',
+      'Default-Roles Gate (always on): when a submitter\'s role is not in MODULE_DEFAULT_ROLES.metadata.roles, their submit creates a pending request and the document waits here. Set roles = null on a module to disable the gate (open-post).',
       'Attachments: waybill photos, deposit slips, OR receipts, fuel receipts, and supporting documents are displayed inline — click any thumbnail to view full-size.',
       'Quick Edit: click Edit on any item to fix typos (description, notes, check#, amount) before approving. Editable fields configured in Control Center → Lookup Tables → APPROVAL_EDITABLE_FIELDS.',
       'Line-Item Edit: fix individual line items (qty, unit_price, batch#) directly — totals recalculate automatically. Configure in Lookup Tables → APPROVAL_EDITABLE_LINE_FIELDS.',
-      'Requests tab: authority matrix approvals (rule-triggered items).',
-      'Rules tab (Admin): create Approval Rules to delegate — assign specific people or roles to approve specific modules. Rules override default roles.',
-      'Default Roles: each module has configurable default roles (Control Center → Lookup Tables → MODULE_DEFAULT_ROLES). These determine who sees the module when no Approval Rules are set.',
+      'Requests tab: authority matrix approvals (rule-triggered escalations on top of the default-roles gate).',
+      'Rules tab (Admin): create Approval Rules to delegate — assign specific people or roles to approve specific modules. Rules layer on top of default roles, they don\'t replace them.',
+      'Default Roles: each module has configurable default roles (Control Center → Lookup Tables → MODULE_DEFAULT_ROLES). Edit per-entity to fit each subsidiary.',
       'Sidebar badge shows how many items need your attention.',
     ],
     next: [
@@ -498,7 +521,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Income', path: '/erp/income' },
       { label: 'Sales', path: '/erp/sales' },
     ],
-    tip: 'Module visibility uses a 4-layer system: (1) Sub-permissions (approvals.approve_sales, etc.) — control which modules each user sees and can approve. (2) Approval Rules — delegate to specific people or roles. (3) Default roles from MODULE_DEFAULT_ROLES lookup. (4) President always sees all. Assign sub-permissions in ERP Access Templates to divide workload: admin handles operational (sales, GRN, collections), finance handles financial (expenses, payroll, journal). Contractors with purchasing permission can also be given approval sub-permissions for GRN verification.',
+    tip: 'Module visibility uses a 4-layer system: (1) Sub-permissions (approvals.approve_sales, etc.) — control which modules each user sees and can approve. (2) Approval Rules — delegate to specific people or roles for amount-based escalation. (3) Default-Roles Gate from MODULE_DEFAULT_ROLES lookup — always enforced; if submitter is not in the role list, their post is held here. (4) President / CEO always bypass. Per-entity, lookup-driven, subscription-ready: each subsidiary configures its own posting roles. To disable the gate for a module, set metadata.roles = null in the lookup.',
   },
   'batch-trace': {
     title: 'Batch Trace',
@@ -575,16 +598,18 @@ const WORKFLOW_GUIDES = {
   'journal-entries': {
     title: 'Journal Entries',
     steps: [
-      'Create manual JE with debit and credit lines (must balance)',
-      'Add reference document or description',
-      'Post — entries flow to Trial Balance and P&L',
-      'Void if needed — creates reversal JE (Storno pattern)',
+      'Create manual JE with debit and credit lines (must balance within ₱0.01)',
+      'Add reference document or description — each JE is assigned a human-readable number at DRAFT time: JE-{ENTITY}{MMDDYY}-{NNN} (e.g. JE-VIP041826-001)',
+      'Post — the system runs the Authority gate (MODULE_DEFAULT_ROLES.JOURNAL + optional ApprovalRule). Authorized roles post directly; others route through the Approval Hub',
+      'Posted JEs flow to Trial Balance, P&L, and General Ledger',
+      'Reverse if needed — creates a new JE with flipped amounts (SAP Storno); original stays POSTED with corrects_je_id linking them. Reversal is gated by accounting.reverse_posted danger sub-permission.',
     ],
     next: [
       { label: 'Trial Balance', path: '/erp/trial-balance' },
       { label: 'P&L', path: '/erp/pnl' },
+      { label: 'Approval Hub', path: '/erp/approvals' },
     ],
-    tip: 'Auto-journals are created by Sales, Collections, Expenses. Manual JEs are for adjustments only.',
+    tip: 'Auto-journals are created automatically by Sales, Collections, Expenses, Petty Cash, IC Transfers, GRN, Depreciation, Interest — these inherit the source document\'s approval decision and do NOT re-gate. Manual JEs (created in this page) DO go through the Authority gate on post. JE numbers use the entity\'s short_name as the code (admin-editable in Entity management, cache-busted on rename) — subsidiaries get their own prefix without a code change. Legacy JEs created before the numbering rollout show their original numeric ID; new JEs use the formatted string. Sort order is chronological (je_date) — the number is for identification, not ordering.',
   },
   'month-end-close': {
     title: 'Month-End Close',
@@ -690,7 +715,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Journal Entries', path: '/erp/journals' },
       { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
     ],
-    tip: 'Fund modes, statuses, expense categories, and transaction types are lookup-driven — manage them in Control Center > Lookup Tables (PETTY_CASH_FUND_TYPE, PETTY_CASH_FUND_STATUS, PETTY_CASH_EXPENSE_CATEGORY).',
+    tip: 'Fund modes, statuses, expense categories, and transaction types are lookup-driven — manage them in Control Center > Lookup Tables (PETTY_CASH_FUND_TYPE, PETTY_CASH_FUND_STATUS, PETTY_CASH_EXPENSE_CATEGORY). President Delete — for anyone granted accounting.reverse_posted in Access Templates (baseline: President only; delegable to CFO/Finance without a code change via ERP_DANGER_SUB_PERMISSIONS). Per-transaction SAP Storno: POSTED txn is marked VOIDED, its journal entry is reversed, and the fund balance flips back in a single atomic session. Fund delete is gated by the same danger sub-perm — the old hardcoded president-only check was removed so subsidiaries can delegate via the template editor. All actions logged to ErpAuditLog.',
   },
   'consignment-aging': {
     title: 'Consignment Aging',
@@ -873,18 +898,21 @@ const WORKFLOW_GUIDES = {
     tip: 'Behind-schedule BDMs are highlighted in red. Aim for 100% completion before payroll run.',
   },
   'csi-booklets': {
-    title: 'CSI Booklets',
+    title: 'CSI Booklets — Monitoring & Traceability',
     steps: [
-      'Create and manage CSI booklet series with start/end numbers',
-      'Allocate weekly ranges to BDMs for invoice numbering',
-      'Track usage and remaining numbers per booklet',
+      'Record a BIR-registered booklet: code, series start/end, optional ATP number + registered address.',
+      'Open a booklet → allocate a small range (typically 3–7 numbers) to a specific BDM. No dates required.',
+      'Out-of-town BDMs get allocations so HQ can trace who used which CSI number. Iloilo-based users who use booklets directly do not need allocations — the system simply skips monitoring for them.',
+      'Void an unused number (wrong entry, cancelled, torn) ONLY with a scan/photo of the physical copy. This prevents off-book reuse of "voided" numbers.',
+      'When a sale posts, the CSI number is auto-marked USED — the BDM\'s available pool updates in real time. If the sale is reopened, the number returns to available.',
     ],
     next: [
       { label: 'Create Sale', path: '/erp/sales/entry' },
       { label: 'View Sales', path: '/erp/sales' },
       { label: 'Access Templates', path: '/erp/control-center?section=access' },
+      { label: 'Void Reason Lookup', path: '/erp/control-center?section=lookups' },
     ],
-    tip: 'Access is template-driven — only users with the inventory.csi_booklets sub-permission can see this page. Manage in Access Templates. Exhausted booklets cannot issue new CSI numbers.',
+    tip: 'Monitoring only — sales are NEVER blocked by CSI validation. Out-of-range / voided / already-used numbers surface as yellow warnings on validate. Void reasons are lookup-driven (ERP_CSI_VOID_REASONS) so subscribers can customize without code changes. Access is gated by the inventory.csi_booklets sub-permission (Access Templates).',
   },
   'cycle-reports': {
     title: 'Cycle Reports',
@@ -1144,7 +1172,9 @@ const WORKFLOW_GUIDES = {
       'View and search all vendors with status filters',
       'Create new vendors with contact info and aliases',
       'Edit or deactivate vendors — active vendors cannot be deleted if referenced in POs',
+      'Click "Learning Queue" chip to review AI-learned vendors — approve to confirm Claude\u2019s classification, reject to deactivate. Rejection preserves the audit trail but stops the classifier from matching.',
     ],
+    tip: 'AI-learned vendors come from Claude wins on OCR scans. Toggle the learner in Control Center \u2192 OCR Settings. Tune the generic-word blocklist in Lookup Tables \u2192 VENDOR_AUTO_LEARN_BLOCKLIST.',
     next: [
       { label: 'Purchase Orders', path: '/erp/purchase-orders' },
       { label: 'Supplier Invoices', path: '/erp/supplier-invoices' },
@@ -1258,6 +1288,24 @@ const WORKFLOW_GUIDES = {
     tip: 'Audit logs are retained for 90 days. Archive older records if needed for compliance.',
   },
 
+  // ═══ Phase 31 — President Reversal Console ═══
+  'president-reversals': {
+    title: 'President Reversal Console — SAP Storno across all modules',
+    steps: [
+      'Pick the Reversible Transactions tab to see POSTED docs across Sales, Collections, Expenses, CALF/PRF, GRN, IC Transfers, DR, Income, Payroll, Petty Cash, and manual JEs.',
+      'Filter by document type and date range. The type list is lookup-driven — new modules appear automatically once their handler is registered.',
+      'Click "Reverse…" on a row. The modal shows the dependent-doc preview: if any downstream POSTED doc consumed funds/stock, you must reverse those first.',
+      'Type the reason and DELETE to confirm. SAP Storno reversal posts to the current open period; the original document stays POSTED with a deletion_event_id link.',
+      'Switch to the Reversal History tab to audit every prior reversal — actor, timestamp, side effects, reason.',
+    ],
+    next: [
+      { label: 'Approval Hub', path: '/erp/approvals' },
+      { label: 'Audit Logs', path: '/erp/audit-logs' },
+      { label: 'Period Locks', path: '/erp/period-locks' },
+    ],
+    tip: 'Reversal entries land in the current period. If the current month is locked for the relevant module, unlock it first or wait. The original period is never modified. VAT (2550Q) and CWT (2307) ledger rows are NOT auto-modified by reversal — they are a finance-owned staging layer. During filing prep, check the finance_tag on any VAT/CWT rows whose source document has been reversed (look for the PRESIDENT_REVERSAL audit entry) and tag them EXCLUDE if they should not be filed, or add a reconciliation note if already filed.',
+  },
+
   // ═══ Phase 28 — Sales Goals & KPI ═══
 
   salesGoalDashboard: {
@@ -1265,36 +1313,139 @@ const WORKFLOW_GUIDES = {
     steps: [
       'President creates the annual Sales Goal Plan from the Setup page',
       'Define growth drivers (Hospital Accreditation, Pharmacy/CSR, etc.) with KPI definitions',
-      'Assign per-entity and per-BDM sales targets',
-      'Activate the plan — targets become visible to BDMs',
-      'Click "Compute KPIs" to refresh KPI snapshots from live ERP data',
-      'Monitor the BDM leaderboard, incentive tiers, and driver progress',
+      'Assign per-entity and per-BDM sales targets — or let activation auto-enroll every active BDM from People Master',
+      'Activate the plan — reference number (SG-{ENTITY}{YYMM}-###) is stamped and targets go visible to BDMs',
+      'Click "Compute KPIs" to refresh KPI snapshots from live ERP data (President/Finance only; others are routed through the Approval Hub)',
+      'Monitor the BDM leaderboard, incentive tiers, and driver progress — deactivated BDMs are hidden automatically',
+      'Scroll to Year-over-Year Trending to compare this year vs last year per BDM + per KPI (SG-5 #28). Needs at least one prior fiscal year of YTD snapshots',
     ],
     next: [
       { label: 'Goal Setup', path: '/erp/sales-goals/setup' },
       { label: 'Incentive Tracker', path: '/erp/sales-goals/incentives' },
+      { label: 'Scenario Planner', path: '/erp/sales-goals/scenario' },
+      { label: 'Variance Alerts', path: '/erp/variance-alerts' },
+      { label: 'Approval Hub', path: '/erp/approvals' },
       { label: 'My Goals', path: '/erp/sales-goals/my' },
     ],
-    tip: 'BDMs see only their own goals. President and delegates with FULL sales_goals access see all BDMs.',
+    tip: 'BDMs see only their own goals. President and delegates with FULL sales_goals access see all BDMs. Non-authorized compute/activate actions route through the Approval Hub (HTTP 202) — check there if a button silently "succeeded" with no data refresh. Status colors (green/amber/red bars + badges) are driven by the STATUS_PALETTE Lookup — rebrand per entity from Control Center → Lookup Tables. Commission accelerators (INCENTIVE_TIER.metadata.accelerator_factor) multiply a tier\'s payout for over-attainment — 1.0× by default (no-op); set > 1.0 per-tier to reward stretch performance.',
+  },
+
+  // ═══ Phase SG-4 #22 — Credit Rule Manager ═══
+  'credit-rule-manager': {
+    title: 'Credit Rules',
+    steps: [
+      'Each rule says "for sales matching THESE conditions, give THIS BDM THIS percentage of credit"',
+      'Conditions are AND-combined — leave fields empty to skip that constraint. Empty rules match every sale (use min/max amount to scope by deal size)',
+      'Priority controls evaluation order (lower runs first). Engine assigns credits until total hits 100%; the residual goes to sale.bdm_id (legacy fallback)',
+      'When no rule matches a sale, full credit goes to sale.bdm_id — preserves pre-SG-4 behavior on day one',
+      'Use Templates (CREDIT_RULE_TEMPLATES lookup) for common shapes: territory primary, product split, key-account override',
+      'Deactivating a rule preserves the historical SalesCredit rows it produced — never hard-delete (audit trail)',
+      'Engine runs automatically inside salesController.postSaleRow on every sale post — no manual trigger needed. Use the Reassign action on the Sale detail page to re-run after rule edits',
+    ],
+    next: [
+      { label: 'Goal Dashboard', path: '/erp/sales-goals' },
+      { label: 'Credit Ledger (this page → Credit Ledger tab)', path: '/erp/credit-rules' },
+      { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
+    ],
+    tip: 'Engine never throws into the sales path. If credit assignment fails, the sale still posts and the failure is logged to ErpAuditLog — admins re-run via the Reassign action. Add new templates by creating CREDIT_RULE_TEMPLATES Lookup rows — no code change.',
+  },
+
+  // ═══ Phase SG-4 #24 — Dispute Center ═══
+  'dispute-center': {
+    title: 'Incentive Dispute Center',
+    steps: [
+      'BDMs file disputes against an IncentivePayout (wrong tier, cap dispute, period mismatch) or a SalesCredit (missing/wrong credit)',
+      'OPEN → UNDER_REVIEW (reviewer takes ownership) → RESOLVED_APPROVED or RESOLVED_DENIED → CLOSED',
+      'Every transition routes through gateApproval(\'INCENTIVE_DISPUTE\') — non-authorized actions are held in the Approval Hub',
+      'RESOLVED_APPROVED on a payout dispute cascades a SAP Storno reversal of the accrual journal (period-lock-respecting). On a credit dispute, appends a negative SalesCredit row',
+      'SLA breaches are detected daily by the Dispute SLA Escalator agent (#DSP) — per-state SLA_DAYS configured via the DISPUTE_SLA_DAYS lookup. Breaches show a red SLA badge on the row',
+      'Filer can CANCEL their own OPEN dispute (no gate). Once UNDER_REVIEW, only the resolver path applies',
+    ],
+    next: [
+      { label: 'Goal Dashboard', path: '/erp/sales-goals' },
+      { label: 'Payout Ledger', path: '/erp/incentive-payouts' },
+      { label: 'Approval Hub', path: '/erp/approvals' },
+      { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
+    ],
+    tip: 'Dispute typology + SLAs are lookup-driven (INCENTIVE_DISPUTE_TYPE + DISPUTE_SLA_DAYS). Subscribers add new dispute types or tune SLA days per entity without code changes. SLA agent never auto-transitions — resolution is always a human decision.',
+  },
+
+  // ═══ Phase SG-5 #26 — Scenario Planner ═══
+  scenarioPlanner: {
+    title: 'Scenario Planner',
+    steps: [
+      'Load the active plan automatically — overrides drive a dry-run projection (no DB writes)',
+      'Tweak Target Revenue or Baseline Revenue to see how company attainment % recomputes',
+      'Adjust per-driver weight mix (must total 100% for a balanced plan — a warning banner flags any mismatch)',
+      'Optionally force a per-BDM attainment % to preview tier placement under the stretch scenario',
+      'Click Run Simulation — side-by-side "current vs scenario" columns render per BDM + company totals',
+      'Accelerator column shows the INCENTIVE_TIER.metadata.accelerator_factor currently applied — set via Control Center → Lookup Tables',
+      'Nothing persists. Push the scenario live by editing the plan (Goal Setup) and re-running Compute KPIs from the dashboard',
+    ],
+    next: [
+      { label: 'Goal Dashboard', path: '/erp/sales-goals' },
+      { label: 'Goal Setup', path: '/erp/sales-goals/setup' },
+      { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
+    ],
+    tip: 'Use this to answer "what if we raised the bar?" or "what if Juan finishes at 120%?" before committing to a new target. Because the engine reuses live computeIncentiveTier + applyTierAccelerator + applyIncentiveCap logic, the forecast matches production accrual math one-for-one — no drift.',
+  },
+
+  // ═══ Phase SG-5 #27 — Variance Alert Center ═══
+  varianceAlertCenter: {
+    title: 'Variance Alert Center',
+    steps: [
+      'kpiVarianceAgent runs monthly day 2 at 6:00 AM and flags every KPI whose deviation crosses the warning/critical threshold',
+      'Each alert persists to VarianceAlert — the cooldown window (VARIANCE_ALERT_COOLDOWN_DAYS, default 7) blocks re-firing the same breach within the window',
+      'The Monday 7:00 AM digest agent (kpiVarianceDigestAgent) rolls undelivered alerts into one per-manager email — so persistent low performers do not flood the inbox',
+      'BDMs see only their own alerts; managers see their direct reports (via PeopleMaster.reports_to); admin/finance/president see the full queue',
+      'Click Resolve once you have acknowledged the signal — optionally jot a short note. Resolved rows stay visible for audit',
+      'Retune thresholds per KPI via Control Center → Lookup Tables → KPI_VARIANCE_THRESHOLDS (per-entity, subscription-ready)',
+    ],
+    next: [
+      { label: 'Goal Dashboard', path: '/erp/sales-goals' },
+      { label: 'Dispute Center', path: '/erp/disputes' },
+      { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
+    ],
+    tip: 'Resolve is a coaching acknowledgement, not a financial op — it does not reverse any journal or payout. If the underlying data is wrong (payout or credit), file a Dispute instead so the reversal flows through the approval gate.',
+  },
+
+  // ═══ Phase SG-3R — KPI Template Library ═══
+  kpiTemplateManager: {
+    title: 'KPI Template Library',
+    steps: [
+      'Create a template set name (e.g. "VIP FY2026 Base") that groups KPI defaults you want to reuse across plans or subsidiaries',
+      'Add one row per (driver, KPI) — picking from existing GROWTH_DRIVER and KPI_CODE Lookup entries. Labels + units auto-fill from the KPI lookup; override if you need entity-specific phrasing',
+      'Set a default target and sort order per row. Mark a row inactive to hide it from plan-creation expansion without losing the row',
+      'When you create a new Sales Goal Plan, pass template_name (or template_id) in the POST body — plan creation will expand the template into growth_drivers[].kpi_definitions[]',
+      'Combine with the GROWTH_DRIVER lookup metadata (default_kpi_codes + default_weight) for zero-typing onboarding of new subsidiaries',
+      'The plan owns its copy after creation — editing the template later never mutates existing plans (SAP Commissions "events are immutable" posture)',
+    ],
+    next: [
+      { label: 'Goal Setup', path: '/erp/sales-goals/setup' },
+      { label: 'KPI Library', path: '/erp/kpi-library' },
+      { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
+    ],
+    tip: 'Templates are per-entity. Each subsidiary can have its own library — copy-paste the same template_name in MG AND CO. with different default targets if needed. Extend GROWTH_DRIVER.metadata.default_kpi_codes in Control Center to add more drivers without code changes.',
   },
 
   salesGoalSetup: {
     title: 'Sales Goal Plan Setup',
-    type: 'dependency',
-    items: [
-      { action: 'Before creating a plan', deps: 'Seed Lookup categories (GROWTH_DRIVER, KPI_CODE, INCENTIVE_TIER) from Control Center → Lookup Tables', section: null },
-      { action: 'When you set entity targets', deps: 'Sum of entity targets should match the plan target revenue. Over-allocation is allowed for execution buffer.', section: null },
-      { action: 'When you set BDM targets', deps: 'Sum of BDM targets under an entity should match the entity target. Check the validation message.', section: null },
-      { action: 'When you add a growth driver', deps: 'Select driver codes from Lookup GROWTH_DRIVER. Add KPI definitions using codes from Lookup KPI_CODE.', section: null },
-      { action: 'When you activate the plan', deps: 'All targets move from DRAFT to ACTIVE. BDMs can then see their goals on the dashboard.', section: null },
-      { action: 'To adjust incentive tiers mid-year', deps: 'Edit INCENTIVE_TIER in Control Center → Lookup Tables. Change budgets, add reward descriptions.', section: null },
+    steps: [
+      'Before creating a plan — seed Lookup categories (GROWTH_DRIVER, KPI_CODE, INCENTIVE_TIER, STATUS_PALETTE, SALES_GOAL_ELIGIBLE_ROLES) from Control Center → Lookup Tables. STATUS_PALETTE auto-seeds on first dashboard load if missing.',
+      'Fill in Plan Details: fiscal year, plan name, baseline revenue, target revenue, and collection target %',
+      'Add Growth Drivers — select driver codes from Lookup GROWTH_DRIVER, then add KPI definitions using codes from Lookup KPI_CODE',
+      'Set Entity Targets — the sum should match the plan target revenue (over-allocation is allowed as an execution buffer)',
+      'Set BDM Targets manually OR rely on auto-enrollment at activation (creates a target row for every active PeopleMaster person whose person_type is in SALES_GOAL_ELIGIBLE_ROLES)',
+      'Define Incentive Programs (optional) — choose whether each program uses tiered rewards',
+      'Activate the plan — reference number assigned, all targets go ACTIVE, eligible BDMs auto-enrolled, audit entry written. Non-authorized submitters are held in the Approval Hub.',
     ],
     next: [
       { label: 'Goal Dashboard', path: '/erp/sales-goals' },
       { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
       { label: 'Access Templates', path: '/erp/control-center?section=access-templates' },
+      { label: 'Approval Hub', path: '/erp/approvals' },
     ],
-    tip: 'Assign sales_goals: FULL access to an OM via Access Templates so they can help manage goals.',
+    tip: 'To extend auto-enrollment to new sales roles (SALES_REP, SALES_MANAGER, TERRITORY_MANAGER, etc.) add the person_type code to the SALES_GOAL_ELIGIBLE_ROLES lookup — zero code change. Re-activating an existing plan is idempotent (only missing BDMs are added).',
   },
 
   salesGoalBdmView: {
@@ -1302,6 +1453,7 @@ const WORKFLOW_GUIDES = {
     steps: [
       'Review your annual sales target and current YTD attainment',
       'Check your incentive tier — see the budget you\'ve earned and what\'s needed for the next tier',
+      'Open the "My Payouts" tab to see your earned incentives — accrued, awaiting approval, paid, or reversed',
       'Monitor monthly sales trends to identify patterns and momentum',
       'Review KPIs per growth driver — these indicate the health of your territory',
       'Create action items to drive each growth driver (accreditation, formulary listing, MD engagement)',
@@ -1310,9 +1462,52 @@ const WORKFLOW_GUIDES = {
     next: [
       { label: 'Goal Dashboard', path: '/erp/sales-goals' },
       { label: 'Incentive Tracker', path: '/erp/sales-goals/incentives' },
+      { label: 'Payout Ledger', path: '/erp/incentive-payouts' },
       { label: 'My Sales', path: '/erp/sales' },
     ],
-    tip: 'Complete action items consistently — they drive the KPIs that determine your incentive tier.',
+    tip: 'Complete action items consistently — they drive the KPIs that determine your incentive tier. Your target appears automatically once the president activates the annual plan; no manual enrollment is needed. Payouts accrue automatically once YTD attainment hits a tier threshold — the amount posts to the GL as Incentive Expense DR / Incentive Accrual CR, capped by your CompProfile if CASH-type + cap is set.',
+  },
+
+  // ═══ Phase SG-Q2 W3 — My Compensation tab on BDM view ═══
+
+  salesGoalCompensation: {
+    title: 'My Compensation Statement',
+    steps: [
+      'Earned — total incentive credited this fiscal year (ACCRUED + APPROVED + PAID)',
+      'Accrued — credited but not yet authority-approved; sits in the Approval Hub',
+      'Paid — settled via a settlement journal entry; cash already moved through your funding COA',
+      'Adjustments — sum of CompProfile cap reductions + reversed payouts (transparency for what was clawed back or capped)',
+      'Tier context shows your current YTD attainment, current tier, and FY-end projected tier',
+      'Click "Print / Save as PDF" — opens the printable statement; use your browser\'s Print menu to save as PDF',
+    ],
+    next: [
+      { label: 'Goal Detail', path: '/erp/sales-goals/my' },
+      { label: 'Payout Ledger', path: '/erp/incentive-payouts' },
+      { label: 'Notification Preferences', path: '/notifications/preferences' },
+    ],
+    tip: 'The statement is a live read of the Sales Goal incentive ledger — generated on demand, no caching, no stale snapshots. Tier milestone notifications fire to you, your manager, and the President when a payout accrues; opt out per-channel via Notification Preferences (compensationAlerts switch). The printable HTML is also subscriber-brandable via the COMP_STATEMENT_TEMPLATE Lookup category — admins set HEADER_TITLE / DISCLAIMER / SIGNATORY_TITLE per entity from Control Center → Lookup Tables.',
+  },
+
+  // ═══ Phase SG-Q2 W2 — Incentive Payout Ledger ═══
+
+  incentivePayoutLedger: {
+    title: 'Incentive Payout Ledger',
+    steps: [
+      'Payouts are created automatically when a BDM qualifies for a tier during YTD KPI snapshot computation',
+      'Each ACCRUED row has a linked journal entry (DR Incentive Expense / CR Incentive Accrual) — audit-visible, period-locked',
+      'Finance/President reviews accrued payouts and clicks "Approve" to lock the amount (no JE posted at approval)',
+      'Click "Pay" on an APPROVED (or ACCRUED) payout → settlement JE posts (DR Incentive Accrual / CR funding COA) and status → PAID',
+      'If a payout is wrong (miscalculated, tier changed, dispute upheld), click "Reverse" with a reason — a SAP-Storno reversal JE posts and status → REVERSED',
+      'Filter by BDM, period, status, or fiscal year. Use the "Payable" view for payroll-batch consumption.',
+    ],
+    next: [
+      { label: 'Goal Dashboard', path: '/erp/sales-goals' },
+      { label: 'Incentive Tracker', path: '/erp/sales-goals/incentives' },
+      { label: 'Approval Hub', path: '/erp/approvals' },
+      { label: 'Period Locks', path: '/erp/period-locks' },
+      { label: 'ERP Settings (COA)', path: '/erp/settings' },
+    ],
+    tip: 'Accrual/settlement/reversal COA codes come from Settings.COA_MAP.INCENTIVE_EXPENSE / INCENTIVE_ACCRUAL — subscriber-configurable via ERP Settings (validated against Chart of Accounts). Approve/Pay/Reverse are gated by gateApproval(module: INCENTIVE_PAYOUT, category: FINANCIAL) — non-authorized submitters are routed to the Approval Hub (HTTP 202). Reversal posts into the CURRENT period (SAP Storno); if the current period is locked, unlock it first. Sub-permissions: sales_goals.payout_view / payout_approve / payout_pay / payout_reverse — delegate via Access Templates.',
   },
 
   kpiLibrary: {
@@ -1465,6 +1660,9 @@ export default function WorkflowGuide({ pageKey }) {
           </div>
         )}
         {guide.tip && <div className="wfg-tip">💡 {guide.tip}</div>}
+        {PAGES_WITH_REJECTION_FLOW.has(pageKey) && (
+          <div className="wfg-tip" style={{ color: '#991b1b' }}>⚠ {REJECTION_FOOTER_NOTE}</div>
+        )}
       </div>
     </>
   );

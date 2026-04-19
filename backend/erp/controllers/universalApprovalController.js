@@ -10,6 +10,8 @@ const { getUniversalPending, MODULE_TO_SUB_KEY, hasApprovalSub } = require('../s
 const Lookup = require('../models/Lookup');
 
 // Phase 34 — Map approval handler type keys to module keys for sub-permission checks
+// Phase G6.7 — extended to cover Group B modules (gap modules routed via ApprovalRequest).
+// Group B `type` strings MUST match `actionType` values in universalApprovalService.js.
 const TYPE_TO_MODULE = {
   sales_line: 'SALES',
   collection: 'COLLECTION',
@@ -24,6 +26,14 @@ const TYPE_TO_MODULE = {
   deduction_schedule: 'DEDUCTION_SCHEDULE',
   perdiem_override: 'PERDIEM_OVERRIDE',
   approval_request: 'APPROVAL_REQUEST',
+  // Phase G6.7 — Group B (gap modules, id = ApprovalRequest._id, dereferenced via doc_id)
+  purchasing: 'PURCHASING',
+  journal: 'JOURNAL',
+  banking: 'BANKING',
+  ic_transfer: 'IC_TRANSFER',
+  petty_cash: 'PETTY_CASH',
+  sales_goal_plan: 'SALES_GOAL_PLAN',
+  incentive_payout: 'INCENTIVE_PAYOUT',
 };
 
 // Module-specific approval handlers (lazy-loaded to avoid circular deps)
@@ -247,15 +257,21 @@ const approvalHandlers = {
     const CarLogbookEntry = require('../models/CarLogbookEntry');
     const doc = await CarLogbookEntry.findById(id);
     if (!doc) throw new Error('Car logbook entry not found');
-    if (doc.status !== 'VALID') throw new Error('Car logbook not in VALID status');
+    // Post/reject ALL VALID entries for same BDM + period + cycle (not just this one)
+    // Car logbook has separate documents per day, but approval is per-batch
+    const batchFilter = { entity_id: doc.entity_id, bdm_id: doc.bdm_id, period: doc.period, cycle: doc.cycle, status: 'VALID' };
     if (action === 'post') {
+      const allValid = await CarLogbookEntry.find(batchFilter);
       const { postSingleCarLogbook } = require('./expenseController');
-      await postSingleCarLogbook(doc, userId);
+      for (const entry of allValid) {
+        await postSingleCarLogbook(entry, userId);
+      }
+      return allValid[0] || doc;
     } else if (action === 'reject') {
-      doc.status = 'ERROR';
-      doc.rejection_reason = reason;
-      doc.validation_errors = [reason];
-      await doc.save();
+      await CarLogbookEntry.updateMany(batchFilter, {
+        $set: { status: 'ERROR', rejection_reason: reason, validation_errors: [reason] }
+      });
+      return doc;
     }
     return doc;
   },
@@ -292,8 +308,146 @@ const approvalHandlers = {
       await doc.save();
     }
     return doc;
-  }
+  },
+
+  // ── Phase G6.7 — Group B reject handlers ──
+  // Group B modules are routed through `ApprovalRequest` (see universalApprovalService
+  // `buildGapModulePendingItems`). The Approval Hub passes `id = ApprovalRequest._id` here
+  // so each handler must look up the request, dereference `doc_id`, and update the
+  // underlying source document. The handler ONLY supports `reject` — the happy-path
+  // approve path stays inside the existing `processDecision()` route, which the module's
+  // own controllers consume after gateApproval().
+  //
+  // Subscription-safe: each module's source-doc model is loaded by name from a lookup-driven
+  // map (REJECT_TARGETS) so adding a new Group B module requires only:
+  //   (1) adding a row to MODULE_REJECTION_CONFIG seed (already done in lookupGenericController),
+  //   (2) adding the model name + business rules below in REJECT_TARGETS,
+  //   (3) wiring the type string in TYPE_TO_MODULE above + universalApprovalService actionType.
+  // No new handlers needed for additional fields — schema is uniform via getModuleRejectionConfig.
+
+  // Maps universalApprovalController `type` → { modelName, docTypeMap, terminalStates }
+  // - modelName: the source-doc Mongoose model
+  // - docTypeMap: optional map of ApprovalRequest.doc_type → modelName when one type covers
+  //   multiple physical models (IC_TRANSFER → InterCompanyTransfer | IcSettlement)
+  // - terminalStates: status values that block rejection (already settled / posted)
+  // Tone matches Rule #20 — never bypass gateApproval/periodLockCheck and never demote a
+  // POSTED financial document via reject; require explicit reverse instead.
+
+  purchasing: async (id, action, userId, reason) => buildGroupBReject({
+    actionType: 'purchasing', id, action, userId, reason,
+    modelByDocType: { SUPPLIER_INVOICE: 'SupplierInvoice' },
+    fallbackModel: 'PurchaseOrder',
+    terminalStates: ['POSTED', 'CLOSED', 'CANCELLED'],
+  }),
+
+  journal: async (id, action, userId, reason) => buildGroupBReject({
+    actionType: 'journal', id, action, userId, reason,
+    modelByDocType: { JOURNAL_ENTRY: 'JournalEntry' },
+    fallbackModel: 'JournalEntry',
+    terminalStates: ['POSTED', 'VOID'],
+  }),
+
+  banking: async (id, action, userId, reason) => buildGroupBReject({
+    actionType: 'banking', id, action, userId, reason,
+    modelByDocType: { BANK_RECON: 'BankStatement' },
+    fallbackModel: 'BankStatement',
+    terminalStates: ['FINALIZED'],
+  }),
+
+  ic_transfer: async (id, action, userId, reason) => buildGroupBReject({
+    actionType: 'ic_transfer', id, action, userId, reason,
+    modelByDocType: { IC_TRANSFER: 'InterCompanyTransfer', IC_SETTLEMENT: 'IcSettlement' },
+    fallbackModel: 'InterCompanyTransfer',
+    terminalStates: ['POSTED', 'CANCELLED', 'RECEIVED'],
+  }),
+
+  petty_cash: async (id, action, userId, reason) => buildGroupBReject({
+    actionType: 'petty_cash', id, action, userId, reason,
+    modelByDocType: { DISBURSEMENT: 'PettyCashTransaction', DEPOSIT: 'PettyCashTransaction' },
+    fallbackModel: 'PettyCashTransaction',
+    terminalStates: ['POSTED', 'VOIDED'],
+  }),
+
+  sales_goal_plan: async (id, action, userId, reason) => buildGroupBReject({
+    actionType: 'sales_goal_plan', id, action, userId, reason,
+    modelByDocType: { SALES_GOAL_PLAN: 'SalesGoalPlan' },
+    fallbackModel: 'SalesGoalPlan',
+    // CLOSED = normal end-of-life; REVERSED = President-Reverse cascade (Phase SG-3R).
+    // Both are terminal — must not be demoted to REJECTED.
+    terminalStates: ['CLOSED', 'REVERSED'],
+  }),
+
+  incentive_payout: async (id, action, userId, reason) => buildGroupBReject({
+    actionType: 'incentive_payout', id, action, userId, reason,
+    modelByDocType: { INCENTIVE_PAYOUT: 'IncentivePayout' },
+    fallbackModel: 'IncentivePayout',
+    terminalStates: ['PAID', 'REVERSED'],
+  }),
 };
+
+/**
+ * Phase G6.7 — Shared reject path for Group B modules.
+ *
+ * Loads the ApprovalRequest by id, derefs to the source doc via doc_id, validates the
+ * source doc isn't already in a terminal state, then sets status='REJECTED' + reason.
+ *
+ * This is intentionally additive: it does NOT touch journals, period locks, or
+ * gateApproval — it only updates the contractor-visible status + reason. The
+ * universalApprove caller handles ApprovalRequest resolution after this returns.
+ *
+ * Period-lock note: rejection does NOT change financial state — no JE is created or
+ * reversed. Period locks gate POSTING (the happy path), not rejection of pre-post
+ * documents. So no periodLockCheck is needed here, in line with Rule #20 (locks
+ * protect ledger integrity, not contractor-visible status fields).
+ */
+async function buildGroupBReject({ actionType, id, action, userId, reason, modelByDocType, fallbackModel, terminalStates }) {
+  if (action !== 'reject') {
+    throw new Error(`Unsupported action for ${actionType}: ${action} — only 'reject' is supported via Group B handler`);
+  }
+
+  const mongoose = require('mongoose');
+  const ApprovalRequest = require('../models/ApprovalRequest');
+
+  // The id we receive may be either an ApprovalRequest._id (gap module path) or the
+  // source doc _id directly (if this handler is ever invoked outside the Hub).
+  // Try ApprovalRequest first; fall back to source doc lookup.
+  const request = await ApprovalRequest.findById(id).lean();
+
+  let modelName, docId;
+  if (request && request.doc_id) {
+    modelName = (modelByDocType && modelByDocType[request.doc_type]) || fallbackModel;
+    docId = request.doc_id;
+  } else {
+    // No request found — assume id is the source doc id directly
+    modelName = fallbackModel;
+    docId = id;
+  }
+
+  if (!modelName) {
+    throw new Error(`No source model resolved for ${actionType} (doc_type=${request?.doc_type})`);
+  }
+
+  let Model;
+  try {
+    Model = mongoose.model(modelName);
+  } catch (err) {
+    throw new Error(`Model ${modelName} not registered: ${err.message}`);
+  }
+
+  const doc = await Model.findById(docId);
+  if (!doc) throw new Error(`${modelName} not found (id=${docId})`);
+
+  if (terminalStates && terminalStates.includes(doc.status)) {
+    throw new Error(`Cannot reject ${modelName} in terminal state ${doc.status} — use reverse/void instead`);
+  }
+
+  doc.status = 'REJECTED';
+  doc.rejection_reason = reason;
+  doc.rejected_by = userId;
+  doc.rejected_at = new Date();
+  await doc.save();
+  return doc;
+}
 
 /**
  * GET /api/erp/approvals/universal-pending
@@ -338,6 +492,42 @@ const universalApprove = catchAsync(async (req, res) => {
   }
 
   const result = await handler(id, action, req.user._id, reason);
+
+  // Phase G4 — Resolve any open default-roles ApprovalRequest for this doc.
+  // Closes the audit loop: when an approver acts in the Hub, mark the synthetic
+  // request as APPROVED/REJECTED so it stops appearing in the Authority Matrix list.
+  // Skipped for 'approval_request' / 'perdiem_override' (handler manages its own request).
+  if (!['approval_request', 'perdiem_override'].includes(type)) {
+    try {
+      const ApprovalRequest = require('../models/ApprovalRequest');
+      const decisionStatus = (action === 'reject') ? 'REJECTED'
+        : (['post', 'approve', 'credit'].includes(action)) ? 'APPROVED'
+        : null;
+      if (decisionStatus) {
+        await ApprovalRequest.updateMany(
+          { doc_id: id, status: 'PENDING' },
+          {
+            $set: {
+              status: decisionStatus,
+              decided_by: req.user._id,
+              decided_at: new Date(),
+              decision_reason: reason || `${action} via Approval Hub`,
+            },
+            $push: {
+              history: {
+                status: decisionStatus,
+                by: req.user._id,
+                reason: reason || `${action} via Approval Hub`,
+              },
+            },
+          }
+        );
+      }
+    } catch (err) {
+      console.error('Approval request resolution failed:', err.message);
+    }
+  }
+
   res.json({ success: true, data: result, message: `${action} successful` });
 });
 
@@ -573,5 +763,10 @@ const universalEdit = catchAsync(async (req, res) => {
 module.exports = {
   getUniversalPendingEndpoint,
   universalApprove,
-  universalEdit
+  universalEdit,
+  // Phase G7.2 — exported so copilotToolRegistry can route DRAFT_REJECTION_REASON
+  // through the SAME handler path /universal-approve uses (Rule #20 — never
+  // bypass gateApproval/period locks; for rejection, the handler is the gate).
+  approvalHandlers,
+  TYPE_TO_MODULE,
 };

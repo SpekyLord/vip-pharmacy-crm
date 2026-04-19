@@ -7,9 +7,18 @@
 import { useState, useEffect, useCallback, useContext } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import { ROLE_SETS } from '../../constants/roles';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import { EntityContext } from '../../context/EntityContextObject';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
+
+// Phase G7 — these categories have their own dedicated UI in Control Center →
+// Agent Config (AI Cowork / Copilot Tools / AI Budget tabs). They're stored as
+// Lookup rows for the same reason every other per-entity config is — the Lookup
+// model IS the storage layer — but they should NOT appear in the generic Lookup
+// Tables sidebar. Two surfaces for the same data caused split-brain confusion
+// and exposed billable AI features in a 50-category list.
+const HIDDEN_FROM_LOOKUP_TABLES = new Set(['AI_COWORK_FEATURES', 'COPILOT_TOOLS', 'AI_SPEND_CAPS']);
 
 const pageStyles = `
   .lm-container { padding: 0; }
@@ -57,6 +66,10 @@ export function LookupManagerContent() {
   const entityCtx = useContext(EntityContext);
   const workingEntityId = entityCtx?.workingEntityId || null;
   const canEdit = ROLE_SETS.MANAGEMENT.includes(user?.role);
+  // Phase 3c — lookup-row delete (Deactivate) gated by Tier 2 lookup-only accounting.lookup_delete.
+  // Activate (PUT to flip is_active back) remains under canEdit (recoverable).
+  const { hasSubPermission } = useErpSubAccess();
+  const canDeleteLookup = hasSubPermission('accounting', 'lookup_delete');
 
   const [categories, setCategories] = useState([]);
   const [seedDefaults, setSeedDefaults] = useState({});
@@ -192,7 +205,7 @@ export function LookupManagerContent() {
         <div className="lm-layout">
           <div className="lm-cats">
             <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--erp-muted)', textTransform: 'uppercase', padding: '0 12px 8px', letterSpacing: 0.5 }}>Categories</div>
-            {categories.map(cat => (
+            {categories.filter(cat => !HIDDEN_FROM_LOOKUP_TABLES.has(cat)).map(cat => (
               <div
                 key={cat}
                 className={`lm-cat-item ${activeCat === cat ? 'active' : ''}`}
@@ -220,6 +233,7 @@ export function LookupManagerContent() {
                     {canEdit && <button className="btn btn-sm btn-primary" onClick={openCreate}>+ Add Item</button>}
                   </div>
                 </div>
+
 
                 {loading ? (
                   <div className="lm-empty">Loading...</div>
@@ -267,9 +281,12 @@ export function LookupManagerContent() {
                           {canEdit && (
                             <td>
                               <button className="btn btn-sm btn-outline" onClick={() => openEdit(item)} style={{ marginRight: 4 }}>Edit</button>
-                              <button className="btn btn-sm btn-danger-outline" onClick={() => handleToggle(item)}>
-                                {item.is_active ? 'Deactivate' : 'Activate'}
-                              </button>
+                              {/* Phase 3c — Deactivate is a DELETE call (gated). Activate is a PUT (recoverable, canEdit-only). */}
+                              {(item.is_active ? canDeleteLookup : true) && (
+                                <button className="btn btn-sm btn-danger-outline" onClick={() => handleToggle(item)}>
+                                  {item.is_active ? 'Deactivate' : 'Activate'}
+                                </button>
+                              )}
                             </td>
                           )}
                         </tr>

@@ -4,6 +4,13 @@
  * Account codes follow PRD v5 §11.1 (1000-8200).
  * Idempotent: uses updateOne with upsert per entity + account_code.
  *
+ * Phase 31b — Lookup-driven (Rule #3): the canonical defaults below are
+ * exposed as `COA_TEMPLATE_LOOKUP_SHAPE` and registered as Lookup category
+ * COA_TEMPLATE in lookupGenericController.SEED_DEFAULTS. The seed reads from
+ * the per-entity Lookup (which subscribers can edit via Control Center →
+ * Lookup Tables) instead of this array. The array remains as the bootstrap
+ * defaults that auto-seed the Lookup on first read.
+ *
  * Usage: node backend/erp/scripts/seedCOA.js
  */
 const path = require('path');
@@ -14,6 +21,7 @@ const mongoose = require('mongoose');
 const connectDB = require('../../config/db');
 const ChartOfAccounts = require('../models/ChartOfAccounts');
 const Entity = require('../models/Entity');
+const Lookup = require('../models/Lookup');
 
 // ═══ Full COA Template ═══
 const COA_TEMPLATE = [
@@ -30,6 +38,7 @@ const COA_TEMPLATE = [
   // ──── 1100-1220: Receivables (ASSET) ────
   { account_code: '1100', account_name: 'Accounts Receivable — Trade', account_type: 'ASSET', account_subtype: 'Receivable', normal_balance: 'DEBIT' },
   { account_code: '1110', account_name: 'AR — BDM Advances', account_type: 'ASSET', account_subtype: 'Receivable', normal_balance: 'DEBIT' },
+  { account_code: '1150', account_name: 'IC Receivable', account_type: 'ASSET', account_subtype: 'Receivable', normal_balance: 'DEBIT' },
   { account_code: '1200', account_name: 'Inventory', account_type: 'ASSET', account_subtype: 'Inventory', normal_balance: 'DEBIT' },
   { account_code: '1210', account_name: 'Input VAT', account_type: 'ASSET', account_subtype: 'Tax Receivable', normal_balance: 'DEBIT' },
   { account_code: '1220', account_name: 'CWT Receivable', account_type: 'ASSET', account_subtype: 'Tax Receivable', normal_balance: 'DEBIT' },
@@ -42,11 +51,14 @@ const COA_TEMPLATE = [
 
   // ──── 2000-2400: Liabilities ────
   { account_code: '2000', account_name: 'Accounts Payable — Trade', account_type: 'LIABILITY', account_subtype: 'AP', normal_balance: 'CREDIT' },
+  { account_code: '2050', account_name: 'IC Payable', account_type: 'LIABILITY', account_subtype: 'AP', normal_balance: 'CREDIT' },
   { account_code: '2100', account_name: 'Output VAT', account_type: 'LIABILITY', account_subtype: 'Tax Payable', normal_balance: 'CREDIT' },
   { account_code: '2200', account_name: 'SSS Payable', account_type: 'LIABILITY', account_subtype: 'Gov Payable', normal_balance: 'CREDIT' },
   { account_code: '2210', account_name: 'PhilHealth Payable', account_type: 'LIABILITY', account_subtype: 'Gov Payable', normal_balance: 'CREDIT' },
   { account_code: '2220', account_name: 'Pag-IBIG Payable', account_type: 'LIABILITY', account_subtype: 'Gov Payable', normal_balance: 'CREDIT' },
   { account_code: '2230', account_name: 'Withholding Tax Payable', account_type: 'LIABILITY', account_subtype: 'Tax Payable', normal_balance: 'CREDIT' },
+  { account_code: '2160', account_name: 'Incentive Accrual Payable', account_type: 'LIABILITY', account_subtype: 'Other', normal_balance: 'CREDIT' },
+  { account_code: '2250', account_name: 'Interest Payable', account_type: 'LIABILITY', account_subtype: 'Other', normal_balance: 'CREDIT' },
   { account_code: '2300', account_name: 'Loans Payable', account_type: 'LIABILITY', account_subtype: 'Loan', normal_balance: 'CREDIT' },
   { account_code: '2301', account_name: 'SBC Credit Card Payable', account_type: 'LIABILITY', account_subtype: 'CC Payable', normal_balance: 'CREDIT' },
   { account_code: '2302', account_name: 'Shell Fleet Card Payable', account_type: 'LIABILITY', account_subtype: 'CC Payable', normal_balance: 'CREDIT' },
@@ -70,6 +82,7 @@ const COA_TEMPLATE = [
   // ──── 5000-5500: Cost of Sales ────
   { account_code: '5000', account_name: 'Cost of Goods Sold', account_type: 'EXPENSE', account_subtype: 'COGS', normal_balance: 'DEBIT' },
   { account_code: '5100', account_name: 'BDM Commission', account_type: 'EXPENSE', account_subtype: 'COGS', normal_balance: 'DEBIT' },
+  { account_code: '5150', account_name: 'Incentive Expense — Sales Goal', account_type: 'EXPENSE', account_subtype: 'COGS', normal_balance: 'DEBIT' },
   { account_code: '5200', account_name: 'Profit Share / Partner Rebate', account_type: 'EXPENSE', account_subtype: 'COGS', normal_balance: 'DEBIT' },
   { account_code: '5300', account_name: "Partners' Insurance", account_type: 'EXPENSE', account_subtype: 'COGS', normal_balance: 'DEBIT' },
   { account_code: '5400', account_name: 'Food Cost', account_type: 'EXPENSE', account_subtype: 'COGS', normal_balance: 'DEBIT' },
@@ -78,9 +91,12 @@ const COA_TEMPLATE = [
   // ──── 6000-6900: Operating Expenses ────
   { account_code: '6000', account_name: 'Salaries & Wages', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6050', account_name: 'Allowances', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
+  { account_code: '6060', account_name: '13th Month Pay', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6100', account_name: 'Per Diem Expense', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6150', account_name: 'Transport Expense', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6155', account_name: 'Travel & Accommodation', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
+  { account_code: '6160', account_name: 'Special Transport', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
+  { account_code: '6170', account_name: 'Other Reimbursable Expense', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6200', account_name: 'Fuel & Gas', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6250', account_name: 'Vehicle Maintenance', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
   { account_code: '6260', account_name: 'Repairs & Maintenance (General)', account_type: 'EXPENSE', account_subtype: 'OpEx', normal_balance: 'DEBIT' },
@@ -117,6 +133,72 @@ const COA_TEMPLATE = [
   { account_code: '8200', account_name: 'BDM Advance Expense (BIR)', account_type: 'EXPENSE', account_subtype: 'BIR-Only', normal_balance: 'DEBIT', bir_flag: 'BIR' },
 ];
 
+// ═══ Lookup-shape conversion ═══
+// Each ChartOfAccounts template entry → Lookup-category COA_TEMPLATE entry.
+// code = ACCT_<account_code> guarantees uniqueness within the Lookup category.
+// metadata carries every field needed to materialize a ChartOfAccounts row.
+const COA_TEMPLATE_LOOKUP_SHAPE = COA_TEMPLATE.map((acct) => ({
+  code: `ACCT_${acct.account_code}`,
+  label: acct.account_name,
+  metadata: {
+    account_code:    acct.account_code,
+    account_type:    acct.account_type,
+    account_subtype: acct.account_subtype || '',
+    normal_balance:  acct.normal_balance,
+    bir_flag:        acct.bir_flag || 'BOTH',
+    parent_code:     acct.parent_code || '',
+    is_active:       acct.is_active !== undefined ? acct.is_active : true,
+  },
+}));
+
+/**
+ * Load the COA template from Lookup for a given entity.
+ * Auto-seeds the Lookup category from `COA_TEMPLATE` on first call so existing
+ * entities pick up new template entries without admin intervention.
+ * Subscribers can override per-entity via Control Center → Lookup Tables.
+ *
+ * Returns array shaped like COA_TEMPLATE entries:
+ * [{account_code, account_name, account_type, account_subtype, normal_balance, bir_flag, parent_code, is_active}, ...]
+ */
+async function loadCoaTemplateForEntity(entityId) {
+  if (!entityId) return COA_TEMPLATE; // no entity context — fall back to hardcoded
+  const ops = COA_TEMPLATE_LOOKUP_SHAPE.map((item, i) => ({
+    updateOne: {
+      filter: { entity_id: entityId, category: 'COA_TEMPLATE', code: item.code },
+      update: {
+        $setOnInsert: { label: item.label, sort_order: i * 10, is_active: true },
+        $set: Object.fromEntries(
+          Object.entries(item.metadata).map(([k, v]) => [`metadata.${k}`, v])
+        ),
+      },
+      upsert: true,
+    },
+  }));
+  // $setOnInsert preserves user customizations; $set merges metadata so updated
+  // canonical defaults propagate (e.g., a typo fix in account_subtype).
+  // Skip $set merge by setting the entry inactive in Lookup.
+  if (ops.length) await Lookup.bulkWrite(ops);
+
+  const items = await Lookup.find({
+    entity_id: entityId,
+    category: 'COA_TEMPLATE',
+    is_active: true,
+  }).sort({ sort_order: 1 }).lean();
+
+  return items
+    .filter(it => it.metadata?.account_code)
+    .map(it => ({
+      account_code:    it.metadata.account_code,
+      account_name:    it.label,
+      account_type:    it.metadata.account_type,
+      account_subtype: it.metadata.account_subtype || '',
+      normal_balance:  it.metadata.normal_balance,
+      bir_flag:        it.metadata.bir_flag || 'BOTH',
+      parent_code:     it.metadata.parent_code || undefined,
+      is_active:       it.metadata.is_active !== false,
+    }));
+}
+
 async function seedCOA() {
   const entities = await Entity.find({ status: 'ACTIVE' }).lean();
   if (entities.length === 0) {
@@ -127,8 +209,9 @@ async function seedCOA() {
   let totalUpserted = 0;
 
   for (const entity of entities) {
+    const template = await loadCoaTemplateForEntity(entity._id);
     let upserted = 0;
-    for (const acct of COA_TEMPLATE) {
+    for (const acct of template) {
       const result = await ChartOfAccounts.updateOne(
         { entity_id: entity._id, account_code: acct.account_code },
         {
@@ -143,7 +226,7 @@ async function seedCOA() {
       );
       if (result.upsertedCount > 0) upserted++;
     }
-    console.log(`  ${entity.entity_name}: ${upserted} new accounts (${COA_TEMPLATE.length} total)`);
+    console.log(`  ${entity.entity_name}: ${upserted} new accounts (${template.length} in template)`);
     totalUpserted += upserted;
   }
 
@@ -166,3 +249,5 @@ if (require.main === module) {
 
 module.exports = seedCOA;
 module.exports.COA_TEMPLATE = COA_TEMPLATE;
+module.exports.COA_TEMPLATE_LOOKUP_SHAPE = COA_TEMPLATE_LOOKUP_SHAPE;
+module.exports.loadCoaTemplateForEntity = loadCoaTemplateForEntity;

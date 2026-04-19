@@ -1,5 +1,6 @@
 const Entity = require('../models/Entity');
 const { catchAsync } = require('../../middleware/errorHandler');
+const { invalidateEntityCodeCache } = require('../services/docNumbering');
 
 /**
  * Entity CRUD Controller — Phase 24
@@ -48,5 +49,8 @@ exports.update = catchAsync(async (req, res) => {
   }
   const entity = await Entity.findByIdAndUpdate(filter._id, { $set: updates }, { new: true, runValidators: true });
   if (!entity) return res.status(404).json({ success: false, message: 'Entity not found' });
+  // Bust the JE-number code cache if short_name changed — new JEs must pick
+  // up the renamed code immediately instead of waiting for process restart.
+  if ('short_name' in updates) invalidateEntityCodeCache(entity._id);
   res.json({ success: true, data: entity });
 });

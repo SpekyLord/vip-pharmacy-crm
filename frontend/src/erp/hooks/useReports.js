@@ -18,11 +18,27 @@ export default function useReports() {
   const getCycleStatus = (period) => api.get(`/reports/cycle-status/${period}`);
   const getProductStreaks = (period, params) => api.get(`/reports/product-streaks/${period}`, { params });
 
-  // ═══ Phase 15.2 — CSI Booklets ═══
+  // ═══ Phase 15.2 — CSI Booklets (monitoring + traceability) ═══
   const getCsiBooklets = (params) => api.get('/csi-booklets', { params });
   const createBooklet = (data) => api.post('/csi-booklets', data);
-  const allocateWeek = (bookletId, data) => api.post(`/csi-booklets/${bookletId}/allocate`, data);
+  // Allocate a number range to a BDM. week_start/week_end are OPTIONAL legacy fields.
+  const allocateCsiRange = (bookletId, data) => api.post(`/csi-booklets/${bookletId}/allocate`, data);
+  // Backward-compat alias — older code may call this name.
+  const allocateWeek = allocateCsiRange;
   const validateCsiNumber = (params) => api.get('/csi-booklets/validate', { params });
+  // BDM self-service: my available (unused + non-voided) CSI numbers.
+  // Uses the non-inventory-gated /my-csi mount so BDMs without inventory module access can still call it.
+  const getAvailableCsiNumbers = (params) => api.get('/my-csi/available', { params });
+  // Admin/contractor: look up any BDM's available CSI numbers (uses gated endpoint).
+  const getAdminCsiAvailable = (params) => api.get('/csi-booklets/available', { params });
+  // Void a CSI number with proof image (multipart/form-data).
+  const voidCsiNumber = (bookletId, allocIdx, formData) =>
+    api.post(`/csi-booklets/${bookletId}/allocations/${allocIdx}/void`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  // Get a short-lived signed URL for the void proof image.
+  const getCsiVoidProof = (bookletId, allocIdx, voidIdx) =>
+    api.get(`/csi-booklets/${bookletId}/allocations/${allocIdx}/voids/${voidIdx}/proof`);
 
   // ═══ Phase 15.3 — Cycle Reports ═══
   const getCycleReports = (params) => api.get('/cycle-reports', { params });
@@ -72,7 +88,8 @@ export default function useReports() {
     getConsignmentAging, getExpenseAnomalies, getBudgetOverruns,
     getFuelEfficiency, getCycleStatus, getProductStreaks,
     // Phase 15.2
-    getCsiBooklets, createBooklet, allocateWeek, validateCsiNumber,
+    getCsiBooklets, createBooklet, allocateWeek, allocateCsiRange, validateCsiNumber,
+    getAvailableCsiNumbers, getAdminCsiAvailable, voidCsiNumber, getCsiVoidProof,
     // Phase 15.3
     getCycleReports, generateCycleReport, reviewCycleReport, confirmCycleReport, creditCycleReport,
     // Phase 15.5

@@ -47,6 +47,31 @@ function initAgentScheduler() {
   cron.schedule('0 5 * * 1', () => triggerScheduled('system_integrity', 'System Integrity'), { timezone: TIMEZONE });
   console.log('[AgentScheduler]   ✓ #S System Integrity - weekly Monday 5:00 AM');
 
+  // Phase SG-Q2 W2 — KPI Snapshot & Incentive Accrual. Day 1 of each month at
+  // 5:00 AM Manila so the previous month's KPI data is frozen before anyone
+  // starts posting Q2+1 sales. Manual Run Now available from Agent Console.
+  cron.schedule('0 5 1 * *', () => triggerScheduled('kpi_snapshot', 'KPI Snapshot & Incentive Accrual'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #K KPI Snapshot - monthly day 1 5:00 AM');
+
+  // Phase SG-Q2 W3 — KPI Variance Alerts. Day 2 at 6:00 AM Manila so the day-1
+  // snapshot is fully written before the variance pass reads it. Threshold
+  // breaches trigger emails to the BDM, their reports_to chain, and president.
+  cron.schedule('0 6 2 * *', () => triggerScheduled('kpi_variance', 'KPI Variance Alerts'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #V KPI Variance - monthly day 2 6:00 AM');
+
+  // Phase SG-5 #27 — KPI Variance Weekly Digest. Monday 07:00 Manila. Rolls up
+  // every VarianceAlert fired in the past 7 days into a single per-manager
+  // email so persistent low performers don't spam the inbox daily.
+  cron.schedule('0 7 * * 1', () => triggerScheduled('kpi_variance_digest', 'KPI Variance Digest'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #VD KPI Variance Digest - Mon 7:00 AM');
+
+  // Phase SG-4 #24 — Dispute SLA Escalator. Daily 06:30 Manila — runs after
+  // the early-morning snapshot/variance jobs so the system is settled. Walks
+  // every non-CLOSED IncentiveDispute and pings the escalation chain on
+  // any state breach. Idempotent — re-runs do not re-fire alerts.
+  cron.schedule('30 6 * * *', () => triggerScheduled('dispute_sla', 'Dispute SLA Escalator'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #DSP Dispute SLA - daily 6:30 AM');
+
   const hasAiKey = !!process.env.ANTHROPIC_API_KEY;
 
   if (hasAiKey) {
@@ -69,6 +94,13 @@ function initAgentScheduler() {
 
     cron.schedule('30 5 * * 1', () => triggerScheduled('org_intelligence', 'Org Intelligence'), { timezone: TIMEZONE });
     console.log('[AgentScheduler]   ✓ #O Org Intelligence - Monday 5:30 AM');
+
+    // Phase G7.9 — Daily Briefing via Copilot.
+    // Default 7:00 AM Manila on weekdays. Per-entity, schedule may be overridden
+    // via the lookup row AI_COWORK_FEATURES.PRESIDENT_DAILY_BRIEFING.metadata.schedule_cron;
+    // for v1, the central cron fires for every entity that has the row enabled.
+    cron.schedule('0 7 * * 1-5', () => triggerScheduled('daily_briefing', 'Daily Briefing (Copilot)'), { timezone: TIMEZONE });
+    console.log('[AgentScheduler]   ✓ #DB Daily Briefing - weekdays 7:00 AM');
   } else {
     console.log('[AgentScheduler] No ANTHROPIC_API_KEY - paid agents disabled. Add key to .env to enable.');
   }

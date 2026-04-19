@@ -122,7 +122,7 @@ export function RecurringJournalsContent() {
     setRunning(id);
     try {
       const res = await api.runRecurringTemplate(id);
-      showSuccess(`JE #${res?.data?.je_number} created (${res?.data?.status})`);
+      showSuccess(`${res?.data?.je_number} created (${res?.data?.status})`);
       loadTemplates();
     } catch (err) { showError(err, 'Recurring journals operation failed'); }
     setRunning(null);

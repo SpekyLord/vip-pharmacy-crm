@@ -32,6 +32,9 @@ export default function useErpApi() {
         data: err.response?.data,
         message: err.message
       });
+      if (err.response?.data?.errors?.length) {
+        console.error('[useErpApi] validation errors:', err.response.data.errors);
+      }
       const msg = err.response?.data?.message || err.message || 'API error';
       setError(msg);
       throw err;

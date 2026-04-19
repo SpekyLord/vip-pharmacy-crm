@@ -9,6 +9,7 @@
  */
 const express = require('express');
 const { roleCheck } = require('../../middleware/roleCheck');
+const { erpSubAccessCheck } = require('../middleware/erpAccessCheck');
 const periodLockCheck = require('../middleware/periodLockCheck');
 const {
   // Income
@@ -26,7 +27,9 @@ const {
   // Archive
   closePeriod, reopenPeriod, getPeriodStatus, getArchiveList,
   // Year-End
-  validateYearEnd, executeYearEnd, getFiscalYearStatus
+  validateYearEnd, executeYearEnd, getFiscalYearStatus,
+  // President reversal (Phase 31)
+  presidentReverseIncome
 } = require('../controllers/incomeController');
 
 const router = express.Router();
@@ -64,14 +67,22 @@ router.get('/profit-sharing', getProfitShareStatus);
 router.get('/profit-sharing/:productId', getProfitShareDetail);
 
 // ═══ Archive & Period Control ═══
-router.post('/archive/close-period', roleCheck('admin', 'finance', 'president'), closePeriod);
-router.post('/archive/reopen-period', roleCheck('admin', 'finance', 'president'), reopenPeriod);
+// Phase 3c — close/reopen-period are period-lock-equivalent operations on INCOME.
+// Gated by the same danger-baseline key as periodLockRoutes /toggle.
+router.post('/archive/close-period', erpSubAccessCheck('accounting', 'period_force_unlock'), closePeriod);
+router.post('/archive/reopen-period', erpSubAccessCheck('accounting', 'period_force_unlock'), reopenPeriod);
 router.get('/archive/period-status', getPeriodStatus);
 router.get('/archive', getArchiveList);
 
 // ═══ Year-End Close ═══
+// validate is read-only (dry run) → keep role-gated to admin/finance/president; only
+// the execute path is danger (irreversible JE cascade).
 router.get('/archive/year-end/validate', roleCheck('admin', 'finance', 'president'), validateYearEnd);
-router.post('/archive/year-end/close', roleCheck('admin', 'finance', 'president'), executeYearEnd);
+router.post('/archive/year-end/close', erpSubAccessCheck('accounting', 'year_end_close'), executeYearEnd);
 router.get('/archive/year-end/status', getFiscalYearStatus);
+
+// Phase 31 — President SAP Storno reversal of a CREDITED/BDM_CONFIRMED IncomeReport.
+// DRAFT/REVIEWED hard-deleted. Reverses the salary JE + clears auto-pulled CALF lines.
+router.post('/income/:id/president-reverse', erpSubAccessCheck('accounting', 'reverse_posted'), presidentReverseIncome);
 
 module.exports = router;

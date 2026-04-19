@@ -82,13 +82,18 @@ const interCompanyTransferSchema = new mongoose.Schema({
   // Status lifecycle
   status: {
     type: String,
-    enum: ['DRAFT', 'APPROVED', 'SHIPPED', 'RECEIVED', 'POSTED', 'CANCELLED'],
+    enum: ['DRAFT', 'APPROVED', 'SHIPPED', 'RECEIVED', 'POSTED', 'CANCELLED', 'REJECTED'],
     default: 'DRAFT'
   },
 
   // Approval
   approved_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   approved_at: { type: Date },
+
+  // Rejection (Phase G6)
+  rejection_reason: { type: String, trim: true, default: '' },
+  rejected_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  rejected_at: { type: Date },
 
   // Shipping
   shipped_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -109,6 +114,9 @@ const interCompanyTransferSchema = new mongoose.Schema({
   cancelled_at: { type: Date },
   cancel_reason: { type: String },
 
+  // SAP Storno reversal — set when IC Transfer is reversed; original stays POSTED for audit trail
+  deletion_event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
+
   // Audit
   created_by: {
     type: mongoose.Schema.Types.ObjectId,
@@ -125,28 +133,37 @@ const interCompanyTransferSchema = new mongoose.Schema({
   collection: 'erp_inter_company_transfers'
 });
 
-// Auto-compute line_total and roll up totals
-interCompanyTransferSchema.pre('save', function (next) {
-  let totalAmount = 0;
-  for (const item of this.line_items) {
-    if (item.batch_lot_no) {
-      item.batch_lot_no = cleanBatchNo(item.batch_lot_no);
+// Auto-compute line_total and roll up totals; assign transfer_ref via docNumbering
+interCompanyTransferSchema.pre('save', async function (next) {
+  try {
+    let totalAmount = 0;
+    for (const item of this.line_items) {
+      if (item.batch_lot_no) {
+        item.batch_lot_no = cleanBatchNo(item.batch_lot_no);
+      }
+      item.line_total = Math.round(item.qty * item.transfer_price * 100) / 100;
+      totalAmount += item.line_total;
     }
-    item.line_total = Math.round(item.qty * item.transfer_price * 100) / 100;
-    totalAmount += item.line_total;
-  }
-  this.total_amount = Math.round(totalAmount * 100) / 100;
-  this.total_items = this.line_items.reduce((sum, li) => sum + li.qty, 0);
+    this.total_amount = Math.round(totalAmount * 100) / 100;
+    this.total_items = this.line_items.reduce((sum, li) => sum + li.qty, 0);
 
-  // Auto-generate transfer_ref if not set
-  if (this.isNew && !this.transfer_ref) {
-    const d = this.transfer_date || new Date();
-    const dateStr = d.toISOString().slice(0, 10).replace(/-/g, '');
-    const rand = String(Math.floor(Math.random() * 999) + 1).padStart(3, '0');
-    this.transfer_ref = `ICT-${dateStr}-${rand}`;
-  }
+    // Auto-generate transfer_ref via shared docNumbering service. Entity-scoped
+    // (source_entity_id) so subsidiaries keep their own sequence; atomic counter
+    // via DocSequence avoids the unique-index collisions the old Math.random
+    // scheme produced. Format: ICT-{ENTITY}{MMDDYY}-{NNN}, matching JE/CALF/PO.
+    if (this.isNew && !this.transfer_ref) {
+      const { generateDocNumber } = require('../services/docNumbering');
+      this.transfer_ref = await generateDocNumber({
+        prefix: 'ICT',
+        entityId: this.source_entity_id,
+        date: this.transfer_date || new Date(),
+      });
+    }
 
-  next();
+    next();
+  } catch (err) {
+    next(err);
+  }
 });
 
 // Indexes

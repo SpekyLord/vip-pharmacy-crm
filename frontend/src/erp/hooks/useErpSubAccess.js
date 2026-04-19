@@ -1,5 +1,5 @@
 /**
- * useErpSubAccess — Phase 16
+ * useErpSubAccess — Phase 16 (updated Phase 3a)
  *
  * Hook for checking sub-module permissions in the frontend.
  * Use this to conditionally show/hide action buttons (Create PO, Record Payment, etc.)
@@ -7,11 +7,37 @@
  * Rules mirror erpSubAccessCheck middleware:
  *   - President → always true
  *   - Admin w/o erp_access.enabled → always true
- *   - Module FULL with no sub_permissions → all true
+ *   - Module FULL with no sub_permissions → all true EXCEPT danger keys
  *   - Module VIEW/FULL with sub_permissions → check specific key
+ *
+ * Danger keys (Phase 3a): sub-permissions in BASELINE_DANGER_SUB_PERMS are
+ * NEVER inherited from module FULL — they require an explicit entry in
+ * `user.erp_access.sub_permissions[module][subKey]`. Backend enforces the
+ * same rule + any subscriber-added keys from the ERP_DANGER_SUB_PERMISSIONS
+ * Lookup category; those extras aren't mirrored on the frontend because
+ * admin perm-config changes rarely (the backend will still reject if the
+ * UI ever shows a button the user can't actually use).
  */
 import { useAuth } from '../../hooks/useAuth';
 import { ROLES } from '../../constants/roles';
+
+// Mirrors BASELINE_DANGER_SUB_PERMS in backend/erp/services/dangerSubPermissions.js.
+// Keep in sync when adding/removing baseline danger keys.
+// Phase 3c (Apr 2026): expanded from 1 → 10 keys covering period-lock, year-end,
+// settings, transfer-pricing, people/login mgmt, access-template delete, payroll
+// gov-rate delete, and product hard-delete. See backend file for the full mapping.
+const BASELINE_DANGER_SUB_PERMS = new Set([
+  'accounting.reverse_posted',
+  'accounting.period_force_unlock',
+  'accounting.year_end_close',
+  'accounting.settings_write',
+  'people.terminate',
+  'people.manage_login',
+  'erp_access.template_delete',
+  'payroll.gov_rate_delete',
+  'inventory.transfer_price_set',
+  'master.product_delete',
+]);
 
 export default function useErpSubAccess() {
   const { user } = useAuth();
@@ -28,15 +54,18 @@ export default function useErpSubAccess() {
     const moduleLevel = user.erp_access?.modules?.[module];
     if (!moduleLevel || moduleLevel === 'NONE') return false;
 
-    // FULL with no sub_permissions for this module → all granted
+    // FULL with no sub_permissions for this module → all granted, EXCEPT danger keys
     // Count only truthy entries — stale false values don't count
     const moduleSubs = user.erp_access?.sub_permissions?.[module];
     const truthyCount = moduleSubs ? Object.values(moduleSubs).filter(Boolean).length : 0;
     if (!moduleSubs || truthyCount === 0) {
-      return moduleLevel === 'FULL';
+      if (moduleLevel !== 'FULL') return false;
+      // Danger sub-perms require explicit grant — module FULL does not inherit them
+      if (BASELINE_DANGER_SUB_PERMS.has(`${module}.${subKey}`)) return false;
+      return true;
     }
 
-    // Check specific sub-permission
+    // Explicit grants bypass the danger gate — admin took the decision
     return !!moduleSubs[subKey];
   };
 

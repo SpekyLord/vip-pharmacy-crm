@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
@@ -7,11 +7,14 @@ import { ROLE_SETS } from '../../constants/roles';
 import useExpenses from '../hooks/useExpenses';
 import useAccounting from '../hooks/useAccounting';
 import useErpApi from '../hooks/useErpApi';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import { processDocument } from '../services/ocrService';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError, showApprovalPending } from '../utils/errorToast';
+import RejectionBanner from '../components/RejectionBanner';
+import { showError, showSuccess, showApprovalPending } from '../utils/errorToast';
+import PresidentReverseModal from '../components/PresidentReverseModal';
 
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
@@ -19,13 +22,16 @@ const STATUS_COLORS = {
 
 export default function PrfCalf() {
   const { user } = useAuth();
-  const { getPrfCalfList, getPrfCalfById, createPrfCalf, updatePrfCalf, deleteDraftPrfCalf, validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines, loading } = useExpenses();
+  const { getPrfCalfList, getPrfCalfById, createPrfCalf, updatePrfCalf, deleteDraftPrfCalf, validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines, presidentReversePrfCalf, loading } = useExpenses();
   const { getMyCards, getMyBankAccounts } = useAccounting();
   const lookupApi = useErpApi();
+  const { hasSubPermission } = useErpSubAccess();
+  const canPresidentReverse = hasSubPermission('accounting', 'reverse_posted');
 
   const [docs, setDocs] = useState([]);
   const [editingDoc, setEditingDoc] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [reverseTarget, setReverseTarget] = useState(null);
   const [pendingRebates, setPendingRebates] = useState([]);
   const [pendingCalfLines, setPendingCalfLines] = useState([]);
   const [myCards, setMyCards] = useState([]);
@@ -86,6 +92,7 @@ export default function PrfCalf() {
     setForm({
       doc_type: 'PRF',
       prf_type: 'PARTNER_REBATE',
+      partner_id: partner.doctor_id || null,
       purpose: `Partner rebate — ${partner.collections?.length || 0} collection(s)`,
       payee_name: partner.doctor_name || '',
       payee_type: 'MD',
@@ -96,6 +103,7 @@ export default function PrfCalf() {
       amount: partner.remaining || 0,
       calf_number: '', advance_amount: 0, liquidation_amount: 0,
       payment_mode: 'BANK_TRANSFER', check_no: '', bank: '',
+      funding_card_id: null, funding_account_id: null,
       notes: `Auto-filled from pending rebates. Original total: ₱${partner.total_rebate}, already paid: ₱${partner.paid || 0}`,
       photo_urls: []
     });
@@ -108,6 +116,9 @@ export default function PrfCalf() {
     const sourceLabel = item.source === 'FUEL' ? 'Fuel (company card)' : 'ACCESS expenses';
     // Use the payment mode from the first line (the company fund method used)
     const primaryPaymentMode = item.lines[0]?.payment_mode || 'CARD';
+    // Auto-inherit funding card/account from linked expense lines (no redundant re-selection)
+    const primaryFundingCard = item.lines[0]?.funding_card_id || null;
+    const primaryFundingAccount = item.lines[0]?.funding_account_id || null;
     // Auto-inherit OR photos from linked expense lines (no need to scan twice)
     const linkedPhotos = item.lines.map(l => l.or_photo_url).filter(Boolean);
     setEditingDoc(null);
@@ -119,6 +130,8 @@ export default function PrfCalf() {
       amount: item.total_amount,
       calf_number: '', advance_amount: item.total_amount, liquidation_amount: item.total_amount,
       payment_mode: primaryPaymentMode,
+      funding_card_id: primaryFundingCard,
+      funding_account_id: primaryFundingAccount,
       check_no: '', bank: '',
       linked_expense_id: item.source_id,
       linked_expense_line_ids: item.lines.map(l => l._id),
@@ -131,6 +144,7 @@ export default function PrfCalf() {
   const resetForm = (docType = 'PRF') => setForm({
     doc_type: docType,
     prf_type: 'PARTNER_REBATE',
+    partner_id: null,
     purpose: '', payee_name: '', payee_type: 'MD',
     partner_bank: '', partner_account_name: '', partner_account_no: '',
     rebate_amount: 0, amount: 0,
@@ -150,11 +164,16 @@ export default function PrfCalf() {
       setForm({
         doc_type: data.doc_type,
         prf_type: data.prf_type || 'PARTNER_REBATE',
+        partner_id: data.partner_id || null,
         purpose: data.purpose || '', payee_name: data.payee_name || '', payee_type: data.payee_type || 'MD',
         partner_bank: data.partner_bank || '', partner_account_name: data.partner_account_name || '', partner_account_no: data.partner_account_no || '',
         rebate_amount: data.rebate_amount || 0, amount: data.amount || 0,
         calf_number: data.calf_number || '', advance_amount: data.advance_amount || 0, liquidation_amount: data.liquidation_amount || 0,
         payment_mode: data.payment_mode || 'CASH', check_no: data.check_no || '', bank: data.bank || '',
+        funding_card_id: data.funding_card_id || null,
+        funding_account_id: data.funding_account_id || null,
+        linked_expense_id: data.linked_expense_id || null,
+        linked_expense_line_ids: data.linked_expense_line_ids || [],
         notes: data.notes || '', photo_urls: data.photo_urls || []
       });
       setShowForm(true);
@@ -204,6 +223,23 @@ export default function PrfCalf() {
   };
   const handleReopen = async (id) => { try { await reopenPrfCalf([id]); loadDocs(); } catch (err) { showError(err, 'Could not reopen PRF/CALF'); } };
   const handleDelete = async (id) => { try { await deleteDraftPrfCalf(id); loadDocs(); } catch (err) { showError(err, 'Could not delete PRF/CALF'); } };
+  const handlePresidentReverse = async ({ reason, confirm }) => {
+    if (!reverseTarget) return;
+    try {
+      const res = await presidentReversePrfCalf(reverseTarget._id, { reason, confirm });
+      setReverseTarget(null);
+      showSuccess(res?.message || `${reverseTarget.doc_type || 'PRF/CALF'} reversed`);
+      loadDocs();
+    } catch (err) {
+      const deps = err?.response?.data?.dependents;
+      const baseMsg = err?.response?.data?.message || err?.message || 'Could not reverse PRF/CALF';
+      const msg = deps?.length
+        ? `${baseMsg} — depends on: ${deps.map(d => `${d.type} ${d.ref}`).join(', ')}`
+        : baseMsg;
+      showError({ message: msg }, msg);
+      throw err;
+    }
+  };
 
   const isFinance = ROLE_SETS.MANAGEMENT.includes(user?.role);
   const calfBalance = (form.advance_amount || 0) - (form.liquidation_amount || 0);
@@ -411,7 +447,8 @@ export default function PrfCalf() {
                 </thead>
                 <tbody>
                   {docs.map(d => (
-                    <tr key={d._id} style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)' }}>
+                    <Fragment key={d._id}>
+                    <tr style={{ borderBottom: d.status === 'ERROR' && d.rejection_reason ? 'none' : '1px solid var(--erp-border, #dbe4f0)' }}>
                       <td style={{ padding: 8, textAlign: 'center' }}>
                         <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700, color: '#fff', background: d.doc_type === 'PRF' ? '#7c3aed' : '#0891b2' }}>{d.doc_type}</span>
                       </td>
@@ -438,8 +475,31 @@ export default function PrfCalf() {
                           <button onClick={() => handleDelete(d._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #ef4444', background: '#fff', color: '#ef4444', cursor: 'pointer' }}>Del</button>
                         )}
                         {d.status === 'POSTED' && isFinance && <button onClick={() => handleReopen(d._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer' }}>Re-open</button>}
+                        {canPresidentReverse && !d.deletion_event_id && (
+                          <button
+                            onClick={() => setReverseTarget(d)}
+                            title="President: delete & reverse (SAP Storno for POSTED; hard-delete otherwise)"
+                            style={{ marginLeft: 4, padding: '2px 8px', fontSize: 12, borderRadius: 4, border: 'none', background: '#7f1d1d', color: '#fff', cursor: 'pointer' }}
+                          >
+                            President Delete
+                          </button>
+                        )}
                       </td>
                     </tr>
+                    {d.status === 'ERROR' && d.rejection_reason && (
+                      <tr style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)' }}>
+                        <td colSpan={7} style={{ padding: '6px 8px 4px' }}>
+                          <RejectionBanner
+                            row={d}
+                            moduleKey="PRF_CALF"
+                            variant="page"
+                            docLabel={`${d.doc_type} ${d.calf_number || ''} — ${d.period} ${d.cycle}`.trim()}
+                            onResubmit={(row) => handleEdit(row)}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   ))}
                   {!docs.length && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)' }}>No PRF/CALF documents</td></tr>}
                 </tbody>
@@ -456,6 +516,17 @@ export default function PrfCalf() {
                     <span style={{ padding: '2px 10px', borderRadius: 4, fontSize: 12, fontWeight: 700, color: '#fff', background: d.doc_type === 'PRF' ? '#7c3aed' : '#0891b2' }}>{d.doc_type}</span>
                     <span style={{ padding: '2px 10px', borderRadius: 4, fontSize: 12, color: '#fff', background: STATUS_COLORS[d.status] || '#6b7280' }}>{d.status}</span>
                   </div>
+                  {d.status === 'ERROR' && d.rejection_reason && (
+                    <div style={{ marginTop: 6 }}>
+                      <RejectionBanner
+                        row={d}
+                        moduleKey="PRF_CALF"
+                        variant="page"
+                        docLabel={`${d.doc_type} ${d.calf_number || ''} — ${d.period} ${d.cycle}`.trim()}
+                        onResubmit={(row) => handleEdit(row)}
+                      />
+                    </div>
+                  )}
                   <div className="prf-calf-card-body">
                     <div>
                       <span className="prf-calf-card-label">Period: </span>
@@ -485,6 +556,15 @@ export default function PrfCalf() {
                     )}
                     {d.status === 'POSTED' && isFinance && (
                       <button onClick={() => handleReopen(d._id)} style={{ border: '1px solid #eab308', background: '#fff', color: '#b45309' }}>Re-open</button>
+                    )}
+                    {canPresidentReverse && !d.deletion_event_id && (
+                      <button
+                        onClick={() => setReverseTarget(d)}
+                        title="President: delete & reverse (SAP Storno for POSTED; hard-delete otherwise)"
+                        style={{ border: 'none', background: '#7f1d1d', color: '#fff' }}
+                      >
+                        President Delete
+                      </button>
                     )}
                   </div>
                 </div>
@@ -658,6 +738,14 @@ export default function PrfCalf() {
           )}
         </main>
       </div>
+      {reverseTarget && (
+        <PresidentReverseModal
+          docLabel={`${reverseTarget.doc_type || 'PRF/CALF'} · ${reverseTarget.period || ''} ${reverseTarget.cycle || ''} · ₱${(reverseTarget.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} · ${reverseTarget.status}`}
+          docStatus={reverseTarget.status}
+          onConfirm={handlePresidentReverse}
+          onClose={() => setReverseTarget(null)}
+        />
+      )}
     </div>
   );
 }

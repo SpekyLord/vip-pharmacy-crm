@@ -8,6 +8,7 @@ import { showError, showApprovalPending } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 
 const pageStyles = `
   .je-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -212,7 +213,12 @@ export default function JournalEntries() {
                         <td>{j.source_module}</td>
                         <td>{fmt(j.total_debit)}</td>
                         <td>{fmt(j.total_credit)}</td>
-                        <td><span className={`badge badge-${j.status}`}>{j.status}</span></td>
+                        <td>
+                          <span className={`badge badge-${j.status}`}>{j.status}</span>
+                          <div style={{ marginTop: 4 }}>
+                            <RejectionBanner row={j} moduleKey="JOURNAL" variant="row" />
+                          </div>
+                        </td>
                         <td onClick={e => e.stopPropagation()}>
                           {j.status === 'DRAFT' && isAdmin && <button className="btn btn-success btn-sm" onClick={() => handlePost(j._id)}>Post</button>}
                           {j.status === 'POSTED' && isAdmin && <button className="btn btn-danger btn-sm" onClick={() => handleReverse(j._id)}>Reverse</button>}
@@ -229,8 +235,15 @@ export default function JournalEntries() {
               <span className="je-back" onClick={() => { setView('list'); setSelected(null); }}>← Back to list</span>
               {selected && (
                 <div className="je-detail">
-                  <h2>JE #{selected.je_number}</h2>
+                  <h2>{selected.je_number}</h2>
                   <p><strong>Date:</strong> {new Date(selected.je_date).toLocaleDateString()} &nbsp; <strong>Period:</strong> {selected.period} &nbsp; <strong>Source:</strong> {selected.source_module} &nbsp; <span className={`badge badge-${selected.status}`}>{selected.status}</span></p>
+                  <RejectionBanner
+                    row={selected}
+                    moduleKey="JOURNAL"
+                    variant="page"
+                    docLabel={selected.je_number}
+                    onResubmit={() => { setView('list'); setSelected(null); }}
+                  />
                   <p>{selected.description}</p>
                   {selected.is_reversal && <p style={{ color: '#dc2626' }}>↩ This is a reversal entry</p>}
                   <table className="je-lines-table">
@@ -269,7 +282,7 @@ export default function JournalEntries() {
                   {batchResults.some(r => !r.success) && <span style={{ color: '#dc2626', fontWeight: 600, marginLeft: 12 }}>{batchResults.filter(r => !r.success).length} failed</span>}
                 </div>
                 {batchResults.filter(r => !r.success).map((r, i) => (
-                  <div key={i} style={{ fontSize: 12, color: '#dc2626', marginBottom: 4 }}>JE #{r.je_number || r.id}: {r.reason}</div>
+                  <div key={i} style={{ fontSize: 12, color: '#dc2626', marginBottom: 4 }}>{r.je_number || r.id}: {r.reason}</div>
                 ))}
                 <div style={{ textAlign: 'right', marginTop: 16 }}>
                   <button className="btn btn-primary" onClick={() => setBatchResults(null)}>Close</button>

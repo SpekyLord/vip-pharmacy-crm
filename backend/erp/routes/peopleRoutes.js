@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { roleCheck } = require('../../middleware/roleCheck');
+const { erpSubAccessCheck } = require('../middleware/erpAccessCheck');
 const {
   getPeopleList,
   getPersonById,
@@ -26,8 +27,9 @@ const {
 } = require('../controllers/peopleController');
 
 // ═══ Bulk Role Migration (admin-only) ═══
+// Phase 3c — bulk-change-role mutates system-tier role for many users at once. Danger-baseline.
 router.get('/legacy-role-counts', roleCheck('admin', 'president'), getLegacyRoleCounts);
-router.post('/bulk-change-role', roleCheck('admin', 'president'), bulkChangeSystemRole);
+router.post('/bulk-change-role', erpSubAccessCheck('people', 'manage_login'), bulkChangeSystemRole);
 
 // ═══ People CRUD ═══
 router.get('/as-users', getAsUsers);  // lightweight CRM-compatible user list (entity-scoped)
@@ -39,13 +41,16 @@ router.post('/', roleCheck('admin', 'finance', 'president'), createPerson);
 router.get('/:id', getPersonById);
 router.put('/:id', roleCheck('admin', 'finance', 'president'), updatePerson);
 router.post('/:id/create-login', roleCheck('admin', 'president'), createLoginForPerson);
-router.post('/:id/disable-login', roleCheck('admin', 'president'), disableLogin);
+// Phase 3c — login manipulation routes (disable/unlink/change-role) gated as `people.manage_login`
+// (danger-baseline). Enable-login is the recoverable inverse → keep role-gated.
+router.post('/:id/disable-login', erpSubAccessCheck('people', 'manage_login'), disableLogin);
 router.post('/:id/enable-login', roleCheck('admin', 'president'), enableLogin);
-router.post('/:id/unlink-login', roleCheck('admin', 'president'), unlinkLogin);
-router.post('/:id/change-role', roleCheck('admin', 'president'), changeSystemRole);
-router.post('/:id/separate', roleCheck('admin', 'finance', 'president'), separatePerson);
+router.post('/:id/unlink-login', erpSubAccessCheck('people', 'manage_login'), unlinkLogin);
+router.post('/:id/change-role', erpSubAccessCheck('people', 'manage_login'), changeSystemRole);
+// Phase 3c — separate/deactivate cascade login disable + flip employment status. Danger-baseline.
+router.post('/:id/separate', erpSubAccessCheck('people', 'terminate'), separatePerson);
 router.post('/:id/reactivate', roleCheck('admin', 'president'), reactivatePerson);
-router.delete('/:id', roleCheck('admin', 'finance', 'president'), deactivatePerson);
+router.delete('/:id', erpSubAccessCheck('people', 'terminate'), deactivatePerson);
 
 // ═══ Compensation Profiles ═══
 router.get('/:id/comp', getCompProfile);

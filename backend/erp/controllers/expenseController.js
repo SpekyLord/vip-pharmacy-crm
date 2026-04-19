@@ -18,7 +18,7 @@ const { computePerdiemAmount, resolvePerdiemThresholds } = require('../services/
 // fuelTracker computations handled by CarLogbookEntry pre-save hook
 const { generateExpenseSummary } = require('../services/expenseSummary');
 const { getDailyMdCounts, getDailyVisitDetails } = require('../services/smerCrmBridge');
-const { journalFromExpense, resolveFundingCoa, getCoaMap } = require('../services/autoJournal');
+const { journalFromExpense, resolveFundingCoa, getCoaMap, journalFromPrfCalf } = require('../services/autoJournal');
 const { createAndPostJournal, reverseJournal } = require('../services/journalEngine');
 const JournalEntry = require('../models/JournalEntry');
 
@@ -612,6 +612,35 @@ const getCarLogbookById = catchAsync(async (req, res) => {
   res.json({ success: true, data: entry });
 });
 
+const getSmerDailyByDate = catchAsync(async (req, res) => {
+  const { date } = req.params; // YYYY-MM-DD
+  const targetDate = new Date(date + 'T00:00:00.000Z');
+  const nextDate = new Date(targetDate);
+  nextDate.setDate(nextDate.getDate() + 1);
+
+  const smer = await SmerEntry.findOne({
+    ...req.tenantFilter,
+    'daily_entries.entry_date': { $gte: targetDate, $lt: nextDate }
+  }).lean();
+
+  if (!smer) return res.json({ success: true, data: null });
+
+  const dailyEntry = smer.daily_entries.find(de => {
+    const d = new Date(de.entry_date);
+    return d >= targetDate && d < nextDate;
+  });
+
+  res.json({
+    success: true,
+    data: dailyEntry ? {
+      hospital_covered: dailyEntry.hospital_covered || '',
+      notes: dailyEntry.notes || '',
+      activity_type: dailyEntry.activity_type || '',
+      destination: [dailyEntry.hospital_covered, dailyEntry.notes].filter(Boolean).join(' — ')
+    } : null
+  });
+});
+
 const deleteDraftCarLogbook = catchAsync(async (req, res) => {
   const result = await CarLogbookEntry.findOneAndDelete({ _id: req.params.id, ...req.tenantFilter, status: 'DRAFT' });
   if (!result) return res.status(404).json({ success: false, message: 'Draft car logbook not found' });
@@ -921,8 +950,12 @@ async function autoCalfForSource(sourceDoc, sourceType) {
 // Auto-classify expense lines that have no coa_code or are still '6900' (Misc)
 async function autoClassifyLines(lines, entityId) {
   if (!lines || !lines.length) return;
+  // Pre-load EXPENSE_CATEGORY lookups once for category→COA fallback
+  const Lookup = require('../models/Lookup');
+  let catLookups = null;
   for (const line of lines) {
     if (!line.coa_code || line.coa_code === '6900') {
+      // Step 1: Try classifier (vendor/keyword match by establishment name)
       if (line.establishment) {
         try {
           const result = await classifyExpense(
@@ -933,10 +966,22 @@ async function autoClassifyLines(lines, entityId) {
             line.coa_code = result.coa_code;
             if (!line.expense_category) line.expense_category = result.expense_category;
             if (result.vendor_id) line.vendor_id = result.vendor_id;
+            continue;
           }
         } catch (err) {
-          // Non-blocking — leave coa_code as-is for manual correction
           console.warn(`[autoClassify] Line "${line.establishment}" failed:`, err.message);
+        }
+      }
+      // Step 2: Fallback — resolve COA from expense_category lookup metadata
+      if (line.expense_category && (!line.coa_code || line.coa_code === '6900')) {
+        if (!catLookups) {
+          try {
+            catLookups = await Lookup.find({ category: 'EXPENSE_CATEGORY', is_active: true }).lean();
+          } catch { catLookups = []; }
+        }
+        const catMatch = catLookups.find(l => l.label === line.expense_category || l.code === line.expense_category);
+        if (catMatch?.metadata?.coa_code && catMatch.metadata.coa_code !== '6900') {
+          line.coa_code = catMatch.metadata.coa_code;
         }
       }
     }
@@ -1003,6 +1048,11 @@ const getExpenseList = catchAsync(async (req, res) => {
   if (req.query.period) filter.period = req.query.period;
   if (req.query.cycle) filter.cycle = req.query.cycle;
 
+  // Phase 6 — hide reversed rows by default; opt-in via ?include_reversed=true.
+  if (req.query.include_reversed !== 'true') {
+    filter.deletion_event_id = { $exists: false };
+  }
+
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 20;
 
@@ -1034,6 +1084,9 @@ const validateExpenses = catchAsync(async (req, res) => {
   const entries = await ExpenseEntry.find({ ...req.tenantFilter, status: { $in: ['DRAFT', 'ERROR'] } });
 
   for (const entry of entries) {
+    // Auto-resolve COA codes before validation (tries vendor/keyword match, then category fallback)
+    await autoClassifyLines(entry.lines, entry.entity_id);
+
     const errors = [];
 
     if (!entry.lines.length) errors.push('No expense lines');
@@ -1048,10 +1101,14 @@ const validateExpenses = catchAsync(async (req, res) => {
       if (!line.establishment) errors.push(`Line ${i + 1}: establishment is required`);
 
       // OR proof gate: ORE and ACCESS lines require OR photo or OR number (PRD v5 §8.3)
-      if (!line.or_photo_url && !line.or_number) {
-        errors.push(`Line ${i + 1}: OR photo or OR number required for ${line.expense_type} expense`);
-      } else if (line.or_number && !line.or_photo_url) {
-        errors.push(`WARNING: Line ${i + 1}: OR# ${line.or_number} provided without receipt photo — attach photo for audit trail`);
+      // Transport categories (P2P, Grab/taxi) are exempt — receipt optional (lookup metadata.or_optional)
+      const isTransportCat = (line.expense_category || '').startsWith('TRANSPORT_') || (line.expense_category || '').startsWith('Transport —');
+      if (!isTransportCat) {
+        if (!line.or_photo_url && !line.or_number) {
+          errors.push(`Line ${i + 1}: OR photo or OR number required for ${line.expense_type} expense`);
+        } else if (line.or_number && !line.or_photo_url) {
+          errors.push(`WARNING: Line ${i + 1}: OR# ${line.or_number} provided without receipt photo — attach photo for audit trail`);
+        }
       }
 
       // #17 Hardening: BLOCK posting with coa_code=6900 (Misc) — must map to correct account
@@ -1442,6 +1499,11 @@ const getPrfCalfList = catchAsync(async (req, res) => {
   if (req.query.status) filter.status = req.query.status;
   if (req.query.period) filter.period = req.query.period;
 
+  // Phase 6 — hide reversed rows by default; opt-in via ?include_reversed=true.
+  if (req.query.include_reversed !== 'true') {
+    filter.deletion_event_id = { $exists: false };
+  }
+
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 20;
 
@@ -1468,6 +1530,26 @@ const getPrfCalfById = catchAsync(async (req, res) => {
 const deleteDraftPrfCalf = catchAsync(async (req, res) => {
   const result = await PrfCalf.findOneAndDelete({ _id: req.params.id, ...req.tenantFilter, status: 'DRAFT' });
   if (!result) return res.status(404).json({ success: false, message: 'Draft PRF/CALF not found' });
+
+  // Clean up calf_id references on linked expense/logbook lines (prevent orphaned refs)
+  if (result.doc_type === 'CALF' && result.linked_expense_id && result.linked_expense_line_ids?.length) {
+    const expense = await ExpenseEntry.findById(result.linked_expense_id);
+    if (expense) {
+      for (const line of expense.lines) {
+        if (line.calf_id?.toString() === result._id.toString()) line.calf_id = undefined;
+      }
+      await expense.save();
+    } else {
+      const logbook = await CarLogbookEntry.findById(result.linked_expense_id);
+      if (logbook) {
+        for (const fuel of logbook.fuel_entries) {
+          if (fuel.calf_id?.toString() === result._id.toString()) fuel.calf_id = undefined;
+        }
+        await logbook.save();
+      }
+    }
+  }
+
   res.json({ success: true, message: 'Draft PRF/CALF deleted' });
 });
 
@@ -1622,39 +1704,14 @@ const submitPrfCalf = catchAsync(async (req, res) => {
     }
   }
 
-  // Phase 11/22: Auto-journal — PRF/CALF (COA from Settings.COA_MAP)
-  const calfCoaMap = await getCoaMap();
+  // Phase 11/22/H3: Auto-journal — PRF/CALF (shared function in autoJournal.js)
   for (const doc of docs) {
     try {
-      const amount = doc.amount || 0;
-      if (amount <= 0) continue;
-      const funding = await resolveFundingCoa(doc);
-      const docRef = doc.prf_number || doc.calf_number || `${doc.doc_type}-${doc.period}`;
-      let lines;
-      if (doc.doc_type === 'PRF') {
-        lines = [
-          { account_code: calfCoaMap.PARTNER_REBATE || '5200', account_name: 'Partner Rebate Expense', debit: amount, credit: 0, description: `PRF: ${doc.payee_name || ''}` },
-          { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `PRF: ${docRef}` }
-        ];
-      } else {
-        lines = [
-          { account_code: calfCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: amount, credit: 0, description: `CALF advance: ${docRef}` },
-          { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `CALF: ${docRef}` }
-        ];
+      const jeData = await journalFromPrfCalf(doc, req.user._id);
+      if (jeData) {
+        jeData.source_event_id = doc.event_id;
+        await createAndPostJournal(doc.entity_id, jeData);
       }
-      await createAndPostJournal(doc.entity_id, {
-        je_date: doc.posted_at || new Date(),
-        period: doc.period,
-        description: `${doc.doc_type}: ${docRef}`,
-        source_module: 'EXPENSE',
-        source_event_id: doc.event_id,
-        source_doc_ref: docRef,
-        lines,
-        bir_flag: doc.bir_flag || 'BOTH',
-        vat_flag: 'N/A',
-        bdm_id: doc.bdm_id,
-        created_by: req.user._id
-      });
     } catch (jeErr) {
       console.error('Auto-journal failed for PRF/CALF:', doc._id, jeErr.message);
     }
@@ -1679,12 +1736,15 @@ const submitPrfCalf = catchAsync(async (req, res) => {
       // Validate
       const valErrors = [];
       if (sourceType === 'EXPENSE') {
+        // Auto-resolve COA codes before validation
+        await autoClassifyLines(source.lines, source.entity_id);
         if (!source.lines.length) valErrors.push('No expense lines');
         for (let i = 0; i < source.lines.length; i++) {
           const l = source.lines[i];
           if (!l.expense_date) valErrors.push(`Line ${i + 1}: date required`);
           if (!l.amount || l.amount <= 0) valErrors.push(`Line ${i + 1}: amount required`);
           if (!l.establishment) valErrors.push(`Line ${i + 1}: establishment required`);
+          if (!l.coa_code || l.coa_code === '6900') valErrors.push(`Line ${i + 1}: COA code missing or Miscellaneous (6900). Map "${l.establishment || 'unknown'}" to correct account.`);
         }
       } else {
         if (!source.entry_date) valErrors.push('Entry date required');
@@ -1812,6 +1872,27 @@ const reopenPrfCalf = catchAsync(async (req, res) => {
     await doc.save();
     reopenedDocs.push(doc);
 
+    // Clear calf_id on linked expense/logbook lines so they show as pending again
+    if (doc.doc_type === 'CALF' && doc.linked_expense_id && doc.linked_expense_line_ids?.length) {
+      try {
+        const expense = await ExpenseEntry.findById(doc.linked_expense_id);
+        if (expense) {
+          for (const line of expense.lines) {
+            if (line.calf_id?.toString() === doc._id.toString()) line.calf_id = undefined;
+          }
+          await expense.save();
+        } else {
+          const logbook = await CarLogbookEntry.findById(doc.linked_expense_id);
+          if (logbook) {
+            for (const fuel of logbook.fuel_entries) {
+              if (fuel.calf_id?.toString() === doc._id.toString()) fuel.calf_id = undefined;
+            }
+            await logbook.save();
+          }
+        }
+      } catch (linkErr) { console.error('Clear calf_id on reopen failed:', doc._id, linkErr.message); }
+    }
+
     await ErpAuditLog.logChange({
       entity_id: doc.entity_id,
       bdm_id: doc.bdm_id,
@@ -1917,6 +1998,7 @@ const getSmerCrmMdCounts = catchAsync(async (req, res) => {
       day_of_week: DAYS_OF_WEEK[dow],
       md_count: crmData.md_count,
       unique_doctors: crmData.unique_doctors,
+      locations: crmData.locations || '',
       perdiem_tier: tier,
       perdiem_amount: amount,
       source: 'CRM' // indicates data came from CRM visit logs
@@ -2095,6 +2177,8 @@ const getPendingCalfLines = catchAsync(async (req, res) => {
         description: l.establishment || l.particulars,
         amount: l.amount,
         payment_mode: l.payment_mode,
+        funding_card_id: l.funding_card_id || null,
+        funding_account_id: l.funding_account_id || null,
         or_photo_url: l.or_photo_url || null
       }))
     });
@@ -2500,6 +2584,20 @@ const postSingleCarLogbook = async (doc, userId) => {
 };
 
 const postSingleExpense = async (doc, userId) => {
+  // Auto-resolve COA codes before posting (approval hub path)
+  await autoClassifyLines(doc.lines, doc.entity_id);
+  await doc.save();
+
+  // CALF-POSTED gate — same check as submitExpenses (line 1176)
+  for (const line of (doc.lines || [])) {
+    if (line.calf_required && line.calf_id) {
+      const calf = await PrfCalf.findById(line.calf_id).select('status').lean();
+      if (!calf || calf.status !== 'POSTED') {
+        throw new Error(`Cannot post: line "${line.establishment || ''}" has CALF that is not POSTED (status: ${calf?.status || 'NOT_FOUND'}). Post the CALF first.`);
+      }
+    }
+  }
+
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
@@ -2576,32 +2674,134 @@ const postSinglePrfCalf = async (doc, userId) => {
     { $set: { event_id: doc.event_id } }
   ).catch(() => {});
 
+  // Phase H3: Auto-journal using shared function
   try {
-    const coaMap = await getCoaMap();
-    const amount = doc.amount || 0;
-    if (amount > 0) {
-      const funding = await resolveFundingCoa(doc);
-      const docRef = doc.prf_number || doc.calf_number || `${doc.doc_type}-${doc.period}`;
-      let lines;
-      if (doc.doc_type === 'PRF') {
-        lines = [
-          { account_code: coaMap.PARTNER_REBATE || '5200', account_name: 'Partner Rebate Expense', debit: amount, credit: 0, description: `PRF: ${doc.payee_name || ''}` },
-          { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `PRF: ${docRef}` }
-        ];
-      } else {
-        lines = [
-          { account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: amount, credit: 0, description: `CALF advance: ${docRef}` },
-          { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `CALF: ${docRef}` }
-        ];
-      }
-      await createAndPostJournal(doc.entity_id, {
-        je_date: doc.posted_at || new Date(), period: doc.period, description: `${doc.doc_type}: ${docRef}`,
-        source_module: 'EXPENSE', source_event_id: doc.event_id, source_doc_ref: docRef,
-        lines, bir_flag: doc.bir_flag || 'BOTH', vat_flag: 'N/A', bdm_id: doc.bdm_id, created_by: userId
-      });
+    const jeData = await journalFromPrfCalf(doc, userId);
+    if (jeData) {
+      jeData.source_event_id = doc.event_id;
+      await createAndPostJournal(doc.entity_id, jeData);
     }
   } catch (jeErr) { console.error('Auto-journal failed for PRF/CALF (approval hub):', doc._id, jeErr.message); }
+
+  // Auto-validate+submit linked expense/logbook when CALF is posted (mirrors submitPrfCalf logic)
+  if (doc.doc_type === 'CALF' && doc.linked_expense_id) {
+    try {
+      let source = await ExpenseEntry.findById(doc.linked_expense_id);
+      let sourceType = 'EXPENSE';
+      if (!source) {
+        source = await CarLogbookEntry.findById(doc.linked_expense_id);
+        sourceType = 'CARLOGBOOK';
+      }
+      if (source && source.status !== 'POSTED') {
+        // Validate
+        const valErrors = [];
+        if (sourceType === 'EXPENSE') {
+          await autoClassifyLines(source.lines, source.entity_id);
+          if (!source.lines.length) valErrors.push('No expense lines');
+          for (let i = 0; i < source.lines.length; i++) {
+            const l = source.lines[i];
+            if (!l.expense_date) valErrors.push(`Line ${i + 1}: date required`);
+            if (!l.amount || l.amount <= 0) valErrors.push(`Line ${i + 1}: amount required`);
+            if (!l.establishment) valErrors.push(`Line ${i + 1}: establishment required`);
+            if (!l.coa_code || l.coa_code === '6900') valErrors.push(`Line ${i + 1}: COA code missing or Miscellaneous (6900)`);
+          }
+        } else {
+          if (!source.entry_date) valErrors.push('Entry date required');
+          if (source.ending_km < source.starting_km) valErrors.push('Ending KM < Starting KM');
+        }
+
+        if (valErrors.length) {
+          source.status = 'ERROR';
+          source.validation_errors = valErrors;
+          await source.save();
+        } else {
+          // Post atomically
+          const autoSession = await mongoose.startSession();
+          try {
+            await autoSession.withTransaction(async () => {
+              source.status = 'POSTED';
+              source.posted_at = new Date();
+              source.posted_by = userId;
+              source.validation_errors = [];
+              const [event] = await TransactionEvent.create([{
+                entity_id: source.entity_id, bdm_id: source.bdm_id,
+                event_type: sourceType === 'EXPENSE' ? 'EXPENSE' : 'CAR_LOGBOOK',
+                event_date: new Date(),
+                document_ref: sourceType === 'EXPENSE'
+                  ? `EXP-${source.period}-${source.cycle}`
+                  : `LOGBOOK-${source.period}-${source.entry_date?.toISOString().split('T')[0] || ''}`,
+                status: 'ACTIVE', created_by: userId
+              }], { session: autoSession });
+              source.event_id = event._id;
+              await source.save({ session: autoSession });
+
+              // Auto-journal
+              const autoCoaMap = await getCoaMap();
+              if (sourceType === 'EXPENSE') {
+                const jLines = [];
+                let totalOre = 0, totalAccess = 0;
+                const desc = `EXP-${source.period}-${source.cycle}`;
+                for (const line of source.lines) {
+                  jLines.push({ account_code: line.coa_code || autoCoaMap.MISC_EXPENSE || '6900', account_name: line.expense_category || 'Miscellaneous', debit: line.amount, credit: 0, description: desc });
+                  if (line.expense_type === 'ORE') totalOre += line.amount || 0;
+                  else totalAccess += line.amount || 0;
+                }
+                if (totalOre > 0) jLines.push({ account_code: autoCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre, description: desc });
+                if (totalAccess > 0) {
+                  const funding = await resolveFundingCoa(source.lines.find(l => l.expense_type === 'ACCESS') || source, autoCoaMap.AP_TRADE);
+                  jLines.push({ account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: totalAccess, description: desc });
+                }
+                if (jLines.length >= 2) {
+                  await createAndPostJournal(source.entity_id, {
+                    je_date: source.posted_at, period: source.period, description: `Expenses: ${desc}`,
+                    source_module: 'EXPENSE', source_event_id: source.event_id, source_doc_ref: desc,
+                    lines: jLines, bir_flag: source.bir_flag || 'BOTH', vat_flag: 'N/A', bdm_id: source.bdm_id, created_by: userId
+                  }, { session: autoSession });
+                }
+              } else {
+                const fuelTotal = source.official_gas_amount || source.total_fuel_amount || 0;
+                if (fuelTotal > 0) {
+                  const funding = await resolveFundingCoa(source.fuel_entries?.[0] || source);
+                  await createAndPostJournal(source.entity_id, {
+                    je_date: source.posted_at, period: source.period, description: `Car Logbook: ${source.period}`,
+                    source_module: 'EXPENSE', source_event_id: source.event_id,
+                    source_doc_ref: `LOGBOOK-${source.period}`,
+                    lines: [
+                      { account_code: autoCoaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas', debit: fuelTotal, credit: 0, description: `Car Logbook: ${source.period}` },
+                      { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: fuelTotal, description: `Car Logbook: ${source.period}` }
+                    ],
+                    bir_flag: 'BOTH', vat_flag: 'N/A', bdm_id: source.bdm_id, created_by: userId
+                  }, { session: autoSession });
+                }
+              }
+            });
+          } finally { autoSession.endSession(); }
+        }
+      }
+    } catch (autoErr) { console.error('Auto-submit linked source failed (approval hub):', doc.linked_expense_id, autoErr.message); }
+  }
 };
+
+// President-only: SAP Storno reversal for Expenses (ORE/ACCESS), CALF, and PRF.
+// CALF clears non-POSTED expense calf_id links; PRF clears Collection rebate_prf_id.
+// Idempotent JE reversal; period-locked landing month rejected.
+const { buildPresidentReverseHandler } = require('../services/documentReversalService');
+const presidentReverseExpense = buildPresidentReverseHandler('EXPENSE');
+const _reverseCalfHandler = buildPresidentReverseHandler('CALF');
+const _reversePrfHandler = buildPresidentReverseHandler('PRF');
+
+// PRF and CALF share the same Mongoose model (PrfCalf) with a `doc_type`
+// discriminator. Rather than forcing the frontend to know which URL variant to
+// call, auto-route: peek at the doc, then dispatch to the matching handler.
+// Keeps one URL per module — matches Sales/Collection ergonomics.
+const presidentReversePrfCalf = catchAsync(async (req, res) => {
+  const row = await PrfCalf.findById(req.params.id).select('doc_type').lean();
+  if (!row) return res.status(404).json({ success: false, message: 'PRF/CALF not found in your scope' });
+  const fn = row.doc_type === 'PRF' ? _reversePrfHandler : _reverseCalfHandler;
+  return fn(req, res);
+});
+const presidentReverseCalf = _reverseCalfHandler;
+const presidentReversePrf = _reversePrfHandler;
 
 module.exports = {
   // SMER
@@ -2610,7 +2810,7 @@ module.exports = {
   overridePerdiemDay, applyPerdiemOverride, getSmerCrmMdCounts, getSmerCrmVisitDetail,
   // Car Logbook
   createCarLogbook, updateCarLogbook, getCarLogbookList, getCarLogbookById, deleteDraftCarLogbook,
-  validateCarLogbook, submitCarLogbook, reopenCarLogbook,
+  validateCarLogbook, submitCarLogbook, reopenCarLogbook, getSmerDailyByDate,
   // Expenses (ORE/ACCESS)
   createExpense, updateExpense, getExpenseList, getExpenseById, deleteDraftExpense,
   validateExpenses, submitExpenses, reopenExpenses,
@@ -2626,5 +2826,7 @@ module.exports = {
   // Per Diem Config
   getPerdiemConfig,
   // Single-document posting helpers (for Approval Hub)
-  postSingleSmer, postSingleCarLogbook, postSingleExpense, postSinglePrfCalf
+  postSingleSmer, postSingleCarLogbook, postSingleExpense, postSinglePrfCalf,
+  // President Reversal (Phase 3a rollout — lookup-driven: accounting.reverse_posted)
+  presidentReverseExpense, presidentReverseCalf, presidentReversePrf, presidentReversePrfCalf
 };

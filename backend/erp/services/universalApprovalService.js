@@ -9,6 +9,7 @@
  */
 const mongoose = require('mongoose');
 const { ROLES } = require('../../constants/roles');
+const { getSignedDownloadUrl, extractKeyFromUrl } = require('../../config/s3');
 
 // Models
 const ApprovalRequest = require('../models/ApprovalRequest');
@@ -18,6 +19,12 @@ const GrnEntry = require('../models/GrnEntry');
 const ApprovalRule = require('../models/ApprovalRule');
 const Lookup = require('../models/Lookup');
 const InventoryLedger = require('../models/InventoryLedger');
+
+// Phase 31 — shared per-module detail builders (also used by Reversal Console)
+const { buildDocumentDetails } = require('./documentDetailBuilder');
+// CRM bridge — used to enrich CAR_LOGBOOK approvals with same-day visit data
+// (mirrors how SMER pulls md_count via the same bridge during generation).
+const { getDailyVisitDetails } = require('./smerCrmBridge');
 
 // Lazy-load optional models (may not exist in all deployments)
 function getModel(name) {
@@ -34,7 +41,15 @@ const MODULE_QUERIES = [
     label: 'Authority Matrix',
     sub_key: null, // special: derive from item.module field
     query: async (entityId) => {
-      const items = await ApprovalRequest.find({ entity_id: entityId, status: 'PENDING' })
+      // Phase G4: exclude level-0 default-roles-gate requests (audit-only).
+      // They have no rule_id and the actionable item is the document itself,
+      // which already appears in its module-specific query (SALES/COLLECTION/etc.).
+      // Including them would double-list each gated submission.
+      const items = await ApprovalRequest.find({
+        entity_id: entityId,
+        status: 'PENDING',
+        $or: [{ level: { $gt: 0 } }, { rule_id: { $ne: null } }],
+      })
         .populate('requested_by', 'name email')
         .sort({ createdAt: -1 })
         .lean();
@@ -63,6 +78,7 @@ const MODULE_QUERIES = [
     query: async (entityId) => {
       const items = await DeductionSchedule.find({ entity_id: entityId, status: 'PENDING_APPROVAL' })
         .populate('bdm_id', 'name email')
+        .populate('approved_by', 'name')
         .sort({ created_at: -1 })
         .lean();
       return items.map(item => ({
@@ -79,19 +95,7 @@ const MODULE_QUERIES = [
         current_action: 'Approve',
         action_key: 'APPROVE',
         approve_data: { type: 'deduction_schedule', id: item._id },
-        details: {
-          deduction_type: item.deduction_type,
-          deduction_label: item.deduction_label,
-          total_amount: item.total_amount,
-          term_months: item.term_months,
-          installment_amount: item.installment_amount,
-          start_period: item.start_period,
-          target_cycle: item.target_cycle || 'C2',
-          description: item.description,
-          installments: (item.installments || []).map(i => ({
-            period: i.period, installment_no: i.installment_no, amount: i.amount, status: i.status
-          }))
-        }
+        details: buildDocumentDetails('DEDUCTION_SCHEDULE', item),
       }));
     },
     // Roles: lookup-driven via MODULE_DEFAULT_ROLES
@@ -106,6 +110,8 @@ const MODULE_QUERIES = [
         status: { $in: ['GENERATED', 'BDM_CONFIRMED'] }
       })
         .populate('bdm_id', 'name email')
+        .populate('reviewed_by', 'name')
+        .populate('credited_by', 'name')
         .sort({ updatedAt: -1 })
         .lean();
       return items.map(item => ({
@@ -126,18 +132,7 @@ const MODULE_QUERIES = [
           id: item._id,
           action: item.status === 'GENERATED' ? 'review' : 'credit'
         },
-        details: {
-          period: item.period,
-          cycle: item.cycle,
-          earnings: item.earnings,
-          total_earnings: item.total_earnings,
-          deduction_lines: (item.deduction_lines || []).map(l => ({
-            deduction_label: l.deduction_label, amount: l.amount, status: l.status,
-            auto_source: l.auto_source, description: l.description
-          })),
-          total_deductions: item.total_deductions,
-          net_pay: item.net_pay
-        }
+        details: buildDocumentDetails('INCOME', item),
       }));
     },
     // Roles: lookup-driven via MODULE_DEFAULT_ROLES
@@ -149,6 +144,9 @@ const MODULE_QUERIES = [
     query: async (entityId) => {
       const items = await GrnEntry.find({ entity_id: entityId, status: 'PENDING' })
         .populate('bdm_id', 'name email')
+        .populate('warehouse_id', 'warehouse_name warehouse_code')
+        .populate('vendor_id', 'vendor_name')
+        .populate('reviewed_by', 'name')
         .sort({ createdAt: -1 })
         .lean();
       return items.map(item => ({
@@ -157,7 +155,7 @@ const MODULE_QUERIES = [
         doc_type: 'GRN',
         doc_id: item._id,
         doc_ref: item.grn_ref || `GRN-${String(item._id).slice(-6)}`,
-        description: `${item.bdm_id?.name || 'BDM'} — ${(item.line_items || []).length} item(s) received`,
+        description: `${item.bdm_id?.name || 'BDM'} — ${item.warehouse_id?.warehouse_name || 'Warehouse'} — ${(item.line_items || []).length} item(s) received`,
         amount: 0,
         submitted_by: item.bdm_id?.name || 'Unknown',
         submitted_at: item.createdAt,
@@ -165,19 +163,7 @@ const MODULE_QUERIES = [
         current_action: 'Approve',
         action_key: 'APPROVE',
         approve_data: { type: 'grn', id: item._id },
-        details: {
-          grn_date: item.grn_date,
-          _warehouse_id: item.warehouse_id,
-          _bdm_id: item.bdm_id?._id || item.bdm_id,
-          line_items: (item.line_items || []).map(li => ({
-            product_id: li.product_id, item_key: li.item_key, batch_lot_no: li.batch_lot_no,
-            expiry_date: li.expiry_date, qty: li.qty
-          })),
-          notes: item.notes,
-          // Phase 34 — attachments for approver verification
-          waybill_photo_url: item.waybill_photo_url,
-          undertaking_photo_url: item.undertaking_photo_url,
-        }
+        details: buildDocumentDetails('INVENTORY', item),
       }));
     },
     // Roles: lookup-driven via MODULE_DEFAULT_ROLES
@@ -194,6 +180,8 @@ const MODULE_QUERIES = [
         status: { $in: ['COMPUTED', 'REVIEWED'] }
       })
         .populate('person_id', 'full_name email')
+        .populate('reviewed_by', 'name')
+        .populate('approved_by', 'name')
         .sort({ updatedAt: -1 })
         .lean();
       return items.map(item => ({
@@ -214,12 +202,7 @@ const MODULE_QUERIES = [
           id: item._id,
           action: item.status === 'COMPUTED' ? 'review' : 'approve'
         },
-        details: {
-          period: item.period, cycle: item.cycle,
-          earnings: item.earnings, deductions: item.deductions,
-          total_earnings: item.total_earnings, total_deductions: item.total_deductions,
-          net_pay: item.net_pay
-        }
+        details: buildDocumentDetails('PAYROLL', item),
       }));
     },
     // Roles: lookup-driven via MODULE_DEFAULT_ROLES
@@ -236,6 +219,8 @@ const MODULE_QUERIES = [
         status: { $in: ['SUBMITTED', 'REVIEWED'] }
       })
         .populate('person_id', 'full_name email')
+        .populate('reviewer_id', 'full_name')
+        .populate('approved_by', 'name')
         .sort({ updatedAt: -1 })
         .lean();
       return items.map(item => ({
@@ -256,16 +241,7 @@ const MODULE_QUERIES = [
           id: item._id,
           action: item.status === 'SUBMITTED' ? 'review' : 'approve'
         },
-        details: {
-          period: item.period, period_type: item.period_type,
-          kpi_ratings: (item.kpi_ratings || []).map(k => ({
-            kpi_code: k.kpi_code, kpi_name: k.kpi_name,
-            self_score: k.self_score, self_comment: k.self_comment,
-            manager_score: k.manager_score
-          })),
-          overall_self_score: item.overall_self_score,
-          overall_manager_score: item.overall_manager_score
-        }
+        details: buildDocumentDetails('KPI', item),
       }));
     },
     // Roles: lookup-driven via MODULE_DEFAULT_ROLES
@@ -298,23 +274,7 @@ const MODULE_QUERIES = [
         current_action: 'Post',
         action_key: 'POST',
         approve_data: { type: 'sales_line', id: item._id, action: 'post' },
-        details: {
-          sale_type: item.sale_type,
-          csi_date: item.csi_date,
-          invoice_number: item.invoice_number,
-          hospital: item.hospital_id?.hospital_name,
-          customer: item.customer_id?.customer_name,
-          payment_mode: item.payment_mode,
-          invoice_total: item.invoice_total,
-          total_vat: item.total_vat,
-          total_net_of_vat: item.total_net_of_vat,
-          _warehouse_id: item.warehouse_id,
-          _bdm_id: item.bdm_id?._id || item.bdm_id,
-          line_items: (item.line_items || []).map(li => ({
-            product_id: li.product_id, qty: li.qty, unit_price: li.unit_price,
-            line_total: li.line_total, vat_amount: li.vat_amount
-          }))
-        }
+        details: buildDocumentDetails('SALES', item),
       }));
     },
     // Roles: lookup-driven via MODULE_DEFAULT_ROLES
@@ -346,27 +306,7 @@ const MODULE_QUERIES = [
         current_action: 'Post',
         action_key: 'POST',
         approve_data: { type: 'collection', id: item._id, action: 'post' },
-        details: {
-          cr_date: item.cr_date,
-          cr_amount: item.cr_amount,
-          hospital: item.hospital_id?.hospital_name,
-          customer: item.customer_id?.customer_name,
-          payment_mode: item.payment_mode,
-          check_no: item.check_no,
-          total_csi_amount: item.total_csi_amount,
-          total_commission: item.total_commission,
-          total_partner_rebates: item.total_partner_rebates,
-          cwt_amount: item.cwt_amount,
-          settled_csis: (item.settled_csis || []).map(c => ({
-            doc_ref: c.doc_ref, invoice_amount: c.invoice_amount,
-            commission_amount: c.commission_amount
-          })),
-          // Phase 34 — attachments for approver verification
-          deposit_slip_url: item.deposit_slip_url,
-          cr_photo_url: item.cr_photo_url,
-          cwt_certificate_url: item.cwt_certificate_url,
-          csi_photo_urls: item.csi_photo_urls,
-        }
+        details: buildDocumentDetails('COLLECTION', item),
       }));
     },
     // Roles: lookup-driven via MODULE_DEFAULT_ROLES
@@ -380,6 +320,7 @@ const MODULE_QUERIES = [
       if (!SmerEntry) return [];
       const items = await SmerEntry.find({ entity_id: entityId, status: 'VALID' })
         .populate('bdm_id', 'name email')
+        .populate('daily_entries.overridden_by', 'name')
         .sort({ createdAt: -1 })
         .lean();
       return items.map(item => ({
@@ -396,18 +337,7 @@ const MODULE_QUERIES = [
         current_action: 'Post',
         action_key: 'POST',
         approve_data: { type: 'smer_entry', id: item._id, action: 'post' },
-        details: {
-          period: item.period,
-          cycle: item.cycle,
-          working_days: item.working_days,
-          total_perdiem: item.total_perdiem,
-          total_transpo: item.total_transpo,
-          total_ore: item.total_ore,
-          total_reimbursable: item.total_reimbursable,
-          travel_advance: item.travel_advance,
-          balance_on_hand: item.balance_on_hand,
-          daily_entries_count: (item.daily_entries || []).length
-        }
+        details: buildDocumentDetails('SMER', item),
       }));
     },
     // Roles: lookup-driven via MODULE_DEFAULT_ROLES
@@ -423,41 +353,49 @@ const MODULE_QUERIES = [
         .populate('bdm_id', 'name email')
         .sort({ createdAt: -1 })
         .lean();
-      return items.map(item => ({
-        id: `CAR_LOGBOOK:${item._id}`,
-        module: 'CAR_LOGBOOK',
-        doc_type: 'CAR_LOGBOOK',
-        doc_id: item._id,
-        doc_ref: `${item.period}-${item.cycle || ''}`.trim(),
-        description: `${item.bdm_id?.name || 'BDM'} — ${item.period} ${item.cycle || ''} — ${item.total_km || 0} km`,
-        amount: item.total_fuel_amount || 0,
-        submitted_by: item.bdm_id?.name || 'Unknown',
-        submitted_at: item.createdAt,
-        status: 'PENDING_POST',
-        current_action: 'Post',
-        action_key: 'POST',
-        approve_data: { type: 'car_logbook', id: item._id, action: 'post' },
-        details: {
-          period: item.period,
-          cycle: item.cycle,
-          entry_date: item.entry_date,
-          total_km: item.total_km,
-          official_km: item.official_km,
-          personal_km: item.personal_km,
-          total_fuel_amount: item.total_fuel_amount,
-          official_gas_amount: item.official_gas_amount,
-          personal_gas_amount: item.personal_gas_amount,
-          actual_liters: item.actual_liters,
-          km_per_liter: item.km_per_liter,
-          overconsumption_flag: item.overconsumption_flag,
-          fuel_entries_count: (item.fuel_entries || []).length,
-          // Phase 34 — fuel receipt photos for approver verification
-          fuel_receipts: (item.fuel_entries || []).filter(fe => fe.receipt_url || fe.starting_km_photo_url || fe.ending_km_photo_url).map(fe => ({
-            day: fe.day, receipt_url: fe.receipt_url,
-            starting_km_photo_url: fe.starting_km_photo_url,
-            ending_km_photo_url: fe.ending_km_photo_url,
-          })),
+      // Enrich each item with CRM visit details (cities/MDs visited that day)
+      // so the approver can sanity-check distance vs. actual route. Best-effort:
+      // a CRM bridge failure must not break the approval listing.
+      return Promise.all(items.map(async (item) => {
+        const details = buildDocumentDetails('CAR_LOGBOOK', item);
+        const bdmUserId = item.bdm_id?._id || item.bdm_id;
+        if (details && bdmUserId && item.entry_date) {
+          try {
+            const visits = await getDailyVisitDetails(bdmUserId, item.entry_date);
+            const crmVisits = (visits || []).map(v => ({
+              doctor_name: v.doctor ? `${v.doctor.firstName || ''} ${v.doctor.lastName || ''}`.trim() : 'Unknown',
+              specialization: v.doctor?.specialization || null,
+              clinic_address: v.doctor?.clinicOfficeAddress || null,
+              visit_time: v.visitDate,
+              visit_type: v.visitType || null,
+              week_label: v.weekLabel || null,
+            }));
+            const cities = [...new Set(crmVisits.map(v => v.clinic_address).filter(Boolean))];
+            details.crm_visit_count = crmVisits.length;
+            details.crm_visits = crmVisits;
+            details.cities_visited = cities;
+          } catch (err) {
+            // Surface the gap to the approver instead of silently hiding it
+            details.crm_visit_count = null;
+            details.crm_lookup_error = err?.message || 'CRM lookup failed';
+          }
         }
+        return {
+          id: `CAR_LOGBOOK:${item._id}`,
+          module: 'CAR_LOGBOOK',
+          doc_type: 'CAR_LOGBOOK',
+          doc_id: item._id,
+          doc_ref: `${item.period}-${item.cycle || ''}`.trim(),
+          description: `${item.bdm_id?.name || 'BDM'} — ${item.period} ${item.cycle || ''} — ${item.total_km || 0} km`,
+          amount: item.total_fuel_amount || 0,
+          submitted_by: item.bdm_id?.name || 'Unknown',
+          submitted_at: item.createdAt,
+          status: 'PENDING_POST',
+          current_action: 'Post',
+          action_key: 'POST',
+          approve_data: { type: 'car_logbook', id: item._id, action: 'post' },
+          details,
+        };
       }));
     },
     // Roles: lookup-driven via MODULE_DEFAULT_ROLES
@@ -471,6 +409,7 @@ const MODULE_QUERIES = [
       if (!ExpenseEntry) return [];
       const items = await ExpenseEntry.find({ entity_id: entityId, status: 'VALID' })
         .populate('bdm_id', 'name email')
+        .populate('recorded_on_behalf_of', 'name')
         .sort({ createdAt: -1 })
         .lean();
       return items.map(item => ({
@@ -487,22 +426,7 @@ const MODULE_QUERIES = [
         current_action: 'Post',
         action_key: 'POST',
         approve_data: { type: 'expense_entry', id: item._id, action: 'post' },
-        details: {
-          period: item.period,
-          cycle: item.cycle,
-          total_ore: item.total_ore,
-          total_access: item.total_access,
-          total_amount: item.total_amount,
-          total_vat: item.total_vat,
-          line_count: item.line_count || (item.lines || []).length,
-          lines: (item.lines || []).slice(0, 10).map(l => ({
-            expense_type: l.expense_type, expense_category: l.expense_category,
-            amount: l.amount, or_number: l.or_number, payment_mode: l.payment_mode,
-            calf_required: l.calf_required,
-            // Phase 34 — OR receipt photo for approver verification
-            or_photo_url: l.or_photo_url,
-          }))
-        }
+        details: buildDocumentDetails('EXPENSES', item),
       }));
     },
     // Roles: lookup-driven via MODULE_DEFAULT_ROLES
@@ -534,23 +458,7 @@ const MODULE_QUERIES = [
           current_action: 'Post',
           action_key: 'POST',
           approve_data: { type: 'prf_calf', id: item._id, action: 'post' },
-          details: {
-            doc_type: item.doc_type,
-            period: item.period,
-            cycle: item.cycle,
-            prf_type: item.prf_type,
-            payee_name: item.payee_name,
-            payee_type: item.payee_type,
-            purpose: item.purpose,
-            payment_mode: item.payment_mode,
-            rebate_amount: item.rebate_amount,
-            advance_amount: item.advance_amount,
-            liquidation_amount: item.liquidation_amount,
-            balance: item.balance,
-            bir_flag: item.bir_flag,
-            // Phase 34 — supporting document photos for approver verification
-            photo_urls: item.photo_urls,
-          }
+          details: buildDocumentDetails('PRF_CALF', item),
         };
       });
     },
@@ -590,20 +498,268 @@ const MODULE_QUERIES = [
           type: 'perdiem_override',
           id: req._id.toString(),
         },
-        details: {
-          module: 'PERDIEM_OVERRIDE',
-          doc_type: req.doc_type,
-          doc_ref: req.doc_ref,
-          description: req.description,
-          amount: req.amount,
-          requested_by: req.requested_by?.name,
-          requested_at: req.requested_at,
-        }
+        details: buildDocumentDetails('PERDIEM_OVERRIDE', req),
       }));
     },
     // Roles: lookup-driven via MODULE_DEFAULT_ROLES
-  }
+  },
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Phase 31 — 5 gap modules (IC_TRANSFER, JOURNAL, BANKING, PURCHASING, PETTY_CASH)
+  //
+  // These modules call `gateApproval()` on submit (see docs/APPROVAL_COVERAGE_AUDIT.md)
+  // but had no MODULE_QUERIES entries — so their pending docs never appeared in the
+  // Approval Hub. Each entry below queries `ApprovalRequest` filtered by module,
+  // hydrates the underlying doc from its source model, and builds rich detail via
+  // the shared `buildDocumentDetails()`.
+  //
+  // Pattern: makePendingQuery(moduleKey, modelName, docTypeMap) → returns a query
+  // function. Each new module just needs one line here. Subscription-safe: adding
+  // a 6th gap module requires no schema changes, just another entry.
+  // ═══════════════════════════════════════════════════════════════════════════
+  {
+    module: 'IC_TRANSFER',
+    label: 'Inter-Company Transfer',
+    sub_key: 'approve_ic_transfer',
+    query: async (entityId) => {
+      return buildGapModulePendingItems({
+        entityId,
+        module: 'IC_TRANSFER',
+        // IC_TRANSFER docs live in two collections depending on docType
+        docTypeToModel: { IC_TRANSFER: 'InterCompanyTransfer', IC_SETTLEMENT: 'IcSettlement' },
+        populateByDocType: {
+          IC_TRANSFER: [
+            { path: 'source_entity_id', select: 'entity_name' },
+            { path: 'target_entity_id', select: 'entity_name' },
+            { path: 'source_warehouse_id', select: 'warehouse_name' },
+            { path: 'target_warehouse_id', select: 'warehouse_name' },
+            { path: 'approved_by', select: 'name' },
+            { path: 'shipped_by', select: 'name' },
+            { path: 'received_by', select: 'name' },
+            { path: 'posted_by', select: 'name' },
+            { path: 'cancelled_by', select: 'name' },
+          ],
+          IC_SETTLEMENT: [
+            { path: 'creditor_entity_id', select: 'entity_name' },
+            { path: 'debtor_entity_id', select: 'entity_name' },
+            { path: 'posted_by', select: 'name' },
+          ],
+        },
+        actionType: 'ic_transfer',
+      });
+    },
+    // Roles: lookup-driven via MODULE_DEFAULT_ROLES
+  },
+  {
+    module: 'JOURNAL',
+    label: 'Journal Entries',
+    sub_key: 'approve_journal',
+    query: async (entityId) => {
+      // JOURNAL covers manual JEs (doc_id = JournalEntry._id) and also
+      // DEPRECIATION/INTEREST batches (doc_id = entity_id — batch-level, no single doc).
+      // For batch docTypes we fall back to the ApprovalRequest itself (no hydrate).
+      return buildGapModulePendingItems({
+        entityId,
+        module: 'JOURNAL',
+        docTypeToModel: { JOURNAL_ENTRY: 'JournalEntry' },
+        populateByDocType: {
+          JOURNAL_ENTRY: [
+            { path: 'posted_by', select: 'name' },
+            { path: 'created_by', select: 'name' },
+            { path: 'corrects_je_id', select: 'je_number je_date' },
+          ],
+        },
+        actionType: 'journal',
+        // For DEPRECIATION/INTEREST (batch), there's no single doc to hydrate.
+        // builder will receive the ApprovalRequest itself.
+        fallbackToRequest: true,
+      });
+    },
+  },
+  {
+    module: 'BANKING',
+    label: 'Bank Reconciliation',
+    sub_key: 'approve_banking',
+    query: async (entityId) => {
+      return buildGapModulePendingItems({
+        entityId,
+        module: 'BANKING',
+        docTypeToModel: { BANK_RECON: 'BankStatement' },
+        populateByDocType: {
+          BANK_RECON: [
+            { path: 'bank_account_id', select: 'bank_name bank_code coa_code' },
+            { path: 'uploaded_by', select: 'name' },
+          ],
+        },
+        actionType: 'banking',
+      });
+    },
+  },
+  {
+    module: 'PURCHASING',
+    label: 'Supplier Invoices',
+    sub_key: 'approve_purchasing',
+    query: async (entityId) => {
+      return buildGapModulePendingItems({
+        entityId,
+        module: 'PURCHASING',
+        docTypeToModel: { SUPPLIER_INVOICE: 'SupplierInvoice' },
+        populateByDocType: {
+          SUPPLIER_INVOICE: [
+            { path: 'vendor_id', select: 'vendor_name tin' },
+            { path: 'po_id', select: 'po_number' },
+          ],
+        },
+        actionType: 'purchasing',
+      });
+    },
+  },
+  {
+    module: 'PETTY_CASH',
+    label: 'Petty Cash Transactions',
+    sub_key: 'approve_petty_cash',
+    query: async (entityId) => {
+      return buildGapModulePendingItems({
+        entityId,
+        module: 'PETTY_CASH',
+        // PettyCash gateApproval uses txn_type as docType (DISBURSEMENT/DEPOSIT),
+        // not a fixed string — map both to the same model.
+        docTypeToModel: { DISBURSEMENT: 'PettyCashTransaction', DEPOSIT: 'PettyCashTransaction' },
+        populateByDocType: {
+          DISBURSEMENT: [
+            { path: 'fund_id', select: 'fund_name fund_code current_balance' },
+            { path: 'approved_by', select: 'name' },
+            { path: 'posted_by', select: 'name' },
+            { path: 'voided_by', select: 'name' },
+          ],
+          DEPOSIT: [
+            { path: 'fund_id', select: 'fund_name fund_code current_balance' },
+            { path: 'approved_by', select: 'name' },
+            { path: 'posted_by', select: 'name' },
+            { path: 'voided_by', select: 'name' },
+          ],
+        },
+        actionType: 'petty_cash',
+      });
+    },
+  },
+
+  // ── Phase G6.7 — Sales Goal Plans + Incentive Payouts (gap modules) ──
+  {
+    module: 'SALES_GOAL_PLAN',
+    label: 'Sales Goal Plan',
+    sub_key: 'approve_sales_goal',
+    query: async (entityId) => {
+      return buildGapModulePendingItems({
+        entityId,
+        module: 'SALES_GOAL_PLAN',
+        docTypeToModel: { SALES_GOAL_PLAN: 'SalesGoalPlan' },
+        populateByDocType: {
+          SALES_GOAL_PLAN: [],
+        },
+        actionType: 'sales_goal_plan',
+      });
+    },
+  },
+  {
+    module: 'INCENTIVE_PAYOUT',
+    label: 'Incentive Payouts',
+    sub_key: 'approve_incentive_payout',
+    query: async (entityId) => {
+      return buildGapModulePendingItems({
+        entityId,
+        module: 'INCENTIVE_PAYOUT',
+        docTypeToModel: { INCENTIVE_PAYOUT: 'IncentivePayout' },
+        populateByDocType: {
+          INCENTIVE_PAYOUT: [
+            { path: 'bdm_id', select: 'name email' },
+          ],
+        },
+        actionType: 'incentive_payout',
+      });
+    },
+  },
 ];
+
+/**
+ * Phase 31 — Shared helper for gap-module pending lists.
+ *
+ * Queries ApprovalRequest filtered by module (PENDING) and for each request,
+ * hydrates the underlying doc from the appropriate model, then builds rich
+ * detail via the shared `buildDocumentDetails()`.
+ *
+ * @param {Object} opts
+ * @param {ObjectId} opts.entityId
+ * @param {string}   opts.module — MODULE_QUERIES module key (also used as builder key)
+ * @param {Object<string,string>} opts.docTypeToModel — maps request.doc_type → Mongoose model name
+ * @param {Object<string,Array>}  opts.populateByDocType — per-docType populate config
+ * @param {string}   opts.actionType — approve_data.type string for the hub's approve action
+ * @param {boolean}  [opts.fallbackToRequest] — if true, fall back to passing the ApprovalRequest
+ *                   itself to the builder when no model mapping matches (batch docTypes like
+ *                   DEPRECIATION/INTEREST that have no single document).
+ */
+async function buildGapModulePendingItems(opts) {
+  const requests = await ApprovalRequest.find({
+    entity_id: opts.entityId,
+    module: opts.module,
+    status: 'PENDING',
+  })
+    .populate('requested_by', 'name email')
+    .sort({ createdAt: -1 })
+    .lean();
+
+  if (!requests.length) return [];
+
+  // Group requests by doc_type so we can batch-hydrate per model.
+  const byDocType = new Map();
+  for (const req of requests) {
+    if (!byDocType.has(req.doc_type)) byDocType.set(req.doc_type, []);
+    byDocType.get(req.doc_type).push(req);
+  }
+
+  // Hydrate docs per docType
+  const hydratedByReqId = new Map();
+  for (const [docType, reqs] of byDocType) {
+    const modelName = opts.docTypeToModel[docType];
+    if (!modelName) continue; // fallback path handled below
+    const Model = getModel(modelName);
+    if (!Model) continue;
+
+    const ids = reqs.map(r => r.doc_id).filter(Boolean);
+    if (!ids.length) continue;
+
+    let query = Model.find({ _id: { $in: ids } });
+    const pops = opts.populateByDocType[docType] || [];
+    for (const p of pops) query = query.populate(p.path, p.select);
+    const docs = await query.lean();
+    const docMap = new Map(docs.map(d => [String(d._id), d]));
+    for (const r of reqs) {
+      const doc = docMap.get(String(r.doc_id));
+      if (doc) hydratedByReqId.set(String(r._id), doc);
+    }
+  }
+
+  return requests.map(req => {
+    const hydrated = hydratedByReqId.get(String(req._id));
+    const docForBuilder = hydrated || (opts.fallbackToRequest ? req : null);
+    return {
+      id: `${opts.module}:${req._id}`,
+      module: opts.module,
+      doc_type: req.doc_type,
+      doc_id: req.doc_id,
+      doc_ref: req.doc_ref || `${req.doc_type}-${String(req._id).slice(-6)}`,
+      description: req.description || `${opts.module} ${req.doc_type} — ${req.doc_ref || 'pending'}`,
+      amount: req.amount || 0,
+      submitted_by: req.requested_by?.name || 'Unknown',
+      submitted_at: req.requested_at || req.createdAt,
+      status: 'PENDING_APPROVAL',
+      current_action: 'Approve',
+      action_key: 'APPROVE',
+      approve_data: { type: opts.actionType, id: req._id, request_id: req._id, doc_id: req.doc_id },
+      details: buildDocumentDetails(opts.module, docForBuilder),
+    };
+  });
+}
 
 /**
  * Phase 34 — Map module keys (from MODULE_QUERIES or gateApproval) to approval sub-permission keys.
@@ -628,6 +784,8 @@ const MODULE_TO_SUB_KEY = {
   DEDUCTION_SCHEDULE: 'approve_deductions',
   KPI:              'approve_kpi',
   PERDIEM_OVERRIDE: 'approve_perdiem',
+  SALES_GOAL_PLAN:  'approve_sales_goal',
+  INCENTIVE_PAYOUT: 'approve_incentive_payout',
 };
 
 /**
@@ -910,6 +1068,72 @@ async function getUniversalPending(entityId, user, entityIds) {
     delete details._warehouse_id;
     delete details._bdm_id;
   }
+
+  // ── Sign S3 photo URLs so the browser can load them ──
+  const signUrl = async (url) => {
+    if (!url) return url;
+    try {
+      const key = extractKeyFromUrl(url);
+      return await getSignedDownloadUrl(key, 3600);
+    } catch (err) {
+      console.error('Approval signUrl failed:', url, err.message);
+      return url;
+    }
+  };
+  const signUrls = (urls) => Promise.all((urls || []).map(u => signUrl(u)));
+
+  await Promise.all(allItems.map(async (item) => {
+    const d = item.details || {};
+    switch (item.module) {
+      case 'SALES':
+        d.csi_photo_url = await signUrl(d.csi_photo_url);
+        break;
+      case 'COLLECTION':
+        [d.deposit_slip_url, d.cr_photo_url, d.cwt_certificate_url] = await Promise.all([
+          signUrl(d.deposit_slip_url), signUrl(d.cr_photo_url), signUrl(d.cwt_certificate_url)
+        ]);
+        d.csi_photo_urls = await signUrls(d.csi_photo_urls);
+        break;
+      case 'EXPENSES':
+        await Promise.all((d.lines || []).map(async (l) => {
+          l.or_photo_url = await signUrl(l.or_photo_url);
+        }));
+        break;
+      case 'CAR_LOGBOOK':
+        await Promise.all([
+          ...(d.fuel_receipts || []).map(async (fr) => {
+            [fr.receipt_url, fr.starting_km_photo_url, fr.ending_km_photo_url] = await Promise.all([
+              signUrl(fr.receipt_url), signUrl(fr.starting_km_photo_url), signUrl(fr.ending_km_photo_url)
+            ]);
+          }),
+          (async () => {
+            [d.starting_km_photo_url, d.ending_km_photo_url] = await Promise.all([
+              signUrl(d.starting_km_photo_url), signUrl(d.ending_km_photo_url)
+            ]);
+          })(),
+        ]);
+        break;
+      case 'INVENTORY':
+        [d.waybill_photo_url, d.undertaking_photo_url] = await Promise.all([
+          signUrl(d.waybill_photo_url), signUrl(d.undertaking_photo_url)
+        ]);
+        break;
+      case 'PRF_CALF':
+        d.photo_urls = await signUrls(d.photo_urls);
+        break;
+      // Phase 31 — gap modules
+      case 'IC_TRANSFER':
+        if (d.kind === 'IC_SETTLEMENT') {
+          [d.deposit_slip_url, d.cr_photo_url] = await Promise.all([
+            signUrl(d.deposit_slip_url), signUrl(d.cr_photo_url)
+          ]);
+        }
+        break;
+      case 'PETTY_CASH':
+        d.or_photo_url = await signUrl(d.or_photo_url);
+        break;
+    }
+  }));
 
   return allItems;
 }

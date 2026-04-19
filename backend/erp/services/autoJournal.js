@@ -50,6 +50,8 @@ const COA_NAMES = {
   COGS: 'Cost of Goods Sold',
   BDM_COMMISSION: 'BDM Commission',
   PARTNER_REBATE: 'Partner Rebate Expense',
+  INCENTIVE_EXPENSE: 'Incentive Expense',
+  INCENTIVE_ACCRUAL: 'Incentive Accrual Payable',
   PER_DIEM: 'Per Diem Expense',
   TRANSPORT: 'Transport Expense',
   SPECIAL_TRANSPORT: 'Special Transport Expense',
@@ -127,6 +129,13 @@ async function journalFromSale(salesLine, entityId, userId) {
   // Skip journal for zero-amount sales (complimentary/samples)
   if (gross === 0) return null;
 
+  // CSI sales carry the booklet# in `doc_ref`; SERVICE_INVOICE/CASH_RECEIPT use
+  // auto-generated `invoice_number`. Without this priority the JE falls back to
+  // the raw ObjectId for every CSI, which is what users see in the detail panel.
+  const docRef = salesLine.doc_ref || salesLine.invoice_number || String(salesLine._id);
+  const saleLabel = salesLine.sale_type === 'SERVICE_INVOICE' ? 'SI'
+    : salesLine.sale_type === 'CASH_RECEIPT' ? 'CR' : 'CSI';
+
   // Direct cash routing: DR PETTY_CASH instead of DR AR_TRADE when fund is set
   const debitCode = salesLine.petty_cash_fund_id && salesLine.payment_mode === 'CASH'
     ? c(coa, 'PETTY_CASH') : c(coa, 'AR_TRADE');
@@ -134,21 +143,21 @@ async function journalFromSale(salesLine, entityId, userId) {
     ? n('PETTY_CASH') : n('AR_TRADE');
 
   const lines = [
-    { account_code: debitCode, account_name: debitName, debit: gross, credit: 0, description: `Sale: ${salesLine.invoice_number || ''}` },
-    { account_code: c(coa, 'SALES_REVENUE'), account_name: n('SALES_REVENUE'), debit: 0, credit: net, description: `Sale: ${salesLine.invoice_number || ''}` },
+    { account_code: debitCode, account_name: debitName, debit: gross, credit: 0, description: `${saleLabel} ${docRef}` },
+    { account_code: c(coa, 'SALES_REVENUE'), account_name: n('SALES_REVENUE'), debit: 0, credit: net, description: `${saleLabel} ${docRef}` },
   ];
 
   if (vat > 0) {
-    lines.push({ account_code: c(coa, 'OUTPUT_VAT'), account_name: n('OUTPUT_VAT'), debit: 0, credit: vat, description: `VAT on ${salesLine.invoice_number || ''}` });
+    lines.push({ account_code: c(coa, 'OUTPUT_VAT'), account_name: n('OUTPUT_VAT'), debit: 0, credit: vat, description: `VAT on ${saleLabel} ${docRef}` });
   }
 
   return {
-    je_date: salesLine.invoice_date || salesLine.created_at || new Date(),
-    period: dateToPeriod(salesLine.invoice_date || salesLine.created_at || new Date()),
-    description: `Sales: ${salesLine.invoice_number || salesLine._id}`,
+    je_date: salesLine.csi_date || salesLine.created_at || new Date(),
+    period: dateToPeriod(salesLine.csi_date || salesLine.created_at || new Date()),
+    description: `${saleLabel} ${docRef} — ${gross.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
     source_module: 'SALES',
     source_event_id: salesLine.event_id || null,
-    source_doc_ref: salesLine.invoice_number || String(salesLine._id),
+    source_doc_ref: docRef,
     lines,
     bir_flag: 'BOTH',
     vat_flag: vat > 0 ? 'VATABLE' : 'EXEMPT',
@@ -577,7 +586,8 @@ async function journalFromCOGS(salesLine, totalCogs, userId) {
   if (!totalCogs || totalCogs <= 0) return null;
   const coa = await getCoaMap();
 
-  const docRef = salesLine.invoice_number || salesLine.doc_ref || '';
+  // CSI stores booklet# in doc_ref; only non-CSI sales use invoice_number.
+  const docRef = salesLine.doc_ref || salesLine.invoice_number || String(salesLine._id);
   return {
     je_date: salesLine.csi_date || salesLine.created_at || new Date(),
     period: dateToPeriod(salesLine.csi_date || salesLine.created_at || new Date()),
@@ -669,6 +679,44 @@ async function journalFromInventoryAdjustment(data, amount, userId) {
   };
 }
 
+/**
+ * Journal from PRF/CALF
+ * PRF: DR PARTNER_REBATE (5200), CR funding source
+ * CALF: DR AR_BDM (1110), CR funding source
+ */
+async function journalFromPrfCalf(doc, userId) {
+  const coa = await getCoaMap();
+  const amount = doc.amount || 0;
+  if (amount <= 0) return null;
+  const funding = await resolveFundingCoa(doc);
+  const docRef = doc.prf_number || doc.calf_number || `${doc.doc_type}-${doc.period}`;
+  let lines;
+  if (doc.doc_type === 'PRF') {
+    lines = [
+      { account_code: coa.PARTNER_REBATE || '5200', account_name: 'Partner Rebate Expense', debit: amount, credit: 0, description: `PRF: ${doc.payee_name || ''}` },
+      { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `PRF: ${docRef}` }
+    ];
+  } else {
+    lines = [
+      { account_code: coa.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: amount, credit: 0, description: `CALF advance: ${docRef}` },
+      { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `CALF: ${docRef}` }
+    ];
+  }
+  return {
+    je_date: doc.posted_at || new Date(),
+    period: doc.period,
+    description: `${doc.doc_type}: ${docRef}`,
+    source_module: 'EXPENSE',
+    source_event_id: doc.event_id || null,
+    source_doc_ref: docRef,
+    lines,
+    bir_flag: doc.bir_flag || 'BOTH',
+    vat_flag: 'N/A',
+    bdm_id: doc.bdm_id || null,
+    created_by: userId
+  };
+}
+
 module.exports = {
   getCoaMap,
   clearCoaCache,
@@ -687,5 +735,6 @@ module.exports = {
   journalFromPettyCash,
   journalFromCOGS,
   journalFromInterCompany,
-  journalFromInventoryAdjustment
+  journalFromInventoryAdjustment,
+  journalFromPrfCalf
 };

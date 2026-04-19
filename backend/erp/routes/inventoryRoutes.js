@@ -3,6 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const { protect } = require('../../middleware/auth');
 const { roleCheck } = require('../../middleware/roleCheck');
+const { erpSubAccessCheck } = require('../middleware/erpAccessCheck');
 const c = require('../controllers/inventoryController');
 
 const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -27,5 +28,10 @@ router.get('/alerts', protect, c.getAlerts);
 // Phase 25 — Expiry management dashboard + batch traceability
 router.get('/expiry-dashboard', protect, c.getExpiryDashboard);
 router.get('/batch-trace/:productId/:batchLotNo', protect, c.getBatchTrace);
+
+// Phase 31 — President SAP Storno reversal of an APPROVED GRN.
+// PENDING/REJECTED rows hard-deleted. Blocks if downstream POSTED docs (Sales,
+// IC Transfers) consumed batches from this GRN. Sub-permission gated.
+router.post('/grn/:id/president-reverse', protect, erpSubAccessCheck('accounting', 'reverse_posted'), c.presidentReverseGrn);
 
 module.exports = router;

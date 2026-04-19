@@ -66,7 +66,7 @@ describe('doctorController getDoctorProducts', () => {
   });
 
   test('returns 200 with doctor + products for active doctor', async () => {
-    const req = { params: { id: '507f1f77bcf86cd799439012' } };
+    const req = { params: { id: '507f1f77bcf86cd799439012' }, user: { _id: 'u1', role: 'admin' } };
     const res = buildRes();
     const next = jest.fn();
     const doctor = {
@@ -103,6 +103,56 @@ describe('doctorController getDoctorProducts', () => {
         products: [{ _id: 'p1' }],
       },
     });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  test('returns 403 when contractor requests products for unassigned doctor', async () => {
+    const req = { params: { id: '507f1f77bcf86cd799439012' }, user: { _id: 'u1', role: 'contractor' } };
+    const res = buildRes();
+    const next = jest.fn();
+    const doctor = {
+      _id: '507f1f77bcf86cd799439012',
+      firstName: 'Jane',
+      lastName: 'Doe',
+      fullName: 'Jane Doe',
+      specialization: 'Cardiology',
+      assignedTo: 'other-user-id',
+      assignedProducts: [{ _id: 'p1' }],
+    };
+    const query = { populate: jest.fn().mockResolvedValue(doctor) };
+    Doctor.findOne.mockReturnValue(query);
+
+    await getDoctorProducts(req, res, next);
+    await flushPromises();
+
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(next.mock.calls[0][0]).toMatchObject({
+      statusCode: 403,
+      message: 'You do not have access to this VIP Client',
+    });
+  });
+
+  test('returns 200 when contractor requests products for their assigned doctor', async () => {
+    const req = { params: { id: '507f1f77bcf86cd799439012' }, user: { _id: 'u1', role: 'contractor' } };
+    const res = buildRes();
+    const next = jest.fn();
+    const doctor = {
+      _id: '507f1f77bcf86cd799439012',
+      firstName: 'Jane',
+      lastName: 'Doe',
+      fullName: 'Jane Doe',
+      specialization: 'Cardiology',
+      assignedTo: 'u1',
+      assignedProducts: [{ _id: 'p1' }],
+    };
+    const query = { populate: jest.fn().mockResolvedValue(doctor) };
+    Doctor.findOne.mockReturnValue(query);
+
+    await getDoctorProducts(req, res, next);
+    await flushPromises();
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.payload.success).toBe(true);
     expect(next).not.toHaveBeenCalled();
   });
 });

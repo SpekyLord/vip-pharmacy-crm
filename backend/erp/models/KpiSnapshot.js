@@ -27,10 +27,14 @@ const incentiveStatusSchema = new mongoose.Schema({
   attainment_pct:    { type: Number, default: 0 },
   tier_code:         { type: String, default: '' },      // Current tier from INCENTIVE_TIER Lookup
   tier_label:        { type: String, default: '' },
-  tier_budget:       { type: Number, default: 0 },       // Budget amount for current tier
+  tier_budget:       { type: Number, default: 0 },       // Accelerated budget (base * factor)
+  // Phase SG-5 #25 — transparency fields so the ledger can show "₱150K base × 1.25 = ₱187.5K"
+  tier_base_budget:          { type: Number, default: 0 }, // INCENTIVE_TIER.metadata.budget_per_bdm
+  tier_accelerator_factor:   { type: Number, default: 1 }, // INCENTIVE_TIER.metadata.accelerator_factor
   projected_tier_code:  { type: String, default: '' },   // Projected tier at year-end pace
   projected_tier_label: { type: String, default: '' },
   projected_tier_budget: { type: Number, default: 0 },
+  projected_tier_accelerator_factor: { type: Number, default: 1 },
   qualified:         { type: Boolean, default: false },
 }, { _id: false });
 

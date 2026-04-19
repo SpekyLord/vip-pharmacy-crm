@@ -19,11 +19,13 @@ router.get('/entities', gate, ic.getEntities);
 // BDMs per entity (for source/target BDM dropdowns)
 router.get('/bdms', gate, ic.getBdmsByEntity);
 
-// Transfer pricing — president/admin only
+// Transfer pricing — list/products are read-only (admin/finance/president keep role gate).
+// Write paths swapped to danger sub-perm (Phase 3c) — transfer-price changes shift cross-entity
+// P&L allocation and inventory cost basis; require explicit Access Template grant.
 router.get('/prices/list', gate, roleCheck('president', 'admin', 'finance'), ic.getTransferPrices);
 router.get('/prices/products', gate, roleCheck('president', 'admin', 'finance'), ic.getTransferPriceProducts);
-router.put('/prices', gate, roleCheck('president', 'admin'), ic.setTransferPrice);
-router.put('/prices/bulk', gate, roleCheck('president', 'admin'), ic.bulkSetTransferPrices);
+router.put('/prices', gate, erpSubAccessCheck('inventory', 'transfer_price_set'), ic.setTransferPrice);
+router.put('/prices/bulk', gate, erpSubAccessCheck('inventory', 'transfer_price_set'), ic.bulkSetTransferPrices);
 
 // Internal Stock Reassignment — sub-permission gated only (no roleCheck).
 // Any user with inventory.transfers sub-permission can create + approve.
@@ -41,5 +43,10 @@ router.patch('/:id/ship', gate, roleCheck('president', 'admin', 'contractor'), i
 router.patch('/:id/receive', gate, ic.receiveTransfer); // Target BDM or admin
 router.patch('/:id/post', gate, roleCheck('president', 'admin'), ic.postTransfer);
 router.patch('/:id/cancel', gate, roleCheck('president', 'admin', 'contractor'), ic.cancelTransfer);
+
+// Phase 31 — President SAP Storno reversal of an SHIPPED/RECEIVED/POSTED IC Transfer.
+// Dual-side reversal (source + target). DRAFT/APPROVED/CANCELLED hard-deleted.
+// Blocks if any target-entity SalesLine consumed transferred stock.
+router.post('/:id/president-reverse', erpSubAccessCheck('accounting', 'reverse_posted'), ic.presidentReverseIcTransfer);
 
 module.exports = router;

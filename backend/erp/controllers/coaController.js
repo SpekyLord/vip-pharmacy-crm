@@ -65,7 +65,7 @@ const updateAccount = catchAsync(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Account not found' });
   }
 
-  const allowed = ['account_name', 'account_subtype', 'bir_flag', 'is_active', 'parent_code'];
+  const allowed = ['account_name', 'normal_balance', 'account_subtype', 'bir_flag', 'is_active', 'parent_code'];
   for (const field of allowed) {
     if (req.body[field] !== undefined) account[field] = req.body[field];
   }
@@ -193,11 +193,21 @@ const importAccounts = catchAsync(async (req, res) => {
 });
 
 // ═══ Seed Default COA ═══
-const { COA_TEMPLATE } = require('../scripts/seedCOA');
+// Lookup-driven (Rule #3): the template is loaded from Lookup category COA_TEMPLATE
+// for the current entity. Subscribers customize defaults via Control Center →
+// Lookup Tables. The bootstrap defaults live in seedCOA.COA_TEMPLATE_LOOKUP_SHAPE
+// and auto-seed the Lookup on first call so existing entities always pick up new
+// canonical accounts (e.g., when the template is extended in code).
+const { loadCoaTemplateForEntity } = require('../scripts/seedCOA');
 
 const seedDefaultCOA = catchAsync(async (req, res) => {
+  if (!req.entityId) {
+    return res.status(400).json({ success: false, message: 'Entity context required.' });
+  }
+
+  const template = await loadCoaTemplateForEntity(req.entityId);
   let created = 0;
-  for (const acct of COA_TEMPLATE) {
+  for (const acct of template) {
     const result = await ChartOfAccounts.updateOne(
       { entity_id: req.entityId, account_code: acct.account_code },
       {
@@ -215,8 +225,8 @@ const seedDefaultCOA = catchAsync(async (req, res) => {
 
   res.json({
     success: true,
-    message: `Seed complete: ${created} new accounts created (${COA_TEMPLATE.length} total in template)`,
-    data: { created, total_template: COA_TEMPLATE.length }
+    message: `Seed complete: ${created} new accounts created (${template.length} in template)`,
+    data: { created, total_template: template.length }
   });
 });
 

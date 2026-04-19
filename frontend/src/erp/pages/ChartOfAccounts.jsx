@@ -135,6 +135,7 @@ export function ChartOfAccountsContent() {
     try {
       await api.updateAccount(editingId, {
         account_name: form.account_name,
+        normal_balance: form.normal_balance,
         account_subtype: form.account_subtype,
         bir_flag: form.bir_flag,
       });
@@ -158,7 +159,15 @@ export function ChartOfAccountsContent() {
       <div className="coa-header">
         <h2>Chart of Accounts</h2>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {isAdmin && accounts.length === 0 && <button className="btn btn-success" onClick={handleSeedCOA}>Seed Default COA</button>}
+          {isAdmin && (
+            <button
+              className={accounts.length === 0 ? 'btn btn-success' : 'btn btn-outline'}
+              onClick={handleSeedCOA}
+              title="Idempotent — adds any template accounts missing from this entity. Existing accounts are not modified."
+            >
+              {accounts.length === 0 ? 'Seed Default COA' : 'Sync from Template'}
+            </button>
+          )}
           <button className="btn btn-outline" onClick={handleExport}>Export Excel</button>
           {isAdmin && <label className="btn btn-outline" style={{ cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" className="upload-input" onChange={handleImport} /></label>}
           {isAdmin && <button className="btn btn-primary" onClick={() => { setEditingId(null); resetForm(); setShowModal(true); }}>+ Add Account</button>}
@@ -231,7 +240,7 @@ export function ChartOfAccountsContent() {
             </div>
             <div className="form-group">
               <label>Normal Balance</label>
-              <SelectField value={form.normal_balance} onChange={e => setForm({ ...form, normal_balance: e.target.value })} disabled={!!editingId}>
+              <SelectField value={form.normal_balance} onChange={e => setForm({ ...form, normal_balance: e.target.value })}>
                 <option value="DEBIT">DEBIT</option>
                 <option value="CREDIT">CREDIT</option>
               </SelectField>

@@ -28,6 +28,12 @@ const notificationPreferenceSchema = new mongoose.Schema({
   reminders: { type: Boolean, default: true },
   messages: { type: Boolean, default: true },
 
+  // Phase SG-Q2 W3 — Sales Goal compensation + variance alerts (opt-in by default).
+  // Set false to suppress tier-reached notifications and plan activate/close/reopen
+  // emails. KPI variance alerts use the kpiVarianceAlerts switch.
+  compensationAlerts: { type: Boolean, default: true },
+  kpiVarianceAlerts: { type: Boolean, default: true },
+
   // Sound
   soundEnabled: { type: Boolean, default: true },
 

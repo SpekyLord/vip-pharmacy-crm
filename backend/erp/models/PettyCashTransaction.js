@@ -50,12 +50,15 @@ const pettyCashTransactionSchema = new mongoose.Schema({
   // Lifecycle
   status: {
     type: String,
-    enum: ['DRAFT', 'VALID', 'ERROR', 'POSTED', 'VOIDED'],
+    enum: ['DRAFT', 'VALID', 'ERROR', 'POSTED', 'VOIDED', 'REJECTED'],
     default: 'DRAFT'
   },
   posted_at: { type: Date },
   posted_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   validation_errors: [{ type: String }],
+  rejection_reason: { type: String, trim: true, default: '' },
+  rejected_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  rejected_at: { type: Date },
   event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
 
   // Void fields

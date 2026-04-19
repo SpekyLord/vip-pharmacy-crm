@@ -31,6 +31,8 @@ import {
   Loader2,
   Volume2,
   VolumeX,
+  DollarSign,
+  TrendingDown,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
@@ -667,6 +669,8 @@ const NotificationPreferences = () => {
     systemUpdates: true,
     reminders: true,
     messages: true,
+    compensationAlerts: true,
+    kpiVarianceAlerts: true,
 
     // Sound
     soundEnabled: true,
@@ -1020,6 +1024,46 @@ const NotificationPreferences = () => {
                     type="checkbox"
                     checked={preferences.messages}
                     onChange={(e) => updatePreference('messages', e.target.checked)}
+                  />
+                  <span className="np-switch-slider" />
+                </label>
+              </div>
+
+              <div className="np-option">
+                <div className="np-option-info">
+                  <div className="np-option-icon green">
+                    <DollarSign size={18} />
+                  </div>
+                  <div className="np-option-text">
+                    <h4>Compensation Alerts</h4>
+                    <p>Sales Goal plan lifecycle and tier-reached milestones</p>
+                  </div>
+                </div>
+                <label className="np-switch">
+                  <input
+                    type="checkbox"
+                    checked={preferences.compensationAlerts}
+                    onChange={(e) => updatePreference('compensationAlerts', e.target.checked)}
+                  />
+                  <span className="np-switch-slider" />
+                </label>
+              </div>
+
+              <div className="np-option">
+                <div className="np-option-info">
+                  <div className="np-option-icon amber">
+                    <TrendingDown size={18} />
+                  </div>
+                  <div className="np-option-text">
+                    <h4>KPI Variance Alerts</h4>
+                    <p>Notify when KPIs deviate from target beyond configured thresholds</p>
+                  </div>
+                </div>
+                <label className="np-switch">
+                  <input
+                    type="checkbox"
+                    checked={preferences.kpiVarianceAlerts}
+                    onChange={(e) => updatePreference('kpiVarianceAlerts', e.target.checked)}
                   />
                   <span className="np-switch-slider" />
                 </label>

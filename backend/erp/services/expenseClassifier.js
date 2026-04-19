@@ -23,13 +23,13 @@ const HARDCODED_RULES = [
   { keywords: ['SHELL', 'PETRON', 'CALTEX', 'PHOENIX', 'SEAOIL', 'GASOLINE', 'FUEL', 'DIESEL'], coa_code: '6200', coa_name: 'Fuel & Gas', category: 'FUEL' },
   { keywords: ['PARKING', 'TOLL', 'NLEX', 'SLEX', 'TPLEX', 'SKYWAY', 'CAVITEX', 'EXPRESSWAY', 'EASYTRIP', 'EASY TRIP', 'AUTOSWEEP', 'AUTO SWEEP', 'RFID', 'TESY'], coa_code: '6600', coa_name: 'Parking & Tolls', category: 'PARKING/TOLL' },
   { keywords: ['HOTEL', 'INN', 'LODGE', 'PENSION', 'AIRBNB', 'ACCOMMODATION', 'RESORT'], coa_code: '6155', coa_name: 'Travel & Accommodation', category: 'TRAVEL/ACCOMMODATION' },
-  { keywords: ['RESTAURANT', 'FOOD', 'MEAL', 'CAFE', 'JOLLIBEE', 'MCDONALDS', 'DINE', 'EATERY'], coa_code: '6350', coa_name: 'ACCESS Expense', category: 'ACCESS/MEALS' },
-  { keywords: ['PRINTING', 'OFFICE', 'SUPPLIES', 'STATIONERY', 'NATIONAL BOOKSTORE'], coa_code: '6400', coa_name: 'Office Supplies', category: 'OFFICE SUPPLIES' },
+  { keywords: ['RESTAURANT', 'FOOD', 'MEAL', 'CAFE', 'JOLLIBEE', 'MCDONALDS', 'DINE', 'EATERY', 'CHOWKING', 'MANG INASAL', 'KFC', 'GREENWICH', 'PIZZA HUT', 'STARBUCKS', 'MAX\'S'], coa_code: '6350', coa_name: 'ACCESS Expense', category: 'ACCESS/MEALS' },
+  { keywords: ['PRINTING', 'OFFICE', 'SUPPLIES', 'STATIONERY', 'NATIONAL BOOKSTORE', 'LANDERS', 'S&R', 'SNR', 'SM STORE', 'ROBINSONS', 'WILCON', 'HANDYMAN', 'TRUE VALUE', 'ACE HARDWARE', 'MERCURY DRUG', 'WATSONS'], coa_code: '6400', coa_name: 'Office Supplies', category: 'OFFICE SUPPLIES' },
   { keywords: ['GLOBE', 'SMART', 'PLDT', 'CONVERGE', 'MERALCO', 'WATER', 'ELECTRIC', 'UTILITY'], coa_code: '6460', coa_name: 'Utilities & Communication', category: 'UTILITIES/COMMUNICATION' },
   { keywords: ['GRAB', 'TAXI', 'ANGKAS', 'FERRY', 'BOAT'], coa_code: '6150', coa_name: 'Transport Expense', category: 'TRANSPORTATION' },
   { keywords: ['FDA', 'DOH', 'LGU', 'LICENSE', 'PERMIT', 'REGULATORY', 'REGISTRATION', 'RENEWAL'], coa_code: '6810', coa_name: 'Regulatory & Licensing', category: 'REGULATORY/LICENSING' },
   { keywords: ['SOFTWARE', 'SUBSCRIPTION', 'DOMAIN', 'HOSTING', 'CLOUD', 'APP', 'COMPUTER', 'LAPTOP', 'PRINTER', 'HARDWARE'], coa_code: '6820', coa_name: 'IT Hardware & Software', category: 'IT/SOFTWARE' },
-  { keywords: ['REPAIR', 'MAINTENANCE', 'AIRCON', 'PLUMBING', 'ELECTRICAL', 'FIX'], coa_code: '6260', coa_name: 'Repairs & Maintenance', category: 'REPAIRS/MAINTENANCE' },
+  { keywords: ['REPAIR', 'MAINTENANCE', 'AIRCON', 'PLUMBING', 'ELECTRICAL', 'FIX', 'TOYOTA', 'HONDA', 'MITSUBISHI', 'FORD', 'ISUZU', 'NISSAN', 'HYUNDAI', 'KIA', 'AUTO SHOP', 'VULCANIZING', 'TIRE'], coa_code: '6260', coa_name: 'Repairs & Maintenance', category: 'REPAIRS/MAINTENANCE' },
   { keywords: ['RENT', 'LEASE', 'BALAI LAWAAN'], coa_code: '6450', coa_name: 'Rent Expense', category: 'RENT' },
   { keywords: ['AUDIT', 'TAX', 'LEGAL', 'ATTORNEY', 'LAWYER', 'CPA', 'ACCOUNTANT', 'PHARMACIST', 'NOTARY'], coa_code: '6800', coa_name: 'Professional Fees', category: 'PROFESSIONAL FEES' },
   { keywords: ['GROCERY', 'MARKET', 'INGREDIENT', 'MEAT', 'VEGETABLE', 'FISH', 'SEAFOOD', 'RICE', 'COOKING', 'FOOD SUPPLY'], coa_code: '5400', coa_name: 'Food Cost', category: 'FOOD COST' },
@@ -51,18 +51,23 @@ const FALLBACK = {
   match_method: 'FALLBACK'
 };
 
-// ── In-memory cache for lookup-driven rules (5-minute TTL) ──
-let _rulesCache = null;
-let _rulesCacheExpiry = 0;
+// ── Per-entity cache for lookup-driven rules (5-minute TTL) ──
+// Phase H3: keyed by entity_id to prevent cross-tenant data leak under load.
+// '__GLOBAL__' bucket is used when no entity context is provided.
+const _rulesCache = new Map(); // entityKey → { value, expiry }
+const RULES_CACHE_TTL_MS = 5 * 60 * 1000;
+const _rulesEntityKey = (entityId) => entityId ? String(entityId) : '__GLOBAL__';
 
 /**
  * Load keyword rules from Lookup table (entity-scoped).
  * Falls back to HARDCODED_RULES if no lookup entries exist.
- * Cached for 5 minutes to avoid DB hits on every OCR scan.
+ * Cached per-entity for 5 minutes to avoid DB hits on every OCR scan.
  */
 async function getKeywordRules(entityId) {
+  const key = _rulesEntityKey(entityId);
   const now = Date.now();
-  if (_rulesCache && now < _rulesCacheExpiry) return _rulesCache;
+  const hit = _rulesCache.get(key);
+  if (hit && now < hit.expiry) return hit.value;
 
   try {
     const filter = { category: 'OCR_EXPENSE_RULES', is_active: true };
@@ -70,29 +75,30 @@ async function getKeywordRules(entityId) {
     const lookupRules = await Lookup.find(filter).sort({ sort_order: 1 }).lean();
 
     if (lookupRules.length > 0) {
-      _rulesCache = lookupRules.map(r => ({
+      const value = lookupRules.map(r => ({
         keywords: r.metadata?.keywords || [],
         coa_code: r.metadata?.coa_code || '6900',
         coa_name: r.label,
         category: r.code,
       }));
-      _rulesCacheExpiry = now + 5 * 60 * 1000;
-      return _rulesCache;
+      _rulesCache.set(key, { value, expiry: now + RULES_CACHE_TTL_MS });
+      return value;
     }
   } catch (err) {
     console.warn('[ExpenseClassifier] Lookup query failed, using hardcoded rules:', err.message);
   }
 
-  // Fallback to hardcoded
-  _rulesCache = HARDCODED_RULES;
-  _rulesCacheExpiry = now + 5 * 60 * 1000;
+  _rulesCache.set(key, { value: HARDCODED_RULES, expiry: now + RULES_CACHE_TTL_MS });
   return HARDCODED_RULES;
 }
 
-/** Bust the rules cache (called when admin updates lookups) */
-function invalidateRulesCache() {
-  _rulesCache = null;
-  _rulesCacheExpiry = 0;
+/** Bust the rules cache (called when admin updates lookups). Pass entityId for targeted bust, omit for full clear. */
+function invalidateRulesCache(entityId) {
+  if (entityId) {
+    _rulesCache.delete(_rulesEntityKey(entityId));
+  } else {
+    _rulesCache.clear();
+  }
 }
 
 /**

@@ -111,7 +111,7 @@ export default function CreditCardLedger() {
         bank_account_id: payForm.bank_account_id,
         payment_date: payForm.payment_date || undefined
       });
-      showMsg(`Payment recorded — JE #${res?.data?.je_number || ''}, ${res?.data?.transactions_paid || 0} txns paid`);
+      showMsg(`Payment recorded — ${res?.data?.je_number || ''}, ${res?.data?.transactions_paid || 0} txns paid`);
       setShowPayment(false);
       setPayForm({ amount: '', bank_account_id: '', payment_date: '' });
       loadCards();

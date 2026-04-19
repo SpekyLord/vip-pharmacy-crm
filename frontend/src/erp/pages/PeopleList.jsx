@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePeople from '../hooks/usePeople';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
@@ -92,6 +93,10 @@ const EMPTY_FORM = {
 export function PeopleListContent() {
   const navigate = useNavigate();
   const api = usePeople();
+  // Phase 3c — bulk-change-role gated by danger-baseline people.manage_login.
+  // Mirrors backend peopleRoutes /bulk-change-role.
+  const { hasSubPermission } = useErpSubAccess();
+  const canManageLogin = hasSubPermission('people', 'manage_login');
   const { options: personTypeOpts } = useLookupOptions('PERSON_TYPE');
   const { options: systemRoleOpts } = useLookupOptions('SYSTEM_ROLE');
   const getRoleLabel = (code) => {
@@ -183,8 +188,8 @@ export function PeopleListContent() {
       <style>{pageStyles}</style>
       <WorkflowGuide pageKey="people-list" />
 
-      {/* Legacy Role Migration Banner */}
-      {Object.keys(legacyCounts).length > 0 && (
+      {/* Legacy Role Migration Banner — bulk-change-role gated by people.manage_login (Phase 3c) */}
+      {Object.keys(legacyCounts).length > 0 && canManageLogin && (
         <div style={{ background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: 10, padding: '12px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
           <div>
             <span style={{ fontWeight: 700, fontSize: 13, color: '#92400e' }}>Legacy Roles Detected</span>

@@ -10,18 +10,18 @@ const SalesLine = require('../models/SalesLine');
 const TransactionEvent = require('../models/TransactionEvent');
 const ErpAuditLog = require('../models/ErpAuditLog');
 const Hospital = require('../models/Hospital');
+const Customer = require('../models/Customer');
 const DocumentAttachment = require('../models/DocumentAttachment');
 const { catchAsync } = require('../../middleware/errorHandler');
-const { getOpenCsis, getArAging, getCollectionRate, getHospitalArBalance } = require('../services/arEngine');
+const { getOpenCsis, getArAging, getCollectionRate, getHospitalArBalance, getArBalance } = require('../services/arEngine');
 const { enrichArWithDunning } = require('../services/dunningService');
 const { generateSoaWorkbook } = require('../services/soaGenerator');
 const { journalFromCollection, journalFromCWT, journalFromCommission, resolveFundingCoa } = require('../services/autoJournal');
 const { createAndPostJournal, reverseJournal } = require('../services/journalEngine');
+const { presidentReverse } = require('../services/documentReversalService');
 const JournalEntry = require('../models/JournalEntry');
 const { createVatEntry } = require('../services/vatService');
 const { createCwtEntry } = require('../services/cwtService');
-const VatLedger = require('../models/VatLedger');
-const CwtLedger = require('../models/CwtLedger');
 const { notifyDocumentPosted, notifyDocumentReopened } = require('../services/erpNotificationService');
 const Settings = require('../models/Settings');
 const PettyCashFund = require('../models/PettyCashFund');
@@ -66,6 +66,11 @@ const getCollections = catchAsync(async (req, res) => {
     if (req.query.cr_date_to) filter.cr_date.$lte = new Date(req.query.cr_date_to);
   }
 
+  // Phase 6 — hide reversed rows by default; opt-in via ?include_reversed=true.
+  if (req.query.include_reversed !== 'true') {
+    filter.deletion_event_id = { $exists: false };
+  }
+
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 20;
   const skip = (page - 1) * limit;
@@ -107,8 +112,9 @@ const getOpenCsisEndpoint = catchAsync(async (req, res) => {
 
   const entityId = (req.isPresident || req.isAdmin || req.isFinance) && req.query.entity_id
     ? req.query.entity_id : req.entityId;
-  const bdmId = (req.isPresident || req.isAdmin || req.isFinance) && req.query.bdm_id
-    ? req.query.bdm_id : req.bdmId;
+  const bdmId = (req.isPresident || req.isAdmin || req.isFinance)
+    ? (req.query.bdm_id || null)
+    : req.bdmId;
 
   const csis = await getOpenCsis(entityId, bdmId, hospitalId, customerId);
   res.json({ success: true, data: csis });
@@ -117,8 +123,9 @@ const getOpenCsisEndpoint = catchAsync(async (req, res) => {
 const getArAgingEndpoint = catchAsync(async (req, res) => {
   const entityId = (req.isPresident || req.isAdmin || req.isFinance) && req.query.entity_id
     ? req.query.entity_id : req.entityId;
-  const bdmId = (req.isPresident || req.isAdmin || req.isFinance) && req.query.bdm_id
-    ? req.query.bdm_id : req.bdmId;
+  const bdmId = (req.isPresident || req.isAdmin || req.isFinance)
+    ? (req.query.bdm_id || null)
+    : req.bdmId;
 
   const arData = await getArAging(entityId, bdmId, req.query.hospital_id);
   const enriched = enrichArWithDunning(arData);
@@ -128,8 +135,9 @@ const getArAgingEndpoint = catchAsync(async (req, res) => {
 const getCollectionRateEndpoint = catchAsync(async (req, res) => {
   const entityId = (req.isPresident || req.isAdmin || req.isFinance) && req.query.entity_id
     ? req.query.entity_id : req.entityId;
-  const bdmId = (req.isPresident || req.isAdmin || req.isFinance) && req.query.bdm_id
-    ? req.query.bdm_id : req.bdmId;
+  const bdmId = (req.isPresident || req.isAdmin || req.isFinance)
+    ? (req.query.bdm_id || null)
+    : req.bdmId;
 
   const rate = await getCollectionRate(entityId, bdmId, req.query.date_from, req.query.date_to);
   res.json({ success: true, data: rate });
@@ -178,9 +186,10 @@ const validateCollections = catchAsync(async (req, res) => {
       }
 
       const slIds = row.settled_csis.map(s => s.sales_line_id);
-      const validSales = await SalesLine.find({
-        _id: { $in: slIds }, status: 'POSTED', hospital_id: row.hospital_id, entity_id: row.entity_id
-      }).select('_id invoice_total').lean();
+      const csiQuery = { _id: { $in: slIds }, status: 'POSTED', entity_id: row.entity_id };
+      if (row.hospital_id) csiQuery.hospital_id = row.hospital_id;
+      else if (row.customer_id) csiQuery.customer_id = row.customer_id;
+      const validSales = await SalesLine.find(csiQuery).select('_id invoice_total').lean();
       const validMap = new Map(validSales.map(s => [s._id.toString(), s]));
 
       for (const csi of row.settled_csis) {
@@ -204,11 +213,11 @@ const validateCollections = catchAsync(async (req, res) => {
         }
       }
 
-      // Hospital-wide AR balance check: total collection must not exceed total outstanding AR
-      const hospitalArBalance = await getHospitalArBalance(row.hospital_id, row.entity_id);
+      // AR balance check: total collection must not exceed total outstanding AR (hospital OR customer)
+      const arBalance = await getArBalance(row.entity_id, row.hospital_id, row.customer_id);
       const thisCollectionTotal = row.settled_csis.reduce((sum, c) => sum + (c.invoice_amount || 0), 0);
-      if (hospitalArBalance > 0 && thisCollectionTotal > hospitalArBalance + 0.01) {
-        errors.push(`Total settlement (P${thisCollectionTotal.toFixed(2)}) exceeds hospital AR balance (P${hospitalArBalance.toFixed(2)})`);
+      if (arBalance > 0 && thisCollectionTotal > arBalance + 0.01) {
+        errors.push(`Total settlement (P${thisCollectionTotal.toFixed(2)}) exceeds AR balance (P${arBalance.toFixed(2)})`);
       }
 
 
@@ -289,7 +298,7 @@ const submitCollections = catchAsync(async (req, res) => {
   const crTotalAmount = validRows.reduce((sum, r) => sum + (r.cr_amount || 0), 0);
   const gated = await gateApproval({
     entityId: req.entityId,
-    module: 'COLLECTIONS',
+    module: 'COLLECTION',
     docType: 'CR',
     docId: validRows[0]._id,
     docRef: validRows.map(r => r.cr_no).filter(Boolean).join(', '),
@@ -319,6 +328,7 @@ const submitCollections = catchAsync(async (req, res) => {
           document_ref: row.cr_no,
           payload: {
             hospital_id: row.hospital_id,
+            customer_id: row.customer_id,
             settled_csis: row.settled_csis,
             cr_amount: row.cr_amount,
             cwt_amount: row.cwt_amount,
@@ -458,11 +468,17 @@ const submitCollections = catchAsync(async (req, res) => {
           }
         }
 
-        // VAT Ledger — OUTPUT VAT from collection (skip for EXEMPT/ZERO hospitals)
+        // VAT Ledger — OUTPUT VAT from collection (skip for EXEMPT/ZERO hospitals/customers)
         const crAmount = row.cr_amount || 0;
-        const hospital = row.hospital_id ? await Hospital.findById(row.hospital_id).select('vat_status').lean() : null;
-        const hospitalVatStatus = hospital?.vat_status || 'VATABLE';
-        if (crAmount > 0 && hospitalVatStatus === 'VATABLE') {
+        let vatStatus = 'VATABLE';
+        if (row.hospital_id) {
+          const hosp = await Hospital.findById(row.hospital_id).select('vat_status').lean();
+          vatStatus = hosp?.vat_status || 'VATABLE';
+        } else if (row.customer_id) {
+          const cust = await Customer.findById(row.customer_id).select('vat_status').lean();
+          vatStatus = cust?.vat_status || 'VATABLE';
+        }
+        if (crAmount > 0 && vatStatus === 'VATABLE') {
           const vatRate = settings?.VAT_RATE || 0.12;
           const vatAmount = Math.round((crAmount * vatRate / (1 + vatRate)) * 100) / 100;
           await createVatEntry({
@@ -472,7 +488,7 @@ const submitCollections = catchAsync(async (req, res) => {
             source_module: 'COLLECTION',
             source_doc_ref: row.cr_no,
             source_event_id: row.event_id,
-            hospital_or_vendor: row.hospital_id,
+            hospital_or_vendor: row.hospital_id || row.customer_id,
             gross_amount: crAmount,
             vat_amount: vatAmount
           }).catch(async (err) => {
@@ -545,19 +561,40 @@ const reopenCollections = catchAsync(async (req, res) => {
   const rows = await Collection.find({ _id: { $in: collection_ids }, ...req.tenantFilter, status: 'POSTED' });
   if (!rows.length) return res.status(404).json({ success: false, message: 'No POSTED collections found' });
 
-  // Save event_ids before clearing them inside transaction
-  const rowEventMap = rows.map(r => ({ _id: r._id, event_id: r.event_id, cr_no: r.cr_no, entity_id: r.entity_id, bdm_id: r.bdm_id }));
+  const reopened = [];
+  const failed = [];
 
-  const session = await mongoose.startSession();
-  try {
-    await session.withTransaction(async () => {
-      for (const row of rows) {
+  for (const row of rows) {
+    // Step 1: Reverse JEs FIRST — if fails, skip this row (keep POSTED, ledger stays balanced)
+    if (row.event_id) {
+      try {
+        const jes = await JournalEntry.find({
+          source_event_id: row.event_id, status: 'POSTED', is_reversal: { $ne: true }
+        });
+        for (const je of jes) {
+          await reverseJournal(je._id, 'Auto-reversal: Collection reopen', req.user._id);
+        }
+      } catch (jeErr) {
+        console.error('JE reversal failed for collection reopen:', row.cr_no, jeErr.message);
+        failed.push({ _id: row._id, cr_no: row.cr_no, error: `Journal reversal failed: ${jeErr.message}` });
+        continue; // Do NOT mark as DRAFT — ledger would be unbalanced
+      }
+    }
+
+    // Step 2: JE reversed successfully — now do ledger/status reversal in a transaction
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
         if (row.event_id) {
           await TransactionEvent.findByIdAndUpdate(row.event_id, { status: 'DELETED' }, { session });
-          await VatLedger.deleteMany({ source_event_id: row.event_id }).session(session);
-          await CwtLedger.deleteMany({ cr_no: row.cr_no, entity_id: row.entity_id }).session(session);
+          // VatLedger / CwtLedger entries are NOT deleted on reopen (Phase 3a/3b
+          // alignment): VAT/CWT rows are a staging layer owned by finance —
+          // they set finance_tag to INCLUDE/EXCLUDE/DEFER at 2550Q/2307 prep
+          // time. Reopen/reverse paths leave the rows in place; finance tags
+          // them EXCLUDE if the underlying document has been reversed. Keeps
+          // BIR audit trail intact even after a reversal.
         }
-        // Reverse petty cash deposit (inside transaction for atomicity)
+        // Reverse petty cash deposit
         const pcTxn = await PettyCashTransaction.findOne({
           linked_collection_id: row._id,
           txn_type: 'DEPOSIT',
@@ -589,48 +626,39 @@ const reopenCollections = catchAsync(async (req, res) => {
         row.posted_by = undefined;
         row.event_id = undefined;
         await row.save({ session });
-      }
-    });
-
-    // Reverse journal entries outside transaction (non-blocking)
-    for (const item of rowEventMap) {
-      if (item.event_id) {
-        try {
-          const jes = await JournalEntry.find({
-            source_event_id: item.event_id, status: 'POSTED', is_reversal: { $ne: true }
-          });
-          for (const je of jes) {
-            await reverseJournal(je._id, 'Auto-reversal: Collection reopen', req.user._id);
-          }
-        } catch (jeErr) {
-          console.error('JE reversal failed for collection reopen:', item.cr_no, jeErr.message);
-        }
-      }
-
-      // Petty cash deposit reversal moved inside session.withTransaction() above for atomicity
-
-      await ErpAuditLog.logChange({
-        entity_id: item.entity_id, bdm_id: item.bdm_id,
-        log_type: 'STATUS_CHANGE', target_ref: item._id.toString(),
-        target_model: 'Collection', field_changed: 'status',
-        old_value: 'POSTED', new_value: 'DRAFT',
-        changed_by: req.user._id, note: `CR ${item.cr_no} reopened`
       });
+
+      reopened.push(row._id);
+      await ErpAuditLog.logChange({
+        entity_id: row.entity_id, bdm_id: row.bdm_id,
+        log_type: 'REOPEN', target_ref: row._id.toString(),
+        target_model: 'Collection', changed_by: req.user._id,
+        note: `CR ${row.cr_no} reopened`
+      });
+    } catch (txErr) {
+      console.error('Reopen transaction failed for collection:', row.cr_no, txErr.message);
+      failed.push({ _id: row._id, cr_no: row.cr_no, error: `Transaction failed: ${txErr.message}` });
+    } finally {
+      session.endSession();
     }
+  }
 
-    res.json({ success: true, message: `${rows.length} collection(s) reopened` });
+  if (failed.length && !reopened.length) {
+    return res.status(500).json({ success: false, message: 'All collection reopens failed', failed });
+  }
+  res.json({ success: true, message: `Reopened ${reopened.length} collection(s)${failed.length ? `, ${failed.length} failed` : ''}`, reopened, failed });
 
-    // Non-blocking: notify management of reopened collections
+  // Non-blocking: notify management of reopened collections
+  if (reopened.length) {
+    const reopenedRefs = rows.filter(r => reopened.includes(r._id)).map(r => r.cr_no).filter(Boolean).join(', ');
     notifyDocumentReopened({
       entityId: req.entityId,
       module: 'Collections',
       docType: 'CR',
-      docRef: rows.map(r => r.cr_no).filter(Boolean).join(', '),
+      docRef: reopenedRefs,
       reopenedBy: req.user.name || req.user.email,
       reason: req.body.reason,
     }).catch(err => console.error('Collection reopen notification failed:', err.message));
-  } finally {
-    await session.endSession();
   }
 });
 
@@ -655,7 +683,7 @@ const requestDeletion = catchAsync(async (req, res) => {
 });
 
 const approveDeletion = catchAsync(async (req, res) => {
-  const collection = await Collection.findOne({ _id: req.params.id, status: 'DELETION_REQUESTED' });
+  const collection = await Collection.findOne({ _id: req.params.id, ...req.tenantFilter, status: 'DELETION_REQUESTED' });
   if (!collection) return res.status(404).json({ success: false, message: 'Collection not found' });
 
   // Reversal event
@@ -690,6 +718,40 @@ const approveDeletion = catchAsync(async (req, res) => {
   res.json({ success: true, message: 'Deletion approved — reversal event created' });
 });
 
+// ═══ PRESIDENT REVERSE — sub-permission gated, applies to any status ═══
+// (DRAFT/ERROR/VALID without event_id → hard delete; POSTED/DELETION_REQUESTED → SAP Storno)
+// Unlike `approveDeletion`, this path handles the full side-effect cleanup (VAT/CWT ledgers,
+// petty cash void, fund decrement) via documentReversalService — matching the `reopenCollections`
+// behavior so post + reverse yields the same ledger state as never-posted.
+const presidentReverseCollection = catchAsync(async (req, res) => {
+  const { reason, confirm } = req.body || {};
+  if (confirm !== 'DELETE') {
+    return res.status(400).json({ success: false, message: 'Type DELETE in the confirmation field to proceed' });
+  }
+  if (!reason || !reason.trim()) {
+    return res.status(400).json({ success: false, message: 'Reason is required' });
+  }
+
+  try {
+    const result = await presidentReverse({
+      doc_type: 'COLLECTION',
+      doc_id: req.params.id,
+      reason,
+      user: req.user,
+      tenantFilter: req.tenantFilter || {},
+    });
+    res.json({
+      success: true,
+      message: result.mode === 'HARD_DELETE'
+        ? `Deleted CR ${result.doc_ref || result.doc_id} (no posting side effects)`
+        : `Reversed CR ${result.doc_ref || result.doc_id} (SAP Storno) — original retained for audit`,
+      data: result,
+    });
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message });
+  }
+});
+
 // ═══ SOA ═══
 
 const generateSoaEndpoint = catchAsync(async (req, res) => {
@@ -698,8 +760,9 @@ const generateSoaEndpoint = catchAsync(async (req, res) => {
 
   const entityId = (req.isPresident || req.isAdmin || req.isFinance) && req.body.entity_id
     ? req.body.entity_id : req.entityId;
-  const bdmId = (req.isPresident || req.isAdmin || req.isFinance) && req.body.bdm_id
-    ? req.body.bdm_id : req.bdmId;
+  const bdmId = (req.isPresident || req.isAdmin || req.isFinance)
+    ? (req.body.bdm_id || null)
+    : req.bdmId;
 
   const buffer = await generateSoaWorkbook(hospital_id, entityId, bdmId);
 
@@ -723,7 +786,8 @@ const postSingleCollection = async (doc, userId) => {
         entity_id: doc.entity_id, bdm_id: doc.bdm_id, event_type: 'CR',
         event_date: doc.cr_date, document_ref: doc.cr_no,
         payload: {
-          hospital_id: doc.hospital_id, settled_csis: doc.settled_csis,
+          hospital_id: doc.hospital_id, customer_id: doc.customer_id,
+          settled_csis: doc.settled_csis,
           cr_amount: doc.cr_amount, cwt_amount: doc.cwt_amount,
           total_commission: doc.total_commission, total_partner_rebates: doc.total_partner_rebates,
           payment_mode: doc.payment_mode
@@ -792,16 +856,23 @@ const postSingleCollection = async (doc, userId) => {
       }
     }
 
-    // VAT Ledger
+    // VAT Ledger (skip for EXEMPT/ZERO hospitals/customers)
     const crAmount = doc.cr_amount || 0;
-    const hospital = doc.hospital_id ? await Hospital.findById(doc.hospital_id).select('vat_status').lean() : null;
-    if (crAmount > 0 && (hospital?.vat_status || 'VATABLE') === 'VATABLE') {
+    let singleVatStatus = 'VATABLE';
+    if (doc.hospital_id) {
+      const hosp = await Hospital.findById(doc.hospital_id).select('vat_status').lean();
+      singleVatStatus = hosp?.vat_status || 'VATABLE';
+    } else if (doc.customer_id) {
+      const cust = await Customer.findById(doc.customer_id).select('vat_status').lean();
+      singleVatStatus = cust?.vat_status || 'VATABLE';
+    }
+    if (crAmount > 0 && singleVatStatus === 'VATABLE') {
       const vatRate = settings?.VAT_RATE || 0.12;
       const vatAmount = Math.round((crAmount * vatRate / (1 + vatRate)) * 100) / 100;
       await createVatEntry({
         entity_id: doc.entity_id, period: doc.period || require('../utils/periodLock').dateToPeriod(doc.cr_date),
         vat_type: 'OUTPUT', source_module: 'COLLECTION', source_doc_ref: doc.cr_no,
-        source_event_id: doc.event_id, hospital_or_vendor: doc.hospital_id,
+        source_event_id: doc.event_id, hospital_or_vendor: doc.hospital_id || doc.customer_id,
         gross_amount: crAmount, vat_amount: vatAmount
       }).catch(err => console.error('VAT entry failed (approval hub):', doc.cr_no, err.message));
     }
@@ -827,6 +898,6 @@ module.exports = {
   getCollections, getCollectionById, getOpenCsisEndpoint,
   validateCollections, submitCollections, reopenCollections,
   getArAgingEndpoint, getCollectionRateEndpoint, generateSoaEndpoint,
-  requestDeletion, approveDeletion,
+  requestDeletion, approveDeletion, presidentReverseCollection,
   postSingleCollection
 };

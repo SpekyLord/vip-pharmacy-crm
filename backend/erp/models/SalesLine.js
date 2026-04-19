@@ -75,6 +75,10 @@ const salesLineSchema = new mongoose.Schema({
   // When set, sale bypasses AR and deposits directly to the fund
   petty_cash_fund_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PettyCashFund' },
 
+  // CSI photo (OCR-scanned or manually uploaded)
+  csi_photo_url: { type: String },
+  csi_attachment_id: { type: String },
+
   line_items: [lineItemSchema],
 
   invoice_total: { type: Number, default: 0 },
@@ -93,6 +97,9 @@ const salesLineSchema = new mongoose.Schema({
   },
   reopen_count: { type: Number, default: 0 },
   validation_errors: [{ type: String }],
+  // Informational-only notices that never block posting (e.g. CSI # not in any
+  // allocation, CSI # voided, etc.). Surfaced as yellow chips in the UI.
+  validation_warnings: [{ type: String }],
   rejection_reason: { type: String },
   // Phase 15.5: Cost Center dimension
   cost_center_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CostCenter' },

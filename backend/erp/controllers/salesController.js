@@ -15,11 +15,14 @@ const { catchAsync } = require('../../middleware/errorHandler');
 const { consumeFIFO, consumeSpecificBatch, buildStockSnapshot } = require('../services/fifoEngine');
 const { journalFromSale, journalFromServiceRevenue, journalFromCOGS } = require('../services/autoJournal');
 const { createAndPostJournal, reverseJournal } = require('../services/journalEngine');
+const { presidentReverse } = require('../services/documentReversalService');
 const JournalEntry = require('../models/JournalEntry');
 const ProductMaster = require('../models/ProductMaster');
 const { notifyDocumentPosted, notifyDocumentReopened } = require('../services/erpNotificationService');
 const PettyCashFund = require('../models/PettyCashFund');
 const PettyCashTransaction = require('../models/PettyCashTransaction');
+const Collection = require('../models/Collection');
+const { validateCsiNumber, markUsed: markCsiUsed, unmarkUsed: unmarkCsiUsed } = require('../services/csiBookletService');
 
 // ═══════════════════════════════════════════════════════════
 // SHARED: Post a single SalesLine row (used by submitSales + approval handler)
@@ -220,6 +223,34 @@ const postSaleRow = async (row, userId, opts = {}) => {
       }
     } catch (jeErr) {
       console.error('Auto-journal failed for sale:', row.doc_ref || row._id, jeErr.message);
+      ErpAuditLog.logChange({
+        entity_id: row.entity_id, log_type: 'LEDGER_ERROR',
+        target_ref: row.doc_ref || row._id?.toString(), target_model: 'JournalEntry',
+        field_changed: 'auto_journal', new_value: jeErr.message,
+        changed_by: row.posted_by,
+        note: `Auto-journal failed for sale ${row.doc_ref || row._id} (approval hub)`
+      }).catch(() => {});
+    }
+
+    // 7. Phase 15.2 (softened) — auto-mark CSI number as used. Non-blocking.
+    if ((row.sale_type || 'CSI') === 'CSI' && row.doc_ref) {
+      try {
+        await markCsiUsed(row.entity_id, null, row.doc_ref);
+      } catch (csiErr) {
+        console.error('CSI markUsed failed (non-blocking, approval hub):', row.doc_ref, csiErr.message);
+      }
+    }
+
+    // 8. Phase SG-4 #22 — Credit rule assignment. Produces SalesCredit rows
+    //    (audit trail of who-earns-what). Always non-blocking: a sale that
+    //    posts but fails credit assignment will fall back to sale.bdm_id @
+    //    100% on the next engine run, and the failure is logged via
+    //    ErpAuditLog. Never reverses the sale itself.
+    try {
+      const { assign: assignCredits } = require('../services/creditRuleEngine');
+      await assignCredits(row, { userId });
+    } catch (ceErr) {
+      console.error('Credit rule assignment failed (non-blocking):', row.doc_ref || row._id, ceErr.message);
     }
 
     return { eventId };
@@ -377,6 +408,12 @@ const getSales = catchAsync(async (req, res) => {
     if (req.query.csi_date_to) filter.csi_date.$lte = new Date(req.query.csi_date_to);
   }
 
+  // Phase 6 — hide reversed rows by default; opt-in via ?include_reversed=true.
+  // Reversed rows stay POSTED for audit, but pollute working lists if shown.
+  if (req.query.include_reversed !== 'true') {
+    filter.deletion_event_id = { $exists: false };
+  }
+
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 50;
   const skip = (page - 1) * limit;
@@ -455,6 +492,7 @@ const validateSales = catchAsync(async (req, res) => {
 
   for (const row of rows) {
     const rowErrors = [];
+    const rowWarnings = []; // monitoring-only; never blocks posting
 
     // Phase 18: type-aware required field validation
     const saleType = row.sale_type || 'CSI';
@@ -468,6 +506,23 @@ const validateSales = catchAsync(async (req, res) => {
     if (saleType === 'CSI') {
       if (!row.doc_ref) rowErrors.push('Document reference (CSI#) is required');
       if (!row.line_items || row.line_items.length === 0) rowErrors.push('At least one line item is required');
+
+      // Phase 15.2 (softened) — CSI booklet traceability check.
+      // Monitoring only: never blocks posting. A warning is pushed if the
+      // CSI # is not in any allocated range, is already used, or was voided.
+      // Skipped entirely for BDMs without allocations (Iloilo-based contractors
+      // who use booklets directly).
+      if (row.doc_ref) {
+        try {
+          const csiCheck = await validateCsiNumber(row.entity_id, row.bdm_id, row.doc_ref);
+          if (!csiCheck.valid && !csiCheck.skipped) {
+            rowWarnings.push(`CSI: ${csiCheck.reason}`);
+          }
+        } catch (csiErr) {
+          // Defensive — monitoring call must never block validation
+          console.error('CSI booklet check failed (non-blocking):', csiErr.message);
+        }
+      }
     } else if (saleType === 'CASH_RECEIPT') {
       if (!row.line_items || row.line_items.length === 0) rowErrors.push('At least one line item is required');
     } else if (saleType === 'SERVICE_INVOICE') {
@@ -596,6 +651,7 @@ const validateSales = catchAsync(async (req, res) => {
     }
 
     // Update row status
+    row.validation_warnings = rowWarnings;
     if (rowErrors.length > 0) {
       row.status = 'ERROR';
       row.validation_errors = rowErrors;
@@ -603,12 +659,21 @@ const validateSales = catchAsync(async (req, res) => {
       errors.push({
         sale_id: row._id,
         doc_ref: row.doc_ref,
-        messages: rowErrors
+        messages: rowErrors,
+        warnings: rowWarnings
       });
     } else {
       row.status = 'VALID';
       row.validation_errors = [];
       validCount++;
+      if (rowWarnings.length > 0) {
+        errors.push({
+          sale_id: row._id,
+          doc_ref: row.doc_ref,
+          messages: [],
+          warnings: rowWarnings
+        });
+      }
     }
 
     await row.save();
@@ -642,7 +707,7 @@ const submitSales = catchAsync(async (req, res) => {
   const gated = await gateApproval({
     entityId: req.entityId,
     module: 'SALES',
-    docType: 'CSI',
+    docType: validRows[0]?.sale_type || 'CSI',
     docId: validRows[0]._id,
     docRef: validRows.map(r => r.doc_ref || r.invoice_number).filter(Boolean).join(', '),
     amount: salesTotalAmount,
@@ -787,6 +852,30 @@ const submitSales = catchAsync(async (req, res) => {
       ).catch(() => {});
     }
 
+    // Phase 15.2 (softened) — auto-mark CSI numbers as used on POSTED.
+    // Non-blocking: a CSI booklet update failure must never fail the post.
+    for (const row of validRows) {
+      if ((row.sale_type || 'CSI') !== 'CSI') continue;
+      if (!row.doc_ref) continue;
+      try {
+        const result = await markCsiUsed(row.entity_id, null, row.doc_ref);
+        if (!result.ok) {
+          // Advisory only — stash for audit, do not fail the post
+          ErpAuditLog.logChange({
+            entity_id: row.entity_id, bdm_id: row.bdm_id,
+            log_type: 'CSI_TRACE',
+            target_ref: row.doc_ref, target_model: 'CsiBooklet',
+            field_changed: 'used_numbers',
+            new_value: `mark-used skipped: ${result.reason}`,
+            changed_by: req.user._id,
+            note: `CSI ${row.doc_ref} posted on sale ${row._id} but booklet mark-used skipped`
+          }).catch(() => {});
+        }
+      } catch (csiErr) {
+        console.error('CSI markUsed failed (non-blocking):', row.doc_ref, csiErr.message);
+      }
+    }
+
     // Phase 11: Auto-journal entries (non-blocking — outside transaction)
     for (const row of validRows) {
       try {
@@ -812,6 +901,13 @@ const submitSales = catchAsync(async (req, res) => {
         }
       } catch (jeErr) {
         console.error('Auto-journal failed for sale:', row.doc_ref || row._id, jeErr.message);
+        ErpAuditLog.logChange({
+          entity_id: row.entity_id, log_type: 'LEDGER_ERROR',
+          target_ref: row.doc_ref || row._id?.toString(), target_model: 'JournalEntry',
+          field_changed: 'auto_journal', new_value: jeErr.message,
+          changed_by: req.user._id,
+          note: `Auto-journal failed for sale ${row.doc_ref || row._id}`
+        }).catch(() => {});
       }
     }
 
@@ -857,18 +953,50 @@ const reopenSales = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'No POSTED rows found to reopen' });
   }
 
-  // Save event_ids BEFORE the transaction clears them (needed for JE reversal after)
-  const rowEventMap = rows.map(r => ({ _id: r._id, event_id: r.event_id, entity_id: r.entity_id, bdm_id: r.bdm_id, doc_ref: r.doc_ref }));
+  const reopened = [];
+  const failed = [];
 
-  let reopenedCount = 0;
-  const session = await mongoose.startSession();
+  for (const row of rows) {
+    // Step 0: Block reopen if CSI is settled by a POSTED collection.
+    // Entity-scoped to prevent cross-entity leaks. Reopen the collection first
+    // to release the CSI, then the CSI becomes reopenable.
+    const settledBy = await Collection.findOne({
+      entity_id: row.entity_id,
+      status: 'POSTED',
+      deletion_event_id: { $exists: false },
+      'settled_csis.sales_line_id': row._id
+    }).select('_id cr_no').lean();
+    if (settledBy) {
+      failed.push({
+        _id: row._id,
+        doc_ref: row.doc_ref,
+        error: `Cannot reopen: settled by Collection ${settledBy.cr_no || settledBy._id}. Reopen the collection first to release this CSI.`
+      });
+      continue;
+    }
 
-  try {
-    await session.withTransaction(async () => {
-      for (const row of rows) {
+    // Step 1: Reverse JEs FIRST — if fails, skip this row (keep POSTED, ledger stays balanced)
+    if (row.event_id) {
+      try {
+        const jes = await JournalEntry.find({
+          source_event_id: row.event_id, status: 'POSTED', is_reversal: { $ne: true }
+        });
+        for (const je of jes) {
+          await reverseJournal(je._id, 'Auto-reversal: SalesLine reopen', req.user._id);
+        }
+      } catch (jeErr) {
+        console.error('JE reversal failed for sale reopen:', row._id, jeErr.message);
+        failed.push({ _id: row._id, doc_ref: row.doc_ref, error: `Journal reversal failed: ${jeErr.message}` });
+        continue; // Do NOT mark as DRAFT — ledger would be unbalanced
+      }
+    }
+
+    // Step 2: JE reversed successfully — now do inventory/status reversal in a transaction
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
         // Create reversal InventoryLedger entries
         const originalEntries = await InventoryLedger.find({ event_id: row.event_id }).session(session);
-
         for (const entry of originalEntries) {
           await InventoryLedger.create([{
             entity_id: entry.entity_id,
@@ -878,8 +1006,8 @@ const reopenSales = catchAsync(async (req, res) => {
             batch_lot_no: entry.batch_lot_no,
             expiry_date: entry.expiry_date,
             transaction_type: 'ADJUSTMENT',
-            qty_in: entry.qty_out,  // Reverse: what went out comes back in
-            qty_out: entry.qty_in,  // Reverse: what came in goes out
+            qty_in: entry.qty_out,
+            qty_out: entry.qty_in,
             event_id: row.event_id,
             recorded_by: req.user._id
           }], { session });
@@ -893,7 +1021,6 @@ const reopenSales = catchAsync(async (req, res) => {
             product_id: item.product_id,
             'conversions.sales_line_id': row._id
           }).session(session);
-
           if (consignment) {
             consignment.conversions = consignment.conversions.filter(
               c => !c.sales_line_id || c.sales_line_id.toString() !== row._id.toString()
@@ -939,41 +1066,42 @@ const reopenSales = catchAsync(async (req, res) => {
         row.event_id = undefined;
         row.validation_errors = [];
         await row.save({ session });
+      });
 
-        reopenedCount++;
-      }
-    });
+      reopened.push(row._id);
 
-    // Reverse journal entries outside transaction using saved event_ids
-    for (const item of rowEventMap) {
-      if (item.event_id) {
+      // Phase 15.2 (softened) — release the CSI number back to the BDM's
+      // available pool when the sale is reopened. Non-blocking audit on failure.
+      if ((row.sale_type || 'CSI') === 'CSI' && row.doc_ref) {
         try {
-          const jes = await JournalEntry.find({
-            source_event_id: item.event_id, status: 'POSTED', is_reversal: { $ne: true }
-          });
-          for (const je of jes) {
-            await reverseJournal(je._id, 'Auto-reversal: SalesLine reopen', req.user._id);
-          }
-        } catch (jeErr) {
-          console.error('JE reversal failed for sale reopen:', item._id, jeErr.message);
+          await unmarkCsiUsed(row.entity_id, row.doc_ref);
+        } catch (csiErr) {
+          console.error('CSI unmarkUsed failed on reopen (non-blocking):', row.doc_ref, csiErr.message);
         }
       }
 
       await ErpAuditLog.logChange({
-        entity_id: item.entity_id,
-        bdm_id: item.bdm_id,
-        log_type: 'REOPEN',
-        target_ref: item._id.toString(),
-        target_model: 'SalesLine',
-        changed_by: req.user._id,
-        note: `Reopened CSI ${item.doc_ref || ''}`
+        entity_id: row.entity_id, bdm_id: row.bdm_id,
+        log_type: 'REOPEN', target_ref: row._id.toString(),
+        target_model: 'SalesLine', changed_by: req.user._id,
+        note: `Reopened CSI ${row.doc_ref || ''}`
       });
+    } catch (txErr) {
+      console.error('Reopen transaction failed for sale:', row._id, txErr.message);
+      failed.push({ _id: row._id, doc_ref: row.doc_ref, error: `Transaction failed: ${txErr.message}` });
+    } finally {
+      session.endSession();
     }
+  }
 
-    res.json({ success: true, reopened_count: reopenedCount });
+  if (failed.length && !reopened.length) {
+    return res.status(500).json({ success: false, message: 'All sale reopens failed', failed });
+  }
+  res.json({ success: true, message: `Reopened ${reopened.length} sale(s)${failed.length ? `, ${failed.length} failed` : ''}`, reopened, failed });
 
-    // Non-blocking: notify management of reopened sales
-    const reopenedRefs = sales.map(s => s.doc_ref).filter(Boolean).join(', ');
+  // Non-blocking: notify management of reopened sales
+  if (reopened.length) {
+    const reopenedRefs = rows.filter(r => reopened.includes(r._id)).map(r => r.doc_ref).filter(Boolean).join(', ');
     notifyDocumentReopened({
       entityId: req.entityId,
       module: 'Sales',
@@ -982,8 +1110,6 @@ const reopenSales = catchAsync(async (req, res) => {
       reopenedBy: req.user.name || req.user.email,
       reason: req.body.reason,
     }).catch(err => console.error('Sales reopen notification failed:', err.message));
-  } finally {
-    await session.endSession();
   }
 });
 
@@ -1027,6 +1153,21 @@ const approveDeletion = catchAsync(async (req, res) => {
 
   if (!sale) {
     return res.status(404).json({ success: false, message: 'Deletion-requested sale not found' });
+  }
+
+  // Block deletion if CSI is settled by a POSTED collection — keeps AR balanced.
+  // Entity-scoped. Collection must be reopened first to release the CSI.
+  const settledBy = await Collection.findOne({
+    entity_id: sale.entity_id,
+    status: 'POSTED',
+    deletion_event_id: { $exists: false },
+    'settled_csis.sales_line_id': sale._id
+  }).select('_id cr_no').lean();
+  if (settledBy) {
+    return res.status(409).json({
+      success: false,
+      message: `Cannot delete: CSI is settled by Collection ${settledBy.cr_no || settledBy._id}. Reopen the collection first to release this CSI.`
+    });
   }
 
   // SAP Storno: create reversal TransactionEvent
@@ -1099,6 +1240,40 @@ const approveDeletion = catchAsync(async (req, res) => {
   });
 });
 
+// ═══════════════════════════════════════════════════════════
+// PRESIDENT REVERSE — sub-permission gated, applies to any status
+// (DRAFT/ERROR → hard delete, POSTED/DELETION_REQUESTED → SAP Storno)
+// ═══════════════════════════════════════════════════════════
+
+const presidentReverseSale = catchAsync(async (req, res) => {
+  const { reason, confirm } = req.body || {};
+  if (confirm !== 'DELETE') {
+    return res.status(400).json({ success: false, message: 'Type DELETE in the confirmation field to proceed' });
+  }
+  if (!reason || !reason.trim()) {
+    return res.status(400).json({ success: false, message: 'Reason is required' });
+  }
+
+  try {
+    const result = await presidentReverse({
+      doc_type: 'SALES_LINE',
+      doc_id: req.params.id,
+      reason,
+      user: req.user,
+      tenantFilter: req.tenantFilter || {},
+    });
+    res.json({
+      success: true,
+      message: result.mode === 'HARD_DELETE'
+        ? `Deleted ${result.doc_ref || result.doc_id} (no posting side effects)`
+        : `Reversed ${result.doc_ref || result.doc_id} (SAP Storno) — original retained for audit`,
+      data: result,
+    });
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = {
   createSale,
   updateSale,
@@ -1110,5 +1285,6 @@ module.exports = {
   reopenSales,
   requestDeletion,
   approveDeletion,
+  presidentReverseSale,
   postSaleRow, // shared helper for approval handler
 };

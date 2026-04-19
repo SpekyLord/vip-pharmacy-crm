@@ -50,12 +50,27 @@ async function generateIncomeReport(entityId, bdmId, period, cycle, userId) {
     bdm_id: new mongoose.Types.ObjectId(bdmId)
   };
 
-  // 1. SMER earnings (includes ORE — ORE is paid from revolving fund, already in total_reimbursable)
+  // 1. SMER earnings (per diem + any legacy transpo/ORE in total_reimbursable)
   const smer = await SmerEntry.findOne({
     ...filter, period, cycle,
     status: { $in: ['POSTED', 'VALID', 'DRAFT'] }
   }).lean();
   const smerAmount = smer?.total_reimbursable || 0;
+
+  // 1b. ORE from ExpenseEntry (for new flow where SMER ore_amount=0, ORE entered via Expenses)
+  //     Only add ORE that isn't already counted in SMER total_reimbursable (avoid double-counting)
+  const smerOre = smer?.total_ore || 0;
+  let expenseOreAmount = 0;
+  if (smerOre === 0) {
+    // SMER has no ORE — pull from ExpenseEntry ORE lines
+    const oreAgg = await ExpenseEntry.aggregate([
+      { $match: { ...filter, period, cycle, status: { $in: ['POSTED', 'VALID', 'DRAFT'] } } },
+      { $unwind: '$lines' },
+      { $match: { 'lines.expense_type': 'ORE' } },
+      { $group: { _id: null, total: { $sum: '$lines.amount' } } }
+    ]);
+    expenseOreAmount = Math.round((oreAgg[0]?.total || 0) * 100) / 100;
+  }
 
   // 2. CORE commission from POSTED Collections
   const collAgg = await Collection.aggregate([
@@ -202,7 +217,7 @@ async function generateIncomeReport(entityId, bdmId, period, cycle, userId) {
     period,
     cycle,
     earnings: {
-      smer: Math.round(smerAmount * 100) / 100,
+      smer: Math.round((smerAmount + expenseOreAmount) * 100) / 100,
       core_commission: Math.round(coreCommission * 100) / 100,
       profit_sharing: Math.round(profitSharing * 100) / 100,
       calf_reimbursement: Math.round(calfReimbursement * 100) / 100
@@ -338,6 +353,19 @@ async function projectIncome(entityId, bdmId, period, cycle) {
     status: { $in: ['DRAFT', 'VALID', 'ERROR', 'POSTED'] }
   }).sort({ updatedAt: -1 }).lean();
 
+  // 1b. ORE from ExpenseEntry (new flow: SMER ore_amount=0, ORE via Expenses)
+  const smerOreP = smer?.total_ore || 0;
+  let expenseOreP = 0;
+  if (smerOreP === 0) {
+    const oreAggP = await ExpenseEntry.aggregate([
+      { $match: { ...filter, period, cycle, status: { $in: ['POSTED', 'VALID', 'DRAFT'] } } },
+      { $unwind: '$lines' },
+      { $match: { 'lines.expense_type': 'ORE' } },
+      { $group: { _id: null, total: { $sum: '$lines.amount' } } }
+    ]);
+    expenseOreP = Math.round((oreAggP[0]?.total || 0) * 100) / 100;
+  }
+
   // 2. Commission from Collections — split by status
   const collAgg = await Collection.aggregate([
     { $match: { ...filter, cr_date: { $gte: start, $lt: end } } },
@@ -405,7 +433,7 @@ async function projectIncome(entityId, bdmId, period, cycle) {
   };
 
   // Earnings
-  const smerAmount = smer?.total_reimbursable || 0;
+  const smerAmount = (smer?.total_reimbursable || 0) + expenseOreP;
   const totalCommission = postedComm.total_commission + draftComm.total_commission + validComm.total_commission;
   const calfReimb = calfBalance < 0 ? Math.abs(calfBalance) : 0;
   const projectedEarnings = Math.round((smerAmount + totalCommission + calfReimb +
@@ -424,7 +452,8 @@ async function projectIncome(entityId, bdmId, period, cycle) {
     projection: {
       smer: {
         amount: Math.round(smerAmount * 100) / 100,
-        ore_included: Math.round((smer?.total_ore || 0) * 100) / 100,
+        ore_included: Math.round(((smer?.total_ore || 0) + expenseOreP) * 100) / 100,
+        ore_from_expenses: expenseOreP,
         status: smer?.status || 'NONE',
         confidence: smer ? statusConfidence(smer.status) : 'NONE'
       },
@@ -823,10 +852,26 @@ async function getIncomeBreakdown(report) {
       }))
   );
 
+  // Group ORE lines by category with subtotals
+  const oreByCat = {};
+  for (const l of oreExpenseLines) {
+    const cat = l.expense_category || 'Uncategorized';
+    if (!oreByCat[cat]) oreByCat[cat] = { category: cat, lines: [], subtotal: 0 };
+    oreByCat[cat].lines.push(l);
+    oreByCat[cat].subtotal += l.amount;
+  }
+  const oreCategories = Object.values(oreByCat).map(c => ({
+    ...c,
+    subtotal: Math.round(c.subtotal * 100) / 100
+  }));
+
   const oreBreakdown = {
-    total: smer?.total_ore || 0,
+    total: Math.round(((smer?.total_ore || 0) + oreExpenseLines.reduce((s, l) => s + l.amount, 0)) * 100) / 100,
+    smer_ore: smer?.total_ore || 0,
+    expense_ore: Math.round(oreExpenseLines.reduce((s, l) => s + l.amount, 0) * 100) / 100,
     daily_ore: oreDays,
-    expense_lines: oreExpenseLines
+    expense_lines: oreExpenseLines,
+    by_category: oreCategories
   };
 
   return {

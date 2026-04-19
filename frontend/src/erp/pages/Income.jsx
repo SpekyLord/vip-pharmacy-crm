@@ -18,6 +18,7 @@ import usePeople from '../hooks/usePeople';
 import { showError } from '../utils/errorToast';
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 import { useLookupOptions } from '../hooks/useLookups';
 
 const pageStyles = `
@@ -69,8 +70,8 @@ const pageStyles = `
   .list-mobile-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--erp-muted); font-weight: 700; }
   .list-mobile-value { font-size: 13px; font-weight: 700; color: var(--erp-text); margin-top: 4px; }
   .list-mobile-actions { display: flex; gap: 8px; margin-top: 12px; }
-  .return-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
-  .return-modal-content { background: var(--erp-panel); border-radius: 12px; padding: 24px; width: 400px; max-width: 90vw; }
+  .return-modal { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+  .return-modal-content { background: var(--erp-panel, #fff); border-radius: 12px; padding: 24px; width: 400px; max-width: 90vw; box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25); }
   .return-modal textarea { width: 100%; padding: 8px; border: 1px solid var(--erp-border); border-radius: 8px; min-height: 80px; font-size: 13px; margin: 12px 0; }
   .badge-pending { background: #fef3c7; color: #92400e; }
   .badge-verified { background: #d1fae5; color: #065f46; }
@@ -86,8 +87,8 @@ const pageStyles = `
   .finance-add-form .field { display: flex; flex-direction: column; gap: 4px; }
   .finance-add-form label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--erp-muted); }
   .finance-add-form input, .finance-add-form select { padding: 4px 8px; border: 1px solid var(--erp-border); border-radius: 4px; font-size: 12px; }
-  .correct-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
-  .correct-modal-content { background: var(--erp-panel); border-radius: 12px; padding: 24px; width: 400px; max-width: 90vw; }
+  .correct-modal { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+  .correct-modal-content { background: var(--erp-panel, #fff); border-radius: 12px; padding: 24px; width: 400px; max-width: 90vw; box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25); }
   .correct-modal input, .correct-modal textarea { width: 100%; padding: 8px; border: 1px solid var(--erp-border); border-radius: 8px; font-size: 13px; margin: 8px 0; }
   .tab-bar { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 2px solid var(--erp-border); }
   .tab-btn { padding: 10px 20px; border: none; background: none; font-size: 14px; font-weight: 600; color: var(--erp-muted); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; }
@@ -714,11 +715,16 @@ export default function Income() {
                   <span className={`badge ${STATUS_BADGES[selected.status] || ''}`}>{selected.status}</span>
                 </div>
 
-                {selected.return_reason && selected.status === 'RETURNED' && (
-                  <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: 12, marginBottom: 12, fontSize: 13 }}>
-                    <strong>Return Reason:</strong> {selected.return_reason}
-                  </div>
-                )}
+                <RejectionBanner
+                  row={selected}
+                  moduleKey="INCOME"
+                  variant="page"
+                  docLabel={`${bdmName(selected)} | ${selected.period} ${cycleLabel(selected.cycle)}`}
+                  onResubmit={() => {
+                    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                />
+
 
                 {/* ── Breakdown toggle ── */}
                 <button style={{ padding: '6px 14px', border: '1px solid #2563eb', borderRadius: 8, background: 'transparent', color: '#2563eb', fontSize: 12, fontWeight: 600, cursor: 'pointer', marginBottom: 8 }}
@@ -773,14 +779,25 @@ export default function Income() {
                                   </tbody>
                                 </table>
                               </div>
-                              {breakdown.ore?.expense_lines?.length > 0 && (
+                              {breakdown.ore && (breakdown.ore.by_category?.length > 0 || breakdown.ore.expense_lines?.length > 0) && (
                                 <>
-                                  <div className="bd-section-title" style={{ marginTop: 10 }}>ORE Receipts</div>
+                                  <div className="bd-section-title" style={{ marginTop: 10 }}>ORE / Cash Expenses</div>
+                                  {breakdown.ore.by_category?.length > 0 && (
+                                    <table className="bd-table" style={{ marginBottom: 8 }}>
+                                      <thead><tr><th>Category</th><th>Lines</th><th>Subtotal</th></tr></thead>
+                                      <tbody>
+                                        {breakdown.ore.by_category.map((cat, ci) => (
+                                          <tr key={ci}><td>{cat.category}</td><td>{cat.lines.length}</td><td>{fmt(cat.subtotal)}</td></tr>
+                                        ))}
+                                        <tr className="bd-subtotal"><td>Total ORE</td><td>{breakdown.ore.expense_lines?.length || 0}</td><td>{fmt(breakdown.ore.expense_ore || 0)}</td></tr>
+                                      </tbody>
+                                    </table>
+                                  )}
                                   <div style={{ overflowX: 'auto' }}>
                                     <table className="bd-table">
                                       <thead><tr><th>Date</th><th>Category</th><th>Establishment</th><th>Particulars</th><th>OR#</th><th>Amount</th></tr></thead>
                                       <tbody>
-                                        {breakdown.ore.expense_lines.map((l, i) => (
+                                        {(breakdown.ore.expense_lines || []).map((l, i) => (
                                           <tr key={i}>
                                             <td>{l.expense_date ? new Date(l.expense_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' }) : '-'}</td>
                                             <td>{l.expense_category || '-'}</td>

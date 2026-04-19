@@ -13,6 +13,7 @@ import useWarehouses from '../hooks/useWarehouses';
 import useEntities from '../hooks/useEntities';
 import usePeople from '../hooks/usePeople';
 import useErpApi from '../hooks/useErpApi';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
 import { showError, showSuccess } from '../utils/errorToast';
@@ -82,6 +83,10 @@ const emptyForm = () => ({
 export function WarehouseManagerContent() {
   useAuth();
   const whApi = useWarehouses();
+  // Phase 3c — create/update gated by Tier 2 lookup-only inventory.warehouse_manage.
+  // Mirrors backend warehouseRoutes POST / + PUT /:id.
+  const { hasSubPermission } = useErpSubAccess();
+  const canManageWarehouse = hasSubPermission('inventory', 'warehouse_manage');
   const { options: stockTypeOpts } = useLookupOptions('STOCK_TYPE');
   const STOCK_TYPES = stockTypeOpts.map(o => o.code);
   useEntities();
@@ -183,7 +188,7 @@ export function WarehouseManagerContent() {
                 {seeding ? 'Importing...' : 'Import Opening Stock'}
               </button>
               <input ref={seedFileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleSeedStock} style={{ display: 'none' }} />
-              <button className="wm-btn wm-btn-primary" onClick={openNew}>+ New Warehouse</button>
+              {canManageWarehouse && <button className="wm-btn wm-btn-primary" onClick={openNew}>+ New Warehouse</button>}
             </div>
           </div>
 
@@ -215,7 +220,7 @@ export function WarehouseManagerContent() {
                   {!wh.is_active && <span className="wm-tag" style={{ background: '#fef2f2', color: '#991b1b' }}>Inactive</span>}
                 </div>
                 <div style={{ marginTop: 10 }}>
-                  <button className="wm-btn wm-btn-sm wm-btn-outline" onClick={() => openEdit(wh)}>Edit</button>
+                  {canManageWarehouse && <button className="wm-btn wm-btn-sm wm-btn-outline" onClick={() => openEdit(wh)}>Edit</button>}
                 </div>
               </div>
             ))}
@@ -317,7 +322,9 @@ export function WarehouseManagerContent() {
                 )}
                 <div className="wm-footer">
                   <button className="wm-btn wm-btn-outline" onClick={() => setEditing(null)}>Cancel</button>
-                  <button className="wm-btn wm-btn-primary" onClick={handleSave}>{editing === 'new' ? 'Create' : 'Save'}</button>
+                  {canManageWarehouse && (
+                    <button className="wm-btn wm-btn-primary" onClick={handleSave}>{editing === 'new' ? 'Create' : 'Save'}</button>
+                  )}
                 </div>
               </div>
             </div>

@@ -79,3 +79,54 @@ export async function getSupportedTypes() {
   const response = await api.get('/erp/ocr/types');
   return response.data.data;
 }
+
+// ── OCR Settings (per-entity, subscription-ready) — Phase H3 ──
+
+/** GET current entity's OCR settings (enabled, ai_fallback, allowed doc types, quota). */
+export async function getOcrSettings() {
+  const response = await api.get('/erp/ocr-settings');
+  return response.data.data;
+}
+
+/** PUT update OCR settings for current entity. Admin/finance/president only. */
+export async function updateOcrSettings(updates) {
+  const response = await api.put('/erp/ocr-settings', updates);
+  return response.data.data;
+}
+
+/** GET aggregated usage stats for current entity (group_by: doc_type | user_id | skipped_reason). */
+export async function getOcrUsage(params = {}) {
+  const response = await api.get('/erp/ocr-settings/usage', { params });
+  return response.data.data;
+}
+
+/** GET recent per-call OCR audit log for current entity. */
+export async function getOcrUsageRecent(limit = 50) {
+  const response = await api.get('/erp/ocr-settings/usage/recent', { params: { limit } });
+  return response.data.data;
+}
+
+// ── Vendor Auto-Learn Review (admin queue for Claude-learned vendors) — Phase H5 ──
+
+/** GET vendors auto-learned from Claude wins. Filter: status=UNREVIEWED|APPROVED|REJECTED */
+export async function listVendorLearnings(params = {}) {
+  const response = await api.get('/erp/vendor-learnings', { params });
+  return response.data.data;
+}
+
+/** GET a single auto-learned vendor (with populated audit fields). */
+export async function getVendorLearning(id) {
+  const response = await api.get(`/erp/vendor-learnings/${id}`);
+  return response.data.data;
+}
+
+/**
+ * PATCH review an auto-learned vendor.
+ * @param {string} id
+ * @param {'APPROVE'|'REJECT'|'UNREVIEW'} action
+ * @param {Object} [edits] — optional inline edits: vendor_name, default_coa_code, default_expense_category, vendor_aliases
+ */
+export async function reviewVendorLearning(id, action, edits = {}) {
+  const response = await api.patch(`/erp/vendor-learnings/${id}`, { action, ...edits });
+  return response.data.data;
+}

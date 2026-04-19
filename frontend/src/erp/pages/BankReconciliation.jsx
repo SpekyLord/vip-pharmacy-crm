@@ -6,6 +6,7 @@ import { showError } from '../utils/errorToast';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 
 const pageStyles = `
   .br-container { background: var(--erp-bg, #f4f7fb); min-height: 100vh; display: flex; flex-direction: column; }
@@ -219,7 +220,12 @@ export default function BankReconciliation() {
                         <td>{s.entry_count}</td>
                         <td>{s.matched_count} / {s.entry_count}</td>
                         <td className="money">{fmt(s.closing_balance)}</td>
-                        <td><span className={`match-${s.status === 'FINALIZED' ? 'MATCHED' : s.status === 'IN_PROGRESS' ? 'RECONCILING_ITEM' : 'UNMATCHED'}`}>{s.status}</span></td>
+                        <td>
+                          <span className={`match-${s.status === 'FINALIZED' ? 'MATCHED' : s.status === 'IN_PROGRESS' ? 'RECONCILING_ITEM' : 'UNMATCHED'}`}>{s.status}</span>
+                          <div style={{ marginTop: 4 }}>
+                            <RejectionBanner row={s} moduleKey="BANKING" variant="row" />
+                          </div>
+                        </td>
                         <td><button className="btn btn-sm btn-primary" onClick={() => openStatement(s)}>Open</button></td>
                       </tr>
                     ))}
@@ -232,6 +238,13 @@ export default function BankReconciliation() {
           {/* Active Statement — Reconciliation View */}
           {activeStatement && reconSummary && (
             <>
+              <RejectionBanner
+                row={activeStatement}
+                moduleKey="BANKING"
+                variant="page"
+                docLabel={`${activeStatement.period} — ${activeStatement.bank_account_id?.bank_name || ''}`}
+                onResubmit={() => { setActiveStatement(null); setReconSummary(null); }}
+              />
               <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
                 <button className="btn btn-outline" onClick={() => { setActiveStatement(null); setReconSummary(null); }}>&larr; Back</button>
                 <span style={{ fontWeight: 600 }}>{activeStatement.period} — {activeStatement.bank_account_id?.bank_name}</span>

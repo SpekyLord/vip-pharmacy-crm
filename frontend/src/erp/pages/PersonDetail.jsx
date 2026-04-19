@@ -10,7 +10,7 @@
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ROLES, ROLE_SETS } from '../../constants/roles';
+import { ROLE_SETS } from '../../constants/roles';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -19,6 +19,7 @@ import usePayroll from '../hooks/usePayroll';
 import useErpAccess from '../hooks/useErpAccess';
 import useFunctionalRoles from '../hooks/useFunctionalRoles';
 import useKpiSelfRating from '../hooks/useKpiSelfRating';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import { showError, showSuccess, showWarning } from '../utils/errorToast';
 import ErpAccessManager from '../components/ErpAccessManager';
 import api from '../../services/api';
@@ -122,7 +123,13 @@ export default function PersonDetail() {
   const DEPARTMENTS = codes('DEPARTMENT');
 
   const canEdit = ROLE_SETS.MANAGEMENT.includes(user?.role);
-  const isPresident = user?.role === ROLES.PRESIDENT;
+  // Phase 3c — danger-baseline gates for destructive people/login operations.
+  // canEdit still gates non-destructive Edit/Save (recoverable). Insurance delete now uses
+  // payroll.insurance_delete (lookup-only Tier 2) instead of president-only role check.
+  const { hasSubPermission } = useErpSubAccess();
+  const canTerminate = hasSubPermission('people', 'terminate');
+  const canManageLogin = hasSubPermission('people', 'manage_login');
+  const canDeleteInsurance = hasSubPermission('payroll', 'insurance_delete');
 
   const [person, setPerson] = useState(null);
   const [payslips, setPayslips] = useState([]);
@@ -473,7 +480,7 @@ export default function PersonDetail() {
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 {canEdit && !editPerson && <button className="pd-btn" onClick={() => setEditPerson(true)}>Edit</button>}
                 {editPerson && <><button className="pd-btn pd-btn-p" onClick={savePerson}>Save</button><button className="pd-btn" onClick={() => setEditPerson(false)}>Cancel</button></>}
-                {canEdit && !editPerson && !(person.status === 'SEPARATED' && person.is_active === false) && (
+                {canTerminate && !editPerson && !(person.status === 'SEPARATED' && person.is_active === false) && (
                   <button className="pd-btn" style={{ fontSize: 11, color: '#dc2626', border: '1px solid #fecaca', background: '#fef2f2' }}
                     onClick={async () => {
                       if (!window.confirm('Separate this employee? This will:\n- Mark status as SEPARATED\n- Deactivate all functional role assignments\n- Disable their system login\n\nContinue?')) return;
@@ -640,7 +647,9 @@ export default function PersonDetail() {
                   <div style={{ display: 'flex', gap: 4 }}>
                     <span className="badge" style={{ background: p.status === 'ACTIVE' ? '#dcfce7' : p.status === 'EXPIRED' ? '#fee2e2' : '#fef3c7', color: p.status === 'ACTIVE' ? '#166534' : p.status === 'EXPIRED' ? '#dc2626' : '#92400e' }}>{p.status}</span>
                     {canEdit && <button className="pd-btn" style={{ padding: '2px 8px', fontSize: 11 }} onClick={() => openInsForm(p)}>Edit</button>}
-                    {isPresident && <button className="pd-btn pd-btn-d" style={{ padding: '2px 8px', fontSize: 11 }} onClick={() => deleteIns(p._id)}>Del</button>}
+                    {/* Phase 3c — insurance delete gated by payroll.insurance_delete (Tier 2 lookup-only)
+                        instead of president-only role check; closes Phase 3a residual. */}
+                    {canDeleteInsurance && <button className="pd-btn pd-btn-d" style={{ padding: '2px 8px', fontSize: 11 }} onClick={() => deleteIns(p._id)}>Del</button>}
                   </div>
                 </div>
                 <div className="pd-grid">
@@ -699,6 +708,7 @@ export default function PersonDetail() {
                 {canEdit && (
                   <div style={{ display: 'flex', gap: 6 }}>
                     {person.user_id?.isActive === false ? (
+                      // Enable Login is the recoverable inverse of disable; keep canEdit (admin/finance/president).
                       <button
                         className="pd-btn"
                         style={{ fontSize: 11, color: '#166534', border: '1px solid #bbf7d0', background: '#f0fdf4' }}
@@ -709,7 +719,7 @@ export default function PersonDetail() {
                         }}
                       >Enable Login</button>
                     ) : (
-                      <button
+                      canManageLogin && <button
                         className="pd-btn"
                         style={{ fontSize: 11, color: '#dc2626', border: '1px solid #fecaca', background: '#fef2f2' }}
                         onClick={async () => {
@@ -719,7 +729,7 @@ export default function PersonDetail() {
                         }}
                       >Disable Login</button>
                     )}
-                    <button
+                    {canManageLogin && <button
                       className="pd-btn"
                       style={{ fontSize: 11, color: '#64748b', border: '1px solid #e5e7eb' }}
                       onClick={async () => {
@@ -727,7 +737,7 @@ export default function PersonDetail() {
                         try { await pplApi.unlinkLogin(id); showSuccess('Login unlinked.'); load(); }
                         catch (err) { showError(err, 'Could not unlink login'); }
                       }}
-                    >Unlink Login</button>
+                    >Unlink Login</button>}
                   </div>
                 )}
               </div>
@@ -738,7 +748,9 @@ export default function PersonDetail() {
               {/* System Role display + change */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, padding: '8px 12px', background: 'var(--erp-accent-soft, #e8efff)', borderRadius: 8 }}>
                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--erp-muted)', minWidth: 90 }}>System Role</span>
-                {canEdit ? (
+                {/* Phase 3c — change-role gated by danger-baseline people.manage_login.
+                    Read-only display falls through to the canEdit-false branch below. */}
+                {canManageLogin ? (
                   <select
                     value={person.user_id?.role || ''}
                     onChange={async (e) => {

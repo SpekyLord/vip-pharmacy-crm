@@ -148,8 +148,8 @@ const getMyStock = catchAsync(async (req, res) => {
  * Sorted by expiry ASC (FIFO order). BDM-scoped.
  */
 const getBatches = catchAsync(async (req, res) => {
-  const bdmId = (req.isAdmin || req.isFinance || req.isPresident) && req.query.bdm_id
-    ? req.query.bdm_id
+  const bdmId = (req.isAdmin || req.isFinance || req.isPresident)
+    ? (req.query.bdm_id || null)
     : req.bdmId;
 
   // Allow privileged users to query a different entity's stock (for IC transfers)
@@ -188,8 +188,8 @@ const getBatches = catchAsync(async (req, res) => {
  * Paginated, date-range filterable. BDM-scoped.
  */
 const getLedger = catchAsync(async (req, res) => {
-  const bdmId = (req.isAdmin || req.isFinance || req.isPresident) && req.query.bdm_id
-    ? req.query.bdm_id
+  const bdmId = (req.isAdmin || req.isFinance || req.isPresident)
+    ? (req.query.bdm_id || null)
     : req.bdmId;
 
   const filter = {
@@ -234,8 +234,8 @@ const getLedger = catchAsync(async (req, res) => {
  * Per product: opening_balance + total_in - total_out = expected_balance
  */
 const getVariance = catchAsync(async (req, res) => {
-  const bdmId = (req.isAdmin || req.isFinance || req.isPresident) && req.query.bdm_id
-    ? req.query.bdm_id
+  const bdmId = (req.isAdmin || req.isFinance || req.isPresident)
+    ? (req.query.bdm_id || null)
     : req.bdmId;
 
   const match = { entity_id: new mongoose.Types.ObjectId(req.entityId) };
@@ -726,6 +726,11 @@ const getGrnList = catchAsync(async (req, res) => {
   if (req.query.status) filter.status = req.query.status;
   if (req.query.po_id) filter.po_id = req.query.po_id;
 
+  // Phase 6 — hide reversed rows by default; opt-in via ?include_reversed=true.
+  if (req.query.include_reversed !== 'true') {
+    filter.deletion_event_id = { $exists: false };
+  }
+
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 50;
   const skip = (page - 1) * limit;
@@ -1087,6 +1092,12 @@ const seedStockOnHand = catchAsync(async (req, res) => {
   });
 });
 
+// President-only: SAP Storno reversal of an APPROVED GRN. PENDING/REJECTED rows
+// are hard-deleted. Blocks if downstream POSTED docs (Sales, IC Transfers) have
+// already consumed batches received via this GRN. See documentReversalService.js.
+const { buildPresidentReverseHandler } = require('../services/documentReversalService');
+const presidentReverseGrn = buildPresidentReverseHandler('GRN');
+
 module.exports = {
   getMyStock,
   getBatches,
@@ -1100,5 +1111,6 @@ module.exports = {
   getAlerts,
   getExpiryDashboard,
   getBatchTrace,
-  seedStockOnHand
+  seedStockOnHand,
+  presidentReverseGrn
 };

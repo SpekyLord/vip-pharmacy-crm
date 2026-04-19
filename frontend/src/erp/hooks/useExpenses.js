@@ -29,6 +29,7 @@ export default function useExpenses() {
   const validateCarLogbook = () => api.post('/expenses/car-logbook/validate', {});
   const submitCarLogbook = () => api.post('/expenses/car-logbook/submit', {});
   const reopenCarLogbook = (ids) => api.post('/expenses/car-logbook/reopen', { logbook_ids: ids });
+  const getSmerDestinationByDate = (date) => api.get(`/expenses/car-logbook/smer-destination/${date}`);
 
   // ═══ ORE / ACCESS ═══
   const getExpenseList = (params) => api.get('/expenses/ore-access', { params });
@@ -62,6 +63,15 @@ export default function useExpenses() {
   // ═══ Per Diem Config ═══
   const getPerdiemConfig = () => api.get('/expenses/perdiem-config');
 
+  // ═══ President Reverse (lookup-driven: accounting.reverse_posted) ═══
+  // POSTED/DELETION_REQUESTED → SAP Storno; DRAFT/ERROR/VALID → hard delete.
+  // Backend returns { success, message, data: { doc_type, doc_id, mode, ... } }.
+  // 409 with `dependents[]` when blocked (e.g., CALF funds POSTED expense).
+  const presidentReverseExpense = (id, { reason, confirm }) =>
+    api.post(`/expenses/ore-access/${id}/president-reverse`, { reason, confirm });
+  const presidentReversePrfCalf = (id, { reason, confirm }) =>
+    api.post(`/expenses/prf-calf/${id}/president-reverse`, { reason, confirm });
+
   return {
     ...api,
     getExpenseSummary,
@@ -71,7 +81,7 @@ export default function useExpenses() {
     getSmerCrmMdCounts, getSmerCrmVisitDetail, overridePerdiemDay, applyPerdiemOverride,
     // Car Logbook
     getCarLogbookList, getCarLogbookById, createCarLogbook, updateCarLogbook, deleteDraftCarLogbook,
-    validateCarLogbook, submitCarLogbook, reopenCarLogbook,
+    validateCarLogbook, submitCarLogbook, reopenCarLogbook, getSmerDestinationByDate,
     // ORE/ACCESS
     getExpenseList, getExpenseById, createExpense, updateExpense, deleteDraftExpense,
     validateExpenses, submitExpenses, reopenExpenses,
@@ -83,6 +93,8 @@ export default function useExpenses() {
     // Revolving Fund
     getRevolvingFundAmount,
     // Per Diem Config
-    getPerdiemConfig
+    getPerdiemConfig,
+    // President Reverse
+    presidentReverseExpense, presidentReversePrfCalf
   };
 }

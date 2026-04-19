@@ -1,8 +1,8 @@
 # VIP ERP - Project Context
 
-> **Last Updated**: April 2026
-> **Version**: 6.7
-> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G4 + H1-H2 + Phase 34 Complete (Apr 17, 2026). Phase 34: Approval Hub per-module sub-permissions, attachment/photo viewing, line-item inline editing, PO approval gate cleanup.
+> **Last Updated**: April 18, 2026
+> **Version**: 6.9
+> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G5 + H1-H5 + Phase 34 + Phase 3a + Phase 3c Complete. Phase 3c (Apr 18, 2026): **Comprehensive hardcoded-role migration** — 30 destructive endpoints across ~15 modules now use `erpSubAccessCheck(module, key)` instead of `roleCheck('admin','finance','president')`. Baseline danger set grew 1 → 10 keys; 19 new sub-perms appear in the Access Template editor (period force-unlock, year-end, settings write, transfer pricing, people terminate/login mgmt, master data deactivate/delete, lookup deletes, etc.). Phase 3a (Apr 18, 2026): **Lookup-driven Danger Sub-Permission Gate + President-Reverse rollout**. Hardcoded `roleCheck('president')` on destructive endpoints replaced with `erpSubAccessCheck('accounting','reverse_posted')` so subsidiaries can delegate to CFO/Finance via Access Template editor without a code change. Rollout adds per-module `/president-reverse` routes to Expenses (ORE/ACCESS), PRF/CALF, and Petty Cash — on top of the existing Sales + Collection endpoints. Baseline danger set stays hardcoded (platform safety floor); subscribers extend via ERP_DANGER_SUB_PERMISSIONS lookup (5-min cache, busted on lookup write). Phase G5 (Apr 18, 2026): Fixed privileged-user BDM filter fallback bug in 9 ERP endpoints.
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -107,9 +107,330 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | G2 | Photo Upload Compression + Approval Hub Populate Fixes | ✅ |
 | G3 | Approval Hub Inline Quick-Edit (Typo Fix Before Approve) | ✅ |
 | G4 | Subsidiary Product Catalog Access (Lookup-Driven) | ✅ |
+| G5 | Privileged User BDM Filter Fix — Cross-BDM Visibility for President/Admin/Finance | ✅ |
 | H1 | Low-Priority Hardening (#13-#19) — CALF, COA, Expense, Batch Upload | ✅ |
 | H2 | OCR Hardening — Lookup-Driven Classification, Entity Scoping, Bugs | ✅ |
+| H3 (OCR) | OCR Subscription-Ready — Per-Entity Settings + Usage Logging + Quotas | ✅ |
+| H4 | OCR High-Confidence — Image Preprocessing + Claude Field Completion | ✅ |
+| H5 | OCR Vendor Auto-Learn from Claude Wins — Self-Improving Classifier | ✅ |
 | 34* | Approval Hub Enhancement: Sub-Permissions + Attachments + Line-Item Edit | ✅ |
+
+---
+
+## JE Numbering Format — Human-Readable, Entity-Scoped (Apr 2026)
+
+### Problem
+`JournalEntry.je_number` was a raw `Number` assigned via `DocSequence.getNext('JE-{entityId}-{year}')`. UI rendered `JE #47` — no date, no entity hint, no clue which subsidiary. Inconsistent with every other doc number (CALF/PRF/PO use `CALF-ILO040326-001` via `services/docNumbering.js`).
+
+### Solution
+JE numbers now follow the project's standard format:
+
+```
+JE-{ENTITY_CODE}{MMDDYY}-{NNN}
+```
+
+Examples: `JE-VIP041826-001`, `JE-MGC041826-003` (where `VIP` / `MGC` come from `Entity.short_name`).
+
+### Implementation
+
+- **`services/docNumbering.js`** — new `generateJeNumber({ entityId, date })`. Resolves entity code via `Entity.short_name` (admin-editable), sanitizes to ASCII-uppercase alphanumerics clamped to 8 chars, falls back to last 3 chars of entity `_id` if blank. In-memory cache (`_entityCodeCache`) avoids repeated Entity lookups on hot paths like bulk posting. Exports `getEntityCode` and `invalidateEntityCodeCache` for reuse.
+- **`models/JournalEntry.js`** — `je_number` field type changed from `Number` to `String`. Legacy numeric values coerced to string on read; no data migration required. Unique index `{entity_id, je_number}` retained.
+- **`services/journalEngine.js`** — `createJournal` + `createAndPostJournal` swapped from inline `DocSequence.getNext` to `generateJeNumber()`. Direct `DocSequence` import removed.
+- **Sort order** — `getJournalsByPeriod` and `getGeneralLedger` use `je_date + created_at` (chronological) instead of lexical `je_number` sort. MMDDYY doesn't sort across years.
+- **Cache invalidation** — `entityController.update` calls `invalidateEntityCodeCache(entity._id)` when `short_name` changes so renamed subsidiaries get the new code on the next JE.
+
+### Authority flow (unchanged)
+
+JE numbering is independent of the approval layer:
+- **DRAFT create** — number assigned immediately, no approval needed.
+- **POST (DRAFT → POSTED)** — `gateApproval({ module: 'JOURNAL' })` fires (Phase G4 default-roles + Phase 29 authority matrix). Number stays stable across the Approval Hub lifecycle.
+- **Reverse POSTED** — `erpSubAccessCheck('accounting', 'reverse_posted')` (Phase 3a danger gate). Reversal JE gets a fresh `generateJeNumber()`; `corrects_je_id` links it to the original.
+- **Auto-journals** from source docs (CSI/CR/Expense/PettyCash/ICT/GRN/Depreciation/Interest) bypass `gateApproval` — the source doc's own approval already gated the action.
+
+### Display
+
+Six call sites dropped the `JE #` prefix (the string is self-descriptive):
+- `services/documentReversalService.js` (reversal console list)
+- `services/journalEngine.js` (reversal description + duplicate-reversal error)
+- `pages/CreditCardLedger.jsx` (payment toast)
+- `pages/JournalEntries.jsx` (detail header + batch-post error list)
+- `pages/RecurringJournals.jsx` (run-now success toast)
+
+Legacy numeric JEs render as bare digits; new JEs render as `JE-VIP041826-001`. No migration pressure.
+
+### Subscription-safe
+
+- Entity code comes from `Entity.short_name` (admin UI field, not hardcoded). New subsidiaries pick a `short_name` on creation and get their own JE prefix immediately. No lookup table needed — Entity master is the canonical source.
+- Cache is per-process + per-entity, busted on admin rename. No cross-tenant leakage.
+
+### WorkflowGuide banner
+
+`journal-entries` entry in `WorkflowGuide.jsx` updated with new number format, approval-gate interaction, legacy vs new distinction, and chronological-sort note.
+
+### Extended to Inter-Company Transfers (Apr 2026)
+
+The same entity-code path now powers `InterCompanyTransfer.transfer_ref`:
+
+- **`services/docNumbering.js#generateDocNumber`** accepts an `entityId` option alongside the existing `bdmId` / `territoryCode` inputs. Resolution priority is `territoryCode` → `bdmId` (Territory lookup) → `entityId` (`getEntityCode`) → `fallbackCode`. Territory-scoped callers (CALF/PRF/PO/CN/SVC/PCF/REM/DS) are unchanged.
+- **`models/InterCompanyTransfer.js`** pre-save now calls `generateDocNumber({ prefix: 'ICT', entityId: source_entity_id })`. Format: `ICT-VIP041826-001`, `ICT-MGCO041826-001`. Replaces the old `Math.random()` + `YYYYMMDD` scheme that could collide under the `transfer_ref` unique index. Pre-save is now `async` with try/next error handling.
+- **Legacy refs** (`ICT-20260418-042`) render untouched — no migration pressure. Downstream display (`TransferOrders.jsx`, `IcArDashboard.jsx`, `IcSettlement.settled_transfers[].transfer_ref`, reversal console) is format-agnostic — plain string equality only.
+- **`WorkflowGuide.jsx#transfers`** banner updated with the new format and subsidiary-prefix note.
+- **Subscription-ready**: same guarantees as JE — `Entity.short_name` is admin-editable, cache invalidated by `entityController.update` via the shared `invalidateEntityCodeCache`, atomic sequencing via `DocSequence.getNext`.
+
+---
+
+## Phase 3a — Lookup-Driven Danger Sub-Permission Gate + President-Reverse Rollout (Apr 2026)
+
+### Problem
+Destructive endpoints (delete petty cash fund, reverse POSTED document) were hardcoded with `roleCheck('president')`. That works for the parent entity, but:
+
+1. **Breaks Access Template abstraction**: Access Template Manager is the canonical place to grant/revoke per-module capabilities. A hardcoded role check is invisible to the template editor — subscribers cannot see, let alone toggle, the capability.
+2. **Forecloses subsidiary delegation**: In MG AND CO. (and every future subsidiary), the CFO or Finance Head may legitimately hold reversal authority. Hardcoded President-only means the only path is a code change per tenant — the opposite of a subscription model.
+3. **Safety floor vs. flexibility tradeoff**: Purely removing the gate and replacing with a configurable lookup would let a subscriber accidentally grant a junior user ledger-destroying power. We need both: a platform-baseline safety floor AND per-tenant extensibility.
+
+### Solution — Two-layer Danger Gate
+
+**Layer 1 — Baseline Safety Floor (code-enforced, can never be removed)**
+- `backend/erp/services/dangerSubPermissions.js` exports `BASELINE_DANGER_SUB_PERMS`: a hardcoded `Set` of sub-permission keys that are treated as "danger" on every entity, regardless of lookup state.
+- Currently: `{ 'accounting.reverse_posted' }`. Adding a baseline entry is a platform release — subscribers cannot opt out.
+
+**Layer 2 — Per-Tenant Extension (lookup-driven)**
+- `ERP_DANGER_SUB_PERMISSIONS` Lookup category (entity-scoped). Each row's `metadata.{module, key}` tuple (e.g. `{ module: 'vendor_master', key: 'delete' }`) is treated as danger for that entity only.
+- Subscribers extend via Control Center → Lookup Tables. Cache TTL 5 min with immediate invalidation on write (`invalidateDangerCache` wired into `lookupGenericController.create/update/remove/seedCategory`).
+- Fail-closed: lookup read errors return 503 "Permission system temporarily unavailable" — better than silently granting.
+
+### How it plugs into the existing middleware
+
+`erpSubAccessCheck(module, subKey)` and `erpAnySubAccessCheck(...pairs)` in `backend/erp/middleware/erpAccessCheck.js` gained a `denyIfDangerFallback(module, subKey, entityId)` helper. The helper only runs on the FULL-fallback path (where module = FULL with no explicit `sub_permissions` entry and the middleware was about to grant implicit access). Explicit grants in `user.erp_access.sub_permissions[module][subKey]` bypass the danger gate — the admin who ticked that box took the decision.
+
+**Effect**: A subscriber admin with `erp_access.modules.accounting = 'FULL'` and no sub_permissions entries gets implicit access to every accounting sub-key **except** danger ones. To grant reversal, they must explicitly tick `accounting.reverse_posted` in the Access Template editor. President always bypasses.
+
+### Frontend mirror (`useErpSubAccess`)
+
+`frontend/src/erp/hooks/useErpSubAccess.js` duplicates `BASELINE_DANGER_SUB_PERMS` so the UI can hide buttons the user cannot actually use. Subscriber-added extras are NOT mirrored (the set changes rarely and the backend still rejects anything the UI slips through). Keep these two sets in sync when adding baseline keys.
+
+### Rollout — `/president-reverse` per-module routes
+
+Before Phase 3a only Sales + Collections had per-module president-reverse endpoints. Phase 3a adds three more via a shared factory (`buildPresidentReverseHandler(doc_type)` in `documentReversalService.js`), so the same auth gate + UX pattern (reason + `confirm: 'DELETE'`) applies everywhere:
+
+| Module | Route | Doc_type handler | Side effects reversed |
+|---|---|---|---|
+| Sales | `POST /api/erp/sales/:id/president-reverse` | SALES_LINE | Inventory, consignment conversions, petty-cash deposit, linked JEs |
+| Collection | `POST /api/erp/collections/:id/president-reverse` | COLLECTION | CSI release, petty-cash deposit, VAT/CWT ledger, linked JEs |
+| **Expense** | `POST /api/erp/expenses/ore-access/:id/president-reverse` | EXPENSE | Linked JEs, deletion event |
+| **PRF/CALF** | `POST /api/erp/expenses/prf-calf/:id/president-reverse` | CALF or PRF (auto-dispatched by `doc_type`) | CALF: clears `calf_id` on non-POSTED expenses; PRF: clears `rebate_prf_id` on Collection; linked JEs |
+| **Petty Cash** | `POST /api/erp/petty-cash/transactions/:id/president-reverse` | PETTY_CASH_TXN | Txn VOIDed, fund balance flipped, linked JEs |
+| **Sales Goal Plan** (Phase SG-3R) | `POST /api/erp/sales-goals/plans/:id/president-reverse` | SALES_GOAL_PLAN | DRAFT: hard-delete plan + DRAFT targets. Posted: reverse every IncentivePayout accrual + settlement JE (idempotent), flip payouts to REVERSED, delete snapshots, close targets, stamp plan REVERSED + deletion_event_id |
+| Central Console | `POST /api/erp/president/reversals/reverse` (body: `{ doc_type, doc_id, reason, confirm }`) | any | Cross-module history, preview dependents |
+
+Plus: `DELETE /api/erp/petty-cash/funds/:id` — hardcoded `roleCheck('president')` swapped for `erpSubAccessCheck('accounting', 'reverse_posted')`. Subsidiaries can now delegate fund-delete to a CFO by ticking one Access Template box.
+
+### Dependent-Doc Blocker
+
+`backend/erp/services/dependentDocChecker.js` runs before every reversal. Returns `{ has_deps, dependents: [{ type, ref, doc_id, message, severity }] }`. Hard blockers abort with HTTP 409 and surface the list so the user knows what to reverse first. Registry covers: GRN, IC Transfer, Consignment, CALF, PRF, Income, Payroll, SalesLine, Collection, Expense, PO. `checkHardBlockers()` filters out `WARN`-severity entries for reversal sites that should proceed despite informational warnings.
+
+### Audit & Period-Lock
+
+Every president-reversal:
+1. Writes an `ErpAuditLog` row with `log_type: 'PRESIDENT_REVERSAL'` and full side-effect payload (doc_ref, mode, reversal_event_id, side_effects list).
+2. Refuses if the **current** period (where reversal entries will land) is locked for the relevant module — original period is never touched, so only the landing-month lock matters.
+
+### Frontend wiring
+
+- `useCollections.js`, `useSales.js` — already had `presidentReverseX()`.
+- `useExpenses.js` — gained `presidentReverseExpense(id, {reason, confirm})` and `presidentReversePrfCalf(id, {reason, confirm})`.
+- `usePettyCash.js` — gained `presidentReverseTxn(id, {reason, confirm})`.
+- Gate buttons with `useErpSubAccess().hasSubPermission('accounting', 'reverse_posted')`.
+
+### WorkflowGuide banners
+
+Updated `expenses`, `prf-calf`, and `petty-cash` entries in `frontend/src/erp/components/WorkflowGuide.jsx` to document President-Delete semantics, dependent-doc blockers, and the lookup-driven delegation path.
+
+### Files touched (Phase 3a)
+
+Backend:
+- `services/dangerSubPermissions.js` (new) — baseline set + lookup reader + cache
+- `services/dependentDocChecker.js` (new) — 11 doc-type checkers
+- `services/documentReversalService.js` — 12 handlers + `buildPresidentReverseHandler` factory
+- `middleware/erpAccessCheck.js` — `denyIfDangerFallback` wired into both `erpSubAccessCheck` and `erpAnySubAccessCheck`
+- `controllers/expenseController.js` — `presidentReverseExpense/Calf/Prf/PrfCalf` (doc_type auto-dispatch)
+- `controllers/pettyCashController.js` — `presidentReversePettyCashTxn`
+- `controllers/collectionController.js` — `presidentReverseCollection` (Phase 3a baseline)
+- `controllers/salesController.js` — `presidentReverseSale` (Phase 3a baseline)
+- `controllers/lookupGenericController.js` — `invalidateDangerCache` on lookup writes + `ERP_DANGER_SUB_PERMISSIONS` seed
+- `routes/{collection,sales,expense,pettyCash,presidentReversal}Routes.js` — gated endpoints
+
+Frontend:
+- `hooks/useErpSubAccess.js` — baseline danger set mirror
+- `hooks/useCollections.js`, `hooks/useSales.js`, `hooks/useExpenses.js`, `hooks/usePettyCash.js` — `presidentReverse*` methods
+- `pages/Collections.jsx` — reverse modal + wiring
+- `components/WorkflowGuide.jsx` — banners for collections, expenses, prf-calf, petty-cash
+
+### Future extension (subscription-ready)
+
+To delegate reversal in a subsidiary:
+1. Admin ticks `accounting.reverse_posted` in that user's Access Template (Control Center → Access Templates).
+2. No deploy needed — backend reads `erp_access.sub_permissions.accounting.reverse_posted === true` on the next request.
+
+To mark a new key as danger (subscriber-specific, no code change):
+1. Admin adds a row to `ERP_DANGER_SUB_PERMISSIONS` lookup with `metadata: { module: 'vendor_master', key: 'delete' }`.
+2. Cache busts immediately. Users with `vendor_master = FULL` but no explicit `vendor_master.delete` grant get rejected.
+
+---
+
+## Phase 3c — Comprehensive Hardcoded-Role Migration (Apr 2026)
+
+### Problem
+After Phase 3a, only `accounting.reverse_posted` was lookup-driven. Most other destructive operations still used hardcoded `roleCheck('admin', 'finance', 'president')` gates spanning 30 endpoints across ~15 modules. These hardcoded unions:
+- **Broke the Access Template abstraction** — capabilities invisible to subscribers configuring users
+- **Blocked legitimate org structures** — subsidiary CFO / HR Head / Inventory Manager couldn't be granted specific destructive authority without becoming "admin"
+- **Created UI/backend drift risk** — every hardcoded role list was another place UI + backend could disagree
+
+### Solution
+Same pattern as Phase 3a, expanded:
+- `BASELINE_DANGER_SUB_PERMS` grew from 1 → 10 keys (platform safety floor)
+- `ERP_DANGER_SUB_PERMISSIONS` lookup seeded with 19 new keys (10 baseline + 9 Tier 2 lookup-only)
+- `ERP_SUB_PERMISSION` seed extended in parallel so the keys appear in the Access Template editor
+- `ERP_MODULE` gained two new modules — `MASTER` (master data governance) and `ERP_ACCESS` (template management) — to host their respective sub-perms in the editor UI
+- 30 routes swapped from `roleCheck(...)` to `erpSubAccessCheck(module, key)`
+- 15 frontend pages gated their destructive buttons via `useErpSubAccess().hasSubPermission(module, key)`
+- `seedAll` now also calls `invalidateDangerCache(req.entityId)` so a fresh entity gets the editor working immediately after seeding
+
+### Rollout table (route → key)
+
+**Tier 1 — baseline (platform safety floor; subscribers cannot remove via lookup)**
+
+| Route | Key |
+|---|---|
+| `periodLockRoutes.js` POST `/toggle` | `accounting.period_force_unlock` |
+| `incomeRoutes.js` POST `/archive/close-period` | `accounting.period_force_unlock` |
+| `incomeRoutes.js` POST `/archive/reopen-period` | `accounting.period_force_unlock` |
+| `incomeRoutes.js` POST `/archive/year-end/close` | `accounting.year_end_close` |
+| `peopleRoutes.js` POST `/:id/separate` | `people.terminate` |
+| `peopleRoutes.js` DELETE `/:id` | `people.terminate` |
+| `peopleRoutes.js` POST `/:id/disable-login` | `people.manage_login` |
+| `peopleRoutes.js` POST `/:id/unlink-login` | `people.manage_login` |
+| `peopleRoutes.js` POST `/:id/change-role` | `people.manage_login` |
+| `peopleRoutes.js` POST `/bulk-change-role` | `people.manage_login` |
+| `erpAccessRoutes.js` DELETE `/templates/:id` | `erp_access.template_delete` |
+| `governmentRatesRoutes.js` DELETE `/:id` | `payroll.gov_rate_delete` |
+| `interCompanyRoutes.js` PUT `/prices` | `inventory.transfer_price_set` |
+| `interCompanyRoutes.js` PUT `/prices/bulk` | `inventory.transfer_price_set` |
+| `settingsRoutes.js` PUT `/` | `accounting.settings_write` |
+| `productMasterRoutes.js` DELETE `/:id` | `master.product_delete` |
+
+**Tier 2 — lookup-only (subscriber-extensible; admins can deactivate the lookup row to drop the key from the danger gate)**
+
+| Route | Key |
+|---|---|
+| `insuranceRoutes.js` DELETE `/:id` | `payroll.insurance_delete` (closes Phase 3a residual) |
+| `creditCardRoutes.js` DELETE `/:id` | `accounting.card_delete` |
+| `customerRoutes.js` PATCH `/:id/deactivate` | `master.customer_deactivate` |
+| `hospitalRoutes.js` PATCH `/:id/deactivate` | `master.hospital_deactivate` |
+| `hospitalRoutes.js` DELETE `/:id/alias` | `master.hospital_alias_delete` |
+| `productMasterRoutes.js` PATCH `/:id/deactivate` | `master.product_deactivate` |
+| `territoryRoutes.js` DELETE `/:id` | `master.territory_delete` |
+| `collectionRoutes.js` POST `/:id/approve-deletion` | `accounting.approve_deletion` (legacy; President Reverse preferred) |
+| `salesRoutes.js` POST `/:id/approve-deletion` | `accounting.approve_deletion` |
+| `lookupRoutes.js` DELETE `/bank-accounts/:id` | `accounting.lookup_delete` |
+| `lookupRoutes.js` DELETE `/payment-modes/:id` | `accounting.lookup_delete` |
+| `lookupRoutes.js` DELETE `/expense-components/:id` | `accounting.lookup_delete` |
+| `lookupGenericRoutes.js` DELETE `/:category/:id` | `accounting.lookup_delete` |
+| `warehouseRoutes.js` POST `/` | `inventory.warehouse_manage` |
+| `warehouseRoutes.js` PUT `/:id` | `inventory.warehouse_manage` |
+
+### Out of scope (intentionally NOT migrated)
+- `entityRoutes.js POST /` — platform-scope subsidiary creation; stays `roleCheck('president')`
+- `erpAccessRoutes.js` user GET/SET/apply-template — delegating "the power to delegate" is a separate decision
+- `coaRoutes.js`, `approvalRoutes.js`, `monthEndCloseRoutes.js`, `pettyCashRoutes.js` fund-delete — already sub-perm-gated
+- All `/president-reverse` routes (Phase 3a) — already gated
+- Income/payroll/PnL/GRN workflow steps (generate/compute/review/approve/post) — governed by `gateApproval()` + Authority Matrix
+- Status-gated DRAFT deletes (Sales/Collection/Expense/PRF-CALF) — controller-side check, not destructive to ledger
+- `inventoryRoutes /seed-stock-on-hand` — one-time migration tool
+
+### Files touched (Phase 3c)
+
+Backend:
+- `services/dangerSubPermissions.js` — `BASELINE_DANGER_SUB_PERMS` 1 → 10 keys
+- `controllers/lookupGenericController.js` — `ERP_MODULE` (+ MASTER, ERP_ACCESS), `ERP_SUB_PERMISSION` (+19 keys), `ERP_DANGER_SUB_PERMISSIONS` (+19 entries), `seedAll` busts danger cache
+- 14 route files — `roleCheck(...)` → `erpSubAccessCheck(module, key)` swaps:
+  `periodLockRoutes`, `incomeRoutes`, `settingsRoutes`, `interCompanyRoutes`, `peopleRoutes`, `erpAccessRoutes`, `governmentRatesRoutes`, `productMasterRoutes`, `insuranceRoutes`, `creditCardRoutes`, `customerRoutes`, `hospitalRoutes`, `territoryRoutes`, `warehouseRoutes`, `lookupRoutes`, `lookupGenericRoutes`, `collectionRoutes`, `salesRoutes`
+
+Frontend:
+- `hooks/useErpSubAccess.js` — baseline mirror 1 → 10 keys
+- 15 pages — destructive-button gates swapped from `isAdmin`/`ROLE_SETS.MANAGEMENT` to `hasSubPermission(module, key)`:
+  `PeriodLocks`, `MonthlyArchive`, `ProfitSharing` (year-end close), `PersonDetail`, `PeopleList`, `AccessTemplateManager`, `GovernmentRates`, `TransferPriceManager`, `ErpSettingsPanel`, `ProductMaster`, `CustomerList`, `TerritoryManager`, `SalesList`, `LookupManager`, `WarehouseManager`
+
+### Migration note for existing entities
+Two new modules (`master`, `erp_access`) appear in the Access Template editor after `seedAll`. Existing user templates default to `NONE` for these — admins must grant at least `VIEW` on the parent module before the per-key sub-permission has any effect. President bypass and the legacy `admin without erp_access enabled` backward-compat path both remain — only erp_access-enabled non-president users feel the change. Run `Control Center → Lookup Tables → Seed Defaults → ERP_MODULE / ERP_SUB_PERMISSION / ERP_DANGER_SUB_PERMISSIONS` (or `seedAll`) after deploy.
+
+### Future extension (subscription-ready)
+- Subsidiary admins delegate any of the 19 new keys via Access Template ticks, no deploy.
+- New danger keys can be added Tier 2 via `ERP_DANGER_SUB_PERMISSIONS` lookup row (5-min cache, busted on write).
+- New baseline danger keys still require a code release (intentional safety floor); add to both `services/dangerSubPermissions.js` `BASELINE_DANGER_SUB_PERMS` and `frontend/src/erp/hooks/useErpSubAccess.js` mirror.
+
+---
+
+## Phase G5 — Privileged User BDM Filter Fix (AR Aging, Open CSIs, Inventory, Streak, SOA)
+
+### Problem
+President/admin/finance users opening AR Aging, Collection Session (Open CSIs dropdown), inventory FIFO/ledger/variance, SOA export, product streak detail, or income projection saw only records whose `bdm_id` equaled their own user `_id` — silently filtering out every other BDM's data. Symptom: AR Aging and Collection Session showed "No open CSIs" for hospitals where CSIs clearly existed under other BDMs.
+
+### Root Cause
+`tenantFilter` middleware sets `req.bdmId = req.user._id` for **every** authenticated user (including president — who is not a BDM on any record). Nine endpoints used this ternary:
+```js
+const bdmId = (privileged && req.query.bdm_id) ? req.query.bdm_id : req.bdmId;
+```
+Privileged user with no `?bdm_id=` in the URL falls through to `req.bdmId` (their own _id). The query filter `bdm_id = <president>` then matches nothing.
+
+### Fix
+Replaced the ternary in all nine endpoints:
+```js
+const bdmId = privileged ? (req.query.bdm_id || null) : req.bdmId;
+```
+- Privileged + no query → `bdmId = null` → no BDM filter → sees all BDMs in the working entity
+- Privileged + query → scoped to that BDM
+- Non-privileged (contractor) → still locked to their own `_id` (unchanged)
+
+### Safeguard
+`getProductStreakDetail` passes `bdmId` directly into `new mongoose.Types.ObjectId(bdmId)` — `ObjectId(null)` silently generates a random ID. Added an explicit `if (!bdmId) return 400 'bdm_id is required'` guard (mirroring `getIncomeProjection`).
+
+### Services Verified for Null-Safe bdmId
+| Service Function | File | Null Handling |
+|---|---|---|
+| `getOpenCsis` | arEngine.js | `if (bdmId) match.bdm_id = ...` — skips filter |
+| `getArAging` | arEngine.js | Delegates to `getOpenCsis` |
+| `getCollectionRate` | arEngine.js | `if (bdmId) match.bdm_id = ...` |
+| `generateSoaWorkbook` | soaGenerator.js | `if (bdmId) match.bdm_id = ...` |
+| `getAvailableBatches` | fifoEngine.js | `buildStockMatch()` skips bdm_id on null |
+| `InventoryLedger` (getLedger/getVariance) | inventoryController inline | `else if (bdmId)` guard |
+| `getProductStreakDetail` | profitShareEngine.js | **Not null-safe** — controller returns 400 |
+| `projectIncome` | incomeCalc.js | Controller already 400s on null |
+
+### Entity Scoping — Deliberately Different
+The same endpoints have an `entity_id` ternary:
+```js
+const entityId = (privileged && req.query.entity_id) ? req.query.entity_id : req.entityId;
+```
+This is **left as-is and is correct**: entity isolation is stricter than BDM isolation. For a president, `req.entityId` is the working entity (X-Entity-Id header or primary) — a valid scope. Cross-entity visibility must be an explicit opt-in via `?entity_id=`, never a silent null.
+
+### Banner Updates (Rule #1)
+- `ar-aging` — added role visibility clarification to the tip: "President/admin/finance see all BDMs' CSIs across the working entity by default (use the BDM filter to scope); BDMs see only their own."
+- `collection-session` — same clarification added.
+
+### Key Files
+```
+backend/erp/controllers/collectionController.js      # 4 fixed: getOpenCsis, getArAging, getCollectionRate, generateSoa
+backend/erp/controllers/inventoryController.js       # 3 fixed: getBatches, getLedger, getVariance
+backend/erp/controllers/erpReportController.js       # getProductStreakDetail fixed + null guard
+backend/erp/controllers/incomeController.js          # getIncomeProjection fixed
+frontend/src/erp/components/WorkflowGuide.jsx        # ar-aging + collection-session role visibility
+```
+
+### Follow-up (Optional, Not Blocking)
+The pattern `req.isPresident || req.isAdmin || req.isFinance` is repeated in 21+ controllers — candidate for centralization via a `canViewOtherBdms(req)` helper, or (fully Rule #3 compliant) a Lookup-driven `CROSS_BDM_VIEW_ROLES` category that subscribers can configure without code changes. Not required for correctness — the fix is complete as-is.
+
+See global CLAUDE.md Rule 21 for the anti-pattern documented for future projects.
 
 ---
 
@@ -127,6 +448,7 @@ Divides approval workload per module via sub-permissions, adds attachment/photo 
 
 ### Attachment/Photo Viewing
 Approvers can now see supporting documents directly in the Approval Hub without leaving the page:
+- **Sales/CSI**: OCR-scanned or uploaded CSI document photo (`csi_photo_url` on SalesLine model)
 - **GRN**: waybill photo, undertaking photo
 - **Collection**: deposit slip, CR photo, CWT certificate, CSI photos
 - **Car Logbook**: fuel receipt photos per day
@@ -630,21 +952,29 @@ Layer 3: President/CEO              → Always sees all modules across all entit
 |----------|---------|
 | `MODULE_DEFAULT_ROLES` | Per-module default role arrays for Approval Hub visibility. `metadata.roles` = `['admin', 'finance', 'president']` or `null` (open). Auto-seeded on first access. |
 
-### Default Seed Values (12 modules)
-| Code | Label | Default Roles |
-|------|-------|---------------|
-| APPROVAL_REQUEST | Authority Matrix | null (open) |
-| DEDUCTION_SCHEDULE | Deduction Schedules | admin, finance, president |
-| INCOME | Income Reports | admin, finance, president |
-| INVENTORY | GRN (Goods Receipt) | admin, finance |
-| PAYROLL | Payslips | admin, finance, president |
-| KPI | KPI Ratings | admin, president |
-| SALES | Sales / CSI | admin, finance, president |
-| COLLECTION | Collections / CR | admin, finance, president |
-| SMER | SMER | admin, finance, president |
-| CAR_LOGBOOK | Car Logbook | admin, finance, president |
-| EXPENSES | Expenses (ORE/ACCESS) | admin, finance, president |
-| PRF_CALF | PRF / CALF | admin, finance, president |
+### Default Seed Values (18 modules — Phase G4 expanded coverage)
+| Code | Label | Default Roles | Used By Gate |
+|------|-------|---------------|---------------|
+| APPROVAL_REQUEST | Authority Matrix | null (open) | Hub visibility only |
+| DEDUCTION_SCHEDULE | Deduction Schedules | admin, finance, president | Hub visibility |
+| INCOME | Income Reports | admin, finance, president | gateApproval + Hub |
+| INVENTORY | GRN (Goods Receipt) | admin, finance | gateApproval + Hub |
+| PAYROLL | Payslips | admin, finance, president | gateApproval + Hub |
+| KPI | KPI Ratings | admin, president | Hub visibility |
+| SALES | Sales / CSI | admin, finance, president | gateApproval + Hub |
+| COLLECTION | Collections / CR | admin, finance, president | gateApproval + Hub |
+| SMER | SMER | admin, finance, president | Hub visibility (gate uses EXPENSES) |
+| CAR_LOGBOOK | Car Logbook | admin, finance, president | Hub visibility (gate uses EXPENSES) |
+| EXPENSES | Expenses (ORE/ACCESS) | admin, finance, president | gateApproval + Hub |
+| PRF_CALF | PRF / CALF | admin, finance, president | Hub visibility (gate uses EXPENSES) |
+| PERDIEM_OVERRIDE | Per Diem Override | admin, finance, president | gateApproval + Hub |
+| **JOURNAL** | Journal Entries | admin, finance, president | gateApproval (Phase G4) |
+| **BANKING** | Banking | admin, finance, president | gateApproval (Phase G4) |
+| **PETTY_CASH** | Petty Cash | admin, finance, president | gateApproval (Phase G4) |
+| **IC_TRANSFER** | Inter-Company Transfer | admin, finance, president | gateApproval (Phase G4) |
+| **PURCHASING** | Purchasing | admin, finance, president | gateApproval (Phase G4) |
+
+**Subscription tuning**: each entity edits its own row via Control Center → Lookup Tables → MODULE_DEFAULT_ROLES. Set `metadata.roles = null` to disable the gate for that module (open-post). Lazy-seeded on first submit per entity — no admin pre-action required.
 
 ### ApprovalRule Enum Expansion
 Added 7 new module values to `ApprovalRule.module` enum so Approval Rules can be created for ALL Universal Hub modules:
@@ -837,6 +1167,117 @@ frontend/src/erp/pages/IncentiveTracker.jsx     # Tiered leaderboard with budget
 - Budget advisor reads P&L to suggest sustainable tier budgets
 - President adjusts tiers anytime via Control Center → Lookup Tables (no code changes)
 
+### Phase SG-Q2 — Compliance Floor + Incentive Ledger + Compensation (Apr 2026)
+
+**Phase SG-Q2 Week 1** (compliance floor): reference number on first activation, gateApproval on activate/reopen/close, period locks, idempotent auto-enrollment of BDMs (lookup-driven `SALES_GOAL_ELIGIBLE_ROLES`), state changes wrapped in mongoose transactions.
+
+**Phase SG-Q2 Week 2** (incentive ledger + GL):
+- `IncentivePayout` model — lifecycle ACCRUED → APPROVED → PAID → REVERSED
+- `journalFromIncentive.js` — accrual JE (DR INCENTIVE_EXPENSE / CR INCENTIVE_ACCRUAL) + settlement JE (DR INCENTIVE_ACCRUAL / CR funding) + reversal (SAP Storno)
+- `salesGoalService.accrueIncentive` triggered from YTD KpiSnapshot computation; CompProfile cap enforced
+- `kpiSnapshotAgent` — monthly day 1 cron, FREE agent
+- Approval Hub integration via `gateApproval(module: 'INCENTIVE_PAYOUT')`, period locks on settle/reverse
+- Sub-permissions: `sales_goals.payout_view / payout_approve / payout_pay / payout_reverse`
+- Subscriber-configurable COA via `Settings.COA_MAP.INCENTIVE_EXPENSE` + `INCENTIVE_ACCRUAL`
+
+**Phase SG-Q2 Week 3** (compensation statement, notifications, variance agent, mobile — shipped 2026-04-19):
+- **Per-accrual transaction wrap.** `mongoose.startSession() + withTransaction` around (re-check) → `postAccrualJournal({ session })` → `IncentivePayout.findOneAndUpdate({ session })`. `DocSequence.getNext`, `generateJeNumber`, `createAndPostJournal` all thread the session through. Concurrent accruals on the same key now resolve to one row + one JE — orphaned-JE risk eliminated.
+- **Compensation statement.** `GET /api/erp/incentive-payouts/statement` (controller `getCompensationStatement`) returns `{ summary: {earned, accrued, adjusted, paid}, periods: […], tier: {…}, rows: […] }`. BDMs see their own; privileged users pass `?bdm_id=` (no silent self-id fallback — Rule #21).
+- **Print PDF.** `GET /api/erp/incentive-payouts/statement/print` returns printable HTML via `templates/compensationStatement.js`. Browser-print produces the PDF (same pattern as sales receipts). Lookup-driven branding via `COMP_STATEMENT_TEMPLATE` Lookup category (HEADER_TITLE / HEADER_SUBTITLE / DISCLAIMER / SIGNATORY_LINE / SIGNATORY_TITLE — per-entity overrides).
+- **My Compensation tab.** `SalesGoalBdmView.jsx` has a Performance | My Compensation tab strip. Compensation tab loads lazily, shows summary cards, tier context, by-period rollup, detail ledger, and a Print button.
+- **Notifications.**
+  - `notifySalesGoalPlanLifecycle` on activate/reopen/close → management + assigned BDMs (de-duped). Email template: `salesGoalPlanLifecycleTemplate`.
+  - `notifyTierReached` from inside `accrueIncentive` (only on a fresh row) → BDM + reports_to chain + president(s). Template: `tierReachedTemplate`.
+  - `notifyKpiVariance` from `kpiVarianceAgent` → BDM + reports_to chain + president(s). Template: `kpiVarianceAlertTemplate`.
+  - All filtered by `NotificationPreference.compensationAlerts` / `kpiVarianceAlerts` (new fields, default `true`). Master `emailNotifications=false` still wins.
+- **kpiVarianceAgent (#V).** New FREE agent; reads YTD KpiSnapshots, classifies deviations against `KPI_VARIANCE_THRESHOLDS` Lookup (per-KPI `metadata.warning_pct` / `metadata.critical_pct`; falls back to GLOBAL row, defaults 20% / 40%). Direction-aware (`LOWER_BETTER_KPIS` set). Cron: `0 6 2 * *` Asia/Manila (day 2, runs after `kpi_snapshot`).
+- **360px mobile.** SalesGoalBdmView, SalesGoalDashboard, IncentivePayoutLedger, compensationStatement print template all have `@media(max-width: 360px)` blocks: 1-col summary cards, scrollable tab strip, condensed tables, 96px ring (was 120px), full-width buttons.
+- **Banner.** `WORKFLOW_GUIDES.salesGoalCompensation` added to WorkflowGuide.
+
+### SG-Q2 Wiring Map
+
+```
+backend/erp/models/IncentivePayout.js                  • Lifecycle: ACCRUED→APPROVED→PAID→REVERSED
+backend/erp/models/DocSequence.js                      • getNext supports {session} (W3)
+backend/erp/services/docNumbering.js                   • generateJeNumber threads session (W3)
+backend/erp/services/journalEngine.js                  • createAndPostJournal threads options.session (W3)
+backend/erp/services/salesGoalService.js               • accrueIncentive wraps in txn + fires notifyTierReached (W3)
+backend/erp/services/journalFromIncentive.js           • postAccrualJournal / postSettlementJournal / reverseAccrualJournal
+backend/erp/services/erpNotificationService.js         • notifySalesGoalPlanLifecycle / notifyTierReached / notifyKpiVariance (W3)
+backend/erp/controllers/salesGoalController.js         • activate/reopen/close fire lifecycle notifications (W3)
+backend/erp/controllers/incentivePayoutController.js   • getCompensationStatement / printCompensationStatement (W3)
+backend/erp/templates/compensationStatement.js         • renderCompensationStatement (W3)
+backend/erp/routes/incentivePayoutRoutes.js            • /statement + /statement/print BEFORE /:id (W3)
+
+backend/agents/kpiSnapshotAgent.js                     • Monthly KPI compute + accrual trigger (W2)
+backend/agents/kpiVarianceAgent.js                     • Variance detection + alerts (W3)
+backend/agents/agentRegistry.js                        • +kpi_snapshot (W2), +kpi_variance (W3)
+backend/agents/agentScheduler.js                       • cron 0 5 1 * * (W2), cron 0 6 2 * * (W3)
+
+backend/templates/erpEmails.js                         • +salesGoalPlanLifecycleTemplate / tierReachedTemplate / kpiVarianceAlertTemplate (W3)
+backend/models/NotificationPreference.js               • +compensationAlerts / kpiVarianceAlerts (W3)
+
+frontend/src/erp/hooks/useSalesGoals.js                • +getCompensationStatement / compensationStatementPrintUrl (W3)
+frontend/src/erp/pages/SalesGoalBdmView.jsx            • Tab strip + My Compensation panel + Print + 360px CSS (W3)
+frontend/src/erp/pages/SalesGoalDashboard.jsx          • 360px CSS (W3)
+frontend/src/erp/pages/IncentivePayoutLedger.jsx       • Full 360px CSS (W3, expanded from W2 stub)
+frontend/src/erp/components/WorkflowGuide.jsx          • +salesGoalCompensation banner (W3)
+```
+
+### SG-Q2 Lookup categories (subscription-configurable)
+| Category | Purpose | Phase |
+|----------|---------|-------|
+| `SALES_GOAL_ELIGIBLE_ROLES` | Person-types auto-enrolled on plan activation | W1 |
+| `STATUS_PALETTE` | Bar/badge colors per attainment bucket (lazy-seeded) | W1 |
+| `MODULE_DEFAULT_ROLES.INCENTIVE_PAYOUT` | Default-Roles Gate for payout lifecycle | W2 |
+| `APPROVAL_MODULE.INCENTIVE_PAYOUT` | Authority Matrix routing | W2 |
+| `APPROVAL_CATEGORY.FINANCIAL` | Adds INCENTIVE_PAYOUT to financial bucket | W2 |
+| `PERIOD_LOCK_MODULES` | Adds INCENTIVE_PAYOUT to lockable modules | W2 |
+| `ERP_SUB_PERMISSION` | 4 new keys: payout_view/approve/pay/reverse | W2 |
+| `ERP_DANGER_SUB_PERMISSIONS` | +SALES_GOALS__PAYOUT_REVERSE (Tier 2) | W2 |
+| `COMP_STATEMENT_TEMPLATE` | Print template branding overrides per entity | W3 |
+| `KPI_VARIANCE_THRESHOLDS` | Per-KPI warning/critical % (+ GLOBAL fallback) | W3 |
+| `NOTIFICATION_ESCALATION` | Reports_to chain max hops (default 3, lazy-seeded) | W3 follow-ups |
+| `NOTIFICATION_CHANNELS` | Per-entity kill-switches for email / in_app / sms | W3 follow-ups |
+| `PDF_RENDERER` | `BINARY_ENABLED` flag to flip statements to binary PDF | W3 follow-ups |
+
+### Phase SG-Q2 W3 follow-ups (April 2026) — 6 items closed
+
+Completed the "Known limitations" block from the W3 hand-off plus three immediate polish items.
+
+**#1 In-app + SMS dispatch.** `erpNotificationService.dispatchMultiChannel()` now fans out to three channels per recipient: email (Resend via existing `sendEmail`), in-app (`MessageInbox.create` — shows in BDM + admin inbox UIs), and SMS (Semaphore, reusing the env/API style of `backend/agents/notificationService.js`). Per-user opt-in respects `NotificationPreference.emailNotifications / inAppAlerts / smsNotifications` plus the category-specific `compensationAlerts` / `kpiVarianceAlerts`. Per-entity kill-switches live in the new `NOTIFICATION_CHANNELS` Lookup category (codes `EMAIL` / `IN_APP` / `SMS`, metadata.enabled). SMS is opt-in at both layers (entity + user) and additionally requires `SEMAPHORE_API_KEY` in env — absent configuration silently skips SMS, never throws. `findNotificationRecipients` now also selects `phone` so SMS can fire without extra queries.
+
+**#2 Multi-hop reports_to chain.** `resolveReportsToChain(userId, { maxDepth })` walks `PeopleMaster.reports_to` up to N hops with a cycle-guard Set and inactive-person skip. Depth is lookup-driven via `NOTIFICATION_ESCALATION.REPORTS_TO_MAX_HOPS` (default 3, hard-capped at 10). `buildBdmEscalationAudience()` builds the full BDM + chain + presidents set and is used by both `notifyTierReached` and `notifyKpiVariance`. The old single-hop blocks in those two functions are replaced.
+
+**#3 Binary PDF (graceful fallback).** New service `backend/erp/services/pdfRenderer.js` — `htmlToPdf(html, opts)` uses puppeteer via **dynamic require** so the dependency is optional. Behavior is lookup-gated via `PDF_RENDERER.BINARY_ENABLED` (per-entity, default `false`; `metadata.engine` default `'puppeteer'`). Query override: `?format=pdf` on `/statement/print`. When PDF is requested but puppeteer is not installed, the controller falls back to HTML and sets `X-PDF-Fallback: html` + `X-PDF-Fallback-Reason: puppeteer_not_installed` response headers. Admins enable by: (a) `npm install puppeteer` in `backend/`, (b) toggling the lookup row via Control Center. `getRendererStatus()` exports an introspection helper for a future settings UI.
+
+**#4 Notification Preferences UI toggles.** `frontend/src/pages/common/NotificationPreferences.jsx` now renders two new toggle rows in the Categories card: "Compensation Alerts" (DollarSign/green) and "KPI Variance Alerts" (TrendingDown/amber). `backend/controllers/notificationPreferenceController.js` adds them to `ALLOWED_FIELDS` + default GET payload. `NotificationPreference` schema already had the two Boolean fields (W3 baseline).
+
+**#5 Lazy-seed KPI_VARIANCE_THRESHOLDS.GLOBAL on first activation.** New helper `salesGoalService.ensureKpiVarianceGlobalThreshold(entityId, session)` upserts the `GLOBAL` row (metadata: `warning_pct=20`, `critical_pct=40`) — called from `activatePlan` inside the transaction for fresh entities, AND from `kpiVarianceAgent.loadThresholds` as a safety net for historical entities whose plans were activated before this deploy. Idempotent; on error returns cleanly (agent has in-memory defaults as final fallback).
+
+**#6 Sidebar "My Compensation" entry.** Contractors (BDM role) see a direct entry `{ path: '/erp/sales-goals/my?tab=compensation', label: 'My Compensation', icon: Wallet }` under Sales Goals. `SalesGoalBdmView.jsx` now honors the `?tab=compensation` query param via `useSearchParams` so the link lands directly on the compensation tab (route + page + nav gate unchanged for privileged users).
+
+### W3 follow-up Wiring Map (additions only)
+```
+backend/erp/services/pdfRenderer.js                    • NEW — optional puppeteer, lookup-gated
+backend/erp/services/erpNotificationService.js         • +dispatchMultiChannel / getEscalationConfig / getChannelConfig / resolveReportsToChain / buildBdmEscalationAudience / persistInApp / dispatchSms
+backend/erp/services/salesGoalService.js               • +ensureKpiVarianceGlobalThreshold / KPI_VARIANCE_GLOBAL_DEFAULT
+backend/erp/controllers/salesGoalController.js         • activatePlan calls ensureKpiVarianceGlobalThreshold(session)
+backend/erp/controllers/incentivePayoutController.js   • printCompensationStatement: lookup-gated pdf | html + X-PDF-Fallback header
+backend/agents/kpiVarianceAgent.js                     • loadThresholds self-seeds GLOBAL row if missing
+backend/controllers/notificationPreferenceController.js • +compensationAlerts / kpiVarianceAlerts in ALLOWED_FIELDS + default payload
+
+frontend/src/components/common/Sidebar.jsx             • +My Compensation entry (CONTRACTOR only)
+frontend/src/erp/pages/SalesGoalBdmView.jsx            • +useSearchParams, honors ?tab=compensation
+frontend/src/pages/common/NotificationPreferences.jsx  • +Compensation + KPI Variance category rows
+```
+
+### Operator notes
+- **Enable binary PDF for a subscriber**: `cd backend && npm install puppeteer`, then flip `PDF_RENDERER.BINARY_ENABLED.metadata.enabled=true` in Control Center for that entity. No code deploy.
+- **Disable in-app alerts org-wide** for a subsidiary: set `NOTIFICATION_CHANNELS.IN_APP.metadata.enabled=false` in that entity. Email + SMS keep firing.
+- **Deepen escalation chain**: set `NOTIFICATION_ESCALATION.REPORTS_TO_MAX_HOPS.metadata.value=5` (capped at 10 in code for safety).
+- **SMS pre-reqs**: `SEMAPHORE_API_KEY` in backend env, user must have a `phone`, user pref `smsNotifications=true`, AND entity `NOTIFICATION_CHANNELS.SMS.metadata.enabled=true` (default `false` — SMS is opt-in). Any missing link → SMS silently skipped, other channels unaffected.
+
 ---
 
 ## ERP Email Notifications (Phase 29)
@@ -865,19 +1306,26 @@ Recipients are resolved dynamically from the database — no hardcoded recipient
 
 ---
 
-## Approval Workflow (Phase 29 — Authority Matrix)
+## Approval Workflow (Phase 29 — Authority Matrix + Phase G4 — Default-Roles Gate)
 
 ### Governing Principle
 **"Any person can CREATE transactions, but all transactions must route through proper authority for POSTING."**
 
 This is enforced via:
 - `gateApproval()` on every submit/post controller (20 functions across 13 controllers)
-- 3-layer authorization: ApprovalRules → MODULE_DEFAULT_ROLES (lookup) → President override
+- **Two-layer authorization** (Phase G4):
+  - **Layer 1 — Default-Roles Gate (always enforced, lookup-driven)**: requester's role must be in `MODULE_DEFAULT_ROLES.metadata.roles` for the module. Holds otherwise.
+  - **Layer 2 — Authority Matrix (escalation rules, optional)**: when `Settings.ENFORCE_AUTHORITY_MATRIX = true` and matching `ApprovalRule` exists, even authorized posters route through level-1/2/3 approvers (typically for amount thresholds).
+- President / CEO bypass both layers (cross-entity superusers).
 - APPROVAL_CATEGORY lookup: FINANCIAL vs OPERATIONAL classification
 - Frontend 202 handling with `showApprovalPending()` utility
 - Period locks prevent posting to closed months
 
-Multi-level, database-driven approval workflow. Controlled by `Settings.ENFORCE_AUTHORITY_MATRIX` (default: `false`).
+### Subscription-Readiness (Phase G4)
+- Each entity configures its own posting authority via Control Center → Lookup Tables → `MODULE_DEFAULT_ROLES`.
+- Set `metadata.roles = ['admin', 'finance', 'president']` to gate that module.
+- Set `metadata.roles = null` (or remove the entry) to disable the gate (open-post — anyone can post).
+- No code changes when subscribers tune. Same lookup is read by both `gateApproval()` (submission side) and `isAuthorizedForModule()` (Hub visibility side) — symmetric configuration.
 
 ### Architecture
 - **ApprovalRule** — entity-scoped rules: module + doc_type + amount threshold + level + approver config
@@ -886,13 +1334,13 @@ Multi-level, database-driven approval workflow. Controlled by `Settings.ENFORCE_
 - Multi-level: Level 1 must approve before Level 2 is evaluated. Up to 5 levels.
 
 ### How It Works
-1. When a controller calls `checkApprovalRequired()`, the service checks if `ENFORCE_AUTHORITY_MATRIX` is true
-2. If true, finds matching rules for the entity/module/docType/amount
-3. If rules match, creates `ApprovalRequest(PENDING)` and notifies approvers via email
-4. Controller returns HTTP 202 (Accepted) with `approval_pending: true`
-5. Approver visits `/erp/approvals` → approves or rejects (rejection requires reason)
-6. On approve, if next-level rules exist, escalates automatically
-7. Once fully approved, the controller's next attempt proceeds without blocking
+1. Controller calls `gateApproval()` → service runs `checkApprovalRequired()`.
+2. **Layer 1 (Default-Roles)**: looks up `MODULE_DEFAULT_ROLES` for the module. If requester's role is not in `metadata.roles` (and not President/CEO), creates `ApprovalRequest(PENDING, level: 0, rule_id: null)`, notifies approvers via email, returns 202 with `approval_pending: true`. Document stays in VALID status — appears in Approval Hub via existing module queries.
+3. **Layer 2 (Authority Matrix)**: only checked if requester passed Layer 1 AND `ENFORCE_AUTHORITY_MATRIX = true`. Finds matching rules for entity/module/docType/amount. If rules match, creates `ApprovalRequest(level: 1+)`, notifies approvers, returns 202.
+4. Approver opens `/erp/approvals` (Approval Hub) → sees the document via its module query (e.g. SALES with `status: 'VALID'`) → clicks Post / Approve / Reject.
+5. `universalApprovalController` invokes the proper post handler (e.g. `postSaleRow`) → document → POSTED.
+6. Controller marks any open `ApprovalRequest(PENDING)` for the doc as `APPROVED` / `REJECTED` to close the audit loop.
+7. For matrix multi-level: on Layer 2 approve, if next-level rules exist, escalates automatically.
 
 ### Key Files
 ```
@@ -941,7 +1389,7 @@ if (gated) return; // 202 already sent
 | PURCHASING | purchasingController | postInvoice | SUPPLIER_INVOICE |
 | SALES | salesController | submitSales | CSI |
 | SALES | creditNoteController | submitCreditNotes | CREDIT_NOTE |
-| COLLECTIONS | collectionController | submitCollections | CR |
+| COLLECTION | collectionController | submitCollections | CR |
 | EXPENSES | expenseController | submitSmer | SMER |
 | EXPENSES | expenseController | submitExpenses | EXPENSE_ENTRY |
 | EXPENSES | expenseController | submitCarLogbook | CAR_LOGBOOK |
@@ -1350,6 +1798,8 @@ All auto-journal COA codes are admin-configurable in `Settings.COA_MAP` (ERP Set
 25. **Sales approval handler uses `postSaleRow`** — The `sales_line` handler in `universalApprovalController.js` calls `salesController.postSaleRow()` (shared helper) for full posting with TransactionEvent, inventory, and journals. This ensures approval-flow posts behave identically to direct `submitSales` posts — including OPENING_AR skip logic. Other module handlers (collection, smer, etc.) are still simplified stubs.
 24. **COA codes are validated on save** — `Settings.updateSettings` validates all COA_MAP codes against ChartOfAccounts before saving. VendorMaster, BankAccount, CreditCard, and PaymentMode controllers validate `coa_code` via `validateCoaCode()` utility. Invalid codes are rejected with 400.
 25. **Reopen reversal is fail-safe** — All `reopen*` functions (SMER, CarLogbook, Expense, PRF/CALF) skip the document if JE reversal fails. The document stays POSTED (ledger balanced) and the failure is reported in the response `failed[]` array. Never mark DRAFT if reversal threw.
+25a. **Settled-CSI guard on sales reopen + deletion** — `reopenSales` and `approveDeletion` in `salesController.js` refuse to process a CSI that is referenced by any POSTED `Collection.settled_csis[].sales_line_id` (entity-scoped, excludes collections with `deletion_event_id`). Reopening a settled CSI would leave the Collection's settled amounts pointing at a DRAFT/deleted sale → AR and GL diverge. User must reopen the Collection first (which releases the CSI), then reopen/delete the CSI. `reopenSales` returns the block in `failed[]` with message `"Cannot reopen: settled by Collection CR#..."`; `approveDeletion` returns HTTP 409. Frontend (`SalesList.jsx`, `SalesEntry.jsx`) surfaces `failed[]` via `showWarning` toast. Banner text updated in `WorkflowGuide.jsx` (`sales-list`, `sales-entry`).
+25b. **`corrects_je_id` is omitted when absent** — `createAndPostJournal` in `journalEngine.js` spreads `corrects_je_id` only when truthy (line 95 area). Writing `corrects_je_id: null` would be indexed by the `{ corrects_je_id: 1 }, { unique: true, sparse: true }` index — MongoDB sparse treats null as present — and the second non-reversal JE insert would hit E11000. Omit → field absent → sparse excludes → safe.
 26. **CALF→Expense auto-submit uses transactions** — `submitPrfCalf` auto-submits linked expenses/carlogbooks inside a MongoDB session. If event creation or journal posting fails, the transaction rolls back — source stays in its previous status, no orphaned events or JEs.
 27. **ACCESS expense fallback is AP_TRADE** — `resolveFundingCoa()` for ACCESS (company-funded) lines passes `COA_MAP.AP_TRADE` as fallback, not CASH_ON_HAND. This ensures the credit account is Accounts Payable when no funding source is resolved.
 28. **`recorded_on_behalf_of` stores the BDM** — In `saveBatchExpenses`, `recorded_on_behalf_of` = the BDM on whose behalf the record was made (matches field name semantics). The admin/uploader is captured in `created_by`. When set, it signals a delegated action.
@@ -1804,6 +2254,73 @@ In **Access Templates** (Control Center > Access), set inventory module to VIEW 
 
 ---
 
+## CSI Booklets — Monitoring + Traceability (Phase 15.2 — softened, April 2026)
+
+The CSI Booklet feature is **monitoring-only**: no sales will ever be blocked by it. Its purpose is to give HQ a traceable paper-trail of which BIR-registered CSI number was used on which sale.
+
+### BIR Iloilo HQ workflow
+
+VIP's BIR "Authority to Print" is registered to the Iloilo head office. Per BIR rules, CSI booklets must be drawn from the registered address. BDMs, however, operate across the Philippines:
+
+1. **HQ records the booklet** — code, series range, optional ATP number + registered address.
+2. **HQ allocates small ranges** (typically 3–7 numbers) to specific remote BDMs. No dates are required.
+3. **The BDM uses the numbers** in the field (Cebu, Manila, Davao, etc.).
+4. **When a sale posts**, the number is auto-marked USED so the BDM's available pool updates.
+5. **HQ reconciles** via the CsiBooklets page for BIR audit.
+
+**Iloilo-based contractors are NOT monitored.** They hold booklets directly. If a BDM has no allocations on file, `validateCsiNumber` returns `{ valid: true, skipped: true }` and no warning is surfaced. Admin opts each BDM in simply by creating an allocation for them.
+
+### Soft-warning vs hard-error pattern
+
+- **Hard errors** (`rowErrors`): missing doc_ref, stock issues, etc. — row stays ERROR, cannot post.
+- **Soft warnings** (`rowWarnings` → `validation_warnings`): CSI number outside allocation, already used, or voided — row still VALID, can post. Surfaced as a yellow panel in SalesEntry.
+
+The pattern mirrors the existing `hospital.credit_limit_action` soft-warn flow at `salesController.js:532-535`.
+
+### Void-with-proof (anti-fraud)
+
+The "no return" policy means allocated numbers stay with the BDM until USED or VOIDED. A contractor may void an unused number (wrong entry, cancelled, torn, misprint) but MUST upload a photo/scan of the physical unused CSI. Without proof, a BDM could claim "voided" and then reuse the physical copy for an off-book sale.
+
+- S3 prefix: `erp-documents/csi-voids/{year}/{month}/`
+- Upload middleware: reuses `uploadSingle('proof') + compressImage` from `backend/middleware/upload.js`
+- Reader: `GET /:id/allocations/:allocIdx/voids/:voidIdx/proof` returns a 1-hour signed S3 URL
+- Reasons are lookup-driven: **`ERP_CSI_VOID_REASONS`** (admin-configurable via Control Center → Lookup Tables)
+
+### Endpoints
+
+| Path | Gate | Purpose |
+|------|------|---------|
+| `GET /erp/my-csi/available` | `protect` only | **BDM self-service**: my unused CSI numbers (bypasses inventory module gate so BDMs without inventory module access still see their list during Sales Entry) |
+| `GET /erp/csi-booklets` | `inventory` module + `inventory.csi_booklets` sub | List all booklets |
+| `GET /erp/csi-booklets/available` | same | Admin: look up any BDM's available numbers (Rule #21 — no silent self-ID fallback) |
+| `GET /erp/csi-booklets/validate` | same | Monitoring-only pre-check |
+| `POST /erp/csi-booklets` | same | Create a booklet |
+| `POST /erp/csi-booklets/:id/allocate` | same | Allocate a range to a BDM (dates optional) |
+| `POST /erp/csi-booklets/:id/allocations/:allocIdx/void` | same + multipart proof upload | Void a number with proof image |
+| `GET /erp/csi-booklets/:id/allocations/:allocIdx/voids/:voidIdx/proof` | same | Fetch signed URL for the proof image |
+
+### Model changes (backward-compatible)
+
+- `CsiBooklet.allocations[].week_start` / `week_end` → **optional** (were required).
+- `CsiBooklet.allocations[].assigned_to` → **new**, optional. Per-allocation BDM (falls back to booklet-level `assigned_to`).
+- `CsiBooklet.allocations[].voided_numbers[]` → **new**. Per-number void record with reason, proof URL, voided_by, voided_at.
+- `CsiBooklet.voided_count` → **new** auto-computed in pre-save.
+- `CsiBooklet.atp_number`, `bir_registration_address`, `issued_at`, `source_warehouse_id` → **new**, all optional, subscription-ready BIR metadata.
+- `SalesLine.validation_warnings[]` → **new** informational-only strings.
+
+### Wiring summary
+
+- **Sales validate** (`salesController.validateSales`): calls `validateCsiNumber` for CSI rows, pushes to `rowWarnings`. Skips silently when `{ skipped: true }` (Iloilo BDMs).
+- **Sales post** (`salesController.submitSales` + `postSaleRow` for approval-hub path): calls `markUsed` per CSI line after POSTED. Non-blocking — any booklet failure is audit-logged but never fails the post.
+- **Sales reopen** (`salesController.reopenSales`): calls `unmarkUsed` so the number returns to the BDM's available pool.
+
+### Key files
+
+- **Backend**: `backend/erp/models/CsiBooklet.js`, `backend/erp/services/csiBookletService.js`, `backend/erp/controllers/csiBookletController.js`, `backend/erp/routes/csiBookletRoutes.js`, `backend/erp/routes/csiBookletPublicRoutes.js`, `backend/erp/routes/index.js` (mount), `backend/erp/controllers/salesController.js` (wiring), `backend/erp/controllers/lookupGenericController.js` (seed), `backend/erp/models/SalesLine.js` (validation_warnings).
+- **Frontend**: `frontend/src/erp/pages/CsiBooklets.jsx`, `frontend/src/erp/pages/SalesEntry.jsx`, `frontend/src/erp/hooks/useReports.js`, `frontend/src/erp/components/WorkflowGuide.jsx`.
+
+---
+
 ## Low-Priority Hardening — Phase H1 (April 2026)
 
 Seven validation and error-handling improvements across CALF, COA, Expenses, and Batch Upload.
@@ -1892,3 +2409,648 @@ backend/erp/ocr/parsers/orParser.js                 # Comma-replace fix (8 locat
 frontend/src/erp/pages/OcrTest.jsx                  # Correct pageKey "ocr-test"
 frontend/src/erp/components/WorkflowGuide.jsx       # New "ocr-test" guide entry
 ```
+
+## OCR Scan-to-Fill Enhancements (April 2026)
+
+### Sales CSI Photo Persistence
+The SalesEntry OCR scan captured CSI photos and uploaded to S3, but the URL was dropped before reaching the database:
+- **Model**: Added `csi_photo_url` and `csi_attachment_id` to SalesLine schema
+- **Frontend**: `handleScanApply` now carries photo URL; `saveAll` includes it in payload
+- **Approval Hub**: SALES approval cards now display CSI document thumbnail (clickable → full-screen preview)
+- **Universal Approval Service**: SALES query returns `csi_photo_url` in details
+
+### Collection CR Scan Auto-Fill (`ScanCRModal`)
+CollectionSession already uploaded CR photos via OCR but discarded extracted data. Now scanning a CR auto-fills the entire form:
+- **"Scan CR to Auto-Fill" button** in page header opens ScanCRModal
+- **Hospital fuzzy matching**: OCR "Received from" text → `matchHospital()` against hospital master → auto-selects hospital
+- **CR details auto-fill**: CR#, date, amount, payment mode, check#, bank
+- **CSI deferred matching**: Extracted CSI numbers are stashed in `pendingCsiMatch` ref; after hospital change triggers open CSI loading, `matchCsis()` auto-selects matching invoices
+- **Step 4 CR photo upload**: Also triggers auto-fill when form is empty (no separate scan needed)
+- **OCR badges**: Green "OCR" badges on auto-filled field labels so user knows what came from scan
+- **Review flow**: Confidence badges (HIGH/MEDIUM/NONE) per field; review acknowledgment required for LOW confidence
+
+### CHECK Payment Bug Fix
+`checkNo`, `checkDate`, `bank` state variables had no setters (read-only). Fixed + added visible CHECK-specific input fields in Step 3.
+
+### Shared OCR Matching Utilities
+Extracted from SalesEntry into `frontend/src/erp/utils/ocrMatching.js`:
+- `normalizeStr`, `matchHospital`, `matchProduct`, `fieldVal`, `fieldConfidence` — shared between SalesEntry and CollectionSession
+- `matchCsis` — new: matches OCR-extracted CSI numbers against open invoices by `doc_ref`
+- `parseCrDate` — new: normalizes OCR date strings ("03-04 20", "March 31, 2026") to YYYY-MM-DD
+- `formatReviewReason` — generic review reason labels
+
+### Key Files
+```
+frontend/src/erp/utils/ocrMatching.js                # Shared OCR matching utilities
+frontend/src/erp/pages/CollectionSession.jsx          # ScanCRModal, auto-fill handler, deferred CSI matching
+frontend/src/erp/pages/SalesEntry.jsx                 # Refactored to import from ocrMatching.js
+frontend/src/erp/pages/ApprovalManager.jsx            # CSI photo display in SALES approval cards
+backend/erp/models/SalesLine.js                       # Added csi_photo_url, csi_attachment_id fields
+backend/erp/services/universalApprovalService.js      # SALES details include csi_photo_url
+```
+
+## Customer Collection Hardening + autoJournal Extraction — Phase H3 (April 2026)
+
+Phase 18 added `customer_id` as an alternative to `hospital_id` for Sales and Collections, but several backend code paths still assumed hospital-only. This phase completes the customer collection wiring.
+
+### Bug Fixes
+| # | Severity | File | Fix |
+|---|----------|------|-----|
+| 1 | HIGH | autoJournal.js:146 | `journalFromSale()` used non-existent `invoice_date` — changed to `csi_date` (model field) |
+| 2 | CRITICAL | collectionController.js:182 | CSI validation query hardcoded `hospital_id` — now builds query dynamically for hospital OR customer |
+| 3 | CRITICAL | arEngine.js + collectionController.js:208 | AR balance check only accepted hospitalId — added `getArBalance(entityId, hospitalId, customerId)` |
+| 4 | MEDIUM | collectionController.js:321,734 | TransactionEvent payload now includes `customer_id` for audit trail |
+| 5 | MEDIUM | collectionController.js:463,805 | VAT status lookup now checks Customer model when hospital_id is absent |
+
+### Refactoring
+- Extracted inline PRF/CALF journal logic from `expenseController.js` (batch submit + approval hub single post) into shared `journalFromPrfCalf()` in `autoJournal.js`
+- PRF: DR PARTNER_REBATE (5200), CR funding source
+- CALF: DR AR_BDM (1110), CR funding source
+- Both `submitPrfCalf` and `postSinglePrfCalf` now use the shared function
+
+### Opening AR Recap
+- Sales with `csi_date < user.live_date` are auto-routed as OPENING_AR (source field)
+- OPENING_AR: skips inventory deduction and COGS journal — only Revenue JE created
+- OPENING_AR CSIs are fully collectable via Collections (no special handling needed)
+- Collections enforce one-target constraint: all settled CSIs must match the CR's hospital_id OR customer_id
+
+### Key Files
+```
+backend/erp/services/autoJournal.js          # Fixed csi_date, added journalFromPrfCalf()
+backend/erp/services/arEngine.js             # Added getArBalance() (hospital OR customer)
+backend/erp/controllers/collectionController.js  # CSI validation, AR balance, TransactionEvent, VAT lookup
+backend/erp/controllers/expenseController.js     # Refactored PRF/CALF journal to use shared function
+frontend/src/erp/components/WorkflowGuide.jsx    # Updated collection-session + prf-calf tips
+```
+
+---
+
+## OCR Vendor Auto-Learn — Phase H5 (April 2026)
+
+Closes the loop on Phase H3+H4: when Claude successfully classifies an OR/gas receipt that the regex classifier didn't recognise, the result was previously used once and discarded, so the next receipt from the same vendor re-paid for another Claude call. Phase H5 captures the win as training data — either by appending the OCR text variation to a similar existing vendor's aliases (next scan hits `ALIAS_MATCH`) or by creating a new `VendorMaster` entry flagged for admin review (next scan hits `EXACT_VENDOR`).
+
+### Governing principle
+- **Self-improving, admin-reviewable**: the classifier gets smarter with usage, but every auto-learned vendor starts at `learning_status: 'UNREVIEWED'` so admin can approve/reject. Rejection deactivates the vendor (is_active = false) without deleting it — the audit trail is preserved.
+- **Subscription-safe**: strictly entity-scoped via `entity_id` filter. No cross-tenant learning. Per-entity toggle `OcrSettings.vendor_auto_learn_enabled` (default ON) lets subscribers opt out.
+- **Non-destructive**: never overwrites an existing vendor's `default_coa_code` (admin-set values win); only appends unique aliases.
+
+### Guardrails (all must pass or action = 'SKIPPED')
+Guardrails are **lookup-driven per-entity** (5-min cache, fallbacks only on fresh install). Admins tune them from Control Center → Lookup Tables — `VENDOR_AUTO_LEARN_BLOCKLIST` (generic words to skip) and `VENDOR_AUTO_LEARN_THRESHOLDS` (name length, snippet cap). Changes take effect within 5 minutes of save; `invalidateGuardrailCache()` is wired into all lookup create/update/delete hooks.
+
+1. `entity_id` must be non-null
+2. `supplier_name` length ≥ MIN_NAME_LEN, ≤ MAX_NAME_LEN, not purely numeric (defaults 3 / 120; admin-tunable)
+3. Name not in the blocklist (defaults: RECEIPT, INVOICE, UNKNOWN, CASHIER, … 23 entries; admin-editable per-entity)
+4. Claude `confidence` must be HIGH or MEDIUM (never learn from LOW)
+5. Claude must return a `coa_code` — a vendor without COA is noise
+
+### Wiring (Pipeline)
+```
+orParser / gasReceiptParser
+  → classifyExpense (regex cascade EXACT → ALIAS → KEYWORD → FALLBACK)
+    → Layer 2b: Claude (LOW classification OR missing fields)
+      → Phase H5: vendorAutoLearner.learnFromAiResult()
+        ├─ similar vendor exists → $addToSet on vendor_aliases
+        └─ no match → VendorMaster.create({ auto_learned_from_ocr: true, learning_status: 'UNREVIEWED' })
+```
+
+### Data Model Changes
+- **VendorMaster**: `auto_learned_from_ocr`, `learning_source` (CLAUDE_AI|MANUAL|IMPORT), `learned_at`, `learning_status` (UNREVIEWED|APPROVED|REJECTED), `learning_meta` (source_doc_type, source_ocr_text, source_raw_snippet, ai_confidence, suggested_coa_code, suggested_category, learn_count). Composite index on `(entity_id, auto_learned_from_ocr, learning_status, learned_at)` for fast review-queue queries.
+- **OcrSettings**: `vendor_auto_learn_enabled` (default true).
+- **OcrUsageLog**: `vendor_auto_learned` (bool) + `vendor_auto_learn_action` (NONE|CREATED|ALIAS_ADDED|SKIPPED) for telemetry.
+
+### API
+- `GET /api/erp/vendor-learnings?status=UNREVIEWED` — admin review queue (entity-scoped; president sees all entities).
+- `GET /api/erp/vendor-learnings/:id` — single entry with populated audit fields.
+- `PATCH /api/erp/vendor-learnings/:id` — action: APPROVE | REJECT | UNREVIEW. Optional inline edits: `vendor_name`, `default_coa_code`, `default_expense_category`, `vendor_aliases`. REJECT sets `is_active = false` so the classifier stops matching it.
+- `GET /api/erp/ocr-settings/usage` — now returns `auto_learn: { CREATED, ALIAS_ADDED, SKIPPED }` counters.
+- All routes require `roleCheck('admin','finance','president')`.
+
+### UI
+- ErpOcrSettingsPanel adds a 5th master-switch toggle `Vendor Auto-Learn (Claude wins)` alongside AI fallback / field completion / preprocessing.
+- New stat card "Vendor Auto-Learn (all time)" shows CREATED / ALIAS_ADDED / SKIPPED counts from `OcrUsageLog`.
+- DependencyBanner (`ocr-settings`) explains both toggle states + references the Auto-Learned Queue.
+- **VendorList.jsx** — `Learning Queue (n)` filter chip, `AI-learned` row badge (purple), `Review` row action (only when UNREVIEWED). Modal `VendorLearningReviewModal.jsx` shows Claude's raw snippet + suggested COA (with "use this" link) + COA dropdown (reuses `useAccounting().listAccounts`, filtered to `EXPENSE` type). Three actions: Reject / Approve / Edit + Approve.
+- **ControlCenter `DEPENDENCY_GUIDE['lookups']`** — new entry for `VENDOR_AUTO_LEARN_BLOCKLIST / VENDOR_AUTO_LEARN_THRESHOLDS` explaining per-entity tuning and 5-min cache semantics.
+- **WorkflowGuide `vendor-list`** — 4th step + tip explaining the review queue and where to toggle the learner / edit the blocklist.
+
+### Key Files
+```
+backend/erp/services/vendorAutoLearner.js        # learnFromAiResult() + getGuardrails() per-entity cached lookup reader + fallbacks
+backend/erp/models/VendorMaster.js               # +5 fields for auto-learn tracking
+backend/erp/models/OcrSettings.js                # +vendor_auto_learn_enabled toggle
+backend/erp/models/OcrUsageLog.js                # +vendor_auto_learned + vendor_auto_learn_action
+backend/erp/ocr/ocrProcessor.js                  # Layer 2b invokes learner after Claude win
+backend/erp/controllers/ocrController.js         # Threads flag + logs action to usage
+backend/erp/controllers/ocrSettingsController.js # Extended allowed list + auto_learn counters
+backend/erp/controllers/vendorLearningController.js  # list/getOne/review
+backend/erp/controllers/lookupGenericController.js   # VENDOR_AUTO_LEARN_* seeds + invalidateGuardrailCache() hooks
+backend/erp/routes/vendorLearningRoutes.js       # admin/finance/president guard
+backend/erp/routes/index.js                      # Mount at /api/erp/vendor-learnings
+frontend/src/erp/pages/ErpOcrSettingsPanel.jsx   # Toggle + stat card
+frontend/src/erp/pages/VendorList.jsx            # H5.10 — Learning Queue chip, AI-learned badge, Review row action
+frontend/src/erp/components/VendorLearningReviewModal.jsx  # H5.10 — review modal with COA dropdown
+frontend/src/erp/components/WorkflowGuide.jsx    # vendor-list step + tip for review queue
+frontend/src/erp/services/ocrService.js          # list/get/review vendor learnings
+frontend/src/erp/hooks/useAccounting.js          # Reused for COA dropdown in modal
+frontend/src/erp/pages/ControlCenter.jsx         # DEPENDENCY_GUIDE entries (incl. VENDOR_AUTO_LEARN_* lookups)
+```
+
+### Verified
+- Syntax check pass on 10 backend files + 3 frontend files
+- Require-graph load test (all models, controllers, routes import cleanly)
+- Learner unit tests: 8 scenarios (CREATED, ALIAS_ADDED manual + auto-learned, 5 SKIPPED paths including ALIAS_EXISTS, NO_ENTITY, LOW_CONFIDENCE, INVALID_NAME, NO_COA)
+- Integration test through `processOcr`: CREATED when no existing, ALIAS_ADDED when similar vendor exists, learner disabled when toggle off, learner not invoked when Claude not fired
+
+
+---
+
+## President Reversal Console — Phase 31 (April 2026)
+
+Cross-module SAP Storno dispatch UI + service for the President. Replaces the per-module
+"approve deletion" trickle with one place to view, audit, and reverse any POSTED
+document across Sales, Collections, Expenses, CALF/PRF, GRN, IC Transfers, DR/Consignment,
+Income Reports, Payroll, Petty Cash, and manual Journal Entries.
+
+### Architecture
+
+- **Service**: `backend/erp/services/documentReversalService.js`
+  - `REVERSAL_HANDLERS` registry — one entry per doc type. Adding a new module = add
+    one entry. The cross-module list and the type-filter dropdown are populated from
+    this registry, so new modules appear automatically.
+  - `presidentReverse({ doc_type, doc_id, reason, user, tenantFilter })` — master
+    entrypoint. Loads the doc, runs the dependent-doc blocker, reverses linked JEs,
+    creates a reversal `TransactionEvent`, performs domain-specific side effects
+    (inventory restore, AR/AP void, petty cash voiding, etc.), and stamps
+    `deletion_event_id` on the original.
+  - `listReversibleDocs({ doc_types, entityId, fromDate, toDate, page, limit })` —
+    cross-module list of POSTED docs eligible for reversal.
+  - `listReversalHistory({ entityId, doc_type, fromDate, toDate, page, limit })` —
+    audit-log feed of `PRESIDENT_REVERSAL` entries.
+  - `previewDependents({ doc_type, doc_id, tenantFilter })` — non-mutating preflight
+    so the UI can warn before the user clicks Reverse.
+  - `buildPresidentReverseHandler(docType)` — Express handler factory used by every
+    per-module controller (avoids 12× copies of the same wrapper).
+
+- **Dependent blocker**: `backend/erp/services/dependentDocChecker.js`
+  - One checker per doc type. GRN blocks if any qty_out InventoryLedger entry against
+    the GRN's batches resolves to a POSTED non-reversed downstream doc. IC Transfer
+    blocks if target-entity SalesLines consumed transferred inventory. DR blocks if
+    any conversions exist. CALF blocks if linked Expense or IncomeReport (auto-pulled
+    CASH_ADVANCE) is POSTED. Sales blocks if a POSTED Collection settled the CSI.
+
+- **Period-lock landing check**: every reverse asserts the *current* period is open
+  for the relevant module before it can land reversal entries. Original period is
+  never modified.
+
+- **Controller**: `backend/erp/controllers/presidentReversalController.js`
+  - `GET /erp/president/reversals/registry` — drives the type filter dropdown.
+  - `GET /erp/president/reversals/reversible` — paginated cross-module list.
+  - `GET /erp/president/reversals/history` — paginated audit log.
+  - `GET /erp/president/reversals/preview/:doc_type/:doc_id` — dependent preflight.
+  - `POST /erp/president/reversals/reverse` — central dispatch; same SAP Storno path
+    as per-module endpoints.
+
+- **Frontend**: `frontend/src/erp/pages/PresidentReversalsPage.jsx`
+  - Two tabs (Reversible Transactions / Reversal History), filters (type/date),
+    type badges per doc kind, "Reverse…" button opens `PresidentReverseModal` which
+    prompts for reason + DELETE confirmation. Sidebar link: "Reversal Console" under
+    Administration. Route: `/erp/president/reversals` (MANAGEMENT roles).
+
+### Sub-Permissions (lookup-driven, subscription-ready)
+
+| Sub-Permission              | Lookup Code                          | Used For                                     |
+|-----------------------------|--------------------------------------|----------------------------------------------|
+| `accounting.reverse_posted` | `ACCOUNTING__REVERSE_POSTED`         | Per-module president-reverse endpoints + central reverse |
+| `accounting.reversal_console` | `ACCOUNTING__REVERSAL_CONSOLE`     | Read-only access to the cross-module Console (list/history/preview) |
+
+President auto-passes both. Subscribers configure other roles via Access Templates —
+no code changes needed per tenant.
+
+### Wired Per-Module Routes
+
+| Module       | Route                                                    | Controller Function                |
+|--------------|----------------------------------------------------------|------------------------------------|
+| Sales        | `POST /api/erp/sales/:id/president-reverse`              | `salesController.presidentReverseSale` |
+| Collection   | `POST /api/erp/collections/:id/president-reverse`        | `collectionController.presidentReverseCollection` |
+| Expense      | `POST /api/erp/expenses/ore-access/:id/president-reverse`| `expenseController.presidentReverseExpense` |
+| CALF / PRF   | `POST /api/erp/expenses/prf-calf/:id/president-reverse`  | `expenseController.presidentReversePrfCalf` (auto-routes by doc_type) |
+| GRN          | `POST /api/erp/inventory/grn/:id/president-reverse`      | `inventoryController.presidentReverseGrn` |
+| IC Transfer  | `POST /api/erp/transfers/:id/president-reverse`          | `interCompanyController.presidentReverseIcTransfer` |
+| DR / Consignment | `POST /api/erp/consignment/dr/:id/president-reverse` | `consignmentController.presidentReverseDr` |
+| Income       | `POST /api/erp/income/:id/president-reverse`             | `incomeController.presidentReverseIncome` |
+| Payroll      | `POST /api/erp/payroll/:id/president-reverse`            | `payrollController.presidentReversePayslip` |
+| Petty Cash   | (via central console)                                    | `documentReversalService` registry: `PETTY_CASH_TXN` |
+| Manual JE    | (via central console)                                    | `documentReversalService` registry: `JOURNAL_ENTRY` |
+
+### Schema Additions
+
+Added `deletion_event_id: ObjectId` (and `reopen_count` where missing) to:
+`GrnEntry`, `InterCompanyTransfer`, `PrfCalf`, `IncomeReport`, `Payslip`, `ExpenseEntry`.
+`Payslip` also gained `event_id` (reverse handler falls back to JE lookup when missing for legacy rows).
+`GrnEntry.status` enum extended with `DELETION_REQUESTED`.
+
+### UX Polish (Phase 6)
+
+`?include_reversed=true` query parameter on list endpoints opts back into showing reversed
+rows; default behavior hides them (filter: `deletion_event_id: { $exists: false }`).
+Wired into: `getSales`, `getCollections`, `getExpenseList`, `getPrfCalfList`,
+`getGrnList`, `getTransfers`, `getIncomeList`, `getPayrollStaging`.
+
+### Common Gotchas (Phase 31)
+
+- **Reversal lands in current period** — if the current month is locked for the
+  relevant module key (`PERIOD_LOCK_MODULE` map in documentReversalService), reversal
+  is refused with HTTP 403. Unlock the period or wait. Original period is never touched.
+- **Idempotent JE reversal** — `reverseLinkedJEs()` skips JEs that already have a
+  `corrects_je_id` pointer, so partial-failure retries succeed cleanly.
+- **IC Transfer is dual-event** — handler reverses BOTH `source_event_id` and
+  `target_event_id`, with separate inventory restoration on each side.
+- **DR/Consignment has no JE/event** — handler hard-deletes the tracker row when
+  `qty_consumed === 0`; otherwise blocks with the dependent-doc error.
+- **The collectionController.approveDeletion path is a partial reversal** (does not
+  void petty cash deposit, does not clean up VAT/CWT). For complete reversal, use
+  the President Console (which calls `documentReversalService.reverseCollection`).
+- **CALF/PRF share one route** (`/prf-calf/:id/president-reverse`) — wrapper peeks
+  at `doc_type` and dispatches to the matching handler.
+
+### Shared Detail Panel + Universal Approval Coverage (Phase 31 extension, April 2026)
+
+Two hubs, one detail layer, one coverage invariant.
+
+**Backend**
+- `backend/erp/services/documentDetailBuilder.js` — shared per-module detail
+  builders (pure functions). Used by BOTH `universalApprovalService.getUniversalPending()`
+  (Approval Hub) and `presidentReversalController.getDetail` (Reversal Console).
+  17 modules registered: 12 existing (SALES, COLLECTION, EXPENSES, PRF_CALF, INCOME,
+  INVENTORY/GRN, PAYROLL, KPI, DEDUCTION_SCHEDULE, SMER, CAR_LOGBOOK, PERDIEM_OVERRIDE)
+  + 5 new for the coverage gap (IC_TRANSFER, JOURNAL, BANKING, PURCHASING, PETTY_CASH).
+- `REVERSAL_DOC_TYPE_TO_MODULE` map — translates REVERSAL_HANDLERS doc_type
+  (SALES_LINE, PAYSLIP, etc.) to the approval module key (SALES, PAYROLL, etc.)
+  so the same builder serves both hubs.
+
+**Coverage invariant (see `docs/APPROVAL_COVERAGE_AUDIT.md`).** Every `gateApproval()`
+call site must have a matching `MODULE_QUERIES` entry, otherwise the pending doc
+silently generates an ApprovalRequest that never surfaces to an approver.
+Phase 31 extension closed the 5 gaps identified by the audit.
+
+**How gap-module queries work.** The 5 new entries use `buildGapModulePendingItems()`
+helper: queries `ApprovalRequest` filtered by `{module, status: 'PENDING'}`, batches
+doc-hydration per docType using the appropriate model, then runs the shared detail
+builder. This pattern means adding a 6th gap module = one more entry, no new code.
+
+**Frontend**
+- `frontend/src/erp/components/DocumentDetailPanel.jsx` — shared renderer. Two
+  modes: `mode="approval"` (inline line-edit UI, Edit buttons per row based on
+  `APPROVAL_EDITABLE_LINE_FIELDS` lookup) and `mode="reversal"` (read-only,
+  clickable image previews only).
+- `frontend/src/erp/pages/ApprovalManager.jsx` — replaced 380 lines of inline
+  per-module JSX with one `<DocumentDetailPanel />` call.
+- `frontend/src/erp/pages/PresidentReversalsPage.jsx` — expandable rows with
+  lazy detail fetch via `GET /api/erp/president/reversals/detail/:doc_type/:doc_id`,
+  result cached client-side per `${doc_type}:${doc_id}` key.
+
+**Lifecycle signal.** A doc's path is now fully visible end-to-end:
+`Submit → Approval Hub (rich detail) → approve (leaves hub, count decrements)
+→ POSTED → Reversal Console (same rich detail, read-only) → reverse (optional)`.
+Every module that blocks posting via `gateApproval()` surfaces in the inbox.
+The Reversal Console matches the detail fidelity of the Approval Hub.
+
+### Common Gotchas (Phase 31 extension)
+
+- **Detail builders are pure — no DB calls inside.** Callers hydrate the doc
+  (populate, lean) then pass to the builder. This lets the reversal detail
+  endpoint reuse the SAME builder without running duplicate queries.
+- **Gap modules carry data in ApprovalRequest, not on the doc itself.** The
+  gap-module pattern reads ApprovalRequest.module=PENDING, maps doc_id to the
+  source model, hydrates. If a batch docType has no single doc (DEPRECIATION,
+  INTEREST — doc_id is the entity_id), the `fallbackToRequest: true` flag on
+  the helper passes the ApprovalRequest itself to the builder.
+- **Approval Hub progress signal depends on items leaving on approve.** Do
+  NOT move POSTED docs back into the inbox — they belong in the Reversal
+  Console for audit. The two hubs serve DIFFERENT stages of the same
+  document lifecycle.
+
+
+---
+
+## Phase G6 — Approval Hub Rejection Feedback (closed loop)
+
+### Why this exists
+When an approver rejects a document via the Approval Hub (e.g., a CAR LOGBOOK with note 'wrong entry, per diem is 800'), the contractor previously had no way to see the reason from their module page. 13 modules already wrote `rejection_reason` to the doc; 8 modules routed through the generic `approval_request` handler so the reason lived only on `ApprovalRequest.decision_reason`. Phase G6 closes the loop across all 21 `gateApproval()` modules.
+
+### Architecture (lookup-driven, subscription-ready)
+- **Lookup category** `MODULE_REJECTION_CONFIG` (per-entity, lazy-seeded) — each row stores `{ rejected_status, reason_field, resubmit_allowed, editable_statuses, banner_tone, description }`. President can edit any row in Control Center → Lookup Tables without code change. Adding a 21st module = one new lookup row + one frontend page wiring + one backend handler entry. Source-of-truth: `backend/erp/controllers/lookupGenericController.js` SEED_DEFAULTS.
+- **Helper** `approvalService.getModuleRejectionConfig(entityId, moduleKey)` — same lazy-seed pattern as Phase G4 `getModulePostingRoles()`. Auto-seeds on first read.
+- **Component** `frontend/src/erp/components/RejectionBanner.jsx` — variants `row` (inline compact) and `page` (full banner with Fix & Resubmit button). Returns null when status doesn't match the configured `rejected_status` so it's safe to mount anywhere.
+- **Hook** `frontend/src/erp/hooks/useRejectionConfig.js` — wraps `useLookupOptions('MODULE_REJECTION_CONFIG')`, returns `{ config }` for the component.
+- **Workflow guidance** `frontend/src/erp/components/WorkflowGuide.jsx` — `PAGES_WITH_REJECTION_FLOW` Set drives a shared red footer note on every module page that's wired for rejection. No per-page editing required to keep guidance in sync.
+
+### Group A vs Group B
+- **Group A (13 modules)** — already had dedicated reject handlers in `universalApprovalController.approvalHandlers`. Each writes `status = ERROR | REJECTED | RETURNED` + `rejection_reason | return_reason` directly on the source doc. Phase G6 only added the frontend banner.
+- **Group B (7 modules)** — Phase G6.7 added new dedicated reject handlers for PURCHASING, JOURNAL, BANKING, IC_TRANSFER (covers both InterCompanyTransfer + IcSettlement), PETTY_CASH, SALES_GOAL_PLAN, INCENTIVE_PAYOUT. All routed through one shared `buildGroupBReject()` function — adding a new module = one wrapper + one lookup row.
+
+### Group B model schema additions
+For every Group B model, the following fields were added (additive only, no removals):
+- `status` enum: appended `REJECTED` value
+- `rejection_reason: { type: String, trim: true, default: '' }`
+- `rejected_by: { type: ObjectId, ref: 'User' }`
+- `rejected_at: { type: Date }`
+
+### Rule #20 / Rule #21 protections
+- Group B handlers refuse to demote terminal-state docs (POSTED/CLOSED/PAID/REVERSED) — must reverse instead. Period locks remain on submit/post routes; rejection does NOT touch the ledger.
+- Handlers accept `id` as either ApprovalRequest._id (gap module path) OR source-doc id directly (fallback). The Hub's `buildGapModulePendingItems` passes `id: req._id` (request, not doc) — handler dereferences via `req.doc_id` and the lookup-driven `modelByDocType` map.
+- gateApproval call sites unchanged (baseline 31).
+
+### Verification — `npm run verify:rejection-wiring`
+Runs `backend/scripts/verifyRejectionWiering.js` (pure static analysis, no DB connection). Exits 1 on:
+1. MODULE_REJECTION_CONFIG row missing source-doc model with the rejected_status in any status enum or the reason_field as a String schema path.
+2. (Warning) MODULE_REJECTION_CONFIG row missing matching MODULE_DEFAULT_ROLES seed (G4 ↔ G6 drift).
+3. (Warning) Module key not referenced by any frontend page importing RejectionBanner.
+4. TYPE_TO_MODULE entry without a matching approvalHandlers handler.
+
+### Common Gotchas (Phase G6)
+- **Lookup field-name drift**: DeductionSchedule's source field is `reject_reason` (not `rejection_reason`). The lookup row's `reason_field` was set to match the existing model — the lookup handles the difference, no model migration needed (Rule #3 spirit). New modules can pick either name as long as the seed matches the model.
+- **"Fix & Resubmit" semantics**: Banner button calls `onResubmit(row)`. For inline list+form pages this opens the form (`handleEdit`). For pages with separate edit routes, navigate via React Router. For Collections (no edit-by-id route), Resubmit calls `handleValidate([row._id])` to re-run validation. Per-page choice — the banner is callback-driven.
+- **Group B id semantics**: When the Approval Hub passes a Group B reject, `id` is the ApprovalRequest._id (not the source doc id). `buildGroupBReject` looks up the request first, dereferences `doc_id`, then loads the source model. Direct calls (id = source doc) still work via the fallback path.
+- **IC_TRANSFER covers two models**: The IC_TRANSFER lookup row + handler covers both InterCompanyTransfer AND IcSettlement via the `modelByDocType` map (`IC_TRANSFER → InterCompanyTransfer`, `IC_SETTLEMENT → IcSettlement`). One module key, two physical docs.
+
+---
+
+## Phase G7 — President's Copilot, Spend Caps, Daily Briefing, Cmd+K (April 2026)
+
+**Goal**: Give the President a chat-driven cockpit that wraps every ERP capability in natural-language tool-use. Reads anything in scope; writes only with explicit confirmation. Lookup-driven so subscribers can disable any tool, edit prompts, set spend caps, and add new tools without code changes.
+
+### Architecture (lookup-driven, subscription-ready)
+
+| Layer | File | Lookup category | Purpose |
+|---|---|---|---|
+| Tool registry | `backend/erp/services/copilotToolRegistry.js` | `COPILOT_TOOLS` | Static `handler_key → JS function` map. Adding a new tool = new lookup row + register one handler. |
+| Chat runtime | `backend/erp/services/copilotService.js` | `AI_COWORK_FEATURES.PRESIDENT_COPILOT` | System prompt, model, role gate, rate limit, max chat turns — all from the lookup row. Tool-use loop with recursion cap (`max_chat_turns`, hard ceiling 12). |
+| Spend cap | `backend/erp/services/spendCapService.js` | `AI_SPEND_CAPS.MONTHLY` | `enforceSpendCap(entityId, featureCode)` is called BEFORE every Anthropic API call by approvalAiService + copilotService. Per-feature overrides win. Defaults `is_active: false` so existing entities aren't blocked on first deploy. |
+| Endpoints | `backend/erp/controllers/copilotController.js` | — | `POST /chat`, `POST /execute`, `GET /status`, `GET /usage`. Mounted at `/api/erp/copilot` in `erp/routes/index.js`. |
+| Widget | `frontend/src/erp/components/PresidentCopilot.jsx` | — | Floating bottom-right button on `/erp/*`. Self-hides when widget_enabled=false (lookup gate). 400×600 panel; fullscreen on <768px. Persists last 20 messages in sessionStorage per entity. |
+| Cmd+K palette | `frontend/src/erp/components/CommandPalette.jsx` | — | Global Ctrl/Cmd+K. Single-input overlay → POST /chat with `mode='quick'`. Auto-navigates if NAVIGATE_TO is the chosen tool. |
+| Daily briefing | `backend/agents/dailyBriefingAgent.js` | `AI_COWORK_FEATURES.PRESIDENT_DAILY_BRIEFING` | Reuses the Copilot infra. Cron 7:00 AM Mon-Fri Manila. Posts to MessageInbox (category=`briefing`) for each entity that has both PRESIDENT_COPILOT and PRESIDENT_DAILY_BRIEFING enabled. |
+| Management UI | `frontend/src/erp/pages/AgentSettings.jsx` | — | New tabs: **Copilot Tools** (toggle/edit each tool row) + **AI Budget** (cap, threshold, action). |
+
+### Seeded starter tools (9, all lookup rows)
+
+| Code | Type | Handler | Purpose |
+|---|---|---|---|
+| `LIST_PENDING_APPROVALS` | read | `listPendingApprovals` | Wraps `getUniversalPending`. |
+| `SEARCH_DOCUMENTS` | read | `searchDocuments` | Cross-module text search across 11 collections. |
+| `SUMMARIZE_MODULE` | read | `summarizeModule` | Aggregate counts/totals over today/week/month/ytd/custom range. |
+| `EXPLAIN_REJECTION` | read | `explainRejection` | Returns reason + history chain for any doc in scope. |
+| `NAVIGATE_TO` | read | `navigateTo` | Returns URL + filters; UI auto-navigates (also drives Cmd+K). |
+| `COMPARE_ENTITIES` | read | `compareEntities` | President-only cross-entity rollup. |
+| `DRAFT_REJECTION_REASON` | write_confirm | `draftRejectionReason` | Preview returns draft + confirmation_payload. Execute calls `universalApprovalController.approvalHandlers[type]` — same path `/universal-approve` uses (Rule #20 compliant). |
+| `DRAFT_MESSAGE` | write_confirm | `draftMessage` | Preview returns draft. Execute writes to `MessageInbox` model. |
+| `DRAFT_NEW_ENTRY` | write_confirm | `draftNewEntry` | Returns prefilled form route. UI navigates; user reviews + submits via existing form (Rule #20). |
+
+### Lookup configuration shapes
+
+**`COPILOT_TOOLS` row metadata**:
+```js
+{
+  tool_type: 'read' | 'write_confirm',
+  handler_key: 'listPendingApprovals',          // must match copilotToolRegistry.HANDLERS
+  json_schema: { name, description, input_schema },  // Claude tool-use shape
+  allowed_roles: ['president', 'admin'],
+  description_for_claude: '...',                // appended to JSON schema description
+  confirmation_template: '...',                 // mustache for write_confirm UI
+  entity_scoped: true,
+  rate_limit_per_min: 30,
+}
+```
+
+**`AI_COWORK_FEATURES.PRESIDENT_COPILOT` metadata**:
+```js
+{
+  surface: 'copilot',
+  system_prompt: '...',                         // top-level system prompt for /chat
+  quick_mode_prompt: '...',                     // appended when mode='quick' (Cmd+K)
+  model: 'claude-sonnet-4-6',
+  max_tokens: 1200, temperature: 0.3,
+  allowed_roles: ['president', 'ceo'],
+  rate_limit_per_min: 30,
+  max_chat_turns: 8,                            // tool-use loop cap (hard ceiling 12)
+  history_persist: 'session',
+}
+```
+
+**`AI_SPEND_CAPS.MONTHLY` metadata**:
+```js
+{
+  monthly_budget_usd: 150,
+  notify_at_pct: 80,
+  action_when_reached: 'disable' | 'warn_only',
+  notify_channels: ['dashboard_banner'],
+  feature_overrides: {
+    OCR: { monthly_budget_usd: 30, action_when_reached: 'disable' }
+  },
+}
+```
+
+### Rule #20 / Rule #21 / Rule #3 protections
+
+- **Rule #20 (no bypass)**: Write-confirm execute paths route through existing controllers — `DRAFT_REJECTION_REASON` calls `universalApprovalController.approvalHandlers[type]` (same logic `/universal-approve` uses, including terminal-state guard); `DRAFT_MESSAGE` writes via the `MessageInbox` model. **No** Copilot handler implements its own period-lock or gateApproval logic.
+- **Rule #21 (no silent self-id fallback)**: All handlers derive `entity_id` from `ctx.entityId` (= `req.entityId`). The verifyCopilotWiring script greps for the anti-pattern `args.entity_id` and fails the build if found. `compareEntities` is the only multi-entity tool; it uses `ctx.entityIds` (= `req.user.entity_ids`) and is gated to privileged roles.
+- **Rule #3 (lookup-driven)**: Tool list, prompts, models, role gates, rate limits, spend caps — all in lookup rows. President can disable any tool, change any prompt, raise/lower the cap from Control Center → AI Budget tab without code change.
+
+### Spend cap enforcement points
+
+- `approvalAiService.invokeAiCoworkFeature` — calls `checkSpendCap(entityId, row.code)` BEFORE the Claude API call. On 429, logs `skipped_reason: SPEND_CAP_EXCEEDED` to `AiUsageLog` and returns the friendly cap message.
+- `copilotService.runChat` — calls `enforceSpendCap(entityId, 'PRESIDENT_COPILOT')` once per chat turn (before the first Claude call). Daily Briefing inherits this enforcement.
+- `copilotService.executeConfirmation` — re-checks the cap at execute time so a payload created earlier in the day can't blow past a cap that was lowered after.
+
+### Audit trail
+
+- **Per Claude turn**: `AiUsageLog` row with `feature_code` = `PRESIDENT_COPILOT` (chat) / `PRESIDENT_DAILY_BRIEFING` (briefing) / one of the AI_COWORK_FEATURES codes (cowork). Includes input/output tokens, cost_usd, latency_ms.
+- **Per tool invocation**: `AiUsageLog` row with `feature_code` = `copilot:<TOOL_CODE>` (e.g., `copilot:LIST_PENDING_APPROVALS`). Used by per-tool rate limiting AND the Copilot Tools tab usage breakdown.
+- **Per tool call (human-readable)**: `ErpAuditLog` row with `log_type: 'COPILOT_TOOL_CALL'`, `target_ref` = tool code, `note` includes args + duration. Phase G7 added three enum values: `COPILOT_TOOL_CALL`, `AI_BUDGET_CHANGE`, `AI_COWORK_CONFIG_CHANGE` — without these, audit writes fail silently against the existing strict enum.
+
+### Verification — `npm run verify:copilot-wiring`
+
+`backend/scripts/verifyCopilotWiring.js` runs 23 static checks:
+
+1. Every `COPILOT_TOOLS` seed has a registered handler in `copilotToolRegistry.HANDLERS`.
+2. Every registered handler has a matching seed (no orphans).
+3. `PRESIDENT_COPILOT` row has `system_prompt` (≥50 chars) + `model`.
+4. `AI_SPEND_CAPS.MONTHLY` has `monthly_budget_usd > 0` + valid `action_when_reached`.
+5. `copilotService` imports + calls `spendCapService` (cap enforced).
+6. `approvalAiService` imports + calls `spendCapService` (cap enforced).
+7. `ErpAuditLog` enum extended with `COPILOT_TOOL_CALL`, `AI_BUDGET_CHANGE`, `AI_COWORK_CONFIG_CHANGE`.
+8. `erp/routes/index.js` mounts `/copilot` and `/ai-cowork`.
+9. `App.jsx` references `PresidentCopilot` + `CommandPalette`.
+10. `copilotToolRegistry` imports `universalApprovalController` (DRAFT_REJECTION_REASON routes through canonical reject path — Rule #20).
+11. `copilotToolRegistry` imports `MessageInbox` model (DRAFT_MESSAGE actually sends).
+12. `copilotToolRegistry` doesn't reference `args.entity_id` (Rule #21).
+13. Frontend services use `/erp/...` not `/api/erp/...` (regression guard for the pre-G7 baseURL bug).
+
+Run via: `npm run verify:copilot-wiring` (also added to `package.json` scripts alongside `verify:rejection-wiring`).
+
+### Frontend wiring summary
+
+```
+App.jsx
+└── ErpAddons (renders only on /erp/*)
+    ├── PresidentCopilot (floating widget)
+    │   ├── useCopilot hook (chat state, sessionStorage persistence)
+    │   └── services/copilotService.js → /api/erp/copilot/{status,chat,execute}
+    └── CommandPalette (global Ctrl/Cmd+K)
+        └── services/copilotService.js (same)
+```
+
+### Daily Briefing wiring
+
+```
+agentScheduler.js
+└── cron '0 7 * * 1-5' → triggerScheduled('daily_briefing')
+    └── agentExecutor → require(dailyBriefingAgent.js).run()
+        └── for each entity with PRESIDENT_COPILOT + PRESIDENT_DAILY_BRIEFING active
+            └── copilotService.runChat(...) — same path as interactive chat
+                └── posts to MessageInbox (category='briefing') for the entity's president user
+```
+
+The briefing prompt is the lookup row `PRESIDENT_DAILY_BRIEFING.metadata.user_template` rendered with `{{date}}` + `{{entity_name}}` placeholders. President can edit prompt + sections in Control Center → Lookup Tables without code change. Cost counts toward the same `AI_SPEND_CAPS` cap as interactive Copilot calls.
+
+### Common Gotchas (Phase G7)
+
+- **Subscription opt-in**: `PRESIDENT_COPILOT` row defaults `is_active: false`. New subsidiaries get the lookup row seeded but the widget stays hidden until president flips the toggle in the AgentSettings AI Cowork tab. Same for `PRESIDENT_DAILY_BRIEFING` and `AI_SPEND_CAPS.MONTHLY`. **Tools default `is_active: true`** so they're ready to use the moment the parent feature is enabled.
+- **`max_chat_turns` cap**: Defaults to 8, hard ceiling at 12 in `copilotService` (`HARD_MAX_TURNS`). Stops a tool-use loop from running away if Claude keeps re-invoking tools.
+- **Frontend service URL bug (now caught)**: `aiCoworkService.js` originally used `/api/erp/...` while axios baseURL is already `/api`, producing `/api/api/erp/...` paths. Fixed in G7 + the verify script asserts no service uses `/api/erp/...`.
+- **Cmd+K NAVIGATE_TO extraction**: Palette extracts the URL by regex-matching the tool's `result_summary` (`"Open <url>"`) — depends on the `navigateTo` handler's display string format. If you change the handler's display, update the palette's regex too. Verified by manual test only (no unit test).
+- **Anthropic SDK version**: `@anthropic-ai/sdk@^0.82.0`. The Copilot uses `client.messages.create({ tools, messages })` directly — falling back to `claudeClient.askClaude` doesn't work because that helper only accepts a single user prompt, not a tool-use conversation. Cost estimation extended to `claude-sonnet-4-6` and `claude-opus-4-7` model IDs in `claudeClient.estimateCost`.
+- **Daily briefing prerequisites**: Both `PRESIDENT_COPILOT` AND `PRESIDENT_DAILY_BRIEFING` rows must be `is_active` for an entity, AND a User with role=president/ceo must exist with that entity in their `entity_id` or `entity_ids`. Otherwise the briefing skips that entity (logged in `key_findings`).
+- **Spend cap cache**: `spendCapService` caches the cap decision for 60s per `(entity_id, feature_code)` key. After raising/lowering a cap, the change applies on next cache miss (≤60s). Lookup CRUD endpoints don't currently bust the cache — call `invalidateSpendCapCache(entityId)` from a custom hook if you need instant propagation.
+
+
+
+---
+
+## Phase SG-4 — Sales Goal Commercial-Grade Features (April 19, 2026)
+
+Closes Section D items 21, 22, 23 (extensions), and 24 from `dreamy-skipping-cookie.md`. Brings VIP Sales Goal to commercial parity with SAP Commissions, SuiteCommissions, Workday ICM, and Oracle Fusion ICM. Net new: plan versioning, credit-rule engine, dispute workflow, comp statement extensions.
+
+### Plan versioning architecture (#21)
+
+```
+IncentivePlan (header — one per (entity_id, fiscal_year))
+  ├─ current_version_no
+  ├─ current_version_id ──→ SalesGoalPlan vN (the active version)
+  └─ status (mirrors current version)
+
+SalesGoalPlan v1 ←─supersedes_plan_id─ SalesGoalPlan v2 ←─supersedes_plan_id─ v3 (current)
+   effective_to=v2.effective_from         effective_to=v3.effective_from        effective_to=null
+
+KpiSnapshot.plan_id  → ALWAYS the version that was active at compute time (never re-pointed)
+IncentivePayout.plan_id → SAME (historical accruals stay tied to v1 even after v2 activates)
+```
+
+**Backward compat**: existing pre-SG-4 plans without `incentive_plan_id` are lazy-backfilled by `incentivePlanService.ensureHeader()` on first save/read. The one-time migration `node backend/scripts/migrateSalesGoalVersioning.js` drops the legacy `{entity_id,fiscal_year}` UNIQUE index and replaces it with `{entity_id,fiscal_year,version_no}` UNIQUE so multiple versions per FY can coexist. Old API endpoints (`getPlans`, `activatePlan`, `closePlan`, `reopenPlan`) work unchanged.
+
+### Credit rule engine (#22, SAP Commissions pattern)
+
+```
+salesController.postSaleRow(saleLine, userId)
+  ├── 1. TransactionEvent created
+  ├── 2. SERVICE_INVOICE / OPENING_AR shortcut
+  ├── 3. Inventory deduction
+  ├── 4. SalesLine.status = 'POSTED'
+  ├── 5. Document attachments link
+  ├── 6. Auto-journal (revenue + COGS)
+  ├── 7. CSI markUsed
+  └── 8. **NEW**: creditRuleEngine.assign(saleLine, { userId })  ← non-blocking
+        ├── buildContext(saleLine) → product_codes, customer_code, territory_id, etc.
+        ├── Load active CreditRule rows for entity, sorted by priority asc
+        ├── For each matched rule: append SalesCredit (source='rule') until total = 100%
+        └── Residual → SalesCredit (source='fallback', credit_bdm_id=saleLine.bdm_id)
+
+Idempotent: re-running deletes existing source∈{rule,fallback} rows and rewrites them.
+Manual + reversal rows survive engine re-runs (audit trail discipline).
+
+Failure mode: errors logged to ErpAuditLog as 'CREDIT_RULE_ERROR'; sale post is NEVER reverted.
+```
+
+**Important**: SG-4 produces SalesCredit rows but consumers (KpiSnapshot, IncentivePayout accrual) still read `sale.bdm_id`. SG-5 will migrate snapshot computation to read SalesCredit so credit-split rules drive accruals.
+
+### Dispute workflow state machine (#24, Oracle Fusion pattern)
+
+```
+                       (gateApproval at every transition — INCENTIVE_DISPUTE module)
+
+[file]  → OPEN ──(takeReview)──→ UNDER_REVIEW ──(resolve APPROVED)──→ RESOLVED_APPROVED
+                                              ──(resolve DENIED)────→ RESOLVED_DENIED
+        (filer can self-cancel: OPEN → CLOSED)            ↓                  ↓
+                                                       (close)            (close)
+                                                          ↓                  ↓
+                                                       CLOSED  ←──────  CLOSED
+
+RESOLVED_APPROVED side-effects (cascade reversal):
+  - artifact_type='payout'  → reverseAccrualJournal(payout.journal_id) + payout.status=REVERSED
+  - artifact_type='credit'  → append SalesCredit row (source='reversal', negative amount)
+
+SLA agent (#DSP daily 06:30):
+  for each non-CLOSED dispute:
+    if days_in_current_state >= DISPUTE_SLA_DAYS[state].sla_days:
+      append sla_breaches[] entry (idempotent — once per state-change cycle)
+      dispatch escalation to filer + reports_to + escalate_to_role + presidents
+      NEVER auto-transition (Rule #20)
+```
+
+### Comp statement extensions (#23 ext, Workday ICM pattern)
+
+```
+COMP_STATEMENT_TEMPLATE lookup (per-entity, admin-editable in Control Center):
+  HEADER_TITLE / HEADER_SUBTITLE / DISCLAIMER / SIGNATORY_LINE / SIGNATORY_TITLE
+  EMAIL_ON_PERIOD_CLOSE.metadata.enabled (true|false) — gates the mass email
+
+GET /incentive-payouts/statement/archive?bdm_id=&from_year=&to_year=
+  → aggregated rollup per (fiscal_year, period) for the BDM's "Past Statements" tab
+  → BDMs see only their own (Rule #21 — no silent privileged self-id fallback)
+
+POST /incentive-payouts/statements/dispatch { period: "2026-03", entity_id?: }
+  → gateApproval('INCENTIVE_PAYOUT', 'STATEMENT_DISPATCH')
+  → for each distinct bdm_id with payouts in the period:
+       compose totals via _composeStatement (same as single-statement endpoint)
+       notifyCompensationStatement → email + in-app + SMS opt-in
+  → idempotent at email layer (EmailLog dedup)
+```
+
+### Lookup categories added (Phase SG-4)
+
+| Category | Purpose | Per-entity? | Lazy-seed? |
+|---|---|---|---|
+| `CREDIT_RULE_TEMPLATES` | Starter shapes for CreditRule (TERRITORY_PRIMARY, PRODUCT_SPLIT, KEY_ACCOUNT_OVERRIDE) | yes | yes (on first read) |
+| `COMP_STATEMENT_TEMPLATE` | Admin-editable brand chrome (HEADER_TITLE, DISCLAIMER, etc.) + EMAIL_ON_PERIOD_CLOSE toggle | yes | yes (on first read) |
+| `DISPUTE_SLA_DAYS` | Per-state SLA (sla_days, escalate_to_role) | yes | yes (on first agent run) |
+| `INCENTIVE_DISPUTE_TYPE` | Typology dropdown driving artifact resolution (payout vs credit) | yes | yes (on first read) |
+| `MODULE_DEFAULT_ROLES.INCENTIVE_DISPUTE` | gateApproval default-roles gate for dispute lifecycle | yes | yes |
+| `APPROVAL_MODULE.INCENTIVE_DISPUTE` | Approval Hub registry entry | yes | yes |
+
+All categories are entity-scoped, lazy-seeded on first miss (Rule #19 cache busting + Rule #20 lookup-driven posture). Subscribers tune via Control Center → Lookup Tables, zero code changes.
+
+**Note on plan-version state**: there is intentionally **no** `ACTIVE_PLAN_VERSION` lookup. An earlier draft mirrored `IncentivePlan.current_version_id` into a Lookup row for an O(1) "fast path", but that mixed operational state into the configuration table. The IncentivePlan header is itself O(1) via the unique index on `{entity_id, fiscal_year}`, and admins shouldn't see a row in Control Center → Lookup Tables that the runtime overwrites on every plan activation. Source of truth: `IncentivePlan.findOne({entity_id, fiscal_year}).current_version_id`. Do **not** reintroduce a lookup mirror.
+
+### gateApproval routing (Phase SG-4 additions)
+
+| Module | docType | Caller | Default roles |
+|---|---|---|---|
+| `SALES_GOAL_PLAN` | `PLAN_NEW_VERSION` | `salesGoalController.createNewVersion` | president, finance |
+| `INCENTIVE_PAYOUT` | `STATEMENT_DISPATCH` | `incentivePayoutController.dispatchStatementsForPeriod` | president, finance |
+| `INCENTIVE_DISPUTE` | `DISPUTE_TAKE_REVIEW` | `incentiveDisputeController.takeReview` | president, finance, admin |
+| `INCENTIVE_DISPUTE` | `DISPUTE_RESOLVE` | `incentiveDisputeController.resolveDispute` | president, finance, admin |
+| `INCENTIVE_DISPUTE` | `DISPUTE_CLOSE` | `incentiveDisputeController.closeDispute` | president, finance, admin |
+
+Filing a dispute (`POST /incentive-disputes`) is NOT gated — it's a request, not a posting. Filer cancellation (`POST /incentive-disputes/:id/cancel`) is also not gated (filer withdraws their own request).
+
+### Common gotchas (Phase SG-4)
+
+- **Migration is required on existing databases.** `node backend/scripts/migrateSalesGoalVersioning.js` MUST be run once before SG-4 deployment. Without it, any attempt to create v2 of an existing plan errors with `E11000 duplicate key` because the legacy `{entity_id,fiscal_year}` UNIQUE index is still active. Fresh installs are unaffected (mongoose autoIndex creates only the composite).
+- **Engine never reverts a sale.** `creditRuleEngine.assign()` is wrapped in try/catch inside `postSaleRow`. If the engine fails for any reason (lookup fetch error, DB hiccup), the sale still posts. Failure logged to ErpAuditLog with `target_model='SalesCredit'`. Re-run via `POST /credit-rules/reassign/:saleLineId`.
+- **APPROVED dispute ≠ payment denied.** Resolving a dispute as APPROVED on a payout cascades a `reverseAccrualJournal()`, which respects period locks. If the payout's accrual period is locked, the reversal will fail and the dispute still moves to RESOLVED_APPROVED — but with no `reversal_journal_id`. Admin must manually reverse from the Payout Ledger after unlocking the period.
+- **Disputes are NOT in the rejection-banner system.** Disputes have their own state machine (OPEN/UNDER_REVIEW/RESOLVED_*/CLOSED), not the gateApproval REJECTED status. The G6 RejectionBanner does not render on the Dispute Center page — by design. SLA breach badges are the visual analog.
+- **Credit rules vs sales attribution**: SG-4 introduces SalesCredit but does NOT yet drive incentive accrual math. Snapshot computation still reads `sale.bdm_id`. Until SG-5, credit-split rules are auditable but advisory. Communicate this to subscribers — a 70/30 split rule today produces a SalesCredit ledger but the BDM listed on the sale still gets the full incentive accrual.
+- **Plan versioning + KpiTemplate**: Editing a KpiTemplate row never cascades to existing plans (SG-3R immutability discipline). Versioning gives admins a clean path to apply template changes — create v2 of a plan with `template_id` in the body, copy/edit the structure, activate v2 to supersede v1.
+- **disputeSlaAgent breach idempotency**: A breach row is appended only when no breach exists for the current state since the last `state_changed_at`. If a dispute transitions to UNDER_REVIEW and back to OPEN (not a current-flow path but theoretically possible via direct DB edit), the breach clock resets — desired behavior because the new state-change effectively gives the chain a fresh chance.
+- **Sidebar visibility for Dispute Center**: visible to ALL users with `sales_goals` VIEW (BDMs need to file). Reviewer actions inside the page are gated by `isPrivileged` check + sub-perm check + `gateApproval` — non-reviewers see only their own disputes filtered server-side (Rule #21).

@@ -16,7 +16,9 @@ import { compressImageFile } from '../utils/compressImage';
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 import { showError } from '../utils/errorToast';
+import PresidentReverseModal from '../components/PresidentReverseModal';
 
 // ── ScanORModal — camera → OR parser → pre-fill expense line ──
  
@@ -366,12 +368,13 @@ const pageStyles = `
 
 export default function Expenses() {
   const { user } = useAuth();
-  const { getExpenseList, getExpenseById, createExpense, updateExpense, deleteDraftExpense, validateExpenses, submitExpenses, reopenExpenses, getExpenseSummary, batchUploadExpenses, saveBatchExpenses, loading } = useExpenses();
+  const { getExpenseList, getExpenseById, createExpense, updateExpense, deleteDraftExpense, validateExpenses, submitExpenses, reopenExpenses, getExpenseSummary, batchUploadExpenses, saveBatchExpenses, presidentReverseExpense, loading } = useExpenses();
   const { getPeopleList } = usePeople();
   const { getMyCards, getMyBankAccounts, listAccounts } = useAccounting();
   const { hasSubPermission } = useErpSubAccess();
   const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
   const canBatchUpload = hasSubPermission('expenses', 'batch_upload') && isAdmin;
+  const canPresidentReverse = hasSubPermission('accounting', 'reverse_posted');
   const lookupApi = useErpApi();
   const { options: expCatOpts } = useLookupOptions('EXPENSE_CATEGORY');
   const EXPENSE_CATEGORIES = expCatOpts.map(o => o.label);
@@ -384,6 +387,7 @@ export default function Expenses() {
   const [expenses, setExpenses] = useState([]);
   const [editingExpense, setEditingExpense] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  const [reverseTarget, setReverseTarget] = useState(null);
   const [summary, setSummary] = useState(null);
   const [period, setPeriod] = useState(() => {
     const d = new Date();
@@ -559,11 +563,27 @@ export default function Expenses() {
     setLines(prev => {
       const updated = [...prev];
       updated[idx] = { ...updated[idx], [field]: value };
+      // Auto-switch payment mode default when expense type changes: ACCESS→CARD, ORE→CASH
+      if (field === 'expense_type') {
+        if (value === 'ACCESS' && updated[idx].payment_mode === 'CASH') {
+          const firstCard = paymentModes.find(p => p.requires_calf && p.is_active !== false);
+          updated[idx].payment_mode = firstCard?.mode_code || 'CARD';
+        } else if (value === 'ORE' && updated[idx].payment_mode !== 'CASH') {
+          updated[idx].payment_mode = 'CASH';
+        }
+      }
       // Auto-set CALF required for ACCESS non-cash (company-funded)
       if (field === 'expense_type' || field === 'payment_mode') {
         const pm = paymentModes.find(p => p.mode_code === updated[idx].payment_mode);
         const needsCalf = pm ? pm.requires_calf : updated[idx].payment_mode !== 'CASH';
         updated[idx].calf_required = updated[idx].expense_type === 'ACCESS' && needsCalf;
+      }
+      // Auto-set COA code from category lookup metadata when category changes
+      if (field === 'expense_category') {
+        const match = expCatOpts.find(o => o.label === value);
+        if (match?.metadata?.coa_code) {
+          updated[idx].coa_code = match.metadata.coa_code;
+        }
       }
       return updated;
     });
@@ -594,7 +614,9 @@ export default function Expenses() {
       if (!l.amount || l.amount <= 0) issues.push(`Line ${i + 1}: Amount must be > 0`);
       if (!l.expense_date) issues.push(`Line ${i + 1}: Date is required`);
       if (l.expense_date && l.expense_date > today) issues.push(`Line ${i + 1}: Expense date cannot be in the future`);
-      if (l.or_number && !l.or_photo_url) issues.push(`Line ${i + 1}: OR# ${l.or_number} provided without receipt photo — attach photo for audit trail`);
+      // Transport categories: receipt is optional (no OR photo required)
+      const isTransport = (l.expense_category || '').startsWith('TRANSPORT_') || (l.expense_category || '').startsWith('Transport —');
+      if (!isTransport && l.or_number && !l.or_photo_url) issues.push(`Line ${i + 1}: OR# ${l.or_number} provided without receipt photo — attach photo for audit trail`);
     });
     if (!lines.length) issues.push('Add at least one expense line');
     if (issues.length) { showError(null, issues.join('. ')); return; }
@@ -627,6 +649,23 @@ export default function Expenses() {
   };
   const handleReopen = async (id) => { try { await reopenExpenses([id]); showMsg('Reopened'); loadExpenses(); } catch (e) { showMsg(e.response?.data?.message || 'Reopen failed', true); } };
   const handleDelete = async (id) => { try { await deleteDraftExpense(id); showMsg('Deleted'); loadExpenses(); } catch (e) { showMsg(e.response?.data?.message || 'Delete failed', true); } };
+  const handlePresidentReverse = async ({ reason, confirm }) => {
+    if (!reverseTarget) return;
+    try {
+      const res = await presidentReverseExpense(reverseTarget._id, { reason, confirm });
+      setReverseTarget(null);
+      showMsg(res?.message || 'Expense reversed');
+      loadExpenses();
+    } catch (err) {
+      const deps = err?.response?.data?.dependents;
+      const baseMsg = err?.response?.data?.message || err?.message || 'Could not reverse expense';
+      const msg = deps?.length
+        ? `${baseMsg} — depends on: ${deps.map(d => `${d.type} ${d.ref}`).join(', ')}`
+        : baseMsg;
+      showMsg(msg, true);
+      throw err;
+    }
+  };
 
   const totalOre = lines.filter(l => l.expense_type === 'ORE').reduce((s, l) => s + (l.amount || 0), 0);
   const totalAccess = lines.filter(l => l.expense_type === 'ACCESS').reduce((s, l) => s + (l.amount || 0), 0);
@@ -905,8 +944,30 @@ export default function Expenses() {
                           <button onClick={() => handleDelete(e._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #ef4444', background: '#fff', color: '#ef4444', cursor: 'pointer' }}>Del</button>
                         )}
                         {e.status === 'POSTED' && isAdmin && <button onClick={() => handleReopen(e._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer' }}>Re-open</button>}
+                        {canPresidentReverse && !e.deletion_event_id && (
+                          <button
+                            onClick={() => setReverseTarget(e)}
+                            title="President: delete & reverse (SAP Storno for POSTED; hard-delete otherwise)"
+                            style={{ marginLeft: 4, padding: '2px 8px', fontSize: 12, borderRadius: 4, border: 'none', background: '#7f1d1d', color: '#fff', cursor: 'pointer' }}
+                          >
+                            President Delete
+                          </button>
+                        )}
                       </td>
                     </tr>
+                    {e.status === 'ERROR' && e.rejection_reason && (
+                      <tr style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)' }}>
+                        <td colSpan={8} style={{ padding: '6px 8px 4px' }}>
+                          <RejectionBanner
+                            row={e}
+                            moduleKey="EXPENSES"
+                            variant="page"
+                            docLabel={`${e.period} ${e.cycle}`}
+                            onResubmit={(row) => handleEdit(row)}
+                          />
+                        </td>
+                      </tr>
+                    )}
                     {e.status === 'ERROR' && e.validation_errors?.length > 0 && (
                       <tr style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)' }}>
                         <td colSpan={8} style={{ padding: '4px 8px 8px', background: '#fef2f2' }}>
@@ -953,6 +1014,17 @@ export default function Expenses() {
                       <div style={{ fontWeight: 600 }}>₱{(e.total_amount || 0).toLocaleString()}</div>
                     </div>
                   </div>
+                  {e.status === 'ERROR' && e.rejection_reason && (
+                    <div style={{ marginTop: 8 }}>
+                      <RejectionBanner
+                        row={e}
+                        moduleKey="EXPENSES"
+                        variant="page"
+                        docLabel={`${e.period} ${e.cycle}`}
+                        onResubmit={(row) => handleEdit(row)}
+                      />
+                    </div>
+                  )}
                   {e.status === 'ERROR' && e.validation_errors?.length > 0 && (
                     <div style={{ marginTop: 8, padding: '6px 8px', borderRadius: 6, background: '#fef2f2', border: '1px solid #fca5a5' }}>
                       <div style={{ fontSize: 12, color: '#dc2626' }}>
@@ -969,6 +1041,15 @@ export default function Expenses() {
                     )}
                     {e.status === 'POSTED' && isAdmin && (
                       <button onClick={() => handleReopen(e._id)} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer' }}>Re-open</button>
+                    )}
+                    {canPresidentReverse && !e.deletion_event_id && (
+                      <button
+                        onClick={() => setReverseTarget(e)}
+                        title="President: delete & reverse (SAP Storno for POSTED; hard-delete otherwise)"
+                        style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, border: 'none', background: '#7f1d1d', color: '#fff', cursor: 'pointer' }}
+                      >
+                        President Delete
+                      </button>
                     )}
                   </div>
                 </div>
@@ -1064,6 +1145,14 @@ export default function Expenses() {
         </main>
       </div>
       <ScanORModal open={scanOpen} onClose={() => setScanOpen(false)} onApply={handleScanApply} />
+      {reverseTarget && (
+        <PresidentReverseModal
+          docLabel={`${reverseTarget.period || ''} ${reverseTarget.cycle || ''} · ₱${(reverseTarget.total_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} · ${reverseTarget.status}`}
+          docStatus={reverseTarget.status}
+          onConfirm={handlePresidentReverse}
+          onClose={() => setReverseTarget(null)}
+        />
+      )}
     </div>
   );
 }

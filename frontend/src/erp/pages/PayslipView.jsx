@@ -4,6 +4,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePayroll from '../hooks/usePayroll';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 
 const pageStyles = `
   .psv-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -62,6 +63,14 @@ export default function PayslipView() {
         <main className="psv-main">
           <span className="psv-back" onClick={() => navigate(-1)}>← Back</span>
           <WorkflowGuide pageKey="payslip-view" />
+
+          <RejectionBanner
+            row={ps}
+            moduleKey="PAYROLL"
+            variant="page"
+            docLabel={`${ps.person_id?.full_name || 'Payslip'} — ${ps.period} ${ps.cycle}`}
+            onResubmit={() => navigate('/erp/payroll')}
+          />
 
           <div className="psv-card">
             <div className="psv-header">

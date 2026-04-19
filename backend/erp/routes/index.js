@@ -32,6 +32,12 @@ router.use('/entities', require('./entityRoutes'));
 router.use('/control-center', require('./controlCenterRoutes'));
 router.use('/lookup-values', require('./lookupGenericRoutes'));
 
+// ═══ Phase H3 — OCR Settings & Usage Metering (per-entity, subscription-ready) ═══
+router.use('/ocr-settings', require('./ocrSettingsRoutes'));
+
+// ═══ Phase H5 — Vendor Auto-Learn Review (admin queue for Claude-learned vendors) ═══
+router.use('/vendor-learnings', require('./vendorLearningRoutes'));
+
 // ═══ Phase 24 — Agent Intelligence ═══
 router.use('/agents', require('./agentRoutes'));
 
@@ -41,8 +47,48 @@ router.use('/scorecards', require('./scorecardRoutes'));
 // ═══ Phase 28 — Sales Goals & KPI ═══
 router.use('/sales-goals', erpAccessCheck('sales_goals'), require('./salesGoalRoutes'));
 
+// ═══ Phase SG-3R — KPI Template (advisory defaults consumed by createPlan) ═══
+// Mounted outside /sales-goals so the admin UI can list/curate templates without
+// needing plan context. Access still gated by erpAccessCheck('sales_goals') inside
+// the route file so non-Sales-Goals users can't enumerate another team's library.
+router.use('/kpi-templates', erpAccessCheck('sales_goals'), require('./kpiTemplateRoutes'));
+
+// ═══ Phase SG-Q2 W2 — Incentive Payout Ledger (sibling of sales-goals) ═══
+// Mounted at its own path so payroll/finance can consume `/payable` without
+// granting Sales Goals module access; route file still enforces
+// erpAccessCheck('sales_goals', ...) since payouts are derived from plans.
+router.use('/incentive-payouts', require('./incentivePayoutRoutes'));
+
+// ═══ Phase SG-4 #22 — Credit Rules (SAP Commissions pattern) ═══
+// Engine runs inside salesController.postSaleRow on every sale post.
+// These routes expose CRUD on rules + read-only credit ledger to admins.
+router.use('/credit-rules', require('./creditRuleRoutes'));
+
+// ═══ Phase SG-4 #24 — Incentive Disputes (Oracle Fusion workflow pattern) ═══
+// Multi-stage dispute flow with SLA escalation. Each transition routes
+// through gateApproval('INCENTIVE_DISPUTE'). Background agent (#DSP) walks
+// the SLA clock daily.
+router.use('/incentive-disputes', require('./incentiveDisputeRoutes'));
+
+// ═══ Phase SG-5 #27 — Variance Alert Center (persisted KPI variance alerts) ═══
+// Coaching signal: list / resolve alerts produced by kpiVarianceAgent. Not
+// a financial document — no gateApproval; BDMs resolve their own, managers
+// resolve their direct reports', admin/finance/president resolve any.
+router.use('/variance-alerts', require('./varianceAlertRoutes'));
+
 // ═══ Phase 28 — Approval Workflow (Authority Matrix) ═══
 router.use('/approvals', require('./approvalRoutes'));
+
+// ═══ Phase G6.10 — AI Cowork (Claude-powered approval/rejection assist) ═══
+// Lookup-driven: AI_COWORK_FEATURES rows control prompts, models, role gates,
+// rate limits per-entity. Subscription opt-in (rows seeded as is_active: false).
+router.use('/ai-cowork', require('./aiCoworkRoutes'));
+
+// ═══ Phase G7 — President's Copilot (chat widget + Cmd+K) ═══
+// Lookup-driven tool registry (COPILOT_TOOLS) + lookup-driven feature row
+// (PRESIDENT_COPILOT). Spend cap (AI_SPEND_CAPS) blocks calls at budget.
+// Write-confirm tools route through existing controllers (Rule #20: no bypass).
+router.use('/copilot', require('./copilotRoutes'));
 
 // ═══ Phase 3 — Sales & Inventory ═══
 router.use('/sales', erpAccessCheck('sales'), require('./salesRoutes'));
@@ -101,6 +147,11 @@ router.use('/coa', erpAccessCheck('accounting'), require('./coaRoutes'));
 router.use('/accounting', erpAccessCheck('accounting'), require('./accountingRoutes'));
 router.use('/month-end-close', erpAccessCheck('accounting'), require('./monthEndCloseRoutes'));
 
+// ═══ Phase 31 — President Reversal Console (cross-module SAP Storno dispatch) ═══
+// Sub-permission gating happens inside the route file; both `accounting.reversal_console`
+// (read-only audit) and `accounting.reverse_posted` (write) are enforced per-endpoint.
+router.use('/president/reversals', require('./presidentReversalRoutes'));
+
 // ═══ Phase 12 — Purchasing & AP ═══
 router.use('/purchasing', erpAccessCheck('purchasing'), require('./purchasingRoutes'));
 
@@ -125,6 +176,10 @@ router.use('/period-locks', erpAccessCheck('accounting'), require('./periodLockR
 router.use('/recurring-journals', erpAccessCheck('accounting'), require('./recurringJournalRoutes'));
 
 // ═══ Phase 15 — SAP-Equivalent Improvements ═══
+// CSI Booklets: the inventory gate blocks the management UI from BDMs without
+// inventory module access. BDMs still need to see their OWN available numbers
+// during Sales Entry, so /my-csi exposes just GET /available without that gate.
+router.use('/my-csi', require('./csiBookletPublicRoutes'));
 router.use('/csi-booklets', erpAccessCheck('inventory'), require('./csiBookletRoutes'));
 router.use('/cycle-reports', erpAccessCheck('reports'), require('./cycleReportRoutes'));
 router.use('/cost-centers', erpAccessCheck('accounting'), require('./costCenterRoutes'));

@@ -4,10 +4,13 @@ import { useAuth } from '../../hooks/useAuth';
 import usePettyCash from '../hooks/usePettyCash';
 import usePeople from '../hooks/usePeople';
 import useWarehouses from '../hooks/useWarehouses';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import { useLookupBatch } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
 import { showError, showSuccess, showApprovalPending } from '../utils/errorToast';
-import { ROLES, ROLE_SETS } from '../../constants/roles';
+import PresidentReverseModal from '../components/PresidentReverseModal';
+import { ROLE_SETS } from '../../constants/roles';
 
 const CEILING = 5000;
 
@@ -321,7 +324,7 @@ function TxnFormModal({ open, onClose, onSave, funds, expenseCategories, editDat
 
 // ---------- Fund Overview Tab ----------
  
-function FundOverview({ funds, loading, onCreateFund, onUpdateFund, onDeleteFund, onGenerateRemittance, onGenerateReplenishment, canManage, isPresident, people, warehouses, fundModes, fundStatuses }) {
+function FundOverview({ funds, loading, onCreateFund, onUpdateFund, onDeleteFund, onGenerateRemittance, onGenerateReplenishment, canManage, canPresidentReverse, people, warehouses, fundModes, fundStatuses }) {
   const [showForm, setShowForm] = useState(false);
   const [editingFund, setEditingFund] = useState(null);
 
@@ -358,7 +361,7 @@ function FundOverview({ funds, loading, onCreateFund, onUpdateFund, onDeleteFund
                   </div>
                   <div style={{ display: 'flex', gap: '4px' }}>
                     {canManage && <button onClick={() => handleEdit(fund)} style={{ padding: '4px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer', color: '#6b7280' }}>Edit</button>}
-                    {isPresident && <button onClick={() => onDeleteFund(fund._id)} style={{ padding: '4px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid #fca5a5', background: '#fff', cursor: 'pointer', color: '#dc2626' }}>Del</button>}
+                    {canPresidentReverse && <button onClick={() => onDeleteFund(fund._id)} title="Delete fund — gated by accounting.reverse_posted sub-permission (delegable via Access Template)" style={{ padding: '4px 10px', fontSize: '12px', borderRadius: '6px', border: '1px solid #fca5a5', background: '#fff', cursor: 'pointer', color: '#dc2626' }}>Del</button>}
                   </div>
                 </div>
                 <div style={styles.cardRow}>
@@ -422,7 +425,7 @@ function FundOverview({ funds, loading, onCreateFund, onUpdateFund, onDeleteFund
 
 // ---------- Transactions Tab ----------
  
-function TransactionsTab({ funds, pc, canManage, expenseCategories }) {
+function TransactionsTab({ funds, pc, canManage, canPresidentReverse, expenseCategories }) {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [fundFilter, setFundFilter] = useState('');
@@ -431,6 +434,7 @@ function TransactionsTab({ funds, pc, canManage, expenseCategories }) {
   const [dateTo, setDateTo] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [editingTxn, setEditingTxn] = useState(null);
+  const [reverseTarget, setReverseTarget] = useState(null);
 
   const loadTransactions = useCallback(async () => {
     setLoading(true);
@@ -470,6 +474,24 @@ function TransactionsTab({ funds, pc, canManage, expenseCategories }) {
     } catch (err) { showError(err, 'Could not void transaction'); }
   };
 
+  const handlePresidentReverse = async ({ reason, confirm }) => {
+    if (!reverseTarget) return;
+    try {
+      const res = await pc.presidentReverseTxn(reverseTarget._id, { reason, confirm });
+      setReverseTarget(null);
+      showSuccess(res?.message || 'Transaction reversed');
+      loadTransactions();
+    } catch (err) {
+      const deps = err?.response?.data?.dependents;
+      const baseMsg = err?.response?.data?.message || err?.message || 'Could not reverse transaction';
+      const msg = deps?.length
+        ? `${baseMsg} — depends on: ${deps.map(d => `${d.type} ${d.ref}`).join(', ')}`
+        : baseMsg;
+      showError({ message: msg }, msg);
+      throw err;
+    }
+  };
+
   const handleSaveTxn = async (body, txnId) => {
     if (txnId) {
       await pc.updateTransaction(txnId, body);
@@ -491,6 +513,7 @@ function TransactionsTab({ funds, pc, canManage, expenseCategories }) {
     if (status === 'POSTED') return <span style={styles.badge('green')}>POSTED</span>;
     if (status === 'DRAFT') return <span style={styles.badge('amber')}>DRAFT</span>;
     if (status === 'VOIDED') return <span style={styles.badge('red')}>VOIDED</span>;
+    if (status === 'REJECTED') return <span style={styles.badge('red')}>REJECTED</span>;
     return <span style={styles.badge('gray')}>{status || 'DRAFT'}</span>;
   };
 
@@ -533,7 +556,8 @@ function TransactionsTab({ funds, pc, canManage, expenseCategories }) {
             </thead>
             <tbody>
               {transactions.map(txn => (
-                <tr key={txn._id}>
+                <React.Fragment key={txn._id}>
+                <tr>
                   <td style={styles.td}>{txn.txn_date ? new Date(txn.txn_date).toLocaleDateString() : '-'}</td>
                   <td style={styles.td}>{txn.txn_number || '-'}</td>
                   <td style={styles.td}>{typeBadge(txn.txn_type)}</td>
@@ -559,9 +583,32 @@ function TransactionsTab({ funds, pc, canManage, expenseCategories }) {
                           </>}
                         </>
                       )}
+                      {canPresidentReverse && !txn.deletion_event_id && txn.status !== 'VOIDED' && (
+                        <button
+                          onClick={() => setReverseTarget(txn)}
+                          title="President: reverse this transaction (VOIDs txn, reverses JE, flips fund balance)"
+                          style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, border: 'none', background: '#7f1d1d', color: '#fff', cursor: 'pointer' }}
+                        >
+                          President Delete
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
+                {txn.status === 'REJECTED' && txn.rejection_reason && (
+                  <tr>
+                    <td colSpan={9} style={{ ...styles.td, padding: '6px 12px' }}>
+                      <RejectionBanner
+                        row={txn}
+                        moduleKey="PETTY_CASH"
+                        variant="page"
+                        docLabel={txn.txn_number || `Petty Cash Txn`}
+                        onResubmit={(row) => { setEditingTxn(row); setShowCreate(true); }}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>
@@ -569,6 +616,14 @@ function TransactionsTab({ funds, pc, canManage, expenseCategories }) {
       )}
 
       <TxnFormModal open={showCreate} onClose={() => { setShowCreate(false); setEditingTxn(null); }} onSave={handleSaveTxn} funds={funds} expenseCategories={expenseCategories} editData={editingTxn} />
+      {reverseTarget && (
+        <PresidentReverseModal
+          docLabel={`${reverseTarget.txn_number || 'Txn'} · ${reverseTarget.txn_type || ''} · ₱${(reverseTarget.amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })} · ${reverseTarget.status || 'DRAFT'}`}
+          docStatus={reverseTarget.status}
+          onConfirm={handlePresidentReverse}
+          onClose={() => setReverseTarget(null)}
+        />
+      )}
     </div>
   );
 }
@@ -674,8 +729,10 @@ export default function PettyCash() {
   const { getPeopleList } = usePeople();
   const { getWarehouses } = useWarehouses();
   const { data: lookups } = useLookupBatch(['PETTY_CASH_FUND_TYPE', 'PETTY_CASH_FUND_STATUS', 'PETTY_CASH_EXPENSE_CATEGORY']);
+  const { hasSubPermission } = useErpSubAccess();
   const canManage = ROLE_SETS.MANAGEMENT.includes(user?.role)
     || user?.erp_access?.sub_permissions?.accounting?.petty_cash === true;
+  const canPresidentReverse = hasSubPermission('accounting', 'reverse_posted');
   const [activeTab, setActiveTab] = useState('funds');
   const [funds, setFunds] = useState([]);
   const [people, setPeople] = useState([]);
@@ -760,10 +817,10 @@ export default function PettyCash() {
       </div>
 
       {activeTab === 'funds' && (
-        <FundOverview funds={funds} loading={loading} onCreateFund={handleCreateFund} onUpdateFund={handleUpdateFund} onDeleteFund={handleDeleteFund} onGenerateRemittance={handleGenerateRemittance} onGenerateReplenishment={handleGenerateReplenishment} canManage={canManage} isPresident={user?.role === ROLES.PRESIDENT} people={people} warehouses={warehouses} fundModes={fundModes} fundStatuses={fundStatuses} />
+        <FundOverview funds={funds} loading={loading} onCreateFund={handleCreateFund} onUpdateFund={handleUpdateFund} onDeleteFund={handleDeleteFund} onGenerateRemittance={handleGenerateRemittance} onGenerateReplenishment={handleGenerateReplenishment} canManage={canManage} canPresidentReverse={canPresidentReverse} people={people} warehouses={warehouses} fundModes={fundModes} fundStatuses={fundStatuses} />
       )}
       {activeTab === 'transactions' && (
-        <TransactionsTab funds={funds} pc={pc} canManage={canManage} expenseCategories={expenseCategories} />
+        <TransactionsTab funds={funds} pc={pc} canManage={canManage} canPresidentReverse={canPresidentReverse} expenseCategories={expenseCategories} />
       )}
       {activeTab === 'documents' && (
         <DocumentsTab pc={pc} canManage={canManage} />

@@ -15,7 +15,72 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const CommunicationLog = require('../models/CommunicationLog');
+const DataDeletionRequest = require('../models/DataDeletionRequest');
+const { handleFacebookDataDeletion } = require('../services/dataDeletionService');
 const { tryAutoReply } = require('../utils/autoReply');
+
+// Capture raw request bytes so HMAC signatures can be verified against the exact payload
+// Meta and Viber sign the raw body, so re-serializing JSON breaks the signature.
+const rawJson = express.json({
+  verify: (req, _res, buf) => {
+    req.rawBody = buf;
+  },
+});
+
+function timingSafeHexEqual(a, b) {
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
+  const bufA = Buffer.from(a, 'hex');
+  const bufB = Buffer.from(b, 'hex');
+  if (bufA.length === 0 || bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+// Verify X-Hub-Signature-256 from Meta (Messenger and WhatsApp Cloud API).
+function verifyMetaSignature(req, res, next) {
+  const secret = process.env.FB_APP_SECRET;
+  if (!secret) {
+    console.error('[Webhook] FB_APP_SECRET is not set; rejecting Meta webhook');
+    return res.sendStatus(500);
+  }
+  const header = req.get('x-hub-signature-256') || '';
+  const [algo, signature] = header.split('=');
+  if (algo !== 'sha256' || !signature) {
+    console.warn('[Webhook] Meta signature header missing or malformed');
+    return res.sendStatus(401);
+  }
+  const expected = crypto
+    .createHmac('sha256', secret)
+    .update(req.rawBody || Buffer.alloc(0))
+    .digest('hex');
+  if (!timingSafeHexEqual(signature, expected)) {
+    console.warn('[Webhook] Meta signature mismatch');
+    return res.sendStatus(401);
+  }
+  next();
+}
+
+// Verify X-Viber-Content-Signature against HMAC-SHA256(body, bot_token).
+function verifyViberSignature(req, res, next) {
+  const token = process.env.VIBER_BOT_TOKEN;
+  if (!token) {
+    console.error('[Webhook] VIBER_BOT_TOKEN is not set; rejecting Viber webhook');
+    return res.sendStatus(500);
+  }
+  const signature = req.get('x-viber-content-signature') || '';
+  if (!signature) {
+    console.warn('[Webhook] Viber signature header missing');
+    return res.sendStatus(401);
+  }
+  const expected = crypto
+    .createHmac('sha256', token)
+    .update(req.rawBody || Buffer.alloc(0))
+    .digest('hex');
+  if (!timingSafeHexEqual(signature, expected)) {
+    console.warn('[Webhook] Viber signature mismatch');
+    return res.sendStatus(401);
+  }
+  next();
+}
 
 // ═══════════════════════════════════════════
 // WhatsApp Cloud API Webhooks
@@ -36,7 +101,7 @@ router.get('/whatsapp', (req, res) => {
 });
 
 // Incoming events (POST)
-router.post('/whatsapp', express.json(), async (req, res) => {
+router.post('/whatsapp', rawJson, verifyMetaSignature, async (req, res) => {
   try {
     const body = req.body;
     if (!body?.entry) return res.sendStatus(200);
@@ -117,7 +182,7 @@ router.get('/messenger', (req, res) => {
   res.sendStatus(403);
 });
 
-router.post('/messenger', express.json(), async (req, res) => {
+router.post('/messenger', rawJson, verifyMetaSignature, async (req, res) => {
   try {
     const body = req.body;
     if (body.object !== 'page') return res.sendStatus(200);
@@ -189,10 +254,62 @@ router.post('/messenger', express.json(), async (req, res) => {
 });
 
 // ═══════════════════════════════════════════
+// Facebook Data Deletion Callback
+// ═══════════════════════════════════════════
+// Meta posts application/x-www-form-urlencoded: signed_request=<sig>.<payload>
+// Response must be JSON: { url, confirmation_code }
+// Spec: https://developers.facebook.com/docs/development/create-an-app/app-dashboard/data-deletion-callback
+
+router.post(
+  '/facebook/data-deletion',
+  express.urlencoded({ extended: false }),
+  async (req, res) => {
+    try {
+      const signedRequest = req.body?.signed_request;
+      const confirmationCode = await handleFacebookDataDeletion(signedRequest);
+
+      const baseUrl =
+        process.env.FRONTEND_URL?.replace(/\/$/, '') || 'https://viosintegrated.net';
+      return res.status(200).json({
+        url: `${baseUrl}/data-deletion/status/${confirmationCode}`,
+        confirmation_code: confirmationCode,
+      });
+    } catch (err) {
+      console.error('[Webhook] Facebook data-deletion error:', err.message);
+      return res.status(400).json({ error: err.message });
+    }
+  }
+);
+
+// Public status lookup (used by the frontend status page)
+router.get('/facebook/data-deletion/status/:code', async (req, res) => {
+  try {
+    const request = await DataDeletionRequest.findOne({
+      confirmationCode: req.params.code,
+    })
+      .select('status requestedAt completedAt deletedCounts')
+      .lean();
+
+    if (!request) {
+      return res.status(404).json({ status: 'not_found' });
+    }
+    return res.json({
+      status: request.status,
+      requestedAt: request.requestedAt,
+      completedAt: request.completedAt,
+      deletedCounts: request.deletedCounts,
+    });
+  } catch (err) {
+    console.error('[Webhook] data-deletion status error:', err.message);
+    return res.status(500).json({ error: 'Internal error' });
+  }
+});
+
+// ═══════════════════════════════════════════
 // Viber Business Messages Webhooks
 // ═══════════════════════════════════════════
 
-router.post('/viber', express.json(), async (req, res) => {
+router.post('/viber', rawJson, verifyViberSignature, async (req, res) => {
   try {
     const body = req.body;
     const event = body.event;

@@ -9,6 +9,11 @@ const Lookup = require('../models/Lookup');
 const SalesGoalTarget = require('../models/SalesGoalTarget');
 const KpiSnapshot = require('../models/KpiSnapshot');
 const ActionItem = require('../models/ActionItem');
+const PeopleMaster = require('../models/PeopleMaster');
+const CompProfile = require('../models/CompProfile');
+const IncentivePayout = require('../models/IncentivePayout');
+const SalesGoalPlan = require('../models/SalesGoalPlan');
+const mongoose = require('mongoose');
 
 /**
  * Sales Goal Service — Phase 28
@@ -36,6 +41,13 @@ async function getGoalConfig(entityId) {
 
 /**
  * Read INCENTIVE_TIER Lookup entries, sorted by attainment_min descending.
+ *
+ * SG-5 #25 — surfaces `accelerator_factor` (per-tier commission multiplier).
+ * Absent metadata → 1.0 (no multiplier, backward compatible). Admins opt a tier
+ * into acceleration by setting metadata.accelerator_factor > 1 in Control
+ * Center → Lookup Tables; `applyTierAccelerator()` below folds it into the
+ * accrued tier_budget. Zero-hardcoding: default factor lives here only because
+ * a Lookup write failure must not crash incentive accrual.
  */
 async function getIncentiveTiers(entityId) {
   const entries = await Lookup.find({
@@ -49,11 +61,164 @@ async function getIncentiveTiers(entityId) {
       label: e.label,
       attainment_min: e.metadata?.attainment_min ?? 0,
       budget_per_bdm: e.metadata?.budget_per_bdm ?? 0,
+      accelerator_factor: normalizeAcceleratorFactor(e.metadata?.accelerator_factor),
       reward_description: e.metadata?.reward_description ?? '',
       bg_color: e.metadata?.bg_color ?? '',
       text_color: e.metadata?.text_color ?? '',
     }))
     .sort((a, b) => b.attainment_min - a.attainment_min); // highest first
+}
+
+/**
+ * Coerce lookup accelerator_factor into a safe multiplier:
+ *   - missing / null / non-numeric → 1.0 (no-op)
+ *   - < 0 → 1.0 (negative would invert commissions; reject defensively)
+ *   - >= 0 → as-is (0 is legal, lets admins explicitly freeze a tier's payout)
+ *
+ * Explicit null/undefined guard avoids the `Number(null) === 0` coercion trap —
+ * we only trust an explicitly supplied 0 (e.g. Number(0), "0"), never an
+ * absent value that coerces to 0.
+ */
+function normalizeAcceleratorFactor(raw) {
+  if (raw === null || raw === undefined || raw === '') return 1.0;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return 1.0;
+  return n;
+}
+
+/**
+ * Apply a tier's accelerator factor to its budget.
+ * Returns `{ accelerated_budget, accelerator_factor, base_budget }`.
+ * Ledger rows should store both values so admins can see the multiplier's
+ * contribution (transparency — mirrors the `uncapped_budget` pattern in
+ * applyIncentiveCap).
+ */
+function applyTierAccelerator(tier) {
+  if (!tier) return { accelerated_budget: 0, accelerator_factor: 1.0, base_budget: 0 };
+  const factor = normalizeAcceleratorFactor(tier.accelerator_factor);
+  const base = Number(tier.budget_per_bdm) || 0;
+  return {
+    accelerated_budget: Math.round(base * factor),
+    accelerator_factor: factor,
+    base_budget: base,
+  };
+}
+
+// Hard-coded fallback used only when both the DB entries are missing AND the
+// lazy-seed write fails (e.g. read-only secondary). Keeps the dashboard
+// renderable on day zero — admins can override per-entity via Control Center.
+const STATUS_PALETTE_FALLBACK = [
+  { code: 'ON_TRACK',         label: 'On Track', bar_color: '#22c55e', bg_color: '#dcfce7', text_color: '#166534', sort_order: 1 },
+  { code: 'NEEDS_ATTENTION',  label: 'At Risk',  bar_color: '#f59e0b', bg_color: '#fef3c7', text_color: '#92400e', sort_order: 2 },
+  { code: 'AT_RISK',          label: 'Behind',   bar_color: '#ef4444', bg_color: '#fee2e2', text_color: '#991b1b', sort_order: 3 },
+];
+
+/**
+ * Read STATUS_PALETTE Lookup entries — colors + labels for attainment buckets
+ * (ON_TRACK / NEEDS_ATTENTION / AT_RISK). Lazy-seeds per entity on first read so
+ * a fresh subsidiary dashboard renders without an admin opening Control Center
+ * first. Mirrors the SALES_GOAL_ELIGIBLE_ROLES lazy-seed pattern in
+ * salesGoalController.autoEnrollEligibleBdms().
+ */
+async function getStatusPalette(entityId) {
+  let entries = await Lookup.find({
+    entity_id: entityId,
+    category: 'STATUS_PALETTE',
+    is_active: true,
+  }).lean();
+
+  if (entries.length === 0 && entityId) {
+    try {
+      const ops = STATUS_PALETTE_FALLBACK.map(p => ({
+        updateOne: {
+          filter: { entity_id: entityId, category: 'STATUS_PALETTE', code: p.code },
+          update: {
+            $setOnInsert: {
+              label: p.label,
+              sort_order: p.sort_order,
+              is_active: true,
+              metadata: {
+                bar_color: p.bar_color,
+                bg_color: p.bg_color,
+                text_color: p.text_color,
+                sort_order: p.sort_order,
+              },
+            },
+          },
+          upsert: true,
+        },
+      }));
+      await Lookup.bulkWrite(ops, { ordered: false });
+      entries = await Lookup.find({
+        entity_id: entityId,
+        category: 'STATUS_PALETTE',
+        is_active: true,
+      }).lean();
+    } catch (err) {
+      console.error('[salesGoal] STATUS_PALETTE lazy-seed failed:', err.message);
+      // Serve the fallback unmodified so the dashboard still renders.
+      return STATUS_PALETTE_FALLBACK.map(p => ({ ...p }));
+    }
+  }
+
+  return entries
+    .map(e => ({
+      code: e.code,
+      label: e.label,
+      bar_color: e.metadata?.bar_color ?? '',
+      bg_color: e.metadata?.bg_color ?? '',
+      text_color: e.metadata?.text_color ?? '',
+      sort_order: e.metadata?.sort_order ?? e.sort_order ?? 0,
+    }))
+    .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+}
+
+// Defaults applied when an entity has no KPI_VARIANCE_THRESHOLDS row.
+// Kept aligned with kpiVarianceAgent.DEFAULT_WARNING_PCT / DEFAULT_CRITICAL_PCT.
+const KPI_VARIANCE_GLOBAL_DEFAULT = {
+  warning_pct: 20,
+  critical_pct: 40,
+};
+
+/**
+ * Ensure a fallback `KPI_VARIANCE_THRESHOLDS.GLOBAL` lookup row exists for the
+ * given entity. Idempotent — safe to call repeatedly. Called lazily on plan
+ * activation so day-1 subscribers see kpiVarianceAgent fire alerts without an
+ * admin first opening Control Center. Mirrors the STATUS_PALETTE self-seed
+ * pattern above.
+ *
+ * Passing `session` makes the write part of an open transaction (used by
+ * salesGoalController.activatePlan).
+ */
+async function ensureKpiVarianceGlobalThreshold(entityId, session = null) {
+  if (!entityId) return { seeded: false, reason: 'no_entity' };
+  try {
+    const filter = { entity_id: entityId, category: 'KPI_VARIANCE_THRESHOLDS', code: 'GLOBAL' };
+    const existing = await Lookup.findOne(filter).session(session || null).lean();
+    if (existing) return { seeded: false, reason: 'already_present' };
+
+    await Lookup.updateOne(
+      filter,
+      {
+        $setOnInsert: {
+          label: 'Global KPI Variance Threshold',
+          sort_order: 0,
+          is_active: true,
+          metadata: {
+            warning_pct: KPI_VARIANCE_GLOBAL_DEFAULT.warning_pct,
+            critical_pct: KPI_VARIANCE_GLOBAL_DEFAULT.critical_pct,
+            note: 'Auto-seeded on first plan activation. Override per-KPI by adding rows with code=<KPI_CODE>.',
+          },
+        },
+      },
+      { upsert: true, ...(session ? { session } : {}) }
+    );
+    return { seeded: true };
+  } catch (err) {
+    console.error('[salesGoal] KPI_VARIANCE_THRESHOLDS.GLOBAL lazy-seed failed:', err.message);
+    // Non-fatal — agent has in-memory fallback. Never blocks plan activation.
+    return { seeded: false, reason: 'error', error: err.message };
+  }
 }
 
 /**
@@ -227,12 +392,228 @@ async function getAutoKpiValue(kpiCode, entityId, bdmId, startDate, endDate) {
   }
 }
 
+// ═══ Incentive Accrual (Phase SG-Q2 W2) ═══
+
+/**
+ * Apply CompProfile.incentive_cap to a proposed tier_budget.
+ *
+ * Cap only bites when:
+ *   - profile.incentive_type === 'CASH'  (in-kind / commission tracked elsewhere)
+ *   - profile.incentive_cap > 0          (0 or missing = no cap)
+ *
+ * Returns `{ capped, uncapped }`. `capped` is what lands on IncentivePayout.
+ * tier_budget; `uncapped` is what the tier originally offered so the ledger
+ * row can surface "₱X reduced to ₱Y by cap" for transparency.
+ */
+async function applyIncentiveCap(personId, entityId, tierBudget) {
+  const uncapped = Number(tierBudget) || 0;
+  if (!personId) return { capped: uncapped, uncapped };
+  const profile = await CompProfile.getActiveProfile(personId);
+  if (!profile) return { capped: uncapped, uncapped };
+  if (profile.incentive_type !== 'CASH') return { capped: uncapped, uncapped };
+  const cap = Number(profile.incentive_cap) || 0;
+  if (cap <= 0) return { capped: uncapped, uncapped };
+  return { capped: Math.min(uncapped, cap), uncapped };
+}
+
+/**
+ * Upsert an IncentivePayout row for a qualified tier + post the accrual journal.
+ *
+ * Idempotency: upsert keyed by (plan_id, bdm_id, period, period_type, program_code).
+ * Re-running computeBdmSnapshot for the same period MUST NOT create a duplicate
+ * accrual or duplicate journal. If an existing row is already APPROVED/PAID/REVERSED,
+ * we leave it alone (authority has taken over the lifecycle). Only ACCRUED rows
+ * get their tier_budget / attainment_pct refreshed on re-compute.
+ *
+ * If the journal post fails we DELETE the just-created ACCRUED row (or leave the
+ * existing one unchanged) so no payout exists without its backing journal — the
+ * ledger and payout ledger stay in lockstep. Failure is logged; the outer snapshot
+ * continues (we don't want one BDM's ledger issue to halt the whole batch).
+ *
+ * Params
+ *  - entityId, plan, bdmId, personId, period, periodType
+ *  - incentiveRow: the computed entry from snap.incentive_status[0] (first program);
+ *                  must have tier_code, tier_label, tier_budget, attainment_pct,
+ *                  qualified (bool)
+ *  - userId: who triggered the snapshot (credited as created_by on fresh rows)
+ *
+ * Returns the IncentivePayout document (or null when nothing to do).
+ */
+async function accrueIncentive({
+  entityId, plan, bdmId, personId, period, periodType,
+  incentiveRow, userId,
+}) {
+  if (!incentiveRow || !incentiveRow.qualified || !incentiveRow.tier_code) return null;
+  if (!bdmId) return null;                              // no user ⇒ nowhere to attribute
+  const rawBudget = Number(incentiveRow.tier_budget) || 0;
+  if (rawBudget <= 0) return null;                       // zero-budget tiers (Participant) — skip ledger noise
+
+  // CompProfile cap enforcement (Phase SG-Q2 W2 item 12).
+  const { capped, uncapped } = await applyIncentiveCap(personId, entityId, rawBudget);
+  if (capped <= 0) return null;
+
+  const upsertKey = {
+    plan_id: plan._id,
+    bdm_id: bdmId,
+    period,
+    period_type: periodType,
+    program_code: incentiveRow.program_code || '',
+  };
+
+  // Idempotency: once a row exists for this (plan, bdm, period, period_type,
+  // program) key, we never auto-mutate the backing journal. Reasons:
+  //   - APPROVED/PAID/REVERSED → authority has taken over the lifecycle.
+  //   - ACCRUED, same numbers    → nothing to do.
+  //   - ACCRUED, different tier  → auto-updating would require reversing the
+  //     old JE AND posting a new one to keep expense in sync with tier_budget.
+  //     Doing that silently inside a batch snapshot recompute is unsafe (no
+  //     audit visibility). Instead we log a warning; admin reverses the
+  //     ACCRUED row via the ledger UI, then the next compute re-accrues at
+  //     the new tier. This matches the SAP Commissions "events are immutable"
+  //     philosophy and keeps the ledger in lockstep with the payout row.
+  const existing = await IncentivePayout.findOne(upsertKey).lean();
+  if (existing) {
+    if (existing.status === 'ACCRUED'
+        && (Number(existing.tier_budget) !== capped
+            || existing.tier_code !== incentiveRow.tier_code)) {
+      console.warn(
+        `[accrueIncentive] Tier/budget drift on ACCRUED payout ${existing._id} `
+        + `(${existing.tier_code} ₱${existing.tier_budget} → ${incentiveRow.tier_code} ₱${capped}). `
+        + `Skipping auto-update — admin must reverse this payout + recompute to adopt the new tier.`
+      );
+    }
+    return existing;
+  }
+
+  // Resolve a BDM label once for the JE description
+  const person = personId ? await PeopleMaster.findById(personId).select('full_name bdm_code').lean() : null;
+  const bdmLabel = person ? `${person.full_name}${person.bdm_code ? ` (${person.bdm_code})` : ''}` : 'BDM';
+
+  // ── Phase SG-Q2 W3 — Per-accrual transaction wrap ───────────────────────
+  // Wrap (a) accrual JE create+post, (b) IncentivePayout upsert in a single
+  // mongoose transaction so a partial failure leaves nothing behind. Without
+  // this wrap, two parallel snapshot computes (e.g. cron + manual Run Now)
+  // could each post a JE, then race on the upsert and one would lose its
+  // backing row — orphan JE in the GL with no payout to point at.
+  //
+  // The transaction also threads through generateJeNumber → DocSequence so
+  // the sequence bump rolls back if anything downstream fails.
+  //
+  // Best-effort: if the txn fails we log + return null so the outer snapshot
+  // batch still completes for the other BDMs. The next run picks it up.
+  let doc = null;
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      // Re-check inside the txn to catch the race where a parallel run won.
+      const raceCheck = await IncentivePayout.findOne(upsertKey).session(session).lean();
+      if (raceCheck) {
+        doc = raceCheck;
+        return;
+      }
+
+      // Build a pseudo payout object so journalFromIncentive has enough context.
+      // The real IncentivePayout row is upserted after so we can store the JE id.
+      const pseudo = {
+        _id: new mongoose.Types.ObjectId(),
+        entity_id: entityId,
+        plan_id: plan._id,
+        bdm_id: bdmId,
+        period,
+        tier_code: incentiveRow.tier_code,
+        tier_label: incentiveRow.tier_label || incentiveRow.tier_code,
+        tier_budget: capped,
+      };
+      const { postAccrualJournal } = require('./journalFromIncentive');
+      const journal = await postAccrualJournal(pseudo, plan.reference, bdmLabel, userId || null, { session });
+
+      doc = await IncentivePayout.findOneAndUpdate(
+        upsertKey,
+        {
+          $set: {
+            entity_id: entityId,
+            plan_id: plan._id,
+            bdm_id: bdmId,
+            person_id: personId || null,
+            fiscal_year: plan.fiscal_year,
+            period,
+            period_type: periodType,
+            program_code: incentiveRow.program_code || '',
+            tier_code: incentiveRow.tier_code,
+            tier_label: incentiveRow.tier_label || incentiveRow.tier_code,
+            tier_budget: capped,
+            uncapped_budget: uncapped,
+            attainment_pct: Number(incentiveRow.attainment_pct) || 0,
+            sales_target: Number(incentiveRow.qualifying_amount) || 0,
+            sales_actual: Number(incentiveRow.actual_amount) || 0,
+            status: 'ACCRUED',
+            journal_id: journal._id,
+            journal_number: journal.je_number,
+          },
+          $setOnInsert: {
+            created_by: userId || null,
+          },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true, session }
+      );
+    });
+  } catch (err) {
+    // Duplicate-key races resolve to "the other run won" — treat as success.
+    if (err && err.code === 11000) {
+      try {
+        doc = await IncentivePayout.findOne(upsertKey).lean();
+      } catch (_) { /* fall through to null */ }
+      console.warn(
+        `[salesGoal.accrueIncentive] Concurrent accrual race for plan ${plan._id} `
+        + `bdm ${bdmId} period ${period} — kept existing payout, JE rolled back.`
+      );
+    } else {
+      console.error('[salesGoal.accrueIncentive] Atomic accrual failed — payout NOT created:', err.message);
+      doc = null;
+    }
+  } finally {
+    session.endSession();
+  }
+
+  // Fire tier-reached notification (non-blocking; outside the txn so an email
+  // hiccup never reverts a posted accrual). Only on a fresh accrual (not a
+  // race-recovery hit on an existing row).
+  if (doc && String(doc._id) !== String(existing?._id) && bdmId) {
+    try {
+      const { notifyTierReached } = require('./erpNotificationService');
+      // Caller (snapshot agent) doesn't await — we don't either.
+      notifyTierReached({
+        entityId,
+        bdmId,
+        bdmLabel,
+        planRef: plan.reference || plan.plan_name,
+        fiscalYear: plan.fiscal_year,
+        period,
+        periodType,
+        tierCode: incentiveRow.tier_code,
+        tierLabel: incentiveRow.tier_label || incentiveRow.tier_code,
+        tierBudget: capped,
+        attainmentPct: Number(incentiveRow.attainment_pct) || 0,
+      }).catch(e => console.error('[notifyTierReached] failed:', e.message));
+    } catch (e) {
+      console.error('[notifyTierReached] dispatch error:', e.message);
+    }
+  }
+
+  return doc;
+}
+
 // ═══ Snapshot Computation ═══
 
 /**
  * Compute KPI snapshot for a single BDM in a period.
+ *
+ * @param {Object} [options]
+ * @param {String|ObjectId} [options.userId] — triggers incentive accrual attribution
+ * @param {Boolean} [options.accrueIncentives=true] — set false to skip accrual
+ *   (e.g. historical re-computes). Default behavior is to accrue on YTD qualifications.
  */
-async function computeBdmSnapshot(entityId, plan, bdmId, personId, territoryId, period, periodType) {
+async function computeBdmSnapshot(entityId, plan, bdmId, personId, territoryId, period, periodType, options = {}) {
   const isYTD = periodType === 'YTD';
   const config = await getGoalConfig(entityId);
   const fiscalStart = config.FISCAL_START_MONTH;
@@ -338,6 +719,12 @@ async function computeBdmSnapshot(entityId, plan, bdmId, personId, territoryId, 
       projectedTier = computeProjectedTier(actualAmount, qualifyingAmount, monthsElapsed, 12, tiers);
     }
 
+    // SG-5 #25 — Commission accelerator applied to tier budget.
+    // Base budget is preserved in the ledger on IncentivePayout.uncapped_budget
+    // (set inside accrueIncentive via applyIncentiveCap); the accelerated
+    // amount is what gets written to tier_budget + journaled.
+    const currentAccel = applyTierAccelerator(currentTier);
+    const projectedAccel = applyTierAccelerator(projectedTier);
     incentiveStatus.push({
       program_code: prog.program_code,
       qualifying_amount: qualifyingAmount,
@@ -345,10 +732,13 @@ async function computeBdmSnapshot(entityId, plan, bdmId, personId, territoryId, 
       attainment_pct: attainmentPct,
       tier_code: currentTier?.code || '',
       tier_label: currentTier?.label || '',
-      tier_budget: currentTier?.budget_per_bdm || 0,
+      tier_budget: currentAccel.accelerated_budget,
+      tier_base_budget: currentAccel.base_budget,
+      tier_accelerator_factor: currentAccel.accelerator_factor,
       projected_tier_code: projectedTier?.code || '',
       projected_tier_label: projectedTier?.label || '',
-      projected_tier_budget: projectedTier?.budget_per_bdm || 0,
+      projected_tier_budget: projectedAccel.accelerated_budget,
+      projected_tier_accelerator_factor: projectedAccel.accelerator_factor,
       qualified: attainmentPct >= 100,
     });
   }
@@ -358,7 +748,7 @@ async function computeBdmSnapshot(entityId, plan, bdmId, personId, territoryId, 
   const actionsCompleted = await ActionItem.countDocuments({ plan_id: plan._id, bdm_id: bdmId, status: 'DONE' });
 
   // Upsert snapshot
-  return KpiSnapshot.findOneAndUpdate(
+  const snapshot = await KpiSnapshot.findOneAndUpdate(
     { entity_id: entityId, plan_id: plan._id, bdm_id: bdmId, period, period_type: periodType },
     {
       $set: {
@@ -382,23 +772,61 @@ async function computeBdmSnapshot(entityId, plan, bdmId, personId, territoryId, 
     },
     { upsert: true, new: true }
   );
+
+  // ── Phase SG-Q2 W2 — Incentive accrual trigger ───────────────────────────
+  // Only accrue on YTD snapshots. Monthly snapshots drive coaching / alerts;
+  // accruing monthly would double-count (YTD already includes the month).
+  // Accrual is best-effort: failures are logged inside accrueIncentive, the
+  // outer snapshot still returns so the dashboard renders.
+  if (periodType === 'YTD' && options.accrueIncentives !== false && incentiveStatus[0]) {
+    await accrueIncentive({
+      entityId,
+      plan,
+      bdmId,
+      personId,
+      period,
+      periodType,
+      incentiveRow: incentiveStatus[0],
+      userId: options.userId || null,
+    });
+  }
+
+  return snapshot;
 }
 
 /**
  * Compute snapshots for all BDMs in a plan.
+ * Filters out targets whose PeopleMaster record is_active=false — deactivated
+ * BDMs do not belong in leaderboards, incentive tiers, or projected-budget math.
+ *
+ * @param {Object} [options] — forwarded to computeBdmSnapshot (userId, accrueIncentives)
  */
-async function computeAllSnapshots(plan, period, periodType) {
+async function computeAllSnapshots(plan, period, periodType, options = {}) {
   const targets = await SalesGoalTarget.find({
     plan_id: plan._id,
     target_type: 'BDM',
     status: 'ACTIVE',
   }).lean();
 
+  // SG-Q2 W1 — resolve active PeopleMaster once, then filter targets. Targets
+  // with no person_id still run (legacy data / direct-user-only enrollment);
+  // targets whose person_id points to an inactive person are skipped.
+  const personIds = targets.map(t => t.person_id).filter(Boolean);
+  let activePersonIds = new Set();
+  if (personIds.length > 0) {
+    const activePeople = await PeopleMaster.find({
+      _id: { $in: personIds },
+      is_active: true,
+    }).select('_id').lean();
+    activePersonIds = new Set(activePeople.map(p => p._id.toString()));
+  }
+
   const results = [];
   for (const t of targets) {
     if (!t.bdm_id) continue;
+    if (t.person_id && !activePersonIds.has(t.person_id.toString())) continue;
     const snap = await computeBdmSnapshot(
-      t.entity_id, plan, t.bdm_id, t.person_id, t.territory_id, period, periodType
+      t.entity_id, plan, t.bdm_id, t.person_id, t.territory_id, period, periodType, options
     );
     results.push({
       bdm_id: t.bdm_id,
@@ -452,13 +880,232 @@ async function getIncentiveBudgetAdvisor(entityId, plan) {
   };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// SG-5 #26 — What-if / scenario modeling
+//
+// `simulatePlanSnapshots(plan, overrides)` returns projected snapshots +
+// incentive accrual forecast WITHOUT persisting to the DB. The input `plan`
+// is used read-only; overrides are applied in-memory. Re-uses the same
+// computeIncentiveTier / applyTierAccelerator / applyIncentiveCap math so
+// scenarios match production accrual behavior one-for-one.
+//
+// Overrides (all optional; unspecified = use current plan value):
+//   target_revenue_override   — replaces plan.target_revenue (number, PHP)
+//   baseline_override         — replaces plan.baseline_revenue (number, PHP)
+//   driver_weight_overrides   — { [driver_code]: weight_pct }
+//   tier_attainment_overrides — { [bdm_id]: attainment_pct } — force a BDM's
+//                               incentive attainment% irrespective of live sales
+//
+// Returns `{ current, scenario, diff, plan_overrides }` — side-by-side totals
+// per BDM (tier, tier_budget, accelerator) plus aggregate company-level
+// revenue / attainment projections.
+//
+// Design notes:
+//   - No DB writes. Safe to call from any role with plan VIEW.
+//   - Each BDM snapshot is read once (YTD period for current fiscal_year) then
+//     the scenario row is derived in-memory. If no snapshot exists yet, the
+//     scenario falls back to the BDM's SalesGoalTarget.
+//   - Incentive cap still applied (CompProfile.incentive_cap) so the forecast
+//     reflects what would actually be accrued.
+// ═══════════════════════════════════════════════════════════════════════════
+async function simulatePlanSnapshots(plan, overrides = {}) {
+  if (!plan) throw new Error('simulatePlanSnapshots: plan is required');
+  const entityId = plan.entity_id;
+  const fiscalYear = plan.fiscal_year;
+
+  const tiers = await getIncentiveTiers(entityId);
+  const config = await getGoalConfig(entityId);
+
+  // Coerce overrides
+  const targetRevOverride = Number(overrides.target_revenue_override);
+  const baselineOverride = Number(overrides.baseline_override);
+  const driverWeights = overrides.driver_weight_overrides || {};
+  const tierAttOverrides = overrides.tier_attainment_overrides || {};
+
+  const scenarioTargetRevenue = Number.isFinite(targetRevOverride) && targetRevOverride > 0
+    ? targetRevOverride
+    : Number(plan.target_revenue) || 0;
+  const scenarioBaseline = Number.isFinite(baselineOverride) && baselineOverride >= 0
+    ? baselineOverride
+    : Number(plan.baseline_revenue) || 0;
+
+  // Scale factor applied to each BDM's sales_target when the company target is
+  // overridden (proportional distribution). If the current plan target is 0 we
+  // skip scaling — nothing to scale from.
+  const baseTarget = Number(plan.target_revenue) || 0;
+  const targetScale = (baseTarget > 0 && scenarioTargetRevenue > 0)
+    ? scenarioTargetRevenue / baseTarget
+    : 1.0;
+
+  // Pull ACTIVE BDM targets + their latest YTD snapshot (if any)
+  const targets = await SalesGoalTarget.find({
+    plan_id: plan._id,
+    target_type: 'BDM',
+    status: 'ACTIVE',
+  }).populate('person_id', 'full_name bdm_code is_active').lean();
+
+  const personIds = targets.map(t => t.person_id?._id).filter(Boolean);
+  const activeTargets = targets.filter(t => !t.person_id || t.person_id.is_active !== false);
+
+  const snapshotRows = await KpiSnapshot.find({
+    plan_id: plan._id,
+    period_type: 'YTD',
+    period: String(fiscalYear),
+  }).lean();
+  const snapByBdm = new Map(snapshotRows.map(s => [String(s.bdm_id), s]));
+
+  let scenarioTotalBudget = 0;
+  let currentTotalBudget = 0;
+  let scenarioActualRevenue = 0;
+  let currentActualRevenue = 0;
+
+  const rows = [];
+  for (const t of activeTargets) {
+    const bdmKey = String(t.bdm_id || '');
+    const snap = bdmKey ? snapByBdm.get(bdmKey) : null;
+
+    const currentAttainment = Number(snap?.sales_attainment_pct) || 0;
+    const currentActual = Number(snap?.sales_actual) || 0;
+    const currentTargetVal = Number(t.sales_target) || 0;
+
+    const scenarioTargetVal = Math.round(currentTargetVal * targetScale);
+    // Apply per-BDM attainment override if supplied; otherwise preserve actual.
+    const overrideAtt = Number(tierAttOverrides[bdmKey]);
+    const scenarioAttainment = Number.isFinite(overrideAtt) && overrideAtt >= 0
+      ? overrideAtt
+      // Scaling the target changes the attainment % against the new target
+      // (actual stays the same — we're not asking "what if I sold more", we're
+      // asking "what if the bar was set here"). If target_scale is 1.0 the
+      // attainment is unchanged.
+      : (scenarioTargetVal > 0 ? Math.round((currentActual / scenarioTargetVal) * 100) : 0);
+
+    const currentTier = computeIncentiveTier(currentAttainment, tiers);
+    const scenarioTier = computeIncentiveTier(scenarioAttainment, tiers);
+    const currentAccel = applyTierAccelerator(currentTier);
+    const scenarioAccel = applyTierAccelerator(scenarioTier);
+
+    // Incentive cap forecast — apply the same CompProfile.incentive_cap math
+    // that would fire in production. Skipped when no person_id (legacy rows).
+    let currentCapped = currentAccel.accelerated_budget;
+    let scenarioCapped = scenarioAccel.accelerated_budget;
+    if (t.person_id?._id) {
+      const curCap = await applyIncentiveCap(t.person_id._id, entityId, currentAccel.accelerated_budget);
+      currentCapped = curCap.capped;
+      const scCap = await applyIncentiveCap(t.person_id._id, entityId, scenarioAccel.accelerated_budget);
+      scenarioCapped = scCap.capped;
+    }
+
+    currentTotalBudget += currentCapped;
+    scenarioTotalBudget += scenarioCapped;
+    currentActualRevenue += currentActual;
+    scenarioActualRevenue += currentActual;
+
+    rows.push({
+      bdm_id: t.bdm_id,
+      bdm_name: t.person_id?.full_name || t.target_label || 'BDM',
+      bdm_code: t.person_id?.bdm_code || '',
+      sales_target_current: currentTargetVal,
+      sales_target_scenario: scenarioTargetVal,
+      sales_actual: currentActual,
+      attainment_current: currentAttainment,
+      attainment_scenario: scenarioAttainment,
+      tier_current: currentTier?.label || '',
+      tier_scenario: scenarioTier?.label || '',
+      tier_budget_current: currentCapped,
+      tier_budget_scenario: scenarioCapped,
+      accelerator_current: currentAccel.accelerator_factor,
+      accelerator_scenario: scenarioAccel.accelerator_factor,
+      budget_delta: scenarioCapped - currentCapped,
+      attainment_delta: scenarioAttainment - currentAttainment,
+    });
+  }
+
+  // Company-level driver overrides: report the new weights + recomputed driver
+  // target pool. We don't re-run auto KPI calculations (that would require live
+  // queries and defeat the "fast dry-run" goal); surfacing the weight change is
+  // enough for a forecast. Admins rerun "Compute KPIs" after the plan is edited
+  // if they want the full refresh.
+  const scenarioDrivers = (plan.growth_drivers || []).map(d => {
+    const currentWeight = Number(d.weight_pct) || 0;
+    const override = Number(driverWeights[d.driver_code]);
+    const scenarioWeight = Number.isFinite(override) && override >= 0 ? override : currentWeight;
+    return {
+      driver_code: d.driver_code,
+      driver_label: d.driver_label || d.driver_code,
+      weight_current: currentWeight,
+      weight_scenario: scenarioWeight,
+      revenue_share_current: Math.round((currentWeight / 100) * (Number(plan.target_revenue) || 0)),
+      revenue_share_scenario: Math.round((scenarioWeight / 100) * scenarioTargetRevenue),
+    };
+  });
+
+  const totalWeightScenario = scenarioDrivers.reduce((sum, d) => sum + d.weight_scenario, 0);
+
+  return {
+    plan_overrides: {
+      target_revenue_current: Number(plan.target_revenue) || 0,
+      target_revenue_scenario: scenarioTargetRevenue,
+      baseline_current: Number(plan.baseline_revenue) || 0,
+      baseline_scenario: scenarioBaseline,
+      target_scale: Math.round(targetScale * 10000) / 10000,
+      total_weight_scenario: totalWeightScenario,
+      weight_warning: totalWeightScenario !== 100,
+    },
+    rows,
+    drivers: scenarioDrivers,
+    summary: {
+      bdm_count: rows.length,
+      current: {
+        total_incentive_budget: currentTotalBudget,
+        total_actual_revenue: currentActualRevenue,
+        attainment_pct: (Number(plan.target_revenue) || 0) > 0
+          ? Math.round((currentActualRevenue / plan.target_revenue) * 100)
+          : 0,
+      },
+      scenario: {
+        total_incentive_budget: scenarioTotalBudget,
+        total_actual_revenue: scenarioActualRevenue,
+        attainment_pct: scenarioTargetRevenue > 0
+          ? Math.round((scenarioActualRevenue / scenarioTargetRevenue) * 100)
+          : 0,
+      },
+      diff: {
+        total_incentive_budget: scenarioTotalBudget - currentTotalBudget,
+      },
+    },
+    config: {
+      attainment_green: config.ATTAINMENT_GREEN,
+      attainment_yellow: config.ATTAINMENT_YELLOW,
+      attainment_red: config.ATTAINMENT_RED,
+    },
+    tiers: tiers.map(t => ({
+      code: t.code,
+      label: t.label,
+      attainment_min: t.attainment_min,
+      budget_per_bdm: t.budget_per_bdm,
+      accelerator_factor: t.accelerator_factor,
+      effective_budget: Math.round(t.budget_per_bdm * t.accelerator_factor),
+    })),
+  };
+}
+
 module.exports = {
   getGoalConfig,
   getIncentiveTiers,
+  getStatusPalette,
+  ensureKpiVarianceGlobalThreshold,
+  KPI_VARIANCE_GLOBAL_DEFAULT,
   computeIncentiveTier,
   computeProjectedTier,
   computeBdmSnapshot,
   computeAllSnapshots,
   getAutoKpiValue,
   getIncentiveBudgetAdvisor,
+  applyIncentiveCap,
+  accrueIncentive,
+  applyTierAccelerator,
+  normalizeAcceleratorFactor,
+  fiscalYearRange,
+  monthRange,
+  simulatePlanSnapshots,
 };

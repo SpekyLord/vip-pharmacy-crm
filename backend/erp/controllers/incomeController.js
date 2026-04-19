@@ -43,7 +43,7 @@ const getIncomeProjection = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'period and cycle are required' });
   }
   const canViewOther = req.isAdmin || req.isFinance || req.isPresident;
-  const bdmId = (canViewOther && req.query.bdm_id) ? req.query.bdm_id : req.bdmId;
+  const bdmId = canViewOther ? (req.query.bdm_id || null) : req.bdmId;
   if (!bdmId) {
     return res.status(400).json({ success: false, message: 'bdm_id is required' });
   }
@@ -86,6 +86,11 @@ const getIncomeList = catchAsync(async (req, res) => {
   if (req.query.period) filter.period = req.query.period;
   if (req.query.cycle) filter.cycle = req.query.cycle;
   if (req.query.status) filter.status = req.query.status;
+
+  // Phase 6 — hide reversed rows by default; opt-in via ?include_reversed=true.
+  if (req.query.include_reversed !== 'true') {
+    filter.deletion_event_id = { $exists: false };
+  }
 
   const reports = await IncomeReport.find(filter)
     .populate('bdm_id', 'name email')
@@ -514,6 +519,10 @@ const postPnl = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: `Cannot post from status ${report.status}` });
   }
 
+  // Period lock check
+  const { checkPeriodOpen } = require('../utils/periodLock');
+  if (report.period) await checkPeriodOpen(req.entityId, report.period);
+
   // Authority matrix gate
   const { gateApproval } = require('../services/approvalService');
   const gated = await gateApproval({
@@ -761,11 +770,18 @@ const getFiscalYearStatusEndpoint = catchAsync(async (req, res) => {
   res.json({ success: true, data: result });
 });
 
+// President-only: SAP Storno reversal of a CREDITED/BDM_CONFIRMED IncomeReport.
+// Reverses the salary JE (DR Salaries / CR Payroll Payables). DRAFT/REVIEWED
+// reports are hard-deleted. Blocks if downstream Payslip references this report.
+const { buildPresidentReverseHandler } = require('../services/documentReversalService');
+const presidentReverseIncome = buildPresidentReverseHandler('INCOME_REPORT');
+
 module.exports = {
   // Income
   generateIncome, getIncomeProjection, requestIncomeGeneration,
   getIncomeList, getIncomeById, getIncomeBreakdown, updateIncomeManual,
   reviewIncome, returnIncome, confirmIncome, creditIncome,
+  presidentReverseIncome,
   // BDM Deduction Lines
   addDeductionLine, removeDeductionLine,
   // Finance Deduction Verification

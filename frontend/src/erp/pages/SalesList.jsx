@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import Pagination from '../../components/common/Pagination';
@@ -7,11 +7,14 @@ import { useAuth } from '../../hooks/useAuth';
 import { ROLES, ROLE_SETS } from '../../constants/roles';
 import useSales from '../hooks/useSales';
 import useEntities from '../hooks/useEntities';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import EntityBadge from '../components/EntityBadge';
+import PresidentReverseModal from '../components/PresidentReverseModal';
+import RejectionBanner from '../components/RejectionBanner';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError } from '../utils/errorToast';
+import { showError, showSuccess, showWarning } from '../utils/errorToast';
 import { useLookupOptions } from '../hooks/useLookups';
 
 function toTitleCase(str) {
@@ -217,9 +220,12 @@ const pageStyles = `
 
 export default function SalesList() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const sales = useSales();
   const { getEntityById } = useEntities();
+  const { hasSubPermission } = useErpSubAccess();
   const isMultiEntity = [ROLES.PRESIDENT, ROLES.CEO, ROLES.ADMIN].includes(user?.role);
+  const canPresidentReverse = hasSubPermission('accounting', 'reverse_posted');
   const { options: sourceOptions } = useLookupOptions('SALE_SOURCE');
 
   const [data, setData] = useState([]);
@@ -227,6 +233,7 @@ export default function SalesList() {
   const [filters, setFilters] = useState({ status: '', csi_date_from: '', csi_date_to: '', source: '' });
   const [selectedSale, setSelectedSale] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [reverseTarget, setReverseTarget] = useState(null);
 
   const loadSales = useCallback(async (page = 1) => {
     setLoading(true);
@@ -269,7 +276,13 @@ export default function SalesList() {
   const handleReopen = async (id) => {
     if (!window.confirm('Re-open this posted sale? Stock will be reversed.')) return;
     try {
-      await sales.reopenSales([id]);
+      const res = await sales.reopenSales([id]);
+      const failed = res?.failed || [];
+      if (failed.length) {
+        showWarning(failed.map(f => `${f.doc_ref || f._id}: ${f.error}`).join('\n'));
+      } else {
+        showSuccess(res?.message || 'Sale reopened');
+      }
       loadSales(pagination.page);
     } catch (err) {
       showError(err, 'Could not reopen sale');
@@ -292,6 +305,18 @@ export default function SalesList() {
     } catch (err) { showError(err, 'Could not approve deletion'); }
   };
 
+  const handlePresidentReverse = async ({ reason, confirm }) => {
+    if (!reverseTarget) return;
+    try {
+      await sales.presidentReverseSale(reverseTarget._id, { reason, confirm });
+      setReverseTarget(null);
+      loadSales(pagination.page);
+    } catch (err) {
+      showError(err, 'Could not reverse sale');
+      throw err;
+    }
+  };
+
   const viewDetail = async (id) => {
     try {
       const res = await sales.getSaleById(id);
@@ -301,6 +326,9 @@ export default function SalesList() {
 
   const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
   const canCreateSales = ROLE_SETS.BDM_ADMIN.includes(user?.role);
+  // Phase 3c — approve-deletion gated by Tier 2 lookup-only accounting.approve_deletion
+  // (legacy path; President Reverse is preferred for full cleanup). Mirrors backend salesRoutes /:id/approve-deletion.
+  const canApproveDeletion = hasSubPermission('accounting', 'approve_deletion');
 
   return (
     <div className="admin-page erp-page saleslist-page">
@@ -315,7 +343,9 @@ export default function SalesList() {
               <div className="sales-nav-tabs" role="tablist" aria-label="Sales navigation">
                 {canCreateSales && <Link to="/erp/sales/entry" className="sales-nav-tab">Sales</Link>}
                 <Link to="/erp/sales" className="sales-nav-tab active" aria-current="page">Sales Transactions</Link>
-                <Link to="/erp/csi-booklets" className="sales-nav-tab">CSI Booklets</Link>
+                <Link to="/erp/csi-booklets" className="sales-nav-tab">
+                  {hasSubPermission('inventory', 'csi_booklets') ? 'CSI Booklets' : 'My CSI'}
+                </Link>
               </div>
               <div className="saleslist-header">
                 <div>
@@ -404,9 +434,19 @@ export default function SalesList() {
                         Req. Delete
                       </button>
                     )}
-                    {sale.status === 'DELETION_REQUESTED' && isAdmin && (
+                    {sale.status === 'DELETION_REQUESTED' && canApproveDeletion && (
                       <button className="btn btn-danger btn-sm" onClick={() => handleApproveDeletion(sale._id)}>
                         Approve Delete
+                      </button>
+                    )}
+                    {canPresidentReverse && !sale.deletion_event_id && (
+                      <button
+                        className="btn btn-sm"
+                        style={{ background: '#7f1d1d', color: '#fff' }}
+                        title="President: delete & reverse this transaction (SAP Storno for POSTED, hard-delete for DRAFT/ERROR)"
+                        onClick={() => setReverseTarget(sale)}
+                      >
+                        President Delete
                       </button>
                     )}
                     </div>
@@ -427,6 +467,16 @@ export default function SalesList() {
               </div>
             )}
             </div>
+
+          {/* President Reverse Modal */}
+          {reverseTarget && (
+            <PresidentReverseModal
+              docLabel={`CSI #${reverseTarget.doc_ref || reverseTarget.invoice_number || '—'} · ₱${(reverseTarget.invoice_total || 0).toLocaleString()} · ${reverseTarget.status}`}
+              docStatus={reverseTarget.status}
+              onConfirm={handlePresidentReverse}
+              onClose={() => setReverseTarget(null)}
+            />
+          )}
 
           {/* Detail Modal */}
           {selectedSale && (
@@ -473,6 +523,19 @@ export default function SalesList() {
                 <div style={{ marginTop: 12, textAlign: 'right' }}>
                   <strong>Invoice Total: P{selectedSale.invoice_total?.toLocaleString()}</strong>
                   <br /><span style={{ fontSize: 12, color: 'var(--erp-muted)' }}>VAT: P{selectedSale.total_vat?.toFixed(2)} | Net: P{selectedSale.total_net_of_vat?.toFixed(2)}</span>
+                </div>
+
+                <div style={{ marginTop: 12 }}>
+                  <RejectionBanner
+                    row={selectedSale}
+                    moduleKey="SALES"
+                    variant="page"
+                    docLabel={selectedSale.invoice_number || selectedSale.csi_no}
+                    onResubmit={(row) => {
+                      setSelectedSale(null);
+                      navigate(`/erp/sales/entry?edit=${row._id}`);
+                    }}
+                  />
                 </div>
 
                 {selectedSale.validation_errors?.length > 0 && (
