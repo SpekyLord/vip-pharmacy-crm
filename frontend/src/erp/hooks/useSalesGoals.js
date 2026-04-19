@@ -108,6 +108,26 @@ export default function useSalesGoals() {
   const getVarianceAlertStats = (params) => api.get('/variance-alerts/stats', { params });
   const resolveVarianceAlert = (id, data) => api.post(`/variance-alerts/${id}/resolve`, data || {});
 
+  // ── Phase SG-6 #29 — SOX Control Matrix ────────────────────────────────
+  // Read-only live view of every Sales Goal state change + live authorization
+  // posture (from MODULE_DEFAULT_ROLES/ERP_SUB_PERMISSIONS/APPROVAL_MODULE
+  // lookups) + audit activity + segregation-of-duties findings + integration
+  // event registry. Admin/finance/president only.
+  const getSoxControlMatrix = (params) => api.get('/sales-goals/sox-control-matrix', { params });
+  const soxControlMatrixPrintUrl = (params = {}) => {
+    const qs = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+    });
+    const base = (import.meta.env.VITE_API_URL || '/api').replace(/\/$/, '');
+    return `${base}/erp/sales-goals/sox-control-matrix/print${qs.toString() ? `?${qs.toString()}` : ''}`;
+  };
+
+  // ── Phase SG-6 #31 — Mid-period target revision ────────────────────────
+  // Opt-in per entity via MID_PERIOD_REVISION_ENABLED lookup. Returns the
+  // updated target with the new TargetRevision entry pushed.
+  const reviseTarget = (targetId, data) => api.post(`/sales-goals/targets/${targetId}/revise`, data || {});
+
   // ── Phase SG-4 #24 — Incentive Disputes (Oracle Fusion workflow) ───────
   const listDisputes = (params) => api.get('/incentive-disputes', { params });
   const getDispute = (id) => api.get(`/incentive-disputes/${id}`);
@@ -168,5 +188,8 @@ export default function useSalesGoals() {
     simulatePlan,
     getTrending,
     listVarianceAlerts, getVarianceAlertStats, resolveVarianceAlert,
+    // Phase SG-6 #29, #31
+    getSoxControlMatrix, soxControlMatrixPrintUrl,
+    reviseTarget,
   };
 }

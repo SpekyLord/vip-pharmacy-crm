@@ -807,6 +807,8 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
       goalItems.push({ path: '/erp/credit-rules', label: 'Credit Rules', icon: Scale });
       // Phase SG-5 #26 — What-if scenario planner (admin/finance/president only)
       goalItems.push({ path: '/erp/sales-goals/scenario', label: 'Scenario Planner', icon: Activity });
+      // Phase SG-6 #29 — SOX Control Matrix (admin/finance/president only; read-only reporting)
+      goalItems.push({ path: '/erp/sales-goals/sox', label: 'SOX Control Matrix', icon: Shield });
     }
     // Phase SG-4 #24 — Dispute Center is visible to everyone with sales_goals
     // VIEW (BDMs file disputes; reviewers act on them — page renders the right

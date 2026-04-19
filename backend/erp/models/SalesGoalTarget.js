@@ -17,6 +17,31 @@ const driverTargetSchema = new mongoose.Schema({
   revenue_target: { type: Number, default: 0 },
 }, { _id: false });
 
+// Phase SG-6 #31 — Mid-period target revision history.
+// Each entry snapshots the PRE-revision values so downstream snapshots can
+// re-compute from the revision point forward without losing the baseline.
+// Keeping the history as a sub-document (not a separate collection) avoids
+// cross-collection joins on dashboard reads.
+const targetRevisionSchema = new mongoose.Schema({
+  revised_at:        { type: Date, default: Date.now },
+  revised_by:        { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  revision_reason:   { type: String, trim: true, required: true },
+  // Snapshot of the prior values BEFORE the revision took effect.
+  prior_sales_target:      { type: Number, default: 0 },
+  prior_collection_target: { type: Number, default: 0 },
+  // Optional: snapshot territory + person_id if those changed (useful for
+  // PeopleMaster-originated revisions — SG-6 #30 lifecycle hook writes these).
+  prior_territory_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Territory' },
+  prior_person_id:    { type: mongoose.Schema.Types.ObjectId, ref: 'PeopleMaster' },
+  // Source — discriminates manual president revisions from auto lifecycle hooks.
+  source: {
+    type: String,
+    enum: ['MANUAL', 'PEOPLE_LIFECYCLE', 'SYSTEM'],
+    default: 'MANUAL',
+  },
+  approval_request_id: { type: mongoose.Schema.Types.ObjectId, ref: 'ApprovalRequest' },
+}, { _id: true, timestamps: false });
+
 const salesGoalTargetSchema = new mongoose.Schema({
   entity_id: {
     type: mongoose.Schema.Types.ObjectId,
@@ -73,6 +98,11 @@ const salesGoalTargetSchema = new mongoose.Schema({
   // Optional breakdowns
   monthly_targets: [monthlyTargetSchema],
   driver_targets:  [driverTargetSchema],
+
+  // Phase SG-6 #31 — Mid-period revision history (append-only).
+  // Historical snapshots stay tied to the value that was active at compute
+  // time — revisions only affect future snapshots (see salesGoalService).
+  target_revisions: { type: [targetRevisionSchema], default: [] },
 
   status: {
     type: String,

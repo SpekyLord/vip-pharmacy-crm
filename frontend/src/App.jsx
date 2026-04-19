@@ -195,6 +195,8 @@ const DisputeCenter = lazyRetry(() => import('./erp/pages/DisputeCenter'));
 // Phase SG-5 #26, #27 — Scenario Planner + Variance Alert Center
 const ScenarioPlanner = lazyRetry(() => import('./erp/pages/ScenarioPlanner'));
 const VarianceAlertCenter = lazyRetry(() => import('./erp/pages/VarianceAlertCenter'));
+// Phase SG-6 #29 — SOX Control Matrix (admin/finance/president only)
+const SoxControlMatrix = lazyRetry(() => import('./erp/pages/SoxControlMatrix'));
 
 // Phase G7 — President's Copilot + Cmd+K palette (ERP-only, role-gated by lookup)
 const PresidentCopilot = lazyRetry(() => import('./erp/components/PresidentCopilot'));
@@ -823,6 +825,8 @@ function App() {
           <Route path="/erp/sales-goals/scenario" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.PRESIDENT, ROLES.FINANCE]} requiredErpModule="sales_goals"><ScenarioPlanner /></ProtectedRoute>} />
           {/* Phase SG-5 #27 — Variance Alert Center (all with sales_goals VIEW; contractor scoped to own) */}
           <Route path="/erp/variance-alerts" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales_goals"><VarianceAlertCenter /></ProtectedRoute>} />
+          {/* Phase SG-6 #29 — SOX Control Matrix (admin/finance/president only) */}
+          <Route path="/erp/sales-goals/sox" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.PRESIDENT, ROLES.FINANCE]} requiredErpModule="sales_goals"><SoxControlMatrix /></ProtectedRoute>} />
 
           {/* Orphaned page direct routes — redirect to Control Center with correct section */}
           <Route path="/erp/agent-settings" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><AgentSettingsRedirect /></ProtectedRoute>} />

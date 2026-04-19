@@ -405,6 +405,23 @@ exports.activatePlan = catchAsync(async (req, res) => {
     enrollmentCount: enrollmentSummary.enrolled,
   }).catch(e => console.error('[notifySalesGoalPlanLifecycle ACTIVATED] failed:', e.message));
 
+  // Phase SG-6 #32 — emit integration event (payroll/HR/finance subscribers).
+  try {
+    const { emit, INTEGRATION_EVENTS } = require('../services/integrationHooks');
+    emit(INTEGRATION_EVENTS.PLAN_ACTIVATED, {
+      entity_id: plan.entity_id,
+      actor_id: req.user._id,
+      ref: plan.reference || String(plan._id),
+      data: {
+        plan_id: String(plan._id),
+        plan_name: plan.plan_name,
+        fiscal_year: plan.fiscal_year,
+        enrolled_count: enrollmentSummary.enrolled,
+        target_revenue: plan.target_revenue,
+      },
+    });
+  } catch (err) { console.warn('[activatePlan] integrationHooks emit skipped:', err.message); }
+
   res.json({
     success: true,
     data: plan,
@@ -476,6 +493,16 @@ exports.reopenPlan = catchAsync(async (req, res) => {
     triggeredBy: req.user.name || req.user.email,
   }).catch(e => console.error('[notifySalesGoalPlanLifecycle REOPENED] failed:', e.message));
 
+  try {
+    const { emit, INTEGRATION_EVENTS } = require('../services/integrationHooks');
+    emit(INTEGRATION_EVENTS.PLAN_REOPENED, {
+      entity_id: plan.entity_id,
+      actor_id: req.user._id,
+      ref: plan.reference || String(plan._id),
+      data: { plan_id: String(plan._id), plan_name: plan.plan_name, fiscal_year: plan.fiscal_year },
+    });
+  } catch (err) { console.warn('[reopenPlan] integrationHooks emit skipped:', err.message); }
+
   res.json({ success: true, data: plan, message: 'Plan reopened to DRAFT' });
 });
 
@@ -544,6 +571,16 @@ exports.closePlan = catchAsync(async (req, res) => {
     event: 'CLOSED',
     triggeredBy: req.user.name || req.user.email,
   }).catch(e => console.error('[notifySalesGoalPlanLifecycle CLOSED] failed:', e.message));
+
+  try {
+    const { emit, INTEGRATION_EVENTS } = require('../services/integrationHooks');
+    emit(INTEGRATION_EVENTS.PLAN_CLOSED, {
+      entity_id: plan.entity_id,
+      actor_id: req.user._id,
+      ref: plan.reference || String(plan._id),
+      data: { plan_id: String(plan._id), plan_name: plan.plan_name, fiscal_year: plan.fiscal_year },
+    });
+  } catch (err) { console.warn('[closePlan] integrationHooks emit skipped:', err.message); }
 
   res.json({ success: true, data: plan, message: 'Plan closed' });
 });
@@ -1934,4 +1971,180 @@ exports.getTrending = catchAsync(async (req, res) => {
 // SG-5 #27 — Variance Alert Center endpoints.
 // Implemented in backend/erp/controllers/varianceAlertController.js (sibling
 // file) to keep controller sizes manageable. Exports re-declared there.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase SG-6 #31 — Mid-period target revision workflow.
+//
+// POST /sales-goal-targets/:id/revise — alternative to reopening the whole
+// plan when only a single BDM/entity target needs adjustment mid-period.
+// Writes an append-only TargetRevision sub-doc so historical snapshots stay
+// tied to the value that was active when they were computed.
+//
+// Behavior:
+//  - Requires `revision_reason` (non-empty).
+//  - Gated via gateApproval(module: 'SALES_GOAL_PLAN', docType: 'TARGET_REVISION').
+//  - Feature is opt-in per entity via MID_PERIOD_REVISION_ENABLED lookup
+//    (default disabled — reopen-plan remains the canonical path unless admin
+//    flips the lookup).
+//  - Atomic under one transaction. Emits integration event `target.revised`.
+// ─────────────────────────────────────────────────────────────────────────────
+exports.reviseTarget = catchAsync(async (req, res) => {
+  const target = await SalesGoalTarget.findById(req.params.id);
+  if (!target) return res.status(404).json({ success: false, message: 'Target not found' });
+
+  // Feature toggle via lookup — default is disabled for safety. Subscribers
+  // opt in per-entity via Control Center → MID_PERIOD_REVISION_ENABLED.
+  const toggleRow = await Lookup.findOne({
+    entity_id: target.entity_id,
+    category: 'MID_PERIOD_REVISION_ENABLED',
+    is_active: true,
+  }).lean();
+  const enabled = toggleRow?.metadata?.value === true || toggleRow?.metadata?.enabled === true;
+  if (!enabled) {
+    return res.status(403).json({
+      success: false,
+      message: 'Mid-period target revision is not enabled for this entity. Enable MID_PERIOD_REVISION_ENABLED in Control Center → Lookup Tables, or reopen the plan instead.',
+    });
+  }
+
+  const plan = await SalesGoalPlan.findById(target.plan_id).lean();
+  if (!plan) return res.status(404).json({ success: false, message: 'Linked plan not found' });
+  if (plan.status !== 'ACTIVE') {
+    return res.status(400).json({ success: false, message: `Plan status is ${plan.status}. Revisions apply only to ACTIVE plans.` });
+  }
+
+  // Period-lock check against the plan's fiscal year for SALES_GOAL module.
+  // Mirrors periodLockCheckByPlan middleware (the :id on this route is the
+  // target, not the plan — so we run the same check here where we have the
+  // plan in hand).
+  try {
+    const PeriodLock = require('../models/PeriodLock');
+    const lock = await PeriodLock.findOne({
+      entity_id: plan.entity_id,
+      module: 'SALES_GOAL',
+      year: plan.fiscal_year,
+      is_locked: true,
+    }).select('month').lean();
+    if (lock) {
+      const monthName = new Date(plan.fiscal_year, lock.month - 1).toLocaleString('en', { month: 'long' });
+      return res.status(403).json({
+        success: false,
+        message: `Period ${monthName} ${plan.fiscal_year} is locked for SALES_GOAL. Unlock the period in Control Center → Period Locks before revising.`,
+      });
+    }
+  } catch (err) {
+    // PeriodLock model resolution failure — defense in depth, don't block
+    // the revise entirely, let the authority gate still run.
+    console.warn('[reviseTarget] period-lock check skipped:', err.message);
+  }
+
+  const reason = String(req.body.revision_reason || '').trim();
+  if (!reason) {
+    return res.status(400).json({ success: false, message: 'revision_reason is required' });
+  }
+
+  // Parse new values. Missing fields = "keep current value".
+  const newSalesTarget = req.body.sales_target != null ? Number(req.body.sales_target) : target.sales_target;
+  const newCollectionTarget = req.body.collection_target != null
+    ? Number(req.body.collection_target)
+    : Math.round(newSalesTarget * (Number(plan.collection_target_pct) || 0));
+
+  if (Number.isNaN(newSalesTarget) || newSalesTarget < 0) {
+    return res.status(400).json({ success: false, message: 'sales_target must be a non-negative number' });
+  }
+  if (Number.isNaN(newCollectionTarget) || newCollectionTarget < 0) {
+    return res.status(400).json({ success: false, message: 'collection_target must be a non-negative number' });
+  }
+  const noChange = newSalesTarget === target.sales_target && newCollectionTarget === target.collection_target;
+  if (noChange) {
+    return res.status(400).json({ success: false, message: 'No change — sales_target and collection_target are the same as current' });
+  }
+
+  // Default-Roles Gate (Phase G4). The amount is the delta (signed) so the
+  // authority matrix can threshold on magnitude of adjustment.
+  const gated = await gateApproval({
+    entityId: plan.entity_id,
+    module: 'SALES_GOAL_PLAN',
+    docType: 'TARGET_REVISION',
+    docId: target._id,
+    docRef: `${plan.reference || plan.plan_name} · ${target.target_label || target.target_type}`,
+    amount: Math.abs(newSalesTarget - target.sales_target),
+    description: `Mid-period target revision — ${target.target_label || target.target_type}: ₱${target.sales_target.toLocaleString()} → ₱${newSalesTarget.toLocaleString()}`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
+  const priorSales = target.sales_target;
+  const priorCollection = target.collection_target;
+
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      target.target_revisions.push({
+        revised_at: new Date(),
+        revised_by: req.user._id,
+        revision_reason: reason,
+        prior_sales_target: priorSales,
+        prior_collection_target: priorCollection,
+        source: 'MANUAL',
+      });
+      target.sales_target = newSalesTarget;
+      target.collection_target = newCollectionTarget;
+      await target.save({ session });
+
+      await ErpAuditLog.logChange([{
+        entity_id: plan.entity_id,
+        log_type: 'STATUS_CHANGE',
+        target_ref: target._id.toString(),
+        target_model: 'SalesGoalTarget',
+        field_changed: 'sales_target',
+        old_value: String(priorSales),
+        new_value: String(newSalesTarget),
+        changed_by: req.user._id,
+        note: `[SG-6 #31] Mid-period revision — ${target.target_label || target.target_type}. Reason: ${reason}`,
+      }], { session });
+    });
+  } finally {
+    session.endSession();
+  }
+
+  // Emit integration event (non-blocking). Payroll/HR subscribers can react.
+  try {
+    const integrationHooks = require('../services/integrationHooks');
+    integrationHooks.emit(integrationHooks.INTEGRATION_EVENTS.TARGET_REVISED, {
+      entity_id: plan.entity_id,
+      actor_id: req.user._id,
+      ref: String(target._id),
+      data: {
+        plan_id: String(plan._id),
+        plan_ref: plan.reference,
+        target_type: target.target_type,
+        target_label: target.target_label,
+        prior_sales_target: priorSales,
+        new_sales_target: newSalesTarget,
+        prior_collection_target: priorCollection,
+        new_collection_target: newCollectionTarget,
+        reason,
+      },
+    });
+  } catch (err) {
+    console.warn('[reviseTarget] integrationHooks.emit skipped:', err.message);
+  }
+
+  res.json({
+    success: true,
+    data: target,
+    message: `Target revised: ₱${priorSales.toLocaleString()} → ₱${newSalesTarget.toLocaleString()}. Historical snapshots preserved; future snapshots will use the new value.`,
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase SG-6 #29 — SOX Control Matrix endpoint.
+//
+// GET /sales-goals/sox-control-matrix — read-only endpoint that materializes
+// a control matrix for every Sales Goal state change + segregation-of-duties
+// findings. Lives in the sibling controller `soxControlMatrixController.js`
+// to keep this file manageable; route delegates there.
 // ─────────────────────────────────────────────────────────────────────────────

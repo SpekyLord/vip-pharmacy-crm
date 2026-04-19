@@ -74,8 +74,11 @@ const PERIOD_LOCK_MODULE = {
   // Phase SG-3R — plan reversal cascades through reverseJournal for every
   // linked IncentivePayout, producing reversal JEs in the current period.
   // Gate against the JOURNAL period-lock (the module that actually receives
-  // the reversal entries). INCENTIVE_PAYOUT is NOT a valid PeriodLock.module
-  // enum value, so picking it here would silently skip the check.
+  // the reversal entries). The route-level `periodLockCheck('INCENTIVE_PAYOUT')`
+  // on /incentive-payouts/:id/reverse already covers direct payout reversal;
+  // here we only need to protect the journal landing zone for cascades.
+  // (Phase SG-Q2 W4: INCENTIVE_PAYOUT is now a valid PeriodLock.module enum
+  // value, so future variants could choose it explicitly if needed.)
   SALES_GOAL_PLAN: 'JOURNAL',
 };
 

@@ -1318,6 +1318,7 @@ const WORKFLOW_GUIDES = {
       'Click "Compute KPIs" to refresh KPI snapshots from live ERP data (President/Finance only; others are routed through the Approval Hub)',
       'Monitor the BDM leaderboard, incentive tiers, and driver progress — deactivated BDMs are hidden automatically',
       'Scroll to Year-over-Year Trending to compare this year vs last year per BDM + per KPI (SG-5 #28). Needs at least one prior fiscal year of YTD snapshots',
+      'Period locks gate writes: Activate/Reopen/Close/Targets-Bulk/Targets-Import are blocked if any month of the plan\'s fiscal year is locked under SALES_GOAL. Compute KPIs and Manual KPI Entry are blocked when the target month is locked. Unlock from Control Center → Period Locks first.',
     ],
     next: [
       { label: 'Goal Setup', path: '/erp/sales-goals/setup' },
@@ -1544,6 +1545,26 @@ const WORKFLOW_GUIDES = {
       { label: 'People Master', path: '/erp/control-center?section=people' },
     ],
     tip: 'Your KPIs are based on your functional role(s). If you\'re missing KPIs, ask admin to verify your role assignments.',
+  },
+
+  // ═══ Phase SG-6 #29 — SOX Control Matrix ═══
+  soxControlMatrix: {
+    title: 'SOX Control Matrix',
+    steps: [
+      'Pick an audit window (default 90 days) — the matrix enumerates every Sales Goal state change and reads the LIVE authorization posture from Control Center lookups',
+      'Each row shows: the operation + description + live allowed roles (MODULE_DEFAULT_ROLES) + approval category + required sub-permission + activity count + actors in the window + emitted integration event',
+      'The Segregation-of-Duties panel flags any user who both CREATED and POSTED/APPROVED/PAID/REVERSED the same document — small-team overlap is common, but auditors want to see the pattern',
+      'The Integration Event Registry panel shows every event Sales Goal emits + how many listeners each has. Zero listeners = no subscriber wired yet (drop-in without SG code changes)',
+      'Click Print / Save as PDF for a point-in-time control report — subscribers brand the header via COMP_STATEMENT_TEMPLATE lookups if desired',
+      'To change who can perform any operation, edit the MODULE_DEFAULT_ROLES row (Control Center → Lookup Tables) — the matrix reflects the change on next refresh',
+    ],
+    next: [
+      { label: 'Goal Dashboard', path: '/erp/sales-goals' },
+      { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
+      { label: 'Approval Hub', path: '/erp/approvals' },
+      { label: 'Access Templates', path: '/erp/control-center?section=access-templates' },
+    ],
+    tip: 'This matrix NEVER governs access — it just REPORTS on the live authorization posture so SOX auditors can confirm controls are in place. Changing a row here would defeat the purpose. To actually tighten/open a control, edit the underlying lookup (e.g. MODULE_DEFAULT_ROLES.SALES_GOAL_PLAN.metadata.roles = null for open-post). The matrix will immediately reflect the new setting.',
   },
 
   incentiveTracker: {

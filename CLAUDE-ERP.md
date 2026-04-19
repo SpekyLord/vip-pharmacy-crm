@@ -1232,7 +1232,7 @@ frontend/src/erp/components/WorkflowGuide.jsx          • +salesGoalCompensatio
 | `MODULE_DEFAULT_ROLES.INCENTIVE_PAYOUT` | Default-Roles Gate for payout lifecycle | W2 |
 | `APPROVAL_MODULE.INCENTIVE_PAYOUT` | Authority Matrix routing | W2 |
 | `APPROVAL_CATEGORY.FINANCIAL` | Adds INCENTIVE_PAYOUT to financial bucket | W2 |
-| `PERIOD_LOCK_MODULES` | Adds INCENTIVE_PAYOUT to lockable modules | W2 |
+| `PeriodLock.module` enum | Adds INCENTIVE_PAYOUT to lockable modules (was missing — orphan fixed in W4) | W2/W4 |
 | `ERP_SUB_PERMISSION` | 4 new keys: payout_view/approve/pay/reverse | W2 |
 | `ERP_DANGER_SUB_PERMISSIONS` | +SALES_GOALS__PAYOUT_REVERSE (Tier 2) | W2 |
 | `COMP_STATEMENT_TEMPLATE` | Print template branding overrides per entity | W3 |
@@ -1769,7 +1769,7 @@ All auto-journal COA codes are admin-configurable in `Settings.COA_MAP` (ERP Set
 5. **Dual P&L**: `pnlService.js` (GL-based) vs `pnlCalc.js` (source-doc-based). `pnlService` is authoritative; `pnlCalc` used for legacy year-end close.
 6. **AR Engine vs GL mismatch risk**: `arEngine.js` computes from source docs, `trialBalanceService.js` from JEs. They can diverge if JEs fail.
 7. **CALF gate**: Expenses with `calf_required=true` cannot be posted until linked CALF is POSTED (enforced in `submitExpenses` and `submitCarLogbook`).
-8. **Period lock**: `periodLockCheck(moduleKey)` middleware prevents posting to locked periods. Applied to all transactional routes: Sales, Collections, Expenses, Purchasing, Income, and Journals. Module keys in PeriodLock model: SALES, COLLECTION, EXPENSE, JOURNAL, PAYROLL, PURCHASING, INVENTORY, BANKING, PETTY_CASH, IC_TRANSFER, INCOME.
+8. **Period lock**: `periodLockCheck(moduleKey)` middleware prevents posting to locked periods. Applied to all transactional routes: Sales, Collections, Expenses, Purchasing, Income, Journals, Deduction Schedules, Incentive Payouts (settle/reverse), and Sales Goals (compute snapshots / manual KPI entry). For plan-spanning Sales Goal routes (activate/reopen/close/targets-bulk/targets-import) use `periodLockCheckByPlan(moduleKey)` — derives the year from the referenced SalesGoalPlan and rejects if any month is locked. Module keys in PeriodLock model: SALES, COLLECTION, EXPENSE, JOURNAL, PAYROLL, PURCHASING, INVENTORY, BANKING, PETTY_CASH, IC_TRANSFER, INCOME, SALES_GOAL, INCENTIVE_PAYOUT, DEDUCTION. The controller `MODULES` constant + Control Center stat card derive their lists from `PeriodLock.schema.path('module').enumValues` so adding a future module never requires touching the controller (Phase SG-Q2 W4).
 9. **Product dropdown format**: All dropdowns must show `brand_name dosage — qty unit_code` (dosage required, never omit).
 10. **IC_TRANSFER** source_module — added to JournalEntry enum for inter-company transfer JEs.
 11. **People dropdowns must filter `status=ACTIVE`** — all people selector dropdowns (Managed By, Reports To, Assign To, Custodian, etc.) must pass `status: 'ACTIVE'` to `getPeopleList()` or rely on `getAsUsers()` which enforces `is_active: true, status: 'ACTIVE'`. Never show SUSPENDED or SEPARATED people in assignment/selection dropdowns.

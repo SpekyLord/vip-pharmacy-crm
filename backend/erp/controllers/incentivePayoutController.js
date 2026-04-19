@@ -192,6 +192,22 @@ exports.approvePayout = catchAsync(async (req, res) => {
     note: `Approved incentive payout ${payout.tier_label || payout.tier_code} for ${payout.period} — ₱${(payout.tier_budget || 0).toLocaleString()}`,
   });
 
+  // Phase SG-6 #32 — fire integration event (non-blocking).
+  try {
+    const { emit, INTEGRATION_EVENTS } = require('../services/integrationHooks');
+    emit(INTEGRATION_EVENTS.PAYOUT_APPROVED, {
+      entity_id: payout.entity_id,
+      actor_id: req.user._id,
+      ref: String(payout._id),
+      data: {
+        bdm_id: payout.bdm_id ? String(payout.bdm_id) : null,
+        period: payout.period,
+        tier_code: payout.tier_code,
+        tier_budget: payout.tier_budget,
+      },
+    });
+  } catch (err) { console.warn('[approvePayout] integrationHooks emit skipped:', err.message); }
+
   res.json({ success: true, data: payout, message: 'Payout approved' });
 });
 
@@ -272,6 +288,24 @@ exports.payPayout = catchAsync(async (req, res) => {
     note: `Paid incentive payout ${payout.tier_label || payout.tier_code} for ${payout.period} — ₱${(payout.tier_budget || 0).toLocaleString()} via ${payout.paid_via || 'cash'} — JE ${settlementJe.je_number}`,
   });
 
+  // Phase SG-6 #32 — fire integration event (payroll/accounting subscribers).
+  try {
+    const { emit, INTEGRATION_EVENTS } = require('../services/integrationHooks');
+    emit(INTEGRATION_EVENTS.PAYOUT_PAID, {
+      entity_id: payout.entity_id,
+      actor_id: req.user._id,
+      ref: String(payout._id),
+      data: {
+        bdm_id: payout.bdm_id ? String(payout.bdm_id) : null,
+        period: payout.period,
+        tier_code: payout.tier_code,
+        tier_budget: payout.tier_budget,
+        paid_via: payout.paid_via,
+        settlement_je: settlementJe.je_number,
+      },
+    });
+  } catch (err) { console.warn('[payPayout] integrationHooks emit skipped:', err.message); }
+
   res.json({ success: true, data: payout, message: 'Payout paid — settlement journal posted' });
 });
 
@@ -340,6 +374,24 @@ exports.reversePayout = catchAsync(async (req, res) => {
     changed_by: req.user._id,
     note: `Reversed incentive payout ${payout.tier_label || payout.tier_code} for ${payout.period} — ₱${(payout.tier_budget || 0).toLocaleString()} — reason: ${reason} — reversal JE ${reversalJe.je_number}`,
   });
+
+  // Phase SG-6 #32 — fire integration event.
+  try {
+    const { emit, INTEGRATION_EVENTS } = require('../services/integrationHooks');
+    emit(INTEGRATION_EVENTS.PAYOUT_REVERSED, {
+      entity_id: payout.entity_id,
+      actor_id: req.user._id,
+      ref: String(payout._id),
+      data: {
+        bdm_id: payout.bdm_id ? String(payout.bdm_id) : null,
+        period: payout.period,
+        tier_code: payout.tier_code,
+        tier_budget: payout.tier_budget,
+        reason,
+        reversal_je: reversalJe.je_number,
+      },
+    });
+  } catch (err) { console.warn('[reversePayout] integrationHooks emit skipped:', err.message); }
 
   res.json({ success: true, data: payout, message: 'Payout reversed — storno journal posted' });
 });
