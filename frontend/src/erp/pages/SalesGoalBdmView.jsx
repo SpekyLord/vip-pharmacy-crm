@@ -162,6 +162,7 @@ export default function SalesGoalBdmView() {
   const incentive = ytdSnap?.incentive_status?.[0] || {};
   const monthly = detail?.monthlyHistory || [];
   const drivers = ytdSnap?.driver_kpis || [];
+  const planDrivers = detail?.plan?.growth_drivers || [];
   const actions = detail?.actions || [];
   const goalConfig = detail?.config || {};
   const colorMap = buildTierColorMap(detail?.tiers);
@@ -172,7 +173,7 @@ export default function SalesGoalBdmView() {
   const ringCircumference = 2 * Math.PI * ringRadius;
   const ringOffset = ringCircumference - (Math.min(attainPct, 100) / 100) * ringCircumference;
 
-  const maxMonthly = Math.max(...monthly.map(m => Math.max(m.sales_actual || 0, m.sales_target || 0)), 1);
+  const maxMonthly = Math.max(...monthly.map(m => Math.max(m.actual || 0, m.target || 0)), 1);
 
   const tc = tierColorStyle(incentive.tier_label, colorMap);
 
@@ -258,11 +259,11 @@ export default function SalesGoalBdmView() {
                 <div className="bdv-card bdv-tier-card">
                   <h4>Incentive Tier</h4>
                   <div className="bdv-tier-badge" style={{ background: tc.bg, color: tc.color }}>
-                    {incentive.current_tier || 'Participant'}
+                    {incentive.tier_label || 'Participant'}
                   </div>
-                  <div className="bdv-tier-detail">Budget Earned: {php(incentive.budget_earned)}</div>
-                  {incentive.projected_tier && (
-                    <div className="bdv-tier-detail">Projected: {incentive.projected_tier}</div>
+                  <div className="bdv-tier-detail">Budget Earned: {php(incentive.tier_budget)}</div>
+                  {incentive.projected_tier_label && (
+                    <div className="bdv-tier-detail">Projected: {incentive.projected_tier_label}</div>
                   )}
                   {incentive.amount_to_next_tier > 0 && (
                     <div className="bdv-next-tier">
@@ -320,10 +321,10 @@ export default function SalesGoalBdmView() {
                               <p style={{ color: 'var(--erp-muted)', fontSize: 12, margin: 0 }}>No KPIs defined for this driver.</p>
                             )}
                             {(d.kpis || []).map((kpi, ki) => {
-                              const kpiPct = kpi.target_value ? ((kpi.actual || 0) / kpi.target_value) * 100 : 0;
+                              const kpiPct = kpi.target_value ? ((kpi.actual_value || 0) / kpi.target_value) * 100 : 0;
                               return (
                                 <div key={kpi.kpi_code || ki} className="bdv-kpi-row">
-                                  <span className="bdv-kpi-name">{kpi.kpi_name || kpi.kpi_code}</span>
+                                  <span className="bdv-kpi-name">{kpi.kpi_label || kpi.kpi_code}</span>
                                   <div className="bdv-kpi-track">
                                     <div className="bdv-kpi-fill" style={{
                                       width: `${Math.min(kpiPct, 100)}%`,
@@ -331,7 +332,7 @@ export default function SalesGoalBdmView() {
                                     }} />
                                   </div>
                                   <span className="bdv-kpi-nums">
-                                    {kpi.actual || 0} / {kpi.target_value || 0} {kpi.unit || ''}
+                                    {kpi.actual_value || 0} / {kpi.target_value || 0} {kpi.unit || ''}
                                   </span>
                                 </div>
                               );
@@ -381,12 +382,18 @@ export default function SalesGoalBdmView() {
                     onChange={e => setActionForm(f => ({ ...f, title: e.target.value }))}
                     style={{ flex: 2 }}
                   />
-                  <input
-                    type="text" placeholder="Driver code"
+                  <select
                     value={actionForm.driver_code}
                     onChange={e => setActionForm(f => ({ ...f, driver_code: e.target.value }))}
                     style={{ flex: 1 }}
-                  />
+                  >
+                    <option value="">— Driver (optional) —</option>
+                    {planDrivers.map(d => (
+                      <option key={d.driver_code} value={d.driver_code}>
+                        {d.driver_code}{d.driver_label ? ` — ${d.driver_label}` : ''}
+                      </option>
+                    ))}
+                  </select>
                   <select value={actionForm.priority} onChange={e => setActionForm(f => ({ ...f, priority: e.target.value }))}>
                     <option value="LOW">Low</option>
                     <option value="MEDIUM">Medium</option>

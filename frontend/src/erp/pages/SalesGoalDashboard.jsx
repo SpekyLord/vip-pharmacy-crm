@@ -9,7 +9,7 @@ import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
 import useSalesGoals from '../hooks/useSalesGoals';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError } from '../utils/errorToast';
+import { showError, showSuccess } from '../utils/errorToast';
 
 const php = (n) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(n || 0);
 const pct = (n) => `${(n || 0).toFixed(1)}%`;
@@ -106,8 +106,10 @@ export default function SalesGoalDashboard() {
     if (!dashboard?.plan?._id) return;
     setComputing(true);
     try {
-      await sg.computeSnapshots({ plan_id: dashboard.plan._id });
+      const res = await sg.computeSnapshots({ plan_id: dashboard.plan._id });
+      const count = res?.data?.count ?? res?.count ?? res?.data?.data?.length ?? 0;
       await loadDashboard();
+      showSuccess(count ? `Computed ${count} BDM snapshot${count === 1 ? '' : 's'}` : 'KPIs computed');
     } catch (err) { showError(err, 'Failed to compute KPI snapshots'); }
     setComputing(false);
   }, [dashboard?.plan?._id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -137,7 +139,7 @@ export default function SalesGoalDashboard() {
 
   const baselineRevenue = plan?.baseline_revenue || 0;
   const targetRevenue = plan?.target_revenue || 0;
-  const actualRevenue = summary?.sales_ytd || 0;
+  const actualRevenue = summary?.total_sales_actual || 0;
   const maxBar = Math.max(targetRevenue, actualRevenue) * 1.1 || 1;
   const actualPct = Math.min((actualRevenue / maxBar) * 100, 100);
   const targetPct = Math.min((targetRevenue / maxBar) * 100, 100);
@@ -226,9 +228,17 @@ export default function SalesGoalDashboard() {
                   <div className="sgd-entity-grid">
                     {entityTargets.map((et, i) => {
                       const attain = et.sales_target ? ((et.actual || 0) / et.sales_target) * 100 : 0;
+                      const displayName = et.entity_name || `Entity ${i + 1}`;
                       return (
                         <div key={et._id || i} className="sgd-entity-card">
-                          <div className="sgd-entity-name">{et.entity_name || et.entity_id || `Entity ${i + 1}`}</div>
+                          <div className="sgd-entity-name">
+                            {displayName}{et.short_name ? ` (${et.short_name})` : ''}
+                            {et.is_inactive && (
+                              <span style={{ marginLeft: 6, fontSize: 10, padding: '2px 6px', borderRadius: 8, background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>
+                                INACTIVE
+                              </span>
+                            )}
+                          </div>
                           <div className="sgd-entity-bar-track">
                             <div className="sgd-entity-bar-fill" style={{
                               width: `${Math.min(attain, 100)}%`,
@@ -251,17 +261,17 @@ export default function SalesGoalDashboard() {
               <div className="sgd-row">
                 <div className="sgd-card">
                   <div className="sgd-card-label">Sales YTD vs Target</div>
-                  <div className="sgd-card-value">{php(summary.sales_ytd)}</div>
+                  <div className="sgd-card-value">{php(summary.total_sales_actual)}</div>
                   <div className="sgd-card-sub">Target: {php(targetRevenue)}</div>
                 </div>
                 <div className="sgd-card">
                   <div className="sgd-card-label">Collections YTD</div>
-                  <div className="sgd-card-value">{php(summary.collections_ytd)}</div>
+                  <div className="sgd-card-value">{php(summary.total_collections_actual)}</div>
                 </div>
                 <div className="sgd-card">
                   <div className="sgd-card-label">Attainment %</div>
-                  <div className="sgd-card-value" style={{ color: statusColor(summary.attainment_pct || 0, config) }}>
-                    {pct(summary.attainment_pct)}
+                  <div className="sgd-card-value" style={{ color: statusColor(summary.overall_attainment_pct || 0, config) }}>
+                    {pct(summary.overall_attainment_pct)}
                   </div>
                 </div>
                 <div className="sgd-card">
@@ -276,17 +286,25 @@ export default function SalesGoalDashboard() {
                   <h3 className="sgd-section-title">Growth Drivers</h3>
                   <div className="sgd-row">
                     {drivers.map((d, i) => {
-                      const mid = ((d.revenue_target_min || 0) + (d.revenue_target_max || 0)) / 2 || 1;
-                      const driverActual = d.actual || 0;
-                      const driverPct = Math.min((driverActual / mid) * 100, 100);
+                      const minVal = Number(d.revenue_target_min) || 0;
+                      const maxVal = Number(d.revenue_target_max) || 0;
+                      const hasTargetRange = minVal > 0 || maxVal > 0;
+                      const mid = hasTargetRange ? ((minVal + maxVal) / 2 || 1) : 1;
+                      const driverActual = Number(d.actual) || 0;
+                      const driverPct = hasTargetRange ? Math.min((driverActual / mid) * 100, 100) : 0;
                       return (
                         <div key={d.driver_code || i} className="sgd-driver-card">
                           <div className="sgd-driver-label">{d.driver_label || d.driver_code}</div>
                           <div className="sgd-driver-range">
-                            {php(d.revenue_target_min)} - {php(d.revenue_target_max)}
+                            {hasTargetRange
+                              ? `${php(minVal)} - ${php(maxVal)}`
+                              : 'No target range set'}
                           </div>
                           <div className="sgd-driver-bar-track">
                             <div className="sgd-driver-bar-fill" style={{ width: `${driverPct}%` }} />
+                          </div>
+                          <div style={{ fontSize: 11, color: 'var(--erp-muted)', marginTop: 4 }}>
+                            Actual: {php(driverActual)}{hasTargetRange ? ` (${driverPct.toFixed(1)}%)` : ''}
                           </div>
                         </div>
                       );
@@ -300,7 +318,15 @@ export default function SalesGoalDashboard() {
                 <h3>BDM Leaderboard</h3>
                 {(dashboard?.leaderboard || []).length === 0 ? (
                   <div style={{ textAlign: 'center', padding: 20, color: 'var(--erp-muted)', fontSize: 13 }}>
-                    No BDM data available. Assign targets and compute snapshots first.
+                    <div style={{ marginBottom: 10 }}>
+                      No BDM snapshots yet. Once BDM targets are assigned, click the button below to roll up their YTD sales, attainment, and incentive tier.
+                    </div>
+                    <button className="sgd-btn" onClick={handleComputeSnapshots} disabled={computing}>
+                      {computing ? 'Computing...' : 'Compute KPIs now'}
+                    </button>
+                    <div style={{ marginTop: 8, fontSize: 12 }}>
+                      Or <Link to="/erp/sales-goals/setup" style={{ color: 'var(--erp-accent)' }}>add BDM targets</Link> first if you haven't.
+                    </div>
                   </div>
                 ) : (
                   <table className="sgd-table">
@@ -309,17 +335,18 @@ export default function SalesGoalDashboard() {
                         <SortTh field="rank">Rank</SortTh>
                         <SortTh field="name">Name</SortTh>
                         <SortTh field="territory">Territory</SortTh>
-                        <SortTh field="target">Target</SortTh>
-                        <SortTh field="actual">Actual</SortTh>
-                        <SortTh field="attainment_pct">Attainment %</SortTh>
-                        <SortTh field="tier">Tier</SortTh>
+                        <SortTh field="sales_target">Target</SortTh>
+                        <SortTh field="sales_actual">Actual</SortTh>
+                        <SortTh field="sales_attainment_pct">Attainment %</SortTh>
+                        <SortTh field="incentive_tier">Tier</SortTh>
                         <th style={{ padding: '8px 10px', fontWeight: 600, fontSize: 13, background: 'var(--erp-accent-soft)' }}>Status</th>
                       </tr>
                     </thead>
                     <tbody>
                       {sortedLeaderboard().map((row, i) => {
-                        const attColor = statusColor(row.attainment_pct || 0, config);
-                        const tc = tierColor(row.tier, buildTierColorMap(dashboard?.tiers));
+                        const attColor = statusColor(row.sales_attainment_pct || 0, config);
+                        const tc = tierColor(row.incentive_tier, buildTierColorMap(dashboard?.tiers));
+                        const statusLabelMap = { on_track: 'On Track', needs_attention: 'At Risk', at_risk: 'Behind' };
                         return (
                           <tr key={row.bdm_id || i}>
                             <td className="num">{row.rank || i + 1}</td>
@@ -329,14 +356,14 @@ export default function SalesGoalDashboard() {
                               </Link>
                             </td>
                             <td>{row.territory || '-'}</td>
-                            <td className="num">{php(row.target)}</td>
-                            <td className="num">{php(row.actual)}</td>
+                            <td className="num">{php(row.sales_target)}</td>
+                            <td className="num">{php(row.sales_actual)}</td>
                             <td className="num" style={{ color: attColor, fontWeight: 600 }}>
-                              {pct(row.attainment_pct)}
+                              {pct(row.sales_attainment_pct)}
                             </td>
                             <td>
                               <span className="sgd-tier-badge" style={{ background: tc.bg, color: tc.color }}>
-                                {row.tier || 'N/A'}
+                                {row.incentive_tier || 'N/A'}
                               </span>
                             </td>
                             <td>
@@ -344,7 +371,7 @@ export default function SalesGoalDashboard() {
                                 background: attColor + '18',
                                 color: attColor
                               }}>
-                                {row.status || (row.attainment_pct >= 100 ? 'On Track' : row.attainment_pct >= 80 ? 'At Risk' : 'Behind')}
+                                {statusLabelMap[row.status] || (row.sales_attainment_pct >= 100 ? 'On Track' : row.sales_attainment_pct >= 80 ? 'At Risk' : 'Behind')}
                               </span>
                             </td>
                           </tr>
@@ -363,7 +390,7 @@ export default function SalesGoalDashboard() {
                     {(() => {
                       const tiers = {};
                       (dashboard?.leaderboard || []).forEach(b => {
-                        const t = b.tier || 'Participant';
+                        const t = b.incentive_tier || 'Participant';
                         if (!tiers[t]) tiers[t] = 0;
                         tiers[t]++;
                       });

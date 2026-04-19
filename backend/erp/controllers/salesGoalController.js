@@ -93,6 +93,26 @@ exports.activatePlan = catchAsync(async (req, res) => {
   res.json({ success: true, data: plan, message: 'Plan activated' });
 });
 
+exports.reopenPlan = catchAsync(async (req, res) => {
+  const plan = await SalesGoalPlan.findById(req.params.id);
+  if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
+  if (plan.status !== 'ACTIVE') {
+    return res.status(400).json({ success: false, message: 'Only ACTIVE plans can be reopened' });
+  }
+
+  plan.status = 'DRAFT';
+  plan.reopened_by = req.user._id;
+  plan.reopened_at = new Date();
+  await plan.save();
+
+  await SalesGoalTarget.updateMany(
+    { plan_id: plan._id, status: 'ACTIVE' },
+    { $set: { status: 'DRAFT' } }
+  );
+
+  res.json({ success: true, data: plan, message: 'Plan reopened to DRAFT' });
+});
+
 exports.closePlan = catchAsync(async (req, res) => {
   const plan = await SalesGoalPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
@@ -307,14 +327,48 @@ exports.getGoalDashboard = catchAsync(async (req, res) => {
     .sort({ sales_attainment_pct: -1 })
     .lean();
 
-  // Entity targets
-  const entityTargets = await SalesGoalTarget.find({
+  // Entity targets — keep raw target_entity_id (no populate) so orphan references survive
+  const entityTargetsRaw = await SalesGoalTarget.find({
     plan_id: plan._id,
     target_type: 'ENTITY',
     status: { $in: ['ACTIVE', 'DRAFT'] },
-  })
-    .populate('target_entity_id', 'entity_name short_name')
-    .lean();
+  }).lean();
+
+  // Resolve entity names via direct lookup (no status filter — include inactive/orphan)
+  const entityIds = entityTargetsRaw
+    .map(t => t.target_entity_id)
+    .filter(Boolean);
+  const entityDocs = entityIds.length
+    ? await Entity.find({ _id: { $in: entityIds } }).select('entity_name short_name status').lean()
+    : [];
+  const entityMap = new Map(entityDocs.map(e => [e._id.toString(), e]));
+
+  // Actuals per entity: sum BDM snapshots grouped by entity_id
+  const actualByEntity = new Map();
+  for (const snap of snapshots) {
+    const eid = snap.entity_id?.toString();
+    if (!eid) continue;
+    actualByEntity.set(eid, (actualByEntity.get(eid) || 0) + (snap.sales_actual || 0));
+  }
+
+  const entityTargets = entityTargetsRaw.map(t => {
+    const entId = t.target_entity_id;
+    const entIdStr = entId?.toString() || '';
+    const ent = entIdStr ? entityMap.get(entIdStr) : null;
+    const nameFromDoc = ent?.entity_name || '';
+    const isInactive = ent ? ent.status !== 'ACTIVE' : !!entIdStr;
+    return {
+      _id: t._id,
+      entity_id: entId || null,
+      entity_name: nameFromDoc || t.target_label || (entIdStr ? 'Deleted entity' : 'Unassigned'),
+      short_name: ent?.short_name || '',
+      is_inactive: isInactive,
+      sales_target: t.sales_target || 0,
+      collection_target: t.collection_target || 0,
+      actual: entIdStr ? (actualByEntity.get(entIdStr) || 0) : 0,
+      status: t.status,
+    };
+  });
 
   // Company totals
   const totalSalesTarget = snapshots.reduce((s, snap) => s + (snap.sales_target || 0), 0);
@@ -342,6 +396,19 @@ exports.getGoalDashboard = catchAsync(async (req, res) => {
       : 'at_risk',
   }));
 
+  // Aggregate driver actuals from snapshot.driver_kpis (sum of KPI actual_value per driver_code)
+  const driverActualByCode = new Map();
+  for (const snap of snapshots) {
+    for (const g of snap.driver_kpis || []) {
+      const sum = (g.kpis || []).reduce((s, k) => s + (k.actual_value || 0), 0);
+      driverActualByCode.set(g.driver_code, (driverActualByCode.get(g.driver_code) || 0) + sum);
+    }
+  }
+  const growthDriversWithActual = (plan.growth_drivers || []).map(d => ({
+    ...(d.toObject ? d.toObject() : d),
+    actual: driverActualByCode.get(d.driver_code) || 0,
+  }));
+
   res.json({
     success: true,
     data: {
@@ -352,7 +419,7 @@ exports.getGoalDashboard = catchAsync(async (req, res) => {
         status: plan.status,
         baseline_revenue: plan.baseline_revenue,
         target_revenue: plan.target_revenue,
-        growth_drivers: plan.growth_drivers,
+        growth_drivers: growthDriversWithActual,
       },
       summary: {
         total_sales_target: totalSalesTarget,
@@ -410,9 +477,57 @@ exports.getBdmGoalDetail = catchAsync(async (req, res) => {
   const config = await salesGoalService.getGoalConfig(req.entityId);
   const tiers = await salesGoalService.getIncentiveTiers(req.entityId);
 
+  // Enrich target with running actual + remaining from YTD snapshot
+  const enrichedTarget = target ? {
+    ...target,
+    actual: ytdSnapshot?.sales_actual || 0,
+    remaining: Math.max(0, (target.sales_target || 0) - (ytdSnapshot?.sales_actual || 0)),
+    collection_actual: ytdSnapshot?.collections_actual || 0,
+  } : null;
+
+  // Enrich incentive_status[0] with "amount_to_next_tier" + "next_tier" for UI
+  let enrichedYtd = ytdSnapshot;
+  if (ytdSnapshot) {
+    const is = ytdSnapshot.incentive_status?.[0];
+    const tiersAsc = [...tiers].sort((a, b) => a.attainment_min - b.attainment_min);
+    const attPct = ytdSnapshot.sales_attainment_pct || 0;
+    const next = tiersAsc.find(t => t.attainment_min > attPct);
+    const amountToNext = next
+      ? Math.max(0, Math.round((next.attainment_min / 100) * (ytdSnapshot.sales_target || 0)) - (ytdSnapshot.sales_actual || 0))
+      : 0;
+    enrichedYtd = {
+      ...ytdSnapshot,
+      incentive_status: is ? [{
+        ...is,
+        amount_to_next_tier: amountToNext,
+        next_tier: next?.label || '',
+      }] : ytdSnapshot.incentive_status,
+    };
+  }
+
+  // Normalize monthly history to {month, actual, target}
+  const monthlyHistoryNorm = monthlyHistory.map(m => {
+    const [, mm] = (m.period || '').split('-');
+    return {
+      period: m.period,
+      month: Number(mm) || 0,
+      actual: m.sales_actual || 0,
+      target: m.sales_target || 0,
+    };
+  });
+
   res.json({
     success: true,
-    data: { plan, target, person, ytdSnapshot, monthlyHistory, actions, config, tiers },
+    data: {
+      plan,
+      target: enrichedTarget,
+      person,
+      ytdSnapshot: enrichedYtd,
+      monthlyHistory: monthlyHistoryNorm,
+      actions,
+      config,
+      tiers,
+    },
   });
 });
 
@@ -474,22 +589,55 @@ exports.getIncentiveBoard = catchAsync(async (req, res) => {
     .sort({ 'incentive_status.0.attainment_pct': -1 })
     .lean();
 
-  const tiers = await salesGoalService.getIncentiveTiers(req.entityId);
+  const tiersRaw = await salesGoalService.getIncentiveTiers(req.entityId);
   const advisor = await salesGoalService.getIncentiveBudgetAdvisor(req.entityId, plan);
   const config = await salesGoalService.getGoalConfig(req.entityId);
 
-  const board = snapshots.map(s => ({
-    bdm_name: s.person_id?.full_name,
-    bdm_code: s.person_id?.bdm_code,
-    territory: s.territory_id?.territory_name,
-    sales_target: s.sales_target,
-    sales_actual: s.sales_actual,
-    attainment_pct: s.sales_attainment_pct,
-    current_tier: s.incentive_status?.[0]?.tier_label || '',
-    current_budget: s.incentive_status?.[0]?.tier_budget || 0,
-    projected_tier: s.incentive_status?.[0]?.projected_tier_label || '',
-    projected_budget: s.incentive_status?.[0]?.projected_tier_budget || 0,
+  // Tiers sorted by attainment_min descending (highest first from service)
+  const tierCountByCode = new Map();
+  for (const s of snapshots) {
+    const code = s.incentive_status?.[0]?.tier_code;
+    if (code) tierCountByCode.set(code, (tierCountByCode.get(code) || 0) + 1);
+  }
+  const tiers = tiersRaw.map(t => ({
+    tier_code: t.code,
+    tier_label: t.label,
+    label: t.label,
+    budget: t.budget_per_bdm,
+    budget_per_bdm: t.budget_per_bdm,
+    attainment_min: t.attainment_min,
+    bdm_count: tierCountByCode.get(t.code) || 0,
+    bg_color: t.bg_color,
+    text_color: t.text_color,
+    reward_description: t.reward_description,
   }));
+
+  // Ascending list by attainment_min for "distance to next tier" computation
+  const tiersAsc = [...tiersRaw].sort((a, b) => a.attainment_min - b.attainment_min);
+
+  const board = snapshots.map((s, i) => {
+    const is = s.incentive_status?.[0];
+    const attPct = s.sales_attainment_pct || 0;
+    const nextTier = tiersAsc.find(t => t.attainment_min > attPct);
+    const amountToNext = nextTier
+      ? Math.max(0, Math.round((nextTier.attainment_min / 100) * (s.sales_target || 0)) - (s.sales_actual || 0))
+      : 0;
+    return {
+      rank: i + 1,
+      bdm_id: s.bdm_id,
+      bdm_name: s.person_id?.full_name,
+      bdm_code: s.person_id?.bdm_code,
+      territory: s.territory_id?.territory_name,
+      sales_target: s.sales_target,
+      sales_actual: s.sales_actual,
+      attainment_pct: attPct,
+      current_tier: is?.tier_label || '',
+      budget: is?.tier_budget || 0,
+      projected_tier: is?.projected_tier_label || '',
+      projected_budget: is?.projected_tier_budget || 0,
+      amount_to_next_tier: amountToNext,
+    };
+  });
 
   res.json({
     success: true,

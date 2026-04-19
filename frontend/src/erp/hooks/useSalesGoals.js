@@ -9,6 +9,7 @@ export default function useSalesGoals() {
   const createPlan = (data) => api.post('/sales-goals/plans', data);
   const updatePlan = (id, data) => api.put(`/sales-goals/plans/${id}`, data);
   const activatePlan = (id) => api.post(`/sales-goals/plans/${id}/activate`);
+  const reopenPlan = (id) => api.post(`/sales-goals/plans/${id}/reopen`);
   const closePlan = (id) => api.post(`/sales-goals/plans/${id}/close`);
 
   // Targets
@@ -41,7 +42,7 @@ export default function useSalesGoals() {
 
   return {
     ...api,
-    getPlans, getPlan, createPlan, updatePlan, activatePlan, closePlan,
+    getPlans, getPlan, createPlan, updatePlan, activatePlan, reopenPlan, closePlan,
     getTargets, getMyTarget, createTarget, bulkCreateTargets, updateTarget,
     computeSnapshots, getSnapshots, getMySnapshot,
     getGoalDashboard, getBdmGoalDetail, getDriverSummary, getIncentiveBoard,

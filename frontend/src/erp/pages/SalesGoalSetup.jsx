@@ -12,7 +12,7 @@ import useSalesGoals from '../hooks/useSalesGoals';
 import useEntities from '../hooks/useEntities';
 import { useLookupBatch } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError } from '../utils/errorToast';
+import { showError, showSuccess, showApprovalPending, isApprovalPending } from '../utils/errorToast';
 
 const php = (n) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(n || 0);
 
@@ -83,6 +83,23 @@ const emptyDriver = {
 };
 
 const emptyKpi = { kpi_code: '', kpi_name: '', target_value: '', unit: '' };
+
+const idOf = (ref) => (ref && typeof ref === 'object' ? ref._id || '' : ref || '');
+
+const normalizeEntityTarget = (t) => ({
+  ...t,
+  entity_id: idOf(t.target_entity_id),
+  entity_name: (typeof t.target_entity_id === 'object' ? t.target_entity_id?.entity_name : '') || t.target_label || '',
+});
+
+const normalizeBdmTarget = (t) => ({
+  ...t,
+  bdm_id: idOf(t.bdm_id),
+  person_id: idOf(t.person_id),
+  territory_id: idOf(t.territory_id),
+  bdm_name: (typeof t.person_id === 'object' ? t.person_id?.full_name : '') || t.target_label || '',
+  territory: (typeof t.territory_id === 'object' ? t.territory_id?.territory_name : '') || t.territory || '',
+});
 
 export default function SalesGoalSetup() {
   const { user: _user } = useAuth(); // eslint-disable-line no-unused-vars
@@ -156,8 +173,8 @@ export default function SalesGoalSetup() {
     try {
       const tRes = await sg.getTargets({ plan_id: id });
       const targets = tRes?.data || [];
-      setEntityTargets(targets.filter(t => t.target_type === 'ENTITY'));
-      setBdmTargets(targets.filter(t => t.target_type === 'BDM'));
+      setEntityTargets(targets.filter(t => t.target_type === 'ENTITY').map(normalizeEntityTarget));
+      setBdmTargets(targets.filter(t => t.target_type === 'BDM').map(normalizeBdmTarget));
     } catch (err) { showError(err, 'Failed to load targets'); }
   }, [plans]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -180,15 +197,28 @@ export default function SalesGoalSetup() {
         growth_drivers: form.growth_drivers,
         incentive_programs: form.incentive_programs,
       };
+      let res;
+      const wasNew = !selectedPlanId;
       if (selectedPlanId) {
-        await sg.updatePlan(selectedPlanId, payload);
+        res = await sg.updatePlan(selectedPlanId, payload);
       } else {
-        const res = await sg.createPlan(payload);
+        res = await sg.createPlan(payload);
         const newId = res?.data?._id;
         if (newId) setSelectedPlanId(newId);
       }
+      if (isApprovalPending(res)) {
+        showApprovalPending('Plan save sent for approval.');
+      } else {
+        showSuccess(wasNew ? 'Plan created' : 'Plan updated');
+      }
       await loadPlans();
-    } catch (err) { showError(err, 'Failed to save plan'); }
+    } catch (err) {
+      if (isApprovalPending(null, err)) {
+        showApprovalPending('Plan save sent for approval.');
+      } else {
+        showError(err, 'Failed to save plan');
+      }
+    }
     setSaving(false);
   }, [form, selectedPlanId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -196,17 +226,50 @@ export default function SalesGoalSetup() {
   const handleActivate = useCallback(async () => {
     if (!selectedPlanId) return;
     try {
-      await sg.activatePlan(selectedPlanId);
+      const res = await sg.activatePlan(selectedPlanId);
+      if (isApprovalPending(res)) {
+        showApprovalPending('Plan activation sent for approval.');
+      } else {
+        showSuccess('Plan activated');
+      }
       await loadPlans();
-    } catch (err) { showError(err, 'Failed to activate plan'); }
+    } catch (err) {
+      if (isApprovalPending(null, err)) showApprovalPending('Plan activation sent for approval.');
+      else showError(err, 'Failed to activate plan');
+    }
   }, [selectedPlanId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleClose = useCallback(async () => {
     if (!selectedPlanId) return;
     try {
-      await sg.closePlan(selectedPlanId);
+      const res = await sg.closePlan(selectedPlanId);
+      if (isApprovalPending(res)) {
+        showApprovalPending('Plan close sent for approval.');
+      } else {
+        showSuccess('Plan closed');
+      }
       await loadPlans();
-    } catch (err) { showError(err, 'Failed to close plan'); }
+    } catch (err) {
+      if (isApprovalPending(null, err)) showApprovalPending('Plan close sent for approval.');
+      else showError(err, 'Failed to close plan');
+    }
+  }, [selectedPlanId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleReopen = useCallback(async () => {
+    if (!selectedPlanId) return;
+    if (!window.confirm('Reopen this plan to DRAFT? All targets under it will also revert to DRAFT until you re-activate.')) return;
+    try {
+      const res = await sg.reopenPlan(selectedPlanId);
+      if (isApprovalPending(res)) {
+        showApprovalPending('Plan reopen sent for approval.');
+      } else {
+        showSuccess('Plan reopened to DRAFT — you can now edit.');
+      }
+      await loadPlans();
+    } catch (err) {
+      if (isApprovalPending(null, err)) showApprovalPending('Plan reopen sent for approval.');
+      else showError(err, 'Failed to reopen plan');
+    }
   }, [selectedPlanId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Growth Drivers
@@ -305,24 +368,44 @@ export default function SalesGoalSetup() {
   const saveEntityTargets = useCallback(async () => {
     setSaving(true);
     try {
+      const plan = plans.find(p => p._id === selectedPlanId);
+      const planEntityId = idOf(plan?.entity_id);
+      let written = 0;
+      let skipped = 0;
+      let pendingApproval = false;
       for (const t of entityTargets) {
+        if (!t.entity_id) { skipped++; continue; }
         const payload = {
           plan_id: selectedPlanId,
+          entity_id: planEntityId || t.entity_id,
           target_type: 'ENTITY',
-          entity_id: t.entity_id,
-          entity_name: t.entity_name,
+          target_entity_id: t.entity_id,
+          target_label: t.entity_name || '',
           sales_target: Number(t.sales_target) || 0,
         };
-        if (t._id) await sg.updateTarget(t._id, payload);
-        else await sg.createTarget(payload);
+        const res = t._id ? await sg.updateTarget(t._id, payload) : await sg.createTarget(payload);
+        if (isApprovalPending(res)) pendingApproval = true;
+        written++;
       }
-      // Reload
       const tRes = await sg.getTargets({ plan_id: selectedPlanId });
       const targets = tRes?.data || [];
-      setEntityTargets(targets.filter(t => t.target_type === 'ENTITY'));
-    } catch (err) { showError(err, 'Failed to save entity targets'); }
+      setEntityTargets(targets.filter(t => t.target_type === 'ENTITY').map(normalizeEntityTarget));
+      if (pendingApproval) {
+        showApprovalPending('Entity targets sent for approval.');
+      } else if (written > 0) {
+        showSuccess(`Saved ${written} entity target${written === 1 ? '' : 's'}${skipped ? ` (${skipped} blank row${skipped === 1 ? '' : 's'} skipped)` : ''}`);
+      } else {
+        showError(null, 'No entity targets saved — pick an entity on each row first.');
+      }
+    } catch (err) {
+      if (isApprovalPending(null, err)) {
+        showApprovalPending('Entity targets sent for approval.');
+      } else {
+        showError(err, 'Failed to save entity targets');
+      }
+    }
     setSaving(false);
-  }, [entityTargets, selectedPlanId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [entityTargets, selectedPlanId, plans]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // BDM Targets
   const addBdmTarget = () => {
@@ -352,27 +435,54 @@ export default function SalesGoalSetup() {
   const saveBdmTargets = useCallback(async () => {
     setSaving(true);
     try {
+      const plan = plans.find(p => p._id === selectedPlanId);
+      const planEntityId = idOf(plan?.entity_id) || idOf(entities[0]?._id);
+      if (!planEntityId) {
+        showError(null, 'Cannot save — no entity found on the plan or in the system.');
+        setSaving(false);
+        return;
+      }
+      const pct = Number(form.collection_target_pct) || 0;
+      let written = 0;
+      let skipped = 0;
+      let pendingApproval = false;
       for (const t of bdmTargets) {
+        if (!t.person_id && !t.bdm_id) { skipped++; continue; }
+        const sales = Number(t.sales_target) || 0;
         const payload = {
           plan_id: selectedPlanId,
+          entity_id: planEntityId,
           target_type: 'BDM',
-          bdm_id: t.bdm_id,
-          bdm_name: t.bdm_name,
-          person_id: t.person_id,
-          territory: t.territory,
-          territory_id: t.territory_id,
-          sales_target: Number(t.sales_target) || 0,
-          collection_target: Number(t.collection_target) || 0,
+          sales_target: sales,
+          collection_target: Math.round(sales * pct / 100),
+          target_label: t.bdm_name || '',
         };
-        if (t._id) await sg.updateTarget(t._id, payload);
-        else await sg.createTarget(payload);
+        if (t.bdm_id) payload.bdm_id = t.bdm_id;
+        if (t.person_id) payload.person_id = t.person_id;
+        if (t.territory_id) payload.territory_id = t.territory_id;
+        const res = t._id ? await sg.updateTarget(t._id, payload) : await sg.createTarget(payload);
+        if (isApprovalPending(res)) pendingApproval = true;
+        written++;
       }
       const tRes = await sg.getTargets({ plan_id: selectedPlanId });
       const targets = tRes?.data || [];
-      setBdmTargets(targets.filter(t => t.target_type === 'BDM'));
-    } catch (err) { showError(err, 'Failed to save BDM targets'); }
+      setBdmTargets(targets.filter(t => t.target_type === 'BDM').map(normalizeBdmTarget));
+      if (pendingApproval) {
+        showApprovalPending('BDM targets sent for approval.');
+      } else if (written > 0) {
+        showSuccess(`Saved ${written} BDM target${written === 1 ? '' : 's'}${skipped ? ` (${skipped} blank row${skipped === 1 ? '' : 's'} skipped)` : ''}`);
+      } else {
+        showError(null, 'No BDM targets saved — pick a BDM on each row first.');
+      }
+    } catch (err) {
+      if (isApprovalPending(null, err)) {
+        showApprovalPending('BDM targets sent for approval.');
+      } else {
+        showError(err, 'Failed to save BDM targets');
+      }
+    }
     setSaving(false);
-  }, [bdmTargets, selectedPlanId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [bdmTargets, selectedPlanId, plans, form, entities]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Incentive Programs
   const addIncentiveProgram = () => {
@@ -439,7 +549,10 @@ export default function SalesGoalSetup() {
                 <button className="sgs-btn sgs-btn-success" onClick={handleActivate}>Activate Plan</button>
               )}
               {planStatus === 'ACTIVE' && selectedPlanId && (
-                <button className="sgs-btn sgs-btn-danger" onClick={handleClose}>Close Plan</button>
+                <>
+                  <button className="sgs-btn sgs-btn-outline" onClick={handleReopen} title="Revert to DRAFT to edit header fields">Reopen to Draft</button>
+                  <button className="sgs-btn sgs-btn-danger" onClick={handleClose}>Close Plan</button>
+                </>
               )}
               <select
                 style={{ padding: '8px 12px', border: '1px solid var(--erp-border)', borderRadius: 8, fontSize: 13, background: 'var(--erp-panel)', color: 'var(--erp-text)' }}
@@ -488,33 +601,47 @@ export default function SalesGoalSetup() {
               {tab === 'plan' && (
                 <div className="sgs-panel">
                   <h3>Plan Details</h3>
-                  <div className="sgs-form-row">
-                    <div className="sgs-field">
-                      <label>Fiscal Year</label>
-                      <input type="number" value={form.fiscal_year ?? ''} onChange={e => handleFormChange('fiscal_year', e.target.value)} />
+                  {planStatus !== 'DRAFT' && selectedPlanId && (
+                    <div className="sgs-validation" style={{ background: '#fef9c3', border: '1px solid #fde68a', color: '#854d0e', marginBottom: 12 }}>
+                      Plan is <strong>{planStatus}</strong>. Header fields are locked to preserve performance history.
+                      {planStatus === 'ACTIVE' && ' Click "Reopen to Draft" above to edit.'}
+                      {' Targets (Entity / BDM tabs) can still be added on an ACTIVE plan.'}
                     </div>
-                    <div className="sgs-field">
-                      <label>Plan Name</label>
-                      <input type="text" value={form.plan_name ?? ''} onChange={e => handleFormChange('plan_name', e.target.value)} placeholder="e.g., FY2026 Growth Plan" />
-                    </div>
-                  </div>
-                  <div className="sgs-form-row">
-                    <div className="sgs-field">
-                      <label>Baseline Revenue (Last Year Actual)</label>
-                      <input type="number" value={form.baseline_revenue ?? ''} onChange={e => handleFormChange('baseline_revenue', e.target.value)} />
-                    </div>
-                    <div className="sgs-field">
-                      <label>Target Revenue</label>
-                      <input type="number" value={form.target_revenue ?? ''} onChange={e => handleFormChange('target_revenue', e.target.value)} />
-                    </div>
-                    <div className="sgs-field">
-                      <label>Collection Target (%)</label>
-                      <input type="number" value={form.collection_target_pct ?? ''} onChange={e => handleFormChange('collection_target_pct', e.target.value)} min="0" max="100" />
-                    </div>
-                  </div>
-                  <button className="sgs-btn sgs-btn-primary" onClick={savePlan} disabled={saving}>
-                    {saving ? 'Saving...' : selectedPlanId ? 'Update Plan' : 'Create Plan'}
-                  </button>
+                  )}
+                  {(() => {
+                    const planLocked = !!selectedPlanId && planStatus !== 'DRAFT';
+                    return (
+                      <>
+                        <div className="sgs-form-row">
+                          <div className="sgs-field">
+                            <label>Fiscal Year</label>
+                            <input type="number" value={form.fiscal_year ?? ''} onChange={e => handleFormChange('fiscal_year', e.target.value)} disabled={planLocked} />
+                          </div>
+                          <div className="sgs-field">
+                            <label>Plan Name</label>
+                            <input type="text" value={form.plan_name ?? ''} onChange={e => handleFormChange('plan_name', e.target.value)} placeholder="e.g., FY2026 Growth Plan" disabled={planLocked} />
+                          </div>
+                        </div>
+                        <div className="sgs-form-row">
+                          <div className="sgs-field">
+                            <label>Baseline Revenue (Last Year Actual)</label>
+                            <input type="number" value={form.baseline_revenue ?? ''} onChange={e => handleFormChange('baseline_revenue', e.target.value)} disabled={planLocked} />
+                          </div>
+                          <div className="sgs-field">
+                            <label>Target Revenue</label>
+                            <input type="number" value={form.target_revenue ?? ''} onChange={e => handleFormChange('target_revenue', e.target.value)} disabled={planLocked} />
+                          </div>
+                          <div className="sgs-field">
+                            <label>Collection Target (%)</label>
+                            <input type="number" value={form.collection_target_pct ?? ''} onChange={e => handleFormChange('collection_target_pct', e.target.value)} min="0" max="100" disabled={planLocked} />
+                          </div>
+                        </div>
+                        <button className="sgs-btn sgs-btn-primary" onClick={savePlan} disabled={saving || planLocked}>
+                          {saving ? 'Saving...' : selectedPlanId ? 'Update Plan' : 'Create Plan'}
+                        </button>
+                      </>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -522,6 +649,11 @@ export default function SalesGoalSetup() {
               {tab === 'drivers' && (
                 <div className="sgs-panel">
                   <h3>Growth Drivers</h3>
+                  {planStatus !== 'DRAFT' && selectedPlanId && (
+                    <div className="sgs-validation" style={{ background: '#fef9c3', border: '1px solid #fde68a', color: '#854d0e', marginBottom: 12 }}>
+                      Plan is <strong>{planStatus}</strong>. Growth drivers are locked. Reopen the plan to edit.
+                    </div>
+                  )}
                   {(form.growth_drivers || []).length === 0 && (
                     <p style={{ color: 'var(--erp-muted)', fontSize: 13 }}>No growth drivers defined. Add one below.</p>
                   )}
@@ -644,6 +776,7 @@ export default function SalesGoalSetup() {
                           <tbody>
                             {entityTargets.map((t, i) => {
                               const collTarget = (Number(t.sales_target) || 0) * (Number(form.collection_target_pct) || 0) / 100;
+                              const savedEntityMissing = t.entity_id && !entities.some(ent => ent._id === t.entity_id);
                               return (
                                 <tr key={t._id || i}>
                                   <td>{i + 1}</td>
@@ -659,12 +792,22 @@ export default function SalesGoalSetup() {
                                       }}
                                     >
                                       <option value="">— Select entity —</option>
+                                      {savedEntityMissing && (
+                                        <option value={t.entity_id}>
+                                          {(t.entity_name || t.entity_id) + ' (inactive)'}
+                                        </option>
+                                      )}
                                       {entities.map(ent => (
                                         <option key={ent._id} value={ent._id}>
                                           {ent.entity_name || ent.name}{ent.short_name ? ` (${ent.short_name})` : ''}
                                         </option>
                                       ))}
                                     </select>
+                                    {savedEntityMissing && (
+                                      <small style={{ color: '#b45309', fontSize: 11, display: 'block', marginTop: 2 }}>
+                                        Saved entity is not ACTIVE — reactivate in Control Center → Entities.
+                                      </small>
+                                    )}
                                   </td>
                                   <td><input type="number" value={t.sales_target || ''} onChange={e => updateEntityTarget(i, 'sales_target', e.target.value)} placeholder="0" /></td>
                                   <td className="num">{php(collTarget)}</td>
@@ -766,7 +909,7 @@ export default function SalesGoalSetup() {
                                   </select>
                                 </td>
                                 <td><input type="number" value={t.sales_target ?? ''} onChange={e => updateBdmTarget(i, 'sales_target', e.target.value)} placeholder="0" /></td>
-                                <td><input type="number" value={t.collection_target ?? ''} onChange={e => updateBdmTarget(i, 'collection_target', e.target.value)} placeholder="0" /></td>
+                                <td className="num">{php((Number(t.sales_target) || 0) * (Number(form.collection_target_pct) || 0) / 100)}</td>
                                 <td><span className="sgs-status-badge" style={statusBadgeStyle(t.status || 'DRAFT')}>{t.status || 'DRAFT'}</span></td>
                               </tr>
                             ))}
@@ -775,7 +918,7 @@ export default function SalesGoalSetup() {
                             <tr style={{ fontWeight: 700 }}>
                               <td colSpan={3}>Total</td>
                               <td className="num">{php(bdmSum)}</td>
-                              <td className="num">{php(bdmTargets.reduce((s, t) => s + (Number(t.collection_target) || 0), 0))}</td>
+                              <td className="num">{php(bdmSum * (Number(form.collection_target_pct) || 0) / 100)}</td>
                               <td />
                             </tr>
                           </tfoot>
@@ -802,6 +945,11 @@ export default function SalesGoalSetup() {
               {tab === 'incentive' && (
                 <div className="sgs-panel">
                   <h3>Incentive Programs</h3>
+                  {planStatus !== 'DRAFT' && selectedPlanId && (
+                    <div className="sgs-validation" style={{ background: '#fef9c3', border: '1px solid #fde68a', color: '#854d0e', marginBottom: 12 }}>
+                      Plan is <strong>{planStatus}</strong>. Incentive programs are locked. Reopen the plan to edit.
+                    </div>
+                  )}
                   {(form.incentive_programs || []).length === 0 && (
                     <p style={{ color: 'var(--erp-muted)', fontSize: 13 }}>No incentive programs defined yet.</p>
                   )}
