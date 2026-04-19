@@ -57,6 +57,24 @@ const communicationLogService = {
     const response = await api.patch(`/communication-logs/${id}/archive`);
     return response.data;
   },
+
+  // Get all unmatched pending inbound messages (admin)
+  getUnmatched: async () => {
+    const response = await api.get('/communication-logs/unmatched');
+    return response.data;
+  },
+
+  // Assign a pending log to a doctor (admin)
+  assign: async (id, doctorId) => {
+    const response = await api.post(`/communication-logs/${id}/assign`, { doctorId });
+    return response.data;
+  },
+
+  // Decline the AI suggestion for a pending log (admin)
+  decline: async (id) => {
+    const response = await api.post(`/communication-logs/${id}/decline`);
+    return response.data;
+  },
 };
 
 export default communicationLogService;

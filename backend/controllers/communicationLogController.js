@@ -134,7 +134,7 @@ const getMyLogs = catchAsync(async (req, res) => {
  * @access  Private (BDM sees own, Admin sees all)
  */
 const getLogsByDoctor = catchAsync(async (req, res) => {
-  const { page = 1, limit = 20, channel } = req.query;
+  const { page = 1, limit = 20, channel, sort: sortParam, source } = req.query;
   const query = { doctor: req.params.doctorId, status: 'logged' };
 
   // BDM can only see their own logs for this doctor
@@ -143,13 +143,15 @@ const getLogsByDoctor = catchAsync(async (req, res) => {
   }
 
   if (channel) query.channel = channel;
+  if (source) query.source = source;
 
+  const sortDir = sortParam === 'asc' ? 1 : -1;
   const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
   const [logs, total] = await Promise.all([
     CommunicationLog.find(query)
       .populate('user', 'name email')
       .populate('doctor', 'firstName lastName specialization')
-      .sort({ contactedAt: -1 })
+      .sort({ contactedAt: sortDir })
       .skip(skip)
       .limit(parseInt(limit, 10))
       .lean(),
@@ -402,6 +404,69 @@ const sendMessage = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Get all unmatched/pending inbound messages (admin)
+ * @route   GET /api/communication-logs/unmatched
+ * @access  Private (Admin)
+ */
+const getUnmatched = catchAsync(async (req, res) => {
+  const logs = await CommunicationLog.find({ pendingAssignment: true })
+    .populate('aiMatchSuggestion.doctorId', 'firstName lastName specialization')
+    .sort({ contactedAt: -1 })
+    .lean();
+
+  res.json({ success: true, data: logs });
+});
+
+/**
+ * @desc    Assign a pending log to a doctor (admin)
+ * @route   POST /api/communication-logs/:id/assign
+ * @access  Private (Admin)
+ */
+const assignLog = catchAsync(async (req, res) => {
+  const { doctorId } = req.body;
+  if (!doctorId) {
+    return res.status(400).json({ success: false, message: 'doctorId is required.' });
+  }
+
+  const log = await CommunicationLog.findById(req.params.id);
+  if (!log) throw new NotFoundError('Communication log not found');
+
+  const doctor = await Doctor.findById(doctorId).lean();
+  if (!doctor) throw new NotFoundError('VIP Client not found');
+
+  // Link the channel ID on the Doctor if not already set
+  const ch = (log.channel || '').toUpperCase();
+  const fieldMap = { MESSENGER: 'messengerId', VIBER: 'viberId', WHATSAPP: 'whatsappNumber' };
+  const channelField = fieldMap[ch];
+  if (channelField && log.senderExternalId && !doctor[channelField]) {
+    await Doctor.findByIdAndUpdate(doctorId, { [channelField]: log.senderExternalId });
+  }
+
+  log.doctor = doctorId;
+  log.user = doctor.assignedTo || req.user._id;
+  log.pendingAssignment = false;
+  log.aiMatchStatus = 'accepted';
+  await log.save();
+
+  res.json({ success: true, message: 'Log assigned to VIP Client.', data: log });
+});
+
+/**
+ * @desc    Decline the AI suggestion for a pending log (admin)
+ * @route   POST /api/communication-logs/:id/decline
+ * @access  Private (Admin)
+ */
+const declineLog = catchAsync(async (req, res) => {
+  const log = await CommunicationLog.findById(req.params.id);
+  if (!log) throw new NotFoundError('Communication log not found');
+
+  log.aiMatchStatus = 'declined';
+  await log.save();
+
+  res.json({ success: true, message: 'AI suggestion declined.', data: log });
+});
+
 // ── Helper: get contact info for a channel ──
 function getContactForChannel(clientOrDoctor, channel) {
   const ch = (channel || '').toUpperCase();
@@ -581,6 +646,9 @@ module.exports = {
   getLogById,
   archiveLog,
   sendMessage,
+  getUnmatched,
+  assignLog,
+  declineLog,
   // Shared helpers (used by messageTemplateController)
   dispatchMessage,
   getContactForChannel,

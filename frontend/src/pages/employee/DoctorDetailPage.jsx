@@ -18,6 +18,7 @@ import LoadingSpinner from '../../components/common/LoadingSpinner';
 import ErrorMessage from '../../components/common/ErrorMessage';
 import DoctorEditForm from '../../components/employee/DoctorEditForm';
 import ProductDetailModal from '../../components/employee/ProductDetailModal';
+import ConversationDrawer from '../../components/common/ConversationDrawer';
 import doctorService from '../../services/doctorService';
 import visitService from '../../services/visitService';
 import productService from '../../services/productService';
@@ -694,6 +695,7 @@ const DoctorDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showConversation, setShowConversation] = useState(false);
   const [detailProduct, setDetailProduct] = useState(null);
   const [loadingProductId, setLoadingProductId] = useState(null);
   const [heatData, setHeatData] = useState([]);
@@ -887,6 +889,13 @@ const DoctorDetailPage = () => {
                   title={!canVisit ? visitReason : 'Log a visit for this VIP Client'}
                 >
                   {canVisit ? 'Log Visit' : 'Cannot Visit'}
+                </button>
+                <button
+                  className="ddp-btn ddp-btn-secondary"
+                  onClick={() => setShowConversation(true)}
+                  title="Open conversation"
+                >
+                  Message
                 </button>
                 <button
                   className="ddp-btn ddp-btn-secondary"
@@ -1164,6 +1173,14 @@ const DoctorDetailPage = () => {
               doctor={doctor}
               onClose={() => setShowEditModal(false)}
               onSaved={handleEditSaved}
+            />
+          )}
+
+          {/* Conversation Drawer */}
+          {showConversation && (
+            <ConversationDrawer
+              doctor={doctor}
+              onClose={() => setShowConversation(false)}
             />
           )}
 
