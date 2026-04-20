@@ -565,7 +565,12 @@ export default function SalesEntry() {
   // Falls back to sane defaults if the lookup hasn't been seeded yet.
   const { config: rejectionConfig } = useRejectionConfig('SALES');
   const rejectionReasonField = rejectionConfig?.reason_field || 'rejection_reason';
-  const rejectionEditableStatuses = rejectionConfig?.editable_statuses || ['DRAFT', 'ERROR'];
+  // useMemo so the array identity is stable across renders — otherwise the
+  // useCallback below sees a "new" array each render and react-hooks/exhaustive-deps fires.
+  const rejectionEditableStatuses = useMemo(
+    () => rejectionConfig?.editable_statuses || ['DRAFT', 'ERROR'],
+    [rejectionConfig]
+  );
   const isRejectedRow = useCallback((row) => Boolean(
     row && row[rejectionReasonField] && rejectionEditableStatuses.includes(row.status)
   ), [rejectionReasonField, rejectionEditableStatuses]);

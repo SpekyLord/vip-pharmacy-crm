@@ -133,7 +133,7 @@ export default function CarLogbook() {
   const {
     getCarLogbookList, createCarLogbook, updateCarLogbook, deleteDraftCarLogbook,
     validateCarLogbook, submitCarLogbook, reopenCarLogbook,
-    getSmerDestinationByDate, getSmerDestinationsBatch, loading
+    getSmerDestinationsBatch, loading
   } = useExpenses();
   const { settings } = useSettings();
   const { options: fuelTypeOpts } = useLookupOptions('FUEL_TYPE');

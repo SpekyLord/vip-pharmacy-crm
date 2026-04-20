@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
-import { matchHospital, matchProduct, fieldVal, fieldConfidence } from '../utils/ocrMatching';
+import { matchHospital, matchProduct, fieldVal, fieldConfidence, formatReviewReason } from '../utils/ocrMatching';
 
 const scanModalStyles = `
   .scan-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; display: flex; align-items: center; justify-content: center; padding: 16px; }
@@ -36,22 +36,6 @@ function ensureStyles() {
   tag.textContent = scanModalStyles;
   document.head.appendChild(tag);
   stylesInjected = true;
-}
-
-export function formatReviewReason(reason) {
-  const labels = {
-    LOW_CONFIDENCE_INVOICE_NO: 'Invoice number needs review',
-    LOW_CONFIDENCE_DATE: 'Invoice date needs review',
-    LOW_CONFIDENCE_HOSPITAL: 'Hospital/customer needs review',
-    MISSING_PRODUCT: 'A line item is missing a product',
-    MISSING_LINE_ITEM_QTY: 'A line item is missing quantity',
-    UNPARSED_ITEM_BLOCK: 'The CSI table could not be parsed cleanly',
-    LINE_ITEM_ARITHMETIC_MISMATCH: 'A line item amount does not match qty × price',
-    TOTAL_MISMATCH: 'Line item totals do not match the invoice total',
-    LAYOUT_UNKNOWN: 'Layout is unknown and needs manual review',
-    UNMATCHED_PRODUCT: 'At least one product did not match master data',
-  };
-  return labels[reason] || reason;
 }
 
 /**
@@ -202,7 +186,7 @@ export default function ScanCSIModal({ open, onClose, onApply, hospitals = [], p
         {photoOnly && step === 'capture' && (
           <div className="scan-photo-only-hint">
             Your previous submission was rejected. Take or upload a clearer photo of the CSI;
-            we'll attach it to this row without re-keying line items so you can resubmit immediately.
+            we&apos;ll attach it to this row without re-keying line items so you can resubmit immediately.
           </div>
         )}
 

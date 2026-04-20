@@ -388,7 +388,7 @@ function BatchMetadataEditModal({ open, target, onClose, onSubmit, submitting })
             placeholder="e.g. ABC12345"
           />
           <span className="bme-hint">
-            Letters and digits only. Dashes/spaces are stripped on save (so "B-1234" becomes "B1234").
+            Letters and digits only. Dashes/spaces are stripped on save (so &quot;B-1234&quot; becomes &quot;B1234&quot;).
             Original: <strong>{target.batch_lot_no}</strong>
           </span>
         </div>
