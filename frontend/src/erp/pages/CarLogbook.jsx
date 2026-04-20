@@ -4,13 +4,14 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useExpenses from '../hooks/useExpenses';
 import useSettings from '../hooks/useSettings';
+import useTransfers from '../hooks/useTransfers';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 import { useLookupOptions } from '../hooks/useLookups';
 import { useRejectionConfig } from '../hooks/useRejectionConfig';
 import WorkflowGuide from '../components/WorkflowGuide';
 import RejectionBanner from '../components/RejectionBanner';
 import { showError, showApprovalPending } from '../utils/errorToast';
-import { ROLE_SETS } from '../../constants/roles';
+import { ROLES, ROLE_SETS } from '../../constants/roles';
 import { useAuth } from '../../hooks/useAuth';
 
 // ── Generic Scan Modal (reused for ODOMETER and GAS_RECEIPT) ──
@@ -134,6 +135,9 @@ const mobileStyles = `
 export default function CarLogbook() {
   const { user } = useAuth();
   const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
+  const isPrivileged = isAdmin; // president/admin/finance may pick which BDM to view
+  const isBdm = user?.role === ROLES.CONTRACTOR;
+  const { getBdmsByEntity } = useTransfers();
   const {
     getCarLogbookList, createCarLogbook, updateCarLogbook, deleteDraftCarLogbook,
     validateCarLogbook, submitCarLogbook, reopenCarLogbook, submitFuelForApproval,
@@ -160,6 +164,14 @@ export default function CarLogbook() {
   const [listTab, setListTab] = useState('working');
   const [expandedRow, setExpandedRow] = useState(null);
   const [savingRow, setSavingRow] = useState(null);
+  // BDM selector — privileged viewers only. BDMs are self-scoped by backend tenantFilter.
+  // Rule #21: no silent self-fallback; privileged starts empty until they pick.
+  const [bdmOptions, setBdmOptions] = useState([]);
+  const [selectedBdmId, setSelectedBdmId] = useState(() => (isBdm ? (user?._id || '') : ''));
+  // Viewing own logbook → writes allowed. Viewing someone else's (or no BDM picked
+  // on a privileged account) → read-only. Rule #21: privileged without a selected BDM
+  // cannot submit because the backend would 400 on missing bdm_id.
+  const viewingSelf = !!selectedBdmId && selectedBdmId === user?._id;
 
   // Scan state
   const [scanOdoOpen, setScanOdoOpen] = useState(false);
@@ -202,8 +214,16 @@ export default function CarLogbook() {
   // Load existing entries and merge into the generated day grid
   const loadAndMerge = useCallback(async () => {
     const dayRows = generateDays();
+    // Privileged viewer with no BDM selected → show empty grid (Rule #21: no silent self-filter)
+    if (isPrivileged && !selectedBdmId) {
+      setRows(dayRows);
+      setExpandedRow(null);
+      return;
+    }
     try {
-      const res = await getCarLogbookList({ period, cycle, limit: 0 });
+      const params = { period, cycle, limit: 0 };
+      if (isPrivileged && selectedBdmId) params.bdm_id = selectedBdmId;
+      const res = await getCarLogbookList(params);
       const docs = res?.data || [];
       const docMap = new Map();
       for (const doc of docs) {
@@ -255,9 +275,23 @@ export default function CarLogbook() {
 
     setRows(dayRows);
     setExpandedRow(null);
-  }, [period, cycle, generateDays]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [period, cycle, generateDays, isPrivileged, selectedBdmId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadAndMerge(); }, [loadAndMerge]);
+
+  // Load BDM options for privileged viewers (entity-scoped). Non-privileged skip this.
+  useEffect(() => {
+    if (!isPrivileged) return;
+    if (!user?.entity_id && !(user?.entity_ids && user.entity_ids.length)) return;
+    const eid = user?.entity_id || user?.entity_ids?.[0];
+    if (!eid) return;
+    (async () => {
+      try {
+        const r = await getBdmsByEntity(eid);
+        setBdmOptions(r?.data || []);
+      } catch (err) { console.error('[CarLogbook] load BDMs:', err.message); }
+    })();
+  }, [isPrivileged, user?.entity_id, user?.entity_ids]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Row change handler
   const handleRowChange = (idx, field, value) => {
@@ -333,6 +367,9 @@ export default function CarLogbook() {
       period, cycle,
       km_per_liter: settings?.FUEL_EFFICIENCY_DEFAULT || 12
     };
+    // Rule #21 — privileged users must stamp the chosen BDM onto create/update calls.
+    // Non-privileged users let the backend default to their own req.bdmId.
+    if (isPrivileged && selectedBdmId) data.bdm_id = selectedBdmId;
 
     setSavingRow(idx);
     try {
@@ -362,6 +399,7 @@ export default function CarLogbook() {
 
   // Save all dirty rows at once (like SMER's "Create/Update" button)
   const handleSaveAll = async () => {
+    if (!viewingSelf) { showMsg('Read-only: you are viewing another BDM\'s logbook', true); return; }
     const dirtyRows = rows.map((r, i) => ({ ...r, idx: i })).filter(r => r.dirty);
     if (!dirtyRows.length) { showMsg('No changes to save'); return; }
     let saved = 0;
@@ -434,13 +472,19 @@ export default function CarLogbook() {
   // builds one CarLogbookCycle wrapper for this BDM instead of batching all
   // open cycles into a multi-entry ApprovalRequest.
   const handleValidate = async () => {
+    if (!viewingSelf) { showMsg('Read-only: you are viewing another BDM\'s logbook', true); return; }
     for (let i = 0; i < rows.length; i++) { if (rows[i].dirty) await saveRow(i); }
-    try { const r = await validateCarLogbook({ period, cycle }); showMsg(r?.message || 'Validated'); loadAndMerge(); } catch (e) { showMsg(e.response?.data?.message || 'Validation failed', true); }
+    const scope = { period, cycle };
+    if (isPrivileged && selectedBdmId) scope.bdm_id = selectedBdmId;
+    try { const r = await validateCarLogbook(scope); showMsg(r?.message || 'Validated'); loadAndMerge(); } catch (e) { showMsg(e.response?.data?.message || 'Validation failed', true); }
   };
   const handleSubmit = async () => {
+    if (!viewingSelf) { showMsg('Read-only: you are viewing another BDM\'s logbook', true); return; }
     for (let i = 0; i < rows.length; i++) { if (rows[i].dirty) await saveRow(i); }
+    const scope = { period, cycle };
+    if (isPrivileged && selectedBdmId) scope.bdm_id = selectedBdmId;
     try {
-      const r = await submitCarLogbook({ period, cycle });
+      const r = await submitCarLogbook(scope);
       if (r?.approval_pending) { showApprovalPending(r.message); }
       else showMsg(r?.message || 'Submitted');
       loadAndMerge();
@@ -522,11 +566,36 @@ export default function CarLogbook() {
             <select value={cycle} onChange={e => setCycle(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }}>
               <option value="C1">Cycle 1</option><option value="C2">Cycle 2</option><option value="MONTHLY">Monthly</option>
             </select>
-            <button onClick={handleSaveAll} disabled={loading || !rows.some(r => r.dirty)} style={{ padding: '6px 16px', borderRadius: 6, background: 'var(--erp-accent, #1e5eff)', color: '#fff', border: 'none', cursor: loading || !rows.some(r => r.dirty) ? 'default' : 'pointer', opacity: rows.some(r => r.dirty) ? 1 : 0.5 }}>Save Car Logbook</button>
-            <button onClick={handleValidate} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#22c55e', color: '#fff', border: 'none', cursor: 'pointer' }}>Validate</button>
-            <button onClick={handleSubmit} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer' }}>Submit</button>
+            {isPrivileged && (
+              <select
+                value={selectedBdmId}
+                onChange={e => setSelectedBdmId(e.target.value)}
+                title="Choose which BDM's logbook to view — required for privileged roles"
+                style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)', minWidth: 180 }}
+              >
+                <option value="">Select a BDM…</option>
+                {bdmOptions.map(b => (
+                  <option key={b._id} value={b._id}>{b.name}</option>
+                ))}
+              </select>
+            )}
+            <button onClick={handleSaveAll} disabled={loading || !viewingSelf || !rows.some(r => r.dirty)} title={!viewingSelf ? 'Read-only: you are viewing another BDM\'s logbook' : undefined} style={{ padding: '6px 16px', borderRadius: 6, background: 'var(--erp-accent, #1e5eff)', color: '#fff', border: 'none', cursor: (loading || !viewingSelf || !rows.some(r => r.dirty)) ? 'default' : 'pointer', opacity: (viewingSelf && rows.some(r => r.dirty)) ? 1 : 0.5 }}>Save Car Logbook</button>
+            <button onClick={handleValidate} disabled={loading || !viewingSelf} title={!viewingSelf ? 'Read-only: you are viewing another BDM\'s logbook' : undefined} style={{ padding: '6px 16px', borderRadius: 6, background: '#22c55e', color: '#fff', border: 'none', cursor: (loading || !viewingSelf) ? 'default' : 'pointer', opacity: viewingSelf ? 1 : 0.5 }}>Validate</button>
+            <button onClick={handleSubmit} disabled={loading || !viewingSelf} title={!viewingSelf ? 'Read-only: you are viewing another BDM\'s logbook' : undefined} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: (loading || !viewingSelf) ? 'default' : 'pointer', opacity: viewingSelf ? 1 : 0.5 }}>Submit</button>
             <Link to="/erp/prf-calf" style={{ padding: '6px 14px', borderRadius: 6, background: '#f1f5f9', color: 'var(--erp-text, #132238)', textDecoration: 'none', fontSize: 13, border: '1px solid var(--erp-border, #dbe4f0)' }}>PRF / CALF</Link>
           </div>
+
+          {/* Read-only banner when privileged viewer is inspecting someone else's logbook */}
+          {isPrivileged && selectedBdmId && !viewingSelf && (
+            <div style={{ padding: 10, marginBottom: 12, borderRadius: 8, background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: 13, color: '#1e40af' }}>
+              Viewing <strong>{bdmOptions.find(b => b._id === selectedBdmId)?.name || 'BDM'}</strong>'s car logbook — read-only. Only the BDM can edit their own entries.
+            </div>
+          )}
+          {isPrivileged && !selectedBdmId && (
+            <div style={{ padding: 10, marginBottom: 12, borderRadius: 8, background: '#fffbeb', border: '1px solid #fde68a', fontSize: 13, color: '#92400e' }}>
+              Select a BDM above to view their car logbook. Car Logbook is a per-person daily grid; pick whose logbook to inspect.
+            </div>
+          )}
 
           {/* CALF Dependency Warning */}
           {hasCalf && (

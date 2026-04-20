@@ -163,6 +163,10 @@ const getSmerList = catchAsync(async (req, res) => {
   if (req.query.period) filter.period = req.query.period;
   if (req.query.cycle) filter.cycle = req.query.cycle;
 
+  // Rule #21: privileged users may scope by bdm_id; absence = no BDM filter.
+  const privileged = req.isPresident || req.isAdmin || req.isFinance;
+  if (privileged && req.query.bdm_id) filter.bdm_id = req.query.bdm_id;
+
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 20;
 
@@ -565,7 +569,26 @@ const applyPerdiemOverride = catchAsync(async (req, res) => {
 // CAR LOGBOOK ENDPOINTS
 // ═══════════════════════════════════════════
 
+// Rule #21 — Car Logbook is a per-BDM document. Privileged users (president/admin/finance)
+// are NOT BDMs on any record, so `req.bdmId` (their own _id) is never a valid default filter.
+// Resolve scope explicitly: privileged must pass `?bdm_id=` (or body.bdm_id) to pick a BDM;
+// non-privileged always use their own _id. See Phase G5 (CLAUDE-ERP) for precedent.
+function resolveCarLogbookScope(req) {
+  const privileged = !!(req.isPresident || req.isAdmin || req.isFinance);
+  const rawBdm = (req.query && req.query.bdm_id) || (req.body && req.body.bdm_id) || null;
+  const bdmId = privileged ? rawBdm : req.bdmId;
+  return { privileged, bdmId };
+}
+
 const createCarLogbook = catchAsync(async (req, res) => {
+  const { privileged, bdmId } = resolveCarLogbookScope(req);
+  if (privileged && !bdmId) {
+    return res.status(400).json({
+      success: false,
+      message: 'bdm_id is required — privileged users must specify which BDM the logbook entry belongs to'
+    });
+  }
+
   const settings = await Settings.getSettings();
   const kmPerLiter = req.body.km_per_liter || settings.FUEL_EFFICIENCY_DEFAULT || 12;
 
@@ -573,7 +596,7 @@ const createCarLogbook = catchAsync(async (req, res) => {
     ...req.body,
     km_per_liter: kmPerLiter,
     entity_id: req.entityId,
-    bdm_id: req.bdmId,
+    bdm_id: bdmId,
     created_by: req.user._id,
     status: 'DRAFT'
   });
@@ -582,18 +605,47 @@ const createCarLogbook = catchAsync(async (req, res) => {
 });
 
 const updateCarLogbook = catchAsync(async (req, res) => {
+  const { privileged, bdmId } = resolveCarLogbookScope(req);
+  if (privileged && !bdmId) {
+    return res.status(400).json({
+      success: false,
+      message: 'bdm_id is required — privileged users must specify which BDM to scope the edit to'
+    });
+  }
   const editable = await getEditableStatuses(req.entityId, 'CAR_LOGBOOK');
-  const entry = await CarLogbookEntry.findOne({ _id: req.params.id, ...req.tenantFilter, status: { $in: editable } });
+  const docFilter = { _id: req.params.id, status: { $in: editable } };
+  if (req.entityId) docFilter.entity_id = req.entityId;
+  if (bdmId) docFilter.bdm_id = bdmId;
+  const entry = await CarLogbookEntry.findOne(docFilter);
   if (!entry) return res.status(404).json({ success: false, message: 'Draft car logbook entry not found' });
 
   Object.assign(entry, req.body);
+  // Lock ownership fields so body cannot silently reassign entity/BDM
+  entry.bdm_id = bdmId || entry.bdm_id;
+  if (req.entityId) entry.entity_id = req.entityId;
   await entry.save();
   const autoCalf = await autoCalfForSource(entry, 'CARLOGBOOK');
   res.json({ success: true, data: entry, auto_calf: autoCalf ? { _id: autoCalf._id, calf_number: autoCalf.calf_number, amount: autoCalf.amount } : null });
 });
 
 const getCarLogbookList = catchAsync(async (req, res) => {
-  const filter = { ...req.tenantFilter };
+  const { privileged, bdmId } = resolveCarLogbookScope(req);
+
+  // The grid UI is per-person. If a privileged user lands without picking a BDM,
+  // return empty so the frontend shows the "Select a BDM" banner instead of a
+  // cross-BDM mashup that breaks the calendar view.
+  if (privileged && !bdmId) {
+    return res.json({
+      success: true,
+      data: [],
+      pagination: { page: 1, limit: 0, total: 0 },
+      message: 'Select a BDM to view their car logbook'
+    });
+  }
+
+  const filter = {};
+  if (req.entityId) filter.entity_id = req.entityId;
+  if (bdmId) filter.bdm_id = bdmId;
   if (req.query.status) filter.status = req.query.status;
   if (req.query.period) filter.period = req.query.period;
   if (req.query.cycle) filter.cycle = req.query.cycle;
@@ -613,7 +665,12 @@ const getCarLogbookList = catchAsync(async (req, res) => {
 });
 
 const getCarLogbookById = catchAsync(async (req, res) => {
-  const entry = await CarLogbookEntry.findOne({ _id: req.params.id, ...req.tenantFilter })
+  const { privileged, bdmId } = resolveCarLogbookScope(req);
+  const docFilter = { _id: req.params.id };
+  if (req.entityId) docFilter.entity_id = req.entityId;
+  if (!privileged) docFilter.bdm_id = req.bdmId;
+  else if (bdmId) docFilter.bdm_id = bdmId;
+  const entry = await CarLogbookEntry.findOne(docFilter)
     .populate('bdm_id', 'name').lean();
   if (!entry) return res.status(404).json({ success: false, message: 'Car logbook entry not found' });
   res.json({ success: true, data: entry });
@@ -621,14 +678,19 @@ const getCarLogbookById = catchAsync(async (req, res) => {
 
 const getSmerDailyByDate = catchAsync(async (req, res) => {
   const { date } = req.params; // YYYY-MM-DD
+  const { privileged, bdmId } = resolveCarLogbookScope(req);
+  // Per-BDM prefill: privileged users must pick a BDM to prefill from their SMER
+  if (privileged && !bdmId) return res.json({ success: true, data: null });
+
   const targetDate = new Date(date + 'T00:00:00.000Z');
   const nextDate = new Date(targetDate);
   nextDate.setDate(nextDate.getDate() + 1);
 
-  const smer = await SmerEntry.findOne({
-    ...req.tenantFilter,
-    'daily_entries.entry_date': { $gte: targetDate, $lt: nextDate }
-  }).lean();
+  const smerFilter = { 'daily_entries.entry_date': { $gte: targetDate, $lt: nextDate } };
+  if (req.entityId) smerFilter.entity_id = req.entityId;
+  if (bdmId) smerFilter.bdm_id = bdmId;
+
+  const smer = await SmerEntry.findOne(smerFilter).lean();
 
   if (!smer) return res.json({ success: true, data: null });
 
@@ -652,6 +714,10 @@ const getSmerDestinationsBatch = catchAsync(async (req, res) => {
   const { dates } = req.query; // comma-separated YYYY-MM-DD
   if (!dates) return res.json({ success: true, data: {} });
 
+  const { privileged, bdmId } = resolveCarLogbookScope(req);
+  // Per-BDM prefill: privileged users must pick a BDM
+  if (privileged && !bdmId) return res.json({ success: true, data: {} });
+
   const dateList = dates.split(',').filter(Boolean);
   if (!dateList.length) return res.json({ success: true, data: {} });
 
@@ -659,10 +725,11 @@ const getSmerDestinationsBatch = catchAsync(async (req, res) => {
   const endDate = new Date(dateList[dateList.length - 1] + 'T00:00:00.000Z');
   endDate.setDate(endDate.getDate() + 1);
 
-  const smers = await SmerEntry.find({
-    ...req.tenantFilter,
-    'daily_entries.entry_date': { $gte: startDate, $lt: endDate }
-  }).lean();
+  const smerFilter = { 'daily_entries.entry_date': { $gte: startDate, $lt: endDate } };
+  if (req.entityId) smerFilter.entity_id = req.entityId;
+  if (bdmId) smerFilter.bdm_id = bdmId;
+
+  const smers = await SmerEntry.find(smerFilter).lean();
 
   const result = {};
   for (const smer of smers) {
@@ -683,14 +750,40 @@ const getSmerDestinationsBatch = catchAsync(async (req, res) => {
 });
 
 const deleteDraftCarLogbook = catchAsync(async (req, res) => {
-  const result = await CarLogbookEntry.findOneAndDelete({ _id: req.params.id, ...req.tenantFilter, status: 'DRAFT' });
+  const { privileged, bdmId } = resolveCarLogbookScope(req);
+  if (privileged && !bdmId) {
+    return res.status(400).json({
+      success: false,
+      message: 'bdm_id is required — privileged users must specify which BDM to scope the delete to'
+    });
+  }
+  const docFilter = { _id: req.params.id, status: 'DRAFT' };
+  if (req.entityId) docFilter.entity_id = req.entityId;
+  if (bdmId) docFilter.bdm_id = bdmId;
+  const result = await CarLogbookEntry.findOneAndDelete(docFilter);
   if (!result) return res.status(404).json({ success: false, message: 'Draft car logbook not found' });
   res.json({ success: true, message: 'Draft car logbook deleted' });
 });
 
 const validateCarLogbook = catchAsync(async (req, res) => {
+  const { privileged, bdmId } = resolveCarLogbookScope(req);
+  if (privileged && !bdmId) {
+    return res.status(400).json({
+      success: false,
+      message: 'bdm_id is required — privileged users must specify which BDM to validate'
+    });
+  }
   const editable = await getEditableStatuses(req.entityId, 'CAR_LOGBOOK');
-  const entries = await CarLogbookEntry.find({ ...req.tenantFilter, status: { $in: editable } });
+  const filter = { status: { $in: editable } };
+  if (req.entityId) filter.entity_id = req.entityId;
+  if (bdmId) filter.bdm_id = bdmId;
+  // Scope to the active period+cycle when the frontend provides them so validation
+  // runs against the cycle being edited, not every open draft across all months.
+  const period = req.body?.period || req.query?.period;
+  const cycle = req.body?.cycle || req.query?.cycle;
+  if (period) filter.period = period;
+  if (cycle) filter.cycle = cycle;
+  const entries = await CarLogbookEntry.find(filter);
 
   for (const entry of entries) {
     const errors = [];
@@ -765,8 +858,18 @@ const validateCarLogbook = catchAsync(async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────
 const submitFuelEntryForApproval = catchAsync(async (req, res) => {
   const { id, fuel_id } = req.params;   // id = CarLogbookEntry day doc id
+  const { privileged, bdmId } = resolveCarLogbookScope(req);
+  if (privileged && !bdmId) {
+    return res.status(400).json({
+      success: false,
+      message: 'bdm_id is required — privileged users must specify which BDM to submit fuel approval for'
+    });
+  }
   const editable = await getEditableStatuses(req.entityId, 'CAR_LOGBOOK');
-  const dayDoc = await CarLogbookEntry.findOne({ _id: id, ...req.tenantFilter, status: { $in: editable } });
+  const docFilter = { _id: id, status: { $in: editable } };
+  if (req.entityId) docFilter.entity_id = req.entityId;
+  if (bdmId) docFilter.bdm_id = bdmId;
+  const dayDoc = await CarLogbookEntry.findOne(docFilter);
   if (!dayDoc) return res.status(404).json({ success: false, message: 'Car logbook day not found or not editable' });
   const fuel = dayDoc.fuel_entries.id(fuel_id);
   if (!fuel) return res.status(404).json({ success: false, message: 'Fuel entry not found' });
@@ -824,10 +927,23 @@ const submitFuelEntryForApproval = catchAsync(async (req, res) => {
 // odometer/fuel/efficiency; the wrapper only carries submit/approve/post state.
 // ─────────────────────────────────────────────────────────────────────────
 const submitCarLogbook = catchAsync(async (req, res) => {
+  // Rule #21 — submit binds a CarLogbookCycle wrapper to a specific BDM. Privileged users
+  // must pass bdm_id explicitly so the wrapper doesn't default to their own user _id
+  // (which would bind some other BDM's VALID entries to a ghost president-owned cycle).
+  const { privileged, bdmId } = resolveCarLogbookScope(req);
+  if (privileged && !bdmId) {
+    return res.status(400).json({
+      success: false,
+      message: 'bdm_id is required — privileged users must specify which BDM to submit the cycle for'
+    });
+  }
+
   // Scope to a specific cycle when period+cycle provided (frontend always passes them)
   const period = req.body?.period || req.query?.period;
   const cycle = req.body?.cycle || req.query?.cycle;
-  const scopedFilter = { ...req.tenantFilter, status: 'VALID' };
+  const scopedFilter = { status: 'VALID' };
+  if (req.entityId) scopedFilter.entity_id = req.entityId;
+  if (bdmId) scopedFilter.bdm_id = bdmId;
   if (period) scopedFilter.period = period;
   if (cycle) scopedFilter.cycle = cycle;
 
@@ -846,8 +962,9 @@ const submitCarLogbook = catchAsync(async (req, res) => {
     });
   }
 
-  // Upsert the CarLogbookCycle wrapper and aggregate totals from the per-day docs
-  const upsertFilter = { entity_id: req.entityId, bdm_id: req.bdmId, period: effPeriod, cycle: effCycle };
+  // Upsert the CarLogbookCycle wrapper and aggregate totals from the per-day docs.
+  // bdm_id comes from resolved scope (not req.bdmId) so privileged users bind to the chosen BDM.
+  const upsertFilter = { entity_id: req.entityId, bdm_id: bdmId, period: effPeriod, cycle: effCycle };
   let cycleDoc = await CarLogbookCycle.findOne(upsertFilter);
   if (!cycleDoc) {
     cycleDoc = new CarLogbookCycle({ ...upsertFilter, created_by: req.user._id, km_per_liter: entries[0].km_per_liter || 12 });
@@ -1289,6 +1406,10 @@ const getExpenseList = catchAsync(async (req, res) => {
   if (req.query.include_reversed !== 'true') {
     filter.deletion_event_id = { $exists: false };
   }
+
+  // Rule #21: privileged users may scope by bdm_id; absence = no BDM filter.
+  const privileged = req.isPresident || req.isAdmin || req.isFinance;
+  if (privileged && req.query.bdm_id) filter.bdm_id = req.query.bdm_id;
 
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 20;
@@ -1742,6 +1863,10 @@ const getPrfCalfList = catchAsync(async (req, res) => {
   if (req.query.include_reversed !== 'true') {
     filter.deletion_event_id = { $exists: false };
   }
+
+  // Rule #21: privileged users may scope by bdm_id; absence = no BDM filter.
+  const privileged = req.isPresident || req.isAdmin || req.isFinance;
+  if (privileged && req.query.bdm_id) filter.bdm_id = req.query.bdm_id;
 
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 20;

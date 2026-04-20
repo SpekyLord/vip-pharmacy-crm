@@ -458,6 +458,51 @@ See global CLAUDE.md Rule 21 for the anti-pattern documented for future projects
 
 ---
 
+## Phase G5.1 — Car Logbook bdm_id Scope Fix (April 21, 2026)
+
+### Problem
+When a privileged user (president/admin/finance) opened `/erp/car-logbook`, the grid showed **every BDM × every entity**'s entries for the selected period+cycle. Every Car Logbook endpoint spread `...req.tenantFilter` into its query; for privileged users `req.tenantFilter = {}`, so no filter was applied. Far worse than the read leak: `validateCarLogbook` would bulk-flip every BDM's DRAFT/ERROR days to VALID/ERROR on a president's click, and `submitCarLogbook` would bundle some other BDM's VALID entries into a `CarLogbookCycle` wrapper bound to the president's `_id`.
+
+### Root Cause
+Same shape as the Phase G5 anti-pattern (`AR Aging` / `Open CSIs` / `FIFO` / `SOA`), but inverted: instead of silent self-fallback producing empty results, an empty `tenantFilter` produced **cross-BDM and cross-entity** results with write side-effects.
+
+### Fix — Backend (`backend/erp/controllers/expenseController.js`)
+Added a `resolveCarLogbookScope(req)` helper (file-local, inline) that returns `{ privileged, bdmId }`. All seven Car Logbook endpoints + the per-fuel approval endpoint now resolve scope explicitly:
+```js
+const privileged = !!(req.isPresident || req.isAdmin || req.isFinance);
+const bdmId = privileged ? (req.query.bdm_id || req.body.bdm_id || null) : req.bdmId;
+```
+- **Reads** (`getCarLogbookList`, `getCarLogbookById`, `getSmerDailyByDate`, `getSmerDestinationsBatch`) — privileged + no bdm_id → empty response with message `"Select a BDM to view their car logbook"`. The grid UI is per-person; cross-BDM mashup is meaningless.
+- **Writes** (`createCarLogbook`, `updateCarLogbook`, `deleteDraftCarLogbook`, `validateCarLogbook`, `submitCarLogbook`, `submitFuelEntryForApproval`) — privileged + no bdm_id → HTTP 400 `"bdm_id is required"`. `submitCarLogbook` also binds the `CarLogbookCycle` wrapper to the resolved bdmId, not `req.bdmId` (which for president would be a ghost user_id).
+- `updateCarLogbook` locks `entry.bdm_id` and `entry.entity_id` on save so body cannot silently reassign ownership.
+- `validateCarLogbook` additionally scopes by `period`+`cycle` from body (frontend already passes these) so it validates the active cycle, not every open draft across months.
+
+### Fix — Frontend (`frontend/src/erp/pages/CarLogbook.jsx`)
+- Added `selectedBdmId` state + BDM picker (privileged viewers only) — data source is `getBdmsByEntity()` from `useTransfers`.
+- `viewingSelf = !!selectedBdmId && selectedBdmId === user._id` — privileged user without a picked BDM is treated as "not viewing self" → Save/Validate/Submit buttons disabled.
+- `loadAndMerge` passes `bdm_id` on list calls when privileged; returns an empty grid immediately when privileged + no BDM picked (avoids the 400 round-trip).
+- `saveRow` stamps `data.bdm_id = selectedBdmId` on create/update when privileged.
+- `handleValidate`/`handleSubmit` stamp `scope.bdm_id` in the POST body.
+
+### Banner (`frontend/src/erp/components/WorkflowGuide.jsx`)
+`car-logbook.tip` extended with: *"Privileged viewers (president/admin/finance) use the BDM picker to audit someone else's cycle — the page is read-only until they pick themselves (Rule #21 — no silent self-fallback; backend requires an explicit bdm_id to create/validate/submit)."*
+
+### Not changed (scope guardrails held)
+- `reopenCarLogbook` — privileged CAN reopen any POSTED cycle across BDMs; this is a deliberate privileged operation and the doc-by-id filter is the correct access gate.
+- SMER/ORE/PRF endpoints — their list endpoints already received a minimal Rule #21 patch (honor `?bdm_id=` from privileged); their write endpoints retain cross-BDM `tenantFilter` behavior pending a separate sweep. SMER/ORE aren't per-person grid UIs so the read leak is not as visually broken as Car Logbook.
+
+### Key Files
+```
+backend/erp/controllers/expenseController.js          # 8 endpoints + resolveCarLogbookScope helper
+frontend/src/erp/pages/CarLogbook.jsx                 # BDM picker, viewingSelf, bdm_id on all writes
+frontend/src/erp/components/WorkflowGuide.jsx         # car-logbook tip mentions Rule #21 + picker
+```
+
+### Build verify
+`node -c backend/erp/controllers/expenseController.js` clean. `npx vite build` clean in 36.34s.
+
+---
+
 ## Phase 34* — Approval Hub Enhancement (Sub-Permissions + Attachments + Line-Item Edit)
 
 Divides approval workload per module via sub-permissions, adds attachment/photo viewing, extends quick-edit to line items, removes unnecessary PO approval gates.
@@ -3783,3 +3828,32 @@ Extracting a shared `buildPartyAccessFilter(user, partyType)` that funnels both 
 ### What a Future Claude Should Do When the Trigger Fires
 
 Jump to `docs/PHASETASK-ERP.md` → `PHASE (FUTURE, SUBSCRIPTION-TRIGGERED) — Unified Party Master`. Follow the 6-PR sequence (additive → backfill+dual-write → txn schema → service cutover → require `party_id` → retire old collections). Use `_id` reuse during migration so txn FKs map 1:1 without rewrite. Feature flags `ERP_PARTY_READ_FROM_PARTIES` and `ERP_PARTY_DUAL_WRITE` gate read/write paths independently for bidirectional rollback.
+
+---
+
+## Phase 33-O — Owner Visibility on Cycle Docs (Apr 2026)
+
+**Problem.** Privileged viewers (President/Admin/Finance) saw Smer/Expenses/PrfCalf/Car Logbook list pages with no BDM owner rendered. `tenantFilter` correctly returned every BDM's docs in-entity (Rule #21), but the UI never displayed the owner — privileged users could not tell whose cycle they were looking at. On Car Logbook specifically, the day-grid frontend collapsed multiple BDMs' entries onto the same date via `docMap.set(entry_date, doc)`, silently dropping most docs.
+
+**Fix.**
+
+1. **BDM column on list pages.** `Smer.jsx`, `Expenses.jsx`, `PrfCalf.jsx` render `row.bdm_id?.name || '—'` as the first (or second, after doc_type) column. Backend list endpoints already populated `bdm_id` with `name`, so this is UI-only for those three. Mobile card headers also show the owner.
+2. **Backend `?bdm_id=` filter (Rule #21 pattern).** `getSmerList`, `getExpenseList`, `getPrfCalfList`, `getCarLogbookList` all accept an optional `?bdm_id=` param. Gate: `privileged && req.query.bdm_id` → apply; else no filter is added. Non-privileged callers stay self-scoped via `req.tenantFilter` (never the ternary "fallback to self" anti-pattern called out in Rule #21).
+3. **Car Logbook BDM picker.** The grid is fundamentally one-BDM-per-view, so a column is the wrong shape. Instead, [CarLogbook.jsx](frontend/src/erp/pages/CarLogbook.jsx) now renders a BDM dropdown for privileged viewers (from `getBdmsByEntity(entity_id)`), empty by default — Rule #21 forbids silent self-id. When a privileged viewer picks someone else, `handleSaveAll`, `handleValidate`, and `handleSubmit` short-circuit with a "Read-only" toast and a blue "Viewing X's logbook" banner renders. When no BDM is picked, an amber "Select a BDM" hint renders and `loadAndMerge` early-returns without hitting the backend.
+
+**Why it matters for subscribers.** The fix is entirely lookup/scope-driven — no role names, no entity names, no BDM identities are hardcoded. Any subscriber's president lands on the same four pages and immediately sees whose cycle they are reviewing, without a code change. The read-only gate on Car Logbook prevents a privileged viewer from accidentally overwriting a BDM's odometer/fuel data while auditing.
+
+**Files touched.**
+- `backend/erp/controllers/expenseController.js` — `?bdm_id=` param added to `getSmerList`, `getExpenseList`, `getPrfCalfList`, `getCarLogbookList` (Rule #21 pattern).
+- `frontend/src/erp/pages/Smer.jsx` — BDM column (desktop list); colSpan 8→9 on empty/error rows.
+- `frontend/src/erp/pages/Expenses.jsx` — BDM column (desktop list) + BDM in mobile card subtitle; colSpan 8→9 on empty/error rows.
+- `frontend/src/erp/pages/PrfCalf.jsx` — BDM column (desktop list) + BDM row in mobile card body; colSpan 7→8 on banner/drill-down/empty rows.
+- `frontend/src/erp/pages/CarLogbook.jsx` — `useTransfers` import, `bdmOptions`/`selectedBdmId`/`viewingSelf` state, BDM selector in controls row, read-only banner, `viewingSelf` guard on `handleSaveAll` / `handleValidate` / `handleSubmit`, `loadAndMerge` early-return + dep array updated.
+- `frontend/src/erp/components/WorkflowGuide.jsx` — `car-logbook.tip` already describes the "privileged viewers pick a BDM; page is read-only until they pick themselves" behavior.
+
+**Integrity check.**
+- `npx vite build` — clean in 40.72s.
+- `node -c backend/erp/controllers/expenseController.js` — OK.
+- Backend `tenantFilter` untouched; no new role logic; `req.isPresident || req.isAdmin || req.isFinance` check matches existing Rule #21 privileged pattern (same as compensation-statement endpoint, line 1363).
+- No breaking change for BDMs: their `req.tenantFilter` still scopes to self, so the `?bdm_id=` query param is ignored for them even if forged (Rule #21: no privileged elevation from query params for non-privileged).
+- `createCarLogbook`/`updateCarLogbook` signatures unchanged — cross-BDM writes remain impossible via this endpoint (President can't create on behalf of a BDM; that's a separate Phase if ever needed).
