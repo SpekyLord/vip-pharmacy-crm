@@ -20,12 +20,31 @@ const officeSupplySchema = new mongoose.Schema({
   cost_center_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CostCenter' },
   notes: { type: String, trim: true },
   is_active: { type: Boolean, default: true },
+  // Phase 31R-OS — stamped by President Reverse when the item is removed via the
+  // Reversal Console. Rows with this field are hidden from default list queries
+  // (use `?include_reversed=true` to surface them for audit).
+  deletion_event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   created_at: { type: Date, default: Date.now, immutable: true }
 }, { timestamps: true, collection: 'erp_office_supplies' });
 
-officeSupplySchema.index({ entity_id: 1, item_code: 1 });
+// Unique (entity_id, item_code) — partial so:
+//   • items without an item_code are still allowed (only string codes participate)
+//   • president-reversed items (deletion_event_id set) free up their code for re-use,
+//     while their row stays in the collection for audit
+// Prevents the silent-duplicate bug where re-clicking Save created multiple identical rows.
+officeSupplySchema.index(
+  { entity_id: 1, item_code: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      item_code: { $type: 'string' },
+      deletion_event_id: { $exists: false },
+    },
+  }
+);
 officeSupplySchema.index({ entity_id: 1, category: 1 });
 officeSupplySchema.index({ entity_id: 1, is_active: 1 });
+officeSupplySchema.index({ entity_id: 1, deletion_event_id: 1 });
 
 module.exports = mongoose.model('OfficeSupply', officeSupplySchema);

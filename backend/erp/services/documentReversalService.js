@@ -57,6 +57,9 @@ const SupplierInvoice = require('../models/SupplierInvoice');
 const CreditNote = require('../models/CreditNote');
 const IcSettlement = require('../models/IcSettlement');
 const ApPayment = require('../models/ApPayment');
+// Phase 31R-OS — office supply reversal (master + transactions).
+const OfficeSupply = require('../models/OfficeSupply');
+const OfficeSupplyTransaction = require('../models/OfficeSupplyTransaction');
 
 const { reverseJournal } = require('./journalEngine');
 const { checkHardBlockers } = require('./dependentDocChecker');
@@ -1193,7 +1196,148 @@ async function reverseIcSettlement({ doc, userId, reason /* , tenantFilter */ })
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
-// Registry — Phase 1-4 complete + Phase 31R
+// OFFICE_SUPPLY_ITEM handler — Phase 31R-OS
+// ───────────────────────────────────────────────────────────────────────────────
+// Master-data reversal. No JE side-effects today (office supplies have no
+// ledger integration), so we use SAP_STORNO: the master row stays in the
+// collection with deletion_event_id + is_active=false for audit, and every
+// non-reversed child transaction is cascade-stamped with the same event_id.
+// If future work posts supply expenses to COA, add a reverseLinkedJEs() branch
+// mirroring the EXPENSE handler.
+
+async function loadOfficeSupply({ doc_id, tenantFilter }) {
+  const s = await OfficeSupply.findOne({ _id: doc_id, ...tenantFilter });
+  if (!s) { const e = new Error('Office supply item not found in your scope'); e.statusCode = 404; throw e; }
+  if (s.deletion_event_id) { const e = new Error('Office supply item already reversed'); e.statusCode = 409; throw e; }
+  return s;
+}
+
+async function reverseOfficeSupply({ doc, userId, reason /* , tenantFilter */ }) {
+  const sideEffects = [];
+  const session = await mongoose.startSession();
+  let reversalEvent;
+  let txnCount = 0;
+  try {
+    await session.withTransaction(async () => {
+      reversalEvent = await createReversalEvent({
+        doc,
+        doc_type: 'OFFICE_SUPPLY_ITEM',
+        entity_id: doc.entity_id,
+        bdm_id: null,
+        reason,
+        userId,
+        session,
+      });
+
+      // Cascade: mark every non-reversed transaction for this item.
+      const txnRes = await OfficeSupplyTransaction.updateMany(
+        { supply_id: doc._id, deletion_event_id: { $exists: false } },
+        { $set: { deletion_event_id: reversalEvent._id } },
+        { session }
+      );
+      txnCount = txnRes.modifiedCount || 0;
+      if (txnCount) sideEffects.push(`transactions_marked_reversed=${txnCount}`);
+
+      // Stamp the master row. Keep the record for audit (don't hard-delete)
+      // so Reversal History + deletion_event_id lookups stay consistent.
+      doc.deletion_event_id = reversalEvent._id;
+      doc.is_active = false;
+      await doc.save({ session });
+    });
+  } finally { session.endSession(); }
+
+  return {
+    doc_type: 'OFFICE_SUPPLY_ITEM',
+    doc_id: doc._id,
+    doc_ref: doc.item_code || doc.item_name,
+    mode: 'SAP_STORNO',
+    reversal_event_id: reversalEvent?._id,
+    side_effects: sideEffects,
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// OFFICE_SUPPLY_TXN handler — Phase 31R-OS
+// ───────────────────────────────────────────────────────────────────────────────
+// Reverses a single PURCHASE/ISSUE/RETURN/ADJUSTMENT by restoring the parent
+// supply's qty_on_hand. Creates an opposite-sign transaction tagged with
+// reversal_event_id (parallels InventoryLedger ADJUSTMENT pattern).
+
+async function loadOfficeSupplyTxn({ doc_id, tenantFilter }) {
+  const t = await OfficeSupplyTransaction.findOne({ _id: doc_id, ...tenantFilter });
+  if (!t) { const e = new Error('Supply transaction not found in your scope'); e.statusCode = 404; throw e; }
+  if (t.deletion_event_id) { const e = new Error('Supply transaction already reversed'); e.statusCode = 409; throw e; }
+  return t;
+}
+
+async function reverseOfficeSupplyTxn({ doc, userId, reason /* , tenantFilter */ }) {
+  const sideEffects = [];
+  const adds = ['PURCHASE', 'RETURN']; // same split used by recordTransaction
+  const originalDelta = adds.includes(doc.txn_type) ? doc.qty : -doc.qty;
+  const restoreDelta = -originalDelta;
+
+  const session = await mongoose.startSession();
+  let reversalEvent;
+  try {
+    await session.withTransaction(async () => {
+      reversalEvent = await createReversalEvent({
+        doc,
+        doc_type: 'OFFICE_SUPPLY_TXN',
+        entity_id: doc.entity_id,
+        bdm_id: null,
+        reason,
+        userId,
+        session,
+      });
+
+      // Opposite-sign audit row. qty stays positive; txn_type flips between
+      // PURCHASE⇄ISSUE and RETURN⇄ADJUSTMENT so the reversal reads naturally
+      // in history. The reversal_event_id link makes it filterable/joinable.
+      const flipType = {
+        PURCHASE:   'ISSUE',
+        ISSUE:      'PURCHASE',
+        RETURN:     'ADJUSTMENT',
+        ADJUSTMENT: 'RETURN',
+      };
+      await OfficeSupplyTransaction.create([{
+        entity_id: doc.entity_id,
+        supply_id: doc.supply_id,
+        txn_type: flipType[doc.txn_type] || 'ADJUSTMENT',
+        txn_date: new Date(),
+        qty: doc.qty,
+        unit_cost: doc.unit_cost,
+        notes: `Reversal of ${doc.txn_type} on ${doc.txn_date?.toISOString?.().slice(0, 10) || ''} — ${reason}`,
+        reversal_event_id: reversalEvent._id,
+        created_by: userId,
+      }], { session });
+
+      // Restore parent supply qty_on_hand. Guard negative floor (shouldn't fire
+      // under normal flows, but the original recordTransaction also guards).
+      const parent = await OfficeSupply.findById(doc.supply_id).session(session);
+      if (parent) {
+        parent.qty_on_hand = Math.max(0, (parent.qty_on_hand || 0) + restoreDelta);
+        await parent.save({ session });
+        sideEffects.push(`qty_on_hand_restored_by=${restoreDelta}`);
+      }
+
+      // Stamp the original as reversed.
+      doc.deletion_event_id = reversalEvent._id;
+      await doc.save({ session });
+    });
+  } finally { session.endSession(); }
+
+  return {
+    doc_type: 'OFFICE_SUPPLY_TXN',
+    doc_id: doc._id,
+    doc_ref: `${doc.txn_type} ${doc.qty}`,
+    mode: 'SAP_STORNO',
+    reversal_event_id: reversalEvent?._id,
+    side_effects: sideEffects,
+  };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// Registry — Phase 1-4 complete + Phase 31R + Phase 31R-OS
 // ───────────────────────────────────────────────────────────────────────────────
 
 const REVERSAL_HANDLERS = {
@@ -1217,6 +1361,9 @@ const REVERSAL_HANDLERS = {
   SUPPLIER_INVOICE:     { load: loadSupplierInvoice, reverse: reverseSupplierInvoice,label: 'Supplier Invoice (AP)', module: 'purchasing' },
   CREDIT_NOTE:          { load: loadCreditNote,      reverse: reverseCreditNote,     label: 'Credit Note (Return)',  module: 'sales' },
   IC_SETTLEMENT:        { load: loadIcSettlement,    reverse: reverseIcSettlement,   label: 'IC Settlement (CR)',    module: 'inter_company' },
+  // Phase 31R-OS — master + transactional reversal for office supplies
+  OFFICE_SUPPLY_ITEM:   { load: loadOfficeSupply,    reverse: reverseOfficeSupply,    label: 'Office Supply (Item)',  module: 'inventory' },
+  OFFICE_SUPPLY_TXN:    { load: loadOfficeSupplyTxn, reverse: reverseOfficeSupplyTxn, label: 'Office Supply (Txn)',   module: 'inventory' },
 };
 
 /**
@@ -1381,6 +1528,21 @@ async function listReversibleDocs({ doc_types, entityId, fromDate, toDate, page 
     if (dateFilter) q.posted_at = dateFilter;
     const rows = await IcSettlement.find(q).select('_id cr_no cr_date creditor_entity_id debtor_entity_id posted_at status cr_amount').sort({ posted_at: -1 }).limit(sliceLimit).lean();
     rows.forEach(r => out.push({ doc_type: 'IC_SETTLEMENT', doc_id: r._id, doc_ref: r.cr_no, entity_id: r.creditor_entity_id, posted_at: r.posted_at, status: r.status, label: REVERSAL_HANDLERS.IC_SETTLEMENT.label, sub: `₱${r.cr_amount || 0}` }));
+  }
+
+  // ─── Phase 31R-OS ───
+  if (wantedTypes.includes('OFFICE_SUPPLY_ITEM')) {
+    const q = { ...baseEntity, ...notReversed };
+    if (dateFilter) q.createdAt = dateFilter;
+    const rows = await OfficeSupply.find(q).select('_id item_name item_code category entity_id createdAt qty_on_hand').sort({ createdAt: -1 }).limit(sliceLimit).lean();
+    rows.forEach(r => out.push({ doc_type: 'OFFICE_SUPPLY_ITEM', doc_id: r._id, doc_ref: r.item_code || r.item_name, entity_id: r.entity_id, posted_at: r.createdAt, status: 'ACTIVE', label: REVERSAL_HANDLERS.OFFICE_SUPPLY_ITEM.label, sub: `${r.category || ''} · qty ${r.qty_on_hand || 0}`.trim() }));
+  }
+
+  if (wantedTypes.includes('OFFICE_SUPPLY_TXN')) {
+    const q = { ...baseEntity, ...notReversed, reversal_event_id: { $exists: false } };
+    if (dateFilter) q.txn_date = dateFilter;
+    const rows = await OfficeSupplyTransaction.find(q).select('_id supply_id txn_type qty txn_date entity_id total_cost').sort({ txn_date: -1 }).limit(sliceLimit).lean();
+    rows.forEach(r => out.push({ doc_type: 'OFFICE_SUPPLY_TXN', doc_id: r._id, doc_ref: `${r.txn_type} ${r.qty}`, entity_id: r.entity_id, posted_at: r.txn_date, status: 'POSTED', label: REVERSAL_HANDLERS.OFFICE_SUPPLY_TXN.label, sub: r.total_cost ? `₱${r.total_cost}` : '' }));
   }
 
   out.sort((a, b) => new Date(b.posted_at || 0) - new Date(a.posted_at || 0));

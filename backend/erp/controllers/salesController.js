@@ -19,6 +19,7 @@ const { presidentReverse } = require('../services/documentReversalService');
 const JournalEntry = require('../models/JournalEntry');
 const ProductMaster = require('../models/ProductMaster');
 const { notifyDocumentPosted, notifyDocumentReopened } = require('../services/erpNotificationService');
+const { getEditableStatuses } = require('../services/approvalService');
 const PettyCashFund = require('../models/PettyCashFund');
 const PettyCashTransaction = require('../models/PettyCashTransaction');
 const Collection = require('../models/Collection');
@@ -459,9 +460,10 @@ const getSaleById = catchAsync(async (req, res) => {
 // ═══════════════════════════════════════════════════════════
 
 const validateSales = catchAsync(async (req, res) => {
+  const editable = await getEditableStatuses(req.entityId, 'SALES');
   const filter = {
     ...req.tenantFilter,
-    status: { $in: ['DRAFT', 'ERROR'] }
+    status: { $in: editable }
   };
 
   // Optionally validate specific rows

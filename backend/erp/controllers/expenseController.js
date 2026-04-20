@@ -21,6 +21,7 @@ const { getDailyMdCounts, getDailyVisitDetails } = require('../services/smerCrmB
 const { journalFromExpense, resolveFundingCoa, getCoaMap, journalFromPrfCalf } = require('../services/autoJournal');
 const { createAndPostJournal, reverseJournal } = require('../services/journalEngine');
 const JournalEntry = require('../models/JournalEntry');
+const { getEditableStatuses } = require('../services/approvalService');
 
 const { ROLES } = require('../../constants/roles');
 const { detectText } = require('../ocr/visionClient');
@@ -120,7 +121,8 @@ const createSmer = catchAsync(async (req, res) => {
 });
 
 const updateSmer = catchAsync(async (req, res) => {
-  const smer = await SmerEntry.findOne({ _id: req.params.id, ...req.tenantFilter, status: { $in: ['DRAFT', 'ERROR'] } });
+  const editable = await getEditableStatuses(req.entityId, 'SMER');
+  const smer = await SmerEntry.findOne({ _id: req.params.id, ...req.tenantFilter, status: { $in: editable } });
   if (!smer) return res.status(404).json({ success: false, message: 'Draft SMER not found' });
 
   const settings = await Settings.getSettings();
@@ -188,7 +190,8 @@ const deleteDraftSmer = catchAsync(async (req, res) => {
 });
 
 const validateSmer = catchAsync(async (req, res) => {
-  const smers = await SmerEntry.find({ ...req.tenantFilter, status: { $in: ['DRAFT', 'ERROR'] } });
+  const editable = await getEditableStatuses(req.entityId, 'SMER');
+  const smers = await SmerEntry.find({ ...req.tenantFilter, status: { $in: editable } });
 
   for (const smer of smers) {
     const errors = [];
@@ -370,10 +373,11 @@ const overridePerdiemDay = catchAsync(async (req, res) => {
   const { entry_id, override_tier, override_reason, remove_override } = req.body;
   if (!entry_id) return res.status(400).json({ success: false, message: 'entry_id is required' });
 
+  const editable = await getEditableStatuses(req.entityId, 'SMER');
   const smer = await SmerEntry.findOne({
     _id: req.params.id,
     ...req.tenantFilter,
-    status: { $in: ['DRAFT', 'ERROR'] }
+    status: { $in: editable }
   });
   if (!smer) return res.status(404).json({ success: false, message: 'SMER not found or not editable' });
 
@@ -508,10 +512,11 @@ const applyPerdiemOverride = catchAsync(async (req, res) => {
     return res.status(403).json({ success: false, message: 'No approved override request found. Approval must be granted first.' });
   }
 
+  const editable = await getEditableStatuses(req.entityId, 'SMER');
   const smer = await SmerEntry.findOne({
     _id: req.params.id,
     ...req.tenantFilter,
-    status: { $in: ['DRAFT', 'ERROR'] }
+    status: { $in: editable }
   });
   if (!smer) return res.status(404).json({ success: false, message: 'SMER not found or not editable' });
 
@@ -576,7 +581,8 @@ const createCarLogbook = catchAsync(async (req, res) => {
 });
 
 const updateCarLogbook = catchAsync(async (req, res) => {
-  const entry = await CarLogbookEntry.findOne({ _id: req.params.id, ...req.tenantFilter, status: { $in: ['DRAFT', 'ERROR'] } });
+  const editable = await getEditableStatuses(req.entityId, 'CAR_LOGBOOK');
+  const entry = await CarLogbookEntry.findOne({ _id: req.params.id, ...req.tenantFilter, status: { $in: editable } });
   if (!entry) return res.status(404).json({ success: false, message: 'Draft car logbook entry not found' });
 
   Object.assign(entry, req.body);
@@ -682,7 +688,8 @@ const deleteDraftCarLogbook = catchAsync(async (req, res) => {
 });
 
 const validateCarLogbook = catchAsync(async (req, res) => {
-  const entries = await CarLogbookEntry.find({ ...req.tenantFilter, status: { $in: ['DRAFT', 'ERROR'] } });
+  const editable = await getEditableStatuses(req.entityId, 'CAR_LOGBOOK');
+  const entries = await CarLogbookEntry.find({ ...req.tenantFilter, status: { $in: editable } });
 
   for (const entry of entries) {
     const errors = [];
@@ -927,11 +934,12 @@ async function autoCalfForSource(sourceDoc, sourceType) {
     const lineIds = calfLines.map(l => l._id);
 
     // Reuse existing DRAFT CALF for this source if any
+    const editable = await getEditableStatuses(sourceDoc.entity_id, 'PRF_CALF');
     let calf = await PrfCalf.findOne({
       entity_id: sourceDoc.entity_id,
       doc_type: 'CALF',
       linked_expense_id: sourceDoc._id,
-      status: { $in: ['DRAFT', 'ERROR'] }
+      status: { $in: editable }
     });
 
     if (calf) {
@@ -1051,7 +1059,8 @@ const createExpense = catchAsync(async (req, res) => {
 });
 
 const updateExpense = catchAsync(async (req, res) => {
-  const entry = await ExpenseEntry.findOne({ _id: req.params.id, ...req.tenantFilter, status: { $in: ['DRAFT', 'ERROR'] } });
+  const editable = await getEditableStatuses(req.entityId, 'EXPENSES');
+  const entry = await ExpenseEntry.findOne({ _id: req.params.id, ...req.tenantFilter, status: { $in: editable } });
   if (!entry) return res.status(404).json({ success: false, message: 'Draft expense not found' });
 
   // Block future expense dates on update too
@@ -1115,7 +1124,8 @@ const deleteDraftExpense = catchAsync(async (req, res) => {
 });
 
 const validateExpenses = catchAsync(async (req, res) => {
-  const entries = await ExpenseEntry.find({ ...req.tenantFilter, status: { $in: ['DRAFT', 'ERROR'] } });
+  const editable = await getEditableStatuses(req.entityId, 'EXPENSES');
+  const entries = await ExpenseEntry.find({ ...req.tenantFilter, status: { $in: editable } });
 
   for (const entry of entries) {
     // Auto-resolve COA codes before validation (tries vendor/keyword match, then category fallback)
@@ -1458,7 +1468,8 @@ const createPrfCalf = catchAsync(async (req, res) => {
 });
 
 const updatePrfCalf = catchAsync(async (req, res) => {
-  const doc = await PrfCalf.findOne({ _id: req.params.id, ...req.tenantFilter, status: { $in: ['DRAFT', 'ERROR'] } });
+  const editable = await getEditableStatuses(req.entityId, 'PRF_CALF');
+  const doc = await PrfCalf.findOne({ _id: req.params.id, ...req.tenantFilter, status: { $in: editable } });
   if (!doc) return res.status(404).json({ success: false, message: 'Draft PRF/CALF not found' });
 
   // Snapshot old links before update
@@ -1588,7 +1599,8 @@ const deleteDraftPrfCalf = catchAsync(async (req, res) => {
 });
 
 const validatePrfCalf = catchAsync(async (req, res) => {
-  const docs = await PrfCalf.find({ ...req.tenantFilter, status: { $in: ['DRAFT', 'ERROR'] } });
+  const editable = await getEditableStatuses(req.entityId, 'PRF_CALF');
+  const docs = await PrfCalf.find({ ...req.tenantFilter, status: { $in: editable } });
 
   for (const doc of docs) {
     const errors = [];

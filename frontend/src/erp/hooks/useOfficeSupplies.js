@@ -22,6 +22,18 @@ export default function useOfficeSupplies() {
     const exportSupplies = async () => { const { data } = await api.get('/erp/office-supplies/export', { responseType: 'blob' }); return data; };
     const importSupplies = async (fd) => { const { data } = await api.post('/erp/office-supplies/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } }); return data; };
 
-    return { getSupplies, getSupplyById, createSupply, updateSupply, recordTransaction, getTransactions, getReorderAlerts, exportSupplies, importSupplies };
+    // Phase 31R-OS — president reversal. Sends the `{ reason, confirm }` payload
+    // required by buildPresidentReverseHandler (shared factory). Backend cascades
+    // to transactions (for items) or restores qty_on_hand (for txns).
+    const presidentReverseItem = async (id, body) => {
+      const { data } = await api.delete(`/erp/office-supplies/${id}/president-reverse`, { data: body });
+      return data;
+    };
+    const presidentReverseTxn = async (id, body) => {
+      const { data } = await api.delete(`/erp/office-supplies/transactions/${id}/president-reverse`, { data: body });
+      return data;
+    };
+
+    return { getSupplies, getSupplyById, createSupply, updateSupply, recordTransaction, getTransactions, getReorderAlerts, exportSupplies, importSupplies, presidentReverseItem, presidentReverseTxn };
   }, []);
 }

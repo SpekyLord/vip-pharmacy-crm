@@ -648,6 +648,64 @@ function buildPettyCashDetails(item) {
   };
 }
 
+// ─── Phase 31R-OS — Office Supplies (master + transactions) ───
+// Shared by President Reversal Console's detail endpoint. Approval Hub does
+// not use this (office supplies are not gated through gateApproval — see plan).
+
+function buildOfficeSupplyDetails(item) {
+  // Handle both shapes: master item (has item_name) OR transaction (has txn_type).
+  if (item.txn_type) {
+    // OFFICE_SUPPLY_TXN
+    const parent = item.supply_id || {};
+    return {
+      doc_class:       'OFFICE_SUPPLY_TXN',
+      txn_type:        item.txn_type,
+      txn_date:        item.txn_date,
+      qty:             item.qty,
+      unit_cost:       item.unit_cost,
+      total_cost:      item.total_cost,
+      issued_to:       item.issued_to || null,
+      or_number:       item.or_number || null,
+      notes:           item.notes || null,
+      item_label:      parent.item_code
+        ? `${parent.item_name} (${parent.item_code})`
+        : parent.item_name || null,
+      item_category:   parent.category || null,
+      item_unit:       parent.unit || null,
+      item_qty_on_hand: parent.qty_on_hand,
+      cost_center:     item.cost_center_id?.cost_center_name
+        || item.cost_center_id?.cost_center_code
+        || null,
+      created_by:      item.created_by?.name || null,
+      reversal_event_id: item.reversal_event_id || null,
+      deletion_event_id: item.deletion_event_id || null,
+    };
+  }
+  // OFFICE_SUPPLY_ITEM
+  return {
+    doc_class:           'OFFICE_SUPPLY_ITEM',
+    item_name:           item.item_name,
+    item_code:           item.item_code || null,
+    category:            item.category || null,
+    unit:                item.unit || null,
+    qty_on_hand:         item.qty_on_hand,
+    reorder_level:       item.reorder_level,
+    last_purchase_price: item.last_purchase_price,
+    is_active:           item.is_active,
+    warehouse:           item.warehouse_id?.warehouse_name
+      || item.warehouse_id?.warehouse_code
+      || null,
+    cost_center:         item.cost_center_id?.cost_center_name
+      || item.cost_center_id?.cost_center_code
+      || null,
+    created_by:          item.created_by?.name || null,
+    created_at:          item.created_at || item.createdAt || null,
+    deletion_event_id:   item.deletion_event_id || null,
+    reorder_alert:       (item.qty_on_hand || 0) <= (item.reorder_level || 0),
+    notes:               item.notes || null,
+  };
+}
+
 // ─── Registry ───
 
 const DETAIL_BUILDERS = {
@@ -672,6 +730,8 @@ const DETAIL_BUILDERS = {
   PETTY_CASH:         buildPettyCashDetails,
   // Phase 31R
   CREDIT_NOTE:        buildCreditNoteDetails,
+  // Phase 31R-OS — shared builder handles both item and txn shapes
+  OFFICE_SUPPLY:      buildOfficeSupplyDetails,
 };
 
 /**
@@ -708,6 +768,10 @@ const REVERSAL_DOC_TYPE_TO_MODULE = {
   SUPPLIER_INVOICE:     'PURCHASING',      // buildPurchasingDetails
   CREDIT_NOTE:          'CREDIT_NOTE',     // buildCreditNoteDetails (new)
   IC_SETTLEMENT:        'IC_TRANSFER',     // buildIcTransferDetails branches on item.cr_no
+  // Phase 31R-OS — both office supply doc_types share one builder that branches
+  // on the `txn_type` field to render item vs txn shape.
+  OFFICE_SUPPLY_ITEM:   'OFFICE_SUPPLY',
+  OFFICE_SUPPLY_TXN:    'OFFICE_SUPPLY',
 };
 
 module.exports = {

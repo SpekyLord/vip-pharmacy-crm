@@ -5327,3 +5327,80 @@ Implement handlers for **SMER_ENTRY, CAR_LOGBOOK, SUPPLIER_INVOICE, CREDIT_NOTE,
 
 **Frontend build:** `npx vite build` clean, 9.56s, 0 errors.
 
+### Phase 31R-OS — Office Supplies Reversal + Duplicate Prevention ✅ (April 20, 2026)
+
+**Trigger.** A single-user incident created 6 identical "BALL PEN / 0.5 MM" rows
+because the modal closed silently on save. Root-cause analysis showed three
+issues layered on top of each other: no success toast → no DB-level dedup →
+no way to remove a mistake after it landed. Approval Hub integration was
+considered and dropped (master data is not gated anywhere else; president
+bypasses approval; duplicates are deterministically solved by a unique index).
+
+**Backend.**
+- [x] `models/OfficeSupply.js` — added `deletion_event_id` + unique **partial**
+  index on `{ entity_id, item_code }` (partialFilterExpression: `item_code`
+  is string AND `deletion_event_id` missing — reversed rows free up their code
+  for re-use while staying in the collection for audit) + extra index
+  `{ entity_id, deletion_event_id }`
+- [x] `models/OfficeSupplyTransaction.js` — added `deletion_event_id` +
+  `reversal_event_id` + index `{ supply_id, deletion_event_id }`
+- [x] `controllers/officeSupplyController.js` — `sendDuplicateIfAny()` helper
+  translates Mongo 11000 to HTTP 409 with a human message; create/update both
+  call it; `getSupplies` hides `deletion_event_id` rows unless `?include_reversed=true`;
+  `createSupply` returns 400 when `req.entityId` is missing (president without
+  working entity selected); exports `presidentReverseSupply` +
+  `presidentReverseSupplyTxn` via `buildPresidentReverseHandler()` factory
+- [x] `routes/officeSupplyRoutes.js` — 2 new DELETE routes gated by
+  `erpSubAccessCheck('accounting', 'reverse_posted')`; transaction route declared
+  BEFORE `/:id/president-reverse` to avoid Express `:id` swallowing `transactions`
+- [x] `services/documentReversalService.js` — 2 new handlers
+  (`loadOfficeSupply`/`reverseOfficeSupply`, `loadOfficeSupplyTxn`/`reverseOfficeSupplyTxn`)
+  registered as `OFFICE_SUPPLY_ITEM` + `OFFICE_SUPPLY_TXN` in `REVERSAL_HANDLERS`
+  (total registry now 20); `listReversibleDocs()` extended with 2 query blocks;
+  item reversal cascades to transactions in a single Mongo session; txn reversal
+  creates an opposite-sign audit row + restores parent qty_on_hand
+- [x] `services/documentDetailHydrator.js` — 2 new `POPULATED_LOADERS` entries
+  populate `supply_id` / `cost_center_id` / `warehouse_id`
+- [x] `services/documentDetailBuilder.js` — new `buildOfficeSupplyDetails()`
+  branches on `item.txn_type` to render master vs txn shape; registered under
+  `DETAIL_BUILDERS.OFFICE_SUPPLY` with both doc types mapped in
+  `REVERSAL_DOC_TYPE_TO_MODULE`
+
+**Frontend.**
+- [x] `hooks/useOfficeSupplies.js` — 2 new methods `presidentReverseItem` +
+  `presidentReverseTxn`
+- [x] `pages/OfficeSupplies.jsx` — `showSuccess()` on create/update/record;
+  president-only Reverse button on every row (desktop + mobile card) + on
+  transaction history rows (with REVERSED badge for already-reversed txns);
+  `PresidentReverseModal` mounted at page root
+- [x] `components/WorkflowGuide.jsx` — `'office-supplies'` banner updated with
+  5 steps (including reversal guidance + 409 duplicate note), new "Reversal
+  Console" next-step link, and updated tip referencing
+  `accounting.reverse_posted` sub-permission
+
+**Integrity checklist — all passed:**
+- Dependencies: `require('./erp/services/documentReversalService')` loads cleanly;
+  `REVERSAL_HANDLERS` now has 20 keys (was 18); controller exports resolve to functions
+- Wiring: Model → Controller → Route → `backend/erp/routes/index.js` mount unchanged
+  (no new top-level routes); `officeSupplyRoutes.js` mounted at `/erp/office-supplies`
+  with `erpAccessCheck('inventory')` umbrella + per-route sub-permission gates
+- Scalable / subscription-ready: no hardcoded business values — `OFFICE_SUPPLY_CATEGORY`
+  still lookup-driven; danger gate reuses existing `ACCOUNTING__REVERSE_POSTED`
+  lookup row (no new key); subscribers delegate via Access Templates
+- Lookup-driven: `buildOfficeSupplyDetails` reads `item.category` / `unit` / etc.
+  directly from the doc (populated or lean); no hardcoded maps
+- Banners: `WorkflowGuide` entry extended; reversal next-step link added
+- No severed wiring: all 18 pre-existing `REVERSAL_HANDLERS` entries present;
+  existing `getSupplies` filter chain preserved (category/is_active still work)
+- Route order: `/transactions/:id/president-reverse` declared before `/:id/president-reverse`
+  so Express matches the literal segment first
+- UI gate ≠ security: president check in the JSX is cosmetic;
+  `accounting.reverse_posted` is enforced server-side via `erpSubAccessCheck`
+
+**Deployment note.** The unique index is sparse, so it will NOT fail to build on
+existing databases that have `null`/missing `item_code` rows. Databases that
+already contain duplicate `item_code` values under the same `entity_id` (e.g. the
+6 BALL PEN incident) will fail index build until either (a) the duplicates are
+reversed via the new President Reverse button (preferred — keeps audit trail),
+or (b) `item_code` is manually unset on duplicates via a one-off query.
+

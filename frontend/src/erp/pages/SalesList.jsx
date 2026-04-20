@@ -329,6 +329,12 @@ export default function SalesList() {
   // Phase 3c — approve-deletion gated by Tier 2 lookup-only accounting.approve_deletion
   // (legacy path; President Reverse is preferred for full cleanup). Mirrors backend salesRoutes /:id/approve-deletion.
   const canApproveDeletion = hasSubPermission('accounting', 'approve_deletion');
+  // Option B (Apr 2026) — Opening AR is now a sibling page pair (Entry + List),
+  // reachable from every sales-family nav. Both gates are lookup-driven; list
+  // falls back to entry's sub-perm while the new `opening_ar_list` seed rolls
+  // out across entities.
+  const canOpeningArEntry = hasSubPermission('sales', 'opening_ar');
+  const canOpeningArList = hasSubPermission('sales', 'opening_ar_list') || canOpeningArEntry;
 
   return (
     <div className="admin-page erp-page saleslist-page">
@@ -343,6 +349,8 @@ export default function SalesList() {
               <div className="sales-nav-tabs" role="tablist" aria-label="Sales navigation">
                 {canCreateSales && <Link to="/erp/sales/entry" className="sales-nav-tab">Sales</Link>}
                 <Link to="/erp/sales" className="sales-nav-tab active" aria-current="page">Sales Transactions</Link>
+                {canOpeningArEntry && <Link to="/erp/sales/opening-ar" className="sales-nav-tab">Opening AR</Link>}
+                {canOpeningArList && <Link to="/erp/sales/opening-ar/list" className="sales-nav-tab">Opening AR Transactions</Link>}
                 <Link to="/erp/csi-booklets" className="sales-nav-tab">
                   {hasSubPermission('inventory', 'csi_booklets') ? 'CSI Booklets' : 'My CSI'}
                 </Link>

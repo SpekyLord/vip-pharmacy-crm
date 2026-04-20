@@ -54,7 +54,9 @@ const approvalHandlers = {
     const request = await ApprovalRequest.findById(id).lean();
     if (request?.doc_id) {
       const SmerEntry = require('../models/SmerEntry');
-      const smer = await SmerEntry.findOne({ _id: request.doc_id, status: { $in: ['DRAFT', 'ERROR'] } });
+      const { getEditableStatuses } = require('../services/approvalService');
+      const editable = await getEditableStatuses(request.entity_id, 'SMER');
+      const smer = await SmerEntry.findOne({ _id: request.doc_id, status: { $in: editable } });
       if (smer) {
         const entryId = request.metadata?.entry_id
           || request.description?.match(/Entry ID: (.+)$/)?.[1];  // fallback for pre-metadata requests

@@ -19,6 +19,11 @@ const officeSupplyTransactionSchema = new mongoose.Schema({
   or_number: { type: String, trim: true },
   notes: { type: String, trim: true },
   cost_center_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CostCenter' },
+  // Phase 31R-OS — reversal stamps. `deletion_event_id` marks the original as
+  // reversed; `reversal_event_id` on the opposite-sign txn links it back to the
+  // reversal TransactionEvent (parallel to InventoryLedger ADJUSTMENT rows).
+  deletion_event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
+  reversal_event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   created_at: { type: Date, default: Date.now, immutable: true }
 }, { timestamps: false, collection: 'erp_office_supply_transactions' });
@@ -31,5 +36,6 @@ officeSupplyTransactionSchema.pre('save', function (next) {
 
 officeSupplyTransactionSchema.index({ supply_id: 1, txn_date: -1 });
 officeSupplyTransactionSchema.index({ entity_id: 1, txn_type: 1 });
+officeSupplyTransactionSchema.index({ supply_id: 1, deletion_event_id: 1 });
 
 module.exports = mongoose.model('OfficeSupplyTransaction', officeSupplyTransactionSchema);

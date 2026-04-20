@@ -5,6 +5,7 @@ const { invalidateRulesCache } = require('../services/expenseClassifier');
 const { invalidateOrParserCache } = require('../ocr/parsers/orParser');
 const { invalidateGuardrailCache } = require('../services/vendorAutoLearner');
 const { invalidateDangerCache } = require('../services/dangerSubPermissions');
+const { invalidateEditableStatuses } = require('../services/approvalService');
 
 // Categories whose changes must bust the OR parser's lookup cache (couriers/payment keywords)
 const OR_PARSER_LOOKUP_CATEGORIES = new Set(['OCR_COURIER_ALIASES', 'OCR_PAYMENT_KEYWORDS']);
@@ -14,6 +15,8 @@ const EXPENSE_CLASSIFIER_CATEGORIES = new Set(['OCR_EXPENSE_RULES', 'EXPENSE_CAT
 const VENDOR_AUTO_LEARN_CATEGORIES = new Set(['VENDOR_AUTO_LEARN_BLOCKLIST', 'VENDOR_AUTO_LEARN_THRESHOLDS']);
 // Categories whose changes must bust the danger-sub-perm cache (explicit-grant allowlist)
 const DANGER_SUB_PERM_CATEGORIES = new Set(['ERP_DANGER_SUB_PERMISSIONS']);
+// Categories whose changes must bust the editable-statuses cache (controller write-guards)
+const REJECTION_CONFIG_CATEGORIES = new Set(['MODULE_REJECTION_CONFIG']);
 
 // Phase G6.10/G7 — categories whose seeded rows must default is_active: false so
 // subscribers explicitly opt in (Anthropic-billable features, spend caps that
@@ -496,6 +499,11 @@ const SEED_DEFAULTS = {
     { code: 'SALES__REOPEN', label: 'Re-open Posted Sales', metadata: { module: 'sales', key: 'reopen', sort_order: 1 } },
     { code: 'SALES__CREDIT_NOTES', label: 'Returns / Credit Notes', metadata: { module: 'sales', key: 'credit_notes', sort_order: 2 } },
     { code: 'SALES__OPENING_AR', label: 'Opening AR Entry (pre-go-live CSIs)', metadata: { module: 'sales', key: 'opening_ar', sort_order: 3 } },
+    // Option B split (Apr 2026) — separate read-only sub-perm so subscribers can
+    // keep the Opening AR Transactions history visible after revoking `opening_ar`
+    // (which hides the Entry page) post-cutover. Frontend lazily falls back to
+    // `opening_ar` if this new code is not yet seeded for the entity.
+    { code: 'SALES__OPENING_AR_LIST', label: 'Opening AR Transactions (read-only history)', metadata: { module: 'sales', key: 'opening_ar_list', sort_order: 4 } },
     // Collections
     { code: 'COLLECTIONS__REOPEN', label: 'Re-open Posted Collections', metadata: { module: 'collections', key: 'reopen', sort_order: 1 } },
     // Expenses
@@ -1093,6 +1101,7 @@ const SEED_DEFAULTS = {
     // ── Group A — modules with dedicated reject handlers in universalApprovalController ──
     { code: 'SALES',             label: 'Sales / CSI — Rejection Config',   metadata: { rejected_status: 'ERROR',    reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'ERROR'],            banner_tone: 'danger', description: 'Sales line items rejected from Approval Hub' } },
     { code: 'COLLECTION',        label: 'Collections / CR — Rejection Config', metadata: { rejected_status: 'ERROR', reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'ERROR'],            banner_tone: 'danger', description: 'Collection receipts rejected from Approval Hub' } },
+    { code: 'CREDIT_NOTE',       label: 'Credit Notes / Returns — Rejection Config', metadata: { rejected_status: 'ERROR', reason_field: 'rejection_reason', resubmit_allowed: true, editable_statuses: ['DRAFT', 'ERROR'],       banner_tone: 'danger', description: 'Credit notes rejected from Approval Hub (returns to DRAFT/ERROR for correction)' } },
     { code: 'SMER',              label: 'SMER — Rejection Config',            metadata: { rejected_status: 'ERROR',  reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'ERROR'],            banner_tone: 'danger', description: 'SMER documents rejected from Approval Hub' } },
     { code: 'CAR_LOGBOOK',       label: 'Car Logbook — Rejection Config',     metadata: { rejected_status: 'ERROR',  reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'ERROR'],            banner_tone: 'danger', description: 'Car logbook entries rejected from Approval Hub (batch reject affects entire period+cycle)' } },
     { code: 'EXPENSES',          label: 'Expenses (ORE/ACCESS) — Rejection Config', metadata: { rejected_status: 'ERROR', reason_field: 'rejection_reason', resubmit_allowed: true, editable_statuses: ['DRAFT', 'ERROR'],      banner_tone: 'danger', description: 'Expense entries rejected from Approval Hub' } },
@@ -2071,6 +2080,7 @@ exports.create = catchAsync(async (req, res) => {
   if (OR_PARSER_LOOKUP_CATEGORIES.has(cat)) invalidateOrParserCache();
   if (VENDOR_AUTO_LEARN_CATEGORIES.has(cat)) invalidateGuardrailCache();
   if (DANGER_SUB_PERM_CATEGORIES.has(cat)) invalidateDangerCache(req.entityId);
+  if (REJECTION_CONFIG_CATEGORIES.has(cat)) invalidateEditableStatuses(req.entityId, item.code);
   res.status(201).json({ success: true, data: item });
 });
 
@@ -2087,6 +2097,7 @@ exports.update = catchAsync(async (req, res) => {
   if (OR_PARSER_LOOKUP_CATEGORIES.has(item.category)) invalidateOrParserCache();
   if (VENDOR_AUTO_LEARN_CATEGORIES.has(item.category)) invalidateGuardrailCache();
   if (DANGER_SUB_PERM_CATEGORIES.has(item.category)) invalidateDangerCache(item.entity_id);
+  if (REJECTION_CONFIG_CATEGORIES.has(item.category)) invalidateEditableStatuses(item.entity_id, item.code);
   res.json({ success: true, data: item });
 });
 
@@ -2098,6 +2109,7 @@ exports.remove = catchAsync(async (req, res) => {
   if (OR_PARSER_LOOKUP_CATEGORIES.has(item.category)) invalidateOrParserCache();
   if (VENDOR_AUTO_LEARN_CATEGORIES.has(item.category)) invalidateGuardrailCache();
   if (DANGER_SUB_PERM_CATEGORIES.has(item.category)) invalidateDangerCache(item.entity_id);
+  if (REJECTION_CONFIG_CATEGORIES.has(item.category)) invalidateEditableStatuses(item.entity_id, item.code);
   res.json({ success: true, data: item, message: 'Item deactivated' });
 });
 
@@ -2115,6 +2127,7 @@ exports.seedCategory = catchAsync(async (req, res) => {
   if (OR_PARSER_LOOKUP_CATEGORIES.has(category)) invalidateOrParserCache();
   if (VENDOR_AUTO_LEARN_CATEGORIES.has(category)) invalidateGuardrailCache();
   if (DANGER_SUB_PERM_CATEGORIES.has(category)) invalidateDangerCache(req.entityId);
+  if (REJECTION_CONFIG_CATEGORIES.has(category)) invalidateEditableStatuses(req.entityId);
   const items = await Lookup.find({ entity_id: req.entityId, category }).sort({ sort_order: 1 }).lean();
   res.json({ success: true, data: items, message: `Seeded ${defaults.length} defaults for ${category}` });
 });
@@ -2136,6 +2149,7 @@ exports.seedAll = catchAsync(async (req, res) => {
   // (without waiting for the 5-minute TTL). Per-category seed already invalidates; mirror
   // that for seedAll so a fresh entity gets the Access Template editor working right away.
   invalidateDangerCache(req.entityId);
+  invalidateEditableStatuses(req.entityId);
   const populated = await Lookup.distinct('category', { entity_id: req.entityId });
   res.json({ success: true, data: results, message: `Seeded ${populated.length}/${Object.keys(SEED_DEFAULTS).length} categories` });
 });

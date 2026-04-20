@@ -52,6 +52,9 @@ const CarLogbookEntry = require('../models/CarLogbookEntry');
 const SupplierInvoice = require('../models/SupplierInvoice');
 const CreditNote = require('../models/CreditNote');
 const IcSettlement = require('../models/IcSettlement');
+// Phase 31R-OS
+const OfficeSupply = require('../models/OfficeSupply');
+const OfficeSupplyTransaction = require('../models/OfficeSupplyTransaction');
 
 const { buildDocumentDetails, REVERSAL_DOC_TYPE_TO_MODULE } = require('./documentDetailBuilder');
 
@@ -229,6 +232,23 @@ const POPULATED_LOADERS = {
       .populate('creditor_entity_id', 'entity_name entity_code')
       .populate('debtor_entity_id', 'entity_name entity_code')
       .populate('posted_by', 'name')
+      .lean();
+  },
+
+  // ── Phase 31R-OS ──
+  OFFICE_SUPPLY_ITEM: async (id, filter) => {
+    return OfficeSupply.findOne({ _id: id, ...filter })
+      .populate('created_by', 'name')
+      .populate('cost_center_id', 'cost_center_name cost_center_code')
+      .populate('warehouse_id', 'warehouse_name warehouse_code')
+      .lean();
+  },
+
+  OFFICE_SUPPLY_TXN: async (id, filter) => {
+    return OfficeSupplyTransaction.findOne({ _id: id, ...filter })
+      .populate('supply_id', 'item_name item_code category unit qty_on_hand')
+      .populate('cost_center_id', 'cost_center_name cost_center_code')
+      .populate('created_by', 'name')
       .lean();
   },
 };

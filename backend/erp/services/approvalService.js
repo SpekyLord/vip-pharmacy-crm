@@ -151,6 +151,60 @@ const getModuleRejectionConfig = async (entityId, moduleKey) => {
   return entry.metadata || null;
 };
 
+// In-memory cache for editable-statuses reads on the controller hot path.
+// Keyed by `${entityId}:${moduleKey}`. TTL bounds staleness if a Lookup row is
+// mutated outside the Control Center (e.g. direct DB edit); the invalidate hook
+// in lookupGenericController gives instant propagation on UI-driven edits.
+const editableStatusesCache = new Map();
+const EDITABLE_STATUSES_TTL_MS = 60_000;
+const EDITABLE_STATUSES_FALLBACK = Object.freeze(['DRAFT', 'ERROR']);
+
+/**
+ * Return the list of statuses in which a document of `moduleKey` is still
+ * user-editable (draft-like, or rejected-and-awaiting-fix). Reads from the
+ * per-entity MODULE_REJECTION_CONFIG.metadata.editable_statuses, with a
+ * short-TTL cache so write-guard queries don't pay a DB round-trip per edit.
+ *
+ * Falls back to ['DRAFT','ERROR'] — the historical hardcoded value — when no
+ * config exists or the lookup lookup returns malformed data. This keeps
+ * controllers safe during rollout even if the seed hasn't reached an entity.
+ *
+ * @param {ObjectId|string} entityId
+ * @param {string} moduleKey - canonical MODULE_REJECTION_CONFIG code
+ * @returns {Promise<string[]>}
+ */
+const getEditableStatuses = async (entityId, moduleKey) => {
+  const upper = (moduleKey || '').toUpperCase();
+  const code = MODULE_KEY_ALIASES[upper] || upper;
+  if (!code || !entityId) return EDITABLE_STATUSES_FALLBACK.slice();
+
+  const cacheKey = `${entityId}:${code}`;
+  const hit = editableStatusesCache.get(cacheKey);
+  if (hit && hit.expiresAt > Date.now()) return hit.statuses;
+
+  const cfg = await getModuleRejectionConfig(entityId, code);
+  const raw = cfg?.editable_statuses;
+  const statuses = Array.isArray(raw) && raw.length > 0 ? raw.slice() : EDITABLE_STATUSES_FALLBACK.slice();
+  editableStatusesCache.set(cacheKey, { statuses, expiresAt: Date.now() + EDITABLE_STATUSES_TTL_MS });
+  return statuses;
+};
+
+/**
+ * Clear cached editable-statuses for a single (entityId, moduleKey) pair, or
+ * clear the whole cache when either argument is omitted. Called by
+ * lookupGenericController on MODULE_REJECTION_CONFIG mutations so Control
+ * Center edits take effect immediately instead of after the TTL.
+ */
+const invalidateEditableStatuses = (entityId, moduleKey) => {
+  if (entityId && moduleKey) {
+    const upper = (moduleKey || '').toUpperCase();
+    const code = MODULE_KEY_ALIASES[upper] || upper;
+    editableStatusesCache.delete(`${entityId}:${code}`);
+    return;
+  }
+  editableStatusesCache.clear();
+};
+
 /**
  * Check whether the authority matrix is enabled for this entity.
  * @returns {Promise<boolean>}
@@ -629,5 +683,7 @@ module.exports = {
   getPendingForApprover,
   getModulePostingRoles,
   getModuleRejectionConfig,
+  getEditableStatuses,
+  invalidateEditableStatuses,
   MODULE_KEY_ALIASES,
 };

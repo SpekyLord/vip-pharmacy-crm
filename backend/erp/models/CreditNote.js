@@ -78,6 +78,7 @@ const creditNoteSchema = new mongoose.Schema({
     default: 'DRAFT'
   },
   validation_errors: [{ type: String }],
+  rejection_reason: { type: String, trim: true },
   posted_at: { type: Date },
   posted_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
 
