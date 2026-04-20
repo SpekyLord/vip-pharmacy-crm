@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
@@ -1158,7 +1158,8 @@ export default function SalesEntry() {
               </thead>
               <tbody>
                 {rows.map((row, idx) => (
-                  <tr key={row._id || row._tempId}>
+                  <Fragment key={row._id || row._tempId}>
+                  <tr>
                     <td style={{ color: 'var(--erp-muted)', fontSize: 12 }}>{idx + 1}</td>
                     <td>
                       <SelectField value={row.hospital_id?._id || row.hospital_id || row.customer_id?._id || row.customer_id || ''} onChange={e => {
@@ -1306,20 +1307,6 @@ export default function SalesEntry() {
                       {row.source === 'OPENING_AR' && (
                         <span className="status-badge" style={{ background: '#fef3c7', color: '#92400e', marginLeft: 4 }} title="Pre-live-date — no inventory deduction">Opening AR</span>
                       )}
-                      {isRejectedRow(row) && (
-                        <div style={{ marginTop: 6, maxWidth: 220 }}>
-                          <RejectionBanner row={row} moduleKey="SALES" variant="row" />
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-outline"
-                            style={{ marginTop: 4, fontSize: 11 }}
-                            onClick={() => setPhotoOnlyRowIdx(idx)}
-                            title="Re-upload a clearer CSI photo without re-keying line items"
-                          >
-                            📷 Re-upload CSI Photo
-                          </button>
-                        </div>
-                      )}
                     </td>
                     <td>
                       {row.status === 'DRAFT' && (
@@ -1327,6 +1314,27 @@ export default function SalesEntry() {
                       )}
                     </td>
                   </tr>
+                  {isRejectedRow(row) && (
+                    <tr>
+                      <td colSpan={13} style={{ padding: '8px 12px', background: '#fff5f5', borderTop: 'none' }}>
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <div style={{ flex: '1 1 360px', minWidth: 0 }}>
+                            <RejectionBanner row={row} moduleKey="SALES" variant="row" />
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline"
+                            onClick={() => setPhotoOnlyRowIdx(idx)}
+                            title="Re-upload a clearer CSI photo without re-keying line items"
+                            style={{ whiteSpace: 'nowrap' }}
+                          >
+                            📷 Re-upload CSI Photo
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

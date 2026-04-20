@@ -24,7 +24,7 @@
  *   the contractor can attach a clearer photo + resubmit without re-keying line
  *   items — same pattern as Expenses / SMER.
  */
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Fragment, useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
@@ -104,7 +104,15 @@ const pageStyles = `
   .oar-row-status { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
   .status-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
   .oar-rejection-banner { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; border-radius: 6px; padding: 6px 8px; font-size: 11px; margin-top: 4px; max-width: 220px; }
-  .oar-line-item { display: grid; grid-template-columns: 2fr 80px 90px 110px 28px; gap: 6px; align-items: center; margin-bottom: 4px; }
+  /* Line items live in a dedicated sub-row spanning the full table width,
+     so the product dropdown gets the room it needs without squeezing the
+     CSI #, Hospital, and Date inputs in the main row. */
+  .oar-line-item { display: grid; grid-template-columns: minmax(280px, 3fr) 90px 100px 130px 32px; gap: 8px; align-items: center; margin-bottom: 6px; }
+  .oar-line-item > * { min-width: 0; }
+  .oar-table { table-layout: auto; min-width: 980px; }
+  .oar-row-main td { border-top: 1px solid var(--erp-border, #dbe4f0); padding-bottom: 4px; }
+  .oar-row-items td { border-top: none; background: var(--erp-bg, #f4f7fb); }
+  .oar-li-section-label { font-size: 10px; color: var(--erp-muted, #5f7188); text-transform: uppercase; font-weight: 700; letter-spacing: 0.4px; margin: 4px 0 6px; }
   .oar-li-add { background: transparent; border: 1px dashed var(--erp-border); color: var(--erp-muted); padding: 4px 8px; font-size: 11px; border-radius: 6px; cursor: pointer; }
   .oar-li-add:hover { background: var(--erp-bg); }
   .oar-li-remove { background: transparent; border: none; color: #dc2626; cursor: pointer; font-size: 14px; }
@@ -522,20 +530,23 @@ export default function OpeningArEntry() {
               </div>
             )}
 
-            {/* ── Desktop / Tablet table ── */}
+            {/* ── Desktop / Tablet table ──
+                Layout: header fields (Hospital / Date / CSI# / Totals / Photo / Status)
+                live in the MAIN row. Line items get a SEPARATE sub-row spanning the
+                full width below, so neither side fights for space and the product
+                dropdown isn't squeezed by a narrow grid track. */}
             <div className="oar-grid">
               <table className="oar-table">
                 <thead>
                   <tr>
-                    <th style={{ width: 38 }}>#</th>
-                    <th style={{ minWidth: 180 }}>Hospital / Customer</th>
-                    <th style={{ width: 140 }}>CSI Date</th>
-                    <th style={{ width: 130 }}>CSI #</th>
-                    <th style={{ minWidth: 320 }}>Line Items</th>
-                    <th style={{ width: 110 }} className="num">Total</th>
-                    <th style={{ width: 80 }}>Photo</th>
-                    <th style={{ width: 130 }}>Status</th>
-                    <th style={{ width: 60 }}></th>
+                    <th style={{ width: 36 }}>#</th>
+                    <th style={{ minWidth: 240 }}>Hospital / Customer</th>
+                    <th style={{ width: 160 }}>CSI Date</th>
+                    <th style={{ width: 180 }}>CSI #</th>
+                    <th style={{ width: 130 }} className="num">Total</th>
+                    <th style={{ width: 70 }}>Photo</th>
+                    <th style={{ width: 160 }}>Status</th>
+                    <th style={{ width: 50 }}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -546,140 +557,146 @@ export default function OpeningArEntry() {
                     const dateMaxOk = !liveDate || row.csi_date < liveDate;
                     const showRejection = row.rejection_reason && editableStatuses.includes(row.status);
                     return (
-                      <tr key={row._id || row._tempId}>
-                        <td>{idx + 1}</td>
-                        <td>
-                          <SelectField
-                            value={row.hospital_id || ''}
-                            onChange={e => updateRow(idx, 'hospital_id', e.target.value)}
-                            disabled={isPosted}
-                          >
-                            <option value="">— Select hospital —</option>
-                            {(hospitals || []).map(h => (
-                              <option key={h._id} value={h._id}>{h.hospital_name || h.name}</option>
-                            ))}
-                          </SelectField>
-                          {!row.hospital_id && customerList.length > 0 && (
+                      <Fragment key={row._id || row._tempId}>
+                        <tr className="oar-row-main">
+                          <td style={{ verticalAlign: 'middle' }}>{idx + 1}</td>
+                          <td>
                             <SelectField
-                              value={row.customer_id || ''}
-                              onChange={e => updateRow(idx, 'customer_id', e.target.value)}
+                              value={row.hospital_id || ''}
+                              onChange={e => updateRow(idx, 'hospital_id', e.target.value)}
                               disabled={isPosted}
                             >
-                              <option value="">— or non-hospital customer —</option>
-                              {customerList.map(c => (
-                                <option key={c._id} value={c._id}>{c.customer_name || c.name}</option>
+                              <option value="">— Select hospital —</option>
+                              {(hospitals || []).map(h => (
+                                <option key={h._id} value={h._id}>{h.hospital_name || h.name}</option>
                               ))}
                             </SelectField>
-                          )}
-                        </td>
-                        <td>
-                          <input
-                            type="date"
-                            value={row.csi_date || ''}
-                            onChange={e => updateRow(idx, 'csi_date', e.target.value)}
-                            max={liveDate ? oneDayBefore(liveDate) : undefined}
-                            disabled={isPosted}
-                            style={!dateMaxOk ? { borderColor: '#dc2626' } : undefined}
-                          />
-                          {!dateMaxOk && (
-                            <div style={{ fontSize: 10, color: '#dc2626', marginTop: 2 }}>Must be before {liveDate}</div>
-                          )}
-                        </td>
-                        <td>
-                          <input
-                            type="text"
-                            value={row.doc_ref || ''}
-                            onChange={e => updateRow(idx, 'doc_ref', e.target.value)}
-                            placeholder="CSI #"
-                            disabled={isPosted}
-                          />
-                        </td>
-                        <td>
-                          {(row.line_items || []).map((item, li) => (
-                            <div key={li} className="oar-line-item">
+                            {!row.hospital_id && customerList.length > 0 && (
                               <SelectField
-                                value={item.product_id?._id || item.product_id || ''}
-                                onChange={e => updateLineItem(idx, li, 'product_id', e.target.value)}
+                                value={row.customer_id || ''}
+                                onChange={e => updateRow(idx, 'customer_id', e.target.value)}
                                 disabled={isPosted}
                               >
-                                <option value="">— Product —</option>
-                                {productOptions.map(p => (
-                                  <option key={p.product_id} value={p.product_id}>{p.label}</option>
+                                <option value="">— or non-hospital customer —</option>
+                                {customerList.map(c => (
+                                  <option key={c._id} value={c._id}>{c.customer_name || c.name}</option>
                                 ))}
                               </SelectField>
-                              <input
-                                type="number"
-                                min="1"
-                                step="any"
-                                value={item.qty || ''}
-                                onChange={e => updateLineItem(idx, li, 'qty', e.target.value)}
-                                placeholder="Qty"
-                                disabled={isPosted}
-                              />
-                              <input
-                                type="text"
-                                value={item.unit || ''}
-                                onChange={e => updateLineItem(idx, li, 'unit', e.target.value)}
-                                placeholder="Unit"
-                                disabled={isPosted}
-                                readOnly={!!item.product_id}
-                              />
-                              <input
-                                type="number"
-                                min="0"
-                                step="0.01"
-                                value={item.unit_price || ''}
-                                onChange={e => updateLineItem(idx, li, 'unit_price', e.target.value)}
-                                placeholder="Price"
-                                disabled={isPosted}
-                              />
-                              {!isPosted && (
-                                <button className="oar-li-remove" title="Remove" onClick={() => removeLineItem(idx, li)}>×</button>
-                              )}
-                            </div>
-                          ))}
-                          {!isPosted && (
-                            <button className="oar-li-add" onClick={() => addLineItem(idx)}>+ Line Item</button>
-                          )}
-                        </td>
-                        <td className="num" style={{ textAlign: 'right', fontWeight: 600 }}>
-                          ₱{total.toFixed(2)}
-                        </td>
-                        <td>
-                          {row.csi_photo_url ? (
-                            <a href={row.csi_photo_url} target="_blank" rel="noopener noreferrer">
-                              <img src={row.csi_photo_url} alt="CSI" className="oar-photo-thumb" />
-                            </a>
-                          ) : (
-                            <div className="oar-photo-placeholder" title="No photo">📄</div>
-                          )}
-                        </td>
-                        <td>
-                          <div className="oar-row-status">
-                            <span className="status-badge" style={{ background: status.bg, color: status.text }}>
-                              {status.label}
-                            </span>
-                            {showRejection && (
-                              <>
-                                <div className="oar-rejection-banner" title={row.rejection_reason}>
-                                  Rejected: {row.rejection_reason.length > 60 ? row.rejection_reason.slice(0, 60) + '…' : row.rejection_reason}
-                                </div>
-                                <button className="btn btn-sm btn-outline" onClick={() => openPhotoReupload(idx)}>
-                                  📷 Re-upload CSI Photo
-                                </button>
-                              </>
                             )}
-                            {(row.validation_errors || []).slice(0, 2).map((ve, vi) => (
-                              <div key={vi} style={{ fontSize: 10, color: '#991b1b' }}>• {ve}</div>
+                          </td>
+                          <td>
+                            <input
+                              type="date"
+                              value={row.csi_date || ''}
+                              onChange={e => updateRow(idx, 'csi_date', e.target.value)}
+                              max={liveDate ? oneDayBefore(liveDate) : undefined}
+                              disabled={isPosted}
+                              style={!dateMaxOk ? { borderColor: '#dc2626' } : undefined}
+                            />
+                            {!dateMaxOk && (
+                              <div style={{ fontSize: 10, color: '#dc2626', marginTop: 2 }}>Must be before {liveDate}</div>
+                            )}
+                          </td>
+                          <td>
+                            <input
+                              type="text"
+                              value={row.doc_ref || ''}
+                              onChange={e => updateRow(idx, 'doc_ref', e.target.value)}
+                              placeholder="CSI booklet #"
+                              disabled={isPosted}
+                            />
+                          </td>
+                          <td className="num" style={{ textAlign: 'right', fontWeight: 600, verticalAlign: 'middle' }}>
+                            ₱{total.toFixed(2)}
+                          </td>
+                          <td style={{ verticalAlign: 'middle' }}>
+                            {row.csi_photo_url ? (
+                              <a href={row.csi_photo_url} target="_blank" rel="noopener noreferrer">
+                                <img src={row.csi_photo_url} alt="CSI" className="oar-photo-thumb" />
+                              </a>
+                            ) : (
+                              <div className="oar-photo-placeholder" title="No photo">📄</div>
+                            )}
+                          </td>
+                          <td>
+                            <div className="oar-row-status">
+                              <span className="status-badge" style={{ background: status.bg, color: status.text }}>
+                                {status.label}
+                              </span>
+                              {showRejection && (
+                                <>
+                                  <div className="oar-rejection-banner" title={row.rejection_reason}>
+                                    Rejected: {row.rejection_reason.length > 60 ? row.rejection_reason.slice(0, 60) + '…' : row.rejection_reason}
+                                  </div>
+                                  <button className="btn btn-sm btn-outline" onClick={() => openPhotoReupload(idx)}>
+                                    📷 Re-upload CSI Photo
+                                  </button>
+                                </>
+                              )}
+                              {(row.validation_errors || []).slice(0, 2).map((ve, vi) => (
+                                <div key={vi} style={{ fontSize: 10, color: '#991b1b' }}>• {ve}</div>
+                              ))}
+                            </div>
+                          </td>
+                          <td style={{ verticalAlign: 'middle' }}>
+                            {!isPosted && rows.length > 1 && (
+                              <button className="btn btn-sm btn-outline" onClick={() => removeRow(idx)} title="Remove row">×</button>
+                            )}
+                          </td>
+                        </tr>
+                        <tr className="oar-row-items">
+                          <td></td>
+                          <td colSpan={7} style={{ paddingTop: 0 }}>
+                            <div className="oar-li-section-label">Line items</div>
+                            {(row.line_items || []).map((item, li) => (
+                              <div key={li} className="oar-line-item">
+                                <SelectField
+                                  value={item.product_id?._id || item.product_id || ''}
+                                  onChange={e => updateLineItem(idx, li, 'product_id', e.target.value)}
+                                  disabled={isPosted}
+                                >
+                                  <option value="">— Product —</option>
+                                  {productOptions.map(p => (
+                                    <option key={p.product_id} value={p.product_id}>{p.label}</option>
+                                  ))}
+                                </SelectField>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  step="any"
+                                  value={item.qty || ''}
+                                  onChange={e => updateLineItem(idx, li, 'qty', e.target.value)}
+                                  placeholder="Qty"
+                                  disabled={isPosted}
+                                />
+                                <input
+                                  type="text"
+                                  value={item.unit || ''}
+                                  onChange={e => updateLineItem(idx, li, 'unit', e.target.value)}
+                                  placeholder="Unit"
+                                  disabled={isPosted}
+                                  readOnly={!!item.product_id}
+                                />
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  value={item.unit_price || ''}
+                                  onChange={e => updateLineItem(idx, li, 'unit_price', e.target.value)}
+                                  placeholder="Price"
+                                  disabled={isPosted}
+                                />
+                                {!isPosted && (
+                                  <button className="oar-li-remove" title="Remove" onClick={() => removeLineItem(idx, li)}>×</button>
+                                )}
+                              </div>
                             ))}
-                          </div>
-                        </td>
-                        <td>
-                          {!isPosted && rows.length > 1 && (
-                            <button className="btn btn-sm btn-outline" onClick={() => removeRow(idx)} title="Remove row">×</button>
-                          )}
-                        </td>
-                      </tr>
+                            {!isPosted && (
+                              <button className="oar-li-add" onClick={() => addLineItem(idx)}>+ Line Item</button>
+                            )}
+                          </td>
+                        </tr>
+                      </Fragment>
                     );
                   })}
                 </tbody>
