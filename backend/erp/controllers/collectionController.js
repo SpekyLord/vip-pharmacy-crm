@@ -23,6 +23,7 @@ const JournalEntry = require('../models/JournalEntry');
 const { createVatEntry } = require('../services/vatService');
 const { createCwtEntry } = require('../services/cwtService');
 const { notifyDocumentPosted, notifyDocumentReopened } = require('../services/erpNotificationService');
+const { getEditableStatuses } = require('../services/approvalService');
 const Settings = require('../models/Settings');
 const PettyCashFund = require('../models/PettyCashFund');
 const PettyCashTransaction = require('../models/PettyCashTransaction');
@@ -146,7 +147,8 @@ const getCollectionRateEndpoint = catchAsync(async (req, res) => {
 // ═══ VALIDATE ═══
 
 const validateCollections = catchAsync(async (req, res) => {
-  const filter = { ...req.tenantFilter, status: { $in: ['DRAFT', 'ERROR'] } };
+  const editable = await getEditableStatuses(req.entityId, 'COLLECTION');
+  const filter = { ...req.tenantFilter, status: { $in: editable } };
   if (req.body.collection_ids?.length) filter._id = { $in: req.body.collection_ids };
 
   const rows = await Collection.find(filter);

@@ -40,6 +40,7 @@ const MODELS_DIR = path.join(ROOT, 'erp', 'models');
 const MODULE_TO_MODEL_FILES = {
   SALES:               ['SalesLine.js'],
   COLLECTION:          ['Collection.js'],
+  CREDIT_NOTE:         ['CreditNote.js'],
   SMER:                ['SmerEntry.js'],
   CAR_LOGBOOK:         ['CarLogbookEntry.js'],
   EXPENSES:            ['ExpenseEntry.js'],

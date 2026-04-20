@@ -712,6 +712,14 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     if (hasSub('sales', 'opening_ar')) {
       salesItems.push({ path: '/erp/sales/opening-ar', label: 'Opening AR', icon: FileInput, isChild: true });
     }
+    // Opening AR Transactions — read-only history surface for posted Opening AR.
+    // Separate sub-permission (`sales.opening_ar_list`) so subscribers can keep
+    // the audit trail visible after revoking `sales.opening_ar` post-cutover.
+    // Falls back to the entry sub-perm while `opening_ar_list` is still rolling
+    // out across entities — same pattern SalesEntry/SalesList use.
+    if (hasSub('sales', 'opening_ar_list') || hasSub('sales', 'opening_ar')) {
+      salesItems.push({ path: '/erp/sales/opening-ar/list', label: 'Opening AR Transactions', icon: FileText, isChild: true });
+    }
     // Sub-permission gated — also visible to contractors with purchasing.credit_notes
     if (hasSub('sales', 'credit_notes') || hasSub('purchasing', 'credit_notes')) salesItems.push({ path: '/erp/credit-notes', label: 'Returns / CN', icon: RotateCcw });
     sections.push({

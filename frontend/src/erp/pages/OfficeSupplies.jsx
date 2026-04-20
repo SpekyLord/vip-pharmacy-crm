@@ -3,6 +3,8 @@ import SelectField from '../../components/common/Select';
 import useOfficeSupplies from '../hooks/useOfficeSupplies';
 import { useLookupOptions } from '../hooks/useLookups';
 import WorkflowGuide from '../components/WorkflowGuide';
+import PresidentReverseModal from '../components/PresidentReverseModal';
+import { useAuth } from '../../hooks/useAuth';
 import { showError, showSuccess } from '../utils/errorToast';
 
 const styles = {
@@ -207,6 +209,10 @@ function TxnModal({ open, onClose, onSave, supplies, TXN_TYPES }) {
 // ---------- Main Page ----------
 export default function OfficeSupplies() {
   const os = useOfficeSupplies();
+  const { user } = useAuth();
+  // Only president sees the destructive "Reverse" button. Backend enforces the
+  // same gate via `accounting.reverse_posted` — this UI check is purely cosmetic.
+  const isPresident = user?.role === 'president';
   const { options: catOpts } = useLookupOptions('OFFICE_SUPPLY_CATEGORY');
   const { options: txnOpts } = useLookupOptions('OFFICE_SUPPLY_TXN_TYPE');
   const TXN_TYPES = txnOpts.map(o => o.code);
@@ -220,6 +226,8 @@ export default function OfficeSupplies() {
   const [showTxnModal, setShowTxnModal] = useState(false);
   const [showTxns, setShowTxns] = useState(false);
   const [txnLoading, setTxnLoading] = useState(false);
+  // Phase 31R-OS — `{ kind: 'ITEM'|'TXN', ...row }` while the reverse modal is open
+  const [reverseTarget, setReverseTarget] = useState(null);
 
   const handleExport = async () => {
     try { const res = await os.exportSupplies(); const url = URL.createObjectURL(new Blob([res])); const a = document.createElement('a'); a.href = url; a.download = 'office-supplies-export.xlsx'; a.click(); URL.revokeObjectURL(url); } catch (err) { showError(err, 'Export failed'); }
@@ -255,16 +263,46 @@ export default function OfficeSupplies() {
   useEffect(() => { if (showTxns) loadTransactions(); }, [showTxns, loadTransactions]);
 
   const handleSaveItem = async (body, id) => {
-    if (id) await os.updateSupply(id, body);
-    else await os.createSupply(body);
+    if (id) {
+      await os.updateSupply(id, body);
+      showSuccess('Supply item updated');
+    } else {
+      await os.createSupply(body);
+      showSuccess('Supply item created');
+    }
     loadSupplies();
   };
 
   const handleRecordTxn = async (body) => {
     const supplyId = body.supply;
     await os.recordTransaction(supplyId, body);
+    showSuccess(`Transaction recorded (${body.txn_type})`);
     loadSupplies();
     if (showTxns) loadTransactions();
+  };
+
+  // Phase 31R-OS — president reverse dispatcher. Modal onConfirm calls this.
+  // Throws on error so the modal stays open for retry (per PresidentReverseModal contract).
+  const handlePresidentReverse = async ({ reason, confirm }) => {
+    if (!reverseTarget) return;
+    const { kind, _id } = reverseTarget;
+    try {
+      const res = kind === 'ITEM'
+        ? await os.presidentReverseItem(_id, { reason, confirm })
+        : await os.presidentReverseTxn(_id, { reason, confirm });
+      setReverseTarget(null);
+      showSuccess(res?.message || (kind === 'ITEM' ? 'Supply item reversed' : 'Supply transaction reversed'));
+      loadSupplies();
+      if (showTxns) loadTransactions();
+    } catch (err) {
+      const deps = err?.response?.data?.dependents;
+      const baseMsg = err?.response?.data?.message || err?.message || 'Could not reverse';
+      const msg = deps?.length
+        ? `${baseMsg} — depends on: ${deps.map(d => `${d.type} ${d.ref}`).join(', ')}`
+        : baseMsg;
+      showError({ message: msg }, msg);
+      throw err;
+    }
   };
 
   const catBadge = (cat) => {
@@ -337,7 +375,18 @@ export default function OfficeSupplies() {
                     <td style={styles.td}>{item.reorder_level}</td>
                     <td style={styles.td}>{styles.peso(item.last_purchase_price)}</td>
                     <td style={styles.td}>
-                      <button style={styles.btnSecondary} onClick={() => { setEditItem(item); setShowItemModal(true); }}>Edit</button>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <button style={styles.btnSecondary} onClick={() => { setEditItem(item); setShowItemModal(true); }}>Edit</button>
+                        {isPresident && (
+                          <button
+                            style={{ ...styles.btn, backgroundColor: '#dc2626', color: '#fff' }}
+                            onClick={() => setReverseTarget({ kind: 'ITEM', ...item })}
+                            title="President Reverse — delete this item and cascade-reverse its transactions"
+                          >
+                            Reverse
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );
@@ -372,6 +421,14 @@ export default function OfficeSupplies() {
                 </div>
                 <div className="os-card-actions">
                   <button style={styles.btnSecondary} onClick={() => { setEditItem(item); setShowItemModal(true); }}>Edit</button>
+                  {isPresident && (
+                    <button
+                      style={{ ...styles.btn, backgroundColor: '#dc2626', color: '#fff' }}
+                      onClick={() => setReverseTarget({ kind: 'ITEM', ...item })}
+                    >
+                      Reverse
+                    </button>
+                  )}
                 </div>
               </div>
             );
@@ -400,6 +457,7 @@ export default function OfficeSupplies() {
                     <th style={styles.th}>Unit Cost</th>
                     <th style={styles.th}>Issued To</th>
                     <th style={styles.th}>Notes</th>
+                    {isPresident && <th style={styles.th}>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -416,6 +474,21 @@ export default function OfficeSupplies() {
                       <td style={styles.td}>{txn.unit_cost ? styles.peso(txn.unit_cost) : '-'}</td>
                       <td style={styles.td}>{txn.issued_to || '-'}</td>
                       <td style={styles.td}>{txn.notes || '-'}</td>
+                      {isPresident && (
+                        <td style={styles.td}>
+                          {txn.reversal_event_id || txn.deletion_event_id
+                            ? <span style={styles.badge('gray')}>REVERSED</span>
+                            : (
+                              <button
+                                style={{ ...styles.btn, backgroundColor: '#dc2626', color: '#fff' }}
+                                onClick={() => setReverseTarget({ kind: 'TXN', ...txn })}
+                                title="President Reverse — restore qty_on_hand"
+                              >
+                                Reverse
+                              </button>
+                            )}
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -443,6 +516,20 @@ export default function OfficeSupplies() {
                     <div><span className="os-card-label">Issued To</span><br /><span className="os-card-value">{txn.issued_to || '-'}</span></div>
                     <div><span className="os-card-label">Notes</span><br /><span className="os-card-value">{txn.notes || '-'}</span></div>
                   </div>
+                  {isPresident && (
+                    <div className="os-card-actions">
+                      {txn.reversal_event_id || txn.deletion_event_id
+                        ? <span style={styles.badge('gray')}>REVERSED</span>
+                        : (
+                          <button
+                            style={{ ...styles.btn, backgroundColor: '#dc2626', color: '#fff' }}
+                            onClick={() => setReverseTarget({ kind: 'TXN', ...txn })}
+                          >
+                            Reverse
+                          </button>
+                        )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -453,6 +540,16 @@ export default function OfficeSupplies() {
 
       <ItemModal open={showItemModal} onClose={() => { setShowItemModal(false); setEditItem(null); }} onSave={handleSaveItem} editItem={editItem} categories={CATEGORIES} />
       <TxnModal open={showTxnModal} onClose={() => setShowTxnModal(false)} onSave={handleRecordTxn} supplies={supplies} TXN_TYPES={TXN_TYPES} />
+      {reverseTarget && (
+        <PresidentReverseModal
+          docLabel={reverseTarget.kind === 'ITEM'
+            ? `Office Supply · ${reverseTarget.item_name}${reverseTarget.item_code ? ` (${reverseTarget.item_code})` : ''} · qty ${reverseTarget.qty_on_hand ?? 0}`
+            : `Office Supply Txn · ${reverseTarget.txn_type} · ${reverseTarget.qty} · ${reverseTarget.supply?.item_name || ''}`}
+          docStatus="POSTED"
+          onConfirm={handlePresidentReverse}
+          onClose={() => setReverseTarget(null)}
+        />
+      )}
     </div>
     </>
   );

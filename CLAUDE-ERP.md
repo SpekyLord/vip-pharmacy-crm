@@ -2649,12 +2649,15 @@ no code changes needed per tenant.
 | Supplier Invoice | (via central console)                                | `documentReversalService` registry: `SUPPLIER_INVOICE` (Phase 31R) |
 | Credit Note  | (via central console)                                    | `documentReversalService` registry: `CREDIT_NOTE` (Phase 31R) |
 | IC Settlement | (via central console)                                   | `documentReversalService` registry: `IC_SETTLEMENT` (Phase 31R) |
+| Office Supply Item | `DELETE /api/erp/office-supplies/:id/president-reverse` | `officeSupplyController.presidentReverseSupply` (Phase 31R-OS) |
+| Office Supply Txn  | `DELETE /api/erp/office-supplies/transactions/:id/president-reverse` | `officeSupplyController.presidentReverseSupplyTxn` (Phase 31R-OS) |
 
 ### Schema Additions
 
 Added `deletion_event_id: ObjectId` (and `reopen_count` where missing) to:
 `GrnEntry`, `InterCompanyTransfer`, `PrfCalf`, `IncomeReport`, `Payslip`, `ExpenseEntry`
-(Phase 31), and `SmerEntry`, `CarLogbookEntry`, `SupplierInvoice`, `CreditNote`, `IcSettlement` (Phase 31R).
+(Phase 31), and `SmerEntry`, `CarLogbookEntry`, `SupplierInvoice`, `CreditNote`, `IcSettlement` (Phase 31R),
+and `OfficeSupply` + `OfficeSupplyTransaction` (Phase 31R-OS — transaction model also gained `reversal_event_id` for the opposite-sign audit row).
 `Payslip` also gained `event_id` (reverse handler falls back to JE lookup when missing for legacy rows).
 `GrnEntry.status` enum extended with `DELETION_REQUESTED`.
 
@@ -2663,7 +2666,7 @@ Added `deletion_event_id: ObjectId` (and `reopen_count` where missing) to:
 `?include_reversed=true` query parameter on list endpoints opts back into showing reversed
 rows; default behavior hides them (filter: `deletion_event_id: { $exists: false }`).
 Wired into: `getSales`, `getCollections`, `getExpenseList`, `getPrfCalfList`,
-`getGrnList`, `getTransfers`, `getIncomeList`, `getPayrollStaging`.
+`getGrnList`, `getTransfers`, `getIncomeList`, `getPayrollStaging`, `getSupplies` (Phase 31R-OS).
 
 ### Common Gotchas (Phase 31)
 
@@ -2709,6 +2712,70 @@ Wired into: `getSales`, `getCollections`, `getExpenseList`, `getPrfCalfList`,
   its own universalApprovalController wiring. It reuses `approve_sales` sub-permission
   so subscribers get the new surface without configuring an extra Access Template
   grant; splitting into `approve_credit_notes` is a future-proof one-row lookup change.
+
+### Phase 31R-OS — Office Supplies reversal (April 2026)
+
+Triggered by a silent-save bug where a single user unknowingly created 6 identical
+"BALL PEN" rows. The fix is three-layered (UX feedback → DB constraint → reversal path):
+
+- **Success toast** added to `handleSaveItem` + `handleRecordTxn` in
+  [frontend/src/erp/pages/OfficeSupplies.jsx](frontend/src/erp/pages/OfficeSupplies.jsx).
+  Previously the modal closed silently; users re-clicked Save thinking the action
+  had failed. Root cause of the duplicate incident.
+- **Unique sparse index** on `{ entity_id, item_code }` in
+  [backend/erp/models/OfficeSupply.js](backend/erp/models/OfficeSupply.js). Sparse
+  so items without a code still save; duplicates produce Mongo error 11000 which
+  the controller now translates to HTTP 409 via the shared `sendDuplicateIfAny()`
+  helper (in [backend/erp/controllers/officeSupplyController.js](backend/erp/controllers/officeSupplyController.js)).
+- **Two new reversal handlers** registered in `REVERSAL_HANDLERS`:
+  - `OFFICE_SUPPLY_ITEM` — SAP Storno with cascade. Marks all
+    `OfficeSupplyTransaction` rows for the item as `deletion_event_id=<reversal>`,
+    then stamps the master row and flips `is_active=false` so it's hidden from
+    default lists. No JE reversal (office supplies have no ledger integration today).
+  - `OFFICE_SUPPLY_TXN` — creates an opposite-sign transaction with
+    `reversal_event_id` stamped, restores parent `qty_on_hand` by the inverse
+    delta, and marks the original with `deletion_event_id`. `txn_type` is flipped
+    (PURCHASE⇄ISSUE, RETURN⇄ADJUSTMENT) so the audit trail reads naturally.
+
+Both doc types are fully wired into:
+- `REVERSAL_HANDLERS` registry (2 new entries, module: `inventory`)
+- `listReversibleDocs()` — surfaces items + unreversed txns in the Console
+- `REVERSAL_DOC_TYPE_TO_MODULE` → `OFFICE_SUPPLY` (shared builder key)
+- `DETAIL_BUILDERS.OFFICE_SUPPLY` — single builder branches on `item.txn_type`
+  to render item vs txn shape
+- `POPULATED_LOADERS` in `documentDetailHydrator.js` — both types populate
+  `supply_id`, `cost_center_id`, `warehouse_id` as applicable
+- `?include_reversed=true` query param on `GET /api/erp/office-supplies`
+
+**Danger gate.** Routes use `erpSubAccessCheck('accounting', 'reverse_posted')` —
+the existing Phase 3a danger sub-permission. No new key; subscribers delegate via
+Access Templates without code changes. President always passes.
+
+**UI.** `PresidentReverseModal` (shared) is mounted on the Office Supplies page
+with a red "Reverse" button appearing per-row only when `user.role === 'president'`.
+Both desktop table and mobile card have the button. Transaction history rows also
+get a Reverse button, or a REVERSED badge if already reversed.
+
+**Common gotchas (Phase 31R-OS).**
+
+- **No period-lock entry** for office supply doc types in `PERIOD_LOCK_MODULE`.
+  Office supplies do not post to COA today (no JE side-effects), so no period
+  gate is needed. `assertReversalPeriodOpen` is a no-op for these types (the
+  map lookup returns undefined and the function returns early). If future work
+  posts supply expenses to the ledger, add entries mapping to `'EXPENSE'` or
+  `'INVENTORY'` and add a `reverseLinkedJEs({ event_id })` branch.
+- **Route order matters.** `router.delete('/transactions/:id/president-reverse', ...)`
+  MUST be declared BEFORE `router.delete('/:id/president-reverse', ...)` in
+  [officeSupplyRoutes.js](backend/erp/routes/officeSupplyRoutes.js), otherwise
+  the `/:id` route swallows the literal `transactions` segment.
+- **Working entity required.** `createSupply` now returns 400 if `req.entityId`
+  is null (president without an `X-Entity-Id` header selected). Prior behavior
+  was to write `entity_id: null` which failed Mongoose validation with a less
+  helpful error.
+- **Approval Hub is intentionally not wired.** Office supplies are master data;
+  Vendor/Product/Bank/Warehouse create flows also skip approval. Adding it only
+  here would be inconsistent — and the duplicates bug is solved by the unique
+  index + toast, not by human review.
 
 ### Shared Detail Panel + Universal Approval Coverage (Phase 31 extension, April 2026)
 

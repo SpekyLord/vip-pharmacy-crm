@@ -14,6 +14,7 @@ const { catchAsync } = require('../../middleware/errorHandler');
 const { buildStockSnapshot } = require('../services/fifoEngine');
 const { createAndPostJournal } = require('../services/journalEngine');
 const { getCoaMap } = require('../services/autoJournal');
+const { getEditableStatuses } = require('../services/approvalService');
 
 // ═══════════════════════════════════════════════════════════
 // CRUD
@@ -108,7 +109,8 @@ const getCreditNoteById = catchAsync(async (req, res) => {
 // ═══════════════════════════════════════════════════════════
 
 const validateCreditNotes = catchAsync(async (req, res) => {
-  const filter = { ...req.tenantFilter, status: { $in: ['DRAFT', 'ERROR'] } };
+  const editable = await getEditableStatuses(req.entityId, 'CREDIT_NOTE');
+  const filter = { ...req.tenantFilter, status: { $in: editable } };
   if (req.body.cn_ids?.length) {
     filter._id = { $in: req.body.cn_ids.map(id => new mongoose.Types.ObjectId(id)) };
   }

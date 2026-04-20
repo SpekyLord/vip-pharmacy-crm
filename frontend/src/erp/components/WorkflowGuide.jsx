@@ -47,7 +47,7 @@ const styles = `
 // Source-of-truth: MODULE_REJECTION_CONFIG seed in backend/erp/controllers/lookupGenericController.js.
 // Adding a new module = adding the page key here AND seeding MODULE_REJECTION_CONFIG.
 const PAGES_WITH_REJECTION_FLOW = new Set([
-  'sales-entry', 'sales-opening-ar', 'collections', 'smer', 'car-logbook', 'expenses', 'prf-calf',
+  'sales-entry', 'sales-opening-ar', 'sales-opening-ar-list', 'collections', 'smer', 'car-logbook', 'expenses', 'prf-calf',
   'grn-entry', 'payslip-view', 'kpi-rating', 'income', 'my-income',
   'purchase-orders', 'journal-entries', 'bank-reconciliation', 'transfer-orders',
   'ic-settlement', 'sales-goal-setup', 'sales-goal-bdm', 'incentive-payout-ledger',
@@ -109,6 +109,29 @@ const WORKFLOW_GUIDES = {
       { label: 'Approval Hub', path: '/erp/approvals' },
     ],
     tip: 'Opening AR is for receivables only. Pre-go-live INVENTORY is loaded with the importOpeningStock script (one-shot at cutover). After cutover is complete, your admin can remove the sales.opening_ar sub-permission to hide this page from the sidebar — entries already posted remain in AR aging.',
+  },
+  // Option B split — posted-history surface for Opening AR. Shares the
+  // sales-family nav bar with SalesEntry / SalesList / OpeningArEntry. Gated
+  // by sales.opening_ar_list sub-permission so subscribers can keep the audit
+  // trail visible after revoking sales.opening_ar post-cutover.
+  'sales-opening-ar-list': {
+    title: 'Opening AR Transactions — Historical Read-Only Audit',
+    steps: [
+      'This is the full history of CSIs flagged source=OPENING_AR — posted, pending deletion, and any drafts/valid/error rows you want to review in one place. New drafts are created on the Opening AR Entry page.',
+      'Filter by status (default = all) or csi_date range. The source filter is fixed to OPENING_AR — to see live sales use the Sales Transactions tab.',
+      'Click any row to open the detail panel: line items, invoice total, VAT/net breakdown, CSI photo thumbnail, and the rejection banner (if an approver sent it back).',
+      'Actions per row: Submit (VALID → POSTED), Re-open (POSTED → DRAFT, reverses the AR journal), Request Deletion (BDM), Approve Deletion (admin w/ accounting.approve_deletion), President Delete (holders of accounting.reverse_posted).',
+      'Re-open is safe for OPENING_AR because no InventoryLedger entries were created at post time — only the AR + Sales Revenue journal is reversed (SAP Storno).',
+      'If an approver rejected a row you submitted: open the detail panel, read the rejection banner, and click Fix & Resubmit — you\'ll land back on the Entry page pre-loaded for editing.',
+      'Tab navigation lets you jump to Sales, Sales Transactions, Opening AR Entry, or CSI Booklets without leaving the context.',
+    ],
+    next: [
+      { label: 'Opening AR Entry', path: '/erp/sales/opening-ar' },
+      { label: 'Sales Transactions', path: '/erp/sales' },
+      { label: 'AR Aging', path: '/erp/collections/ar' },
+      { label: 'Approval Hub', path: '/erp/approvals' },
+    ],
+    tip: 'Subscribers who want read-only audit after cutover can revoke sales.opening_ar (hides Entry) but keep sales.opening_ar_list (keeps this page). Both are lookup-driven via Control Center → Lookup Tables → ERP_SUB_PERMISSION.',
   },
   'sales-entry': {
     title: 'Creating a Sale (CSI / Cash Receipt / Service Invoice)',
@@ -725,17 +748,19 @@ const WORKFLOW_GUIDES = {
   'office-supplies': {
     title: 'Office Supplies',
     steps: [
-      'Record purchases (PURCHASE) or issues to staff (ISSUE)',
-      'Track returns and adjustments',
-      'View current stock levels by category',
-      'Categories are lookup-driven — manage in Lookup Tables',
+      'Click + Add Item to register a new supply. Each item_code must be unique within your entity — duplicates are rejected at save time (HTTP 409)',
+      'Record purchases (PURCHASE) or issues to staff (ISSUE) via Record Transaction',
+      'Track returns and adjustments; stock deltas are computed atomically',
+      'View current stock levels by category; the REORDER badge highlights items at or below reorder_level',
+      'President-only: click Reverse on any row to undo a mistake. Item reversal cascades to all transactions for that item; transaction reversal restores qty_on_hand. Both show up in the Reversal Console.',
     ],
     next: [
       { label: 'Petty Cash', path: '/erp/petty-cash' },
+      { label: 'Reversal Console', path: '/erp/president/reversals' },
       { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
       { label: 'Access Templates', path: '/erp/control-center?section=access' },
     ],
-    tip: 'Access is template-driven — only users with the inventory.office_supplies sub-permission can see this page. Manage in Access Templates.',
+    tip: 'Access is template-driven — only users with the inventory.office_supplies sub-permission can see this page. Reversing needs accounting.reverse_posted (president always has it). Manage both in Access Templates.',
   },
   'petty-cash': {
     title: 'Petty Cash',

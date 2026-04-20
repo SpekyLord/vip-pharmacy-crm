@@ -29,13 +29,16 @@ import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import { ROLE_SETS } from '../../constants/roles';
 import useSales from '../hooks/useSales';
 import useHospitals from '../hooks/useHospitals';
 import useCustomers from '../hooks/useCustomers';
 import useErpApi from '../hooks/useErpApi';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
 import ScanCSIModal from '../components/ScanCSIModal';
+import CsiPhoto, { csiPhotoStyles } from '../components/CsiPhoto';
 import { useRejectionConfig } from '../hooks/useRejectionConfig';
 import { showError, showApprovalPending, showSuccess } from '../utils/errorToast';
 
@@ -116,8 +119,37 @@ const pageStyles = `
   .oar-li-add { background: transparent; border: 1px dashed var(--erp-border); color: var(--erp-muted); padding: 4px 8px; font-size: 11px; border-radius: 6px; cursor: pointer; }
   .oar-li-add:hover { background: var(--erp-bg); }
   .oar-li-remove { background: transparent; border: none; color: #dc2626; cursor: pointer; font-size: 14px; }
-  .oar-photo-thumb { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; border: 1px solid var(--erp-border); cursor: pointer; }
-  .oar-photo-placeholder { width: 48px; height: 48px; border-radius: 6px; border: 1px dashed var(--erp-border); display: flex; align-items: center; justify-content: center; color: var(--erp-muted); font-size: 18px; }
+  /* Shared top nav tabs — mirrors SalesEntry/SalesList so the five sales-family
+     pages (Sales, Sales Transactions, Opening AR, Opening AR Transactions,
+     CSI Booklets) share one visual navigation widget. Class names match
+     SalesEntry/SalesList so theming stays in sync. */
+  .sales-nav-tabs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: nowrap;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-bottom: 12px;
+    padding: 6px;
+    border: 1px solid var(--erp-border, #dbe4f0);
+    border-radius: 10px;
+    background: var(--erp-panel, #fff);
+  }
+  .sales-nav-tabs::-webkit-scrollbar { height: 0; }
+  .sales-nav-tab {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    color: var(--erp-text, #132238);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .sales-nav-tab.active { background: var(--erp-accent, #1e5eff); color: #fff; }
+  .sales-nav-tab:hover { border-color: var(--erp-border, #dbe4f0); }
   .oar-cards { display: none; }
   @media (max-width: 768px) {
     .oar-grid { display: none; }
@@ -135,9 +167,20 @@ export default function OpeningArEntry() {
   const { hospitals } = useHospitals();
   const customers = useCustomers();
   const erpApi = useErpApi();
+  const { hasSubPermission } = useErpSubAccess();
 
   const liveDate = user?.live_date ? toDateInput(user.live_date) : '';
   const defaultBackdate = liveDate ? oneDayBefore(liveDate) : '';
+
+  // Nav-tab visibility — lookup-driven sub-permissions so subscribers control
+  // which sales-family surfaces BDMs see. Entry + List gates are separate so
+  // subscribers can revoke "opening_ar" post-cutover while keeping "opening_ar_list"
+  // available for read-only historical audit. `opening_ar_list` lazy-falls-back
+  // to `opening_ar` while the new sub-perm is still being seeded across entities.
+  const canCreateSales = ROLE_SETS.BDM_ADMIN.includes(user?.role);
+  const canOpeningArEntry = hasSubPermission('sales', 'opening_ar');
+  const canOpeningArList = hasSubPermission('sales', 'opening_ar_list') || canOpeningArEntry;
+  const canCsiBooklets = hasSubPermission('inventory', 'csi_booklets');
 
   const [productMaster, setProductMaster] = useState([]);
   const [customerList, setCustomerList] = useState([]);
@@ -145,7 +188,10 @@ export default function OpeningArEntry() {
   const [validationErrors, setValidationErrors] = useState([]);
   const [actionLoading, setActionLoading] = useState('');
   const [scanModalOpen, setScanModalOpen] = useState(false);
-  const [photoOnlyRowIdx, setPhotoOnlyRowIdx] = useState(null); // null = full scan, number = re-upload to that row
+  // null = full OCR scan (create new row from extracted data);
+  // number = re-upload photo to that existing row (rejection fallback);
+  // 'NEW' = proof-only upload: create a fresh row with just the photo, no OCR.
+  const [photoOnlyRowIdx, setPhotoOnlyRowIdx] = useState(null);
   const [productLoading, setProductLoading] = useState(false);
 
   // Lookup-driven rejection config (MODULE_REJECTION_CONFIG → SALES; Opening AR reuses
@@ -285,10 +331,13 @@ export default function OpeningArEntry() {
     });
   };
 
-  // ── OCR scan apply (from ScanCSIModal — full mode) ──────────────────────
+  // ── Apply handler — routes based on photoOnlyRowIdx sentinel ────────────
+  // null     → full OCR: create new row pre-filled from extracted fields
+  // number   → re-upload: update csi_photo_url/attachment_id on that row only
+  // 'NEW'    → proof-only: create fresh row with just the photo, no OCR fields
   const handleScanApply = useCallback((scannedData) => {
-    // Photo-only mode: attach photo to the targeted existing row
-    if (photoOnlyRowIdx !== null) {
+    // Re-upload path: attach photo to the targeted existing row (keeps line items).
+    if (typeof photoOnlyRowIdx === 'number') {
       setRows(prev => {
         const updated = [...prev];
         if (!updated[photoOnlyRowIdx]) return prev;
@@ -304,8 +353,22 @@ export default function OpeningArEntry() {
       return;
     }
 
-    // Full scan: create a new row with extracted data
-    // Clamp csi_date to before live_date if OCR returned a future/today date
+    // Proof-only path: create a fresh row with just the photo attached.
+    // BDM fills in hospital, CSI#, date, and line items manually.
+    if (photoOnlyRowIdx === 'NEW') {
+      const newRow = {
+        ...buildEmptyRow(defaultBackdate),
+        csi_photo_url: scannedData.csi_photo_url || '',
+        csi_attachment_id: scannedData.csi_attachment_id || null
+      };
+      setRows(prev => [...prev, newRow]);
+      setPhotoOnlyRowIdx(null);
+      showSuccess('Photo attached to new row. Fill in the hospital, CSI#, date, and line items, then save.');
+      return;
+    }
+
+    // Full OCR scan: create a new row with extracted data pre-filled.
+    // Clamp csi_date to before live_date if OCR returned a future/today date.
     let csiDate = scannedData.csi_date;
     if (liveDate && csiDate >= liveDate) {
       csiDate = defaultBackdate;
@@ -457,6 +520,7 @@ export default function OpeningArEntry() {
           <Navbar />
           <main className="oar-main">
             <style>{pageStyles}</style>
+            <style>{csiPhotoStyles}</style>
             <div className="oar-error-banner">
               <strong>Your ERP go-live date is not set.</strong>
               <div style={{ marginTop: 4 }}>
@@ -482,8 +546,23 @@ export default function OpeningArEntry() {
         <Navbar />
         <main className="oar-main">
           <style>{pageStyles}</style>
+          <style>{csiPhotoStyles}</style>
 
           <WorkflowGuide pageKey="sales-opening-ar" />
+
+          {/* Shared sales-family navigation. Mirrors SalesEntry / SalesList /
+              OpeningArList so the five pages share one nav widget. Each tab
+              gates off its own sub-permission so subscribers can hide entry
+              post-cutover while keeping the transaction history visible. */}
+          <div className="sales-nav-tabs" role="tablist" aria-label="Sales navigation">
+            {canCreateSales && <Link to="/erp/sales/entry" className="sales-nav-tab">Sales</Link>}
+            <Link to="/erp/sales" className="sales-nav-tab">Sales Transactions</Link>
+            {canOpeningArEntry && <Link to="/erp/sales/opening-ar" className="sales-nav-tab active" aria-current="page">Opening AR</Link>}
+            {canOpeningArList && <Link to="/erp/sales/opening-ar/list" className="sales-nav-tab">Opening AR Transactions</Link>}
+            <Link to="/erp/csi-booklets" className="sales-nav-tab">
+              {canCsiBooklets ? 'CSI Booklets' : 'My CSI'}
+            </Link>
+          </div>
 
           <div className="oar-banner">
             <strong>Opening AR Entry — pre-go-live CSIs only.</strong>
@@ -491,6 +570,8 @@ export default function OpeningArEntry() {
               Your live date is <strong>{liveDate}</strong>. CSIs dated before this go to AR + Sales Revenue
               with <strong>no inventory deduction and no COGS</strong> (opening inventory is loaded separately
               via the import script). All entries route through the same Approval Hub as live sales.
+              {' '}
+              {canOpeningArList && <Link to="/erp/sales/opening-ar/list" style={{ color: '#1e40af', fontWeight: 600 }}>View posted Opening AR history →</Link>}
             </div>
           </div>
 
@@ -501,8 +582,11 @@ export default function OpeningArEntry() {
                 <p className="oar-subtitle">Historical CSIs · Product list = ProductMaster (no stock filter)</p>
               </div>
               <div className="oar-actions">
-                <button className="btn btn-outline" onClick={() => { setPhotoOnlyRowIdx(null); setScanModalOpen(true); }}>
+                <button className="btn btn-outline" onClick={() => { setPhotoOnlyRowIdx(null); setScanModalOpen(true); }} title="Scan a CSI photo with OCR — auto-fills hospital, CSI#, and line items">
                   📷 Scan CSI
+                </button>
+                <button className="btn btn-outline" onClick={() => { setPhotoOnlyRowIdx('NEW'); setScanModalOpen(true); }} title="Upload a CSI photo as proof only — no OCR; you type the row details manually">
+                  📎 Upload CSI
                 </button>
                 <button className="btn btn-outline" onClick={addRow}>+ Add Row</button>
                 <button className="btn btn-primary" onClick={saveAll} disabled={!hasNew || actionLoading === 'save'}>
@@ -610,13 +694,11 @@ export default function OpeningArEntry() {
                             ₱{total.toFixed(2)}
                           </td>
                           <td style={{ verticalAlign: 'middle' }}>
-                            {row.csi_photo_url ? (
-                              <a href={row.csi_photo_url} target="_blank" rel="noopener noreferrer">
-                                <img src={row.csi_photo_url} alt="CSI" className="oar-photo-thumb" />
-                              </a>
-                            ) : (
-                              <div className="oar-photo-placeholder" title="No photo">📄</div>
-                            )}
+                            <CsiPhoto
+                              url={row.csi_photo_url}
+                              attachmentId={row.csi_attachment_id}
+                              onReupload={!isPosted ? () => openPhotoReupload(idx) : undefined}
+                            />
                           </td>
                           <td>
                             <div className="oar-row-status">

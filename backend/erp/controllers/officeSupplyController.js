@@ -9,8 +9,24 @@ const OfficeSupply = require('../models/OfficeSupply');
 const OfficeSupplyTransaction = require('../models/OfficeSupplyTransaction');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { SEED_DEFAULTS } = require('./lookupGenericController');
+const { buildPresidentReverseHandler } = require('../services/documentReversalService');
 const XLSX = require('xlsx');
 const { safeXlsxRead } = require('../../utils/safeXlsxRead');
+
+// Phase 31R-OS helper: translate Mongo duplicate-key errors into a user-friendly
+// 409 response. Saves 6-BALL-PEN incidents from recurring — frontend surfaces
+// the server `message` field directly via showError().
+function sendDuplicateIfAny(err, res, itemCode) {
+  if (err && err.code === 11000) {
+    const code = itemCode || 'this code';
+    res.status(409).json({
+      success: false,
+      message: `An item with code "${code}" already exists in this entity.`,
+    });
+    return true;
+  }
+  return false;
+}
 
 // ═══════════════════════════════════════════════════════════
 // SUPPLIES CRUD
@@ -21,7 +37,7 @@ const { safeXlsxRead } = require('../../utils/safeXlsxRead');
  * Adds reorder_alert flag when qty_on_hand <= reorder_level
  */
 const getSupplies = catchAsync(async (req, res) => {
-  const { category, is_active } = req.query;
+  const { category, is_active, include_reversed } = req.query;
   const page = Number(req.query.page) || 1;
   const rawLimit = req.query.limit;
   const limit = rawLimit === '0' || rawLimit === 0 ? 0 : (Number(rawLimit) || 50);
@@ -29,6 +45,8 @@ const getSupplies = catchAsync(async (req, res) => {
   const filter = { ...req.tenantFilter };
   if (category) filter.category = category;
   if (is_active !== undefined) filter.is_active = is_active === 'true';
+  // Phase 31R-OS — hide president-reversed rows by default (matches sales/collections/expenses).
+  if (include_reversed !== 'true') filter.deletion_event_id = { $exists: false };
 
   const query = OfficeSupply.find(filter).sort({ item_name: 1 });
   if (limit > 0) query.skip((page - 1) * limit).limit(limit);
@@ -87,14 +105,25 @@ const getSupplyById = catchAsync(async (req, res) => {
  * POST / — create a new office supply item
  */
 const createSupply = catchAsync(async (req, res) => {
+  if (!req.entityId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Working entity is required. Select an entity before creating supply items.',
+    });
+  }
   const supplyData = {
     ...req.body,
     entity_id: req.entityId,
     created_by: req.user._id
   };
 
-  const supply = await OfficeSupply.create(supplyData);
-  res.status(201).json({ success: true, data: supply });
+  try {
+    const supply = await OfficeSupply.create(supplyData);
+    res.status(201).json({ success: true, data: supply });
+  } catch (err) {
+    if (sendDuplicateIfAny(err, res, supplyData.item_code)) return;
+    throw err;
+  }
 });
 
 /**
@@ -110,13 +139,25 @@ const updateSupply = catchAsync(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Supply item not found' });
   }
 
-  const blocked = ['_id', 'entity_id', 'created_at', 'created_by'];
+  if (supply.deletion_event_id) {
+    return res.status(409).json({
+      success: false,
+      message: 'This item has been reversed by the president and cannot be edited.',
+    });
+  }
+
+  const blocked = ['_id', 'entity_id', 'created_at', 'created_by', 'deletion_event_id'];
   for (const [key, val] of Object.entries(req.body)) {
     if (!blocked.includes(key)) supply[key] = val;
   }
 
-  await supply.save();
-  res.json({ success: true, data: supply });
+  try {
+    await supply.save();
+    res.json({ success: true, data: supply });
+  } catch (err) {
+    if (sendDuplicateIfAny(err, res, supply.item_code)) return;
+    throw err;
+  }
 });
 
 // ═══════════════════════════════════════════════════════════
@@ -329,6 +370,16 @@ const importSupplies = catchAsync(async (req, res) => {
   res.json({ success: true, message: `Import complete: ${created} created, ${updated} updated, ${errors.length} errors`, data: { created, updated, errors } });
 });
 
+// ═══════════════════════════════════════════════════════════
+// PRESIDENT REVERSAL — Phase 31R-OS
+// ═══════════════════════════════════════════════════════════
+// Delegates to the shared `buildPresidentReverseHandler` factory. Handler does
+// all of: reason + DELETE-confirmation validation, tenant scope load, cascade
+// reversal (transactions for items, qty restore for txns), audit-log write.
+// Danger-gated at the route layer via `erpSubAccessCheck('accounting', 'reverse_posted')`.
+const presidentReverseSupply = buildPresidentReverseHandler('OFFICE_SUPPLY_ITEM');
+const presidentReverseSupplyTxn = buildPresidentReverseHandler('OFFICE_SUPPLY_TXN');
+
 module.exports = {
   getSupplies,
   getSupplyById,
@@ -339,5 +390,7 @@ module.exports = {
   getAllTransactions,
   getReorderAlerts,
   exportSupplies,
-  importSupplies
+  importSupplies,
+  presidentReverseSupply,
+  presidentReverseSupplyTxn,
 };

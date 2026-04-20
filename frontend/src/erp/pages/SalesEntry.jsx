@@ -551,7 +551,8 @@ export default function SalesEntry() {
   const [actionLoading, setActionLoading] = useState('');
   const [scanModalOpen, setScanModalOpen] = useState(false);
   // Rejection-fallback flow: re-upload a CSI photo to a previously-rejected row
-  // without re-keying line items. null = inactive; number = target row index.
+  // without re-keying line items. null = inactive; number = target row index;
+  // 'NEW' = attach-photo-only to a fresh row (no OCR parsing, proof-only path).
   const [photoOnlyRowIdx, setPhotoOnlyRowIdx] = useState(null);
   const [customerList, setCustomerList] = useState([]);
   // Phase 15.2 (softened) — BDM's available CSI numbers (monitoring hint)
@@ -559,6 +560,12 @@ export default function SalesEntry() {
   const reportsHook = useReports();
   const { hasSubPermission } = useErpSubAccess();
   const canManageCsi = hasSubPermission('inventory', 'csi_booklets');
+  // Opening AR nav-tab gates (Option B split — Apr 2026). Entry + List have
+  // separate sub-perms so subscribers can retire Entry post-cutover while
+  // keeping List visible for read-only audit. `opening_ar_list` lazy-falls
+  // back to `opening_ar` until the new sub-perm is fully seeded.
+  const canOpeningArEntry = hasSubPermission('sales', 'opening_ar');
+  const canOpeningArList = hasSubPermission('sales', 'opening_ar_list') || canOpeningArEntry;
 
   // Lookup-driven rejection config (MODULE_REJECTION_CONFIG → SALES).
   // Drives when the rejection banner + photo-reupload fallback appear.
@@ -719,6 +726,32 @@ export default function SalesEntry() {
     setPhotoOnlyRowIdx(null);
     showSuccess('Photo attached. Re-validate and resubmit when ready.');
   }, []);
+
+  // Proof-only upload: create a fresh row with just the CSI photo attached.
+  // The BDM fills in hospital / CSI# / line items manually afterwards. Distinct
+  // from Scan CSI (which runs OCR and pre-fills) and from Re-upload CSI Photo
+  // (which only targets a rejected existing row).
+  const handlePhotoUploadNewRow = useCallback((scannedData) => {
+    const newRow = {
+      ...emptyRow(),
+      csi_photo_url: scannedData.csi_photo_url || '',
+      csi_attachment_id: scannedData.csi_attachment_id || null
+    };
+    setRows(prev => [...prev, newRow]);
+    setPhotoOnlyRowIdx(null);
+    showSuccess('Photo attached to new row. Fill in the hospital, CSI#, and line items, then save.');
+  }, []);
+
+  // Unified apply handler for the photo-only modal. Routes based on whether a
+  // specific row index is being targeted (rejection re-upload) or the 'NEW'
+  // sentinel (proof-only upload to a brand-new row).
+  const handlePhotoOnlyApply = useCallback((scannedData) => {
+    if (photoOnlyRowIdx === 'NEW') {
+      handlePhotoUploadNewRow(scannedData);
+    } else if (typeof photoOnlyRowIdx === 'number') {
+      handlePhotoReupload(photoOnlyRowIdx, scannedData);
+    }
+  }, [photoOnlyRowIdx, handlePhotoUploadNewRow, handlePhotoReupload]);
 
   // Apply OCR scan results as a new row
   const handleScanApply = useCallback((scannedData) => {
@@ -931,6 +964,8 @@ export default function SalesEntry() {
             <div className="sales-nav-tabs" role="tablist" aria-label="Sales navigation">
               <Link to="/erp/sales/entry" className="sales-nav-tab active" aria-current="page">Sales</Link>
               <Link to="/erp/sales" className="sales-nav-tab">Sales Transactions</Link>
+              {canOpeningArEntry && <Link to="/erp/sales/opening-ar" className="sales-nav-tab">Opening AR</Link>}
+              {canOpeningArList && <Link to="/erp/sales/opening-ar/list" className="sales-nav-tab">Opening AR Transactions</Link>}
               <Link to="/erp/csi-booklets" className="sales-nav-tab">
                 {canManageCsi ? 'CSI Booklets' : 'My CSI'}
               </Link>
@@ -963,7 +998,8 @@ export default function SalesEntry() {
               {saleType !== 'SERVICE_INVOICE' && (
                 <div className="sales-actions">
                   <div className="sales-actions-group">
-                    <button className="btn btn-primary" onClick={() => setScanModalOpen(true)} style={{ background: '#7c3aed' }}>📷 Scan CSI</button>
+                    <button className="btn btn-primary" onClick={() => setScanModalOpen(true)} style={{ background: '#7c3aed' }} title="Scan a CSI photo with OCR — auto-fills hospital, CSI#, and line items">📷 Scan CSI</button>
+                    <button className="btn btn-outline" onClick={() => setPhotoOnlyRowIdx('NEW')} title="Upload a CSI photo as proof only — no OCR; you type the row details manually">📎 Upload CSI</button>
                     <button className="btn btn-outline" onClick={addRow}>+ Add Row</button>
                   </div>
                   <div className="sales-actions-group">
@@ -1512,12 +1548,13 @@ export default function SalesEntry() {
         hospitals={hospitals}
         productOptions={productOptions}
       />
-      {/* Photo-only fallback modal — used after Approval Hub rejection.
-          Contractor uploads a clearer CSI photo; line items are preserved. */}
+      {/* Photo-only modal — shared by two flows:
+          (1) 'NEW' → toolbar "Upload CSI" creates a fresh row with photo attached (no OCR)
+          (2) <number> → rejection "Re-upload CSI Photo" attaches photo to existing row */}
       <ScanCSIPhotoFallback
         open={photoOnlyRowIdx !== null}
         onClose={() => setPhotoOnlyRowIdx(null)}
-        onApply={(data) => handlePhotoReupload(photoOnlyRowIdx, data)}
+        onApply={handlePhotoOnlyApply}
         hospitals={hospitals}
         productOptions={productOptions}
         photoOnly
