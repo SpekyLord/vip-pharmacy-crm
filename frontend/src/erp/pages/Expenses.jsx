@@ -945,6 +945,7 @@ export default function Expenses() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <thead>
                   <tr style={{ background: 'var(--erp-bg-alt, #f1f5f9)', borderBottom: '2px solid var(--erp-border, #dbe4f0)' }}>
+                    <th style={{ padding: 8, textAlign: 'left' }}>BDM</th>
                     <th style={{ padding: 8, textAlign: 'left' }}>Period</th>
                     <th style={{ padding: 8, textAlign: 'left' }}>Cycle</th>
                     <th style={{ padding: 8, textAlign: 'right' }}>Lines</th>
@@ -959,6 +960,7 @@ export default function Expenses() {
                   {visibleExpenses.map(e => (
                     <React.Fragment key={e._id}>
                     <tr style={{ borderBottom: e.status === 'ERROR' ? 'none' : '1px solid var(--erp-border, #dbe4f0)' }}>
+                      <td style={{ padding: 8 }}>{e.bdm_id?.name || '—'}</td>
                       <td style={{ padding: 8 }}>{e.period}</td>
                       <td style={{ padding: 8 }}>{e.cycle}</td>
                       <td style={{ padding: 8, textAlign: 'right' }}>{e.line_count || 0}</td>
@@ -989,7 +991,7 @@ export default function Expenses() {
                     </tr>
                     {e.status === 'ERROR' && e.rejection_reason && (
                       <tr style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)' }}>
-                        <td colSpan={8} style={{ padding: '6px 8px 4px' }}>
+                        <td colSpan={9} style={{ padding: '6px 8px 4px' }}>
                           <RejectionBanner
                             row={e}
                             moduleKey="EXPENSES"
@@ -1002,7 +1004,7 @@ export default function Expenses() {
                     )}
                     {e.status === 'ERROR' && e.validation_errors?.length > 0 && (
                       <tr style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)' }}>
-                        <td colSpan={8} style={{ padding: '4px 8px 8px', background: '#fef2f2' }}>
+                        <td colSpan={9} style={{ padding: '4px 8px 8px', background: '#fef2f2' }}>
                           <div style={{ fontSize: 12, color: '#dc2626' }}>
                             {e.validation_errors.map((err, i) => <div key={i}>- {err}</div>)}
                           </div>
@@ -1011,7 +1013,7 @@ export default function Expenses() {
                     )}
                     </React.Fragment>
                   ))}
-                  {!visibleExpenses.length && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)' }}>{listTab === 'working' ? 'No unposted expenses for this period' : 'No posted expenses for this period'}</td></tr>}
+                  {!visibleExpenses.length && <tr><td colSpan={9} style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)' }}>{listTab === 'working' ? 'No unposted expenses for this period' : 'No posted expenses for this period'}</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -1024,7 +1026,7 @@ export default function Expenses() {
                   <div className="erp-expense-card-header">
                     <div>
                       <div style={{ fontWeight: 600 }}>{e.period}</div>
-                      <div style={{ fontSize: 12, color: 'var(--erp-muted, #5f7188)' }}>{e.cycle}</div>
+                      <div style={{ fontSize: 12, color: 'var(--erp-muted, #5f7188)' }}>{e.cycle} · {e.bdm_id?.name || '—'}</div>
                     </div>
                     <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 12, color: '#fff', background: STATUS_COLORS[e.status] || '#6b7280' }}>{e.status}</span>
                   </div>

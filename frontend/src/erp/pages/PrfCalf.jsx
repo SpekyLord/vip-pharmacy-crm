@@ -472,6 +472,7 @@ export default function PrfCalf() {
                 <thead>
                   <tr style={{ background: 'var(--erp-bg-alt, #f1f5f9)', borderBottom: '2px solid var(--erp-border, #dbe4f0)' }}>
                     <th style={{ padding: 8, textAlign: 'center' }}>Type</th>
+                    <th style={{ padding: 8, textAlign: 'left' }}>BDM</th>
                     <th style={{ padding: 8, textAlign: 'left' }}>Period</th>
                     <th style={{ padding: 8, textAlign: 'left' }}>Payee / Purpose</th>
                     <th style={{ padding: 8, textAlign: 'right' }}>Amount</th>
@@ -487,6 +488,7 @@ export default function PrfCalf() {
                       <td style={{ padding: 8, textAlign: 'center' }}>
                         <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700, color: '#fff', background: d.doc_type === 'PRF' ? '#7c3aed' : '#0891b2' }}>{d.doc_type}</span>
                       </td>
+                      <td style={{ padding: 8 }}>{d.bdm_id?.name || '—'}</td>
                       <td style={{ padding: 8 }}>{d.period} {d.cycle}</td>
                       <td style={{ padding: 8, fontSize: 13 }}>
                         {d.doc_type === 'PRF' ? (
@@ -538,7 +540,7 @@ export default function PrfCalf() {
                     </tr>
                     {d.status === 'ERROR' && d.rejection_reason && (
                       <tr style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)' }}>
-                        <td colSpan={7} style={{ padding: '6px 8px 4px' }}>
+                        <td colSpan={8} style={{ padding: '6px 8px 4px' }}>
                           <RejectionBanner
                             row={d}
                             moduleKey="PRF_CALF"
@@ -552,7 +554,7 @@ export default function PrfCalf() {
                     {/* Phase 33 — inline Linked Expenses drill-down */}
                     {d.doc_type === 'CALF' && openLinkRowId === String(d._id) && (
                       <tr style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)', background: '#f8fafc' }}>
-                        <td colSpan={7} style={{ padding: '8px 16px' }}>
+                        <td colSpan={8} style={{ padding: '8px 16px' }}>
                           {linksByCalfId[String(d._id)]?.error && <div style={{ color: '#dc2626', fontSize: 12 }}>{linksByCalfId[String(d._id)].error}</div>}
                           {linksByCalfId[String(d._id)]?.linked && (
                             <div>
@@ -595,7 +597,7 @@ export default function PrfCalf() {
                     )}
                     </Fragment>
                   ))}
-                  {!visibleDocs.length && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)' }}>{listTab === 'working' ? 'No unposted PRF/CALF' : 'No posted PRF/CALF for this period'}</td></tr>}
+                  {!visibleDocs.length && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)' }}>{listTab === 'working' ? 'No unposted PRF/CALF' : 'No posted PRF/CALF for this period'}</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -622,6 +624,10 @@ export default function PrfCalf() {
                     </div>
                   )}
                   <div className="prf-calf-card-body">
+                    <div>
+                      <span className="prf-calf-card-label">BDM: </span>
+                      {d.bdm_id?.name || '—'}
+                    </div>
                     <div>
                       <span className="prf-calf-card-label">Period: </span>
                       {d.period} {d.cycle}

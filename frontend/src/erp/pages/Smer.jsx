@@ -653,6 +653,7 @@ export default function Smer() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                 <thead>
                   <tr style={{ background: 'var(--erp-bg-alt, #f1f5f9)', borderBottom: '2px solid var(--erp-border, #dbe4f0)' }}>
+                    <th style={{ padding: 8, textAlign: 'left' }}>BDM</th>
                     <th style={{ padding: 8, textAlign: 'left' }}>Period</th>
                     <th style={{ padding: 8, textAlign: 'left' }}>Cycle</th>
                     <th style={{ padding: 8, textAlign: 'right' }}>Days</th>
@@ -667,6 +668,7 @@ export default function Smer() {
                   {visibleSmers.map(s => (
                     <React.Fragment key={s._id}>
                     <tr style={{ borderBottom: s.status === 'ERROR' ? 'none' : '1px solid var(--erp-border, #dbe4f0)' }}>
+                      <td style={{ padding: 8 }}>{s.bdm_id?.name || '—'}</td>
                       <td style={{ padding: 8 }}>{s.period}</td>
                       <td style={{ padding: 8 }}>{s.cycle}</td>
                       <td style={{ padding: 8, textAlign: 'right' }}>{s.working_days}</td>
@@ -690,7 +692,7 @@ export default function Smer() {
                     </tr>
                     {s.status === 'ERROR' && s.rejection_reason && (
                       <tr style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)' }}>
-                        <td colSpan={8} style={{ padding: '6px 8px 4px' }}>
+                        <td colSpan={9} style={{ padding: '6px 8px 4px' }}>
                           <RejectionBanner
                             row={s}
                             moduleKey="SMER"
@@ -703,7 +705,7 @@ export default function Smer() {
                     )}
                     {s.status === 'ERROR' && s.validation_errors?.length > 0 && (
                       <tr style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)' }}>
-                        <td colSpan={8} style={{ padding: '4px 8px 8px', background: '#fef2f2' }}>
+                        <td colSpan={9} style={{ padding: '4px 8px 8px', background: '#fef2f2' }}>
                           <div style={{ fontSize: 12, color: '#dc2626' }}>
                             {s.validation_errors.map((err, i) => <div key={i}>- {err}</div>)}
                           </div>
@@ -712,7 +714,7 @@ export default function Smer() {
                     )}
                     </React.Fragment>
                   ))}
-                  {!visibleSmers.length && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)' }}>{listTab === 'working' ? 'No unposted SMERs for this period' : 'No posted SMERs for this period'}</td></tr>}
+                  {!visibleSmers.length && <tr><td colSpan={9} style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)' }}>{listTab === 'working' ? 'No unposted SMERs for this period' : 'No posted SMERs for this period'}</td></tr>}
                 </tbody>
               </table>
             </div>
