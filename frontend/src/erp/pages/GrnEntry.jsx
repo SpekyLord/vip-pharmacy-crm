@@ -391,7 +391,6 @@ export default function GrnEntry() {
   const [waybillPreview, setWaybillPreview] = useState('');
   const [waybillUploading, setWaybillUploading] = useState(false);
   const [undertakingPhotoUrl, setUndertakingPhotoUrl] = useState('');
-  const [undertakingAttachmentId, setUndertakingAttachmentId] = useState(null);
   const [ocrData, setOcrData] = useState(null);
 
   // Per-entity capture settings (expiry floor, variance tolerance, waybill required)
@@ -557,7 +556,6 @@ export default function GrnEntry() {
     }
     if (meta?.undertaking_photo_url) {
       setUndertakingPhotoUrl(meta.undertaking_photo_url);
-      setUndertakingAttachmentId(meta.undertaking_attachment_id || null);
       setOcrData({ scanned_at: new Date().toISOString(), attachment_id: meta.undertaking_attachment_id });
     }
   };
@@ -604,7 +602,7 @@ export default function GrnEntry() {
       setSearchParams({});
       if (waybillPreview) URL.revokeObjectURL(waybillPreview);
       setWaybillPhotoUrl(''); setWaybillPreview('');
-      setUndertakingPhotoUrl(''); setUndertakingAttachmentId(null); setOcrData(null);
+      setUndertakingPhotoUrl(''); setOcrData(null);
       await loadList();
       purchasing.listPOs({ status: 'APPROVED,PARTIALLY_RECEIVED', limit: 200 })
         .then(r => setReceivablePOs(r?.data || []))
