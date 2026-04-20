@@ -45,22 +45,28 @@ const getRegistry = catchAsync(async (req, res) => {
 /**
  * GET /erp/president/reversals/reversible
  * Cross-module list of reversible POSTED docs. Filterable by doc_types[],
- * entity_id, from_date, to_date. Default scope is the caller's entity unless
- * they pass `?entity_id=ALL` explicitly (which only privileged callers can do).
+ * entity_id, from_date, to_date.
+ *
+ * Scope semantics (CLAUDE.md §21):
+ * - Privileged (president/admin/finance) default to cross-entity (null) so the
+ *   console mirrors the rest of president's cross-entity surfaces (SalesList,
+ *   Approval Hub). Narrow by passing `?entity_id=<id>`. `?entity_id=ALL` is a
+ *   legacy alias for the same cross-entity default.
+ * - Non-privileged callers are always pinned to their working entity; the
+ *   query param is ignored so BDMs/contractors cannot probe sibling entities.
  */
 const getReversible = catchAsync(async (req, res) => {
   const { doc_types, from_date, to_date } = req.query;
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 50;
 
-  // Privileged-user query-filter rule (CLAUDE.md §21):
-  // Default to caller's working entity. Allow `?entity_id=ALL` for cross-entity
-  // visibility — but ONLY for privileged users. Non-privileged callers always
-  // get their working entity regardless of the param.
   const privileged = req.isPresident || req.isAdmin || req.isFinance;
-  let entityId = req.entityId;
-  if (privileged && req.query.entity_id) {
-    entityId = req.query.entity_id === 'ALL' ? null : req.query.entity_id;
+  let entityId;
+  if (privileged) {
+    const q = req.query.entity_id;
+    entityId = (q && q !== 'ALL') ? q : null;
+  } else {
+    entityId = req.entityId;
   }
 
   const types = doc_types ? String(doc_types).split(',').filter(Boolean) : null;
@@ -78,6 +84,8 @@ const getReversible = catchAsync(async (req, res) => {
 /**
  * GET /erp/president/reversals/history
  * Reversal audit log feed. Filterable by entity, doc_type, date.
+ * Same scope semantics as `getReversible` — privileged callers default to
+ * cross-entity; non-privileged are pinned to their working entity. See §21.
  */
 const getHistory = catchAsync(async (req, res) => {
   const { doc_type, from_date, to_date } = req.query;
@@ -85,9 +93,12 @@ const getHistory = catchAsync(async (req, res) => {
   const limit = parseInt(req.query.limit) || 50;
 
   const privileged = req.isPresident || req.isAdmin || req.isFinance;
-  let entityId = req.entityId;
-  if (privileged && req.query.entity_id) {
-    entityId = req.query.entity_id === 'ALL' ? null : req.query.entity_id;
+  let entityId;
+  if (privileged) {
+    const q = req.query.entity_id;
+    entityId = (q && q !== 'ALL') ? q : null;
+  } else {
+    entityId = req.entityId;
   }
 
   const result = await listReversalHistory({

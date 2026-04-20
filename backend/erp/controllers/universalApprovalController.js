@@ -537,7 +537,19 @@ const universalApprove = catchAsync(async (req, res) => {
   }
 
   // Phase 34: sub-permission check — user must have the module's approval sub-permission
-  const moduleKey = TYPE_TO_MODULE[type];
+  // Phase G4.1: for `approval_request`, dereference the request to derive the
+  // real module key (APPROVAL_REQUEST has sub_key=null by design — the gate has
+  // to key on the underlying module like EXPENSES/PURCHASING).
+  let moduleKey = TYPE_TO_MODULE[type];
+  if (type === 'approval_request') {
+    try {
+      const ApprovalRequest = require('../models/ApprovalRequest');
+      const reqDoc = await ApprovalRequest.findById(id).select('module').lean();
+      if (reqDoc?.module) moduleKey = reqDoc.module;
+    } catch (err) {
+      console.error('Approval request module lookup failed:', err.message);
+    }
+  }
   const subKey = moduleKey ? MODULE_TO_SUB_KEY[moduleKey] : null;
   if (subKey && !hasApprovalSub(req.user, subKey)) {
     return res.status(403).json({

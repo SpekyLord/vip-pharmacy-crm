@@ -22,7 +22,24 @@ const AGENTS_DIR = path.join(ROOT, 'backend', 'agents');
 const ERP_SERVICES = path.join(ROOT, 'backend', 'erp', 'services');
 const ERP_CONTROLLERS = path.join(ROOT, 'backend', 'erp', 'controllers');
 const PAGES_DIR = path.join(ROOT, 'frontend', 'src', 'erp', 'pages');
+const CRM_PAGES_DIR = path.join(ROOT, 'frontend', 'src', 'pages');
 const COMPONENTS_DIR = path.join(ROOT, 'frontend', 'src', 'erp', 'components');
+
+// Recursively collect .jsx files under a directory (one level is enough for
+// CRM pages, which have admin/, employee/, common/ subfolders).
+function listJsxRecursive(dir) {
+  if (!fs.existsSync(dir)) return [];
+  const out = [];
+  const walk = (current) => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile() && entry.name.endsWith('.jsx')) out.push(full);
+    }
+  };
+  walk(dir);
+  return out;
+}
 
 let issues = 0;
 
@@ -79,42 +96,76 @@ function checkLookupCollections() {
   if (issues === 0) console.log(`  ✓ All $lookup collection names valid (${checked} checked)`);
 }
 
-// ═══ 2. WorkflowGuide pageKeys ═══
+// ═══ 2. WorkflowGuide + PageGuide pageKeys ═══
+// Two banner libraries live side by side:
+//   - ERP pages (and some shared pages) use <WorkflowGuide pageKey="..."/>
+//     backed by WORKFLOW_GUIDES in frontend/src/erp/components/WorkflowGuide.jsx
+//   - CRM pages use <PageGuide pageKey="..."/> backed by PAGE_GUIDES in
+//     frontend/src/components/common/PageGuide.jsx
+// A handful of shared pages (e.g. InboxPage.jsx) render EITHER banner
+// depending on role, so the same key can legitimately live in both libraries.
+// Integrity means attributing each usage to its component and validating
+// against the matching source-of-truth.
 function checkWorkflowGuides() {
-  console.log('\n2. WorkflowGuide PageKeys');
+  console.log('\n2. WorkflowGuide + PageGuide PageKeys');
   console.log('─'.repeat(40));
 
   const wfgPath = path.join(COMPONENTS_DIR, 'WorkflowGuide.jsx');
+  const pgPath = path.join(ROOT, 'frontend', 'src', 'components', 'common', 'PageGuide.jsx');
+
   if (!fs.existsSync(wfgPath)) { warn('WFG', 'WorkflowGuide.jsx not found'); return; }
+  if (!fs.existsSync(pgPath)) { warn('WFG', 'PageGuide.jsx not found'); return; }
 
-  const wfgContent = fs.readFileSync(wfgPath, 'utf-8');
-
-  // Extract defined pageKeys
-  const definedKeys = new Set();
   const keyRe = /['"]?([a-zA-Z][-a-zA-Z0-9]*)['"]?:\s*\{[\s\n]*title:/g;
-  let m;
-  while ((m = keyRe.exec(wfgContent)) !== null) definedKeys.add(m[1]);
+  const extractKeys = (content) => {
+    const set = new Set();
+    let m;
+    while ((m = keyRe.exec(content)) !== null) set.add(m[1]);
+    keyRe.lastIndex = 0; // reset for reuse
+    return set;
+  };
 
-  // Find used pageKeys across all pages
-  const usedKeys = new Set();
-  const pages = fs.readdirSync(PAGES_DIR).filter(f => f.endsWith('.jsx'));
-  for (const file of pages) {
-    const content = fs.readFileSync(path.join(PAGES_DIR, file), 'utf-8');
-    const useRe = /pageKey=["']([^"']+)["']/g;
-    while ((m = useRe.exec(content)) !== null) usedKeys.add(m[1]);
+  const wfgKeys = extractKeys(fs.readFileSync(wfgPath, 'utf-8'));
+  const pgKeys = extractKeys(fs.readFileSync(pgPath, 'utf-8'));
+
+  // Scan every page under erp/pages AND pages/ and attribute each pageKey
+  // usage to the banner component on the same JSX tag.
+  const wfgUsed = new Set();
+  const pgUsed = new Set();
+  const pageFiles = [
+    ...listJsxRecursive(PAGES_DIR),
+    ...listJsxRecursive(CRM_PAGES_DIR),
+  ];
+  const useRe = /<(WorkflowGuide|PageGuide)\b[^>]*?\bpageKey=["']([^"']+)["']/g;
+  for (const filePath of pageFiles) {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    let m;
+    while ((m = useRe.exec(content)) !== null) {
+      if (m[1] === 'WorkflowGuide') wfgUsed.add(m[2]);
+      else pgUsed.add(m[2]);
+    }
   }
 
-  // Defined but never used
-  for (const key of definedKeys) {
-    if (!usedKeys.has(key)) warn('WFG', `pageKey "${key}" defined but never used in any page`);
+  // Defined but never used — per library
+  for (const key of wfgKeys) {
+    if (!wfgUsed.has(key)) warn('WFG', `WorkflowGuide key "${key}" defined but never used in any page`);
   }
-  // Used but never defined
-  for (const key of usedKeys) {
-    if (!definedKeys.has(key)) warn('WFG', `pageKey "${key}" used in a page but not defined in WorkflowGuide`);
+  for (const key of pgKeys) {
+    if (!pgUsed.has(key)) warn('WFG', `PageGuide key "${key}" defined but never used in any page`);
+  }
+  // Used but never defined — per library
+  for (const key of wfgUsed) {
+    if (!wfgKeys.has(key)) warn('WFG', `<WorkflowGuide pageKey="${key}"/> used in a page but not defined in WORKFLOW_GUIDES`);
+  }
+  for (const key of pgUsed) {
+    if (!pgKeys.has(key)) warn('WFG', `<PageGuide pageKey="${key}"/> used in a page but not defined in PAGE_GUIDES`);
   }
 
   const startIssues = issues;
-  if (issues === startIssues) console.log(`  ✓ All ${definedKeys.size} pageKeys valid (${usedKeys.size} used)`);
+  if (issues === startIssues) {
+    console.log(`  ✓ All WorkflowGuide keys valid: ${wfgKeys.size} defined / ${wfgUsed.size} used`);
+    console.log(`  ✓ All PageGuide keys valid:     ${pgKeys.size} defined / ${pgUsed.size} used`);
+  }
 }
 
 // ═══ 3. ControlCenter SECTIONS → file exports ═══

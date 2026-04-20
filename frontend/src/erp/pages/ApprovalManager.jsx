@@ -22,7 +22,10 @@ export default function ApprovalManager() {
   } = useApprovals();
 
   const [tab, setTab] = useState('all-pending'); // 'all-pending' | 'requests' | 'rules'
-  const [statusFilter, setStatusFilter] = useState('PENDING');
+  // Phase G4.1 — Requests tab is now the Approval History log (APPROVED /
+  // REJECTED / CANCELLED). Pending items live in All Pending, hydrated with
+  // full DocumentDetailPanel details via the APPROVAL_REQUEST query + dedup.
+  const [statusFilter, setStatusFilter] = useState('APPROVED');
   const [moduleFilter, setModuleFilter] = useState('');
   const [showRuleForm, setShowRuleForm] = useState(false);
   const [editingRule, setEditingRule] = useState(null);
@@ -256,9 +259,10 @@ export default function ApprovalManager() {
               </button>
               <button
                 onClick={() => setTab('requests')}
+                title="Historical approval requests (APPROVED / REJECTED / CANCELLED). Pending items live in All Pending with expandable details."
                 style={{ padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, background: tab === 'requests' ? 'var(--erp-accent, #2563eb)' : 'transparent', color: tab === 'requests' ? '#fff' : 'var(--erp-text)', borderWidth: 1, borderStyle: 'solid', borderColor: tab === 'requests' ? 'transparent' : 'var(--erp-border)' }}
               >
-                Requests {requests.length > 0 ? `(${requests.length})` : ''}
+                Approval History {requests.length > 0 ? `(${requests.length})` : ''}
               </button>
               {isAdmin && (
                 <button
@@ -426,9 +430,12 @@ export default function ApprovalManager() {
             </div>
           )}
 
-          {/* ─── Requests Tab ─── */}
+          {/* ─── Requests Tab → Approval History (Phase G4.1) ─── */}
           {tab === 'requests' && (
             <div style={{ background: 'var(--erp-panel)', borderRadius: 12, padding: 16, boxShadow: '0 1px 3px rgba(0,0,0,.06)' }}>
+              <div style={{ marginBottom: 12, padding: 10, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, fontSize: 12, color: '#1e40af', lineHeight: 1.5 }}>
+                <strong>Approval History</strong> — historical decisions (APPROVED / REJECTED / CANCELLED) from the Default-Roles Gate and Authority Matrix. Pending items now appear in <strong>All Pending</strong> with full expandable details.
+              </div>
               <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
                 {['PENDING', 'APPROVED', 'REJECTED', ''].map(s => (
                   <button key={s || 'all'} onClick={() => setStatusFilter(s)}
