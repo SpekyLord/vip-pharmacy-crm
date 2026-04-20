@@ -27,7 +27,6 @@ export default defineConfig(({ mode }) => ({
           charts: ['recharts'],
           excel: ['xlsx'],
           maps: ['leaflet', 'react-leaflet'],
-          icons: ['lucide-react', 'react-icons'],
         },
       },
     },
