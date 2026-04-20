@@ -575,6 +575,33 @@ async function accrueIncentive({
     session.endSession();
   }
 
+  // Phase SG-6 #32 — emit payout.accrued integration event (non-blocking).
+  // Only for fresh accruals, not race-recovery hits.
+  if (doc && String(doc._id) !== String(existing?._id)) {
+    try {
+      const integrationHooks = require('./integrationHooks');
+      integrationHooks.emit(integrationHooks.INTEGRATION_EVENTS.PAYOUT_ACCRUED, {
+        entity_id: entityId,
+        actor_id: userId,
+        ref: String(doc._id),
+        data: {
+          plan_id: String(plan._id),
+          plan_ref: plan.reference,
+          bdm_id: bdmId ? String(bdmId) : null,
+          period,
+          period_type: periodType,
+          tier_code: incentiveRow.tier_code,
+          tier_budget: capped,
+          uncapped_budget: uncapped,
+          attainment_pct: Number(incentiveRow.attainment_pct) || 0,
+          journal_number: doc.journal_number || null,
+        },
+      });
+    } catch (err) {
+      console.warn('[accrueIncentive] integrationHooks emit skipped:', err.message);
+    }
+  }
+
   // Fire tier-reached notification (non-blocking; outside the txn so an email
   // hiccup never reverts a posted accrual). Only on a fresh accrual (not a
   // race-recovery hit on an existing row).

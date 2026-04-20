@@ -345,11 +345,22 @@ function parseDR(ocrResult) {
     amount: scoredField(b.amount, getWordConfidencesForText(words, String(b.amount || '')), b.amount != null),
   }));
 
+  // Phase H6 — normalize dr_type to dispatch_type enum matching
+  // ConsignmentTracker.dispatch_type ('SAMPLING' | 'CONSIGNMENT'). The existing
+  // dr_type string is kept for backward compatibility with any older consumers.
+  const dispatchType = drType === 'DR_SAMPLING' ? 'SAMPLING' : 'CONSIGNMENT';
+
   return {
     dr_no: scoredField(drNo, getWordConfidencesForText(words, drNo), !!drNo),
+    // Phase H6 — expose dr_ref (same value, aligned with ConsignmentTracker field name)
+    dr_ref: scoredField(drNo, getWordConfidencesForText(words, drNo), !!drNo),
     date: scoredField(date, getWordConfidencesForText(words, date), !!date),
+    // Phase H6 — expose dr_date (aligned with ConsignmentTracker + CRITICAL_FIELDS_BY_DOC)
+    dr_date: scoredField(date, getWordConfidencesForText(words, date), !!date),
     hospital: scoredField(hospital, getWordConfidencesForText(words, hospital), !!hospital),
+    hospital_name: scoredField(hospital, getWordConfidencesForText(words, hospital), !!hospital),
     dr_type: scoredField(drType, [], !!drType),
+    dispatch_type: scoredField(dispatchType, [], true),
     line_items: lineItems,
     validation_flags: validationFlags,
   };

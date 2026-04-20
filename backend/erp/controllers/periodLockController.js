@@ -2,8 +2,11 @@ const PeriodLock = require('../models/PeriodLock');
 const { catchAsync } = require('../../middleware/errorHandler');
 const XLSX = require('xlsx');
 
-const MODULES = ['SALES', 'COLLECTION', 'EXPENSE', 'JOURNAL', 'PAYROLL',
-  'PURCHASING', 'INVENTORY', 'BANKING', 'PETTY_CASH', 'IC_TRANSFER'];
+// Phase SG-Q2 W4 — derive from the Mongoose enum so the controller never
+// drifts from the model. Prior hardcoded list lost INCOME (added later) and
+// would have lost SALES_GOAL/INCENTIVE_PAYOUT/DEDUCTION too. Single source
+// of truth: PeriodLock.module enum.
+const MODULES = PeriodLock.schema.path('module').enumValues;
 
 /**
  * GET /api/erp/period-locks?year=2026

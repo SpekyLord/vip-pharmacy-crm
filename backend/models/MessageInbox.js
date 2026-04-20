@@ -108,6 +108,68 @@ const messageInboxSchema = new mongoose.Schema(
       default: false,
       index: true,
     },
+
+    // ── Phase G9.A extensions ──
+    // Multi-tenant scoping. Nullable for pre-G9 rows (backfilled by
+    // backend/scripts/backfillMessageInboxEntityId.js). Required for new
+    // writes once migration is green. All list queries filter by this.
+    entity_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Entity",
+      index: true,
+      default: null,
+    },
+
+    // Groups replies into one conversation. Usually set to the first
+    // message's _id on reply; for approval-linked threads we reuse the
+    // ApprovalRequest._id so approve / decision / reopen rows thread
+    // together without extra lookups.
+    thread_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      index: true,
+      default: null,
+    },
+    parent_message_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "MessageInbox",
+      default: null,
+    },
+
+    // Action affordance — set when the recipient is expected to DO something
+    // (approve, resolve, reply, acknowledge, open a linked page). Drives the
+    // red-dot in the inbox UI and the [Approve]/[Resolve] button row.
+    requires_action: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    // Lookup: MESSAGE_ACTIONS — label/variant/confirm/api_path in metadata
+    action_type: {
+      type: String,
+      default: null,
+    },
+    action_payload: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null,
+    },
+    action_completed_at: {
+      type: Date,
+      default: null,
+    },
+    action_completed_by: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    // Lookup: MESSAGE_FOLDERS — INBOX/ACTION_REQUIRED/APPROVALS/TASKS/
+    // AI_AGENT_REPORTS/ANNOUNCEMENTS/CHAT/SENT/ARCHIVE. Derived from
+    // category at write time; stored to keep list queries single-index.
+    folder: {
+      type: String,
+      default: "INBOX",
+      index: true,
+    },
   },
   {
     timestamps: true, // createdAt + updatedAt
@@ -123,6 +185,26 @@ messageInboxSchema.index({
 });
 messageInboxSchema.index({ category: 1, createdAt: -1 });
 messageInboxSchema.index({ priority: 1, createdAt: -1 });
+
+// Phase G9.A — entity-scoped primary list index (drives /api/messages for all roles)
+messageInboxSchema.index({
+  entity_id: 1,
+  recipientRole: 1,
+  recipientUserId: 1,
+  isArchived: 1,
+  createdAt: -1,
+});
+// Phase G9.A — folder-scoped list (Inbox / Tasks / Approvals tabs)
+messageInboxSchema.index({ entity_id: 1, folder: 1, createdAt: -1 });
+// Phase G9.A — Action Required queue
+messageInboxSchema.index({
+  entity_id: 1,
+  requires_action: 1,
+  action_completed_at: 1,
+  createdAt: -1,
+});
+// Phase G9.A — thread view
+messageInboxSchema.index({ thread_id: 1, createdAt: 1 });
 
 // Text search (title + body + senderName)
 messageInboxSchema.index({ title: "text", body: "text", senderName: "text" });

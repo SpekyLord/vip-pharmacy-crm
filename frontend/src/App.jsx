@@ -42,6 +42,9 @@ const MyVisits = lazyRetry(() => import('./pages/employee/MyVisits'));
 const NewVisitPage = lazyRetry(() => import('./pages/employee/NewVisitPage'));
 const NewClientVisitPage = lazyRetry(() => import('./pages/employee/NewClientVisitPage'));
 const EmployeeInbox = lazyRetry(() => import('./pages/employee/EMP_InboxPage'));
+// Phase G9.R5 — unified inbox surface for ALL roles. EMP_InboxPage now
+// re-exports this so /bdm/inbox keeps the same component.
+const InboxPage = lazyRetry(() => import('./pages/common/InboxPage'));
 const CallPlanPage = lazyRetry(() => import('./pages/employee/CallPlanPage'));
 const DoctorDetailPage = lazyRetry(() => import('./pages/employee/DoctorDetailPage'));
 const ProductSpecPage = lazyRetry(() => import('./pages/employee/ProductSpecPage'));
@@ -195,10 +198,15 @@ const DisputeCenter = lazyRetry(() => import('./erp/pages/DisputeCenter'));
 // Phase SG-5 #26, #27 — Scenario Planner + Variance Alert Center
 const ScenarioPlanner = lazyRetry(() => import('./erp/pages/ScenarioPlanner'));
 const VarianceAlertCenter = lazyRetry(() => import('./erp/pages/VarianceAlertCenter'));
+// Phase SG-6 #29 — SOX Control Matrix (admin/finance/president only)
+const SoxControlMatrix = lazyRetry(() => import('./erp/pages/SoxControlMatrix'));
 
 // Phase G7 — President's Copilot + Cmd+K palette (ERP-only, role-gated by lookup)
 const PresidentCopilot = lazyRetry(() => import('./erp/components/PresidentCopilot'));
 const CommandPalette   = lazyRetry(() => import('./erp/components/CommandPalette'));
+
+// Phase G8 (P2-9) — Tasks page (backs CREATE_TASK / LIST_OVERDUE_ITEMS Copilot tools)
+const TasksPage = lazyRetry(() => import('./erp/pages/TasksPage'));
 
 // Standalone routes redirect to ControlCenter with the right section param
 const AgentSettingsRedirect = () => <Navigate to="/erp/control-center?section=agent-settings" replace />;
@@ -293,6 +301,23 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.BDM_ADMIN}>
                 <EmployeeInbox />
+              </ProtectedRoute>
+            }
+          />
+          {/* Phase G9.R5 — unified inbox for every authenticated role */}
+          <Route
+            path="/inbox"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.ALL}>
+                <InboxPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/inbox/thread/:thread_id"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.ALL}>
+                <InboxPage />
               </ProtectedRoute>
             }
           />
@@ -823,6 +848,11 @@ function App() {
           <Route path="/erp/sales-goals/scenario" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.PRESIDENT, ROLES.FINANCE]} requiredErpModule="sales_goals"><ScenarioPlanner /></ProtectedRoute>} />
           {/* Phase SG-5 #27 — Variance Alert Center (all with sales_goals VIEW; contractor scoped to own) */}
           <Route path="/erp/variance-alerts" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL} requiredErpModule="sales_goals"><VarianceAlertCenter /></ProtectedRoute>} />
+          {/* Phase SG-6 #29 — SOX Control Matrix (admin/finance/president only) */}
+          <Route path="/erp/sales-goals/sox" element={<ProtectedRoute allowedRoles={[ROLES.ADMIN, ROLES.PRESIDENT, ROLES.FINANCE]} requiredErpModule="sales_goals"><SoxControlMatrix /></ProtectedRoute>} />
+
+          {/* Phase G8 (P2-9) — Tasks (cross-cutting productivity; every ERP user) */}
+          <Route path="/erp/tasks" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL}><TasksPage /></ProtectedRoute>} />
 
           {/* Orphaned page direct routes — redirect to Control Center with correct section */}
           <Route path="/erp/agent-settings" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><AgentSettingsRedirect /></ProtectedRoute>} />

@@ -57,6 +57,23 @@ const REJECTION_FOOTER_NOTE = 'If an approver rejects this document, a red banne
 
 // ── Complete BDM workflow guide config ──
 const WORKFLOW_GUIDES = {
+  // ── Phase G9.R7 — Unified Operational Inbox ──
+  'inbox': {
+    title: 'Unified Operational Inbox',
+    steps: [
+      'Approvals folder = every pending decision routed to you. Approve/Reject in-place — the row delegates to the canonical approval handler (no parallel paths, Rule #20).',
+      'Tasks folder = your assigned tasks with the mini-editor (status / due date / reassign). Hit "Open full page" for the Gantt / Kanban / bulk-ops view at /erp/tasks.',
+      'AI Agents folder = findings from rule-based agents (KPI variance, daily briefing, OCR, task overdue) — actionable items show [Resolve], passive ones show [Acknowledge].',
+      'Approval threads stay together by ApprovalRequest._id — request, decision and reopen events fold into one conversation. Look here before re-opening a posted document.',
+      'Compose to send a direct message or broadcast — gated by messaging.* sub-permissions and the per-entity MESSAGE_ACCESS_ROLES matrix (Control Center → Lookup Tables to edit).',
+    ],
+    next: [
+      { label: 'Approval Hub', path: '/erp/approvals' },
+      { label: 'My Tasks', path: '/erp/tasks' },
+      { label: 'AI Agents', path: '/erp/agent-dashboard' },
+    ],
+    tip: 'Channels (email / in-app / SMS) are kill-switched per entity via NOTIFICATION_CHANNELS lookup. Per-user opt-in lives on the user\'s NotificationPreference. Disabling IN_APP for the entity hides ALL future inbox writes — existing rows stay visible.',
+  },
   'erp-dashboard': {
     title: 'Your Daily Workflow',
     steps: [
@@ -717,6 +734,26 @@ const WORKFLOW_GUIDES = {
     ],
     tip: 'Fund modes, statuses, expense categories, and transaction types are lookup-driven — manage them in Control Center > Lookup Tables (PETTY_CASH_FUND_TYPE, PETTY_CASH_FUND_STATUS, PETTY_CASH_EXPENSE_CATEGORY). President Delete — for anyone granted accounting.reverse_posted in Access Templates (baseline: President only; delegable to CFO/Finance without a code change via ERP_DANGER_SUB_PERMISSIONS). Per-transaction SAP Storno: POSTED txn is marked VOIDED, its journal entry is reversed, and the fund balance flips back in a single atomic session. Fund delete is gated by the same danger sub-perm — the old hardcoded president-only check was removed so subsidiaries can delegate via the template editor. All actions logged to ErpAuditLog.',
   },
+  // Phase G8 (P2-9) — Tasks page guide (Secretary Copilot backing UI).
+  'tasks': {
+    title: 'Tasks — POA-aligned workspace',
+    steps: [
+      'Create a task and (optionally) tag it with a Growth Driver + KPI + Goal Period so it lands in the right POA pipeline',
+      'Use the [List] tab for day-to-day triage — advanced filters (driver, KPI, period, assignee, date range, text search) narrow the view; the checkboxes enable bulk ops (change status / priority / delete)',
+      'Switch to [Gantt] to see timeline bars grouped by the 5 POA drivers (Hospital Accreditation, Product Inclusion, Inventory Optimization, Demand Pull, Price Increase) with revenue-band chips and a Today marker',
+      'Switch to [Kanban] to drag cards between OPEN → IN_PROGRESS → BLOCKED → DONE → CANCELLED — drops save instantly and sync the inbox TASKS folder',
+      'Switch to [Revenue Bridge] for the POA summary — % done per driver against the PHP 10M increment goal',
+      'Owners (responsibility tags like BDM / PRESIDENT / EBDM / OM) render as chips in every view and in the mini-editor — add or remove them without leaving the row',
+      'Bulk reassigning many tasks to one person? The inbox will roll them up into one summary row once the per-assignee count exceeds the TASK_BULK_NOTIFY_THRESHOLD lookup (default 5)',
+      'Or say "create a task to sign rent renewal Friday" to the Copilot — it drafts + confirms + saves',
+    ],
+    next: [
+      { label: 'AI Agents', path: '/erp/agent-dashboard' },
+      { label: 'Control Center', path: '/erp/control-center' },
+      { label: 'Inbox (TASKS folder)', path: '/inbox' },
+    ],
+    tip: 'Growth drivers, KPI codes, owner tags, and bulk-notify threshold are all editable via Control Center → Lookups — no code deploy needed. Tasks remain entity-scoped and outside the approval gate (productivity, not finance).',
+  },
   'consignment-aging': {
     title: 'Consignment Aging',
     steps: [
@@ -1318,6 +1355,7 @@ const WORKFLOW_GUIDES = {
       'Click "Compute KPIs" to refresh KPI snapshots from live ERP data (President/Finance only; others are routed through the Approval Hub)',
       'Monitor the BDM leaderboard, incentive tiers, and driver progress — deactivated BDMs are hidden automatically',
       'Scroll to Year-over-Year Trending to compare this year vs last year per BDM + per KPI (SG-5 #28). Needs at least one prior fiscal year of YTD snapshots',
+      'Period locks gate writes: Activate/Reopen/Close/Targets-Bulk/Targets-Import are blocked if any month of the plan\'s fiscal year is locked under SALES_GOAL. Compute KPIs and Manual KPI Entry are blocked when the target month is locked. Unlock from Control Center → Period Locks first.',
     ],
     next: [
       { label: 'Goal Setup', path: '/erp/sales-goals/setup' },
@@ -1544,6 +1582,26 @@ const WORKFLOW_GUIDES = {
       { label: 'People Master', path: '/erp/control-center?section=people' },
     ],
     tip: 'Your KPIs are based on your functional role(s). If you\'re missing KPIs, ask admin to verify your role assignments.',
+  },
+
+  // ═══ Phase SG-6 #29 — SOX Control Matrix ═══
+  soxControlMatrix: {
+    title: 'SOX Control Matrix',
+    steps: [
+      'Pick an audit window (default 90 days) — the matrix enumerates every Sales Goal state change and reads the LIVE authorization posture from Control Center lookups',
+      'Each row shows: the operation + description + live allowed roles (MODULE_DEFAULT_ROLES) + approval category + required sub-permission + activity count + actors in the window + emitted integration event',
+      'The Segregation-of-Duties panel flags any user who both CREATED and POSTED/APPROVED/PAID/REVERSED the same document — small-team overlap is common, but auditors want to see the pattern',
+      'The Integration Event Registry panel shows every event Sales Goal emits + how many listeners each has. Zero listeners = no subscriber wired yet (drop-in without SG code changes)',
+      'Click Print / Save as PDF for a point-in-time control report — subscribers brand the header via COMP_STATEMENT_TEMPLATE lookups if desired',
+      'To change who can perform any operation, edit the MODULE_DEFAULT_ROLES row (Control Center → Lookup Tables) — the matrix reflects the change on next refresh',
+    ],
+    next: [
+      { label: 'Goal Dashboard', path: '/erp/sales-goals' },
+      { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
+      { label: 'Approval Hub', path: '/erp/approvals' },
+      { label: 'Access Templates', path: '/erp/control-center?section=access-templates' },
+    ],
+    tip: 'This matrix NEVER governs access — it just REPORTS on the live authorization posture so SOX auditors can confirm controls are in place. Changing a row here would defeat the purpose. To actually tighten/open a control, edit the underlying lookup (e.g. MODULE_DEFAULT_ROLES.SALES_GOAL_PLAN.metadata.roles = null for open-post). The matrix will immediately reflect the new setting.',
   },
 
   incentiveTracker: {

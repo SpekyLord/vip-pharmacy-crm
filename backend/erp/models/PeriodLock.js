@@ -4,8 +4,14 @@ const periodLockSchema = new mongoose.Schema({
   entity_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Entity', required: true },
   module: {
     type: String,
+    // Phase SG-Q2 W4 — added SALES_GOAL (sales-goal plan + KPI period gate),
+    // INCENTIVE_PAYOUT (settlement/reversal gate, was wired but missing from
+    // enum → silent skip), DEDUCTION (deduction schedules, same orphan bug).
+    // Future migration to a PERIOD_LOCKABLE_MODULES lookup is non-breaking:
+    // remove the enum and add a custom validator against the lookup table.
     enum: ['SALES', 'COLLECTION', 'EXPENSE', 'JOURNAL', 'PAYROLL',
-           'PURCHASING', 'INVENTORY', 'BANKING', 'PETTY_CASH', 'IC_TRANSFER', 'INCOME'],
+           'PURCHASING', 'INVENTORY', 'BANKING', 'PETTY_CASH', 'IC_TRANSFER', 'INCOME',
+           'SALES_GOAL', 'INCENTIVE_PAYOUT', 'DEDUCTION'],
     required: true
   },
   year: { type: Number, required: true },

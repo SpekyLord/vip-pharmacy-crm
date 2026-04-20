@@ -180,15 +180,19 @@ const PAGE_GUIDES = {
     tip: 'Hospital HEAT data appears automatically when a VIP Client has hospital affiliations set by admin.',
   },
   'inbox': {
-    title: 'Message Inbox',
+    title: 'Unified Inbox',
     steps: [
-      'View messages from Admin with priority indicators',
-      'Click a message to read the full content',
-      'Archive read messages to keep your inbox clean',
+      'Folders on the left group everything: Approvals, Tasks, AI Agents, Announcements, Chat. The red dot is "Action Required" — items waiting on your click ([Approve] / [Resolve] / [Mark done]).',
+      'Click a row to read it. Replies appear inline as a threaded conversation — approve/decision/reopen events all fold into the same thread by approval request.',
+      'Tasks open with a mini-editor so you can change status / due date / assignee inline. Need the full Gantt / Kanban view? Use the "Open full page" button.',
+      'New message? Hit "+ New" to send a direct message or broadcast — backend enforces who can DM whom via the messaging.* sub-permissions and the MESSAGE_ACCESS_ROLES lookup.',
     ],
     next: [
       { label: 'Dashboard', path: '/bdm' },
+      { label: 'Approvals', path: '/erp/approvals' },
+      { label: 'My Tasks', path: '/erp/tasks' },
     ],
+    tip: 'The bell in the top navbar shows action-required (red) and unread (blue) totals. Cmd/Ctrl+click any item to open it in a new tab.',
   },
   'gps-verification': {
     title: 'GPS Verification',

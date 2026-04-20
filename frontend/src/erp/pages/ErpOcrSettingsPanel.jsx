@@ -49,7 +49,10 @@ const styles = `
   .ocr-success { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; padding: 10px 12px; border-radius: 8px; font-size: 12px; }
 `;
 
-const ALL_DOC_TYPES_FALLBACK = ['CSI', 'CR', 'CWT_2307', 'GAS_RECEIPT', 'ODOMETER', 'OR', 'UNDERTAKING', 'DR'];
+// Phase H6 — Sales OCR adds BANK_SLIP + CHECK. The backend (OcrSettings model)
+// is the source of truth via /api/erp/ocr-settings -> all_doc_types; this
+// fallback only fires if the backend response is malformed.
+const ALL_DOC_TYPES_FALLBACK = ['CSI', 'CR', 'CWT_2307', 'GAS_RECEIPT', 'ODOMETER', 'OR', 'UNDERTAKING', 'DR', 'BANK_SLIP', 'CHECK'];
 const DOC_TYPE_LABELS = {
   CSI: 'Charge Sales Invoice',
   CR: 'Collection Receipt',
@@ -59,6 +62,8 @@ const DOC_TYPE_LABELS = {
   OR: 'Official Receipt',
   UNDERTAKING: 'GRN Undertaking',
   DR: 'Delivery Receipt',
+  BANK_SLIP: 'Bank Deposit Slip',
+  CHECK: 'Check',
 };
 
 export default function ErpOcrSettingsPanel() {

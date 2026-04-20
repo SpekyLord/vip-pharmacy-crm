@@ -191,12 +191,14 @@ const getConsignmentPool = catchAsync(async (req, res) => {
     .lean();
 
   // Compute live aging (pre-save hook only runs at save-time)
+  // Phase H6 — SAMPLING dispatches skip FORCE_CSI (samples never convert to sale).
   const now = new Date();
   for (const c of consignments) {
     c.days_outstanding = Math.floor((now - new Date(c.dr_date)) / (1000 * 60 * 60 * 24));
+    const isSampling = c.dispatch_type === 'SAMPLING';
     if (c.qty_remaining <= 0) {
       c.aging_status = 'COLLECTED';
-    } else if (c.days_outstanding >= (c.max_days_force_csi || 90)) {
+    } else if (!isSampling && c.days_outstanding >= (c.max_days_force_csi || 90)) {
       c.aging_status = 'FORCE_CSI';
     } else if (c.days_outstanding >= (c.max_days_alert || 60)) {
       c.aging_status = 'OVERDUE';

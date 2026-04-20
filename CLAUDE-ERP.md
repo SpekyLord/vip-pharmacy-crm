@@ -113,6 +113,8 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | H3 (OCR) | OCR Subscription-Ready — Per-Entity Settings + Usage Logging + Quotas | ✅ |
 | H4 | OCR High-Confidence — Image Preprocessing + Claude Field Completion | ✅ |
 | H5 | OCR Vendor Auto-Learn from Claude Wins — Self-Improving Classifier | ✅ |
+| H6 | Sales OCR — BDM field scanning of CSI / CR / DR (sampling+consignment) / Bank Slip / Check + AI_SPEND_CAPS enforcement on OCR Claude calls | 🚧 |
+| G8 | Agents + Copilot Expansion — 8 rule-based scheduled agents + Task collection + 10 new Copilot tools (Secretary + HR) + 3 AI toggle lookups | ✅ |
 | 34* | Approval Hub Enhancement: Sub-Permissions + Attachments + Line-Item Edit | ✅ |
 
 ---
@@ -1232,7 +1234,7 @@ frontend/src/erp/components/WorkflowGuide.jsx          • +salesGoalCompensatio
 | `MODULE_DEFAULT_ROLES.INCENTIVE_PAYOUT` | Default-Roles Gate for payout lifecycle | W2 |
 | `APPROVAL_MODULE.INCENTIVE_PAYOUT` | Authority Matrix routing | W2 |
 | `APPROVAL_CATEGORY.FINANCIAL` | Adds INCENTIVE_PAYOUT to financial bucket | W2 |
-| `PERIOD_LOCK_MODULES` | Adds INCENTIVE_PAYOUT to lockable modules | W2 |
+| `PeriodLock.module` enum | Adds INCENTIVE_PAYOUT to lockable modules (was missing — orphan fixed in W4) | W2/W4 |
 | `ERP_SUB_PERMISSION` | 4 new keys: payout_view/approve/pay/reverse | W2 |
 | `ERP_DANGER_SUB_PERMISSIONS` | +SALES_GOALS__PAYOUT_REVERSE (Tier 2) | W2 |
 | `COMP_STATEMENT_TEMPLATE` | Print template branding overrides per entity | W3 |
@@ -1769,7 +1771,7 @@ All auto-journal COA codes are admin-configurable in `Settings.COA_MAP` (ERP Set
 5. **Dual P&L**: `pnlService.js` (GL-based) vs `pnlCalc.js` (source-doc-based). `pnlService` is authoritative; `pnlCalc` used for legacy year-end close.
 6. **AR Engine vs GL mismatch risk**: `arEngine.js` computes from source docs, `trialBalanceService.js` from JEs. They can diverge if JEs fail.
 7. **CALF gate**: Expenses with `calf_required=true` cannot be posted until linked CALF is POSTED (enforced in `submitExpenses` and `submitCarLogbook`).
-8. **Period lock**: `periodLockCheck(moduleKey)` middleware prevents posting to locked periods. Applied to all transactional routes: Sales, Collections, Expenses, Purchasing, Income, and Journals. Module keys in PeriodLock model: SALES, COLLECTION, EXPENSE, JOURNAL, PAYROLL, PURCHASING, INVENTORY, BANKING, PETTY_CASH, IC_TRANSFER, INCOME.
+8. **Period lock**: `periodLockCheck(moduleKey)` middleware prevents posting to locked periods. Applied to all transactional routes: Sales, Collections, Expenses, Purchasing, Income, Journals, Deduction Schedules, Incentive Payouts (settle/reverse), and Sales Goals (compute snapshots / manual KPI entry). For plan-spanning Sales Goal routes (activate/reopen/close/targets-bulk/targets-import) use `periodLockCheckByPlan(moduleKey)` — derives the year from the referenced SalesGoalPlan and rejects if any month is locked. Module keys in PeriodLock model: SALES, COLLECTION, EXPENSE, JOURNAL, PAYROLL, PURCHASING, INVENTORY, BANKING, PETTY_CASH, IC_TRANSFER, INCOME, SALES_GOAL, INCENTIVE_PAYOUT, DEDUCTION. The controller `MODULES` constant + Control Center stat card derive their lists from `PeriodLock.schema.path('module').enumValues` so adding a future module never requires touching the controller (Phase SG-Q2 W4).
 9. **Product dropdown format**: All dropdowns must show `brand_name dosage — qty unit_code` (dosage required, never omit).
 10. **IC_TRANSFER** source_module — added to JournalEntry enum for inter-company transfer JEs.
 11. **People dropdowns must filter `status=ACTIVE`** — all people selector dropdowns (Managed By, Reports To, Assign To, Custodian, etc.) must pass `status: 'ACTIVE'` to `getPeopleList()` or rely on `getAsUsers()` which enforces `is_active: true, status: 'ACTIVE'`. Never show SUSPENDED or SEPARATED people in assignment/selection dropdowns.
@@ -2733,6 +2735,129 @@ The Reversal Console matches the detail fidelity of the Approval Hub.
 
 ---
 
+## Phase H6 — Sales OCR (BDM Field Scanning) + AI Spend-Cap Enforcement on OCR (April 19, 2026)
+
+### Why this exists
+
+Phase H2-H5 built the smart-OCR pipeline for expense docs (OR / Gas Receipt). Phase H6 extends the **same pipeline** — Google Vision → rule-based parser → Claude field-completion → master-data resolver → vendor auto-learn — to the sales side of the business so BDMs scan CSI / CR / DR / Bank Slip / Check in the field instead of typing. Everything is additive; no regressions in the existing Expense OCR flow.
+
+Phase H6 also closes two long-standing governance gaps inherited from Phase G7:
+
+1. **OCR Claude calls bypassed AI_SPEND_CAPS** — `ocrAutoFillAgent.classifyWithClaude` called `askClaude()` directly with no `enforceSpendCap()` gate. Sales OCR volume (~1,320 scans/month at steady state) would have run the monthly AI budget invisible to the AI Budget tab.
+2. **`OcrUsageLog.cost_usd` did not exist** — `spendCapService.getCurrentMonthSpend()` already aggregates `$cost_usd` from `erp_ocr_usage_logs`, but nobody was writing the field. Result: OCR spend was silently excluded from the AI Budget total.
+
+Both are fixed as the **first commit** of H6 so they land before any Sales OCR volume ramps up.
+
+### Architecture — additive, not replacing
+
+```
+BDM's phone camera (SalesDocScanner.jsx)
+  → POST /api/erp/ocr/process (existing endpoint, reused)
+    → OcrSettings.getForEntity (cached, per-entity gate)
+      → detectText (Google Vision)                    ← Layer 1 (unchanged)
+        → parseCSI / parseCR / parseDR / bankSlipParser / checkParser   ← Layer 2a (new parsers added)
+          → classifyWithClaude (if critical fields weak — now spend-cap gated)   ← Layer 2b (gate is new)
+            → resolveCustomer / resolveProduct / resolveVendor  ← Layer 3 (unchanged)
+              → learnFromAiResult (vendor auto-learn, unchanged) ← Layer 4 (unchanged)
+                → DRAFT record (SalesLine / Collection / SamplingLog / ConsignmentTracker / Deposit / CheckReceived)  ← new dispatcher
+                  → BDM reviews pre-filled form on phone
+                    → Submit → gateApproval() + periodLockCheck → POSTED
+```
+
+### Deliverables
+
+| # | Item | Status |
+|---|---|---|
+| P1-1 | `enforceSpendCap('OCR')` wired into `ocrAutoFillAgent.classifyWithClaude` — entity scoped, 429 on cap hit, caller catches and falls back to rule-based result | ✅ |
+| P1-2 | `OcrUsageLog.cost_usd` + `ai_skipped_reason` added, populated by `ocrController` from `processor.ai_cost_usd` | ✅ |
+| P1-3 | Smart OCR extended to sales doc types — CSI/CR/DR/BANK_SLIP/CHECK added to `CRITICAL_FIELDS_BY_DOC` so field-completion fallback fires on handwriting | 🚧 |
+| P1-4 | New parsers `bankSlipParser.js` + `checkParser.js` + `drRouter.js` (sampling vs consignment marker detection) | 🚧 |
+| P1-5 | Missing DRAFT models: `SamplingLog`, `Deposit`, `CheckReceived` (the other three — `SalesLine`, `Collection`, `ConsignmentTracker` — already exist) | 🚧 |
+| P1-6 | DRAFT-creation endpoints per doc type under `/api/erp/sales-ocr/*` — each creates the correct DRAFT record from the processor output | 🚧 |
+| P1-7 | Mobile `SalesDocScanner.jsx` (camera, preview, retry, 360px-verified) + six review forms (one per doc type) | 🚧 |
+| P1-8 | `BANK_SLIP` + `CHECK` added to `OcrSettings.ALL_DOC_TYPES` and surfaced in existing `ErpOcrSettingsPanel` — no new panel, just chips | 🚧 |
+| P1-9 | `/erp/scan` route + Sidebar link under BDM section + WorkflowGuide banner | 🚧 |
+
+### Critical spend-cap gate (P1-1) — how it works
+
+**Before**: `classifyWithClaude()` called `askClaude()` unconditionally once `ANTHROPIC_API_KEY` was present and `ai_fallback_enabled` was true. No cost aggregation, no cap check.
+
+**After**:
+```js
+// backend/agents/ocrAutoFillAgent.js
+async function classifyWithClaude(rawOcrText, extractedFields = {}, context = {}) {
+  // Phase H6 — entity-scoped AI_SPEND_CAPS gate. Throws 429 on cap hit.
+  if (context.entityId) {
+    await enforceSpendCap(context.entityId, 'OCR');
+  }
+  // ... existing Claude call
+}
+```
+
+The `processOcr` caller (in `ocrProcessor.js`) passes `entityId` into `context`, catches the 429, records `ai_skipped_reason: 'SPEND_CAP_EXCEEDED'`, and returns the rule-based result. Vision + parser still run; only the Claude step is short-circuited. The frontend sees the same response shape — just with `validation_flags: [{ type: 'AI_SPEND_CAP_EXCEEDED' }]` and weaker confidence. Zero regressions in success paths.
+
+### Cost visibility (P1-2) — schema + write path
+
+```js
+// backend/erp/models/OcrUsageLog.js — Phase H6 additions
+ai_skipped_reason: { type: String, enum: ['NONE', 'SPEND_CAP_EXCEEDED'], default: 'NONE' },
+cost_usd:          { type: Number, default: 0, min: 0 },
+```
+
+`spendCapService.getCurrentMonthSpend()` at line 109 already aggregates `$cost_usd` from `erp_ocr_usage_logs` — so once the field is populated, OCR spend immediately appears in the AI Budget tab total without any further work.
+
+### Integrity checklist (H6 — applies to every commit in this phase)
+
+Every file touched must pass:
+- `node -c <file>` — syntax
+- Existing `npm run verify:copilot-wiring` and `npm run verify:rejection-wiring` — must stay ✓
+- **Expense OCR regression guard**: an OR or GAS_RECEIPT scan before and after H6 must produce the same `extracted.amount`, `extracted.supplier_name`, `classification.coa_code` for the same fixture.
+- **New endpoints must go through the standard middleware stack**: `erpAccessCheck` → `erpSubAccessCheck` → `periodLockCheck(module)` → handler → `gateApproval(module)`. No shortcuts (Rule #20).
+- **Entity from `req.entityId` only** — never from client body (Rule #21).
+- **Every new doc type added to `OcrSettings.ALL_DOC_TYPES`** must also appear in the existing `ErpOcrSettingsPanel` chip grid; no orphaned enum values.
+- **Every new parser must be registered in `ocrProcessor.PARSERS` AND `SUPPORTED_DOC_TYPES`** — both are exported and used by the frontend's `getSupportedTypes` endpoint.
+- **DR router fallback**: when the marker is ambiguous (no "SAMPLING" / "CONSIGNMENT" keyword found), default to `ConsignmentTracker` (the more common case) and flag `review_required = true` so the BDM disambiguates on review.
+
+### Subscription-readiness (Rule #3 alignment)
+
+| Config | Lookup / Source | Default for new subsidiary |
+|---|---|---|
+| Which doc types are OCR-allowed | `OcrSettings.allowed_doc_types` (per-entity) | all types — admin deselects chips to restrict |
+| Claude AI fallback on/off | `OcrSettings.ai_fallback_enabled` | true |
+| Monthly Vision call quota | `OcrSettings.monthly_call_quota` | 0 (unlimited) |
+| Monthly AI budget cap | `Lookup AI_SPEND_CAPS.MONTHLY` | `is_active: false` (safe default — no cap enforced) |
+| Per-BDM daily scan throttle | `Lookup OCR_DAILY_SCAN_CAP` (Phase H6.2 — deferred) | 25/BDM/day (added when volume signal warrants) |
+
+No hardcoded sales-OCR behavior. All of: which entities have it, which doc types they can scan, how much Claude they can burn, and which BDMs can use it — all flow from existing Lookup / Settings / ErpOcrSettings. A new subsidiary onboarded via Control Center gets sane defaults and opts in per-chip.
+
+### Files touched in H6 (running list — updated as commits land)
+
+**Modified**:
+- `backend/erp/models/OcrUsageLog.js` — H6.1 cost_usd + ai_skipped_reason
+- `backend/agents/ocrAutoFillAgent.js` — H6.1 enforceSpendCap gate
+- `backend/erp/ocr/ocrProcessor.js` — H6.1 pass entityId + catch 429 + surface cost
+
+**New (planned)**:
+- `backend/erp/ocr/parsers/bankSlipParser.js`
+- `backend/erp/ocr/parsers/checkParser.js`
+- `backend/erp/ocr/parsers/drRouter.js`
+- `backend/erp/models/SamplingLog.js`
+- `backend/erp/models/Deposit.js`
+- `backend/erp/models/CheckReceived.js`
+- `backend/erp/controllers/salesOcrController.js`
+- `backend/erp/routes/salesOcrRoutes.js`
+- `frontend/src/erp/pages/ScanDocumentPage.jsx`
+- `frontend/src/erp/components/scan/SalesDocScanner.jsx` + six review forms
+
+### Common gotchas (H6)
+
+- **`AI_SPEND_CAPS` lookup is lazy-seeded with `is_active: false`** — existing entities will NOT start enforcing a cap just because Phase H6 landed. President must explicitly flip `is_active: true` + set `monthly_budget_usd` in Control Center → AI Budget. This matches the Phase G7 safety default.
+- **`enforceSpendCap` throws a 429 `Error` with `.reason === 'SPEND_CAP_EXCEEDED'`** — other 429s (rate limits, timeouts) will have different `.reason`. The processor's 429 handler checks BOTH status AND reason before treating it as a spend-cap skip; otherwise it falls through to the generic error path.
+- **OcrUsageLog 1-year TTL** — historical `cost_usd` older than 12 months is auto-purged. If the user wants longer retention for audit, export to cold storage before the TTL fires.
+- **Sales docs don't need expense classification** — `EXPENSE_DOC_TYPES` stays `{OR, GAS_RECEIPT}`. The Claude fallback branch in `ocrProcessor.js` is being refactored so field-completion runs for CSI/CR/DR too, but the classifier (which maps vendor → COA) is skipped for sales docs (they have no COA — they have a customer).
+
+---
+
 ## Phase G6 — Approval Hub Rejection Feedback (closed loop)
 
 ### Why this exists
@@ -3054,3 +3179,188 @@ Filing a dispute (`POST /incentive-disputes`) is NOT gated — it's a request, n
 - **Plan versioning + KpiTemplate**: Editing a KpiTemplate row never cascades to existing plans (SG-3R immutability discipline). Versioning gives admins a clean path to apply template changes — create v2 of a plan with `template_id` in the body, copy/edit the structure, activate v2 to supersede v1.
 - **disputeSlaAgent breach idempotency**: A breach row is appended only when no breach exists for the current state since the last `state_changed_at`. If a dispute transitions to UNDER_REVIEW and back to OPEN (not a current-flow path but theoretically possible via direct DB edit), the breach clock resets — desired behavior because the new state-change effectively gives the chain a fresh chance.
 - **Sidebar visibility for Dispute Center**: visible to ALL users with `sales_goals` VIEW (BDMs need to file). Reviewer actions inside the page are gated by `isPrivileged` check + sub-perm check + `gateApproval` — non-reviewers see only their own disputes filtered server-side (Rule #21).
+
+---
+
+## Phase G8 — Agents + Copilot Expansion (April 19, 2026)
+
+### Why this exists
+
+Phase G7 delivered the Copilot chat widget + 9 read/write tools + Daily Briefing. The president-facing surface still lacked: (a) structured persistence for "remind me to X" — tasks lived in the inbox, un-listable; (b) HR coaching/rating/ranking helpers; (c) a broader operational-signal agent estate (treasury, FP&A, procurement, compliance, audit, data quality, FEFO, expansion). Phase G8 fills all three gaps in one coordinated release.
+
+### Scope (shipped)
+
+**1 new model** — `Task` collection (`backend/erp/models/Task.js`, collection `erp_tasks`).
+- Entity-scoped (Rule #21), parent/child support, OPEN → IN_PROGRESS → DONE state machine.
+- Routes: `/api/erp/tasks` (list, overdue, create, update, delete).
+- Page: `/erp/tasks` (linked from Sidebar → Administration → My Tasks).
+- WorkflowGuide entry: `'tasks'`.
+
+**8 new scheduled agents** (all rule-based FREE; AI toggles per-agent via lookup):
+| Agent key | Cron (Asia/Manila) | Output category | Route |
+|---|---|---|---|
+| `treasury` | `30 5 * * 1-5` | briefing | PRESIDENT |
+| `fpa_forecast` | `0 6 * * 1` | briefing | PRESIDENT |
+| `procurement_scorecard` | `0 7 * * 2` | briefing | PRESIDENT |
+| `compliance_calendar` | `0 5 * * 1` | compliance_alert | PRESIDENT |
+| `internal_audit_sod` | `0 8 * * 3` | compliance_alert | PRESIDENT + FINANCE |
+| `data_quality` | `0 9 * * *` | data_quality | PRESIDENT + ADMIN |
+| `fefo_audit` | `30 7 * * *` | inventory_alert | PRESIDENT |
+| `expansion_readiness` | `0 10 1 * *` | briefing | PRESIDENT |
+
+**10 new Copilot tools** (5 Secretary + 5 HR, all pay-per-use via existing AI_SPEND_CAPS):
+- Secretary: `CREATE_TASK`, `LIST_OVERDUE_ITEMS`, `DRAFT_DECISION_BRIEF`, `DRAFT_ANNOUNCEMENT`, `WEEKLY_SUMMARY`
+- HR: `SUGGEST_KPI_TARGETS`, `DRAFT_COMP_ADJUSTMENT`, `AUDIT_SELF_RATINGS`, `RANK_PEOPLE`, `RECOMMEND_HR_ACTION`
+
+**3 new lookup categories** (subscription-ready, lazy-seeded):
+- `TREASURY_AGENT_AI_MODE` (default `rule`)
+- `FPA_FORECAST_AI_MODE` (default `rule`)
+- `HR_ACTION_BLUNTNESS` (default `balanced`)
+
+**System prompt updated** — `PRESIDENT_COPILOT.metadata.system_prompt` now names the new Secretary + HR tools and references the 8 background agents so Claude routes natural-language questions to the right capability.
+
+### Architecture principles
+
+1. **Tasks are not finance** — no `gateApproval` / no period lock on the Task routes. Productivity ≠ ledger.
+2. **Agents are entity-ignorant at the scheduler layer** — same as Phase G7 existing agents. Each run aggregates system-wide data and posts to `PRESIDENT` recipient group, which resolves to every president across all entities. Multi-entity breakdowns surface inside the agent body (e.g., Expansion Readiness ranks entities).
+3. **AI toggles are additive** — every rule-based agent produces a usable output WITHOUT Claude. `TREASURY_AGENT_AI_MODE=ai` and `FPA_FORECAST_AI_MODE=ai` only APPEND a Claude narrative to the already-built body; they never replace rule output. Each AI branch is gated by `enforceSpendCap()`.
+4. **Copilot tools obey the G7 contract** — write_confirm handlers return a draft + confirmation payload in preview mode; execute mode routes through the existing model / controller. No bypass of `gateApproval`.
+5. **Lookup-driven HR bluntness** — RECOMMEND_HR_ACTION never auto-executes. Conservative tier suppresses `manage_out`. All action tiers above `coach` flag `requires_hr_legal_review=true`.
+
+### Critical invariants + gotchas
+
+- **No client-supplied `entity_id`**: every handler derives entity from `ctx.entityId` (Copilot calls) or `req.entityId` (HTTP). Rule #21 is strict.
+- **Task deletion cascade**: `parent_task_id` references live on parent's `sub_tasks[]` cache. On delete, the cache is best-effort pulled; tree can always be rebuilt from `parent_task_id`.
+- **DRAFT_ANNOUNCEMENT recipient resolution**: uses the User model `entity_id` / `entity_ids` fields. Non-privileged callers can never target another entity — scope collapses to the caller's working entity regardless of `target_entity_id` value.
+- **SoD + Data Quality dual-route notifications**: both agents call `notify` twice — once to PRESIDENT with full channels, once to FINANCE / ADMIN with `in_app` only (prevents duplicate email spam on the same fact).
+- **verify:copilot-wiring**: baseline moved from 25/25 → **35/35**. Future tool additions must keep this green.
+- **PersonComp DRAFT fallback**: if the install doesn't have a `PersonComp` model registered, `DRAFT_COMP_ADJUSTMENT` in execute mode returns `ok:false` with a note directing the user to the People > Comp UI. Nothing is silently lost.
+- **Compliance deadlines**: baseline 6 deadlines live in `complianceDeadlineAgent.BASELINE_DEADLINES`. Override by seeding `Lookup` rows in category `COMPLIANCE_DEADLINES` — when any row exists there, the baseline is IGNORED. Empty lookup category = baseline used (safe default for fresh subsidiaries).
+
+### Files touched
+
+**Backend (new)**:
+- `backend/erp/models/Task.js`
+- `backend/erp/controllers/taskController.js`
+- `backend/erp/routes/taskRoutes.js`
+- `backend/agents/treasuryAgent.js`
+- `backend/agents/fpaForecastAgent.js`
+- `backend/agents/procurementScorecardAgent.js`
+- `backend/agents/complianceDeadlineAgent.js`
+- `backend/agents/internalAuditSodAgent.js`
+- `backend/agents/dataQualityAgent.js`
+- `backend/agents/fefoAuditAgent.js`
+- `backend/agents/expansionReadinessAgent.js`
+
+**Backend (modified)**:
+- `backend/agents/agentRegistry.js` — 8 new rows
+- `backend/agents/agentScheduler.js` — 8 new cron schedules
+- `backend/agents/ocrAutoFillAgent.js` — 429 re-throw fix (carry-over from Phase H6 P1-1)
+- `backend/erp/routes/index.js` — `/tasks` mount
+- `backend/erp/services/copilotToolRegistry.js` — 10 new handlers
+- `backend/erp/controllers/lookupGenericController.js` — 10 new COPILOT_TOOLS rows, 3 new lookup categories, system prompt update
+
+**Frontend (new)**:
+- `frontend/src/erp/pages/TasksPage.jsx`
+
+**Frontend (modified)**:
+- `frontend/src/App.jsx` — `/erp/tasks` route
+- `frontend/src/components/common/Sidebar.jsx` — "My Tasks" link
+- `frontend/src/erp/components/WorkflowGuide.jsx` — `'tasks'` guide entry
+
+### Day-launch defaults (already in place)
+
+- All 8 scheduled agents seed `AgentConfig.enabled = true` via existing lazy-seed in `agentExecutor.ensureAgentConfig`.
+- `TREASURY_AGENT_AI_MODE.value = 'rule'`, `FPA_FORECAST_AI_MODE.value = 'rule'`, `HR_ACTION_BLUNTNESS.value = 'balanced'` (all seeded when first read).
+- All 10 new COPILOT_TOOLS rows seed `is_active: true`.
+- `AI_SPEND_CAPS.MONTHLY` still seeds with `is_active: false` — subscriber opts in via Control Center → AI Budget.
+
+### Subscription model
+
+A new subsidiary onboarded tomorrow gets:
+- Task collection available immediately (no seed needed — collection materialises on first insert).
+- All 8 agents run on their crons but post only when the subsidiary's data surfaces signals.
+- All 10 Copilot tools available in chat; gated per-role via each row's `allowed_roles`.
+- Zero code change needed to add a new compliance deadline, raise the BDM graduation threshold, or flip an agent to AI mode — all lookup-driven via Control Center.
+
+---
+
+## Phase G9 — Unified Operational Inbox (April 20, 2026)
+
+### Why
+SAP Fiori / Odoo / NetSuite all converge on one read-pane for everything that needs a user's attention: approvals, tasks, agent findings, broadcasts, chat. Pre-G9 the CRM had three disjoint surfaces (Inbox = admin broadcasts only, Approval Hub = approvals only, Tasks page = standalone) and email was the only path for AI-agent findings. G9 fuses them.
+
+### Architecture
+- **Schema**: `MessageInbox` extended with `entity_id`, `folder`, `thread_id`, `parent_message_id`, `requires_action`, `action_type`, `action_payload`, `action_completed_at`, `action_completed_by`. 4 new compound indexes for (entity_id, folder), (entity_id, requires_action), (thread_id, createdAt), (entity_id, recipientRole, recipientUserId, isArchived, createdAt).
+- **Folders are lookup-driven**: `MESSAGE_FOLDERS` lookup (lazy-seeds via `inboxLookups.getFoldersConfig`) → 9 codes (INBOX, ACTION_REQUIRED, APPROVALS, TASKS, AI_AGENT_REPORTS, ANNOUNCEMENTS, CHAT, SENT, ARCHIVE). 4 are virtual (computed at query time).
+- **Action affordance is lookup-driven**: `MESSAGE_ACTIONS` lookup → 6 codes (approve / reject / resolve / acknowledge / reply / open_link) with `metadata.variant`, `confirm`, `reason_required`, `api_path` template.
+- **Two-way DM matrix is lookup-driven**: `MESSAGE_ACCESS_ROLES` lookup → 6 rows (president/ceo/admin/finance/contractor/employee), each with `can_dm_roles` (or `*`), `can_broadcast`, `can_cross_entity`, `can_dm_direct_reports`.
+- **Helper module**: `backend/erp/utils/inboxLookups.js` exports `FOLDER_DEFAULTS`, `ACTION_DEFAULTS`, `ACCESS_ROLES_DEFAULTS`, `CATEGORY_TO_FOLDER`, `folderForCategory`, `getFoldersConfig`, `getActionsConfig`, `getAccessRolesConfig`, `canDm`, `canBroadcast`. Same lazy-seed pattern as `getChannelConfig`.
+
+### Routing & dispatch upgrade
+- `dispatchMultiChannel` (in `erpNotificationService.js`) gained 7 new options: `inAppFolder`, `inAppThreadId`, `inAppParentMessageId`, `inAppRequiresAction`, `inAppActionType`, `inAppActionPayload`, `inAppSender`.
+- `persistInApp` extended with the same fields. Folder auto-derives from category via `folderForCategory()` when not passed.
+- All 7 existing notify* helpers (`notifyDocumentPosted/Reopened`, `notifyApprovalRequest/Decision`, `notifyPayrollPosted`, `notifyTierReached`, `notifyKpiVariance`) flipped from email-only `sendToRecipients` to `dispatchMultiChannel` so they ALSO write inbox rows.
+- New helper `notifyTaskEvent({ event: 'assigned'|'reassigned'|'completed'|'commented'|'overdue', ... })` writes to TASKS folder. Thread-id = task._id. Wired into `taskController.createTask` + `updateTask`.
+- **Approval threading**: `approvalService.js` passes `approvalRequestId: request._id` (and `nextRequest._id` for escalated levels) to `notifyApprovalRequest` and `notifyApprovalDecision`. Thread-id = `ApprovalRequest._id` so request → decision → reopen all fold into the same conversation in the inbox.
+
+### API
+- `GET /api/messages` — list w/ `?folder=&requires_action=&thread_id=&counts=1` (counts=1 returns `{ data, counts: { unread, action_required, inbox, approvals, tasks, ai_agent_reports, announcements, chat } }`).
+- `GET /api/messages/counts` — lightweight bell counts (Cache-Control: 25s).
+- `GET /api/messages/folders` — lookup-driven folder + action config.
+- `GET /api/messages/thread/:thread_id` — full thread (oldest first; entity-scoped; audience-guarded).
+- `POST /api/messages/compose` — two-way DM (recipient_user_id OR recipient_role); gated by `messaging.* sub-perms` + `MESSAGE_ACCESS_ROLES` matrix; president bypasses.
+- `POST /api/messages/:id/reply` — child row; `thread_id = parent.thread_id || parent._id`; audience swap.
+- `POST /api/messages/:id/action` — delegates to canonical downstream:
+  - `approve`/`reject` → `universalApprovalController.approvalHandlers.approval_request(id, action, userId, reason)` (NO bypass of gateApproval / period locks; Rule #20).
+  - `resolve` → mirrors `varianceAlertController.resolveVarianceAlert` permission logic.
+  - `acknowledge` → stamp completion only.
+  - `open_link` → frontend-only.
+  - Stamps `action_completed_at` + `action_completed_by` on success; force-marks read.
+
+### Sub-permissions (Phase G9.R3)
+New module **MESSAGING** in `ERP_MODULE` lookup (sort_order 15). Five sub-perms in `ERP_SUB_PERMISSION`:
+- `messaging.dm_any_role` — direct-message any role
+- `messaging.dm_direct_reports` — DM your reports_to children only
+- `messaging.broadcast` — broadcast to a role group
+- `messaging.cross_entity` — send across entities
+- `messaging.impersonate_reply` — admin tool, reply as another sender
+
+`MODULE_DEFAULT_ROLES.MESSAGING` defaults `roles=['president','ceo','admin','finance','contractor','employee']` (open). Subscribers tighten via Control Center → Lookup Tables.
+
+### Frontend
+- `pages/common/InboxPage.jsx` — 3-pane (folders / list / thread) on desktop; stacked + drawer on mobile (≥360 px). Replaces the BDM-only `EMP_InboxPage` (now a re-export shim for `/bdm/inbox` URL stability).
+- `components/common/inbox/InboxFolderNav.jsx` — vertical desktop / horizontal scroll on mobile, lookup-driven labels + icons + per-folder badge counts.
+- `components/common/inbox/InboxMessageList.jsx` — compact rows w/ sender initials, action/high-priority chips, time-aware timestamps.
+- `components/common/inbox/InboxThreadView.jsx` — thread + action button row + reply composer + reason modal for reject/resolve.
+- `components/common/inbox/InboxComposeModal.jsx` — direct/broadcast toggle, lazy-loaded user list, rate-limited 5000-char body.
+- `components/common/NotificationBell.jsx` — replaces the mock `NotificationCenter`. Polls `/messages/counts` every 30 s and on `inbox:updated` event. Red badge = action_required, blue = unread.
+- TASKS folder branch mounts `TaskMiniEditor` (already shipped) instead of `InboxThreadView`. The mini editor saves via `PATCH /erp/tasks/:id` (Rule #20).
+- Routes: `/inbox` and `/inbox/thread/:thread_id` (allowedRoles = ALL); `/bdm/inbox` aliases the same component.
+- Sidebar: Inbox link added to ERP Administration section AND CRM admin "Main" section AND existing BDM "Work" section.
+- Navbar: `<NotificationBell />` mounted next to the theme toggle.
+
+### Verify scripts
+- `npm --prefix backend run verify:inbox-wiring` — 19/19 checks (FOLDER_DEFAULTS shape, CATEGORY_TO_FOLDER cross-file consistency, lazy-seed null-safety, notify* dispatch coverage, controller/route alignment, frontend mounts, agent-direct-write entity_id/folder presence, agentRegistry+scheduler for task_overdue, ERP_MODULE+ERP_SUB_PERMISSION+MODULE_DEFAULT_ROLES seed for MESSAGING, DRAFT_REPLY_TO_MESSAGE tool+handler).
+- `npm --prefix backend run verify:copilot-wiring` — bumped to 36/36 with new `DRAFT_REPLY_TO_MESSAGE` tool (handler `draftReplyToMessage`, allowed_roles include contractor so BDMs can reply via Copilot).
+
+### Task Overdue Agent (Phase G9.R1)
+- `backend/agents/taskOverdueAgent.js` — FREE (rule-based). Cron `15 6 * * 1-5` Manila (weekdays 06:15, between Treasury 05:30 and Inventory Reorder 06:30, before Daily Briefing 07:00).
+- Walks every active entity for `Task` rows with `status ∈ {OPEN, IN_PROGRESS, BLOCKED}` AND `due_date < now` AND `assignee_user_id ≠ null`.
+- Cooldown: per-entity `TASK_OVERDUE_COOLDOWN_DAYS` lookup (GLOBAL row, default 1 day; lazy-seeds on first run). New Task field `last_overdue_notify_at` is the dedup stamp.
+- Fires `notifyTaskEvent({ event: 'overdue' })` per task → row lands in TASKS folder w/ `requires_action=true`, `action_type='open_link'`, `action_payload.deep_link='/erp/tasks?id=…'`.
+- Registered in `agentRegistry.AGENT_DEFINITIONS.task_overdue` (FREE) and surfaced on the Agent Dashboard with Clock icon `#ea580c`.
+
+### Subscription posture
+A new subsidiary tomorrow gets:
+- Inbox UI immediately for every authenticated role (no per-tenant seed; folders/actions lazy-seed on first read).
+- Their MESSAGE_FOLDERS / MESSAGE_ACTIONS / MESSAGE_ACCESS_ROLES rows materialise on first call to `inboxLookups.get*Config(entityId)`; admin can re-label "Tasks / To-Do" → "ToDos" via Control Center → Lookup Tables without a code deploy.
+- `task_overdue` cron fires for them on the next weekday morning; the agent skips entities with no overdue tasks.
+- Two-way messaging is open by default (MESSAGING module + all 6 roles in MODULE_DEFAULT_ROLES); admin tightens via Access Templates.
+- Existing `NOTIFICATION_CHANNELS.IN_APP.metadata.enabled = false` kill-switch suppresses NEW inbox writes immediately; existing rows stay visible (so no data loss when toggling).
+
+### Known follow-ups (intentionally deferred)
+- Broadcast UI for "Reply All" on broadcast rows (currently single-recipient).
+- Inbox bulk-archive / bulk-mark-read (admin convenience; not blocking).
+- Cross-entity inbox view for presidents (currently surfaces all entities when `?entity_id=` omitted; no per-entity grouping pill in the list yet).
+- Dual-route POSTED-event notifications (Phase G8 SoD pattern): currently `notifyDocumentPosted` writes one row to all of management; subscribers complaining of in-app noise can later split into PRESIDENT-with-all-channels + FINANCE/ADMIN-in-app-only without schema changes.

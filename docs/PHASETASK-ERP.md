@@ -4854,3 +4854,378 @@ Frontend MODIFIED:
 - **Digest agent routes exclusively to `reports_to` managers.** BDMs without a `reports_to` line in PeopleMaster are excluded from the digest email pool (their alerts still fire in the per-event email path). Filling in PeopleMaster.reports_to is a data-quality task, not a code change.
 - **YoY chart is capped at top 12 BDMs** to keep the legend readable on tablet. For larger teams, Statistics page (Phase G2) is the right surface for a full per-BDM drill-down.
 - **Plan-version reconciliation in trending is implicit** (via `KpiSnapshot.plan_id` → `IncentivePlan.current_version_id` from SG-4 #21). Joining two snapshots from different versions of the same logical plan works; joining snapshots from entirely different plan headers (different fiscal year is expected; same fiscal-year different entity is not).
+
+## Phase SG-6 — Compliance & Integration Layer ✅ (April 19, 2026)
+
+Closes Section D items **29–32** of `dreamy-skipping-cookie.md`. Brings Sales Goal to full parity with mature VIP ERP modules AND commercial-grade on the core loop. HRIS NOT in scope — user confirmed no external HRIS subscription planned; PeopleMaster alone covers the sales-goal-eligible lifecycle.
+
+### Scope (4 sub-deliverables in one commit)
+
+#### #29 — SOX-readiness Control Matrix
+- **NEW** `backend/erp/controllers/soxControlMatrixController.js` — materializes a control matrix for every Sales Goal state change (16 controls). Reads LIVE config from `MODULE_DEFAULT_ROLES` + `ERP_SUB_PERMISSIONS` + `APPROVAL_MODULE` + `APPROVAL_CATEGORY` + last-N-days `ErpAuditLog` activity per op + segregation-of-duties analyzer (flags users who both CREATE and POST/APPROVE/PAY/REVERSE the same document in the window) + live `integrationHooks.describeRegistry()` panel.
+- **Routes** `GET /sales-goals/sox-control-matrix[?window_days=]` + `/print[?format=pdf|html]`. Reuses existing `pdfRenderer.resolvePdfPreference()` + `htmlToPdf()` — HTML by default, puppeteer PDF when `PDF_RENDERER.BINARY_ENABLED=true`.
+- **NEW** `frontend/src/erp/pages/SoxControlMatrix.jsx` — admin page: window selector + summary cards + control table + SoD findings panel + integration registry panel + Print/Save-as-PDF button. Sidebar entry "SOX Control Matrix" (admin only). App.jsx route `/erp/sales-goals/sox`. WorkflowGuide key `soxControlMatrix`.
+- **Design invariant**: CONTROLS definition is a module constant (not a Lookup). Intentional — the matrix AUDITS the live authorization posture; moving CONTROLS to a lookup would let an admin hide a control by deleting its row (defeats SOX).
+
+#### #30 — PeopleMaster Lifecycle Helpers (HRIS-free)
+- **NEW** `backend/erp/services/salesGoalLifecycleHooks.js` — attached to PeopleMaster via `post('save')`. Pre-save hook snapshots `is_active`, `person_type`, `territory_id`, `entity_id` on `this.__sgPrior`; post-save hook classifies the transition:
+  - **(a) Enroll**: new or newly-eligible → idempotent `SalesGoalTarget(target_type='BDM')` insert using `GOAL_CONFIG.DEFAULT_TARGET_REVENUE` + `plan.collection_target_pct`. Emits `person.auto_enrolled`.
+  - **(b) Close**: deactivated OR role left eligible set → append `TargetRevision` sub-doc on BDM's target + apply `GOAL_CONFIG.DEACTIVATION_PAYOUT_POLICY` lookup (default `finalize_accrued` = leave ACCRUED intact; `reverse_accrued` = flag REJECTED so authority posts reversal JE via ledger UI). Emits `person.lifecycle_closed`.
+  - **(c) Revise**: in-role territory/role change → append `TargetRevision` (source=`PEOPLE_LIFECYCLE`), update territory_id. No payout impact.
+- **Guardrails** (F.1 cross-module safety):
+  - Additive — does NOT replace any existing PeopleMaster hook.
+  - Short-circuits if no active plan for entity (fresh subsidiaries work).
+  - Own transaction per branch — Sales Goal failure NEVER blocks PeopleMaster save.
+  - NEVER posts FI journals auto (human-in-loop invariant — policy `reverse_accrued` flags REJECTED, doesn't post reversal).
+  - All auto-actions write `ErpAuditLog` with `[SG-6 lifecycle]` prefix.
+- **Subscription-ready**: `SALES_GOAL_ELIGIBLE_ROLES` + `GOAL_CONFIG.DEACTIVATION_PAYOUT_POLICY` fully lookup-driven. Adding a new sales role (e.g. `SALES_REP`, `TERRITORY_MANAGER`) is a 1-row lookup edit.
+
+#### #31 — Mid-Period Target Revision Workflow
+- **NEW** `salesGoalController.reviseTarget` + `POST /sales-goals/targets/:id/revise`. Required `revision_reason`. Gated via `gateApproval(module='SALES_GOAL_PLAN', docType='TARGET_REVISION')` — non-authorized submitters routed through Approval Hub (HTTP 202). Transaction-wrapped. Emits `target.revised`.
+- **NEW schema field** `SalesGoalTarget.target_revisions[]` — append-only sub-doc array with `{ revised_at, revised_by, revision_reason, prior_sales_target, prior_collection_target, prior_territory_id, prior_person_id, source (MANUAL|PEOPLE_LIFECYCLE|SYSTEM), approval_request_id }`.
+- **Feature toggle**: `MID_PERIOD_REVISION_ENABLED` lookup (default disabled). Canonical path remains "reopen plan → edit → reactivate" unless admin opts in via Control Center.
+- **Historical snapshot safety**: existing KpiSnapshot rows stay tied to the value that was active at compute time. Future snapshots re-compute from revision point forward (SG-4 plan-versioning pattern, applied at the target level).
+
+#### #32 — Integration Hook Registry
+- **NEW** `backend/erp/services/integrationHooks.js` — in-process event bus. `on(event, handler)` registers a listener, `emit(event, payload)` dispatches. Listeners run on next microtask (non-blocking). Per-handler try/catch — one bad listener never blocks emission. Every emit also writes to `ErpAuditLog` (`target_model: 'IntegrationEvent'`) for replayable signal stream.
+- **Event codes** (all lookup-registered in `INTEGRATION_EVENTS`):
+  - `plan.activated`, `plan.closed`, `plan.reopened`, `plan.versioned`
+  - `payout.accrued`, `payout.approved`, `payout.paid`, `payout.reversed`
+  - `dispute.filed`, `dispute.resolved`
+  - `target.revised`
+  - `person.auto_enrolled`, `person.lifecycle_closed`
+- **Emit sites wired** (Sales Goal never imports consumers):
+  - `salesGoalController.activatePlan/closePlan/reopenPlan/reviseTarget`
+  - `salesGoalService.accrueIncentive` (fresh payout only, not race-recovery)
+  - `incentivePayoutController.approvePayout/payPayout/reversePayout`
+  - `incentiveDisputeController.resolveDispute`
+  - `salesGoalLifecycleHooks.enrollPerson/closePersonLifecycle`
+- **describeRegistry()** surfaces listener counts + enabled state for the SOX matrix registry panel.
+
+### Wiring map (Phase SG-6)
+
+```
+Backend NEW:
+  backend/erp/services/integrationHooks.js
+  backend/erp/services/salesGoalLifecycleHooks.js
+  backend/erp/controllers/soxControlMatrixController.js
+
+Backend MODIFIED:
+  backend/erp/models/PeopleMaster.js                  [+pre('save') prior-capture, +post('save') sg-lifecycle fire-and-forget]
+  backend/erp/models/SalesGoalTarget.js               [+targetRevisionSchema sub-doc + target_revisions[] array]
+  backend/erp/controllers/salesGoalController.js      [+reviseTarget, +integration emit on activate/close/reopen]
+  backend/erp/controllers/incentivePayoutController.js[+integration emit on approve/pay/reverse]
+  backend/erp/controllers/incentiveDisputeController.js[+integration emit on resolve]
+  backend/erp/services/salesGoalService.js            [+integration emit on accrueIncentive (fresh only)]
+  backend/erp/controllers/lookupGenericController.js  [+MID_PERIOD_REVISION_ENABLED, +INTEGRATION_EVENTS, +GOAL_CONFIG.DEACTIVATION_PAYOUT_POLICY]
+  backend/erp/routes/salesGoalRoutes.js               [+POST /targets/:id/revise, +GET /sox-control-matrix, +/print]
+
+Frontend NEW:
+  frontend/src/erp/pages/SoxControlMatrix.jsx
+
+Frontend MODIFIED:
+  frontend/src/erp/hooks/useSalesGoals.js             [+getSoxControlMatrix, soxControlMatrixPrintUrl, reviseTarget]
+  frontend/src/erp/components/WorkflowGuide.jsx       [+soxControlMatrix guide]
+  frontend/src/App.jsx                                [+SoxControlMatrix lazy + route /erp/sales-goals/sox]
+  frontend/src/components/common/Sidebar.jsx          [+SOX Control Matrix (admin/finance/president)]
+```
+
+### Acceptance checklist (Phase SG-6)
+
+- [x] `node -c` clean on every modified/new backend file (11 files verified).
+- [x] Runtime `require()` loads every new service + controller without missing-module errors.
+- [x] `npx vite build --mode development` clean — `SoxControlMatrix-*.js` chunk emitted.
+- [x] `node backend/scripts/startupCheck.js` — passed.
+- [x] `node backend/scripts/verifyRejectionWiring.js` — OK (20 modules verified, 0 warnings).
+- [x] No modifications to Expense/Collection/CALF/SMER/PettyCash/Journal/Payroll controllers. PeopleMaster gets ONLY a pre/post-save hook attached — no schema field additions.
+- [x] All new lookups are entity-scoped, seeded with defaults, admin-editable (`MID_PERIOD_REVISION_ENABLED`, `INTEGRATION_EVENTS`, `GOAL_CONFIG.DEACTIVATION_PAYOUT_POLICY`).
+- [x] SOX matrix NEVER governs access — it REPORTS. Changing a matrix row has no effect; change the underlying lookup to actually adjust posture.
+- [x] Lifecycle hook short-circuits on first-entity save (no active plan yet — zero crashes).
+- [x] Integration emit is fire-and-forget — no `await` in any emit site. Listener errors are per-handler, never block emitting module.
+- [x] Mid-period revision gated by `MID_PERIOD_REVISION_ENABLED` lookup; default disabled — "reopen plan" remains canonical unless admin opts in.
+- [x] Integration emit functional test: `on('plan.activated', fn) + emit('plan.activated', {...})` roundtrips payload.
+- [ ] **Manual smoke (staging — required before wider rollout)**:
+  - Deactivate a BDM in PeopleMaster (flip `is_active=false`) → next compute excludes them from leaderboard; per `DEACTIVATION_PAYOUT_POLICY`, their open ACCRUED rows are either left intact (`finalize_accrued`) or flagged REJECTED (`reverse_accrued`). `ErpAuditLog` shows `[SG-6 lifecycle]` entry. PeopleMaster save NEVER errors.
+  - Add a new active BDM → lifecycle hook creates `SalesGoalTarget(target_type='BDM')` with `GOAL_CONFIG.DEFAULT_TARGET_REVENUE`. Emits `person.auto_enrolled`.
+  - Toggle `MID_PERIOD_REVISION_ENABLED.metadata.enabled = true` → POST `/sales-goals/targets/:id/revise` with `{ revision_reason, sales_target }` → authority gate fires for non-president; president path appends `target_revisions[]` + emits `target.revised`. Historical KpiSnapshot rows untouched; re-run Compute KPIs → future snapshots use new target.
+  - Open `/erp/sales-goals/sox` as admin → 16 controls rendered, live allowed_roles match MODULE_DEFAULT_ROLES, actor counts populated from recent activity, segregation findings panel populated, integration registry shows 13 event codes (listener counts = 0 until a subscriber wires `integrationHooks.on`).
+  - Click Print / Save as PDF → new window opens with HTML view (or PDF if PDF_RENDERER.BINARY_ENABLED=true + puppeteer installed).
+  - Activate a plan as president → check ErpAuditLog for a `target_model: 'IntegrationEvent'` row with `new_value: 'plan.activated'`.
+
+### Known limitations / future hooks (Phase SG-6)
+
+- **SOX CONTROLS list is a module constant, not a lookup.** Intentional — see §#29 design invariant. If subscribers add new Sales Goal state changes (unlikely in ERP core, possible for plugin modules), they extend `CONTROLS` in `soxControlMatrixController.js` — one edit, not a lookup race.
+- **Lifecycle hook runs on EVERY PeopleMaster save**, including no-op saves (touching a non-classified field). Short-circuits after the `prior === current` classification, so the cost is one indexed query + one memory compare. Does NOT introduce measurable latency on the PeopleMaster write path.
+- **Integration event bus is in-process only.** Cross-process (multi-node) subscribers need a message broker. Acceptable for current VIP deployment (single Node instance); for horizontal scaling this file is the right place to swap in Redis/Kafka without changing emit sites.
+- **`reverse_accrued` policy flags REJECTED — does NOT auto-post reversal JE.** By design (human-in-loop invariant). Authority sees the REJECTED row in the payout ledger and clicks Reverse, which posts the SAP-Storno JE via `reverseJournal`. Documented in the GOAL_CONFIG lookup metadata so admins understand before flipping.
+- **Mid-period revision does NOT cascade to IncentivePayout retroactively.** If a BDM already has an ACCRUED payout and you revise their target downward, the accrued tier_budget STAYS at the pre-revision value (matches "historical snapshots immutable" posture from SG-4). To re-accrue at the new tier, authority reverses the payout, then re-runs Compute KPIs.
+- **SOX matrix audit window is capped at 365 days** to keep the query fast. For annual SOX reports, run the endpoint on a dated window and archive the PDF offsite.
+- **No auto-discovery of subscribers** — listeners are registered by module init code. Drop-in extension is one-liner (`integrationHooks.on('payout.paid', handler)` at module startup), but there's no registration CLI.
+
+---
+
+## Phase SG-Q2 W4 — Period-Lock Hardening on Sales Goals + Orphan Cleanup ✅ (April 19, 2026)
+
+Closes the Q2 evaluation gap on Rule #20 compliance for the Sales Goal module AND fixes three pre-existing orphan bugs in the period-lock matrix that were silently broken since SG-Q2 W2.
+
+### Scope
+
+#### Period-lock wiring (the Gap-1 work)
+- **Extended `PeriodLock.module` enum** ([backend/erp/models/PeriodLock.js](backend/erp/models/PeriodLock.js)) — added `SALES_GOAL`, `INCENTIVE_PAYOUT`, `DEDUCTION`. Non-breaking; existing rows already use values inside the new superset.
+- **NEW middleware** [backend/erp/middleware/periodLockCheckByPlan.js](backend/erp/middleware/periodLockCheckByPlan.js) — sibling to `periodLockCheck`. For plan-spanning routes, loads the referenced `SalesGoalPlan`, derives `fiscal_year`, and rejects if ANY month of that year is locked for the moduleKey. Read plan id from `req.params.id` (preferred) or `req.body.plan_id`. POST/PUT/PATCH only; gracefully skips when plan id, plan, or `req.entityId` missing.
+- **Wired 7 sales-goal routes** ([backend/erp/routes/salesGoalRoutes.js](backend/erp/routes/salesGoalRoutes.js)):
+  - Plan-spanning (use `periodLockCheckByPlan('SALES_GOAL')`): `/plans/:id/activate`, `/plans/:id/reopen`, `/plans/:id/close`, `/targets/bulk`, `/targets/import`
+  - Period-specific (use `periodLockCheck('SALES_GOAL')`): `/snapshots/compute`, `/kpi/manual`
+  - Order: erpAccessCheck → erpSubAccessCheck → period guard → handler → `gateApproval` (internal). Matches existing convention.
+
+#### Orphan-bug cleanup (discovered during the audit)
+- **O1 — `INCENTIVE_PAYOUT` was wired but missing from enum.** Wire-up at `incentivePayoutRoutes.js:49,55` (Pay/Reverse) was silently no-op since SG-Q2 W2 — the middleware queried an enum value that didn't exist. Now closed via the enum extension.
+- **O2 — `DEDUCTION` was wired but missing from enum.** Same orphan pattern at `deductionScheduleRoutes.js:28,31,34`. Now closed.
+- **O3 — `periodLockController.MODULES` constant out of sync with model.** Hardcoded list never updated when `INCOME` was added → matrix UI silently dropped INCOME locks. Replaced the constant with `PeriodLock.schema.path('module').enumValues` so the controller is a single-source-of-truth derivative.
+- **O4 — `controlCenterController.js:78` hardcoded "10 modules" stat.** Replaced with `PeriodLock.schema.path('module').enumValues.length` so the stat card stays accurate forever.
+- **O5 — Frontend `PeriodLocks.jsx` MODULE_LABELS missing 3 keys.** Added `SALES_GOAL`, `INCENTIVE_PAYOUT`, `DEDUCTION` labels (INCOME was already present — agent earlier was wrong).
+
+#### Workflow guides (Rule #1)
+- **`salesGoalDashboard` banner** ([frontend/src/erp/components/WorkflowGuide.jsx:1311](frontend/src/erp/components/WorkflowGuide.jsx)) — added a step explaining which actions are gated by SALES_GOAL period locks and how to unlock.
+- **`incentivePayoutLedger` banner** — already documented period-lock interaction (line 1498, 1511); no edit needed. Verified.
+
+### Files touched (10)
+
+| File | Change |
+|---|---|
+| `backend/erp/models/PeriodLock.js` | enum +3 keys |
+| `backend/erp/controllers/periodLockController.js` | MODULES → enum derive |
+| `backend/erp/controllers/controlCenterController.js` | totalModules → enum derive |
+| `backend/erp/middleware/periodLockCheckByPlan.js` | NEW |
+| `backend/erp/routes/salesGoalRoutes.js` | wire 7 routes |
+| `frontend/src/erp/pages/PeriodLocks.jsx` | +3 labels |
+| `frontend/src/erp/components/WorkflowGuide.jsx` | salesGoalDashboard step |
+| `CLAUDE-ERP.md` | period-lock invariant updated |
+| `docs/PHASETASK-ERP.md` | this entry |
+
+### Audit findings — what was already shipped (false alarms in the original gap list)
+
+The Q2-eval gap brief listed four items. Only Gap 1 (period-lock middleware) was a real gap. The others were already shipped:
+
+- **Gap 2 (payout lifecycle routes)** — `/incentive-payouts/:id/{approve,pay,reverse}` + `/payable?period=` all wired in `incentivePayoutRoutes.js:22,41-57` since SG-Q2 W2 with full middleware stack. No work.
+- **Gap 3 (lookup seeds)** — `CREDIT_RULE_TEMPLATES`, `DISPUTE_SLA_DAYS`, `COMP_STATEMENT_TEMPLATE` all lazy-seeded in `lookupGenericController.js:941,1012,981`. `ACTIVE_PLAN_VERSION` is intentionally NOT a lookup — operational state lives in `IncentivePlan.current_version_id` (see `incentivePlanService.js:15` design note). No work.
+- **Gap 4 (auto-enrollment from PeopleMaster)** — `autoEnrollEligibleBdms()` ([salesGoalController.js:51](backend/erp/controllers/salesGoalController.js)) called inside `activatePlan` transaction at line 365. Plus ongoing post-save hook in `salesGoalLifecycleHooks.js`. No admin click-enroll required. No work.
+
+### Integrity guarantees
+
+- **Single source of truth**: every module list (controller MODULES, Control Center stat) derives from `PeriodLock.schema.path('module').enumValues`. Adding a future module = one edit (enum), zero downstream code changes.
+- **Entity isolation preserved**: middleware filters by `req.entityId` (Tenant A's lock doesn't bleed to Tenant B). Unique index already includes `entity_id`.
+- **No regression to 26 existing `periodLockCheck()` call sites**: original middleware unchanged. New behavior lives in sibling `periodLockCheckByPlan`.
+- **Default-Roles Gate order preserved**: erpAccessCheck → erpSubAccessCheck → period guard → handler (which calls `gateApproval` internally). Authority Matrix routing unaffected.
+- **Agent (cron) bypass intentional**: `kpiSnapshotAgent` calls `salesGoalService` directly, not HTTP. No req.body collision; agent can compute snapshots even in locked periods because it writes to historical YTD rows that admins lock specifically to freeze user-facing edits, not to halt the daily catch-up cron.
+
+### Future hooks (deferred — not blocking Q2)
+
+- **`PERIOD_LOCKABLE_MODULES` lookup category** — to remove the enum entirely, swap the schema enum for a custom validator that reads the lookup. Migration is non-breaking. Useful for plugin-style subsidiaries that want to lock additional custom modules. Skipped here per Rule #3 carve-out for immutable code identifiers.
+- **`GET /api/erp/period-locks/modules` endpoint** — to remove frontend `MODULE_LABELS` hardcoding and let subscribers customize labels. Skipped here.
+- **Wiring-check script** that fails CI if any `periodLockCheck('X')` argument is not in `PeriodLock.module` enum — would have caught O1+O2 earlier. Worth Phase SG-Q2 W5.
+
+---
+
+## PHASE H6 — SALES OCR (BDM Field Scanning) + OCR AI Spend-Cap 🚧 IN PROGRESS (April 19, 2026)
+
+**Owner**: Gregg (President) • **Priority**: High • **Effort**: ~18.5d • **Target cost**: ~$25-55/mo at steady state (1,320 scans/mo)
+
+### Goal
+
+BDMs scan CSI / Collection Receipt / Delivery Receipt (sampling + consignment variants) / Bank Deposit Slip / Check on their phone in the field instead of typing. Each scan creates a DRAFT in the correct target model; BDM reviews on their phone; submit routes through `gateApproval()` per Rule #20. Same smart-OCR pipeline that handles Expenses (Google Vision → rule-based parser → Claude field-completion → master-data resolver → vendor auto-learn) — just extended to sales doc types and new parsers for bank slip + check.
+
+### Two governance gaps fixed up front
+
+| ID | Gap | Fix | Status |
+|---|---|---|---|
+| P1-1 | `ocrAutoFillAgent.classifyWithClaude` bypassed `AI_SPEND_CAPS` | Wire `enforceSpendCap('OCR')` into the agent; pass `entityId` via processor context; catch 429 in processor and record `ai_skipped_reason: 'SPEND_CAP_EXCEEDED'` | ✅ |
+| P1-2 | `OcrUsageLog.cost_usd` did not exist → OCR spend invisible in AI Budget total | Add `cost_usd` + `ai_skipped_reason` fields; populate from `processor.ai_cost_usd`; `spendCapService` already aggregates `$cost_usd` so no further work there | ✅ |
+
+Both shipped as a single standalone commit before any sales-OCR volume lands.
+
+### Deliverables (remaining)
+
+| # | Item | Effort | Depends on |
+|---|---|---|---|
+| P1-3 | Extend smart OCR Claude-fallback to sales doc types (CSI/CR/DR/BANK_SLIP/CHECK in `CRITICAL_FIELDS_BY_DOC`) | 1d | P1-1 |
+| P1-4 | Parsers: `bankSlipParser.js`, `checkParser.js`, `drRouter.js` (sampling vs consignment marker) | 5d | P1-3 |
+| P1-5 | Missing DRAFT models: `SamplingLog`, `Deposit`, `CheckReceived` (only 3 — `SalesLine`, `Collection`, `ConsignmentTracker` already exist in `backend/erp/models/`) | 2d | — |
+| P1-6 | Add `BANK_SLIP` + `CHECK` to existing `OcrSettings.ALL_DOC_TYPES` and to the existing `ErpOcrSettingsPanel` chip grid (no new panel) | 0.5d | P1-5 |
+| P1-7 | `/api/erp/sales-ocr/*` endpoints — one per doc type, each wraps `processOcr` + creates correct DRAFT record via `gateApproval()` + `periodLockCheck(module)` | 3d | P1-4, P1-5 |
+| P1-8 | Mobile `SalesDocScanner.jsx` (camera, preview, retry, 360px-verified) | 2d | — |
+| P1-9 | Six review forms (CSIReviewForm, CRReviewForm, DRSamplingReviewForm, DRConsignmentReviewForm, BankSlipReviewForm, CheckReviewForm) — pre-filled editable fields | 3d | P1-7 |
+| P1-10 | `/erp/scan` route + Sidebar link + WorkflowGuide banner | 1d | P1-8, P1-9 |
+| P1-11 | Integrity — `verify:copilot-wiring` + `verify:rejection-wiring` stay ✓; vite build ✓; Expense OCR regression fixture; 10-doc UAT on BDM phone | 1d | all |
+
+### Architectural decisions (locked)
+
+1. **Reuse existing 5-layer pipeline** — no new adapter, no new OCR tier. Google Vision is already the primary engine; adding sales docs = adding parsers + extending `CRITICAL_FIELDS_BY_DOC` + registering doc types in `OcrSettings.ALL_DOC_TYPES`.
+2. **One reusable mobile scanner component** (`SalesDocScanner.jsx`) — doc type selected before capture; the scanner is agnostic. Review forms are the only per-doc-type UI.
+3. **DR routing via marker detection** — single `drParser` still does the raw parse; a `drRouter.js` wrapper inspects extracted text for `SAMPLING|SAMPLE|FREE\s*SAMPLE` (→ SamplingLog) vs `CONSIGNMENT|CONSIGN` (→ ConsignmentTracker). Ambiguous → defaults to ConsignmentTracker (the more common case) with `review_required: true`.
+4. **AI_SPEND_CAPS stays opt-in** — existing entities will NOT start enforcing a cap just because H6 landed. Seed default is `is_active: false`. President opts in via Control Center → AI Budget.
+5. **BDM authority** — BDMs can CREATE scanned DRAFTS; POSTING still routes through `gateApproval()` per Rule #20 (Default-Roles Gate from Phase G4, Authority Matrix from Phase 29 if enabled).
+6. **Banners everywhere** — new `/erp/scan` page gets a `WorkflowGuide` entry; Control Center OCR panel already has its own helper text (no change needed).
+
+### Subscription-readiness
+
+- `OcrSettings` is already per-entity. H6 only adds two new doc types to `ALL_DOC_TYPES` — every existing subscriber inherits them (defaulting to ENABLED; admin can untick chips in OCR Settings to restrict).
+- `AI_SPEND_CAPS.MONTHLY` lookup row governs spend. Per-feature overrides via `metadata.feature_overrides.OCR` for entities that want a separate OCR-only cap.
+- No hardcoded sample markers, no hardcoded parser thresholds, no hardcoded check/bank field positions.
+
+### Integrity guarantees
+
+- **Zero regressions in Expense OCR** — additive changes only. Existing `OR` and `GAS_RECEIPT` flows untouched; the spend-cap gate applies to them too (closes the same Phase G7 gap symmetrically), which is a correctness gain.
+- **Rule #2 end-to-end wiring** — every new doc type must be wired across: `OcrSettings.ALL_DOC_TYPES` → `ocrProcessor.PARSERS` → `ocrProcessor.SUPPORTED_DOC_TYPES` → `salesOcrController.DRAFT_CREATORS` → `salesOcrRoutes` → `SalesDocScanner` doc-type chip → review form component. Missing any one = orphaned enum.
+- **Rule #3 lookup-driven** — sample marker keywords, handwriting confidence thresholds, and per-BDM daily cap all configurable via Lookup.
+- **Rule #20 gateApproval** — every DRAFT creation endpoint wraps submit/post in `gateApproval(module)` + `periodLockCheck(module)`. No bypass.
+- **Rule #21 entity from `req.entityId`** — never from client body. New endpoints follow the existing `ocrController` pattern.
+
+### Common gotchas (H6 — reference)
+
+- Sales docs don't need expense classification. Don't add CSI/CR/DR to `EXPENSE_DOC_TYPES` — that would run COA classification on receipts with no vendor. Only add them to `CRITICAL_FIELDS_BY_DOC` so field-completion runs.
+- Multi-entity letterheads share the same scanner (VIP Inc. TIN `744-251-498-00000`; MG AND CO. TIN `010-824-240-00000`). Entity resolver must match TIN from the letterhead text → `Entity.tin_number` before assigning the DRAFT to an entity. If the TIN doesn't match any known entity, fall back to `req.entityId` (the BDM's working entity) with `review_required: true`.
+- Expiry date formats observed in the wild: `17/06/2027`, `11/2027`, `09/20/28`, `01-2027`, `08/2028`. Parser must handle MM/YY, MM/YYYY, DD/MM/YYYY, and MM-YYYY.
+- CR settlement box lists CSI#s being paid as line items — `Collection.line_items[]` must accept partial-payment rows (amount < CSI total).
+- Check MICR line (bottom of check) is the most reliable source for check number + routing number + account number; when Vision reads it cleanly the regex parse is HIGH confidence without Claude fallback.
+
+## Phase G8 — Agents + Copilot Expansion ✅ (April 19, 2026)
+
+### Goal
+Close the Phase 2 scope from `HANDOFF-phase-agents-copilot.md`: a proper `Task` collection, 8 new rule-based scheduled agents, and 10 new Copilot tools (5 Secretary + 5 HR), plus 3 AI toggle lookups that let subscribers flip individual agents to Claude-assisted narrative without a code change.
+
+### Delivered (22 items)
+- **Task model + UI**: `backend/erp/models/Task.js`, `taskController.js`, `taskRoutes.js`; `frontend/src/erp/pages/TasksPage.jsx`, route `/erp/tasks`, Sidebar link under Administration, WorkflowGuide `'tasks'` entry.
+- **8 scheduled agents** registered in `agentRegistry.js` + cron in `agentScheduler.js`:
+  - `treasury` (weekdays 5:30 AM), `fpa_forecast` (Mon 6 AM), `procurement_scorecard` (Tue 7 AM), `compliance_calendar` (Mon 5 AM), `internal_audit_sod` (Wed 8 AM), `data_quality` (daily 9 AM), `fefo_audit` (daily 7:30 AM), `expansion_readiness` (monthly, 1st at 10 AM).
+- **10 Copilot tools** in `copilotToolRegistry.js` + matching rows in `COPILOT_TOOLS` lookup:
+  - Secretary: CREATE_TASK, LIST_OVERDUE_ITEMS, DRAFT_DECISION_BRIEF, DRAFT_ANNOUNCEMENT, WEEKLY_SUMMARY.
+  - HR: SUGGEST_KPI_TARGETS, DRAFT_COMP_ADJUSTMENT, AUDIT_SELF_RATINGS, RANK_PEOPLE, RECOMMEND_HR_ACTION.
+- **3 AI-toggle lookups** seeded: `TREASURY_AGENT_AI_MODE` (`rule`), `FPA_FORECAST_AI_MODE` (`rule`), `HR_ACTION_BLUNTNESS` (`balanced`).
+- **PRESIDENT_COPILOT** `system_prompt` updated — names the new tools so Claude routes natural-language questions to the right handler.
+- **Prep fix (Phase H6 P1-1 carry-over)**: `ocrAutoFillAgent.classifyWithClaude` now re-throws the 429 from `enforceSpendCap` so `ocrProcessor` can record `ai_skipped_reason: 'SPEND_CAP_EXCEEDED'` instead of silently returning `null`.
+
+### Integrity results
+- `npm run verify:copilot-wiring` → **35/35 passes, 0 errors, 0 warnings** (was 25/25 pre-G8).
+- `npm run verify:rejection-wiring` → **20 modules verified, 0 warnings** (unchanged).
+- `node -c` clean on every modified file.
+
+### Subscription-readiness (Rule #3)
+| Config | Lookup / Source | Default |
+|---|---|---|
+| Treasury AI mode | `TREASURY_AGENT_AI_MODE.DEFAULT.metadata.value` | `rule` |
+| FP&A AI mode | `FPA_FORECAST_AI_MODE.DEFAULT.metadata.value` | `rule` |
+| HR recommendation bluntness | `HR_ACTION_BLUNTNESS.DEFAULT.metadata.value` | `balanced` |
+| BDM graduation threshold | `EXPANSION_READINESS_CONFIG.DEFAULT.metadata.bdm_graduation_monthly_sales_min` | ₱500,000 |
+| BDM graduation months required | `EXPANSION_READINESS_CONFIG.DEFAULT.metadata.bdm_graduation_months_required` | 3 |
+| Compliance deadlines | `COMPLIANCE_DEADLINES.*` (optional override) | 6 baseline PH deadlines |
+| Tool visibility per role | `COPILOT_TOOLS.<code>.metadata.allowed_roles` | per tool |
+| Monthly AI budget cap | `AI_SPEND_CAPS.MONTHLY` | `is_active: false` (opt-in) |
+
+### Common gotchas (G8)
+- **Task routes skip erpAccessCheck.** Productivity collection, every ERP-auth user can maintain their own. Privileged scope (`?scope=all`) gated by role check inside the controller — Rule #21 enforced.
+- **DRAFT_ANNOUNCEMENT respects entity scope for non-privileged callers.** Even if Claude passes `target_entity_id`, non-privileged recipients fall back to `ctx.entityId`. Privileged users (president/ceo/admin) can broadcast to a specific other entity when they have multi-entity access.
+- **RECOMMEND_HR_ACTION never writes.** It returns a recommendation payload only. All action tiers above `coach` set `requires_hr_legal_review=true`. Conservative bluntness downgrades `manage_out` to `PIP`. Execute side is manual — the president issues a warning / PIP / separation via the existing People / Payroll flows after reading the recommendation.
+- **Rule-based first.** Treasury + FP&A agents produce a useful body purely from SQL aggregations. The AI toggle only APPENDS a short narrative — never replaces the numbers. Flipping the toggle to `ai` counts Claude calls against `AI_SPEND_CAPS` for that entity.
+- **Internal Audit + Data Quality dual-route notifications** use two separate `notify()` calls (PRESIDENT + ALL_ADMINS). The second call uses `channels: ['in_app']` only, so finance / admin don't also receive the email — email always goes to the primary (PRESIDENT) route.
+- **verify:copilot-wiring baseline is now 35/35.** Any new tool added after G8 that forgets to register a handler will fail CI. Don't regress this.
+
+---
+
+## Phase G9 — Unified Operational Inbox (April 20, 2026, COMPLETE)
+
+### Goal
+Single inbox surface for ALL roles that fuses approvals, tasks, AI agent findings, broadcasts, and chat. Replaces the BDM-only EMP_InboxPage and removes the email-only path for AI agent findings.
+
+### What shipped
+| Layer | Change |
+|---|---|
+| Schema | `MessageInbox` + `entity_id`, `folder`, `thread_id`, `parent_message_id`, `requires_action`, `action_type`, `action_payload`, `action_completed_at`, `action_completed_by`. 4 new compound indexes. |
+| Lookups (subscription-ready) | `MESSAGE_FOLDERS` (9 codes), `MESSAGE_ACTIONS` (6 codes), `MESSAGE_ACCESS_ROLES` (6 roles, can_dm/can_broadcast/can_cross_entity). All lazy-seed via `inboxLookups.get*Config(entityId)`. |
+| Lookups (governance) | `ERP_MODULE.MESSAGING` (sort 15) + 5 `ERP_SUB_PERMISSION` rows (`messaging.dm_any_role`, `dm_direct_reports`, `broadcast`, `cross_entity`, `impersonate_reply`) + `MODULE_DEFAULT_ROLES.MESSAGING` (open). |
+| Lookup (cooldown) | `TASK_OVERDUE_COOLDOWN_DAYS.GLOBAL.metadata.days = 1`. Lazy-seeds on first agent run. |
+| Helper module | `backend/erp/utils/inboxLookups.js` (10 exports including `folderForCategory`, `canDm`, `canBroadcast`). |
+| Notification dispatch | `dispatchMultiChannel` + `persistInApp` extended with folder/thread/action affordance fields. 7 notify* helpers flipped from email-only to multi-channel + new `notifyTaskEvent`. |
+| Approval threading | `approvalService.js` passes `approvalRequestId` to `notifyApprovalRequest`/`notifyApprovalDecision` so request → decision → reopen events fold into one thread. |
+| Task overdue agent | `backend/agents/taskOverdueAgent.js` (FREE, weekdays 06:15 Manila). Cooldown via lookup. New Task field `last_overdue_notify_at`. Registered in `agentRegistry.task_overdue` and Agent Dashboard. |
+| AI agents audit | `dailyBriefingAgent`, `orgIntelligenceAgent`, `notificationService.sendInApp` now stamp `entity_id` + `folder` on every `MessageInbox.create` (auto-derived from category via `folderForCategory` for the generic helper). |
+| API | `GET /messages` (folder/thread/counts), `GET /messages/counts`, `GET /messages/folders`, `GET /messages/thread/:id`, `POST /messages/compose`, `POST /messages/:id/reply`, `POST /messages/:id/action`. |
+| Frontend | `pages/common/InboxPage.jsx` (3-pane desktop, stacked mobile ≥360 px) + 4 sub-components in `components/common/inbox/` + `NotificationBell.jsx` in navbar. TASKS folder mounts existing `TaskMiniEditor` (ships intact). `EMP_InboxPage` is now a re-export shim. |
+| Routes | `/inbox` and `/inbox/thread/:thread_id` (allowedRoles = ALL); Sidebar links added to ERP Administration + CRM admin Main + existing BDM Work. |
+| Banners | `PageGuide.inbox` (CRM) refreshed for the new model. New `WorkflowGuide.inbox` (ERP) entry. |
+| Copilot | New tool `DRAFT_REPLY_TO_MESSAGE` (write_confirm) + handler `draftReplyToMessage` in `copilotToolRegistry`. Routes through inbox reply pathway (Rule #20). |
+| Verify scripts | `verify:inbox-wiring` (NEW, 19 checks) + `verify:copilot-wiring` (now 36/36). |
+
+### Migration / deploy order
+1. Deploy schema + helper + lookups (R1–R3).
+2. Run `node backend/scripts/backfillMessageInboxEntityId.js` once (already idempotent; supports `--dry-run`).
+3. Deploy R4 (controller/route expansion).
+4. Deploy R5–R8 (frontend + Copilot tool + verify scripts).
+5. Verify: `npm --prefix backend run verify:inbox-wiring && npm --prefix backend run verify:copilot-wiring && cd frontend && npx vite build`.
+6. Smoke test (per CLAUDE-ERP Phase G9 section).
+
+### Integrity results
+- `node -c` clean on all 19 backend files modified/created.
+- `verify:inbox-wiring` → **19/19 passes, 0 errors, 0 warnings**.
+- `verify:copilot-wiring` → **36/36 passes, 0 errors, 0 warnings** (was 35/35 pre-G9).
+- `npx vite build` (frontend) → built in 12.89 s, no errors.
+
+### Common gotchas (G9)
+- **Agent path normalization.** Handoff said `backend/erp/agents/taskOverdueAgent.js`; canonical is `backend/agents/taskOverdueAgent.js` (matches the rest of the registry). The agent imports models from `../erp/models/*`.
+- **`agent_key` enum was removed in Phase G8.** No need to extend `AgentRun` — registry is the source of truth via `isKnownAgent`.
+- **Folder map duplication.** `CATEGORY_TO_FOLDER` lives in BOTH `inboxLookups.js` AND `backfillMessageInboxEntityId.js`. The verify script asserts the backfill script *references* `CATEGORY_TO_FOLDER` (regex check) so a missing import is caught — but the maps must stay in lockstep manually.
+- **Privileged scope (Rule #21).** `messageInboxController.resolveEntityScope` returns `null` for privileged users with no `?entity_id=` → no entity filter (sees everything). Non-privileged callers always pin to their own `entity_id`. Never silently fall back to `req.user.entity_id` for privileged users.
+- **Action delegation (Rule #20).** `POST /messages/:id/action` does NOT reimplement approve/reject/resolve. It dispatches into `universalApprovalController.approvalHandlers.approval_request` (for approve/reject) and mirrors `varianceAlertController.resolveVarianceAlert`'s permission logic (for resolve). The approve handler enforces sub-perms + period locks — the inbox endpoint is a thin facade.
+- **Entity field on existing AI-agent rows.** Pre-G9 `MessageInbox` rows have `entity_id = null` until the migration runs. The new list endpoint scopes by entity for non-privileged users — those legacy rows will not appear for them after the migration unless backfilled. Run the backfill before users notice.
+- **Task editor URL.** `TaskMiniEditor` is mounted ONLY when `activeFolder === 'TASKS'` AND the task was successfully fetched via `GET /erp/tasks/:id`. If the underlying task was deleted (orphaned message), the standard `InboxThreadView` renders instead — graceful fallback.
+
+---
+
+## Phase G10 — Tasks ↔ KPI Alignment + Gantt + Kanban + Bulk Ops ✅ (April 20, 2026)
+
+### Scope
+Align `/erp/tasks` with the **2026 Sales GOAL and POA** (source:
+`C:\Users\LENOVO\OneDrive\Documents\2026\TRAINING\2026 Sales GOAL and POA.pdf`).
+5 growth drivers, 13 KPIs, responsibility tags, revenue bands — all
+lookup-driven and per-entity so subscribers configure without a code
+deploy. Four view tabs on `/erp/tasks`: List, Gantt, Kanban, Revenue
+Bridge.
+
+### What shipped
+
+| Area | Details |
+|---|---|
+| Task model | Added (all optional): `growth_driver_code`, `kpi_code`, `goal_period` (`YYYY` \| `YYYY-QN` \| `YYYY-MM`), `milestone_label`, `start_date`, `kpi_ref_id`, `responsibility_tags[]`. New index `{ entity_id, growth_driver_code, goal_period, status }`. |
+| Lookup seeds | `GROWTH_DRIVER` (5 POA drivers), `KPI_CODE` (13 KPIs — 3 existing reused + 10 new), `RESPONSIBILITY_TAG` (4 POA tags: BDM, PRESIDENT, EBDM, OM), `TASK_BULK_NOTIFY_THRESHOLD` (scalar, default 5). Lazy-seeded per entity via `backend/erp/utils/kpiLookups.js` mirroring the G9 `inboxLookups.js` pattern. |
+| New KPI codes | `TIME_TO_ACCREDITATION_DAYS`, `FORMULARY_APPROVAL_RATE`, `MONTHLY_REORDER_FREQ`, `LOST_SALES_INCIDENTS`, `INVENTORY_TURNOVER`, `EXPIRY_RETURNS`, `MD_ENGAGEMENT_COVERAGE`, `HOSP_REORDER_CYCLE_TIME`, `VOLUME_RETENTION_POST_PI`, `GROSS_MARGIN_PER_SKU`. All start with `metadata.auto_compute = false` (manual data source) — no `salesGoalService.computeKpi` switch cases added in G10. |
+| Controller | `listTasks` grew: `growth_driver_code` / `kpi_code` / `goal_period` / `responsibility_tags` / `due_from` / `due_to` / `q` (regex-safe free-text). `createTask` + `updateTask` validate driver + KPI against per-entity lookup and reject on unknown codes or driver/KPI misalignment. New endpoints: `listDrivers`, `listKpiCodes?driver=`, `listByDriver` (POA-ordered groups for Gantt), `bulkUpdate` (whitelisted patch + per-task auth + rollup notifications), `bulkDelete` (creator-or-privileged gate). |
+| Routes | `GET /erp/tasks/drivers`, `GET /erp/tasks/kpi-codes`, `GET /erp/tasks/by-driver`, `POST /erp/tasks/bulk-update`, `POST /erp/tasks/bulk-delete` — all registered **before** `:id` patterns so static paths resolve first. |
+| Bulk-notify rollup | Per-assignee event count ≤ `TASK_BULK_NOTIFY_THRESHOLD` → fire N `notifyTaskEvent` (preserves taskId threading). Count > threshold → single `dispatchMultiChannel` summary row in the TASKS folder with `action_type=open_link` + `deep_link=/erp/tasks?ids=<csv>`. Prevents 50-row inbox spam on bulk reassignment. |
+| Frontend | `TasksGantt.jsx` (POA-driver-grouped CSS Gantt with week/month/quarter zoom, today marker, responsibility-tag chips, drawer-mounted `TaskMiniEditor`), `TasksKanban.jsx` (5-column HTML5 drag-to-column, optimistic + revert), `RevenueBridge.jsx` (driver × status progress + total vs PHP 10M increment goal), `TaskMiniEditor.jsx` extended with driver/KPI/period chips + Owners multi-select tag picker. `TasksPage.jsx` rewritten with 4 tabs, advanced filter bar (driver/KPI cascade, period, priority, date range, search), bulk action bar (status/priority/delete), Owners column, and `inbox:updated` event dispatch after bulk ops. |
+| Banners | `WorkflowGuide.tasks` refreshed: 8 steps covering all 4 tabs + Owners tags + bulk-notify rollup + Copilot path. |
+| Verify scripts | New `verify:task-kpi-wiring` (lookup presence, lazy-seed null safety, controller exports, route mounts, frontend imports, rollup wiring, inbox-sync dispatch). No impact on `verify:copilot-wiring` (36/36) or `verify:inbox-wiring`. |
+
+### Migration / deploy order
+1. Deploy R1 (model + lookup util + controller + routes). All fields are optional; no schema migration required for existing data.
+2. Run `node backend/scripts/backfillTaskKpiFields.js --dry-run` — documentation-only, verifies field counts on existing rows. Produces no writes.
+3. Deploy R2 (frontend components + TasksPage + WorkflowGuide). Verify: `cd frontend && npx vite build`.
+4. Verify: `npm --prefix backend run verify:task-kpi-wiring` passes.
+5. Optional smoke: create one task tagged HOSPITAL_ACCREDITATION + PCT_HOSP_ACCREDITED + 2026-Q1 → verify it appears in all four tabs correctly. Bulk-reassign 6 tasks to one BDM → verify single rollup inbox row (threshold=5).
+
+### Integrity results
+- `node -c` clean on all backend files modified/created.
+- `verify:task-kpi-wiring` → **ALL CHECKS PASS**.
+- `cd frontend && npx vite build` → clean.
+- `verify:copilot-wiring` → **36/36** (unchanged; G10 adds no Copilot tools).
+- `verify:inbox-wiring` → unchanged.
+
+### Common gotchas (G10)
+- **Route order.** `/drivers`, `/kpi-codes`, `/by-driver`, `/bulk-update`, `/bulk-delete` MUST be registered before `PATCH /:id` and `DELETE /:id` — otherwise Express matches `bulk-update` as an ObjectId and shadows the bulk handler.
+- **KPI/driver alignment.** `createTask` / `updateTask` / `bulkUpdate` reject with 400 if `kpi_code`'s `metadata.driver` doesn't match `growth_driver_code`. Lookup rows with no `metadata.driver` skip the check (migration-friendly).
+- **Milestone-only for new KPIs.** The 10 new KPI codes have `metadata.auto_compute = false` — `salesGoalService.computeKpi` has no cases for them. Flip `auto_compute` + add a case in a later phase when the rule is defined. The Gantt + Kanban + Revenue Bridge work on task state, not KPI actuals.
+- **Bulk-notify rollup.** Threshold is per-assignee, not global. If one bulk reassigns 4 tasks to Alice and 8 tasks to Bob (threshold=5), Alice gets 4 per-task rows (preserving threading) and Bob gets 1 summary row with a deep-link to the filtered list.
+- **Drawer `TaskMiniEditor`.** Both Gantt and Kanban open the same mini-editor in a side drawer. Rule #20 — no parallel detail view. The drawer component dispatches `inbox:updated` after every save so the NotificationBell + InboxPage refresh.
+- **Responsibility tags are freeform at save time.** Controller's `sanitizeTags` upper-cases + trims + dedupes but does NOT reject unknown codes. `validateResponsibilityTags` exists in `kpiLookups` for future strict contexts (importer) but taskController keeps it flexible so admins can tag with entity-specific codes before updating the lookup.
+- **Privileged `scope=all` is opt-in.** `RevenueBridge.jsx` tries `scope=all` first; on 403 falls back to `scope=mine` silently so the widget remains useful for non-privileged users. No toast on the fallback path.
+- **Goal period format.** `sanitizePeriod` accepts `YYYY`, `YYYY-QN`, `YYYY-MM` only. Anything else is cleared to null. `updateTask` returns 400 on non-empty-but-invalid input (refuses to silently lose the value).
+- **G10.D (POA Excel import) deferred.** The 2026-POA-Tasks.xlsx template is not finalized. Schema and controller placeholder exist in the plan (see `g10-tasks-kpi-gantt.md` G10.D section) — defer until the admin-side Excel sheet is confirmed.

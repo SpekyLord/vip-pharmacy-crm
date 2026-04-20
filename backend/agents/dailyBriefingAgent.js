@@ -64,6 +64,8 @@ async function findPresidentUserForEntity(entityId) {
 }
 
 async function postBriefingMessage({ entityId, recipient, title, body }) {
+  // Phase G9.R2 — entity_id + folder so the briefing surfaces in the
+  // recipient's "AI Agents" folder of the unified inbox (Phase G9.A).
   return MessageInbox.create({
     senderName: 'Daily Briefing',
     senderRole: 'system',
@@ -74,6 +76,8 @@ async function postBriefingMessage({ entityId, recipient, title, body }) {
     priority: 'normal',
     recipientRole: recipient.role,
     recipientUserId: recipient._id,
+    entity_id: entityId || recipient.entity_id || null,
+    folder: 'AI_AGENT_REPORTS',
   });
 }
 
