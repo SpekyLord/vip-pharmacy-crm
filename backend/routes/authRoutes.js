@@ -33,18 +33,25 @@ const {
   loginValidation,
   registerValidation,
 } = require('../middleware/validation');
+const {
+  getRateLimitWindowMs,
+  getAuthRateLimitMax,
+  formatMinutesLabel,
+} = require('../config/runtime');
 
 // Skip route-level rate limiting in development to prevent lockouts during testing
 const isDev = process.env.NODE_ENV !== 'production';
 const noop = (req, res, next) => next();
+const authWindowMs = getRateLimitWindowMs();
+const authWindowMinutes = Math.max(1, Math.ceil(authWindowMs / 60000));
 
 // Rate limiting for auth routes (security: prevent brute force attacks)
 const authLimiter = isDev ? noop : rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 20, // 20 attempts per window
+  windowMs: authWindowMs,
+  max: getAuthRateLimitMax(),
   message: {
     success: false,
-    message: 'Too many authentication attempts. Please try again after 15 minutes.',
+    message: `Too many authentication attempts. Please try again after ${formatMinutesLabel(authWindowMinutes)}.`,
   },
   standardHeaders: true,
   legacyHeaders: false,
@@ -52,8 +59,8 @@ const authLimiter = isDev ? noop : rateLimit({
 
 // Separate rate limiter for refresh-token (higher limit since frontend may fire multiple parallel requests)
 const refreshLimiter = isDev ? noop : rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 60, // Allow more since each page load can trigger multiple refreshes
+  windowMs: authWindowMs,
+  max: Math.max(60, getAuthRateLimitMax()),
   message: {
     success: false,
     message: 'Too many refresh attempts. Please try again later.',

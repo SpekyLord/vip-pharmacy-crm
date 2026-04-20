@@ -13,7 +13,7 @@
  * Route: /admin/activity
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Activity,
   MapPin,
@@ -310,6 +310,7 @@ const ActivityMonitor = () => {
     peakHour: '—',
   });
   const [currentTime, setCurrentTime] = useState(new Date());
+  const fetchControllerRef = useRef(null);
 
   // Modal state
   const [selectedActivity, setSelectedActivity] = useState(null);
@@ -320,6 +321,10 @@ const ActivityMonitor = () => {
      --------------------------------------------------------------------------- */
 
   const fetchStats = useCallback(async () => {
+    if (fetchControllerRef.current) fetchControllerRef.current.abort();
+    const controller = new AbortController();
+    fetchControllerRef.current = controller;
+    const { signal } = controller;
     try {
       const todayISO = new Date().toISOString().split('T')[0];
 
@@ -327,6 +332,8 @@ const ActivityMonitor = () => {
         auditLogService.getStats({ date: todayISO }).catch(() => ({ data: {} })),
         visitService.getAll({ dateFrom: todayISO, dateTo: todayISO, limit: 0 }).catch(() => ({ pagination: { total: 0 } })),
       ]);
+
+      if (signal.aborted) return;
 
       const auditData = auditStatsRes.data || {};
       const visitsLogged = visitsRes.pagination?.total ?? (visitsRes.data?.length || 0);
@@ -343,6 +350,7 @@ const ActivityMonitor = () => {
         peakHour,
       });
     } catch (err) {
+      if (err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') return;
       console.error('Failed to fetch activity stats:', err);
     }
   }, []);
@@ -362,7 +370,10 @@ const ActivityMonitor = () => {
   useEffect(() => {
     fetchStats();
     const interval = setInterval(fetchStats, 60000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (fetchControllerRef.current) fetchControllerRef.current.abort();
+    };
   }, [fetchStats]);
 
   /* ---------------------------------------------------------------------------

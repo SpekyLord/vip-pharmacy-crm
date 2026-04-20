@@ -18,6 +18,11 @@ const { catchAsync } = require('../middleware/errorHandler');
 const { logAuditEvent, AuditActions } = require('../utils/auditLogger');
 const { sendPasswordResetEmail } = require('../services/emailService');
 const { ROLES } = require('../constants/roles');
+const {
+  getLoginMaxAttempts,
+  getLoginLockoutDurationMinutes,
+  formatMinutesLabel,
+} = require('../config/runtime');
 
 /**
  * Hash a refresh token with SHA-256 for secure storage.
@@ -25,6 +30,9 @@ const { ROLES } = require('../constants/roles');
  */
 const hashRefreshToken = (token) =>
   crypto.createHash('sha256').update(token).digest('hex');
+
+const buildLockoutMessage = () =>
+  `Too many failed login attempts. Account is temporarily locked for ${formatMinutesLabel(getLoginLockoutDurationMinutes())}.`;
 
 /**
  * @desc    Register a new user
@@ -146,7 +154,7 @@ const login = catchAsync(async (req, res) => {
   if (!isMatch) {
     // Increment failed login attempts and potentially lock account
     const attempts = await user.handleFailedLogin();
-    const remainingAttempts = 5 - attempts;
+    const remainingAttempts = Math.max(getLoginMaxAttempts() - attempts, 0);
 
     // Log failed login attempt
     await logAuditEvent(AuditActions.LOGIN_FAILURE, {
@@ -167,7 +175,7 @@ const login = catchAsync(async (req, res) => {
       });
       return res.status(423).json({
         success: false,
-        message: 'Too many failed login attempts. Account is temporarily locked for 15 minutes.',
+        message: buildLockoutMessage(),
         data: {
           lockedUntil: user.lockoutUntil,
           remainingSeconds: user.getLockoutRemaining(),

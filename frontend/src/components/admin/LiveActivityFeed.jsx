@@ -19,7 +19,7 @@
  * @prop {function} onActivityClick - Callback when activity item is clicked (receives activity)
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, memo } from 'react';
 import {
   MapPin,
   LogIn,
@@ -824,4 +824,4 @@ const ActivityItem = ({ activity, onClick, compact = false }) => {
   );
 };
 
-export default LiveActivityFeed;
+export default memo(LiveActivityFeed);

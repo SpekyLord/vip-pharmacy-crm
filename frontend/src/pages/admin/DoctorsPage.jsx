@@ -8,7 +8,7 @@
  * - Add/Edit modal
  */
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { Stethoscope, RefreshCw, Sparkles, CheckSquare, Square, AlertTriangle, X } from 'lucide-react';
 import Navbar from '../../components/common/Navbar';
@@ -484,6 +484,9 @@ const doctorsPageStyles = `
 `;
 
 const DoctorsPage = () => {
+  const fetchDoctorsControllerRef = useRef(null);
+  const fetchClientsControllerRef = useRef(null);
+
   const [doctors, setDoctors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -512,6 +515,14 @@ const DoctorsPage = () => {
     }, 300);
     return () => clearTimeout(t);
   }, [searchInput]);
+
+  // Abort in-flight requests on unmount
+  useEffect(() => {
+    return () => {
+      fetchDoctorsControllerRef.current?.abort();
+      fetchClientsControllerRef.current?.abort();
+    };
+  }, []);
 
   const [regularClients, setRegularClients] = useState([]);
   const [regularLoading, setRegularLoading] = useState(false);
@@ -592,6 +603,10 @@ const DoctorsPage = () => {
   }, []);
 
   const fetchDoctors = useCallback(async () => {
+    fetchDoctorsControllerRef.current?.abort();
+    fetchDoctorsControllerRef.current = new AbortController();
+    const signal = fetchDoctorsControllerRef.current.signal;
+
     try {
       setLoading(true);
       setError(null);
@@ -609,7 +624,7 @@ const DoctorsPage = () => {
       if (filters.assignedTo) params.assignedTo = filters.assignedTo;
       if (filters.vipClientType) params.clientType = filters.vipClientType;
 
-      const response = await doctorService.getAll(params);
+      const response = await doctorService.getAll(params, signal);
       const taggedDoctors = (response.data || []).map(doc => ({ ...doc, _clientType: 'vip' }));
       setDoctors(taggedDoctors);
       setPagination((prev) => ({
@@ -617,8 +632,10 @@ const DoctorsPage = () => {
         total: response.pagination?.total || 0,
         pages: response.pagination?.pages || 0,
       }));
-    } catch {
-      setError('Failed to load doctors. Please try again.');
+    } catch (err) {
+      if (err?.name !== 'CanceledError' && err?.code !== 'ERR_CANCELED') {
+        setError('Failed to load doctors. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -634,6 +651,10 @@ const DoctorsPage = () => {
   }, [refreshAfterCleanup]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchRegularClients = useCallback(async () => {
+    fetchClientsControllerRef.current?.abort();
+    fetchClientsControllerRef.current = new AbortController();
+    const signal = fetchClientsControllerRef.current.signal;
+
     try {
       setRegularLoading(true);
       const params = {
@@ -642,7 +663,7 @@ const DoctorsPage = () => {
       };
       if (filters.search) params.search = filters.search;
 
-      const response = await clientService.getAll(params);
+      const response = await clientService.getAll(params, signal);
       const clientsWithType = (response.data || []).map(client => ({
         ...client,
         _clientType: 'regular',

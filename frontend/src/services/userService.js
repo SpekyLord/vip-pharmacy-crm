@@ -10,8 +10,8 @@ import api from './api';
 
 const userService = {
   // Get all users with optional filters (admin only)
-  getAll: async (params = {}) => {
-    const response = await api.get('/users', { params });
+  getAll: async (params = {}, signal) => {
+    const response = await api.get('/users', { params, signal });
     return response.data;
   },
 

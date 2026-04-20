@@ -151,8 +151,14 @@ const processVisitPhotos = async (req, res, next) => {
     const now = new Date();
 
     for (const file of req.files) {
-      // Compress image before upload (3-5 MB → ~300-500 KB)
-      const { buffer: compressed, mimetype: compressedMime } = await compressImage(file.buffer, file.mimetype);
+      // Only compress if file exceeds 500 KB — avoids CPU burn on small photos
+      let compressed, compressedMime;
+      if (file.size > 500 * 1024) {
+        ({ buffer: compressed, mimetype: compressedMime } = await compressImage(file.buffer, file.mimetype));
+      } else {
+        compressed = file.buffer;
+        compressedMime = file.mimetype;
+      }
 
       // Compute MD5 hash on compressed buffer for duplicate detection
       const hash = crypto.createHash('md5').update(compressed).digest('hex');

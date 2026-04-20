@@ -43,7 +43,9 @@ exports.invoke = catchAsync(async (req, res) => {
 // Returns active feature rows for the current entity. Frontend uses this to
 // decide whether to show buttons in RejectionBanner / ApprovalManager.
 exports.listFeatures = catchAsync(async (req, res) => {
-  if (!req.entityId) return res.status(400).json({ success: false, message: 'Entity context required' });
+  // Authenticated users without ERP entity context should degrade cleanly.
+  // The frontend already treats an empty list as "no AI features available".
+  if (!req.entityId) return res.json({ success: true, data: [] });
   const items = await Lookup.find({
     entity_id: req.entityId,
     category: 'AI_COWORK_FEATURES',

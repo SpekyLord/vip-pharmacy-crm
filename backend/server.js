@@ -20,23 +20,19 @@ const { randomUUID } = require('crypto');
 const dotenv = require('dotenv');
 
 const connectDB = require('./config/db');
+const {
+  parseIntEnv,
+  parseBooleanEnv,
+  getClientUrl,
+  getRateLimitWindowMs,
+  getGeneralRateLimitMax,
+  getAuthRateLimitMax,
+  getUserRateLimitMax,
+} = require('./config/runtime');
 const { errorHandler, notFound } = require('./middleware/errorHandler');
 const { logInfo, logWarn, logError } = require('./utils/logger');
 
 dotenv.config({ path: path.join(__dirname, '.env') });
-
-const parseIntEnv = (name, fallback) => {
-  const raw = process.env[name];
-  if (raw === undefined || raw === null || raw === '') return fallback;
-  const parsed = parseInt(raw, 10);
-  return Number.isNaN(parsed) ? fallback : parsed;
-};
-
-const parseBooleanEnv = (name, fallback = false) => {
-  const raw = process.env[name];
-  if (raw === undefined || raw === null || raw === '') return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(String(raw).toLowerCase());
-};
 
 const isProduction = () => process.env.NODE_ENV === 'production';
 const shouldSkipDbConnect = () => parseBooleanEnv('SKIP_DB_CONNECT', false);
@@ -123,9 +119,13 @@ const buildCorsOptions = () => ({
       return callback(new Error('Not allowed by CORS'));
     }
 
+    const configuredClientUrl = getClientUrl();
     const devAllowedOrigins = [
-      'http://localhost:5173',
-      'http://127.0.0.1:5173',
+      ...new Set([
+        configuredClientUrl,
+        'http://localhost:5173',
+        'http://127.0.0.1:5173',
+      ].filter(Boolean)),
       /^http:\/\/10\.\d+\.\d+\.\d+:5173$/,
       /^http:\/\/192\.168\.\d+\.\d+:5173$/,
     ];
@@ -151,10 +151,10 @@ const createRateLimiters = () => {
     return { generalLimiter: noop, authLimiter: noop, userLimiter: noop };
   }
 
-  const windowMs = parseIntEnv('RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000);
-  const generalMax = parseIntEnv('RATE_LIMIT_GENERAL_MAX', 500);
-  const authMax = parseIntEnv('RATE_LIMIT_AUTH_MAX', 50);
-  const userMax = parseIntEnv('RATE_LIMIT_USER_MAX', 300);
+  const windowMs = getRateLimitWindowMs();
+  const generalMax = getGeneralRateLimitMax();
+  const authMax = getAuthRateLimitMax();
+  const userMax = getUserRateLimitMax();
 
   const limiterOptions = {
     windowMs,

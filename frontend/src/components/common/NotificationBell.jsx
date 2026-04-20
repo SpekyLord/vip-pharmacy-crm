@@ -27,6 +27,7 @@ const styles = `
 `;
 
 const POLL_MS = 30_000;
+const EVENT_DEBOUNCE_MS = 2_000;
 
 export default function NotificationBell() {
   const [counts, setCounts] = useState({ unread: 0, action_required: 0 });
@@ -47,10 +48,15 @@ export default function NotificationBell() {
   useEffect(() => {
     refresh();
     const interval = setInterval(refresh, POLL_MS);
-    const onInboxUpdate = () => refresh();
+    let debounceTimer = null;
+    const onInboxUpdate = () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(refresh, EVENT_DEBOUNCE_MS);
+    };
     window.addEventListener('inbox:updated', onInboxUpdate);
     return () => {
       clearInterval(interval);
+      clearTimeout(debounceTimer);
       window.removeEventListener('inbox:updated', onInboxUpdate);
     };
   }, [refresh]);

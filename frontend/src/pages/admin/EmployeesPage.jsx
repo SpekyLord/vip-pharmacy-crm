@@ -7,7 +7,7 @@
  * - Account status management
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import toast from 'react-hot-toast';
 import { Users, UserCheck, UserX, RefreshCw } from 'lucide-react';
 import Navbar from '../../components/common/Navbar';
@@ -284,6 +284,8 @@ const employeesPageStyles = `
 `;
 
 const EmployeesPage = () => {
+  const fetchControllerRef = useRef(null);
+
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -299,15 +301,22 @@ const EmployeesPage = () => {
     isActive: '',
   });
 
-  // Calculate stats
-  const stats = {
+  const stats = useMemo(() => ({
     total: employees.length,
     active: employees.filter(e => e.isActive).length,
     inactive: employees.filter(e => !e.isActive).length,
-  };
+  }), [employees]);
 
-  // Fetch employees with current filters and pagination
+  // Abort in-flight requests on unmount
+  useEffect(() => {
+    return () => fetchControllerRef.current?.abort();
+  }, []);
+
   const fetchEmployees = useCallback(async () => {
+    fetchControllerRef.current?.abort();
+    fetchControllerRef.current = new AbortController();
+    const signal = fetchControllerRef.current.signal;
+
     try {
       setLoading(true);
       setError(null);
@@ -321,7 +330,7 @@ const EmployeesPage = () => {
       if (filters.role) params.role = filters.role;
       if (filters.isActive !== '') params.isActive = filters.isActive;
 
-      const response = await userService.getAll(params);
+      const response = await userService.getAll(params, signal);
       setEmployees(response.data || []);
       setPagination((prev) => ({
         ...prev,
@@ -329,8 +338,10 @@ const EmployeesPage = () => {
         pages: response.pagination?.pages || 0,
       }));
     } catch (err) {
-      console.error('Failed to fetch employees:', err);
-      setError('Failed to load BDMs. Please try again.');
+      if (err?.name !== 'CanceledError' && err?.code !== 'ERR_CANCELED') {
+        console.error('Failed to fetch employees:', err);
+        setError('Failed to load BDMs. Please try again.');
+      }
     } finally {
       setLoading(false);
     }

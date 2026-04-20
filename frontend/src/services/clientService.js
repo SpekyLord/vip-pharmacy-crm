@@ -7,8 +7,8 @@
 import api from './api';
 
 const clientService = {
-  getAll: async (params = {}) => {
-    const response = await api.get('/clients', { params });
+  getAll: async (params = {}, signal) => {
+    const response = await api.get('/clients', { params, signal });
     return response.data;
   },
 
