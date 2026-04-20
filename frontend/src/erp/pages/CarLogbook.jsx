@@ -587,7 +587,7 @@ export default function CarLogbook() {
           {/* Read-only banner when privileged viewer is inspecting someone else's logbook */}
           {isPrivileged && selectedBdmId && !viewingSelf && (
             <div style={{ padding: 10, marginBottom: 12, borderRadius: 8, background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: 13, color: '#1e40af' }}>
-              Viewing <strong>{bdmOptions.find(b => b._id === selectedBdmId)?.name || 'BDM'}</strong>'s car logbook — read-only. Only the BDM can edit their own entries.
+              Viewing <strong>{bdmOptions.find(b => b._id === selectedBdmId)?.name || 'BDM'}</strong>&apos;s car logbook — read-only. Only the BDM can edit their own entries.
             </div>
           )}
           {isPrivileged && !selectedBdmId && (
