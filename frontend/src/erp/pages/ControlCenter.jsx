@@ -57,7 +57,10 @@ const SECTIONS = {
   'agent-settings': lazy(() => import('./AgentSettings')),
   'ocr-settings': lazy(() => import('./ErpOcrSettingsPanel')),
   'erp-settings': lazy(() => import('./ErpSettingsPanel')),
-  'lookups': lazy(() => import('./LookupManager'))
+  'lookups': lazy(() => import('./LookupManager')),
+  // Phase G9.R8 — Inbox Retention admin. Lookup-driven (INBOX_RETENTION +
+  // INBOX_ACK_DEFAULTS) with preview + run-now gated by messaging.retention_manage.
+  'inbox-retention': lazy(() => import('./InboxRetentionSettings').then(m => ({ default: m.InboxRetentionSettingsContent })))
 };
 
 const CATEGORY_CONFIG = [
@@ -154,7 +157,11 @@ const CATEGORY_CONFIG = [
     icon: Settings,
     items: [
       { key: 'erp-settings', label: 'ERP Settings', icon: Settings },
-      { key: 'lookups', label: 'Lookup Tables', icon: List }
+      { key: 'lookups', label: 'Lookup Tables', icon: List },
+      // Phase G9.R8 — Inbox Retention. Surfaced here (not under Intelligence)
+      // because the agent is rule-based and the tuning knobs are day-counts
+      // that admins + finance touch without opening the generic lookup UI.
+      { key: 'inbox-retention', label: 'Inbox Retention', icon: Archive }
     ]
   }
 ];
@@ -425,6 +432,17 @@ const DEPENDENCY_GUIDE = {
       { action: 'Before assigning roles', deps: 'Add people in People Master first — only active people appear in the assignment list', section: 'people' },
       { action: 'When you assign a functional role', deps: 'KPIs linked to that function will appear in the person\'s self-rating form', section: 'kpi-library' },
       { action: 'When you remove a role', deps: 'The person will no longer see KPIs for that function in future self-rating periods', section: null },
+    ]
+  },
+  'inbox-retention': {
+    title: 'Inbox Retention Dependencies',
+    items: [
+      { action: 'When you tighten a retention window', deps: 'Messages falling inside the new window get soft-deleted on the next nightly run (2 AM Manila). The grace period is a second safety net — hard purge only kicks in after GRACE_PERIOD_DAYS on top.', section: null },
+      { action: 'When you disable a retention rule', deps: 'Use Active/Inactive on the row to stop that branch from contributing candidates. ENABLED=false kills the whole agent for this entity — nothing is marked or purged.', section: null },
+      { action: 'When you change an acknowledgement default', deps: 'Only affects NEW messages created after the save — existing rows keep their must_acknowledge flag. Compose-time override always wins.', section: null },
+      { action: 'Use Preview before Run Now', deps: 'Preview is a dry-run — it counts candidates without writing. Run Now is destructive (hard-deletes stage-2 candidates older than the grace period).', section: null },
+      { action: 'Missing the sub-permission?', deps: 'messaging.retention_manage must be granted on the user\'s Access Template. Default role grants are seeded via ERP_SUB_PERMISSION lookup.', section: 'access-templates' },
+      { action: 'Prefer editing raw JSON?', deps: 'Every row here is a Lookup entry — INBOX_RETENTION + INBOX_ACK_DEFAULTS. Lookup Tables surfaces the full metadata editor (priorities, min/max, folders, categories, roles).', section: 'lookups' },
     ]
   },
 };

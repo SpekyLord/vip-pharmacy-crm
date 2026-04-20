@@ -13,7 +13,7 @@
  *   - ACTION_REQUIRED: rows with requires_action && !action_completed_at
  *   - APPROVALS / TASKS / AI_AGENT_REPORTS / ANNOUNCEMENTS / CHAT: folder match
  *   - SENT:            messages I sent
- *   - ARCHIVE:         isArchived = true
+ *   - ARCHIVE:         messages the current user self-archived (archivedBy contains me)
  *
  * Task folder swap
  *   When folder=TASKS, the right pane mounts <TaskMiniEditor> instead of the
@@ -243,6 +243,91 @@ export default function InboxPage() {
     }
   }, [refreshList]);
 
+  // ── Phase G9.R8 — Archive / Unarchive / Acknowledge / Read-receipts ──
+  // All four delegate to messageService; each refreshes the list (so
+  // badge counts update) and refreshes the active message DTO (so the
+  // ACK chip / Archive/Unarchive label flip without a full re-open).
+  const refreshActive = useCallback(async (id) => {
+    try {
+      const t = await messageService.getThread(id); // cheap re-fetch for the thread
+      if (t?.data?.length) {
+        const updated = t.data.find((m) => String(m._id) === String(id)) || t.data[0];
+        setActiveMessage(updated);
+        setThread(t.data);
+      }
+    } catch {
+      /* best-effort */
+    }
+  }, []);
+
+  const handleArchiveToggle = useCallback(async (id, nextArchived) => {
+    setActionBusy(true);
+    try {
+      if (nextArchived) await messageService.archive(id);
+      else await messageService.unarchive(id);
+      toast.success(nextArchived ? 'Archived' : 'Restored to inbox');
+      await refreshActive(id);
+      refreshList();
+      window.dispatchEvent(new Event('inbox:updated'));
+    } catch (err) {
+      toast.error(err?.response?.data?.message || err?.message || 'Archive failed');
+    } finally {
+      setActionBusy(false);
+    }
+  }, [refreshActive, refreshList]);
+
+  const handleAcknowledgeMessage = useCallback(async (id) => {
+    setActionBusy(true);
+    try {
+      const res = await messageService.acknowledge(id);
+      if (res?.data) setActiveMessage(res.data);
+      toast.success('Acknowledged');
+      refreshList();
+      window.dispatchEvent(new Event('inbox:updated'));
+    } catch (err) {
+      toast.error(err?.response?.data?.message || err?.message || 'Could not acknowledge');
+    } finally {
+      setActionBusy(false);
+    }
+  }, [refreshList]);
+
+  const handleViewReceipts = useCallback(async (id) => {
+    const res = await messageService.getAckStatus(id);
+    return res?.data || null;
+  }, []);
+
+  const handleMarkAllRead = useCallback(async () => {
+    setActionBusy(true);
+    try {
+      const res = await messageService.markAllRead(activeFolder);
+      const modified = res?.data?.modified || 0;
+      toast.success(modified > 0 ? `Marked ${modified} read` : 'Nothing to mark read');
+      refreshList();
+      window.dispatchEvent(new Event('inbox:updated'));
+    } catch (err) {
+      toast.error(err?.response?.data?.message || err?.message || 'Could not mark all read');
+    } finally {
+      setActionBusy(false);
+    }
+  }, [activeFolder, refreshList]);
+
+  const handleBulkArchive = useCallback(async (ids) => {
+    if (!Array.isArray(ids) || ids.length === 0) return;
+    setActionBusy(true);
+    try {
+      const res = await messageService.bulkArchive(ids);
+      const modified = res?.data?.modified || 0;
+      toast.success(`Archived ${modified} message${modified === 1 ? '' : 's'}`);
+      refreshList();
+      setActiveMessage((curr) => (curr && ids.includes(String(curr._id)) ? null : curr));
+      window.dispatchEvent(new Event('inbox:updated'));
+    } catch (err) {
+      toast.error(err?.response?.data?.message || err?.message || 'Bulk archive failed');
+    } finally {
+      setActionBusy(false);
+    }
+  }, [refreshList]);
+
   // ── Reply handler ────────────────────────────────────────────────
   const handleReply = useCallback(async (id, body) => {
     setActionBusy(true);
@@ -319,6 +404,9 @@ export default function InboxPage() {
                 activeId={activeMessage?._id}
                 onSelect={openMessage}
                 loading={loading}
+                onMarkAllRead={handleMarkAllRead}
+                onBulkArchive={handleBulkArchive}
+                busy={actionBusy}
               />
             </section>
 
@@ -342,6 +430,17 @@ export default function InboxPage() {
                   actionsConfig={actionsConfig}
                   onAction={handleAction}
                   onReply={handleReply}
+                  onArchiveToggle={handleArchiveToggle}
+                  onAcknowledge={handleAcknowledgeMessage}
+                  // Only expose read-receipts to sender + privileged roles.
+                  // Parent-side gate mirrors the backend check so the button
+                  // only appears when the API will actually return data.
+                  onViewReceipts={
+                    activeMessage && (
+                      String(activeMessage.senderUserId) === String(user?._id)
+                      || ['president', 'ceo', 'admin', 'finance'].includes(user?.role)
+                    ) ? handleViewReceipts : undefined
+                  }
                   onClose={() => setActiveMessage(null)}
                   busy={actionBusy}
                 />

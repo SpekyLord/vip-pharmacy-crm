@@ -512,6 +512,10 @@ const MODULE_QUERIES = [
     sub_key: 'approve_perdiem',
     query: async (entityId) => {
       const ApprovalRequest = require('../models/ApprovalRequest');
+      const SmerEntry = require('../models/SmerEntry');
+      const Settings = require('../models/Settings');
+      const { computePerdiemAmount } = require('../services/perdiemCalc');
+
       const pendingOverrides = await ApprovalRequest.find({
         entity_id: entityId,
         module: 'PERDIEM_OVERRIDE',
@@ -521,25 +525,82 @@ const MODULE_QUERIES = [
         .sort({ createdAt: -1 })
         .lean();
 
-      return pendingOverrides.map(req => ({
-        id: req._id.toString(),
-        module: 'PERDIEM_OVERRIDE',
-        doc_type: req.doc_type || 'SMER_DAILY_ENTRY',
-        doc_id: req.doc_id?.toString(),
-        doc_ref: req.doc_ref,
-        description: req.description,
-        amount: req.amount,
-        submitted_by: req.requested_by?.name || 'Unknown',
-        submitted_at: req.requested_at,
-        status: req.status,
-        current_action: 'approve',
-        action_key: 'perdiem_override',
-        approve_data: {
-          type: 'perdiem_override',
+      if (pendingOverrides.length === 0) return [];
+
+      // Batch-fetch linked SMER entries and populate hospital names for coverage summary
+      const smerIds = [...new Set(pendingOverrides.map(r => r.doc_id?.toString()).filter(Boolean))];
+      const smers = smerIds.length
+        ? await SmerEntry.find({ _id: { $in: smerIds } })
+            .populate('daily_entries.hospital_ids', 'name')
+            .populate('daily_entries.hospital_id', 'name')
+            .lean()
+        : [];
+      const smerMap = new Map(smers.map(s => [s._id.toString(), s]));
+      const settings = await Settings.getSettings();
+
+      return pendingOverrides.map(req => {
+        const smer = req.doc_id ? smerMap.get(req.doc_id.toString()) : null;
+        const entryId = req.metadata?.entry_id
+          || req.description?.match(/Entry ID: (.+)$/)?.[1]
+          || null;
+        const entry = smer && entryId
+          ? (smer.daily_entries || []).find(e => e._id?.toString() === entryId)
+          : null;
+
+        let coverage = null;
+        if (entry && smer) {
+          const requestedTier = req.metadata?.override_tier
+            || req.description?.match(/→ (FULL|HALF)/)?.[1]
+            || null;
+          const requestedMd = requestedTier === 'FULL' ? 999 : (requestedTier === 'HALF' ? 3 : entry.md_count);
+          const requestedAmount = requestedTier
+            ? computePerdiemAmount(requestedMd, smer.perdiem_rate, settings).amount
+            : req.amount;
+          const hospitals = (entry.hospital_ids || []).map(h => h?.name).filter(Boolean);
+          const hospitalCovered = hospitals.length
+            ? hospitals.join(', ')
+            : (entry.hospital_covered || entry.hospital_id?.name || null);
+
+          coverage = {
+            entry_date: entry.entry_date,
+            day_of_week: entry.day_of_week,
+            day_number: entry.day,
+            md_count: entry.md_count,
+            hospital_covered: hospitalCovered,
+            activity_type: entry.activity_type || null,
+            current_tier: entry.perdiem_tier,
+            current_amount: entry.perdiem_amount,
+            requested_tier: requestedTier,
+            requested_amount: requestedAmount,
+            difference: (requestedAmount || 0) - (entry.perdiem_amount || 0),
+            override_reason: req.metadata?.override_reason
+              || req.description?.match(/\((.+?)\)\./)?.[1]
+              || null,
+            period: smer.period,
+            cycle: smer.cycle,
+          };
+        }
+
+        return {
           id: req._id.toString(),
-        },
-        details: buildDocumentDetails('PERDIEM_OVERRIDE', req),
-      }));
+          module: 'PERDIEM_OVERRIDE',
+          doc_type: req.doc_type || 'SMER_DAILY_ENTRY',
+          doc_id: req.doc_id?.toString(),
+          doc_ref: req.doc_ref,
+          description: req.description,
+          amount: req.amount,
+          submitted_by: req.requested_by?.name || 'Unknown',
+          submitted_at: req.requested_at,
+          status: req.status,
+          current_action: 'approve',
+          action_key: 'perdiem_override',
+          approve_data: {
+            type: 'perdiem_override',
+            id: req._id.toString(),
+          },
+          details: buildDocumentDetails('PERDIEM_OVERRIDE', { ...req, _coverage: coverage }),
+        };
+      });
     },
     // Roles: lookup-driven via MODULE_DEFAULT_ROLES
   },
@@ -695,7 +756,10 @@ const MODULE_QUERIES = [
         module: 'SALES_GOAL_PLAN',
         docTypeToModel: { SALES_GOAL_PLAN: 'SalesGoalPlan' },
         populateByDocType: {
-          SALES_GOAL_PLAN: [],
+          SALES_GOAL_PLAN: [
+            { path: 'created_by', select: 'name' },
+            { path: 'approved_by', select: 'name' },
+          ],
         },
         actionType: 'sales_goal_plan',
       });
@@ -713,6 +777,8 @@ const MODULE_QUERIES = [
         populateByDocType: {
           INCENTIVE_PAYOUT: [
             { path: 'bdm_id', select: 'name email' },
+            { path: 'plan_id', select: 'plan_name fiscal_year reference' },
+            { path: 'journal_id', select: 'je_number je_date' },
           ],
         },
         actionType: 'incentive_payout',
@@ -1165,6 +1231,9 @@ async function getUniversalPending(entityId, user, entityIds) {
         ]);
         break;
       case 'PRF_CALF':
+        d.photo_urls = await signUrls(d.photo_urls);
+        break;
+      case 'CREDIT_NOTE':
         d.photo_urls = await signUrls(d.photo_urls);
         break;
       // Phase 31 — gap modules

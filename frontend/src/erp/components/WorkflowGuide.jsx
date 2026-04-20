@@ -57,22 +57,43 @@ const REJECTION_FOOTER_NOTE = 'If an approver rejects this document, a red banne
 
 // ── Complete BDM workflow guide config ──
 const WORKFLOW_GUIDES = {
-  // ── Phase G9.R7 — Unified Operational Inbox ──
+  // ── Phase G9.R7–R8 — Unified Operational Inbox ──
   'inbox': {
     title: 'Unified Operational Inbox',
     steps: [
-      'Approvals folder = every pending decision routed to you. Approve/Reject in-place — the row delegates to the canonical approval handler (no parallel paths, Rule #20).',
+      'Approvals folder = every pending decision routed to you. Approve/Reject in-place — the row delegates to the canonical approval handler (no parallel paths, Rule #20). Approve/Reject/Resolve are blocked until any must-acknowledge banner is cleared — the Acknowledge button itself is never gated.',
       'Tasks folder = your assigned tasks with the mini-editor (status / due date / reassign). Hit "Open full page" for the Gantt / Kanban / bulk-ops view at /erp/tasks.',
-      'AI Agents folder = findings from rule-based agents (KPI variance, daily briefing, OCR, task overdue) — actionable items show [Resolve], passive ones show [Acknowledge].',
+      'AI Agents folder = findings from rule-based agents (KPI variance, daily briefing, OCR, task overdue) — actionable items show [Resolve], passive ones show [Acknowledge]. AI reports auto-require ack by default (tunable in Control Center → Inbox Retention).',
+      'Archive is per-recipient: Archive / Unarchive in the thread header only hides the message from your inbox — senders keep it in Sent, other recipients are unaffected. Use the list toolbar "Select" mode to bulk-archive several threads; "Mark all read" flips every unread row in the current folder.',
       'Approval threads stay together by ApprovalRequest._id — request, decision and reopen events fold into one conversation. Look here before re-opening a posted document.',
-      'Compose to send a direct message or broadcast — gated by messaging.* sub-permissions and the per-entity MESSAGE_ACCESS_ROLES matrix (Control Center → Lookup Tables to edit).',
+      'Compose to send a direct message or broadcast — gated by messaging.* sub-permissions and the per-entity MESSAGE_ACCESS_ROLES matrix (Control Center → Lookup Tables to edit). Use "Require acknowledgement" to force recipients to confirm before they can act. Read-receipts button (sender + admin/president/ceo/finance) lists who acknowledged and who is still pending.',
+      'Retention: archived / read / AI-agent / broadcast messages auto-purge via the nightly #MR Inbox Retention agent. Tune per-entity windows or run a preview / Run Now from Control Center → Inbox Retention.',
     ],
     next: [
       { label: 'Approval Hub', path: '/erp/approvals' },
       { label: 'My Tasks', path: '/erp/tasks' },
       { label: 'AI Agents', path: '/erp/agent-dashboard' },
+      { label: 'Inbox Retention', path: '/admin/control-center/inbox-retention' },
     ],
-    tip: 'Channels (email / in-app / SMS) are kill-switched per entity via NOTIFICATION_CHANNELS lookup. Per-user opt-in lives on the user\'s NotificationPreference. Disabling IN_APP for the entity hides ALL future inbox writes — existing rows stay visible.',
+    tip: 'Channels (email / in-app / SMS) are kill-switched per entity via NOTIFICATION_CHANNELS lookup. Per-user opt-in lives on the user\'s NotificationPreference. Disabling IN_APP for the entity hides ALL future inbox writes — existing rows stay visible. Badge colors on the folder nav: blue = unread, amber ⚑ = unacknowledged, red = action required.',
+  },
+  // ── Phase G9.R8 — Inbox Retention Admin ──
+  'inbox-retention-settings': {
+    title: 'Inbox Retention Settings',
+    steps: [
+      'Each row under "Retention Thresholds" is a Lookup entry in INBOX_RETENTION. Edit the days value to tighten or relax how long the agent keeps a class of messages. ENABLED acts as the entity-wide kill-switch — flip it to Inactive to halt all purges for this entity.',
+      'ARCHIVED_DAYS / READ_DAYS / UNREAD_DAYS / AI_AGENT_DAYS / BROADCAST_DAYS are OR-combined — a message matching ANY enabled rule becomes a stage-1 candidate. Safety guards always apply: unacknowledged must-ack messages and open approvals are never purged, even if they match an age rule.',
+      'GRACE_PERIOD_DAYS sits between stage-1 (soft-delete — row is flagged and hidden from the list) and stage-2 (hard-delete). Treat it as your recovery window. Lowering it to 1–2 days purges faster but also shortens admin recovery time; keeping it at 7+ days preserves a week of "oops, undo".',
+      '"Acknowledgement Defaults" (INBOX_ACK_DEFAULTS) drive the auto-must-acknowledge flag on newly-composed messages — applied via the MessageInbox pre-save hook. Disable a row to stop auto-flagging; compose-time "Require acknowledgement" always wins over defaults.',
+      'Preview runs a dry-count across all active entities — no writes. Use it to verify expected volumes before Run Now. Run Now is destructive (hard-deletes stage-2 candidates) and requires messaging.retention_manage — pending drafts must be saved or discarded first.',
+      'Missing rows? Click Seed Defaults. Deeper metadata edits (min/max clamps, sender role lists, per-folder/category scoping) live in Control Center → Lookup Tables → INBOX_RETENTION or INBOX_ACK_DEFAULTS — both categories share the same entity-scoped storage.',
+    ],
+    next: [
+      { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
+      { label: 'Agent Dashboard', path: '/erp/agent-dashboard' },
+      { label: 'Access Templates', path: '/erp/control-center?section=access-templates' },
+    ],
+    tip: 'The agent runs nightly at 02:00 Manila (#MR Inbox Retention). Saves here take effect on the next run — no restart required. Run Now is safe to call repeatedly: stage-1 is idempotent (already-marked rows are not re-touched) and stage-2 only hard-deletes what has been sitting in the grace window.',
   },
   'erp-dashboard': {
     title: 'Your Daily Workflow',
@@ -98,6 +119,7 @@ const WORKFLOW_GUIDES = {
       'Enter the CSI booklet number (doc_ref) and the historical csi_date. The product dropdown is sourced from ProductMaster (no warehouse stock filter), so discontinued or zero-stock products are still selectable.',
       'Add line items — qty × unit_price feeds the AR balance. There is no FIFO override and no batch picker because no inventory is consumed (opening stock is loaded separately via the importOpeningStock script).',
       'Optional: Scan CSI captures a photo + auto-fills doc_ref/date/hospital/line items via OCR. The photo is stored on the row (csi_photo_url) for audit.',
+      'Duplicate rule: the same CSI # (doc_ref) cannot be used twice for the same hospital/customer within the Opening AR bucket. CSI numbers are canonicalized on save — prefixes ("CSI ", "INV ", "#") and leading zeros are stripped, so "4852", "004852", "CSI 004852", and "INV 004852" are all the same booklet page and stored as "4852". Live Sales and Opening AR are separate buckets — a live CSI #4852 does not conflict with an Opening AR #4852, and vice versa. A row with no hospital/customer yet will NOT trigger a duplicate error (it fails on the required-field check instead). If validation flags a duplicate, edit the existing row rather than creating a new one.',
       'Save Drafts → Validate → Post Opening AR. Posting auto-routes through gateApproval (module=SALES). Period lock for the historical month is bypassed because source=OPENING_AR (set automatically when csi_date < live_date).',
       'Posted opening AR shows up in AR Aging, Collections (CSI dropdown), and Hospital SOA — same as live CSIs. The journal entry posts AR debit / Sales Revenue + Output VAT credit. No COGS, no inventory ledger entry.',
       'If an approver rejects: a red banner with the reason appears on the row. Click Re-upload CSI Photo to attach a clearer image without re-keying line items, then Validate + Post again.',
@@ -141,6 +163,7 @@ const WORKFLOW_GUIDES = {
       'CSI/Cash Receipt: add line items — product, quantity, price. Service Invoice: enter description + total.',
       'CSI only: the CSI # input shows your available booklet numbers (if you have an allocation). This is a monitoring hint — you can still type any number, but posting an unknown number will raise a yellow audit warning.',
       'For Cash Receipt or Service Invoice with CASH payment: optionally select a Petty Cash Fund to deposit cash directly',
+      'Duplicate rule (CSI): same CSI # cannot be reused for the same hospital/customer within the live Sales bucket. CSI numbers are canonicalized on save — prefixes ("CSI ", "INV ", "#") and leading zeros are stripped, so "4852", "004852", "CSI 004852", and "INV 004852" are the same booklet page. Opening AR is a separate bucket, so historical numbers do not collide with live ones. (CASH_RECEIPT and SERVICE_INVOICE doc-refs are system-generated and kept in their exact format.) If a duplicate is flagged, edit the existing row rather than creating a new one.',
       'Save as DRAFT, then Validate to check for errors. Red = must fix before posting. Yellow = informational (e.g. CSI number outside your allocation) — will NOT block posting.',
       'Post to finalize — CSI creates AR; Cash Receipt/Service Invoice with fund creates direct petty cash deposit instead of AR. Posted CSI numbers are auto-marked "used" in your booklet allocation.',
       'Re-open a POSTED sale to correct it — reverses stock, petty-cash deposit, and journal entries (SAP Storno). The consumed CSI number returns to your available pool. Blocked if a POSTED Collection already settled this CSI; reopen the collection first to release it.',

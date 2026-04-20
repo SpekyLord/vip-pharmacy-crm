@@ -84,17 +84,76 @@ const messageService = {
 
 
 
-  // Archive (optional)
-  // ✅ PATCH /messages/:id/archive
+  // ─── Phase G9.R8 — Archive (per-recipient) + Acknowledge + Retention ──
+  //
+  // All archive/ack operations are self-service: each user's archive and ack
+  // state is independent. Sender's Sent folder is NEVER affected by recipient
+  // archiving (matches Gmail/Slack semantics).
+
+  /** PATCH /messages/:id/archive — archive just my copy. */
   archive: async (id) => {
-    const res = await api.patch(`/messages/${id}/archive`);
+    const res = await api.patch(`/messages/${id}/archive`, {}, { withCredentials: true });
     return res.data;
   },
 
-  // Unarchive (optional)
-  // ✅ PATCH /messages/:id/unarchive
+  /** PATCH /messages/:id/unarchive — restore my copy to the inbox. */
   unarchive: async (id) => {
-    const res = await api.patch(`/messages/${id}/unarchive`);
+    const res = await api.patch(`/messages/${id}/unarchive`, {}, { withCredentials: true });
+    return res.data;
+  },
+
+  /**
+   * PATCH /messages/bulk-archive — archive N messages in one call.
+   * @param {string[]} ids
+   */
+  bulkArchive: async (ids) => {
+    const res = await api.patch('/messages/bulk-archive', { ids }, { withCredentials: true });
+    return res.data;
+  },
+
+  /**
+   * PATCH /messages/read-all — mark every message in the current folder read.
+   * @param {string} folder - 'INBOX' | 'APPROVALS' | 'TASKS' | 'AI_AGENT_REPORTS' | 'ANNOUNCEMENTS' | 'CHAT' | 'ARCHIVE' | 'ACTION_REQUIRED' | 'SENT'
+   */
+  markAllRead: async (folder = 'INBOX') => {
+    const res = await api.patch('/messages/read-all', { folder }, { withCredentials: true });
+    return res.data;
+  },
+
+  /**
+   * PATCH /messages/:id/acknowledge — explicit "I have read and understood this".
+   * Idempotent: clicking twice is a no-op.
+   */
+  acknowledge: async (id) => {
+    const res = await api.patch(`/messages/${id}/acknowledge`, {}, { withCredentials: true });
+    return res.data;
+  },
+
+  /**
+   * GET /messages/:id/ack-status — sender/admin view of who acknowledged.
+   * Returns { total, acknowledged: [{user_id, name, at}], pending: [{user_id, name}] }.
+   */
+  getAckStatus: async (id) => {
+    const res = await api.get(`/messages/${id}/ack-status`, { withCredentials: true });
+    return res.data;
+  },
+
+  /**
+   * POST /messages/retention/run-now — fire the retention agent manually.
+   * Gated by messaging.retention_manage sub-perm. Returns summary envelope.
+   * @param {{dry_run?: boolean}} opts
+   */
+  runRetention: async (opts = {}) => {
+    const res = await api.post('/messages/retention/run-now', opts, { withCredentials: true });
+    return res.data;
+  },
+
+  /**
+   * GET /messages/retention/preview — dry-run retention count. Returns the
+   * same envelope shape as runRetention but with dry_run=true and no writes.
+   */
+  previewRetention: async () => {
+    const res = await api.get('/messages/retention/preview', { withCredentials: true });
     return res.data;
   },
 

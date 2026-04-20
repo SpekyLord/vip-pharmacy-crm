@@ -35,6 +35,13 @@ const AGENT_DEFINITIONS = {
   // Walks every active entity for overdue tasks (status OPEN/IN_PROGRESS/BLOCKED, due_date < now)
   // and pushes `notifyTaskEvent({ event: 'overdue' })` per task. Cooldown via TASK_OVERDUE_COOLDOWN_DAYS lookup.
   task_overdue:          { key: 'task_overdue',          label: 'Task Overdue Notifier',          modulePath: './taskOverdueAgent',           type: 'FREE' },
+  // Phase G9.R8 — Inbox Retention (FREE; no AI)
+  // Two-stage soft-delete → hard-delete for old archived / read / AI-agent /
+  // broadcast messages, per-entity lookup-driven (INBOX_RETENTION). Safety
+  // guards never purge unacknowledged must-ack messages or open approvals.
+  // See backend/erp/services/messageRetentionAgent.js. Scheduled nightly in
+  // backend/agents/agentScheduler.js (2:00 AM Asia/Manila).
+  message_retention:     { key: 'message_retention',     label: 'Inbox Retention',                modulePath: '../erp/services/messageRetentionAgent', type: 'FREE' },
 };
 
 const AGENT_KEYS = Object.keys(AGENT_DEFINITIONS);

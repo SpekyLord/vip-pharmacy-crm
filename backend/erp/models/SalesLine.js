@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-const { cleanBatchNo, normalizeUnit } = require('../utils/normalize');
+const { cleanBatchNo, normalizeUnit, normalizeDocRef } = require('../utils/normalize');
 
 const lineItemSchema = new mongoose.Schema({
   product_id: {
@@ -63,7 +63,12 @@ const salesLineSchema = new mongoose.Schema({
   doc_ref: {
     type: String,
     trim: true
-    // Required for CSI (booklet number), auto-generated for SERVICE_INVOICE/CASH_RECEIPT
+    // Canonicalization happens in pre('save') where `this.sale_type` is
+    // available — CSI gets aggressive digits-only normalization (so
+    // "4852" / "004852" / "CSI 004852" / "INV 004852" collapse to the
+    // same canonical value), while CASH_RECEIPT / SERVICE_INVOICE keep
+    // their auto-generated "RCT-ILO040326-001" format intact.
+    // Required for CSI (booklet number), auto-generated for SERVICE_INVOICE/CASH_RECEIPT.
   },
   // Phase 18: system-generated invoice number for non-CSI sales
   invoice_number: { type: String, trim: true },
@@ -126,6 +131,17 @@ const salesLineSchema = new mongoose.Schema({
 
 // Pre-save: validate customer reference + normalize line items + auto-compute totals
 salesLineSchema.pre('save', async function () {
+  // Canonicalize doc_ref first — must happen before the CSI required-field
+  // check so that a user typing only "CSI" (with no digits) collapses to an
+  // empty string and fails cleanly. For CSI, aggressive digits-only stripping
+  // ensures "4852", "004852", "CSI 004852", "INV 004852" all land on the
+  // same canonical value. For non-CSI (CASH_RECEIPT / SERVICE_INVOICE), the
+  // normalizer is a no-op so auto-generated formats like "RCT-ILO040326-001"
+  // stay intact.
+  if (this.doc_ref) {
+    this.doc_ref = normalizeDocRef(this.doc_ref, this.sale_type);
+  }
+
   // Phase 18: at least one customer reference required
   if (!this.hospital_id && !this.customer_id) {
     throw new Error('Either hospital_id or customer_id is required');
@@ -189,5 +205,8 @@ salesLineSchema.index({ status: 1 });
 salesLineSchema.index({ entity_id: 1, sale_type: 1, status: 1 });
 salesLineSchema.index({ entity_id: 1, customer_id: 1, csi_date: -1 });
 salesLineSchema.index({ petty_cash_fund_id: 1 });
+// Covers validateSales duplicate-detection (scoped by entity + sale_type +
+// SALE_SOURCE bucket + doc_ref). Prevents COLLSCAN on high-volume entities.
+salesLineSchema.index({ entity_id: 1, sale_type: 1, source: 1, doc_ref: 1 });
 
 module.exports = mongoose.model('SalesLine', salesLineSchema);

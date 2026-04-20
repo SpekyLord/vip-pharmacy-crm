@@ -504,6 +504,11 @@ const SEED_DEFAULTS = {
     // (which hides the Entry page) post-cutover. Frontend lazily falls back to
     // `opening_ar` if this new code is not yet seeded for the entity.
     { code: 'SALES__OPENING_AR_LIST', label: 'Opening AR Transactions (read-only history)', metadata: { module: 'sales', key: 'opening_ar_list', sort_order: 4 } },
+    // Messaging (Phase G9.R8 — Apr 2026)
+    // Gates the admin Inbox Retention Settings page + the Run-Now / Preview
+    // retention endpoints. Lookup-driven so subscribers can delegate storage
+    // hygiene to a finance operator without widening erp_access.
+    { code: 'MESSAGING__RETENTION_MANAGE', label: 'Manage inbox retention settings', metadata: { module: 'messaging', key: 'retention_manage', sort_order: 10 } },
     // Collections
     { code: 'COLLECTIONS__REOPEN', label: 'Re-open Posted Collections', metadata: { module: 'collections', key: 'reopen', sort_order: 1 } },
     // Expenses
@@ -797,6 +802,32 @@ const SEED_DEFAULTS = {
   PHOTO_FLAG: ['date_mismatch', 'duplicate_photo'],
   MESSAGE_CATEGORY: ['announcement', 'payroll', 'leave', 'policy', 'system', 'compliance_alert', 'other', 'ai_coaching', 'ai_schedule', 'ai_alert'],
   MESSAGE_PRIORITY: ['normal', 'important', 'high'],
+  // Phase G9.R8 — Inbox retention (Apr 2026)
+  // Lookup-driven per-entity retention settings consumed by
+  // backend/erp/services/messageRetentionAgent.js. Seeded with sensible
+  // defaults; admin edits via Control Center → Inbox Retention Settings.
+  // Each row's `metadata.value` is the effective value (number/bool). The
+  // retention agent lazy-seeds this category on first run if no rows exist
+  // for the entity — so new subscribers inherit defaults automatically.
+  INBOX_RETENTION: [
+    { code: 'ENABLED', label: 'Retention agent enabled for this entity', metadata: { value: true } },
+    { code: 'ARCHIVED_DAYS', label: 'Days to keep archived messages', metadata: { value: 90, unit: 'days', min: 7, max: 3650 } },
+    { code: 'READ_DAYS', label: 'Days to keep read messages (non-approval folders)', metadata: { value: 180, unit: 'days', min: 30, max: 3650 } },
+    { code: 'UNREAD_DAYS', label: 'Days to keep unread messages (safety net)', metadata: { value: 365, unit: 'days', min: 90, max: 3650 } },
+    { code: 'AI_AGENT_DAYS', label: 'Days to keep acknowledged AI agent reports', metadata: { value: 30, unit: 'days', min: 7, max: 3650 } },
+    { code: 'BROADCAST_DAYS', label: 'Days to keep broadcasts after read', metadata: { value: 60, unit: 'days', min: 7, max: 3650 } },
+    { code: 'GRACE_PERIOD_DAYS', label: 'Soft-delete grace period before hard purge', metadata: { value: 7, unit: 'days', min: 1, max: 90 } },
+  ],
+  // Phase G9.R8 — Inbox acknowledgement defaults (Apr 2026)
+  // Consumed by backend/erp/utils/inboxAckDefaults.js. Rules evaluated in
+  // order; first match flips must_acknowledge=true on the new message.
+  // Admin override at compose time always wins.
+  INBOX_ACK_DEFAULTS: [
+    { code: 'CATEGORY_AI_AGENT_REPORT', label: 'Require ack for AI agent reports', metadata: { value: true, folders: ['AI_AGENT_REPORTS'] } },
+    { code: 'CATEGORY_BROADCAST', label: 'Require ack for broadcasts (recipientUserId=null)', metadata: { value: true, categories: ['announcement', 'policy', 'system'] } },
+    { code: 'REQUIRES_ACTION', label: 'Require ack when requires_action is true', metadata: { value: true } },
+    { code: 'BROADCAST_ROLES', label: 'Sender roles whose broadcasts need ack', metadata: { value: ['president', 'admin'] } },
+  ],
   // Name cleanup rules — used by backend/utils/nameCleanup.js
   NAME_PARTICLE: [
     { code: 'DE', label: 'de', metadata: { position: 'any' } },

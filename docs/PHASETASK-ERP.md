@@ -4243,6 +4243,14 @@ Console — Phase 31" section for the architecture deep-dive.
 
 **Deferred.** CreditNote (creditNoteController calls gateApproval with module='SALES', docType='CREDIT_NOTE' — currently only SalesLine surfaces under SALES). Add a dedicated CREDIT_NOTE MODULE_QUERIES entry + builder + frontend panel in a follow-up.
 
+**Follow-up closed (Apr 20, 2026) — Approval Hub detail-panel gap sweep.**
+- [x] `PERDIEM_OVERRIDE` — query now dereferences linked `SmerEntry.daily_entries` (hospital populate), builds coverage bundle (entry_date, day_of_week, md_count, hospital_covered, current_tier/amount, requested_tier/amount, amount_difference, override_reason). Frontend panel renders a "Coverage Summary" block with exact calendar date + weekday and tier/amount delta chips.
+- [x] `CREDIT_NOTE` — frontend panel case added (builder already existed since Phase 31R). Signs `photo_urls` in `getUniversalPending`'s switch for thumbnails to load.
+- [x] `SALES_GOAL_PLAN` — `buildSalesGoalPlanDetails` added; query populates `created_by` + `approved_by`. Registered in `DETAIL_BUILDERS` and in `REVERSAL_DOC_TYPE_TO_MODULE` so the Reversal Console reuses the same panel. Panel surfaces baseline→target revenue with growth %, collection target, growth driver list, incentive program list, version/effective-date metadata.
+- [x] `INCENTIVE_PAYOUT` — `buildIncentivePayoutDetails` added; query populates `bdm_id`, `plan_id`, `journal_id`. Panel surfaces BDM, plan ref, FY/period, tier, attainment math (target vs actual + %), cap-applied indicator, accrual JE reference, settlement info. No reversal-console entry (payout reversal routes through its own endpoint, not the master handler).
+- [x] `MODULE_COLORS` in `ApprovalManager.jsx` — added the three new module chip colors so the filter tabs and card badges render consistently.
+- [x] Subscription/scalability preserved — no new hardcoded business values. All three modules already had `APPROVAL_CATEGORY`, `APPROVAL_MODULE`, `MODULE_DEFAULT_ROLES`, and `REJECTION_CONFIG` lookup seeds from Phase G6.7. No schema or authorization changes — only detail-panel payload enrichment + render.
+
 ---
 
 ## Phase 3c — Comprehensive Hardcoded-Role Migration ✅ (April 18, 2026)

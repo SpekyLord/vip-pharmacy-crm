@@ -222,7 +222,8 @@ export default function ApprovalManager() {
     SALES: '#059669', COLLECTION: '#0d9488', SMER: '#ea580c', CAR_LOGBOOK: '#64748b',
     EXPENSES: '#b45309', PRF_CALF: '#7c3aed',
     IC_TRANSFER: '#9333ea', JOURNAL: '#1e40af', BANKING: '#0e7490', PETTY_CASH: '#c2410c',
-    PERDIEM_OVERRIDE: '#a16207'
+    PERDIEM_OVERRIDE: '#a16207',
+    CREDIT_NOTE: '#be185d', SALES_GOAL_PLAN: '#1d4ed8', INCENTIVE_PAYOUT: '#047857',
   };
 
   const filteredHubItems = hubModuleFilter

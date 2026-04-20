@@ -1418,26 +1418,44 @@ async function listReversibleDocs({ doc_types, entityId, fromDate, toDate, page 
   const baseEntity = entityId ? { entity_id: entityId } : {};
   const notReversed = { deletion_event_id: { $exists: false } };
   const out = [];
-  const sliceLimit = Math.max(limit, 50);
+  let totalCount = 0;
+  // Per-type fetch needs to cover the globally-sorted page, not just `limit`.
+  // After per-type queries are merged and re-sorted by posted_at, the rows that
+  // fall in slice [(page-1)*limit, page*limit] may come from any single source,
+  // so each source must provide at least that many rows to guarantee coverage.
+  const perTypeFetch = page * limit;
+
+  // Small helper so every type consistently fetches the page-covering slice
+  // AND contributes its true count to `total`. Runs find + count in parallel.
+  const fetchAndCount = async (Model, q, selectFields, sortField) => {
+    const [rows, cnt] = await Promise.all([
+      Model.find(q).select(selectFields).sort({ [sortField]: -1 }).limit(perTypeFetch).lean(),
+      Model.countDocuments(q),
+    ]);
+    return { rows, cnt };
+  };
 
   if (wantedTypes.includes('SALES_LINE')) {
     const q = { ...baseEntity, ...notReversed, status: 'POSTED' };
     if (dateFilter) q.posted_at = dateFilter;
-    const rows = await SalesLine.find(q).select('_id doc_ref invoice_number entity_id bdm_id posted_at status sale_type').sort({ posted_at: -1 }).limit(sliceLimit).lean();
+    const { rows, cnt } = await fetchAndCount(SalesLine, q, '_id doc_ref invoice_number entity_id bdm_id posted_at status sale_type', 'posted_at');
+    totalCount += cnt;
     rows.forEach(r => out.push({ doc_type: 'SALES_LINE', doc_id: r._id, doc_ref: r.doc_ref || r.invoice_number, entity_id: r.entity_id, bdm_id: r.bdm_id, posted_at: r.posted_at, status: r.status, label: REVERSAL_HANDLERS.SALES_LINE.label, sub: r.sale_type }));
   }
 
   if (wantedTypes.includes('COLLECTION')) {
     const q = { ...baseEntity, ...notReversed, status: 'POSTED' };
     if (dateFilter) q.posted_at = dateFilter;
-    const rows = await Collection.find(q).select('_id cr_no entity_id bdm_id posted_at status').sort({ posted_at: -1 }).limit(sliceLimit).lean();
+    const { rows, cnt } = await fetchAndCount(Collection, q, '_id cr_no entity_id bdm_id posted_at status', 'posted_at');
+    totalCount += cnt;
     rows.forEach(r => out.push({ doc_type: 'COLLECTION', doc_id: r._id, doc_ref: r.cr_no, entity_id: r.entity_id, bdm_id: r.bdm_id, posted_at: r.posted_at, status: r.status, label: REVERSAL_HANDLERS.COLLECTION.label }));
   }
 
   if (wantedTypes.includes('EXPENSE')) {
     const q = { ...baseEntity, ...notReversed, status: 'POSTED' };
     if (dateFilter) q.posted_at = dateFilter;
-    const rows = await ExpenseEntry.find(q).select('_id period entity_id bdm_id posted_at status total_amount').sort({ posted_at: -1 }).limit(sliceLimit).lean();
+    const { rows, cnt } = await fetchAndCount(ExpenseEntry, q, '_id period entity_id bdm_id posted_at status total_amount', 'posted_at');
+    totalCount += cnt;
     rows.forEach(r => out.push({ doc_type: 'EXPENSE', doc_id: r._id, doc_ref: `EXP ${r.period}`, entity_id: r.entity_id, bdm_id: r.bdm_id, posted_at: r.posted_at, status: r.status, label: REVERSAL_HANDLERS.EXPENSE.label, sub: `₱${r.total_amount}` }));
   }
 
@@ -1447,14 +1465,16 @@ async function listReversibleDocs({ doc_types, entityId, fromDate, toDate, page 
     if (wantedTypes.includes('PRF')) types.push('PRF');
     const q = { ...baseEntity, ...notReversed, status: 'POSTED', doc_type: { $in: types } };
     if (dateFilter) q.posted_at = dateFilter;
-    const rows = await PrfCalf.find(q).select('_id doc_type calf_number prf_number entity_id bdm_id posted_at status amount').sort({ posted_at: -1 }).limit(sliceLimit).lean();
+    const { rows, cnt } = await fetchAndCount(PrfCalf, q, '_id doc_type calf_number prf_number entity_id bdm_id posted_at status amount', 'posted_at');
+    totalCount += cnt;
     rows.forEach(r => out.push({ doc_type: r.doc_type, doc_id: r._id, doc_ref: r.calf_number || r.prf_number, entity_id: r.entity_id, bdm_id: r.bdm_id, posted_at: r.posted_at, status: r.status, label: REVERSAL_HANDLERS[r.doc_type].label, sub: `₱${r.amount}` }));
   }
 
   if (wantedTypes.includes('GRN')) {
     const q = { ...baseEntity, ...notReversed, status: 'APPROVED' };
     if (dateFilter) q.grn_date = dateFilter;
-    const rows = await GrnEntry.find(q).select('_id grn_date entity_id bdm_id status po_number').sort({ grn_date: -1 }).limit(sliceLimit).lean();
+    const { rows, cnt } = await fetchAndCount(GrnEntry, q, '_id grn_date entity_id bdm_id status po_number', 'grn_date');
+    totalCount += cnt;
     rows.forEach(r => out.push({ doc_type: 'GRN', doc_id: r._id, doc_ref: `GRN ${r.grn_date?.toISOString().slice(0,10)}`, entity_id: r.entity_id, bdm_id: r.bdm_id, posted_at: r.grn_date, status: r.status, label: REVERSAL_HANDLERS.GRN.label, sub: r.po_number }));
   }
 
@@ -1465,60 +1485,80 @@ async function listReversibleDocs({ doc_types, entityId, fromDate, toDate, page 
       ...(entityId ? { $or: [{ source_entity_id: entityId }, { target_entity_id: entityId }] } : {}),
     };
     if (dateFilter) q.transfer_date = dateFilter;
-    const rows = await InterCompanyTransfer.find(q).select('_id transfer_ref source_entity_id target_entity_id transfer_date status total_amount').sort({ transfer_date: -1 }).limit(sliceLimit).lean();
+    const { rows, cnt } = await fetchAndCount(InterCompanyTransfer, q, '_id transfer_ref source_entity_id target_entity_id transfer_date status total_amount', 'transfer_date');
+    totalCount += cnt;
     rows.forEach(r => out.push({ doc_type: 'IC_TRANSFER', doc_id: r._id, doc_ref: r.transfer_ref, entity_id: r.source_entity_id, posted_at: r.transfer_date, status: r.status, label: REVERSAL_HANDLERS.IC_TRANSFER.label, sub: `₱${r.total_amount}` }));
   }
 
   if (wantedTypes.includes('INCOME_REPORT')) {
     const q = { ...baseEntity, ...notReversed, status: { $in: ['CREDITED', 'BDM_CONFIRMED'] } };
     if (dateFilter) q.credited_at = dateFilter;
-    const rows = await IncomeReport.find(q).select('_id period cycle entity_id bdm_id credited_at status net_pay').sort({ credited_at: -1 }).limit(sliceLimit).lean();
+    const { rows, cnt } = await fetchAndCount(IncomeReport, q, '_id period cycle entity_id bdm_id credited_at status net_pay', 'credited_at');
+    totalCount += cnt;
     rows.forEach(r => out.push({ doc_type: 'INCOME_REPORT', doc_id: r._id, doc_ref: `${r.period} / ${r.cycle}`, entity_id: r.entity_id, bdm_id: r.bdm_id, posted_at: r.credited_at, status: r.status, label: REVERSAL_HANDLERS.INCOME_REPORT.label, sub: `Net ₱${r.net_pay}` }));
   }
 
   if (wantedTypes.includes('PAYSLIP')) {
     const q = { ...baseEntity, ...notReversed, status: 'POSTED' };
     if (dateFilter) q.posted_at = dateFilter;
-    const rows = await Payslip.find(q).select('_id period cycle entity_id person_id posted_at status net_pay').sort({ posted_at: -1 }).limit(sliceLimit).lean();
+    const { rows, cnt } = await fetchAndCount(Payslip, q, '_id period cycle entity_id person_id posted_at status net_pay', 'posted_at');
+    totalCount += cnt;
     rows.forEach(r => out.push({ doc_type: 'PAYSLIP', doc_id: r._id, doc_ref: `${r.period} / ${r.cycle}`, entity_id: r.entity_id, posted_at: r.posted_at, status: r.status, label: REVERSAL_HANDLERS.PAYSLIP.label, sub: `Net ₱${r.net_pay}` }));
   }
 
   if (wantedTypes.includes('JOURNAL_ENTRY')) {
     const q = { ...baseEntity, status: 'POSTED', is_reversal: { $ne: true } };
     if (dateFilter) q.je_date = dateFilter;
-    const rows = await JournalEntry.find(q).select('_id je_number je_date entity_id source_module status').sort({ je_date: -1 }).limit(sliceLimit).lean();
+    const rows = await JournalEntry.find(q).select('_id je_number je_date entity_id source_module status').sort({ je_date: -1 }).limit(perTypeFetch).lean();
     const ids = rows.map(r => r._id);
     const reversed = await JournalEntry.find({ corrects_je_id: { $in: ids } }).select('corrects_je_id').lean();
-    const skip = new Set(reversed.map(r => r.corrects_je_id.toString()));
-    rows.filter(r => !skip.has(r._id.toString())).forEach(r => out.push({ doc_type: 'JOURNAL_ENTRY', doc_id: r._id, doc_ref: String(r.je_number || ''), entity_id: r.entity_id, posted_at: r.je_date, status: r.status, label: REVERSAL_HANDLERS.JOURNAL_ENTRY.label, sub: r.source_module }));
+    const skipIds = new Set(reversed.map(r => r.corrects_je_id.toString()));
+    const visible = rows.filter(r => !skipIds.has(r._id.toString()));
+    // JE true-total: POSTED-not-reversal that are also not pointed to by any reversal JE.
+    // Uses $lookup so the count is accurate even when >perTypeFetch rows exist.
+    // `from:` must be the actual collection name on the model, NOT the Mongoose-pluralized
+    // default — JournalEntry explicitly uses `erp_journal_entries` (see models/JournalEntry.js).
+    const jeCollectionName = JournalEntry.collection.collectionName;
+    const jeCountAgg = await JournalEntry.aggregate([
+      { $match: q },
+      { $lookup: { from: jeCollectionName, localField: '_id', foreignField: 'corrects_je_id', as: 'reversals' } },
+      { $match: { 'reversals.0': { $exists: false } } },
+      { $count: 'total' },
+    ]);
+    totalCount += jeCountAgg[0]?.total || 0;
+    visible.forEach(r => out.push({ doc_type: 'JOURNAL_ENTRY', doc_id: r._id, doc_ref: String(r.je_number || ''), entity_id: r.entity_id, posted_at: r.je_date, status: r.status, label: REVERSAL_HANDLERS.JOURNAL_ENTRY.label, sub: r.source_module }));
   }
 
   // ─── Phase 31R ───
   if (wantedTypes.includes('SMER_ENTRY')) {
     const q = { ...baseEntity, ...notReversed, status: 'POSTED' };
     if (dateFilter) q.posted_at = dateFilter;
-    const rows = await SmerEntry.find(q).select('_id period cycle entity_id bdm_id posted_at status total_reimbursable').sort({ posted_at: -1 }).limit(sliceLimit).lean();
+    const { rows, cnt } = await fetchAndCount(SmerEntry, q, '_id period cycle entity_id bdm_id posted_at status total_reimbursable', 'posted_at');
+    totalCount += cnt;
     rows.forEach(r => out.push({ doc_type: 'SMER_ENTRY', doc_id: r._id, doc_ref: `SMER ${r.period}-${r.cycle}`, entity_id: r.entity_id, bdm_id: r.bdm_id, posted_at: r.posted_at, status: r.status, label: REVERSAL_HANDLERS.SMER_ENTRY.label, sub: `₱${r.total_reimbursable || 0}` }));
   }
 
   if (wantedTypes.includes('CAR_LOGBOOK')) {
     const q = { ...baseEntity, ...notReversed, status: 'POSTED' };
     if (dateFilter) q.posted_at = dateFilter;
-    const rows = await CarLogbookEntry.find(q).select('_id period cycle entry_date entity_id bdm_id posted_at status total_km total_fuel_amount').sort({ posted_at: -1 }).limit(sliceLimit).lean();
+    const { rows, cnt } = await fetchAndCount(CarLogbookEntry, q, '_id period cycle entry_date entity_id bdm_id posted_at status total_km total_fuel_amount', 'posted_at');
+    totalCount += cnt;
     rows.forEach(r => out.push({ doc_type: 'CAR_LOGBOOK', doc_id: r._id, doc_ref: `LOGBOOK ${r.entry_date?.toISOString?.().slice(0,10) || r.period}`, entity_id: r.entity_id, bdm_id: r.bdm_id, posted_at: r.posted_at, status: r.status, label: REVERSAL_HANDLERS.CAR_LOGBOOK.label, sub: `${r.total_km || 0} km / ₱${r.total_fuel_amount || 0}` }));
   }
 
   if (wantedTypes.includes('SUPPLIER_INVOICE')) {
     const q = { ...baseEntity, ...notReversed, status: 'POSTED' };
     if (dateFilter) q.invoice_date = dateFilter;
-    const rows = await SupplierInvoice.find(q).select('_id invoice_ref invoice_date entity_id status total_amount vendor_name').sort({ invoice_date: -1 }).limit(sliceLimit).lean();
+    const { rows, cnt } = await fetchAndCount(SupplierInvoice, q, '_id invoice_ref invoice_date entity_id status total_amount vendor_name', 'invoice_date');
+    totalCount += cnt;
     rows.forEach(r => out.push({ doc_type: 'SUPPLIER_INVOICE', doc_id: r._id, doc_ref: r.invoice_ref, entity_id: r.entity_id, posted_at: r.invoice_date, status: r.status, label: REVERSAL_HANDLERS.SUPPLIER_INVOICE.label, sub: `${r.vendor_name || ''} ₱${r.total_amount || 0}`.trim() }));
   }
 
   if (wantedTypes.includes('CREDIT_NOTE')) {
     const q = { ...baseEntity, ...notReversed, status: 'POSTED' };
     if (dateFilter) q.posted_at = dateFilter;
-    const rows = await CreditNote.find(q).select('_id cn_number cn_date entity_id bdm_id posted_at status credit_total').sort({ posted_at: -1 }).limit(sliceLimit).lean();
+    const { rows, cnt } = await fetchAndCount(CreditNote, q, '_id cn_number cn_date entity_id bdm_id posted_at status credit_total', 'posted_at');
+    totalCount += cnt;
     rows.forEach(r => out.push({ doc_type: 'CREDIT_NOTE', doc_id: r._id, doc_ref: r.cn_number || String(r._id), entity_id: r.entity_id, bdm_id: r.bdm_id, posted_at: r.posted_at, status: r.status, label: REVERSAL_HANDLERS.CREDIT_NOTE.label, sub: `₱${r.credit_total || 0}` }));
   }
 
@@ -1530,7 +1570,8 @@ async function listReversibleDocs({ doc_types, entityId, fromDate, toDate, page 
       ...(entityId ? { $or: [{ creditor_entity_id: entityId }, { debtor_entity_id: entityId }] } : {}),
     };
     if (dateFilter) q.posted_at = dateFilter;
-    const rows = await IcSettlement.find(q).select('_id cr_no cr_date creditor_entity_id debtor_entity_id posted_at status cr_amount').sort({ posted_at: -1 }).limit(sliceLimit).lean();
+    const { rows, cnt } = await fetchAndCount(IcSettlement, q, '_id cr_no cr_date creditor_entity_id debtor_entity_id posted_at status cr_amount', 'posted_at');
+    totalCount += cnt;
     rows.forEach(r => out.push({ doc_type: 'IC_SETTLEMENT', doc_id: r._id, doc_ref: r.cr_no, entity_id: r.creditor_entity_id, posted_at: r.posted_at, status: r.status, label: REVERSAL_HANDLERS.IC_SETTLEMENT.label, sub: `₱${r.cr_amount || 0}` }));
   }
 
@@ -1538,20 +1579,22 @@ async function listReversibleDocs({ doc_types, entityId, fromDate, toDate, page 
   if (wantedTypes.includes('OFFICE_SUPPLY_ITEM')) {
     const q = { ...baseEntity, ...notReversed };
     if (dateFilter) q.createdAt = dateFilter;
-    const rows = await OfficeSupply.find(q).select('_id item_name item_code category entity_id createdAt qty_on_hand').sort({ createdAt: -1 }).limit(sliceLimit).lean();
+    const { rows, cnt } = await fetchAndCount(OfficeSupply, q, '_id item_name item_code category entity_id createdAt qty_on_hand', 'createdAt');
+    totalCount += cnt;
     rows.forEach(r => out.push({ doc_type: 'OFFICE_SUPPLY_ITEM', doc_id: r._id, doc_ref: r.item_code || r.item_name, entity_id: r.entity_id, posted_at: r.createdAt, status: 'ACTIVE', label: REVERSAL_HANDLERS.OFFICE_SUPPLY_ITEM.label, sub: `${r.category || ''} · qty ${r.qty_on_hand || 0}`.trim() }));
   }
 
   if (wantedTypes.includes('OFFICE_SUPPLY_TXN')) {
     const q = { ...baseEntity, ...notReversed, reversal_event_id: { $exists: false } };
     if (dateFilter) q.txn_date = dateFilter;
-    const rows = await OfficeSupplyTransaction.find(q).select('_id supply_id txn_type qty txn_date entity_id total_cost').sort({ txn_date: -1 }).limit(sliceLimit).lean();
+    const { rows, cnt } = await fetchAndCount(OfficeSupplyTransaction, q, '_id supply_id txn_type qty txn_date entity_id total_cost', 'txn_date');
+    totalCount += cnt;
     rows.forEach(r => out.push({ doc_type: 'OFFICE_SUPPLY_TXN', doc_id: r._id, doc_ref: `${r.txn_type} ${r.qty}`, entity_id: r.entity_id, posted_at: r.txn_date, status: 'POSTED', label: REVERSAL_HANDLERS.OFFICE_SUPPLY_TXN.label, sub: r.total_cost ? `₱${r.total_cost}` : '' }));
   }
 
   out.sort((a, b) => new Date(b.posted_at || 0) - new Date(a.posted_at || 0));
   const start = (page - 1) * limit;
-  return { data: out.slice(start, start + limit), total: out.length, page, limit };
+  return { data: out.slice(start, start + limit), total: totalCount, page, limit };
 }
 
 /**

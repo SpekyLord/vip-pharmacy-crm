@@ -63,6 +63,11 @@ export default function InboxComposeModal({ open, onClose, onSent }) {
   const [recipientRole, setRecipientRole] = useState(ROLE_OPTIONS[0].code);
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
+  // Phase G9.R8 — explicit "require recipient to acknowledge". Lookup-driven
+  // default flips based on category/broadcast/role; admin can override either
+  // way at compose time. Null = "use lookup default on server" (the pre-save
+  // hook decides). True/False = explicit override sent to the backend.
+  const [mustAck, setMustAck] = useState(null);
   const [users, setUsers] = useState(null);
   const [usersLoading, setUsersLoading] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -95,8 +100,14 @@ export default function InboxComposeModal({ open, onClose, onSent }) {
   if (!open) return null;
 
   const reset = () => {
-    setSubject(''); setBody(''); setRecipientUserId(''); setError(null);
+    setSubject(''); setBody(''); setRecipientUserId(''); setError(null); setMustAck(null);
   };
+
+  // Phase G9.R8 — effective default checkbox state. When mustAck is null we
+  // show the inferred default (broadcasts + admin/president → pre-checked).
+  // Admin can explicitly tick/untick, which sets mustAck to true/false.
+  const inferredDefault = mode === 'role'; // broadcast always defaults to ack-required
+  const effectiveMustAck = mustAck === null ? inferredDefault : mustAck;
 
   const handleSend = async () => {
     setError(null);
@@ -123,6 +134,10 @@ export default function InboxComposeModal({ open, onClose, onSent }) {
       } else {
         payload.recipient_role = recipientRole;
       }
+      // Phase G9.R8 — explicit ack override. Only send when admin changed
+      // it from the inferred default; null means "let the server's
+      // lookup-driven pre-save hook decide".
+      if (mustAck !== null) payload.must_acknowledge = mustAck;
       const res = await messageService.compose(payload);
       window.dispatchEvent(new Event('inbox:updated'));
       reset();
@@ -182,6 +197,27 @@ export default function InboxComposeModal({ open, onClose, onSent }) {
           <div className="icm-row">
             <label htmlFor="icm-body">Message</label>
             <textarea id="icm-body" maxLength={5000} value={body} onChange={(e) => setBody(e.target.value)} placeholder="Write your message…" disabled={busy} />
+          </div>
+
+          {/* Phase G9.R8 — Require acknowledgement.
+              Pre-checked for broadcasts (role mode) to nudge the ack trail by default.
+              Admin can opt out for chatty messages. Lookup rules on the server
+              also add requirement for AI agent reports / requires_action rows. */}
+          <div className="icm-row" style={{ flexDirection: 'row', gap: 8, alignItems: 'center', marginTop: 4 }}>
+            <input
+              id="icm-must-ack"
+              type="checkbox"
+              checked={!!effectiveMustAck}
+              onChange={(e) => setMustAck(e.target.checked)}
+              disabled={busy}
+              style={{ width: 18, height: 18, margin: 0 }}
+            />
+            <label htmlFor="icm-must-ack" style={{ margin: 0, textTransform: 'none', fontWeight: 600, color: '#334155' }}>
+              Require acknowledgement
+              <span style={{ display: 'block', fontSize: 11, color: '#64748b', fontWeight: 400, marginTop: 2 }}>
+                Recipients must click “I acknowledge” before the message is considered handled. Appears in read-receipts.
+              </span>
+            </label>
           </div>
 
           {error && <div className="icm-error">{error}</div>}

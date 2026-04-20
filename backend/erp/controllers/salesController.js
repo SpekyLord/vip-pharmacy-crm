@@ -581,21 +581,35 @@ const validateSales = catchAsync(async (req, res) => {
       } catch { /* AR engine not critical for validation */ }
     }
 
-    // Duplicate check: same doc_ref + hospital/customer + sale_type (CSI and CASH_RECEIPT only)
-    if (saleType !== 'SERVICE_INVOICE' && row.doc_ref) {
+    // Duplicate check: same doc_ref within the same customer scope, sale_type,
+    // and SALE_SOURCE bucket. When no hospital/customer is set, skip — the row
+    // already fails with "Hospital or Customer is required" from line 504, so
+    // emitting an extra (global-scope) duplicate error is noise.
+    //
+    // source is a SALE_SOURCE Lookup-driven field (CLAUDE-ERP.md Rule #24).
+    // We read it off the row itself (schema default='SALES_LINE') so the rule
+    // is not hardcoded to literal enum values — subscribers who rename lookup
+    // entries keep coherent behavior as long as writes and reads stay
+    // consistent, which they do because source is stamped at create/update.
+    if (saleType !== 'SERVICE_INVOICE' && row.doc_ref && (row.hospital_id || row.customer_id)) {
       const dupFilter = {
         _id: { $ne: row._id },
         entity_id: row.entity_id,
         sale_type: saleType,
+        source: row.source,
         doc_ref: row.doc_ref,
         status: { $nin: ['DELETION_REQUESTED'] }
       };
       if (row.hospital_id) dupFilter.hospital_id = row.hospital_id;
       if (row.customer_id) dupFilter.customer_id = row.customer_id;
 
-      const dupCheck = await SalesLine.findOne(dupFilter);
+      const dupCheck = await SalesLine.findOne(dupFilter).select('status source').lean();
       if (dupCheck) {
-        rowErrors.push(`Duplicate: ${row.doc_ref} already exists for this customer`);
+        const scopeLabel = row.hospital_id ? 'this hospital' : 'this customer';
+        const bucketLabel = row.source === 'OPENING_AR' ? 'Opening AR' : 'Sales';
+        rowErrors.push(
+          `Duplicate ${bucketLabel} doc #${row.doc_ref} already exists for ${scopeLabel} (status: ${dupCheck.status}). Edit the existing row instead of creating a new one.`
+        );
       }
     }
 
