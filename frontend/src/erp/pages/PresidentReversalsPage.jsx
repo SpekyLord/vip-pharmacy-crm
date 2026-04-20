@@ -78,6 +78,8 @@ export default function PresidentReversalsPage() {
   const [tab, setTab] = useState('reversible'); // 'reversible' | 'history'
   const [registry, setRegistry] = useState([]);
   const [filters, setFilters] = useState({ doc_type: '', from_date: '', to_date: '' });
+  const [page, setPage] = useState(1);
+  const LIMIT = 50;
   const [data, setData] = useState({ rows: [], total: 0, page: 1 });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -117,7 +119,7 @@ export default function PresidentReversalsPage() {
     setLoading(true); setError(null);
     try {
       const params = {
-        page: 1, limit: 50,
+        page, limit: LIMIT,
         ...(filters.doc_type ? { doc_types: filters.doc_type } : {}),
         ...(filters.from_date ? { from_date: filters.from_date } : {}),
         ...(filters.to_date ? { to_date: filters.to_date } : {}),
@@ -125,7 +127,7 @@ export default function PresidentReversalsPage() {
       };
       const fn = tab === 'reversible' ? api.getReversible : api.getHistory;
       const res = await fn(params);
-      setData({ rows: res?.data || [], total: res?.total || 0, page: res?.page || 1 });
+      setData({ rows: res?.data || [], total: res?.total || 0, page: res?.page || page });
     } catch (err) {
       setError(err?.response?.data?.message || err?.message || 'Failed to load');
       setData({ rows: [], total: 0, page: 1 });
@@ -137,7 +139,14 @@ export default function PresidentReversalsPage() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
+  }, [tab, page]);
+
+  const switchTab = (next) => {
+    if (next === tab) return;
+    // Reset page atomically with tab — avoids a double-fetch from two effects racing.
+    setPage(1);
+    setTab(next);
+  };
 
   const onReverseClick = async (row) => {
     // Preview dependents first (informational — backend re-checks on submit).
@@ -217,10 +226,10 @@ export default function PresidentReversalsPage() {
       <WorkflowGuide pageKey="president-reversals" />
 
       <div className="pr-tabs">
-        <button className={`pr-tab ${tab === 'reversible' ? 'active' : ''}`} onClick={() => setTab('reversible')}>
+        <button className={`pr-tab ${tab === 'reversible' ? 'active' : ''}`} onClick={() => switchTab('reversible')}>
           Reversible Transactions
         </button>
-        <button className={`pr-tab ${tab === 'history' ? 'active' : ''}`} onClick={() => setTab('history')}>
+        <button className={`pr-tab ${tab === 'history' ? 'active' : ''}`} onClick={() => switchTab('history')}>
           Reversal History
         </button>
       </div>
@@ -245,7 +254,7 @@ export default function PresidentReversalsPage() {
         </div>
         <div className="pr-filter">
           <label>&nbsp;</label>
-          <button onClick={load}>{loading ? 'Loading…' : 'Apply'}</button>
+          <button onClick={() => (page === 1 ? load() : setPage(1))}>{loading ? 'Loading…' : 'Apply'}</button>
         </div>
       </div>
 
@@ -328,8 +337,33 @@ export default function PresidentReversalsPage() {
 
       <div className="pr-pager">
         <span style={{ fontSize: 12, color: '#64748b' }}>
-          {loading ? 'Loading…' : `Showing ${data.rows.length} of ${data.total}`}
+          {loading
+            ? 'Loading…'
+            : (() => {
+                const start = data.total === 0 ? 0 : (page - 1) * LIMIT + 1;
+                const end = (page - 1) * LIMIT + data.rows.length;
+                return `Showing ${start}–${end} of ${data.total}`;
+              })()}
         </span>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={loading || page <= 1}
+            style={{ padding: '6px 12px', borderRadius: 5, border: '1px solid #cbd5e1', background: page <= 1 ? '#f1f5f9' : '#fff', color: '#334155', fontSize: 12, fontWeight: 600, cursor: page <= 1 ? 'not-allowed' : 'pointer' }}
+          >
+            ← Prev
+          </button>
+          <span style={{ fontSize: 12, color: '#475569', padding: '0 4px' }}>
+            Page {page} of {Math.max(1, Math.ceil((data.total || 0) / LIMIT))}
+          </span>
+          <button
+            onClick={() => setPage(p => p + 1)}
+            disabled={loading || page * LIMIT >= (data.total || 0)}
+            style={{ padding: '6px 12px', borderRadius: 5, border: '1px solid #cbd5e1', background: page * LIMIT >= (data.total || 0) ? '#f1f5f9' : '#fff', color: '#334155', fontSize: 12, fontWeight: 600, cursor: page * LIMIT >= (data.total || 0) ? 'not-allowed' : 'pointer' }}
+          >
+            Next →
+          </button>
+        </div>
       </div>
 
       {reverseTarget && (
