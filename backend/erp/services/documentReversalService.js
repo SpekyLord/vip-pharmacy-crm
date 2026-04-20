@@ -1223,7 +1223,9 @@ async function reverseOfficeSupply({ doc, userId, reason /* , tenantFilter */ })
         doc,
         doc_type: 'OFFICE_SUPPLY_ITEM',
         entity_id: doc.entity_id,
-        bdm_id: null,
+        // OfficeSupply has no bdm_id; TransactionEvent.bdm_id is required:true,
+        // so fall back to the original creator, then to the reversing user.
+        bdm_id: doc.created_by || userId,
         reason,
         userId,
         session,
@@ -1284,7 +1286,9 @@ async function reverseOfficeSupplyTxn({ doc, userId, reason /* , tenantFilter */
         doc,
         doc_type: 'OFFICE_SUPPLY_TXN',
         entity_id: doc.entity_id,
-        bdm_id: null,
+        // OfficeSupplyTransaction has no bdm_id; TransactionEvent.bdm_id is
+        // required:true, so fall back to the txn creator, then to the reversing user.
+        bdm_id: doc.created_by || userId,
         reason,
         userId,
         session,
