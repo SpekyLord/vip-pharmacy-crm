@@ -28,9 +28,21 @@ const officeSupplySchema = new mongoose.Schema({
   created_at: { type: Date, default: Date.now, immutable: true }
 }, { timestamps: true, collection: 'erp_office_supplies' });
 
-// Unique (entity_id, item_code) — sparse so items without a code are still allowed.
+// Unique (entity_id, item_code) — partial so:
+//   • items without an item_code are still allowed (only string codes participate)
+//   • president-reversed items (deletion_event_id set) free up their code for re-use,
+//     while their row stays in the collection for audit
 // Prevents the silent-duplicate bug where re-clicking Save created multiple identical rows.
-officeSupplySchema.index({ entity_id: 1, item_code: 1 }, { unique: true, sparse: true });
+officeSupplySchema.index(
+  { entity_id: 1, item_code: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      item_code: { $type: 'string' },
+      deletion_event_id: { $exists: false },
+    },
+  }
+);
 officeSupplySchema.index({ entity_id: 1, category: 1 });
 officeSupplySchema.index({ entity_id: 1, is_active: 1 });
 officeSupplySchema.index({ entity_id: 1, deletion_event_id: 1 });

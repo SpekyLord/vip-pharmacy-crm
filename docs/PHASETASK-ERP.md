@@ -5337,8 +5337,11 @@ considered and dropped (master data is not gated anywhere else; president
 bypasses approval; duplicates are deterministically solved by a unique index).
 
 **Backend.**
-- [x] `models/OfficeSupply.js` — added `deletion_event_id` + unique sparse index
-  on `{ entity_id, item_code }` + extra index `{ entity_id, deletion_event_id }`
+- [x] `models/OfficeSupply.js` — added `deletion_event_id` + unique **partial**
+  index on `{ entity_id, item_code }` (partialFilterExpression: `item_code`
+  is string AND `deletion_event_id` missing — reversed rows free up their code
+  for re-use while staying in the collection for audit) + extra index
+  `{ entity_id, deletion_event_id }`
 - [x] `models/OfficeSupplyTransaction.js` — added `deletion_event_id` +
   `reversal_event_id` + index `{ supply_id, deletion_event_id }`
 - [x] `controllers/officeSupplyController.js` — `sendDuplicateIfAny()` helper

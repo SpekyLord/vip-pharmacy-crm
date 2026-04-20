@@ -2722,11 +2722,14 @@ Triggered by a silent-save bug where a single user unknowingly created 6 identic
   [frontend/src/erp/pages/OfficeSupplies.jsx](frontend/src/erp/pages/OfficeSupplies.jsx).
   Previously the modal closed silently; users re-clicked Save thinking the action
   had failed. Root cause of the duplicate incident.
-- **Unique sparse index** on `{ entity_id, item_code }` in
-  [backend/erp/models/OfficeSupply.js](backend/erp/models/OfficeSupply.js). Sparse
-  so items without a code still save; duplicates produce Mongo error 11000 which
-  the controller now translates to HTTP 409 via the shared `sendDuplicateIfAny()`
-  helper (in [backend/erp/controllers/officeSupplyController.js](backend/erp/controllers/officeSupplyController.js)).
+- **Unique partial index** on `{ entity_id, item_code }` in
+  [backend/erp/models/OfficeSupply.js](backend/erp/models/OfficeSupply.js). The
+  `partialFilterExpression` requires `item_code: { $type: 'string' }` AND
+  `deletion_event_id: { $exists: false }` so: (a) items without a code still
+  save, and (b) president-reversed items free up their code for re-use while
+  their row stays in the collection for audit. Duplicates produce Mongo error
+  11000 which the controller translates to HTTP 409 via the shared
+  `sendDuplicateIfAny()` helper (in [backend/erp/controllers/officeSupplyController.js](backend/erp/controllers/officeSupplyController.js)).
 - **Two new reversal handlers** registered in `REVERSAL_HANDLERS`:
   - `OFFICE_SUPPLY_ITEM` — SAP Storno with cascade. Marks all
     `OfficeSupplyTransaction` rows for the item as `deletion_event_id=<reversal>`,
