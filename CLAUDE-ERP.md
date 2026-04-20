@@ -1084,6 +1084,96 @@ Approver opens Approval Hub:
 
 ---
 
+## Phase 33 — Car Logbook Cycle-Wrapper Redesign (April 21, 2026)
+
+> Not to be confused with the earlier "Phase 33 — Bulk Role Migration + Login Fix" further down. Both were tagged Phase 33 in the backlog; this section covers the car-logbook cycle-wrapper work shipped April 21, 2026.
+
+**Why.** Approval Hub showed `Submit 16 car logbook entries` with 16× duplicate `LOGBOOK-2026-04` docRefs and `Lines=0 / ₱0 / ORE:₱0` on the card. Root cause: `submitCarLogbook` aggregated 15 per-day `CarLogbookEntry` docs into ONE `ApprovalRequest` (title + comma-joined docRef), but `MODULE_QUERIES['CAR_LOGBOOK']` hydrated each per-day doc individually, and the generic EXPENSES card renderer expected `line_count / total_ore / total_access / total_amount` — fields that don't exist on a per-day doc. Symptom: unreadable approval queue + wrong totals.
+
+**Architecture decision (critical — don't second-guess).** The initial plan was a single-collection rewrite of `CarLogbookEntry` into SMER-shape (`daily_entries[]` inside one cycle doc). That would have severed **10+ downstream services** that read per-day fields at top level: `incomeCalc`, `expenseSummary`, `fuelEfficiencyService`, `expenseAnomalyService`, `performanceRankingService`, `dashboardService`, `documentReversalService` list query, `copilotToolRegistry`, `monthEndClose`, `testExpenseEndpoints`. The pivot was a **dual-model wrapper**:
+
+- **`CarLogbookEntry`** — unchanged per-day doc. Per-day odometer / fuel / destination / KM / efficiency remain the source of truth. Zero breakage for the 10+ consumers.
+- **`CarLogbookCycle`** — NEW lightweight wrapper (one per `entity_id + bdm_id + period + cycle`) carrying approval/posting state + aggregated totals (`working_days`, `total_km`, `total_fuel_amount`, `cycle_efficiency_variance`, `cycle_overconsumption_flag`). Per-day docs back-link via `cycle_id`. Submit/post/reverse run at the **cycle** level. The wrapper is what the Approval Hub surfaces.
+
+**What shipped (backend).**
+
+1. **New model `CarLogbookCycle`** — wrapper with `refreshTotalsFromDays()` that aggregates from per-day docs; carries `status`, `event_id`, `deletion_event_id`.
+2. **Additive fields on `CarLogbookEntry`** — `cycle_id` (back-link); per-fuel `doc_ref`, `receipt_ocr_source` (SCAN|URL_UPLOAD), `manual_override_flag/reason`, `backup_photo_url/attachment_id`, and per-fuel approval state (`approval_status`, `approval_request_id`, `approved_by`, `approved_at`, `rejection_reason`).
+3. **`submitCarLogbook` rewritten** — scopes to a single `period+cycle` (rejects multi-cycle mixed submits), upserts a `CarLogbookCycle`, links per-day docs via `cycle_id`, fires ONE `gateApproval({ module: 'EXPENSES', docType: 'CAR_LOGBOOK', docId: cycleDoc._id, docRef: 'LOGBOOK-{period}-{cycle}' })`. Pre-post gate: each non-CASH fuel must be **either** `approval_status='APPROVED'` (per-fuel path) **or** linked to a POSTED CALF. Post flips the wrapper + all linked per-day docs in a transaction, writes ONE JE per cycle.
+4. **`reopenCarLogbook` rewritten** — accepts `cycle_ids` (new) or legacy `logbook_ids`. Cycle path reverses JE, flips wrapper + all per-day docs to DRAFT in a transaction.
+5. **`submitFuelEntryForApproval` NEW** — per-fuel flow mirroring SMER's per-diem override. Assigns `FUEL-{ENTITY}{MMDDYY}-{NNN}` via `generateDocNumber({ prefix: 'FUEL' })` (no new numbering code — reuses `docNumbering.js` + `DocSequence` atomic counter). Fires `gateApproval({ module: 'EXPENSES', docType: 'FUEL_ENTRY' })`. Open-post path → APPROVED immediately.
+6. **`postSingleCarLogbook` extended** — branches on `doc.constructor.modelName === 'CarLogbookCycle'`. Cycle path posts wrapper + all days atomically, ONE JE. Legacy per-day path preserved for backward compatibility.
+7. **`getLinkedExpenses` NEW** (`GET /expenses/prf-calf/:id/linked-expenses`) — queries `CarLogbookEntry.fuel_entries.calf_id` + `ExpenseEntry.lines.calf_id`, returns unified list with running total vs CALF amount + variance. Drives the PrfCalf inline drill-down.
+8. **`approvalHandlers.car_logbook`** — tries `CarLogbookCycle` first, falls back to per-day for legacy docs.
+9. **`approvalHandlers.fuel_entry` NEW** — flips nested `fuel_entries[i].approval_status` to APPROVED/REJECTED.
+10. **`MODULE_AUTO_POST.FUEL_ENTRY`** added. The dispatcher now prefers `MODULE_AUTO_POST[req.doc_type]` over `[req.module]`, so FUEL_ENTRY (held under `module: 'EXPENSES'`) routes to the fuel_entry handler, not expense_entry.
+11. **`MODULE_QUERIES['CAR_LOGBOOK']`** now queries `CarLogbookCycle` (one per period+cycle), hydrates each with its per-day docs, CRM-enrichment loops across all days in the cycle. docRef = `LOGBOOK-{period}-{cycle}` (single clean ref). description = `{bdm} — {period} {cycle} — {workingDays} working day(s), {total_km} km`. amount = `total_fuel_amount`.
+12. **`MODULE_QUERIES['FUEL_ENTRY'] NEW`** — scans `CarLogbookEntry` where `fuel_entries.approval_status='PENDING'`. One item per pending fuel entry.
+13. **`buildCarLogbookDetails`** rewritten as dual-shape (detects CYCLE vs legacy DAY via presence of `working_days`/`entry_date`). CYCLE shape emits `period`, `cycle`, `working_days`, `total_*`, `cycle_overconsumption_flag`, `daily_entries[]`, flat `fuel_receipts[]`, pending/approved/rejected fuel counters, plus `line_count + total_amount` aliases so the generic EXPENSES card shows non-zero values.
+14. **`buildFuelEntryDetails` NEW** + `DETAIL_BUILDERS.FUEL_ENTRY`.
+15. **`documentReversalService.loadCarLogbook / reverseCarLogbook` dual-shape** — cycle path reverses JE via `reverseLinkedJEs({ event_id })`, stamps `deletion_event_id` on wrapper + all linked per-day docs in a transaction. Pre-POSTED cycle → hard-delete wrapper + DRAFT/VALID/ERROR days. `REVERSAL_HANDLERS` count preserved at 21.
+16. **Reversal Console list query** updated to surface `CarLogbookCycle` docs (legacy per-day block dead-coded with `if (false &&` — safe to remove in a future cleanup once no legacy per-day POSTED docs remain).
+17. **SEED_DEFAULTS updated** (`lookupGenericController.js`): `APPROVAL_CATEGORY.OPERATIONAL.modules += FUEL_ENTRY`; `APPROVAL_MODULE.FUEL_ENTRY` added (OPERATIONAL); `MODULE_DEFAULT_ROLES.FUEL_ENTRY` added (admin / finance / president — subscribers tighten or `null` to open-post via Control Center). `CAR_LOGBOOK` description updated.
+18. **Reset script `backend/scripts/resetCarLogbook.js`** — dry-run by default; `--live` drops POSTED/DELETION_REQUESTED per-day docs, drops `erp_car_logbook_cycles`, rejects pending CAR_LOGBOOK/FUEL_ENTRY ApprovalRequests. `--archive` renames instead of drops. Does **not** touch TransactionEvents or JournalEntries (ledger stays balanced — user accepted the fresh-start migration strategy because contractors have paper copies).
+
+**What shipped (frontend).**
+
+1. **`useExpenses` hook** — `validateCarLogbook(scope)` + `submitCarLogbook(scope)` accept `{ period, cycle }`. `reopenCarLogbook(ids, kind='cycle')`. New `submitFuelForApproval(dayId, fuelId)`. New `getLinkedExpenses(calfId)`.
+2. **`CarLogbook.jsx`** — `handleValidate` / `handleSubmit` pass `{ period, cycle }`; `handleReopen` passes `'cycle'` kind. New `handleSubmitFuel` handler. Per-fuel approval UI (desktop grid + mobile card): approval-status badge, "Submit Fuel" / "Resubmit" button (shown when editable + non-CASH + no CALF + no approval or REJECTED), fuel-level lock when PENDING/APPROVED.
+3. **`PrfCalf.jsx`** — CALF rows get a "View Links" button; inline sub-row renders linked fuel + expense entries with totals + variance vs CALF amount (Phase 33 inline drill-down, driven by `getLinkedExpenses`).
+4. **`WorkflowGuide.jsx`** — `WORKFLOW_GUIDES['car-logbook']` steps + tip rewritten to describe the cycle-wrapper flow, per-fuel Submit, pre-post gate, and atomic cycle reverse.
+
+**Before / After Approval Hub card.**
+
+| | Before | After |
+|---|---|---|
+| Card title | `Submit 16 car logbook entries` | `Submit Car Logbook 2026-04 C2 (14 working days, total ₱8,420)` |
+| docRef | `LOGBOOK-2026-04,LOGBOOK-2026-04,…` (×16) | `LOGBOOK-2026-04-C2` |
+| Lines / Amount | `Lines=0 / ₱0 / ORE:₱0` | `14 days / ₱8,420 / 312 km` |
+| Journal entries on post | 16 (one per day — ledger churn) | 1 |
+
+**Integrity note — known dead code.** `documentReversalService` Reversal Console list query has a legacy per-day branch guarded with `if (false &&` to be safe during migration. Keep it until `backend/scripts/resetCarLogbook.js --live --archive` runs in production, then remove in a follow-up commit.
+
+**Files changed (Phase 33).**
+
+| File | Change |
+|------|--------|
+| `backend/erp/models/CarLogbookEntry.js` | Additive — `cycle_id`, per-fuel `doc_ref` / `receipt_ocr_source` / `manual_override_*` / `backup_photo_*` / approval state. |
+| `backend/erp/models/CarLogbookCycle.js` | NEW — wrapper with `refreshTotalsFromDays()`. |
+| `backend/erp/controllers/expenseController.js` | `submitCarLogbook` / `reopenCarLogbook` rewritten; `postSingleCarLogbook` extended; NEW `submitFuelEntryForApproval` + `getLinkedExpenses`. |
+| `backend/erp/controllers/universalApprovalController.js` | `approvalHandlers.car_logbook` dual-shape; NEW `fuel_entry` handler; `MODULE_AUTO_POST.FUEL_ENTRY`; dispatcher prefers `doc_type` over `module`. |
+| `backend/erp/controllers/lookupGenericController.js` | SEED_DEFAULTS — `APPROVAL_CATEGORY`, `APPROVAL_MODULE`, `MODULE_DEFAULT_ROLES`, `CAR_LOGBOOK` description. |
+| `backend/erp/services/universalApprovalService.js` | `MODULE_QUERIES.CAR_LOGBOOK` now wrapper-driven; NEW `FUEL_ENTRY` query; `DOC_TYPE_HYDRATION.CAR_LOGBOOK.modelName=CarLogbookCycle`; `FUEL_ENTRY` added; `MODULE_TO_SUB_KEY.FUEL_ENTRY='approve_expenses'`. |
+| `backend/erp/services/documentDetailBuilder.js` | `buildCarLogbookDetails` dual-shape; NEW `buildFuelEntryDetails`; `DETAIL_BUILDERS.FUEL_ENTRY`. |
+| `backend/erp/services/documentReversalService.js` | `loadCarLogbook` / `reverseCarLogbook` dual-shape; list query surfaces `CarLogbookCycle`. REVERSAL_HANDLERS=21 (unchanged). |
+| `backend/erp/routes/expenseRoutes.js` | Two new routes: `POST /car-logbook/:id/fuel/:fuel_id/submit`, `GET /prf-calf/:id/linked-expenses`. |
+| `backend/scripts/resetCarLogbook.js` | NEW — dry-run/live/archive migration script. |
+| `frontend/src/erp/hooks/useExpenses.js` | `{period, cycle}` scope on validate/submit; `submitFuelForApproval`; `getLinkedExpenses`. |
+| `frontend/src/erp/pages/CarLogbook.jsx` | Period+cycle scope on actions; per-fuel approval UI (desktop + mobile) — badge + Submit Fuel / Resubmit button + fuel-level lock when PENDING/APPROVED. |
+| `frontend/src/erp/pages/PrfCalf.jsx` | CALF "View Links" inline drill-down (Phase 33). |
+| `frontend/src/erp/components/WorkflowGuide.jsx` | `car-logbook` banner — steps + tip rewritten. |
+
+**Backward compatibility + safety.**
+- Per-day CRUD (`createCarLogbook / updateCarLogbook / getCarLogbookList / getCarLogbookById / validateCarLogbook / deleteDraftCarLogbook`) unchanged. The 10+ downstream services listed above continue to read per-day fields at top level.
+- `SmerEntry.car_logbook_id` still resolves to a per-day `_id` — SMER integration untouched.
+- Legacy paths preserved: `reopenCarLogbook(ids, 'day')`, per-day approvalHandler fallback, legacy `postSingleCarLogbook` branch.
+- No historical journal migration. POSTED history stays or gets flushed via the reset script — user's choice.
+- `REVERSAL_HANDLERS` count unchanged at 21 (handler is dual-shape).
+
+**Subscription readiness.**
+- `MODULE_DEFAULT_ROLES.FUEL_ENTRY` seeded via Lookup, so subscribers tighten (president-only) or open-post (`metadata.roles=null`) through Control Center without code changes.
+- `APPROVAL_CATEGORY.OPERATIONAL.modules` includes FUEL_ENTRY — subscribers can re-categorize via Lookup.
+- Per-fuel doc_ref uses entity-scoped `DocSequence` — subsidiary prefixes work out of the box.
+- Editable statuses still driven by `MODULE_REJECTION_CONFIG.CAR_LOGBOOK` lookup (per-entity overrides in place).
+- Cycle boundaries (`C1`=1-15, `C2`=16-end, `MONTHLY`=full) are implied by the wrapper's `period+cycle` unique key; per-subscriber alternative cycles can be added without schema changes.
+
+**Verification.**
+- `node -c` clean on all 9 backend files touched.
+- `npx vite build` clean (confirmed at each handoff — 9.29s → 11s).
+- Repro steps: BDM creates April C2 cycle with 14 working days + 3 non-CASH fuels → clicks Submit Fuel on each non-CASH fuel row → Approval Hub shows 3 FUEL_ENTRY cards with `FUEL-VIP042126-###` refs → president approves each → fuel rows flip to APPROVED (locked) → BDM clicks Submit on the cycle → ONE card `LOGBOOK-2026-04-C2` in the hub → president posts → ONE JE `Car Logbook 2026-04 C2`. Reversal via Reversal Console reverses the JE and cascades `deletion_event_id` to the wrapper + all 14 per-day docs atomically.
+
+---
+
 ## Phase E.2 — Deduction Schedules (Recurring + Non-Recurring)
 
 Standalone `DeductionSchedule` model for both recurring (CC installment ₱990/month × 10) and non-recurring (one-time ₱1,500 next month) deductions. BDMs create schedules even before payslips exist. Installments auto-inject into payslips when generated.

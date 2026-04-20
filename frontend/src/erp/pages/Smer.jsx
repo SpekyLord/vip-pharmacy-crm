@@ -150,6 +150,7 @@ export default function Smer() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
   const [cycle, setCycle] = useState('C1');
+  const [listTab, setListTab] = useState('working');
 
   // Form state
   const [dailyEntries, setDailyEntries] = useState([]);
@@ -596,6 +597,11 @@ export default function Smer() {
   const totalReimbursable = totals.perdiem + totals.transpo + totals.special + totals.ore;
   const balanceOnHand = travelAdvance - totalReimbursable;
 
+  // Split SMERs into Working (actionable) vs Posted (archive)
+  const workingSmers = smers.filter(s => s.status !== 'POSTED');
+  const postedSmers = smers.filter(s => s.status === 'POSTED');
+  const visibleSmers = listTab === 'working' ? workingSmers : postedSmers;
+
   return (
     <div className="admin-page erp-page">
       <style>{smerMobileStyles}</style>
@@ -622,6 +628,25 @@ export default function Smer() {
             <button onClick={handleSubmit} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer' }}>Submit</button>
           </div>
 
+          {/* Working vs Posted tabs — separates actionable SMERs from archive */}
+          {!showForm && (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setListTab('working')}
+                style={{ padding: '7px 14px', minHeight: 40, borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, background: listTab === 'working' ? 'var(--erp-accent, #2563eb)' : 'transparent', color: listTab === 'working' ? '#fff' : 'var(--erp-text)', borderWidth: 1, borderStyle: 'solid', borderColor: listTab === 'working' ? 'transparent' : 'var(--erp-border, #dbe4f0)' }}
+              >
+                Working {workingSmers.length > 0 ? `(${workingSmers.length})` : ''}
+              </button>
+              <button
+                onClick={() => setListTab('posted')}
+                title="Already-posted SMERs (archive)"
+                style={{ padding: '7px 14px', minHeight: 40, borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, background: listTab === 'posted' ? 'var(--erp-accent, #2563eb)' : 'transparent', color: listTab === 'posted' ? '#fff' : 'var(--erp-text)', borderWidth: 1, borderStyle: 'solid', borderColor: listTab === 'posted' ? 'transparent' : 'var(--erp-border, #dbe4f0)' }}
+              >
+                Posted {postedSmers.length > 0 ? `(${postedSmers.length})` : ''}
+              </button>
+            </div>
+          )}
+
           {/* SMER List */}
           {!showForm && (
             <div style={{ overflowX: 'auto' }}>
@@ -639,7 +664,7 @@ export default function Smer() {
                   </tr>
                 </thead>
                 <tbody>
-                  {smers.map(s => (
+                  {visibleSmers.map(s => (
                     <React.Fragment key={s._id}>
                     <tr style={{ borderBottom: s.status === 'ERROR' ? 'none' : '1px solid var(--erp-border, #dbe4f0)' }}>
                       <td style={{ padding: 8 }}>{s.period}</td>
@@ -687,7 +712,7 @@ export default function Smer() {
                     )}
                     </React.Fragment>
                   ))}
-                  {!smers.length && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)' }}>No SMER entries for this period</td></tr>}
+                  {!visibleSmers.length && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)' }}>{listTab === 'working' ? 'No unposted SMERs for this period' : 'No posted SMERs for this period'}</td></tr>}
                 </tbody>
               </table>
             </div>

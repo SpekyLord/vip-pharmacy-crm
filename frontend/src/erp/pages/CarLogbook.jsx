@@ -92,6 +92,10 @@ function ScanModal({ open, onClose, onApply, docType, title }) {
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
 };
+// Per-fuel approval status (Phase 33) — null|PENDING|APPROVED|REJECTED
+const FUEL_APPROVAL_COLORS = {
+  PENDING: '#eab308', APPROVED: '#22c55e', REJECTED: '#ef4444'
+};
 const DAYS_OF_WEEK = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const WEEKEND_BG = '#f8fafc';
 
@@ -132,7 +136,7 @@ export default function CarLogbook() {
   const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
   const {
     getCarLogbookList, createCarLogbook, updateCarLogbook, deleteDraftCarLogbook,
-    validateCarLogbook, submitCarLogbook, reopenCarLogbook,
+    validateCarLogbook, submitCarLogbook, reopenCarLogbook, submitFuelForApproval,
     getSmerDestinationsBatch, loading
   } = useExpenses();
   const { settings } = useSettings();
@@ -153,6 +157,7 @@ export default function CarLogbook() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
   const [cycle, setCycle] = useState('C1');
+  const [listTab, setListTab] = useState('working');
   const [expandedRow, setExpandedRow] = useState(null);
   const [savingRow, setSavingRow] = useState(null);
 
@@ -425,17 +430,17 @@ export default function CarLogbook() {
     });
   };
 
-  // Batch actions
+  // Batch actions — Phase 33: scope to the current period+cycle so the backend
+  // builds one CarLogbookCycle wrapper for this BDM instead of batching all
+  // open cycles into a multi-entry ApprovalRequest.
   const handleValidate = async () => {
-    // Save all dirty rows first
     for (let i = 0; i < rows.length; i++) { if (rows[i].dirty) await saveRow(i); }
-    try { const r = await validateCarLogbook(); showMsg(r?.message || 'Validated'); loadAndMerge(); } catch (e) { showMsg(e.response?.data?.message || 'Validation failed', true); }
+    try { const r = await validateCarLogbook({ period, cycle }); showMsg(r?.message || 'Validated'); loadAndMerge(); } catch (e) { showMsg(e.response?.data?.message || 'Validation failed', true); }
   };
   const handleSubmit = async () => {
-    // Save all dirty rows first
     for (let i = 0; i < rows.length; i++) { if (rows[i].dirty) await saveRow(i); }
     try {
-      const r = await submitCarLogbook();
+      const r = await submitCarLogbook({ period, cycle });
       if (r?.approval_pending) { showApprovalPending(r.message); }
       else showMsg(r?.message || 'Submitted');
       loadAndMerge();
@@ -444,7 +449,29 @@ export default function CarLogbook() {
       else showMsg(e.response?.data?.message || 'Submit failed — are there VALID entries?', true);
     }
   };
-  const handleReopen = async (id) => { try { await reopenCarLogbook([id]); showMsg('Reopened'); loadAndMerge(); } catch (e) { showMsg(e.response?.data?.message || 'Reopen failed', true); } };
+  // Reopen from the page list now targets the cycle wrapper id (cycle_id on each row).
+  const handleReopen = async (id) => { try { await reopenCarLogbook([id], 'cycle'); showMsg('Reopened'); loadAndMerge(); } catch (e) { showMsg(e.response?.data?.message || 'Reopen failed', true); } };
+  // Phase 33 — per-fuel approval. Save the row first (need fuel._id from DB), then
+  // POST /expenses/car-logbook/:id/fuel/:fuel_id/submit. Handle 202 (gateApproval
+  // held in Approval Hub) the same way SMER per-diem override does.
+  const handleSubmitFuel = async (rowIdx, fuelIdx) => {
+    const row = rows[rowIdx];
+    if (!row?._id) { showMsg('Save the day first before submitting fuel for approval', true); return; }
+    if (row.dirty) { await saveRow(rowIdx); }
+    // Re-read row after save (row._id / fuel._id may have changed)
+    const fresh = rows[rowIdx];
+    const fuel = fresh?.fuel_entries?.[fuelIdx];
+    if (!fuel?._id) { showMsg('Fuel entry not yet persisted — save the day and try again', true); return; }
+    try {
+      const r = await submitFuelForApproval(fresh._id, fuel._id);
+      if (r?.approval_pending) { showApprovalPending(r.message); }
+      else showMsg(`Fuel approved (${r?.data?.doc_ref || 'auto'})`);
+      loadAndMerge();
+    } catch (e) {
+      if (e?.response?.data?.approval_pending) { showApprovalPending(e.response.data.message); loadAndMerge(); }
+      else showMsg(e.response?.data?.message || 'Fuel approval submit failed', true);
+    }
+  };
   const handleDelete = async (id, idx) => {
     try {
       await deleteDraftCarLogbook(id);
@@ -467,6 +494,14 @@ export default function CarLogbook() {
   const inp = { padding: '2px 4px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 11 };
   const scanBtn = { padding: '1px 4px', borderRadius: 3, background: '#16a34a', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 9, fontWeight: 600 };
   const isEditable = (row) => !row.status || editableStatuses.includes(row.status);
+
+  // Split rows into Working (actionable) vs Posted (archive). Totals above are computed
+  // from all rows so switching tabs does not change period-level KPIs or the CALF warning.
+  const workingRows = rows.filter(r => r.status !== 'POSTED');
+  const postedRows = rows.filter(r => r.status === 'POSTED');
+  const visibleRows = listTab === 'working' ? workingRows : postedRows;
+  // Preserve original grid index so edits/expand still target the correct row in `rows`.
+  const indexedVisibleRows = visibleRows.map(r => ({ row: r, idx: rows.indexOf(r) }));
 
   return (
     <div className="admin-page erp-page">
@@ -528,6 +563,29 @@ export default function CarLogbook() {
             );
           })()}
 
+          {/* Working vs Posted tabs — separates draft days from posted archive */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+            <button
+              onClick={() => setListTab('working')}
+              style={{ padding: '7px 14px', minHeight: 40, borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, background: listTab === 'working' ? 'var(--erp-accent, #2563eb)' : 'transparent', color: listTab === 'working' ? '#fff' : 'var(--erp-text)', borderWidth: 1, borderStyle: 'solid', borderColor: listTab === 'working' ? 'transparent' : 'var(--erp-border, #dbe4f0)' }}
+            >
+              Working {workingRows.length > 0 ? `(${workingRows.length})` : ''}
+            </button>
+            <button
+              onClick={() => setListTab('posted')}
+              title="Already-posted days (archive)"
+              style={{ padding: '7px 14px', minHeight: 40, borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, background: listTab === 'posted' ? 'var(--erp-accent, #2563eb)' : 'transparent', color: listTab === 'posted' ? '#fff' : 'var(--erp-text)', borderWidth: 1, borderStyle: 'solid', borderColor: listTab === 'posted' ? 'transparent' : 'var(--erp-border, #dbe4f0)' }}
+            >
+              Posted {postedRows.length > 0 ? `(${postedRows.length})` : ''}
+            </button>
+          </div>
+
+          {visibleRows.length === 0 && rows.length > 0 && (
+            <div style={{ padding: 12, marginBottom: 12, borderRadius: 8, background: '#f8fafc', border: '1px dashed var(--erp-border, #dbe4f0)', fontSize: 13, color: 'var(--erp-muted, #5f7188)', textAlign: 'center' }}>
+              {listTab === 'working' ? 'No unposted days — all days in this period are posted. Switch to Posted to view the archive.' : 'No posted days yet — switch to Working to edit.'}
+            </div>
+          )}
+
           {/* ═══ Desktop Grid ═══ */}
           <div className="cl-table" style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -548,7 +606,7 @@ export default function CarLogbook() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, idx) => {
+                {indexedVisibleRows.map(({ row, idx }) => {
                   const editable = isEditable(row);
                   const isExp = expandedRow === idx;
                   const fuelCount = (row.fuel_entries || []).length;
@@ -615,19 +673,29 @@ export default function CarLogbook() {
                       {isExp && (
                         <tr style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)', background: row.isWeekend ? WEEKEND_BG : '#fafbfc' }}>
                           <td colSpan={12} style={{ padding: '4px 8px 8px 32px' }}>
-                            {row.fuel_entries.map((fuel, fi) => (
+                            {row.fuel_entries.map((fuel, fi) => {
+                              // Phase 33 per-fuel approval: lock when PENDING or APPROVED;
+                              // REJECTED keeps the row editable so the BDM can fix + resubmit.
+                              const fuelLocked = fuel.approval_status === 'PENDING' || fuel.approval_status === 'APPROVED';
+                              const fuelEditable = editable && !fuelLocked;
+                              const isNonCash = fuel.payment_mode && fuel.payment_mode !== 'CASH';
+                              // "Submit Fuel for Approval" path only when non-CASH and not routed via CALF.
+                              const canSubmitFuel = editable && isNonCash && !fuel.calf_id
+                                && (!fuel.approval_status || fuel.approval_status === 'REJECTED')
+                                && !!row._id && !!fuel._id;
+                              return (
                               <div key={fi} style={{ display: 'flex', gap: 6, marginBottom: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-                                <input placeholder="Station" value={fuel.station_name} onChange={e => updateFuelEntry(idx, fi, 'station_name', e.target.value)} disabled={!editable} style={{ ...inp, width: 100 }} />
-                                <select value={fuel.fuel_type} onChange={e => updateFuelEntry(idx, fi, 'fuel_type', e.target.value)} disabled={!editable} style={{ ...inp, width: 80 }}>
+                                <input placeholder="Station" value={fuel.station_name} onChange={e => updateFuelEntry(idx, fi, 'station_name', e.target.value)} disabled={!fuelEditable} style={{ ...inp, width: 100 }} />
+                                <select value={fuel.fuel_type} onChange={e => updateFuelEntry(idx, fi, 'fuel_type', e.target.value)} disabled={!fuelEditable} style={{ ...inp, width: 80 }}>
                                   {FUEL_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
-                                <input type="number" placeholder="L" value={fuel.liters || ''} onChange={e => updateFuelEntry(idx, fi, 'liters', Number(e.target.value))} disabled={!editable} style={{ ...inp, width: 55, textAlign: 'right' }} />
-                                <input type="number" placeholder="₱/L" value={fuel.price_per_liter || ''} onChange={e => updateFuelEntry(idx, fi, 'price_per_liter', Number(e.target.value))} disabled={!editable} style={{ ...inp, width: 55, textAlign: 'right' }} />
+                                <input type="number" placeholder="L" value={fuel.liters || ''} onChange={e => updateFuelEntry(idx, fi, 'liters', Number(e.target.value))} disabled={!fuelEditable} style={{ ...inp, width: 55, textAlign: 'right' }} />
+                                <input type="number" placeholder="₱/L" value={fuel.price_per_liter || ''} onChange={e => updateFuelEntry(idx, fi, 'price_per_liter', Number(e.target.value))} disabled={!fuelEditable} style={{ ...inp, width: 55, textAlign: 'right' }} />
                                 <span style={{ fontSize: 11, fontWeight: 600, minWidth: 60 }}>= ₱{(fuel.total_amount || 0).toLocaleString()}</span>
-                                <select value={fuel.payment_mode} onChange={e => updateFuelEntry(idx, fi, 'payment_mode', e.target.value)} disabled={!editable} style={{ ...inp, width: 75 }}>
+                                <select value={fuel.payment_mode} onChange={e => updateFuelEntry(idx, fi, 'payment_mode', e.target.value)} disabled={!fuelEditable} style={{ ...inp, width: 75 }}>
                                   {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
                                 </select>
-                                {editable && (
+                                {fuelEditable && (
                                   <label style={{ padding: '1px 6px', borderRadius: 3, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 9, fontWeight: 600, display: 'inline-block' }}>
                                     Rcpt
                                     <input type="file" accept="image/*" style={{ display: 'none' }} onChange={async e => {
@@ -645,14 +713,26 @@ export default function CarLogbook() {
                                   </label>
                                 )}
                                 {fuel.receipt_url && <span style={{ fontSize: 9, padding: '1px 4px', borderRadius: 3, background: '#dcfce7', color: '#166534', fontWeight: 600 }}>Rcpt ✓</span>}
-                                {fuel.payment_mode && fuel.payment_mode !== 'CASH' && (
+                                {isNonCash && (
                                   fuel.calf_id
                                     ? <a href={`/erp/prf-calf?id=${fuel.calf_id}`} style={{ fontSize: 9, padding: '1px 4px', borderRadius: 3, background: '#dcfce7', color: '#166534', fontWeight: 600, textDecoration: 'none' }}>CALF ✓</a>
                                     : <span style={{ fontSize: 9, padding: '1px 4px', borderRadius: 3, background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>CALF</span>
                                 )}
-                                {editable && <button onClick={() => removeFuelEntry(idx, fi)} style={{ padding: '0 4px', borderRadius: 3, border: '1px solid #ef4444', color: '#ef4444', background: '#fff', cursor: 'pointer', fontSize: 10 }}>X</button>}
+                                {/* Phase 33 — approval status badge + submit button */}
+                                {fuel.approval_status && (
+                                  <span title={fuel.doc_ref || ''} style={{ fontSize: 9, padding: '1px 4px', borderRadius: 3, color: '#fff', background: FUEL_APPROVAL_COLORS[fuel.approval_status] || '#6b7280', fontWeight: 600 }}>
+                                    {fuel.approval_status}
+                                  </span>
+                                )}
+                                {canSubmitFuel && (
+                                  <button onClick={() => handleSubmitFuel(idx, fi)} title="Submit this fuel entry for per-fuel approval (FUEL_ENTRY doc_type)" style={{ padding: '1px 6px', borderRadius: 3, background: '#7c3aed', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 9, fontWeight: 600 }}>
+                                    {fuel.approval_status === 'REJECTED' ? 'Resubmit' : 'Submit Fuel'}
+                                  </button>
+                                )}
+                                {fuelEditable && <button onClick={() => removeFuelEntry(idx, fi)} style={{ padding: '0 4px', borderRadius: 3, border: '1px solid #ef4444', color: '#ef4444', background: '#fff', cursor: 'pointer', fontSize: 10 }}>X</button>}
                               </div>
-                            ))}
+                              );
+                            })}
                             {editable && (
                               <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
                                 <button onClick={() => addFuelEntry(idx)} style={{ padding: '2px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', cursor: 'pointer', fontSize: 10 }}>+ Add Fuel</button>
@@ -693,7 +773,7 @@ export default function CarLogbook() {
 
           {/* ═══ Mobile Card View ═══ */}
           <div className="cl-cards">
-            {rows.map((row, idx) => {
+            {indexedVisibleRows.map(({ row, idx }) => {
               const editable = isEditable(row);
               const isExp = expandedRow === idx;
               return (
@@ -753,15 +833,36 @@ export default function CarLogbook() {
                   {/* Expanded fuel */}
                   {isExp && (
                     <div style={{ padding: '6px 0', borderTop: '1px solid var(--erp-border, #dbe4f0)' }}>
-                      {row.fuel_entries.map((fuel, fi) => (
-                        <div key={fi} style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 4, padding: 4, borderRadius: 4, background: '#f8fafc', fontSize: 11 }}>
-                          <input placeholder="Station" value={fuel.station_name} onChange={e => updateFuelEntry(idx, fi, 'station_name', e.target.value)} disabled={!editable} style={{ flex: '1 1 80px', ...inp }} />
-                          <input type="number" placeholder="L" value={fuel.liters || ''} onChange={e => updateFuelEntry(idx, fi, 'liters', Number(e.target.value))} disabled={!editable} style={{ width: 50, ...inp, textAlign: 'right' }} />
-                          <input type="number" placeholder="₱/L" value={fuel.price_per_liter || ''} onChange={e => updateFuelEntry(idx, fi, 'price_per_liter', Number(e.target.value))} disabled={!editable} style={{ width: 50, ...inp, textAlign: 'right' }} />
+                      {row.fuel_entries.map((fuel, fi) => {
+                        const fuelLocked = fuel.approval_status === 'PENDING' || fuel.approval_status === 'APPROVED';
+                        const fuelEditable = editable && !fuelLocked;
+                        const isNonCash = fuel.payment_mode && fuel.payment_mode !== 'CASH';
+                        const canSubmitFuel = editable && isNonCash && !fuel.calf_id
+                          && (!fuel.approval_status || fuel.approval_status === 'REJECTED')
+                          && !!row._id && !!fuel._id;
+                        return (
+                        <div key={fi} style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 4, padding: 4, borderRadius: 4, background: '#f8fafc', fontSize: 11, alignItems: 'center' }}>
+                          <input placeholder="Station" value={fuel.station_name} onChange={e => updateFuelEntry(idx, fi, 'station_name', e.target.value)} disabled={!fuelEditable} style={{ flex: '1 1 80px', ...inp }} />
+                          <input type="number" placeholder="L" value={fuel.liters || ''} onChange={e => updateFuelEntry(idx, fi, 'liters', Number(e.target.value))} disabled={!fuelEditable} style={{ width: 50, ...inp, textAlign: 'right' }} />
+                          <input type="number" placeholder="₱/L" value={fuel.price_per_liter || ''} onChange={e => updateFuelEntry(idx, fi, 'price_per_liter', Number(e.target.value))} disabled={!fuelEditable} style={{ width: 50, ...inp, textAlign: 'right' }} />
                           <span style={{ fontWeight: 600, minWidth: 55 }}>₱{(fuel.total_amount || 0).toLocaleString()}</span>
-                          {editable && <button onClick={() => removeFuelEntry(idx, fi)} style={{ padding: '0 4px', borderRadius: 3, border: '1px solid #ef4444', color: '#ef4444', background: '#fff', cursor: 'pointer', fontSize: 10 }}>X</button>}
+                          {isNonCash && !fuel.calf_id && (
+                            <span style={{ fontSize: 9, padding: '1px 4px', borderRadius: 3, background: '#fef3c7', color: '#92400e', fontWeight: 600 }}>CALF</span>
+                          )}
+                          {fuel.approval_status && (
+                            <span title={fuel.doc_ref || ''} style={{ fontSize: 9, padding: '1px 4px', borderRadius: 3, color: '#fff', background: FUEL_APPROVAL_COLORS[fuel.approval_status] || '#6b7280', fontWeight: 600 }}>
+                              {fuel.approval_status}
+                            </span>
+                          )}
+                          {canSubmitFuel && (
+                            <button onClick={() => handleSubmitFuel(idx, fi)} style={{ padding: '2px 6px', borderRadius: 3, background: '#7c3aed', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 10, fontWeight: 600, minHeight: 28 }}>
+                              {fuel.approval_status === 'REJECTED' ? 'Resubmit' : 'Submit Fuel'}
+                            </button>
+                          )}
+                          {fuelEditable && <button onClick={() => removeFuelEntry(idx, fi)} style={{ padding: '0 4px', borderRadius: 3, border: '1px solid #ef4444', color: '#ef4444', background: '#fff', cursor: 'pointer', fontSize: 10 }}>X</button>}
                         </div>
-                      ))}
+                        );
+                      })}
                       {editable && (
                         <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
                           <button onClick={() => addFuelEntry(idx)} style={{ padding: '4px 10px', borderRadius: 4, border: '1px solid var(--erp-border)', background: '#fff', cursor: 'pointer', fontSize: 11 }}>+ Add Fuel</button>

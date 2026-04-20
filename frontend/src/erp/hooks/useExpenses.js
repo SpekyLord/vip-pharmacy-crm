@@ -26,9 +26,20 @@ export default function useExpenses() {
   const createCarLogbook = (data) => api.post('/expenses/car-logbook', data);
   const updateCarLogbook = (id, data) => api.put(`/expenses/car-logbook/${id}`, data);
   const deleteDraftCarLogbook = (id) => api.del(`/expenses/car-logbook/${id}`);
-  const validateCarLogbook = () => api.post('/expenses/car-logbook/validate', {});
-  const submitCarLogbook = () => api.post('/expenses/car-logbook/submit', {});
-  const reopenCarLogbook = (ids) => api.post('/expenses/car-logbook/reopen', { logbook_ids: ids });
+  // Phase 33: validate/submit accept { period, cycle } to scope to a single wrapper cycle
+  const validateCarLogbook = (scope) => api.post('/expenses/car-logbook/validate', scope || {});
+  const submitCarLogbook = (scope) => api.post('/expenses/car-logbook/submit', scope || {});
+  // Reopen defaults to cycle wrapper ids (CarLogbookCycle._id). Pass kind='day' to
+  // reopen legacy per-day CarLogbookEntry ids (backward-compat).
+  const reopenCarLogbook = (ids, kind = 'cycle') => {
+    const body = kind === 'cycle' ? { cycle_ids: ids } : { logbook_ids: ids };
+    return api.post('/expenses/car-logbook/reopen', body);
+  };
+  // Per-fuel-entry approval (mirrors per-diem override). Submits one fuel_entries[i]
+  // for independent Approval Hub routing.
+  const submitFuelForApproval = (dayId, fuelId) => api.post(`/expenses/car-logbook/${dayId}/fuel/${fuelId}/submit`, {});
+  // Linked expenses audit under a CALF (fuel + expense lines that reference it).
+  const getLinkedExpenses = (calfId) => api.get(`/expenses/prf-calf/${calfId}/linked-expenses`);
   const getSmerDestinationByDate = (date) => api.get(`/expenses/car-logbook/smer-destination/${date}`);
   const getSmerDestinationsBatch = (dates) => api.get('/expenses/car-logbook/smer-destinations', { params: { dates: dates.join(',') } });
 
@@ -82,7 +93,10 @@ export default function useExpenses() {
     getSmerCrmMdCounts, getSmerCrmVisitDetail, overridePerdiemDay, applyPerdiemOverride,
     // Car Logbook
     getCarLogbookList, getCarLogbookById, createCarLogbook, updateCarLogbook, deleteDraftCarLogbook,
-    validateCarLogbook, submitCarLogbook, reopenCarLogbook, getSmerDestinationByDate, getSmerDestinationsBatch,
+    validateCarLogbook, submitCarLogbook, reopenCarLogbook, submitFuelForApproval,
+    getSmerDestinationByDate, getSmerDestinationsBatch,
+    // Phase 33 — CALF linked-expenses audit
+    getLinkedExpenses,
     // ORE/ACCESS
     getExpenseList, getExpenseById, createExpense, updateExpense, deleteDraftExpense,
     validateExpenses, submitExpenses, reopenExpenses,

@@ -354,7 +354,7 @@ const SEED_DEFAULTS = {
   // Financial vs Operational segregation — president approves financial, can delegate operational later
   APPROVAL_CATEGORY: [
     { code: 'FINANCIAL', label: 'Financial', metadata: { description: 'Involves money movement — requires president/finance approval', modules: ['EXPENSES', 'PURCHASING', 'PAYROLL', 'JOURNAL', 'BANKING', 'PETTY_CASH', 'IC_TRANSFER', 'INCOME', 'PRF_CALF', 'PERDIEM_OVERRIDE', 'DEDUCTION_SCHEDULE', 'INCENTIVE_PAYOUT'] } },
-    { code: 'OPERATIONAL', label: 'Operational', metadata: { description: 'Document processing & verification — can be delegated to admin/finance', modules: ['SALES', 'INVENTORY', 'KPI', 'SMER', 'CAR_LOGBOOK', 'COLLECTION', 'SALES_GOAL_PLAN', 'UNDERTAKING'] } },
+    { code: 'OPERATIONAL', label: 'Operational', metadata: { description: 'Document processing & verification — can be delegated to admin/finance', modules: ['SALES', 'INVENTORY', 'KPI', 'SMER', 'CAR_LOGBOOK', 'FUEL_ENTRY', 'COLLECTION', 'SALES_GOAL_PLAN', 'UNDERTAKING'] } },
   ],
   APPROVAL_MODULE: [
     // Authority Matrix modules (Phase 29) — with financial/operational category.
@@ -380,6 +380,9 @@ const SEED_DEFAULTS = {
     { code: 'COLLECTION', label: 'Collection (Posting)', metadata: { category: 'OPERATIONAL' } },
     { code: 'SMER', label: 'SMER', metadata: { category: 'OPERATIONAL' } },
     { code: 'CAR_LOGBOOK', label: 'Car Logbook', metadata: { category: 'OPERATIONAL' } },
+    // Phase 33 — per-fuel-entry approval (mirrors per-diem override). Held under
+    // module:'EXPENSES' at gateApproval time but surfaced as its own row in the Hub.
+    { code: 'FUEL_ENTRY', label: 'Fuel Entry (per-receipt)', metadata: { category: 'OPERATIONAL' } },
     // Phase 31R follow-up — CreditNote (returns) surfaces under its own module key
     // so pending CN approvals appear in the Approval Hub. Category=OPERATIONAL
     // because returns are a sales-operations flow, not a finance approval.
@@ -896,7 +899,10 @@ const SEED_DEFAULTS = {
     { code: 'SALES', label: 'Sales / CSI', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated sales invoices' } },
     { code: 'COLLECTION', label: 'Collections / CR', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated collection receipts' } },
     { code: 'SMER', label: 'SMER', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated travel/expense reimbursements' } },
-    { code: 'CAR_LOGBOOK', label: 'Car Logbook', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated car logbook entries' } },
+    { code: 'CAR_LOGBOOK', label: 'Car Logbook', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated car logbook cycle (period+cycle wrapper over per-day docs)' } },
+    // Phase 33 — per-fuel-entry approval default roles. Subscribers can tighten or
+    // set null for open-post (any BDM can auto-approve their own fuel receipts).
+    { code: 'FUEL_ENTRY', label: 'Fuel Entry (per-receipt)', metadata: { roles: ['admin', 'finance', 'president'], description: 'Approve individual fuel receipts (non-CASH) before cycle submit' } },
     // Phase 31R follow-up — CreditNote posting authority. Subscribers can set
     // metadata.roles = null for open-post (any BDM can post returns without approval).
     { code: 'CREDIT_NOTE', label: 'Credit Notes / Returns', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post product returns / sales-returns credit notes' } },

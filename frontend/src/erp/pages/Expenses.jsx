@@ -401,6 +401,7 @@ export default function Expenses() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
   const [cycle, setCycle] = useState('C1');
+  const [listTab, setListTab] = useState('working');
   const [lines, setLines] = useState([]);
   const [scanOpen, setScanOpen] = useState(false);
   const [scanTargetIdx, setScanTargetIdx] = useState(null);
@@ -677,6 +678,11 @@ export default function Expenses() {
   const totalOre = lines.filter(l => l.expense_type === 'ORE').reduce((s, l) => s + (l.amount || 0), 0);
   const totalAccess = lines.filter(l => l.expense_type === 'ACCESS').reduce((s, l) => s + (l.amount || 0), 0);
 
+  // Split expenses into Working (actionable) vs Posted (archive)
+  const workingExpenses = expenses.filter(e => e.status !== 'POSTED');
+  const postedExpenses = expenses.filter(e => e.status === 'POSTED');
+  const visibleExpenses = listTab === 'working' ? workingExpenses : postedExpenses;
+
   return (
     <div className="admin-page erp-page erp-expenses-page">
       <Navbar />
@@ -914,6 +920,25 @@ export default function Expenses() {
             </div>
           )}
 
+          {/* Working vs Posted tabs — separates actionable expenses from archive */}
+          {!showForm && (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setListTab('working')}
+                style={{ padding: '7px 14px', minHeight: 40, borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, background: listTab === 'working' ? 'var(--erp-accent, #2563eb)' : 'transparent', color: listTab === 'working' ? '#fff' : 'var(--erp-text)', borderWidth: 1, borderStyle: 'solid', borderColor: listTab === 'working' ? 'transparent' : 'var(--erp-border, #dbe4f0)' }}
+              >
+                Working {workingExpenses.length > 0 ? `(${workingExpenses.length})` : ''}
+              </button>
+              <button
+                onClick={() => setListTab('posted')}
+                title="Already-posted expenses (archive)"
+                style={{ padding: '7px 14px', minHeight: 40, borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, background: listTab === 'posted' ? 'var(--erp-accent, #2563eb)' : 'transparent', color: listTab === 'posted' ? '#fff' : 'var(--erp-text)', borderWidth: 1, borderStyle: 'solid', borderColor: listTab === 'posted' ? 'transparent' : 'var(--erp-border, #dbe4f0)' }}
+              >
+                Posted {postedExpenses.length > 0 ? `(${postedExpenses.length})` : ''}
+              </button>
+            </div>
+          )}
+
           {/* Expense List */}
           {!showForm && (
             <div className="erp-expenses-table-wrap">
@@ -931,7 +956,7 @@ export default function Expenses() {
                   </tr>
                 </thead>
                 <tbody>
-                  {expenses.map(e => (
+                  {visibleExpenses.map(e => (
                     <React.Fragment key={e._id}>
                     <tr style={{ borderBottom: e.status === 'ERROR' ? 'none' : '1px solid var(--erp-border, #dbe4f0)' }}>
                       <td style={{ padding: 8 }}>{e.period}</td>
@@ -986,7 +1011,7 @@ export default function Expenses() {
                     )}
                     </React.Fragment>
                   ))}
-                  {!expenses.length && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)' }}>No expenses for this period</td></tr>}
+                  {!visibleExpenses.length && <tr><td colSpan={8} style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)' }}>{listTab === 'working' ? 'No unposted expenses for this period' : 'No posted expenses for this period'}</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -994,7 +1019,7 @@ export default function Expenses() {
 
           {!showForm && (
             <div className="erp-expenses-cards">
-              {expenses.map(e => (
+              {visibleExpenses.map(e => (
                 <div key={e._id} className="erp-expense-card">
                   <div className="erp-expense-card-header">
                     <div>
@@ -1061,9 +1086,9 @@ export default function Expenses() {
                   </div>
                 </div>
               ))}
-              {!expenses.length && (
+              {!visibleExpenses.length && (
                 <div style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)', border: '1px dashed var(--erp-border, #dbe4f0)', borderRadius: 10 }}>
-                  No expenses for this period
+                  {listTab === 'working' ? 'No unposted expenses for this period' : 'No posted expenses for this period'}
                 </div>
               )}
             </div>

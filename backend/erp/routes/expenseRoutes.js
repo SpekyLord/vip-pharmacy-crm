@@ -17,13 +17,15 @@ const {
   overridePerdiemDay, applyPerdiemOverride, getSmerCrmMdCounts, getSmerCrmVisitDetail,
   // Car Logbook
   createCarLogbook, updateCarLogbook, getCarLogbookList, getCarLogbookById, deleteDraftCarLogbook,
-  validateCarLogbook, submitCarLogbook, reopenCarLogbook, getSmerDailyByDate, getSmerDestinationsBatch,
+  validateCarLogbook, submitCarLogbook, reopenCarLogbook, submitFuelEntryForApproval,
+  getSmerDailyByDate, getSmerDestinationsBatch,
   // Expenses (ORE/ACCESS)
   createExpense, updateExpense, getExpenseList, getExpenseById, deleteDraftExpense,
   validateExpenses, submitExpenses, reopenExpenses,
   // PRF/CALF
   createPrfCalf, updatePrfCalf, getPrfCalfList, getPrfCalfById, deleteDraftPrfCalf,
   validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines,
+  getLinkedExpenses,
   // Batch Upload
   batchUploadExpenses, saveBatchExpenses,
   // Summary
@@ -72,6 +74,10 @@ router.post('/car-logbook/reopen', periodLockCheck('EXPENSE'), reopenCarLogbook)
 router.get('/car-logbook/:id', getCarLogbookById);
 router.put('/car-logbook/:id', updateCarLogbook);
 router.delete('/car-logbook/:id', deleteDraftCarLogbook);  // DRAFT only
+// Phase 33 — per-fuel-entry approval flow (mirrors per-diem override).
+// Flips the nested fuel_entry.approval_status to PENDING and fires an
+// ApprovalRequest via gateApproval({ docType: 'FUEL_ENTRY' }).
+router.post('/car-logbook/:id/fuel/:fuel_id/submit', submitFuelEntryForApproval);
 
 // ═══ Batch Upload (requires expenses.batch_upload sub-permission) ═══
 router.post('/ore-access/batch-upload', erpSubAccessCheck('expenses', 'batch_upload'), uploadMultiple('photos', 20), batchUploadExpenses);
@@ -103,6 +109,8 @@ router.post('/prf-calf/validate', validatePrfCalf);
 router.post('/prf-calf/submit', periodLockCheck('EXPENSE'), submitPrfCalf);
 router.post('/prf-calf/reopen', periodLockCheck('EXPENSE'), roleCheck('admin', 'finance', 'president'), reopenPrfCalf);
 router.get('/prf-calf/:id', getPrfCalfById);
+// Phase 33 — Linked expenses audit (fuel + expense lines drawing against this CALF)
+router.get('/prf-calf/:id/linked-expenses', getLinkedExpenses);
 router.put('/prf-calf/:id', periodLockCheck('EXPENSE'), updatePrfCalf);
 router.delete('/prf-calf/:id', deleteDraftPrfCalf);  // DRAFT only
 

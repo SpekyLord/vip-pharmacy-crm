@@ -461,58 +461,108 @@ const MODULE_QUERIES = [
     label: 'Car Logbook',
     sub_key: 'approve_expenses',
     query: async (entityId) => {
+      // Phase 33: surface CarLogbookCycle wrapper docs (one per period+cycle)
+      // instead of 15× per-day CarLogbookEntry rows. Fixes the "Lines=0 / ₱0 /
+      // 16× LOGBOOK-2026-04" display bug where batched-day submissions
+      // hydrated as individual entries.
+      const CarLogbookCycle = getModel('CarLogbookCycle');
       const CarLogbookEntry = getModel('CarLogbookEntry');
-      if (!CarLogbookEntry) return [];
-      const items = await CarLogbookEntry.find({ entity_id: entityId, status: 'VALID' })
+      if (!CarLogbookCycle) return [];
+
+      const cycles = await CarLogbookCycle.find({ entity_id: entityId, status: 'VALID' })
         .populate('bdm_id', 'name email')
         .sort({ createdAt: -1 })
         .lean();
-      // Enrich each item with CRM visit details (cities/MDs visited that day)
-      // so the approver can sanity-check distance vs. actual route. Best-effort:
-      // a CRM bridge failure must not break the approval listing.
-      return Promise.all(items.map(async (item) => {
-        const details = buildDocumentDetails('CAR_LOGBOOK', item);
-        const bdmUserId = item.bdm_id?._id || item.bdm_id;
-        if (details && bdmUserId && item.entry_date) {
+
+      return Promise.all(cycles.map(async (cycle) => {
+        // Hydrate per-day docs for this cycle (detail panel needs the fuel_receipts + per-day rows)
+        const days = CarLogbookEntry
+          ? await CarLogbookEntry.find({ cycle_id: cycle._id }).sort({ entry_date: 1 }).lean()
+          : [];
+
+        const details = buildDocumentDetails('CAR_LOGBOOK', { ...cycle, daily_entries: days });
+
+        // Best-effort CRM enrichment — pull distinct cities the BDM visited across the cycle
+        const bdmUserId = cycle.bdm_id?._id || cycle.bdm_id;
+        if (details && bdmUserId && days.length) {
           try {
-            const visits = await getDailyVisitDetails(bdmUserId, item.entry_date);
-            const crmVisits = (visits || []).map(v => ({
-              doctor_name: v.doctor ? `${v.doctor.firstName || ''} ${v.doctor.lastName || ''}`.trim() : 'Unknown',
-              specialization: v.doctor?.specialization || null,
-              clinic_address: v.doctor?.clinicOfficeAddress || null,
-              visit_time: v.visitDate,
-              visit_type: v.visitType || null,
-              week_label: v.weekLabel || null,
-            }));
-            const cities = [...new Set(crmVisits.map(v => v.clinic_address).filter(Boolean))];
-            details.crm_visit_count = crmVisits.length;
-            details.crm_visits = crmVisits;
+            const allVisits = [];
+            for (const d of days) {
+              if (!d.entry_date) continue;
+              const v = await getDailyVisitDetails(bdmUserId, d.entry_date);
+              if (v && v.length) allVisits.push(...v.map(x => ({ ...x, entry_date: d.entry_date })));
+            }
+            const cities = [...new Set(allVisits.map(v => v.doctor?.clinicOfficeAddress).filter(Boolean))];
+            details.crm_visit_count = allVisits.length;
             details.cities_visited = cities;
           } catch (err) {
-            // Surface the gap to the approver instead of silently hiding it
             details.crm_visit_count = null;
             details.crm_lookup_error = err?.message || 'CRM lookup failed';
           }
         }
+
+        const workingDays = cycle.working_days || 0;
         return {
-          id: `CAR_LOGBOOK:${item._id}`,
+          id: `CAR_LOGBOOK:${cycle._id}`,
           module: 'CAR_LOGBOOK',
           doc_type: 'CAR_LOGBOOK',
-          doc_id: item._id,
-          doc_ref: `${item.period}-${item.cycle || ''}`.trim(),
-          description: `${item.bdm_id?.name || 'BDM'} — ${item.period} ${item.cycle || ''} — ${item.total_km || 0} km`,
-          amount: item.total_fuel_amount || 0,
-          submitted_by: item.bdm_id?.name || 'Unknown',
-          submitted_at: item.createdAt,
+          doc_id: cycle._id,
+          doc_ref: `LOGBOOK-${cycle.period}-${cycle.cycle}`,
+          description: `${cycle.bdm_id?.name || 'BDM'} — ${cycle.period} ${cycle.cycle} — ${workingDays} working day${workingDays === 1 ? '' : 's'}, ${cycle.total_km || 0} km`,
+          amount: cycle.total_fuel_amount || 0,
+          submitted_by: cycle.bdm_id?.name || 'Unknown',
+          submitted_at: cycle.createdAt,
           status: 'PENDING_POST',
           current_action: 'Post',
           action_key: 'POST',
-          approve_data: { type: 'car_logbook', id: item._id, action: 'post' },
+          approve_data: { type: 'car_logbook', id: cycle._id, action: 'post' },
           details,
         };
       }));
     },
     // Roles: lookup-driven via MODULE_DEFAULT_ROLES
+  },
+
+  {
+    module: 'FUEL_ENTRY',
+    label: 'Fuel Entry (per-receipt)',
+    sub_key: 'approve_expenses',
+    query: async (entityId) => {
+      // Per-fuel-entry approvals (mirrors per-diem override). Surface
+      // CarLogbookEntry.fuel_entries[i] where approval_status === 'PENDING'.
+      const CarLogbookEntry = getModel('CarLogbookEntry');
+      if (!CarLogbookEntry) return [];
+      const docs = await CarLogbookEntry.find({
+        entity_id: entityId,
+        'fuel_entries.approval_status': 'PENDING',
+      }).populate('bdm_id', 'name email').lean();
+
+      const out = [];
+      for (const day of docs) {
+        for (const fuel of (day.fuel_entries || [])) {
+          if (fuel.approval_status !== 'PENDING') continue;
+          const details = buildDocumentDetails('FUEL_ENTRY', { day, fuel });
+          const dateStr = day.entry_date ? new Date(day.entry_date).toISOString().split('T')[0] : '';
+          out.push({
+            id: `FUEL_ENTRY:${fuel._id}`,
+            module: 'FUEL_ENTRY',
+            doc_type: 'FUEL_ENTRY',
+            doc_id: fuel._id,
+            doc_ref: fuel.doc_ref || `FUEL-${day.period}-${day._id}`,
+            description: `${day.bdm_id?.name || 'BDM'} — Fuel ₱${(fuel.total_amount || 0).toLocaleString()} @ ${fuel.station_name || 'unknown'} on ${dateStr}`,
+            amount: fuel.total_amount || 0,
+            submitted_by: day.bdm_id?.name || 'Unknown',
+            submitted_at: day.createdAt,
+            status: 'PENDING_APPROVAL',
+            current_action: 'Approve',
+            action_key: 'APPROVE',
+            approve_data: { type: 'fuel_entry', id: fuel._id, action: 'post' },
+            details,
+          });
+        }
+      }
+      return out;
+    },
   },
   {
     module: 'EXPENSES',
@@ -932,7 +982,8 @@ const DOC_TYPE_HYDRATION = {
   CR:                  { modelName: 'Collection',        populate: [{ path: 'bdm_id', select: 'name email' }] },
   SMER:                { modelName: 'SmerEntry',         populate: [{ path: 'bdm_id', select: 'name email' }] },
   SMER_ENTRY:          { modelName: 'SmerEntry',         populate: [{ path: 'bdm_id', select: 'name email' }] },
-  CAR_LOGBOOK:         { modelName: 'CarLogbookEntry',   populate: [{ path: 'bdm_id', select: 'name email' }] },
+  CAR_LOGBOOK:         { modelName: 'CarLogbookCycle',   populate: [{ path: 'bdm_id', select: 'name email' }] },
+  FUEL_ENTRY:          { modelName: 'CarLogbookEntry',   populate: [{ path: 'bdm_id', select: 'name email' }] },
   EXPENSE_ENTRY:       { modelName: 'ExpenseEntry',      populate: [{ path: 'bdm_id', select: 'name email' }, { path: 'recorded_on_behalf_of', select: 'name' }] },
   PRF:                 { modelName: 'PrfCalf',           populate: [{ path: 'bdm_id', select: 'name email' }] },
   CALF:                { modelName: 'PrfCalf',           populate: [{ path: 'bdm_id', select: 'name email' }] },
@@ -1087,6 +1138,7 @@ const MODULE_TO_SUB_KEY = {
   INVENTORY:        'approve_inventory',
   SMER:             'approve_expenses',
   CAR_LOGBOOK:      'approve_expenses',
+  FUEL_ENTRY:       'approve_expenses',
   // Phase 31R follow-up — Credit Note shares the sales approve sub-permission.
   // Adding a dedicated `approve_credit_notes` sub-key would be subscription-cleaner,
   // but reusing `approve_sales` avoids a second Access Template grant for the same
