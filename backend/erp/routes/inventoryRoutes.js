@@ -18,6 +18,11 @@ router.get('/ledger/:productId', protect, c.getLedger);
 router.get('/variance', protect, c.getVariance);
 router.post('/physical-count', protect, c.recordPhysicalCount);
 
+// Metadata correction — fix wrong batch_lot_no / expiry_date on stock already on hand.
+// Narrow, audited, no GL impact. President + anyone with explicit
+// `inventory.edit_batch_metadata` (or module-level FULL fall-through) may use it.
+router.patch('/batches/correct-metadata', protect, erpSubAccessCheck('inventory', 'edit_batch_metadata'), c.correctBatchMetadata);
+
 // Phase 4 — GRN workflow + alerts
 router.post('/grn', protect, c.createGrn);
 router.post('/grn/:id/approve', protect, roleCheck('admin', 'finance'), c.approveGrn);

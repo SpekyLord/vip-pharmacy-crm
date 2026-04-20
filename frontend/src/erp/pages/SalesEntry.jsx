@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
+import { useAuth } from '../../hooks/useAuth';
 import useSales from '../hooks/useSales';
 import useInventory from '../hooks/useInventory';
 import useHospitals from '../hooks/useHospitals';
@@ -14,6 +15,11 @@ import WarehousePicker from '../components/WarehousePicker';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import RejectionBanner from '../components/RejectionBanner';
+import { useRejectionConfig } from '../hooks/useRejectionConfig';
+// Shared modal — used in photo-only mode for the rejection-fallback flow.
+// The inline ScanCSIModal below remains the primary scan UX for live entries.
+import ScanCSIPhotoFallback from '../components/ScanCSIModal';
 import { showError, showApprovalPending, showSuccess, showWarning } from '../utils/errorToast';
 import { matchHospital, matchProduct, fieldVal, fieldConfidence } from '../utils/ocrMatching';
 
@@ -527,6 +533,9 @@ function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions }) {
 }
 
 export default function SalesEntry() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const liveDate = user?.live_date ? new Date(user.live_date).toISOString().split('T')[0] : '';
   const sales = useSales();
   const inventory = useInventory();
   const { hospitals } = useHospitals();
@@ -541,12 +550,30 @@ export default function SalesEntry() {
   const [validationErrors, setValidationErrors] = useState([]);
   const [actionLoading, setActionLoading] = useState('');
   const [scanModalOpen, setScanModalOpen] = useState(false);
+  // Rejection-fallback flow: re-upload a CSI photo to a previously-rejected row
+  // without re-keying line items. null = inactive; number = target row index.
+  const [photoOnlyRowIdx, setPhotoOnlyRowIdx] = useState(null);
   const [customerList, setCustomerList] = useState([]);
   // Phase 15.2 (softened) — BDM's available CSI numbers (monitoring hint)
   const [availableCsi, setAvailableCsi] = useState([]);
   const reportsHook = useReports();
   const { hasSubPermission } = useErpSubAccess();
   const canManageCsi = hasSubPermission('inventory', 'csi_booklets');
+
+  // Lookup-driven rejection config (MODULE_REJECTION_CONFIG → SALES).
+  // Drives when the rejection banner + photo-reupload fallback appear.
+  // Falls back to sane defaults if the lookup hasn't been seeded yet.
+  const { config: rejectionConfig } = useRejectionConfig('SALES');
+  const rejectionReasonField = rejectionConfig?.reason_field || 'rejection_reason';
+  // useMemo so the array identity is stable across renders — otherwise the
+  // useCallback below sees a "new" array each render and react-hooks/exhaustive-deps fires.
+  const rejectionEditableStatuses = useMemo(
+    () => rejectionConfig?.editable_statuses || ['DRAFT', 'ERROR'],
+    [rejectionConfig]
+  );
+  const isRejectedRow = useCallback((row) => Boolean(
+    row && row[rejectionReasonField] && rejectionEditableStatuses.includes(row.status)
+  ), [rejectionReasonField, rejectionEditableStatuses]);
 
   // Phase 18: Service Invoice state (no line items — just description + total)
   const [serviceForm, setServiceForm] = useState({ customer_type: 'hospital', customer_ref: '', csi_date: new Date().toISOString().split('T')[0], service_description: '', invoice_total: '', payment_mode: 'CASH', petty_cash_fund_id: '' });
@@ -675,6 +702,24 @@ export default function SalesEntry() {
 
   const addRow = () => setRows(prev => [...prev, emptyRow()]);
 
+  // Rejection-fallback: attach a fresh CSI photo to an existing row without
+  // re-keying line items. Triggered from the "Re-upload CSI Photo" button on
+  // rows whose status is DRAFT/ERROR with rejection_reason set.
+  const handlePhotoReupload = useCallback((rowIdx, scannedData) => {
+    setRows(prev => {
+      const updated = [...prev];
+      if (!updated[rowIdx]) return prev;
+      updated[rowIdx] = {
+        ...updated[rowIdx],
+        csi_photo_url: scannedData.csi_photo_url || updated[rowIdx].csi_photo_url,
+        csi_attachment_id: scannedData.csi_attachment_id || updated[rowIdx].csi_attachment_id
+      };
+      return updated;
+    });
+    setPhotoOnlyRowIdx(null);
+    showSuccess('Photo attached. Re-validate and resubmit when ready.');
+  }, []);
+
   // Apply OCR scan results as a new row
   const handleScanApply = useCallback((scannedData) => {
     const newRow = {
@@ -720,6 +765,13 @@ export default function SalesEntry() {
         }
         if (saleType === 'CSI' && !row.doc_ref) {
           warnings.push('Row skipped: CSI# is required for CSI sales.');
+          continue;
+        }
+        // Backdated guard: live Sales Entry is for go-live-date-onward only.
+        // Pre-cutover historical CSIs must be entered via Opening AR Entry, where
+        // the product dropdown is sourced from ProductMaster (not warehouse stock).
+        if (liveDate && row.csi_date && row.csi_date < liveDate) {
+          warnings.push(`Row skipped: CSI date ${row.csi_date} is before your go-live date (${liveDate}). Use Opening AR Entry for historical CSIs.`);
           continue;
         }
 
@@ -864,7 +916,7 @@ export default function SalesEntry() {
   };
 
   const hasPosted = rows.some(r => r.status === 'POSTED');
-  const hasDraftOrError = rows.some(r => r.status === 'DRAFT' || r.status === 'ERROR');
+  const hasDraftOrError = rows.some(r => rejectionEditableStatuses.includes(r.status));
   const allValid = rows.length > 0 && rows.every(r => r.status === 'VALID' || r.status === 'POSTED');
 
   return (
@@ -1111,7 +1163,8 @@ export default function SalesEntry() {
               </thead>
               <tbody>
                 {rows.map((row, idx) => (
-                  <tr key={row._id || row._tempId}>
+                  <Fragment key={row._id || row._tempId}>
+                  <tr>
                     <td style={{ color: 'var(--erp-muted)', fontSize: 12 }}>{idx + 1}</td>
                     <td>
                       <SelectField value={row.hospital_id?._id || row.hospital_id || row.customer_id?._id || row.customer_id || ''} onChange={e => {
@@ -1136,7 +1189,24 @@ export default function SalesEntry() {
                       </SelectField>
                     </td>
                     <td>
-                      <input type="date" value={row.csi_date ? (typeof row.csi_date === 'string' ? row.csi_date.split('T')[0] : new Date(row.csi_date).toISOString().split('T')[0]) : ''} onChange={e => updateRow(idx, 'csi_date', e.target.value)} disabled={row.status === 'POSTED'} />
+                      <input
+                        type="date"
+                        value={row.csi_date ? (typeof row.csi_date === 'string' ? row.csi_date.split('T')[0] : new Date(row.csi_date).toISOString().split('T')[0]) : ''}
+                        onChange={e => updateRow(idx, 'csi_date', e.target.value)}
+                        min={liveDate || undefined}
+                        disabled={row.status === 'POSTED'}
+                        style={liveDate && row.csi_date && (typeof row.csi_date === 'string' ? row.csi_date.split('T')[0] : new Date(row.csi_date).toISOString().split('T')[0]) < liveDate ? { borderColor: '#d97706' } : undefined}
+                      />
+                      {liveDate && row.csi_date && (typeof row.csi_date === 'string' ? row.csi_date.split('T')[0] : new Date(row.csi_date).toISOString().split('T')[0]) < liveDate && row.status !== 'POSTED' && (
+                        <div style={{ fontSize: 10, color: '#92400e', marginTop: 2, lineHeight: 1.3 }}>
+                          Backdated (before {liveDate}).{' '}
+                          <button
+                            type="button"
+                            onClick={() => navigate('/erp/sales/opening-ar')}
+                            style={{ background: 'none', border: 'none', color: '#1e40af', textDecoration: 'underline', padding: 0, cursor: 'pointer', font: 'inherit' }}
+                          >Open in Opening AR Entry →</button>
+                        </div>
+                      )}
                     </td>
                     <td>
                       <input
@@ -1249,6 +1319,27 @@ export default function SalesEntry() {
                       )}
                     </td>
                   </tr>
+                  {isRejectedRow(row) && (
+                    <tr>
+                      <td colSpan={13} style={{ padding: '8px 12px', background: '#fff5f5', borderTop: 'none' }}>
+                        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                          <div style={{ flex: '1 1 360px', minWidth: 0 }}>
+                            <RejectionBanner row={row} moduleKey="SALES" variant="row" />
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline"
+                            onClick={() => setPhotoOnlyRowIdx(idx)}
+                            title="Re-upload a clearer CSI photo without re-keying line items"
+                            style={{ whiteSpace: 'nowrap' }}
+                          >
+                            📷 Re-upload CSI Photo
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -1268,6 +1359,24 @@ export default function SalesEntry() {
                     <span className="status-badge" style={{ background: '#fef3c7', color: '#92400e', marginLeft: 4, fontSize: 10 }} title="Pre-live-date — no inventory deduction">Opening AR</span>
                   )}
                 </div>
+                {isRejectedRow(row) && (
+                  <RejectionBanner
+                    row={row}
+                    moduleKey="SALES"
+                    variant="page"
+                    docLabel={row.doc_ref ? `CSI ${row.doc_ref}` : `Row ${idx + 1}`}
+                  >
+                    <button
+                      type="button"
+                      className="rjb-btn rjb-btn-primary"
+                      onClick={() => setPhotoOnlyRowIdx(idx)}
+                      title="Re-upload a clearer CSI photo without re-keying line items"
+                      style={{ background: '#2563eb' }}
+                    >
+                      📷 Re-upload CSI Photo
+                    </button>
+                  </RejectionBanner>
+                )}
                 <label>{saleType === 'CSI' ? 'Hospital' : 'Customer'}</label>
                 <SelectField value={row.hospital_id?._id || row.hospital_id || row.customer_id?._id || row.customer_id || ''} onChange={e => {
                   const val = e.target.value;
@@ -1395,13 +1504,24 @@ export default function SalesEntry() {
           })()}
         </main>
       </div>
-      {/* Scan CSI Modal */}
+      {/* Scan CSI Modal — primary scan flow (full OCR + line-item matching) */}
       <ScanCSIModal
         open={scanModalOpen}
         onClose={() => setScanModalOpen(false)}
         onApply={handleScanApply}
         hospitals={hospitals}
         productOptions={productOptions}
+      />
+      {/* Photo-only fallback modal — used after Approval Hub rejection.
+          Contractor uploads a clearer CSI photo; line items are preserved. */}
+      <ScanCSIPhotoFallback
+        open={photoOnlyRowIdx !== null}
+        onClose={() => setPhotoOnlyRowIdx(null)}
+        onApply={(data) => handlePhotoReupload(photoOnlyRowIdx, data)}
+        hospitals={hospitals}
+        productOptions={productOptions}
+        photoOnly
+        docType="CSI"
       />
     </div>
   );

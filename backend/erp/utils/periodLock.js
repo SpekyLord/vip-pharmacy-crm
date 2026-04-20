@@ -13,10 +13,17 @@ const mongoose = require('mongoose');
  *
  * @param {String|ObjectId} entityId
  * @param {String} period - "YYYY-MM" format
+ * @param {Object} [opts]
+ * @param {String} [opts.source] - transaction source. 'OPENING_AR' bypasses the lock
+ *   because pre-cutover historical CSIs land in periods that are CLOSED by definition.
+ *   Safe because OPENING_AR is auto-set only when csi_date < user.live_date (set once at go-live).
  * @throws {Error} if period is closed or locked
  */
-async function checkPeriodOpen(entityId, period) {
+async function checkPeriodOpen(entityId, period, opts = {}) {
   if (!entityId || !period) return; // skip if no entity or period
+
+  // Opening AR bypass: pre-cutover entries are expected to fall in closed periods
+  if (opts.source === 'OPENING_AR') return;
 
   const archive = await MonthlyArchive.findOne({
     entity_id: new mongoose.Types.ObjectId(entityId),

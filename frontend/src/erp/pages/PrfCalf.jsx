@@ -13,6 +13,7 @@ import { processDocument } from '../services/ocrService';
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
 import RejectionBanner from '../components/RejectionBanner';
+import { useRejectionConfig } from '../hooks/useRejectionConfig';
 import { showError, showSuccess, showApprovalPending } from '../utils/errorToast';
 import PresidentReverseModal from '../components/PresidentReverseModal';
 
@@ -27,6 +28,12 @@ export default function PrfCalf() {
   const lookupApi = useErpApi();
   const { hasSubPermission } = useErpSubAccess();
   const canPresidentReverse = hasSubPermission('accounting', 'reverse_posted');
+
+  // Lookup-driven rejection config (MODULE_REJECTION_CONFIG → PRF_CALF).
+  // Drives which statuses can still be edited / re-submitted by the contractor.
+  // Fallback preserves prior hardcoded behavior if the lookup is not yet seeded.
+  const { config: rejectionConfig } = useRejectionConfig('PRF_CALF');
+  const editableStatuses = rejectionConfig?.editable_statuses || ['DRAFT', 'ERROR'];
 
   const [docs, setDocs] = useState([]);
   const [editingDoc, setEditingDoc] = useState(null);
@@ -468,7 +475,7 @@ export default function PrfCalf() {
                         <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 12, color: '#fff', background: STATUS_COLORS[d.status] || '#6b7280' }}>{d.status}</span>
                       </td>
                       <td style={{ padding: 8, textAlign: 'center' }}>
-                        {['DRAFT', 'ERROR'].includes(d.status) && (
+                        {editableStatuses.includes(d.status) && (
                           <button onClick={() => handleEdit(d)} style={{ marginRight: 4, padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', cursor: 'pointer' }}>Edit</button>
                         )}
                         {d.status === 'DRAFT' && (
@@ -548,7 +555,7 @@ export default function PrfCalf() {
                     )}
                   </div>
                   <div className="prf-calf-card-actions">
-                    {['DRAFT', 'ERROR'].includes(d.status) && (
+                    {editableStatuses.includes(d.status) && (
                       <button onClick={() => handleEdit(d)} style={{ border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', color: 'var(--erp-text, #132238)' }}>Edit</button>
                     )}
                     {d.status === 'DRAFT' && (

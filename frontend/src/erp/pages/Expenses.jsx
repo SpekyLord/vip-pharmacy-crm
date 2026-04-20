@@ -15,6 +15,7 @@ import { compressImageFile } from '../utils/compressImage';
 
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
+import { useRejectionConfig } from '../hooks/useRejectionConfig';
 import WorkflowGuide from '../components/WorkflowGuide';
 import RejectionBanner from '../components/RejectionBanner';
 import { showError } from '../utils/errorToast';
@@ -383,6 +384,12 @@ export default function Expenses() {
   const EXPENSE_TYPES = expTypeOpts.map(o => o.code);
   const BIR_FLAGS = birFlagOpts.map(o => o.code);
   const [paymentModes, setPaymentModes] = useState([]);
+
+  // Lookup-driven rejection config (MODULE_REJECTION_CONFIG → EXPENSES).
+  // Drives which statuses can still be edited / re-submitted by the contractor.
+  // Fallback preserves prior hardcoded behavior if the lookup is not yet seeded.
+  const { config: rejectionConfig } = useRejectionConfig('EXPENSES');
+  const editableStatuses = rejectionConfig?.editable_statuses || ['DRAFT', 'ERROR'];
 
   const [expenses, setExpenses] = useState([]);
   const [editingExpense, setEditingExpense] = useState(null);
@@ -937,7 +944,7 @@ export default function Expenses() {
                         <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 12, color: '#fff', background: STATUS_COLORS[e.status] || '#6b7280' }}>{e.status}</span>
                       </td>
                       <td style={{ padding: 8, textAlign: 'center' }}>
-                        {['DRAFT', 'ERROR'].includes(e.status) && (
+                        {editableStatuses.includes(e.status) && (
                           <button onClick={() => handleEdit(e)} style={{ marginRight: 4, padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', cursor: 'pointer' }}>Edit</button>
                         )}
                         {e.status === 'DRAFT' && (
@@ -1033,7 +1040,7 @@ export default function Expenses() {
                     </div>
                   )}
                   <div className="erp-expense-card-actions">
-                    {['DRAFT', 'ERROR'].includes(e.status) && (
+                    {editableStatuses.includes(e.status) && (
                       <button onClick={() => handleEdit(e)} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', cursor: 'pointer' }}>Edit</button>
                     )}
                     {e.status === 'DRAFT' && (

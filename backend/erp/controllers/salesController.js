@@ -718,10 +718,11 @@ const submitSales = catchAsync(async (req, res) => {
   if (gated) return;
 
   // Period lock check — prevent posting to closed/locked months
+  // OPENING_AR rows bypass the lock (pre-cutover dates fall in closed periods by design)
   const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
   for (const row of validRows) {
     const period = dateToPeriod(row.csi_date);
-    await checkPeriodOpen(row.entity_id, period);
+    await checkPeriodOpen(row.entity_id, period, { source: row.source });
   }
 
   const session = await mongoose.startSession();

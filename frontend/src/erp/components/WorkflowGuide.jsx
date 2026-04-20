@@ -47,7 +47,7 @@ const styles = `
 // Source-of-truth: MODULE_REJECTION_CONFIG seed in backend/erp/controllers/lookupGenericController.js.
 // Adding a new module = adding the page key here AND seeding MODULE_REJECTION_CONFIG.
 const PAGES_WITH_REJECTION_FLOW = new Set([
-  'sales-entry', 'collections', 'smer', 'car-logbook', 'expenses', 'prf-calf',
+  'sales-entry', 'sales-opening-ar', 'collections', 'smer', 'car-logbook', 'expenses', 'prf-calf',
   'grn-entry', 'payslip-view', 'kpi-rating', 'income', 'my-income',
   'purchase-orders', 'journal-entries', 'bank-reconciliation', 'transfer-orders',
   'ic-settlement', 'sales-goal-setup', 'sales-goal-bdm', 'incentive-payout-ledger',
@@ -89,6 +89,26 @@ const WORKFLOW_GUIDES = {
       { label: 'Collect Payment', path: '/erp/collections' },
     ],
     tip: 'Complete all DRAFT documents before end of day. Unfinished drafts will not appear in reports.',
+  },
+  'sales-opening-ar': {
+    title: 'Opening AR Entry — Pre-Go-Live CSIs',
+    steps: [
+      'Use this page only for historical CSIs dated BEFORE your ERP go-live date (live_date on your user profile). The form blocks any csi_date on or after live_date.',
+      'Pick the hospital (or non-hospital customer) — the same record powers AR aging and Collections, so it must match the entity that owes the money.',
+      'Enter the CSI booklet number (doc_ref) and the historical csi_date. The product dropdown is sourced from ProductMaster (no warehouse stock filter), so discontinued or zero-stock products are still selectable.',
+      'Add line items — qty × unit_price feeds the AR balance. There is no FIFO override and no batch picker because no inventory is consumed (opening stock is loaded separately via the importOpeningStock script).',
+      'Optional: Scan CSI captures a photo + auto-fills doc_ref/date/hospital/line items via OCR. The photo is stored on the row (csi_photo_url) for audit.',
+      'Save Drafts → Validate → Post Opening AR. Posting auto-routes through gateApproval (module=SALES). Period lock for the historical month is bypassed because source=OPENING_AR (set automatically when csi_date < live_date).',
+      'Posted opening AR shows up in AR Aging, Collections (CSI dropdown), and Hospital SOA — same as live CSIs. The journal entry posts AR debit / Sales Revenue + Output VAT credit. No COGS, no inventory ledger entry.',
+      'If an approver rejects: a red banner with the reason appears on the row. Click Re-upload CSI Photo to attach a clearer image without re-keying line items, then Validate + Post again.',
+    ],
+    next: [
+      { label: 'Live Sales Entry', path: '/erp/sales/entry' },
+      { label: 'View All Sales', path: '/erp/sales' },
+      { label: 'AR Aging', path: '/erp/collections/ar' },
+      { label: 'Approval Hub', path: '/erp/approvals' },
+    ],
+    tip: 'Opening AR is for receivables only. Pre-go-live INVENTORY is loaded with the importOpeningStock script (one-shot at cutover). After cutover is complete, your admin can remove the sales.opening_ar sub-permission to hide this page from the sidebar — entries already posted remain in AR aging.',
   },
   'sales-entry': {
     title: 'Creating a Sale (CSI / Cash Receipt / Service Invoice)',
@@ -135,13 +155,15 @@ const WORKFLOW_GUIDES = {
       'Transaction Ledger — all stock movements (in/out)',
       'Check stock before creating sales to avoid over-selling',
       'Request transfers from main warehouse if stock is low',
+      'Wrong quantity? Use "Physical Count" (top-right) to record actual on-hand qty — variances post as ADJUSTMENT entries with a journal entry.',
+      'Wrong batch number or expiry date? Expand the product row and click "Edit" on the batch line. Metadata-only fix — no journal entry, no quantity change.',
     ],
     next: [
       { label: 'Create Sale', path: '/erp/sales/entry' },
       { label: 'Request Transfer', path: '/erp/transfers' },
       { label: 'View Consignment', path: '/erp/consignment' },
     ],
-    tip: 'FIFO (First In, First Out) is enforced. Oldest batches are sold first automatically.',
+    tip: 'FIFO (First In, First Out) is enforced. Oldest batches are sold first automatically. Batch metadata fix (batch # / expiry typo) is audited and rewrites every ledger row plus the source GRN line — gated by `inventory.edit_batch_metadata` sub-permission, so subscribers can grant it to trusted contractors via Access Template without code changes. Quantity corrections still run through Physical Count; full GRN reversal is the President-only path when qty or cost is wrong.',
   },
   'dr-entry': {
     title: 'Delivery Receipt / Consignment',
