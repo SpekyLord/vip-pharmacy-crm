@@ -406,7 +406,7 @@ const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => 
   const currentWeek = Schedule.getCurrentCycleWeek(visitDate);
 
   const [doctors, weeklyVisits, monthlyCounts, scheduleEntries] = await Promise.all([
-    Doctor.find({ _id: { $in: doctorIds } }),
+    Doctor.find({ _id: { $in: doctorIds } }).lean(),
     Visit.find({
       doctor: { $in: doctorIds },
       user: userId,
@@ -433,7 +433,7 @@ const canVisitDoctorsBatch = async (doctorIds, user, visitDate = new Date()) => 
       doctor: { $in: doctorIds },
       user: userId,
       cycleNumber: currentCycle,
-    }),
+    }).lean(),
   ]);
 
   const doctorMap = new Map(doctors.map((d) => [d._id.toString(), d]));

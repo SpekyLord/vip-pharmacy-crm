@@ -9,7 +9,7 @@
  * - Programs: Program and support type implementation coverage stats
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   BarChart3,
   Users,
@@ -1587,10 +1587,12 @@ const StatisticsPage = () => {
   const [bdmLoading, setBdmLoading] = useState(false);
 
   /* ---------------------------------------------------------------------------
-     Data Fetching
+     Data Fetching — tab-gated: only load data when a tab is first visited
      --------------------------------------------------------------------------- */
 
-  const fetchAllData = async () => {
+  const loadedTabsRef = useRef(new Set());
+
+  const fetchOverviewData = async () => {
     try {
       setLoading(true);
       setError(null);
@@ -1599,7 +1601,6 @@ const StatisticsPage = () => {
       const employees = empRes.data || [];
       setBdmEmployees(employees);
 
-      // Derive overview stats from bulk CPT grid summary
       let totalTarget = 0;
       let totalActual = 0;
       let onTrack = 0;
@@ -1636,19 +1637,6 @@ const StatisticsPage = () => {
         targetVisitsThisMonth: totalTarget,
         perBdmCallRates,
       });
-
-      // Fetch program, support type, product, and heatmap stats in parallel
-      const [progStatsRes, supportStatsRes, productStatsRes, heatmapRes] = await Promise.all([
-        programService.getStats().catch(() => ({ data: [] })),
-        supportTypeService.getStats().catch(() => ({ data: [] })),
-        visitService.getProductPresentationStats().catch(() => ({ data: [] })),
-        scheduleService.getCrossBdmHeatmap().catch(() => ({ data: null })),
-      ]);
-      setProgramStats(progStatsRes.data || []);
-      setSupportTypeStats(supportStatsRes.data || []);
-      setProductStats(productStatsRes.data || []);
-      setHeatmapData(heatmapRes.data || null);
-
     } catch {
       setError('Failed to load statistics data. Please try again.');
     } finally {
@@ -1656,9 +1644,47 @@ const StatisticsPage = () => {
     }
   };
 
+  const fetchProgramsData = async () => {
+    try {
+      const [progStatsRes, supportStatsRes] = await Promise.all([
+        programService.getStats().catch(() => ({ data: [] })),
+        supportTypeService.getStats().catch(() => ({ data: [] })),
+      ]);
+      setProgramStats(progStatsRes.data || []);
+      setSupportTypeStats(supportStatsRes.data || []);
+    } catch { /* silent */ }
+  };
+
+  const fetchProductsData = async () => {
+    try {
+      const productStatsRes = await visitService.getProductPresentationStats().catch(() => ({ data: [] }));
+      setProductStats(productStatsRes.data || []);
+    } catch { /* silent */ }
+  };
+
+  const fetchHeatmapData = async () => {
+    try {
+      const heatmapRes = await scheduleService.getCrossBdmHeatmap().catch(() => ({ data: null }));
+      setHeatmapData(heatmapRes.data || null);
+    } catch { /* silent */ }
+  };
+
+  // Load overview on mount
   useEffect(() => {
-    fetchAllData();
-  }, []);
+    loadedTabsRef.current.add('overview');
+    loadedTabsRef.current.add('bdm-performance'); // employees loaded with overview
+    fetchOverviewData();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Lazy-load tab data on first visit
+  useEffect(() => {
+    if (loadedTabsRef.current.has(activeTab)) return;
+    loadedTabsRef.current.add(activeTab);
+
+    if (activeTab === 'programs') fetchProgramsData();
+    else if (activeTab === 'products') fetchProductsData();
+    else if (activeTab === 'heatmap') fetchHeatmapData();
+  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch DCR data when BDM or cycle changes
   useEffect(() => {
@@ -1696,7 +1722,19 @@ const StatisticsPage = () => {
      --------------------------------------------------------------------------- */
 
   const handleRefresh = () => {
-    fetchAllData();
+    // Reset loaded state for current tab so it re-fetches
+    loadedTabsRef.current.delete(activeTab);
+    if (activeTab === 'overview' || activeTab === 'bdm-performance') {
+      loadedTabsRef.current.delete('overview');
+      loadedTabsRef.current.delete('bdm-performance');
+      fetchOverviewData();
+    } else if (activeTab === 'programs') {
+      fetchProgramsData();
+    } else if (activeTab === 'products') {
+      fetchProductsData();
+    } else if (activeTab === 'heatmap') {
+      fetchHeatmapData();
+    }
   };
 
   const handleBdmChange = (e) => {

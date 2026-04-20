@@ -414,18 +414,22 @@ const AdminDashboard = () => {
   ].filter(Boolean).join(' ');
 
   useEffect(() => {
+    const controller = new AbortController();
+
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
         setError(null);
 
-        api.get('/erp/agents/runs?limit=3')
+        // Non-critical: load agent runs separately without blocking main data
+        api.get('/erp/agents/runs?limit=3', { signal: controller.signal })
           .then((res) => setAgentRuns(res.data?.data || []))
           .catch(() => {});
 
         const [doctorsRes, usersRes, cptSummaryRes, todayStatsRes, cycleRes] = await Promise.all([
-          doctorService.getAll({ limit: 0 }),
-          api.get('/users', { params: { limit: 0 } }),
+          // limit:1 triggers countDocuments on backend — gets true total without fetching all records
+          doctorService.getAll({ limit: 1 }),
+          api.get('/users', { params: { limit: 1 } }),
           scheduleService.getCPTGridSummary().catch(() => ({ data: [] })),
           visitService.getAdminTodayStats().catch(() => ({ data: {} })),
           scheduleService.getCycleSchedule().catch(() => ({ data: {} })),
@@ -497,6 +501,7 @@ const AdminDashboard = () => {
     };
 
     fetchDashboardData();
+    return () => controller.abort();
   }, []);
 
   if (loading) return <LoadingSpinner fullScreen />;

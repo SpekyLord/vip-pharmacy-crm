@@ -2,7 +2,7 @@
  * Dashboard Component (Admin)
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Calendar,
@@ -1138,4 +1138,4 @@ const Dashboard = ({ user, stats = {}, onViewAllActivity }) => {
   );
 };
 
-export default Dashboard;
+export default memo(Dashboard);
