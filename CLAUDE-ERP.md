@@ -102,6 +102,7 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | E.2 | Deduction Schedules — Recurring (Installment) + Non-Recurring (One-Time) | ✅ |
 | F | Universal Approval Hub — Cross-Entity, Delegatable, Inline Approve | ✅ |
 | F.1 | Lookup-Driven Module Default Roles — Rule #3 Compliance for Approval Hub | ✅ |
+| G4.1 | ApprovalRequest Hydration in All-Pending — Rich DocumentDetailPanel + doc_id Dedup | ✅ |
 | Gap 9 | Rx Correlation — Visit vs Sales + Rebates + Programs | ✅ |
 | G1 | BDM Income Projection + Revolving Fund + CALF Bidirectional + Personal Gas | ✅ |
 | G2 | Photo Upload Compression + Approval Hub Populate Fixes | ✅ |
@@ -1019,6 +1020,70 @@ Added 7 new module values to `ApprovalRule.module` enum so Approval Rules can be
 
 ---
 
+## Phase G4.1 — ApprovalRequest Hydration in All-Pending (April 21, 2026)
+
+**Why.** The Approval Workflow page had two tabs showing overlapping data: **All Pending** (module-native rich detail + expandable `<DocumentDetailPanel>`) and **Requests** (flat 7-column ApprovalRequest audit list with no expand). The Requests tab was the only place `level: 0` default-roles-gate items surfaced, but it never rendered line items / photos / audit trail — so approvers couldn't inspect what they were approving without opening the module page in another tab. Intended Phase 31R design ("raw module query surfaces the doc; APPROVAL_REQUEST duplicate is suppressed") fails for any module whose own query filter doesn't include the gated status.
+
+**What shipped.**
+
+1. **`APPROVAL_REQUEST` MODULE_QUERIES entry now surfaces ALL pending requests** (removed the `$or: [{ level: { $gt: 0 } }, { rule_id: { $ne: null } }]` filter). Each request is hydrated via a new `buildApprovalRequestDetails(req)` helper that:
+   - Resolves the module key from `REVERSAL_DOC_TYPE_TO_MODULE[req.doc_type]` (reused from `documentDetailBuilder.js`) with `req.module` as fallback.
+   - Looks up the underlying doc via `DOC_TYPE_HYDRATION[req.doc_type] = { modelName, populate }` (22-row registry covering CSI/CR/SMER/CAR_LOGBOOK/EXPENSE_ENTRY/PRF/CALF/GRN/UNDERTAKING/CREDIT_NOTE/INCOME_REPORT/PAYSLIP/KPI_RATING/DEDUCTION_SCHEDULE + Group B gap modules SUPPLIER_INVOICE/JOURNAL_ENTRY/BANK_RECON/IC_TRANSFER/IC_SETTLEMENT/DISBURSEMENT/DEPOSIT/SALES_GOAL_PLAN/INCENTIVE_PAYOUT).
+   - Calls `buildDocumentDetails(moduleKey, hydratedDoc)` so the item renders with the same rich card as every other module. Best-effort: when no registry row or model exists, falls back to passing the ApprovalRequest itself to the builder so `doc_ref` / `amount` / `description` still render.
+
+2. **Doc_id-based dedup** added to `getUniversalPending` after the existing by-id dedup. When two items share the same `doc_id` and at least one is NOT an `APPROVAL_REQUEST:*` item, the `APPROVAL_REQUEST:*` copies are dropped. Result: the raw module item wins (preserving the Phase 31R "no double-listing" guarantee and the existing Post-action close-loop), while orphan ApprovalRequests (no module-native sibling) still surface with hydrated details.
+
+2b. **Per-item sub-permission filter** on APPROVAL_REQUEST items. `APPROVAL_REQUEST` has `sub_key: null` at module level (was: Phase 34 note "filtered per-item" — the per-item filter was never implemented). With Phase G4.1 now surfacing ALL pending requests, each `APPROVAL_REQUEST:*` item is filtered against `MODULE_TO_SUB_KEY[item.module]` via `hasApprovalSub(user, ...)` in `getUniversalPending`. Mirror check added to `universalApprove` controller: when `type === 'approval_request'`, derefs the request to read its `module` field and re-runs the sub-perm gate against the real module. Closes the visibility + approve-action gap in one pass. President/CEO always bypass (unchanged).
+
+3. **Requests tab repurposed to "Approval History"**: default filter flipped from `PENDING` → `APPROVED`. Inline blue info panel explains the tab is for APPROVED / REJECTED / CANCELLED audit and directs approvers to All Pending for anything actionable. Button still labelled `Approval History (N)` with a tooltip.
+
+4. **WorkflowGuide `approval-manager` banner** — steps rewritten to describe the unified All Pending feed (module-native items + hydrated ApprovalRequests), call out the Phase G4.1 change explicitly, and rename the old "Requests tab" step to "Approval History tab".
+
+**Architecture (no change to happy path).**
+
+```
+BDM submits → controller calls gateApproval() → 202 returned
+              └→ ApprovalRequest(level=0, PENDING) + doc stays in pre-post state (VALID/DRAFT/etc.)
+
+Approver opens Approval Hub:
+   ├── Raw doc in module query?
+   │     YES → All Pending shows CAR_LOGBOOK:<id> (action: POST) — dedup drops APPROVAL_REQUEST:<reqId>
+   │     NO  → All Pending shows APPROVAL_REQUEST:<reqId> (action: APPROVE, hydrated details)
+   │
+   ├── Click Post (raw-doc path) → module handler posts → close-loop (line 555 of universalApprovalController.js)
+   │                               flips the matching ApprovalRequest to APPROVED
+   │
+   └── Click Approve (orphan path) → processDecision flips the request to APPROVED
+                                    → BDM re-submits, gateApproval finds APPROVED, post succeeds
+```
+
+**Files changed.**
+| File | Change |
+|------|--------|
+| `backend/erp/services/universalApprovalService.js` | Refactored `APPROVAL_REQUEST` MODULE_QUERIES entry (removed level-0 filter, added hydration). New `DOC_TYPE_HYDRATION` const + `buildApprovalRequestDetails()` helper. New doc_id-based dedup pass in `getUniversalPending()`. |
+| `frontend/src/erp/pages/ApprovalManager.jsx` | `statusFilter` default `PENDING` → `APPROVED`. Tab renamed "Requests" → "Approval History". Inline info panel inside the tab body. |
+| `frontend/src/erp/components/WorkflowGuide.jsx` | `approval-manager` guide steps rewritten. |
+| `CLAUDE-ERP.md` | This section + index table entry. |
+
+**Backward-compatibility + safety.**
+- Phase 29 `ApprovalRequest` schema unchanged.
+- Phase G4 default-roles gate + Phase G6 rejection feedback unchanged.
+- Phase 31R "no double-listing" guarantee preserved by the by-doc_id dedup (raw module item wins).
+- `approval_request` handler in `universalApprovalController.js` unchanged — still calls `processDecision` via `approvalService`. Future enhancement: extend the handler to auto-post the underlying doc on APPROVE for the orphan case (Group A modules) so the approver doesn't need a second trip. Deferred — add only if orphan cases become common in practice.
+- No new routes, no schema migration, no lookup migration. Auto-seeded Lookup categories unchanged.
+
+**Subscription readiness.**
+- `DOC_TYPE_HYDRATION` is code-level today (model names bind at `require()` time). Future migration path: `APPROVAL_REQUEST_HYDRATION` Lookup category with a whitelist resolver — mirrors how `MODULE_DEFAULT_ROLES` graduated from hardcoded to Lookup in Phase F.1. Not done here because current subscribers share the same pharmaceutical-distribution doc types; swap the registry when the first non-pharma subscriber onboards.
+- Dedup logic is module-agnostic — adding a new module to MODULE_QUERIES automatically benefits from the dedup pass.
+
+**Verification.**
+- `node -c backend/erp/services/universalApprovalService.js` clean.
+- `npx vite build` clean in ~9s (`ApprovalManager-BmBqFGp0.js` 30 kB, `WorkflowGuide-B-hDGpDt.js` 102 kB).
+- Repro the user's screenshot scenario: CAR_LOGBOOK held by gateApproval(module='EXPENSES', docType='CAR_LOGBOOK'). As president on `/erp/approvals` → All Pending tab the entry now appears with full hydrated details (line items, fuel receipts, GPS, total km). Click Details → DocumentDetailPanel renders; click Post on the raw item → module handler fires and the mirror ApprovalRequest transitions to APPROVED via the close-loop.
+- Approval History tab defaults to APPROVED; shows completed authority decisions with decided_by and reason.
+
+---
+
 ## Phase E.2 — Deduction Schedules (Recurring + Non-Recurring)
 
 Standalone `DeductionSchedule` model for both recurring (CC installment ₱990/month × 10) and non-recurring (one-time ₱1,500 next month) deductions. BDMs create schedules even before payslips exist. Installments auto-inject into payslips when generated.
@@ -1448,8 +1513,9 @@ All module pages handle `approval_pending` in API responses:
 - Helper: `isApprovalPending()` for checking both success and error paths
 
 ### WorkflowGuide Coverage
-- **87/96 ERP pages** have WorkflowGuide banners (90.6%)
-- **9 admin/system pages** intentionally excluded (ControlCenter uses DependencyBanner; LookupManager, EntityManager, AgentSettings, ErpSettingsPanel, FoundationHealth, TerritoryManager, PartnerScorecard are config-only pages)
+- **88/96 ERP pages** have WorkflowGuide banners (91.7%)
+- **7 admin/system pages** intentionally excluded (ControlCenter uses DependencyBanner; LookupManager, EntityManager, AgentSettings, ErpSettingsPanel, FoundationHealth, TerritoryManager are config-only pages)
+- **PartnerScorecard** (slide-out from OrgChart) now has a WorkflowGuide (Apr 2026 — previously excluded as "config-only"; flipped because it's user-facing and its scores/graduation depend on lookup-driven weights + criteria that BDMs and admins need to understand)
 - **6 Phase 28 pages** use camelCase pageKeys (salesGoalDashboard, salesGoalSetup, salesGoalBdmView, kpiLibrary, kpiSelfRating, incentiveTracker)
 - Every new ERP page MUST add a WorkflowGuide entry — see "Workflow Guide & Dependency Guide Governance" section
 
@@ -2733,6 +2799,48 @@ Wired into: `getSales`, `getCollections`, `getExpenseList`, `getPrfCalfList`,
   its own universalApprovalController wiring. It reuses `approve_sales` sub-permission
   so subscribers get the new surface without configuring an extra Access Template
   grant; splitting into `approve_credit_notes` is a future-proof one-row lookup change.
+
+### Phase 31-E — Reversal Console cross-entity default (April 2026)
+
+**Symptom.** President viewed the Sales list and saw POSTED CSIs from MG and CO.
+(and every other subsidiary — that page scopes by `req.tenantFilter`, which is
+`{}` for presidents). Opening the Reversal Console with the same login showed an
+empty list for those same POSTED CSIs. Root cause: the console's list/history
+controllers silently fell back to `req.entityId` (the president's *primary*
+entity) when no `?entity_id=` query param was supplied, scoping out every
+subsidiary without telling the user.
+
+**Fix.** [backend/erp/controllers/presidentReversalController.js](backend/erp/controllers/presidentReversalController.js)
+`getReversible` + `getHistory` now follow global Rule #21 exactly:
+
+| Caller | No query param | `?entity_id=<id>` | `?entity_id=ALL` |
+|---|---|---|---|
+| Privileged (president/admin/finance) | **null** (cross-entity) | narrow to that entity | null (legacy alias, same as no param) |
+| Non-privileged (BDM/contractor) | pinned to `req.entityId` | param ignored | param ignored |
+
+Service-layer contract is already correct — `listReversibleDocs` /
+`listReversalHistory` interpret `entityId === null` as "skip entity filter", so
+no downstream change was needed. No new query param is required from the
+frontend; the existing `PresidentReversalsPage` picks up cross-entity rows on
+next fetch without code or UI change.
+
+**Scalability / subscription-readiness.** No hardcoded role list — reuses the
+existing `req.isPresident || req.isAdmin || req.isFinance` helper set by
+`tenantFilter` middleware (subscribers can later migrate the triple-check to a
+`CROSS_SCOPE_VIEW_ROLES` Lookup without touching the console). No new lookup
+rows. No new collection, model, or schema field. No migration needed — the
+change is purely a controller-level default.
+
+**Integrity / blast radius.**
+- The `reverse` and `detail` endpoints were already tenant-safe (use
+  `req.tenantFilter` directly, which stays `{}` for presidents — cross-entity
+  reverse has always worked; only the *list* was hiding rows).
+- Non-privileged callers still cannot probe sibling entities — the `else` branch
+  continues to pin to `req.entityId` and ignores `?entity_id=`.
+- Same pattern deliberately NOT applied to `collectionController.getCollections`
+  and `inventoryController` bulk listers; those have business-specific reasons
+  to default to the working entity (finance reconciles one set of books at a
+  time). Document that difference here rather than "fix" cosmetically.
 
 ### Phase 31R-OS — Office Supplies reversal (April 2026)
 

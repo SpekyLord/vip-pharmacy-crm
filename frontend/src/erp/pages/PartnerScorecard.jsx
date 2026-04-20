@@ -4,6 +4,7 @@
  */
 import { useState, useEffect } from 'react';
 import useErpApi from '../hooks/useErpApi';
+import WorkflowGuide from '../components/WorkflowGuide';
 
 function scoreColor(score) {
   if (score >= 70) return '#22c55e';
@@ -129,6 +130,7 @@ export default function PartnerScorecard({ personId, onClose }) {
         </div>
 
         <div className="sc-body">
+          <WorkflowGuide pageKey="partner-scorecard" />
           {loading && <div className="sc-empty">Loading scorecard...</div>}
           {!loading && !sc && (
             <div className="sc-empty">No scorecard data. Click &quot;Recompute Scores&quot; to generate.</div>

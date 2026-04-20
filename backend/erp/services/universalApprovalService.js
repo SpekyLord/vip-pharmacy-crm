@@ -42,32 +42,58 @@ const MODULE_QUERIES = [
     label: 'Authority Matrix',
     sub_key: null, // special: derive from item.module field
     query: async (entityId) => {
-      // Phase G4: exclude level-0 default-roles-gate requests (audit-only).
-      // They have no rule_id and the actionable item is the document itself,
-      // which already appears in its module-specific query (SALES/COLLECTION/etc.).
-      // Including them would double-list each gated submission.
+      // Phase G4.1 (April 2026) — surface ALL pending ApprovalRequests with rich details.
+      //
+      // Previously excluded level-0 default-roles-gate items on the assumption that
+      // their underlying module query (SALES/COLLECTION/...) would always surface the
+      // raw doc. In practice some modules filter by statuses that miss gated docs,
+      // leaving the request orphaned in the legacy Requests tab with no expand UI.
+      //
+      // Current behaviour: include everything, hydrate each underlying doc via
+      // `buildApprovalRequestDetails` (lookup-driven doc_type → model map), and then
+      // let the by-doc_id dedup pass in getUniversalPending prefer the raw-module
+      // item whenever both surfaces exist. That preserves the Phase 31R "no double-
+      // listing" guarantee while fixing the orphan case.
       const items = await ApprovalRequest.find({
         entity_id: entityId,
         status: 'PENDING',
-        $or: [{ level: { $gt: 0 } }, { rule_id: { $ne: null } }],
       })
         .populate('requested_by', 'name email')
         .sort({ createdAt: -1 })
         .lean();
-      return items.map(item => ({
-        id: `APPROVAL_REQUEST:${item._id}`,
-        module: item.module || 'APPROVAL_REQUEST',
-        doc_type: item.doc_type || 'APPROVAL',
-        doc_id: item._id,
-        doc_ref: item.doc_ref || `REQ-${String(item._id).slice(-6)}`,
-        description: item.description || `${item.module} approval — ${item.doc_ref || 'pending'}`,
-        amount: item.amount || 0,
-        submitted_by: item.requested_by?.name || 'Unknown',
-        submitted_at: item.requested_at || item.createdAt,
-        status: 'PENDING_APPROVAL',
-        current_action: 'Approve',
-        action_key: 'APPROVE',
-        approve_data: { type: 'approval_request', id: item._id }
+
+      return Promise.all(items.map(async (item) => {
+        const { details, moduleKey } = await buildApprovalRequestDetails(item);
+        return {
+          id: `APPROVAL_REQUEST:${item._id}`,
+          module: item.module || 'APPROVAL_REQUEST',
+          doc_type: item.doc_type || 'APPROVAL',
+          // doc_id (top-level) — drives the by-doc_id dedup in getUniversalPending.
+          // Fallback to the request _id when the request has no underlying doc
+          // (synthetic holds) so dedup never coalesces unrelated items.
+          doc_id: item.doc_id || item._id,
+          doc_ref: item.doc_ref || `REQ-${String(item._id).slice(-6)}`,
+          description: item.description || `${item.module} approval — ${item.doc_ref || 'pending'}`,
+          amount: item.amount || 0,
+          submitted_by: item.requested_by?.name || 'Unknown',
+          submitted_at: item.requested_at || item.createdAt,
+          status: 'PENDING_APPROVAL',
+          current_action: 'Approve',
+          action_key: 'APPROVE',
+          // Passes doc_id + doc_type + module alongside request id so the handler
+          // (and future auto-post extensions) can dereference the underlying doc
+          // without re-querying.
+          approve_data: {
+            type: 'approval_request',
+            id: item._id,
+            request_id: item._id,
+            doc_id: item.doc_id || null,
+            doc_type: item.doc_type || null,
+            module: item.module || null,
+            module_key: moduleKey || null,
+          },
+          details,
+        };
       }));
     },
     // Roles: lookup-driven via MODULE_DEFAULT_ROLES (null = open, governed by ApprovalRule)
@@ -885,6 +911,91 @@ const MODULE_QUERIES = [
   },
 ];
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase G4.1 (April 2026) — APPROVAL_REQUEST hydration registry
+//
+// Maps ApprovalRequest.doc_type → { modelName, populate } so the Approval Hub
+// can render rich DocumentDetailPanel cards for ANY pending request (Group A
+// where the raw doc is the primary surface AND orphans where only the request
+// is visible). Scalable + subscription-safe:
+//   - Add a new doc_type = add one row; no MODULE_QUERIES change needed.
+//   - Module-key resolution piggybacks on the existing
+//     `REVERSAL_DOC_TYPE_TO_MODULE` registry in documentDetailBuilder.js.
+//   - Future migration: source this from a `APPROVAL_REQUEST_HYDRATION` Lookup
+//     category (mirrors how MODULE_DEFAULT_ROLES moved to Lookup in Phase F.1).
+//     Model names are require()-bound so the Lookup migration will need a
+//     whitelist resolver — not done here to keep the change scoped.
+// ═══════════════════════════════════════════════════════════════════════════
+const DOC_TYPE_HYDRATION = {
+  // ── Group A — gateApproval-held docs whose module_query also surfaces them ──
+  CSI:                 { modelName: 'SalesLine',         populate: [{ path: 'bdm_id', select: 'name email' }] },
+  CR:                  { modelName: 'Collection',        populate: [{ path: 'bdm_id', select: 'name email' }] },
+  SMER:                { modelName: 'SmerEntry',         populate: [{ path: 'bdm_id', select: 'name email' }] },
+  SMER_ENTRY:          { modelName: 'SmerEntry',         populate: [{ path: 'bdm_id', select: 'name email' }] },
+  CAR_LOGBOOK:         { modelName: 'CarLogbookEntry',   populate: [{ path: 'bdm_id', select: 'name email' }] },
+  EXPENSE_ENTRY:       { modelName: 'ExpenseEntry',      populate: [{ path: 'bdm_id', select: 'name email' }, { path: 'recorded_on_behalf_of', select: 'name' }] },
+  PRF:                 { modelName: 'PrfCalf',           populate: [{ path: 'bdm_id', select: 'name email' }] },
+  CALF:                { modelName: 'PrfCalf',           populate: [{ path: 'bdm_id', select: 'name email' }] },
+  GRN:                 { modelName: 'GrnEntry',          populate: [{ path: 'warehouse_id', select: 'warehouse_name warehouse_code' }, { path: 'vendor_id', select: 'vendor_name' }, { path: 'bdm_id', select: 'name email' }] },
+  UNDERTAKING:         { modelName: 'Undertaking',       populate: [{ path: 'requested_by', select: 'name email' }] },
+  CREDIT_NOTE:         { modelName: 'CreditNote',        populate: [{ path: 'bdm_id', select: 'name email' }] },
+  INCOME_REPORT:       { modelName: 'IncomeReport',      populate: [{ path: 'bdm_id', select: 'name email' }] },
+  PAYSLIP:             { modelName: 'Payslip',           populate: [{ path: 'user_id', select: 'name email' }] },
+  KPI_RATING:          { modelName: 'KpiSelfRating',     populate: [{ path: 'bdm_id', select: 'name email' }] },
+  DEDUCTION_SCHEDULE:  { modelName: 'DeductionSchedule', populate: [{ path: 'bdm_id', select: 'name email' }] },
+  // ── Group B — docs whose primary surface IS the ApprovalRequest ──
+  SUPPLIER_INVOICE:    { modelName: 'SupplierInvoice',      populate: [{ path: 'vendor_id', select: 'vendor_name tin' }, { path: 'po_id', select: 'po_number' }] },
+  JOURNAL_ENTRY:       { modelName: 'JournalEntry',         populate: [{ path: 'posted_by', select: 'name' }, { path: 'created_by', select: 'name' }] },
+  BANK_RECON:          { modelName: 'BankStatement',        populate: [{ path: 'bank_account_id', select: 'bank_name bank_code coa_code' }] },
+  IC_TRANSFER:         { modelName: 'InterCompanyTransfer', populate: [{ path: 'source_entity_id', select: 'entity_name' }, { path: 'target_entity_id', select: 'entity_name' }] },
+  IC_SETTLEMENT:       { modelName: 'IcSettlement',         populate: [{ path: 'creditor_entity_id', select: 'entity_name' }, { path: 'debtor_entity_id', select: 'entity_name' }] },
+  DISBURSEMENT:        { modelName: 'PettyCashTransaction', populate: [{ path: 'fund_id', select: 'fund_name fund_code current_balance' }, { path: 'created_by', select: 'name email' }] },
+  DEPOSIT:             { modelName: 'PettyCashTransaction', populate: [{ path: 'fund_id', select: 'fund_name fund_code current_balance' }, { path: 'created_by', select: 'name email' }] },
+  SALES_GOAL_PLAN:     { modelName: 'SalesGoalPlan',        populate: [{ path: 'created_by', select: 'name' }] },
+  INCENTIVE_PAYOUT:    { modelName: 'IncentivePayout',      populate: [{ path: 'bdm_id', select: 'name email' }, { path: 'plan_id', select: 'plan_name fiscal_year reference' }] },
+};
+
+/**
+ * Phase G4.1 — Hydrate an ApprovalRequest with its underlying document +
+ * DocumentDetailPanel-ready `details` object.
+ *
+ * Returns `{ details, moduleKey }`. Best-effort: when the doc can't be
+ * hydrated (no registry row, no model, doc deleted), falls back to passing
+ * the ApprovalRequest itself to the builder so the detail panel still renders
+ * doc_ref / amount / description.
+ *
+ * Uses the existing REVERSAL_DOC_TYPE_TO_MODULE mapping from documentDetailBuilder
+ * so new doc_types registered for reversal automatically inherit a module key here.
+ */
+async function buildApprovalRequestDetails(req) {
+  const { REVERSAL_DOC_TYPE_TO_MODULE } = require('./documentDetailBuilder');
+  const docType = req.doc_type;
+  const moduleKey = (docType && REVERSAL_DOC_TYPE_TO_MODULE[docType]) || req.module || null;
+
+  const hydration = DOC_TYPE_HYDRATION[docType];
+  if (!hydration || !req.doc_id) {
+    return { details: buildDocumentDetails(moduleKey, req), moduleKey };
+  }
+
+  const Model = getModel(hydration.modelName);
+  if (!Model) {
+    return { details: buildDocumentDetails(moduleKey, req), moduleKey };
+  }
+
+  try {
+    let query = Model.findById(req.doc_id);
+    for (const p of (hydration.populate || [])) {
+      if (p?.path) query = query.populate(p.path, p.select);
+    }
+    const doc = await query.lean();
+    if (!doc) return { details: buildDocumentDetails(moduleKey, req), moduleKey };
+    return { details: buildDocumentDetails(moduleKey, doc), moduleKey };
+  } catch (err) {
+    console.error(`ApprovalRequest hydration failed [${docType}/${req.doc_id}]:`, err.message);
+    return { details: buildDocumentDetails(moduleKey, req), moduleKey };
+  }
+}
+
 /**
  * Phase 31 — Shared helper for gap-module pending lists.
  *
@@ -1164,13 +1275,62 @@ async function getUniversalPending(entityId, user, entityIds) {
     )
   );
 
-  // Flatten, deduplicate by id, and sort by submitted_at descending
+  // Flatten + dedup by composite id (strict dupes from module re-entry across entities)
   const seen = new Set();
-  const allItems = results.flat().filter(item => {
+  const flat = results.flat().filter(item => {
     if (seen.has(item.id)) return false;
     seen.add(item.id);
     return true;
-  }).sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
+  });
+
+  // ── Phase G4.1 — doc_id dedup across surfaces ──
+  //
+  // The APPROVAL_REQUEST query now returns ALL pending requests (previously it
+  // excluded level-0 default-roles-gate items). That can duplicate any request
+  // whose underlying doc is ALSO returned by a module-native query — e.g. a
+  // CAR_LOGBOOK held by gateApproval appears both as
+  //   id: 'CAR_LOGBOOK:<entryId>'       (raw, action_key: POST)
+  //   id: 'APPROVAL_REQUEST:<reqId>'    (mirror, action_key: APPROVE)
+  // Both items share the same `doc_id`. We prefer the raw module item because
+  // its action handler runs the actual post (which resolves the request via
+  // the Phase G4 close-loop). Orphan ApprovalRequests (no module-native
+  // sibling) survive this pass and surface with their hydrated details so the
+  // approver can still expand and act on them from the Hub.
+  const byDocId = new Map();
+  for (const item of flat) {
+    const key = item.doc_id ? String(item.doc_id) : null;
+    if (!key) continue;
+    if (!byDocId.has(key)) byDocId.set(key, []);
+    byDocId.get(key).push(item);
+  }
+
+  const dropIds = new Set();
+  for (const group of byDocId.values()) {
+    if (group.length < 2) continue;
+    const hasRaw = group.some(g => !String(g.id).startsWith('APPROVAL_REQUEST:'));
+    if (!hasRaw) continue;
+    for (const g of group) {
+      if (String(g.id).startsWith('APPROVAL_REQUEST:')) dropIds.add(g.id);
+    }
+  }
+
+  // ── Phase G4.1 — per-item sub-permission filter for APPROVAL_REQUEST items ──
+  //
+  // APPROVAL_REQUEST is registered with `sub_key: null` (open at the module
+  // level — any Hub user passes isAuthorizedForModule). Pre-Phase G4.1 the
+  // query only returned level-1+ items, so the "bypass" was tiny. Now that we
+  // surface ALL pending requests (incl. level-0 default-roles-gate), we must
+  // derive each item's real sub_key from its `module` field and filter out
+  // items the caller isn't entitled to approve. President/CEO always pass.
+  const filteredByPerm = flat.filter(item => {
+    if (!String(item.id).startsWith('APPROVAL_REQUEST:')) return true;
+    const itemModule = item.module || 'APPROVAL_REQUEST';
+    const itemSubKey = MODULE_TO_SUB_KEY[itemModule];
+    return hasApprovalSub(user, itemSubKey);
+  });
+
+  const allItems = filteredByPerm.filter(i => !dropIds.has(i.id))
+    .sort((a, b) => new Date(b.submitted_at) - new Date(a.submitted_at));
 
   // ── Enrich line_items: product names + available stock ──
   // 1. Collect all product_id values and warehouse/bdm context from items with line_items

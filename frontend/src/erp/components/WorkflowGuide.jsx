@@ -607,16 +607,17 @@ const WORKFLOW_GUIDES = {
     title: 'Universal Approval Hub',
     steps: [
       'Governing principle: "Any person can CREATE, but authority POSTS." Submitters validate; the Hub posts.',
-      'All Pending tab: see EVERY transaction across the ERP that needs your attention — approve, post, or reject inline.',
-      'Module filter: narrow by Sales, Collections, SMER, Car Logbook, Expenses, PRF/CALF, Income, Deductions, GRN, Payroll, KPI, etc.',
+      'All Pending tab: EVERY transaction awaiting action across the ERP — includes module-native items (raw docs in VALID/PENDING_APPROVAL) AND Authority-Matrix / Default-Roles-Gate escalations. Each row expands to show the full document with line items, photos, and audit trail.',
+      'Phase G4.1 (Apr 2026) — Approval Requests are now hydrated into All Pending with full DocumentDetailPanel cards (was: flat table in the Requests tab). Dedup keeps the raw module item whenever both surfaces exist, so there is no double-listing.',
+      'Module filter: narrow by Sales, Collections, SMER, Car Logbook, Expenses, PRF/CALF, Income, Deductions, GRN, Payroll, KPI, Banking, Journal, Petty Cash, IC Transfer, Purchasing, Sales Goal Plans, Incentive Payouts, etc.',
       'Sub-permissions: your assigned approval sub-permissions control which modules you see. Admin might handle Sales + GRN, finance handles Expenses + Payroll. President sees everything. Configure in Control Center → ERP Access Templates → Approvals sub-permissions.',
-      'Posting modules (Sales, Collections, SMER, Car Logbook, Expenses, PRF/CALF, Banking, Journal, Petty Cash, IC Transfer, Purchasing): documents in VALID status appear here — click Post to transition to POSTED.',
-      'Approval modules (Income, Deductions, GRN, Payroll, KPI): multi-step review/approve workflows.',
-      'Default-Roles Gate (always on): when a submitter\'s role is not in MODULE_DEFAULT_ROLES.metadata.roles, their submit creates a pending request and the document waits here. Set roles = null on a module to disable the gate (open-post).',
+      'Posting modules (Sales, Collections, SMER, Car Logbook, Expenses, PRF/CALF, Banking, Journal, Petty Cash, IC Transfer, Purchasing): documents in VALID status — click Post to transition to POSTED; the close-loop auto-resolves any pending ApprovalRequest on the same doc.',
+      'Approval modules (Income, Deductions, GRN, Payroll, KPI, Undertaking, Per-Diem Override): multi-step review/approve workflows.',
+      'Default-Roles Gate (always on): when a submitter\'s role is not in MODULE_DEFAULT_ROLES.metadata.roles, their post is held and a pending request appears in All Pending. Set roles = null on a module to disable the gate (open-post).',
       'Attachments: waybill photos, deposit slips, OR receipts, fuel receipts, and supporting documents are displayed inline — click any thumbnail to view full-size.',
       'Quick Edit: click Edit on any item to fix typos (description, notes, check#, amount) before approving. Editable fields configured in Control Center → Lookup Tables → APPROVAL_EDITABLE_FIELDS.',
       'Line-Item Edit: fix individual line items (qty, unit_price, batch#) directly — totals recalculate automatically. Configure in Lookup Tables → APPROVAL_EDITABLE_LINE_FIELDS.',
-      'Requests tab: authority matrix approvals (rule-triggered escalations on top of the default-roles gate).',
+      'Approval History tab: historical ApprovalRequest decisions (APPROVED / REJECTED / CANCELLED) for Authority-Matrix audit. Filter by status or module.',
       'Rules tab (Admin): create Approval Rules to delegate — assign specific people or roles to approve specific modules. Rules layer on top of default roles, they don\'t replace them.',
       'Default Roles: each module has configurable default roles (Control Center → Lookup Tables → MODULE_DEFAULT_ROLES). Edit per-entity to fit each subsidiary.',
       'Sidebar badge shows how many items need your attention.',
@@ -934,6 +935,30 @@ const WORKFLOW_GUIDES = {
       { label: 'Performance Ranking', path: '/erp/performance-ranking' },
     ],
     tip: 'Set "Reports To" on each person to build the org chart hierarchy.',
+  },
+  // Partner Scorecard slide-out panel (opens from Org Chart by clicking a
+  // partner node). Read-only aggregation — the panel itself never writes to
+  // the DB. Upstream data comes from CRM (Visit, Doctor.engagement_level) +
+  // ERP (SalesLine, Collection, ExpenseEntry). Graduation + weights are
+  // lookup-driven via ErpSettings (GRADUATION_CRITERIA, SCORECARD_WEIGHTS),
+  // so each subsidiary can calibrate its own bar without code changes.
+  'partner-scorecard': {
+    title: 'Partner Scorecard — Performance, Graduation & AI Insights',
+    steps: [
+      'Performance tab — five weighted sub-scores (Visits / Sales / Collections / Efficiency / Engagement) plus an overall 0-100 composite. Weights come from ErpSettings.SCORECARD_WEIGHTS (default 25/25/20/15/15) and are per-entity, so every subsidiary can tune its own formula in Control Center without a code change.',
+      'Graduation tab — live checklist of ErpSettings.GRADUATION_CRITERIA (7 defaults: Months Active, VIP Clients Assigned, Monthly Sales ₱, Collection Rate %, Expense/Sales Ratio %, Visit Compliance %, Avg Engagement). Each row shows actual vs target and comparator (≥ / ≤). 100% met = the green "Ready to Graduate" banner fires — your cue to start the subsidiary provisioning conversation.',
+      'AI Insights tab — rule-based agent findings (KPI variance, org intelligence, daily briefing) tagged info / warning / critical. Rule-based is the default; paid Claude tier only engages where it clearly unlocks capability (handwriting / narrative). Empty state means the agents have not run yet for this partner.',
+      'Data sources are read-only aggregations: CRM Visit + Doctor (assignment + engagement_level), ERP SalesLine (POSTED only), Collection (POSTED), ExpenseEntry (POSTED). The panel is a slide-out — closing or dismissing it never mutates data. Safe to recompute as often as you need.',
+      'Monthly snapshots live in erp_partner_scorecards keyed by (person_id, period, entity_id). The trend bars at the bottom pull the last N history rows for this partner, newest on the right. Missing snapshot = "Click Recompute Scores to generate" empty state.',
+      'Recompute is admin / president only via the "Recompute Scores" button on the Org Chart header (POST /api/erp/scorecards/compute, gated by roleCheck). BDMs see the last cached snapshot for their own scorecard but cannot trigger a recompute.',
+    ],
+    next: [
+      { label: 'Org Chart', path: '/erp/org-chart' },
+      { label: 'ERP Settings (Weights & Criteria)', path: '/erp/control-center?section=erp-settings' },
+      { label: 'Agent Dashboard', path: '/erp/agent-dashboard' },
+      { label: 'Performance Ranking', path: '/erp/performance-ranking' },
+    ],
+    tip: 'Subscription-ready by design: GRADUATION_CRITERIA and SCORECARD_WEIGHTS are per-entity ErpSettings so pharma, e-commerce, rental, and F&B subsidiaries can each set their own bar. Raising a graduation target does not invalidate past snapshots — just re-run Recompute Scores and partners re-qualify on the next pass. The panel respects entity isolation via req.entityId; president sees all entities, others see their own.',
   },
 
   // ═══ Payroll & Performance ═══
@@ -1431,7 +1456,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Audit Logs', path: '/erp/audit-logs' },
       { label: 'Period Locks', path: '/erp/period-locks' },
     ],
-    tip: 'Reversal entries land in the current period. If the current month is locked for the relevant module, unlock it first or wait. The original period is never modified. VAT (2550Q) and CWT (2307) ledger rows are NOT auto-modified by reversal — they are a finance-owned staging layer. During filing prep, check the finance_tag on any VAT/CWT rows whose source document has been reversed (look for the PRESIDENT_REVERSAL audit entry) and tag them EXCLUDE if they should not be filed, or add a reconciliation note if already filed.',
+    tip: 'Reversal entries land in the current period. If the current month is locked for the relevant module, unlock it first or wait. The original period is never modified. VAT (2550Q) and CWT (2307) ledger rows are NOT auto-modified by reversal — they are a finance-owned staging layer. During filing prep, check the finance_tag on any VAT/CWT rows whose source document has been reversed (look for the PRESIDENT_REVERSAL audit entry) and tag them EXCLUDE if they should not be filed, or add a reconciliation note if already filed. Scope: President / Admin / Finance see every entity by default on this page (matches the Sales list and Approval Hub) — append `?entity_id=<id>` to narrow. Non-privileged callers are always pinned to their working entity.',
   },
 
   // ═══ Phase 28 — Sales Goals & KPI ═══
