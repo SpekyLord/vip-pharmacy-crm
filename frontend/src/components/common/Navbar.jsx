@@ -10,7 +10,7 @@
  * - Logout button
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, memo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import {
   BarChart3,
@@ -840,4 +840,4 @@ const Navbar = () => {
   );
 };
 
-export default Navbar;
+export default memo(Navbar);

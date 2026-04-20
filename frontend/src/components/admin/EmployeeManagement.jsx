@@ -7,7 +7,7 @@
  * - Account activation/deactivation
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { Search, Plus, Eye, Edit2, Power, X, ChevronDown, KeyRound, Unlock, Trash2 } from 'lucide-react';
@@ -1965,4 +1965,4 @@ const EmployeeManagement = ({
 };
 
 
-export default EmployeeManagement;
+export default memo(EmployeeManagement);

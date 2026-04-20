@@ -199,6 +199,7 @@ visitSchema.index({ status: 1, visitDate: -1 }); // Optimized for status + date 
 visitSchema.index({ visitDate: -1 });
 visitSchema.index({ yearWeekKey: 1 });
 visitSchema.index({ doctor: 1, user: 1, monthYear: 1 }); // For monthly visit count queries
+visitSchema.index({ doctor: 1, user: 1, monthYear: 1, status: 1 }); // For filtered monthly count queries
 visitSchema.index({ 'photos.hash': 1 }, { sparse: true }); // For duplicate photo detection
 visitSchema.index({ photoFlags: 1 }, { sparse: true }); // For photo audit queries
 

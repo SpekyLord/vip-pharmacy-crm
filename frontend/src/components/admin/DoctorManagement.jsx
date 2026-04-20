@@ -8,7 +8,7 @@
  * - Add/Edit modal
  */
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, memo } from 'react';
 import { Plus, Edit2, Trash2, ArrowUpCircle, AlertTriangle, X, ChevronDown, Building2, MessageSquare } from 'lucide-react';
 import ConversationDrawer from '../common/ConversationDrawer';
 import doctorService from '../../services/doctorService';
@@ -2549,4 +2549,4 @@ const DoctorManagement = ({
   );
 };
 
-export default DoctorManagement;
+export default memo(DoctorManagement);
