@@ -36,6 +36,9 @@ const TYPE_TO_MODULE = {
   petty_cash: 'PETTY_CASH',
   sales_goal_plan: 'SALES_GOAL_PLAN',
   incentive_payout: 'INCENTIVE_PAYOUT',
+  // Phase 32 — Undertaking (GRN receipt confirmation). Acknowledge auto-approves
+  // the linked GRN via postSingleUndertaking (rule #20).
+  undertaking: 'UNDERTAKING',
 };
 
 // Module-specific approval handlers (lazy-loaded to avoid circular deps)
@@ -314,6 +317,34 @@ const approvalHandlers = {
     return doc;
   },
 
+  // Phase 32 — Undertaking (GRN receipt confirmation) approval handler.
+  // Approve path calls postSingleUndertaking which opens a MongoDB session and
+  // auto-approves the linked GRN atomically (rule #20). Reject returns the doc
+  // to DRAFT so the BDM can fix and resubmit (no validation errors field; the
+  // rejection_reason captures why).
+  undertaking: async (id, action, userId, reason) => {
+    const Undertaking = require('../models/Undertaking');
+    const doc = await Undertaking.findById(id);
+    if (!doc) throw new Error('Undertaking not found');
+    if (doc.status !== 'SUBMITTED') {
+      throw new Error(`Undertaking is ${doc.status}, expected SUBMITTED`);
+    }
+    if (action === 'approve' || action === 'post') {
+      const { postSingleUndertaking } = require('./undertakingController');
+      const { undertaking } = await postSingleUndertaking(doc, userId);
+      return undertaking;
+    } else if (action === 'reject') {
+      // Phase 32R — reject is terminal. Linked GRN stays PENDING for reversal
+      // or direct rejection by approver.
+      doc.status = 'REJECTED';
+      doc.rejection_reason = reason || 'Rejected from Approval Hub';
+      doc.reopen_count = (doc.reopen_count || 0) + 1;
+      await doc.save();
+      return doc;
+    }
+    return doc;
+  },
+
   // Phase 31R follow-up — Credit Note (product return) approval handler.
   // Mirrors smer_entry / car_logbook / expense_entry: approver posts one CN via
   // the extracted `postSingleCreditNote` helper (which handles event+inventory+JE);
@@ -569,6 +600,9 @@ const MODEL_MAP = {
   expense_entry:      () => require('../models/ExpenseEntry'),
   prf_calf:           () => require('../models/PrfCalf'),
   grn:                () => require('../models/GrnEntry'),
+  // Phase 32 — Undertaking (receipt-confirmation doc). Editable only in DRAFT; the
+  // Approval Hub surfaces SUBMITTED, but edits aren't allowed there (approver decides).
+  undertaking:        () => require('../models/Undertaking'),
 };
 
 // Statuses that appear in the Approval Hub — only these are editable
@@ -583,6 +617,11 @@ const EDITABLE_STATUSES = {
   expense_entry:      ['VALID'],
   prf_calf:           ['VALID'],
   grn:                ['PENDING'],
+  // Phase 32R — Undertaking is read-only (capture is on GRN; UT just mirrors +
+  // acknowledges). Approval Hub cannot quick-edit the UT because there are no
+  // editable line fields. To fix a mistake, the BDM must reverse the GRN and
+  // re-capture.
+  undertaking:        [],
 };
 
 /**

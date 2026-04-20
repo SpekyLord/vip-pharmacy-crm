@@ -4251,6 +4251,12 @@ Console — Phase 31" section for the architecture deep-dive.
 - [x] `MODULE_COLORS` in `ApprovalManager.jsx` — added the three new module chip colors so the filter tabs and card badges render consistently.
 - [x] Subscription/scalability preserved — no new hardcoded business values. All three modules already had `APPROVAL_CATEGORY`, `APPROVAL_MODULE`, `MODULE_DEFAULT_ROLES`, and `REJECTION_CONFIG` lookup seeds from Phase G6.7. No schema or authorization changes — only detail-panel payload enrichment + render.
 
+**Round 2 closeout (Apr 20, 2026) — tier-2 panel gaps.**
+- [x] `PETTY_CASH` — query now populates `created_by` (the model uses `created_by` as the requester/BDM scope — there's no separate `bdm_id` field, see PettyCashTransaction.js line 79). Builder surfaces `requested_by` + email; panel shows a "Requested by" line for disbursements so the approver can see who cut the PCV without opening the source page.
+- [x] `JOURNAL` (DEPRECIATION / INTEREST batches) — previously fell back to the ApprovalRequest stub, so the approver saw no line detail. Query now post-processes batch items by calling `depreciationService.getDepreciationStaging(entityId, period)` or `loanService.getInterestStaging(entityId, period)` (period extracted from `doc_ref`) and passes a `_batch_kind` bundle into `buildJournalDetails`, which branches to a staging-table shape. Panel has a dedicated batch branch (`d.is_batch`) showing per-asset depreciation or per-loan interest/principal/balance, with a batch-kind chip and totals row.
+- [x] `BANKING` — builder no longer truncates to first 10 mixed entries. Now returns **full** `unmatched_entries` and `reconciling_entries` lists (those are the approver's job), plus a capped `matched_preview` (20 rows, with `matched_truncated` flag for the UI). Panel renders three separate tables (unmatched red, reconciling amber, matched green) so unmatched lines are never hidden behind pagination. Reconciliation data flow: BankStatement → `buildBankingDetails` → Approval Hub panel, end-to-end.
+- [x] Verified: `node -c` clean on both backend files; esbuild JSX check clean on both frontend files. No schema migrations. No authorization changes. No lookup seed changes (PETTY_CASH/JOURNAL/BANKING were already in `APPROVAL_MODULE` + `MODULE_DEFAULT_ROLES` + `REJECTION_CONFIG`). `depreciationService.getDepreciationStaging` and `loanService.getInterestStaging` confirmed exported.
+
 ---
 
 ## Phase 3c — Comprehensive Hardcoded-Role Migration ✅ (April 18, 2026)
@@ -5411,4 +5417,318 @@ already contain duplicate `item_code` values under the same `entity_id` (e.g. th
 6 BALL PEN incident) will fail index build until either (a) the duplicates are
 reversed via the new President Reverse button (preferred — keeps audit trail),
 or (b) `item_code` is manually unset on duplicates via a one-off query.
+
+---
+
+## Phase 24-C — Foundation Health Lookup-Count Reconciliation (Apr 20, 2026)
+
+### Problem
+The "Lookup Tables" card on the Control Center Foundation Health dashboard
+displayed **137/133 (Complete)** — numerator exceeded denominator. Caused by
+mismatched counting sources:
+- **Numerator** (`lookups.categories_configured`, 137) came from
+  `Lookup.distinct('category', { entity_id })` — the live DB.
+- **Denominator** (`lookups.total_available`, 133) came from
+  `Object.keys(SEED_DEFAULTS)` in `lookupGenericController.js`.
+
+The 4-category drift: **NOTIFICATION_CHANNELS, NOTIFICATION_ESCALATION,
+PDF_RENDERER, TASK_OVERDUE_COOLDOWN_DAYS** — all lazy-seeded at runtime via
+`$setOnInsert` in their respective services but never added to `SEED_DEFAULTS`.
+Foundation Health card therefore showed >100% once any of the 4 agents ran.
+
+### Fix
+Two-layer reconciliation so the card is correct today AND stays correct as new
+lazy-seeded categories are added.
+
+**Backend.**
+- [x] `backend/erp/controllers/controlCenterController.js` — `lookups` block in
+  `getHealth` now computes denominator as the **union** of `SEED_DEFAULTS` keys
+  and live DB categories. Numerator stays as DB-category count. Math never
+  exceeds 100% regardless of future runtime drift.
+- [x] `backend/erp/controllers/lookupGenericController.js` — added 7 new
+  categories to `SEED_DEFAULTS` (133 → 140) so the seed list is authoritative
+  again:
+  - **NOTIFICATION_CHANNELS** (3 rows: EMAIL, IN_APP, SMS)
+  - **NOTIFICATION_ESCALATION** (REPORTS_TO_MAX_HOPS)
+  - **PDF_RENDERER** (BINARY_ENABLED)
+  - **TASK_OVERDUE_COOLDOWN_DAYS** (GLOBAL)
+  - **COMPLIANCE_DEADLINES** (6 PH statutory deadlines: BIR 1601-E/2550-M/
+    1701-Q, SSS, PhilHealth, HDMF) — read by `complianceDeadlineAgent`
+  - **EXPANSION_READINESS_CONFIG** (DEFAULT thresholds) — read by
+    `expansionReadinessAgent`
+  - **KPI_VARIANCE_THRESHOLDS** (GLOBAL fallback) — read by `kpiVarianceAgent`
+- [x] `buildSeedOps` — added `insert_only_metadata: true` row flag so
+  admin-tunable metadata (enabled flags, thresholds) is $setOnInsert rather
+  than $set. Preserves admin edits across repeat `seedAll` calls. Structural
+  metadata (statutory BIR dates on COMPLIANCE_DEADLINES) keeps the old
+  dot-notation `$set` path so engineering corrections still propagate.
+
+**Frontend.**
+- [x] `frontend/src/erp/pages/FoundationHealth.jsx` — cards now carry an optional
+  `section` key and render as buttons that update `?section=…` via
+  `useSearchParams`. Clicking Lookup Tables jumps straight into the Lookup
+  Manager with the System Settings group already expanded (all Control Center
+  groups default to `isExpanded: true` per line 529 of `ControlCenter.jsx`).
+  Keyboard-navigable + focus ring for a11y.
+- [x] `frontend/src/erp/pages/ControlCenter.jsx` — `DEPENDENCY_GUIDE.lookups`
+  extended with 7 new banner items describing NOTIFICATION_CHANNELS,
+  NOTIFICATION_ESCALATION, PDF_RENDERER, COMPLIANCE_DEADLINES,
+  KPI_VARIANCE_THRESHOLDS, EXPANSION_READINESS_CONFIG, and
+  TASK_OVERDUE_COOLDOWN_DAYS. Satisfies CLAUDE.md Rule #1 (helper banners for
+  every user-facing page) and the Rule #3 subscription model.
+
+**Integrity checklist — all passed.**
+- Syntax: `node -c` clean on both modified backend controllers; ESLint clean on
+  both frontend files.
+- Wiring: `getHealth` still exports via `catchAsync`; Foundation Health endpoint
+  `GET /erp/control-center/health` unchanged; FoundationHealth card contract
+  back-compatible (cards without `section` render as plain divs).
+- SEED_DEFAULTS count: 133 → 140 (verified via
+  `Object.keys(SEED_DEFAULTS).length`); no duplicate keys; no existing entries
+  mutated.
+- Lazy-seed compatibility: the 4 existing runtime seeders
+  (`erpNotificationService.getChannelConfig/getEscalationConfig`,
+  `pdfRenderer.resolvePdfPreference`, `taskOverdueAgent.loadCooldownDays`) still
+  run as safety nets. Because all use `updateOne + $setOnInsert`, running before
+  or after seedAll is safe — admin customizations are never clobbered either
+  way.
+- Scalable / subscription-ready: new categories are entity-scoped (filter
+  includes `entity_id`), lookup-driven (admin tunes in Lookup Manager, no code
+  deploy), and dispatch via `$setOnInsert` so each subscriber's edits survive
+  re-seed. Foundation Health denominator = `union(SEED_DEFAULTS, DB)` so future
+  lazy-seeded categories auto-expand the denominator without code change.
+- Cache invalidation: none of the 7 new categories are in
+  `EXPENSE_CLASSIFIER_CATEGORIES`, `OR_PARSER_LOOKUP_CATEGORIES`,
+  `VENDOR_AUTO_LEARN_CATEGORIES`, `DANGER_SUB_PERM_CATEGORIES`, or
+  `REJECTION_CONFIG_CATEGORIES`. The consuming services each re-read on every
+  cron tick / request, so no TTL flush needed.
+- Banners: `DEPENDENCY_GUIDE.lookups` extended — no orphaned references.
+- UI gate ≠ security: card click-through uses existing `?section=…` param
+  pattern; no new permission surface.
+- No severed wiring: `seedAllLookups.js` standalone script unchanged (works
+  identically because it always uses `$setOnInsert` for metadata); 20 other
+  files that `require(...).SEED_DEFAULTS` still see the same object shape.
+
+### Math Verification
+| State | Numerator (DB cats) | Denominator (union) | Card |
+|-------|---------------------|---------------------|------|
+| Before fix | 137 | 133 | `137/133` (103%) ❌ |
+| After fix, pre-seedAll | 137 | 140 | `137/140` (98%) ⚠️ |
+| After `Seed All` button in Lookup Manager | 140 | 140 | `140/140` ✅ Complete |
+
+Clicking the card in Foundation Health now deep-links to Lookup Manager; an
+admin finishing the setup simply clicks "Seed All" there to reach 100%.
+
+---
+
+## Phase 32R — GRN Capture + Undertaking Approval Wrapper ✅ (April 20, 2026)
+
+### Why
+Phase 32 (shipped earlier April 20) moved batch/expiry capture onto a new Undertaking model and scanned packaging barcodes as the primary input. User rejected the pivot because it split data entry across two pages and mismatched the CALF→Expense analogy the rest of the ERP uses. Phase 32R restores the pre-Phase 32 flow where **GRN is the capture surface** (product + qty + batch + expiry + waybill), and layers a thin, read-only Undertaking on top as an approval wrapper — same pattern as CALF wrapping Expense.
+
+### Shipped
+
+**Backend** (previously committed Phase 32R backend session, unchanged this session):
+- `backend/erp/models/GrnEntry.js` — per-line `scan_confirmed` + `expected_qty` (pre-save mirror).
+- `backend/erp/controllers/inventoryController.js` — `createGrn` enforces waybill gate (`GRN_SETTINGS.WAYBILL_REQUIRED`) + per-line capture validation (batch + expiry ≥ today + MIN_EXPIRY_DAYS + qty > 0) BEFORE any DB write.
+- `backend/erp/services/undertakingService.js` — rewritten. Kept `autoUndertakingForGrn`, added `getGrnSetting` (reads GRN_SETTINGS, falls back to UNDERTAKING_SETTINGS) + `computeLineVariance`. Removed `syncUndertakingToGrn`, `validateUndertaking`, `validateUndertakingLine` — validation now lives on GRN capture.
+- `backend/erp/controllers/undertakingController.js` — dropped `updateUndertaking`, `matchBarcodeToLine`. `submitUndertaking` now a pure DRAFT→SUBMITTED flip with `gateApproval()`. `rejectUndertaking` → terminal REJECTED (GRN stays PENDING).
+- `backend/erp/routes/undertakingRoutes.js` — dropped `PUT /:id` and `POST /:id/match-barcode`.
+- `backend/erp/controllers/universalApprovalController.js` — `approvalHandlers.undertaking.reject` uses terminal REJECTED. `EDITABLE_STATUSES.undertaking = []`.
+- `backend/erp/controllers/lookupGenericController.js` — seed category renamed `UNDERTAKING_SETTINGS` → `GRN_SETTINGS`, added `WAYBILL_REQUIRED`.
+
+**Frontend** (this session):
+- `frontend/src/erp/services/undertakingService.js` — dropped `updateUndertaking`, `matchBarcode`. Renamed `getUndertakingSettings` → `getGrnSettings` (with legacy export alias). Category fallback: GRN_SETTINGS → UNDERTAKING_SETTINGS.
+- `frontend/src/erp/pages/GrnEntry.jsx` — rebuilt. Per-line batch + expiry + qty inputs, required waybill upload, bulk "Scan Undertaking Paper" OCR modal (`processDocument(file, 'UNDERTAKING')`), deep-link navigate to `/erp/undertaking/:id` after save.
+- `frontend/src/erp/pages/UndertakingDetail.jsx` — rewritten. Read-only review only. Waybill + Undertaking-paper thumbnails, read-only line table, status-gated action row (Validate & Submit / Acknowledge + Reject / President-Reverse).
+- `frontend/src/erp/components/UndertakingLineRow.jsx` — rewritten. All inputs removed. Plain read-only cells: product (Rule #4), expected/received qty, batch + scan ✓, expiry + days-to-expiry color band, variance badge.
+- `frontend/src/erp/pages/UndertakingList.jsx` — DRAFT tab renamed "Review Pending"; header copy refreshed.
+- `frontend/src/erp/components/WorkflowGuide.jsx` — `grn-entry` + `undertaking-entry` steps/tips rewritten to match the capture-on-GRN + read-only-on-UT framing.
+- `frontend/src/erp/pages/ControlCenter.jsx` — `undertaking-settings` section renamed `grn-settings`. Dependency guide includes WAYBILL_REQUIRED, MIN_EXPIRY_DAYS, VARIANCE_TOLERANCE_PCT, MODULE_DEFAULT_ROLES.UNDERTAKING, ERP_DANGER_SUB_PERMISSIONS.INVENTORY__REVERSE_UNDERTAKING + legacy UNDERTAKING_SETTINGS fallback note.
+
+### Verification
+
+```bash
+# Backend (should report 21 handlers + gone functions return undefined)
+node -e "const inv=require('./backend/erp/controllers/inventoryController'); const ut=require('./backend/erp/controllers/undertakingController'); const svc=require('./backend/erp/services/undertakingService'); const {REVERSAL_HANDLERS}=require('./backend/erp/services/documentReversalService'); console.log('approveGrnCore:',typeof inv.approveGrnCore,'postSingleUndertaking:',typeof ut.postSingleUndertaking,'getGrnSetting:',typeof svc.getGrnSetting,'syncUndertakingToGrn(gone):',typeof svc.syncUndertakingToGrn,'handlers:',Object.keys(REVERSAL_HANDLERS).length)"
+
+# Frontend
+cd frontend && npx vite build
+
+# Manual (run after build succeeds)
+# - BDM creates standalone GRN → picks product + types qty + scans paper (OCR autofills batch/expiry/qty) + uploads waybill → Save & Validate
+# - Auto-UT DRAFT → BDM opens it → Validate & Submit → 202 if non-authorized (Approval Hub) or SUBMITTED
+# - Approver acknowledges from Hub → GRN APPROVED + InventoryLedger written atomically → /erp/my-stock shows new batch
+# - Approver rejects → UT REJECTED (terminal), GRN stays PENDING → BDM reverses GRN via Reversal Console and re-captures
+# - GRN without waybill → 400 "Waybill photo is required"
+# - GRN with expiry < today + MIN_EXPIRY_DAYS → 400 "Line N: expiry must be at least N days in the future"
+# - President-Reverse on ACKNOWLEDGED UT → cascade storno to GRN + InventoryLedger reduction
+```
+
+### Gotchas
+
+1. **Waybill upload reuses `/erp/ocr/process`** with `docType='WAYBILL'`. OCR parser doesn't know WAYBILL so it uploads to S3, skips OCR, returns `s3_url`. One DocumentAttachment pipeline, no new endpoint.
+2. **Scan = OCR on paper, NOT BarcodeDetector.** The capture flow OCRs the physical Undertaking paper; it is NOT a packaging barcode scanner. An earlier draft handoff mentioned BarcodeDetector — disregard.
+3. **REJECTED is terminal.** Unlike Phase 32's "reject bounces UT back to DRAFT", 32R reject is final. GRN stays PENDING so the BDM must reverse and re-capture — closing the loophole where a BDM could silently re-edit a rejected UT.
+4. **Existing Phase 32 DRAFT UTs** (empty batch/expiry, waiting for packaging-barcode scan) need to be reversed via Reversal Console → UNDERTAKING → hard-delete. The linked PENDING GRN hard-deletes with them. BDM then recaptures on the new GrnEntry surface.
+5. **Existing Phase 32 SUBMITTED UTs** (batch/expiry populated by old scan flow) acknowledge normally — the acknowledge handler is unchanged.
+6. **Subscription-readiness**: all thresholds are `GRN_SETTINGS` lookups, tunable via Control Center. No hardcoded values. Legacy `UNDERTAKING_SETTINGS` rows keep working via `getGrnSetting` fallback.
+
+---
+
+## Phase 32R-GRN# — Human-Readable GRN Doc Numbers ✅ (April 20, 2026)
+
+### Why
+Follow-up to Phase 32R. `GrnEntry` never had a doc number — frontend showed `po_number || _id.slice(-6)`. STANDALONE GRNs (no PO) therefore rendered as a hex tail (`GRN · 611961`) on the Undertaking list and every linked-GRN surface. Out of line with CALF / PRF / PO / JE / ICT which all use `services/docNumbering.js`.
+
+### Shipped
+
+**Backend**
+- `backend/erp/models/GrnEntry.js` — added `grn_number: { type: String, trim: true, index: { sparse: true } }`. Sparse so legacy rows don't block the index.
+- `backend/erp/controllers/inventoryController.js#createGrn` — calls `generateDocNumber({ prefix: 'GRN', bdmId: req.bdmId, entityId: req.entityId, date: grn_date })` before the `withTransaction` block. Passed into `GrnEntry.create(...)`. Audit-log note reads `GRN ${grn_number} created …`. Format: `GRN-{TERR|ENTITY}{MMDDYY}-{NNN}` (e.g. `GRN-ILO042026-001`).
+- `backend/erp/controllers/undertakingController.js` — `getUndertakingList` populate select adds `grn_number`. (Detail endpoint already populates the full GRN doc.)
+- `backend/erp/services/universalApprovalService.js` — populate select adds `grn_number`; Approval Hub row description leads with `grn.grn_number` when present.
+- `backend/erp/services/documentDetailHydrator.js` — UNDERTAKING populate select adds `grn_number`.
+- `backend/erp/services/documentDetailBuilder.js#buildUndertakingDetails` — `linked_grn.grn_number` surfaced to `DocumentDetailPanel`.
+- `backend/erp/services/documentReversalService.js` — GRN row `doc_ref` is `grn_number` (ISO-date fallback for legacy). Undertaking row does one batched `GrnEntry.find({_id: {$in}}).select('grn_number')` lookup to surface the linked GRN's number in the `sub` label.
+
+**Frontend**
+- `frontend/src/erp/pages/UndertakingList.jsx` — row link uses `grn.grn_number || po_number || id.slice(-6)`.
+- `frontend/src/erp/pages/UndertakingDetail.jsx` — header link uses the same precedence.
+- `frontend/src/erp/pages/GrnAuditView.jsx` — header sub-line uses the precedence; new `GRN#` cell in the grid.
+- `frontend/src/erp/pages/GrnEntry.jsx` — GRN list: new `GRN#` column on the desktop table (colspan bumped to 10 for empty state); card title is `grn_number` with date demoted; success toast reads back the new number.
+- `frontend/src/erp/components/DocumentDetailPanel.jsx` — Linked GRN card uses the precedence.
+- `frontend/src/erp/components/WorkflowGuide.jsx` — `grn-entry` tip documents the new format; `undertaking-entry` tip notes the link now shows the number.
+
+### Integrity Checklist (all confirmed before commit)
+
+- [x] `grn_number` generation runs **before** `session.withTransaction` — atomic via `DocSequence.getNext`, independent of GRN rollback.
+- [x] Territory code → Entity short_name → fallback: admin/president-created GRNs (no territory binding) still get an entity-prefixed number.
+- [x] All 7 display sites (UndertakingList, UndertakingDetail, GrnAuditView, DocumentDetailPanel, GrnEntry table, GrnEntry card, GrnEntry success toast) use the same precedence chain `grn_number → po_number → id.slice(-6)` so legacy rows keep rendering.
+- [x] All 5 backend read paths that expose the linked GRN to the UI (`undertakingController.getUndertakingList`, `undertakingController.getUndertakingById`, `universalApprovalService.UNDERTAKING query`, `documentDetailHydrator.UNDERTAKING`, `documentReversalService.GRN + UNDERTAKING`) include `grn_number`.
+- [x] Approval flow unchanged — `gateApproval({ module: 'INVENTORY' })`, `MODULE_DEFAULT_ROLES.INVENTORY`, `REVERSAL_HANDLERS.GRN` / `UNDERTAKING`, period lock, and `approveGrnCore` all key on `_id` / ObjectIds, not on `grn_number`.
+- [x] Subscription-ready — Territory-driven via `Territory.getCodeForBdm` (admin lookup); entity fallback via `Entity.short_name` (admin-editable, cached, invalidated on rename); no hardcoded prefixes.
+- [x] No backfill — legacy GRNs remain displayable via the `po_number`/id fallback; no dashboards or reports depend on `grn_number` being non-null.
+- [x] Syntax clean: `node -c` on every edited backend file; `npx vite build` clean on frontend.
+
+---
+
+## PHASE (FUTURE, SUBSCRIPTION-TRIGGERED) — Unified Party Master (Customer + Hospital Fusion)
+
+**Status:** DEFERRED — execute when subscription model / generic ERP work begins.
+**Triggers:** onboarding of subsidiary #2 beyond MG AND CO., OR start of multi-tenant subscription rollout.
+
+### Why Deferred
+
+The current two-model design (`Customer` + `Hospital`) works for VIP single-tenant. The operational pain is cosmetic — duplicate controllers/routes, `$or: [{ hospital_id }, { customer_id }]` branches in txn models, duplicate frontend pages — not functional. The two models also encode a real scoping difference (hospital = globally shared across VIP + MG AND CO. + future subsidiaries; customer = entity-specific), which the fusion has to preserve via partial indexes. Executing the refactor on a single-tenant codebase is speculative; the payoff lands when subsidiary #2 onboards and duplicate-maintenance becomes expensive at scale.
+
+### Why Fuse Eventually
+
+- ~80% field overlap between `Customer` and `Hospital`.
+- 177 refs to `hospital_id`/`customer_id` across 30 backend files.
+- 4 txn models use ugly OR-validation: `SalesLine`, `Collection`, `CreditNote`, `Collateral` (pre-save validator requires one of the two).
+- 4 models are hospital-only today but should open to any party_type when fused: `SmerEntry`, `ConsignmentTracker`, `CwtLedger`, `CreditRule`. Consignment-to-pharmacy and CWT-for-industrial-buyer are realistic future cases.
+- Frontend has fully parallel `CustomerList.jsx` / `HospitalList.jsx` with separate services and hooks — every new field shipped twice.
+
+### Target Design (Summary)
+
+Single `erp_parties` collection with:
+
+```
+entity_id          (ObjectId, required unless party_type==='hospital')
+party_type         (String, Lookup: PARTY_TYPE — retail | hospital | pharmacy | diagnostic | industrial)
+party_name, party_name_clean, party_aliases[]
+tin, vat_status, payment_terms, credit_limit, credit_limit_action,
+cwt_rate, atc_code, is_top_withholding_agent, default_sale_type
+address, contact_person, contact_phone, contact_email
+warehouse_ids[]   (sparse — populated mainly on hospital-type parties)
+tagged_bdms[taggedBdmSchema]
+status
+hospital_profile? {                    // sparse sub-doc, only populated when party_type==='hospital'
+  hospital_type, bed_capacity, level,
+  purchaser_name, purchaser_phone,
+  chief_pharmacist_name, chief_pharmacist_phone,
+  key_decision_maker, engagement_level (1–5),
+  major_events[] (≤3), programs_to_level_5
+}
+legacy_ref { source: 'erp_hospitals'|'erp_customers', source_id }   // migration traceability
+```
+
+**Partial indexes** (key mechanism — one collection, two scoping rules):
+
+- `{ party_name_clean: 1 }` unique, `partialFilterExpression: { party_type: 'hospital' }` — global hospital uniqueness.
+- `{ entity_id: 1, party_name_clean: 1 }` unique, `partialFilterExpression: { party_type: { $ne: 'hospital' } }` — entity-scoped uniqueness for everyone else.
+- Plus: `{ entity_id: 1, party_type: 1, status: 1 }`, `{ warehouse_ids: 1 }`, `{ 'tagged_bdms.bdm_id': 1 }`, text index on `party_name + party_aliases`.
+
+Txn models get `party_id` (ObjectId ref Party) + `party_type_cached` (denormalized for index efficiency). Old `hospital_id`/`customer_id` fields kept as deprecated aliases for the transition window.
+
+### Invariants to Preserve
+
+1. **Hospital global sharing** — one `St Luke's` record across every entity. `entity_id` must remain optional when `party_type==='hospital'`.
+2. **Customer entity-scoping** — retail/pharmacy/diagnostic/industrial parties stay scoped per entity.
+3. **Access control stays split by `party_type`** — do NOT collapse:
+   - Hospitals use warehouse-driven access via `buildHospitalAccessFilter` in [backend/erp/utils/hospitalAccess.js:21-38](../backend/erp/utils/hospitalAccess.js#L21-L38). BDM assigned to a Warehouse (as `manager_id` or `assigned_users`) inherits access to every hospital whose `warehouse_ids[]` includes that warehouse. O(1) operational cost — new hospital under existing warehouse auto-inherits the right BDMs.
+   - Customers use direct `tagged_bdms` `{ $elemMatch: { bdm_id, is_active } }` as in [backend/erp/controllers/customerController.js:20-24](../backend/erp/controllers/customerController.js#L20-L24). Territorial pattern doesn't apply to retail — direct tagging is correct.
+   - Admin/finance/president/ceo short-circuit to `{}` (unchanged; Rule #21 — no silent self-ID fallback).
+4. **Warehouse stays party-agnostic** — [backend/erp/models/Warehouse.js](../backend/erp/models/Warehouse.js) has no refs to hospitals/customers; the arrow goes the other way. No change to Warehouse model.
+5. **HEAT fields are orthogonal to warehouse** — no business logic couples them; safe to extract into `hospital_profile` sub-doc.
+6. **AR / commission paths don't use warehouse** — fusion doesn't touch arEngine/commission computation.
+
+### Migration Strategy (Reference — 6 PRs, Dual-Write, Zero-Downtime)
+
+Key trick: **reuse original `_id`** when copying Customer/Hospital into erp_parties. This means every existing `hospital_id`/`customer_id` FK in the txn collections already resolves against `erp_parties` without any rewrite, and rollback is bidirectional.
+
+1. **PR1 Additive.** Create Party model + indexes + partyController (read-only) + `/api/erp/parties` + seed `PARTY_TYPE` Lookup. No reads/writes change. Safe deploy.
+2. **PR2 Backfill + dual-write.** Run `migrateCustomersHospitalsToParties.js` (idempotent, `_id`-preserving, dry-run flag). Enable `ERP_PARTY_DUAL_WRITE=true` — customer/hospital controllers write to both old and new collections.
+3. **PR3 Txn schema extension.** Add `party_id` + `party_type_cached` (non-required) to all txn models. Run `backfillPartyIdOnTxns.js`. Controllers dual-write.
+4. **PR4 Service cutover.** Flip service queries to read `party_id` (`arEngine`, `autoJournal`, `documentDetailHydrator`, `documentDetailBuilder`, `universalApprovalService`, `cwtService`, `consignmentReportService`, `creditRuleEngine`, `incomeCalc`, `soaGenerator`). Frontend tab defaults switch to `/api/erp/parties`.
+5. **PR5 Make `party_id` required.** Old txn fields deprecated (warn in logs). UI collapses to single `PartyList.jsx` with tabs — old routes 301 to preselected tabs.
+6. **PR6 Retire (T+30).** After backup: drop `erp_customers`/`erp_hospitals`, remove deprecated fields, compat shims, old routes, old frontend pages.
+
+**Rollback:** `_id` reuse keeps FKs valid either direction. Flags `ERP_PARTY_READ_FROM_PARTIES` and `ERP_PARTY_DUAL_WRITE` toggle independently. Old collections retained 30 days.
+
+### Verification Checklist (for executing team)
+
+- **Reconciliation** — `count(erp_parties) === count(erp_hospitals) + count(erp_customers)` post-PR2.
+- **ID continuity** — sample 50 txns per model; `party_id` resolves to same logical entity as prior `hospital_id`/`customer_id`.
+- **AR invariants** — snapshot `arEngine.computeOpenBalance` per entity as JSON before/after; must be byte-identical.
+- **Uniqueness tests:**
+  - Duplicate hospital name across two entities → **must fail** (global partial index).
+  - Same customer name across two entities for non-hospital → **must succeed** (entity-scoped partial index).
+- **Round-trip smoke** — create + post + reverse for: Sales invoice (hospital AND pharmacy parties), Collection, CreditNote, Collateral, Consignment-to-pharmacy, CWT ledger.
+- **Period-lock + gateApproval** — writes blocked within locked periods; non-authorized submits route through Approval Hub (HTTP 202; Rule #20).
+- **Rollback drill** — flip `ERP_PARTY_READ_FROM_PARTIES=false` in staging; UI reverts to old collections and functions.
+
+### Cheap Prep (Optional, Can Ship Anytime Before Full Fusion)
+
+Extract the two existing access filters into one shared util, `buildPartyAccessFilter(user, partyType)`:
+
+- If `partyType === 'hospital'` → reuse existing warehouse-driven logic verbatim from [backend/erp/utils/hospitalAccess.js:21-38](../backend/erp/utils/hospitalAccess.js#L21-L38).
+- Else → return the `tagged_bdms.$elemMatch` filter from [customerController.js:20-24](../backend/erp/controllers/customerController.js#L20-L24).
+- Admin/finance/president/ceo → `{}`.
+
+~30 lines, zero schema change, zero migration. Fusion PR becomes half the size when it eventually lands.
+
+### Affected Files (Reference List for Executing Team)
+
+**Models (modify):** [SalesLine.js](../backend/erp/models/SalesLine.js) L49-54, [Collection.js](../backend/erp/models/Collection.js) L35-37, [CreditNote.js](../backend/erp/models/CreditNote.js) L59-60, [Collateral.js](../backend/erp/models/Collateral.js) L17-18, [SmerEntry.js](../backend/erp/models/SmerEntry.js), [ConsignmentTracker.js](../backend/erp/models/ConsignmentTracker.js), [CwtLedger.js](../backend/erp/models/CwtLedger.js), [CreditRule.js](../backend/erp/models/CreditRule.js).
+
+**Models (new):** `backend/erp/models/Party.js`.
+
+**Controllers/Routes:** new `partyController.js` + `partyRoutes.js` mounted at `/api/erp/parties`; existing `customerController.js` + `hospitalController.js` become thin shims during transition, removed at PR6.
+
+**Services (switch `$or` → `party_id`):** `arEngine.js`, `autoJournal.js`, `documentDetailHydrator.js`, `documentDetailBuilder.js`, `universalApprovalService.js`, `cwtService.js`, `consignmentReportService.js`, `creditRuleEngine.js`, `incomeCalc.js`, `soaGenerator.js`.
+
+**Scripts (new):** `migrateCustomersHospitalsToParties.js`, `backfillPartyIdOnTxns.js`.
+
+**Frontend:** new `PartyList.jsx` + `partyService.js` + `useParties.js`; existing `HospitalList.jsx` / `CustomerList.jsx` become tab-preselected wrappers at PR5, removed at PR6. Add `PARTY_MASTER` entry to `WORKFLOW_GUIDES` in `WorkflowGuide.jsx` (banner compliance).
+
+**Reused utilities:** `cleanName` from `utils/nameClean.js`; `gateApproval` from `services/approvalService.js`; existing `taggedBdmSchema` block; generalized `buildPartyAccessFilter` (from cheap-prep step above).
+
+### Out of Scope Even When Executed
+
+- CRM `Doctor` (VIP Client) model — separate clinical master, not a transactional party.
+- COA codes or journal semantics — no new COA entries introduced.
+- [backend/erp/models/Warehouse.js](../backend/erp/models/Warehouse.js) — stays inventory-only and party-agnostic.
+- AR / commission computation paths — don't reference warehouse today, don't need to after fusion.
 

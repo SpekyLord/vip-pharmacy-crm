@@ -4,9 +4,18 @@ const { cleanBatchNo } = require('../utils/normalize');
 const grnLineItemSchema = new mongoose.Schema({
   product_id: { type: mongoose.Schema.Types.ObjectId, ref: 'ProductMaster', required: true },
   item_key: { type: String },
-  batch_lot_no: { type: String, required: [true, 'Batch/Lot number is required'] },
-  expiry_date: { type: Date, required: [true, 'Expiry date is required'] },
+  // Phase 32R: GRN is the capture surface. batch_lot_no + expiry_date are
+  // required at create time (controller enforces — pre-save skips for legacy
+  // drafts). scan_confirmed flags OCR-parsed lines vs manual typing so the
+  // approver can see capture quality in the Approval Hub.
+  batch_lot_no: { type: String, default: '' },
+  expiry_date: { type: Date, default: null },
+  scan_confirmed: { type: Boolean, default: false },
   qty: { type: Number, required: [true, 'Quantity is required'], min: 1 },
+  // Expected qty — for PO/transfer lines this is the remaining receivable
+  // (pre-filled, read-only on the UI). For standalone GRNs it mirrors `qty`
+  // on submit so the variance validator always has both numbers to compare.
+  expected_qty: { type: Number },
   // UOM conversion: qty is in purchase units; qty_selling_units is computed
   purchase_uom: { type: String, trim: true },
   selling_uom: { type: String, trim: true },
@@ -20,6 +29,12 @@ const grnEntrySchema = new mongoose.Schema({
   entity_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Entity', required: true },
   bdm_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   warehouse_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Warehouse' }, // Phase 17 — receiving warehouse
+
+  // Human-readable doc number — `GRN-{TERR|ENTITY}{MMDDYY}-{NNN}` via
+  // services/docNumbering.generateDocNumber. Sparse so pre-numbering legacy
+  // rows (no backfill) keep working. Generated in inventoryController.createGrn
+  // before save; stays stable across the Undertaking + Approval Hub lifecycle.
+  grn_number: { type: String, trim: true, index: { unique: false, sparse: true } },
 
   // Source type: PO (supplier), INTERNAL_TRANSFER (same-entity reassignment), or standalone
   source_type: {
@@ -58,6 +73,9 @@ const grnEntrySchema = new mongoose.Schema({
   reviewed_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   reviewed_at: { type: Date },
 
+  // Phase 32 — back-link to auto-created Undertaking (receipt confirmation doc)
+  undertaking_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Undertaking' },
+
   // Link to TransactionEvent on approval
   event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
 
@@ -73,12 +91,15 @@ const grnEntrySchema = new mongoose.Schema({
   collection: 'erp_grn_entries'
 });
 
-// Normalize batch numbers and compute selling-unit quantities on save
+// Normalize batch numbers and compute selling-unit quantities on save.
+// Phase 32R: mirror expected_qty from qty when the caller didn't provide it
+// (standalone GRNs) so the variance validator always has both numbers.
 grnEntrySchema.pre('save', function (next) {
   for (const item of this.line_items) {
     if (item.batch_lot_no) {
       item.batch_lot_no = cleanBatchNo(item.batch_lot_no);
     }
+    if (item.expected_qty == null) item.expected_qty = item.qty;
     // Compute qty in selling units: qty (purchase) * conversion_factor
     item.qty_selling_units = (item.qty || 0) * (item.conversion_factor || 1);
   }

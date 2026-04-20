@@ -100,6 +100,10 @@ const PERIOD_LOCK_MODULE = {
   SUPPLIER_INVOICE: 'PURCHASING',
   CREDIT_NOTE:      'SALES',
   IC_SETTLEMENT:    'BANKING',
+  // Phase 32 — Undertaking reversal cascades to the linked GRN when the GRN is
+  // APPROVED. The reversal JE + negating InventoryLedger entries land in the
+  // current INVENTORY period (same as GRN's own reversal).
+  UNDERTAKING:      'INVENTORY',
 };
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -531,6 +535,125 @@ async function reverseGrn({ doc, userId, reason, tenantFilter }) {
   } finally { session.endSession(); }
 
   return { doc_type: 'GRN', doc_id: doc._id, doc_ref: `GRN-${doc._id}`, mode: 'SAP_STORNO', reversal_event_id: reversalEvent?._id, side_effects: sideEffects };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// UNDERTAKING handler (Phase 32 — cascades to linked GRN when APPROVED)
+// ───────────────────────────────────────────────────────────────────────────────
+//
+// Undertaking states:
+//   DRAFT / SUBMITTED / REJECTED → hard-delete the Undertaking. Also hard-delete
+//     the linked GRN if it is still PENDING (BDM/approver can re-scan from
+//     scratch). If GRN is already APPROVED, disallow — the approver must first
+//     reverse the GRN through its own handler.
+//   ACKNOWLEDGED → SAP Storno. Reuse reverseGrn() on the linked GRN (which
+//     handles period-lock, dependency check, ledger reversal, PO rollback,
+//     journal reversal). Then mark the Undertaking REJECTED with
+//     deletion_event_id set to the GRN reversal event.
+//
+// Invariants:
+//   - Undertaking.deletion_event_id marks it terminal (partial unique index).
+//   - Never flip a POSTED/APPROVED GRN to DRAFT — original stays for audit.
+async function loadUndertaking({ doc_id, tenantFilter }) {
+  const Undertaking = require('../models/Undertaking');
+  const u = await Undertaking.findOne({ _id: doc_id, ...tenantFilter });
+  if (!u) { const e = new Error('Undertaking not found in your scope'); e.statusCode = 404; throw e; }
+  if (u.deletion_event_id) { const e = new Error('Undertaking already reversed'); e.statusCode = 409; throw e; }
+  return u;
+}
+
+async function reverseUndertaking({ doc, userId, reason, tenantFilter }) {
+  const Undertaking = require('../models/Undertaking');
+  const sideEffects = [];
+
+  // Non-terminal states: hard-delete
+  if (['DRAFT', 'SUBMITTED', 'REJECTED'].includes(doc.status)) {
+    const grn = doc.linked_grn_id
+      ? await GrnEntry.findOne({ _id: doc.linked_grn_id, ...tenantFilter })
+      : null;
+
+    if (grn && grn.status === 'APPROVED') {
+      const err = new Error(
+        `Cannot hard-delete Undertaking — linked GRN is APPROVED. Reverse the GRN first (which will also reverse this Undertaking), or acknowledge the Undertaking before attempting reversal.`
+      );
+      err.statusCode = 409;
+      throw err;
+    }
+
+    await Undertaking.deleteOne({ _id: doc._id, ...tenantFilter });
+    if (grn && ['PENDING', 'REJECTED'].includes(grn.status)) {
+      await GrnEntry.deleteOne({ _id: grn._id, ...tenantFilter });
+      sideEffects.push('linked_grn_hard_deleted');
+    } else {
+      sideEffects.push('hard_deleted');
+    }
+    return {
+      doc_type: 'UNDERTAKING',
+      doc_id: doc._id,
+      doc_ref: doc.undertaking_number || String(doc._id),
+      mode: 'HARD_DELETE',
+      reversal_event_id: null,
+      side_effects: sideEffects.length ? sideEffects : ['hard_deleted'],
+    };
+  }
+
+  // ACKNOWLEDGED → cascade-reverse the linked GRN
+  if (doc.status !== 'ACKNOWLEDGED') {
+    const e = new Error(`Undertaking is ${doc.status} — only ACKNOWLEDGED can be SAP-storno reversed`);
+    e.statusCode = 400;
+    throw e;
+  }
+
+  await assertReversalPeriodOpen({ doc_type: 'UNDERTAKING', entityId: doc.entity_id });
+
+  const grn = doc.linked_grn_id
+    ? await GrnEntry.findOne({ _id: doc.linked_grn_id, ...tenantFilter })
+    : null;
+
+  if (!grn) {
+    const e = new Error('Undertaking has no linked GRN — cannot cascade-reverse');
+    e.statusCode = 500;
+    throw e;
+  }
+
+  if (grn.status === 'APPROVED' && !grn.deletion_event_id) {
+    // Delegate to reverseGrn — it already handles period lock, dependency checks
+    // (downstream sales/transfers), journal reversal, inventory return, and PO rollback.
+    const grnResult = await reverseGrn({
+      doc: grn,
+      userId,
+      reason: `Cascade from Undertaking ${doc.undertaking_number} reversal: ${reason}`,
+      tenantFilter
+    });
+    sideEffects.push(`grn_reversed=${grnResult.mode}`);
+    if (grnResult.reversal_event_id) {
+      sideEffects.push(`grn_reversal_event=${grnResult.reversal_event_id}`);
+    }
+
+    // Mirror the GRN's deletion_event_id onto the Undertaking so the partial
+    // unique index on linked_grn_id opens up and the Undertaking stops
+    // appearing in the "reversible" list.
+    doc.deletion_event_id = grnResult.reversal_event_id || new mongoose.Types.ObjectId();
+    doc.status = 'REJECTED';
+    doc.rejection_reason = `Reversed by president: ${reason}`;
+    await doc.save();
+  } else {
+    // GRN already reversed (or was never APPROVED) — just mark the Undertaking
+    doc.deletion_event_id = new mongoose.Types.ObjectId();
+    doc.status = 'REJECTED';
+    doc.rejection_reason = `Reversed by president: ${reason}`;
+    await doc.save();
+    sideEffects.push('grn_already_reversed_or_not_approved');
+  }
+
+  return {
+    doc_type: 'UNDERTAKING',
+    doc_id: doc._id,
+    doc_ref: doc.undertaking_number || String(doc._id),
+    mode: 'SAP_STORNO',
+    reversal_event_id: doc.deletion_event_id,
+    side_effects: sideEffects,
+  };
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -1368,6 +1491,8 @@ const REVERSAL_HANDLERS = {
   // Phase 31R-OS — master + transactional reversal for office supplies
   OFFICE_SUPPLY_ITEM:   { load: loadOfficeSupply,    reverse: reverseOfficeSupply,    label: 'Office Supply (Item)',  module: 'inventory' },
   OFFICE_SUPPLY_TXN:    { load: loadOfficeSupplyTxn, reverse: reverseOfficeSupplyTxn, label: 'Office Supply (Txn)',   module: 'inventory' },
+  // Phase 32 — Undertaking (receipt confirmation). Cascades to reverseGrn when ACKNOWLEDGED.
+  UNDERTAKING:          { load: loadUndertaking,     reverse: reverseUndertaking,     label: 'Undertaking (Receipt)', module: 'inventory' },
 };
 
 /**
@@ -1473,9 +1598,51 @@ async function listReversibleDocs({ doc_types, entityId, fromDate, toDate, page 
   if (wantedTypes.includes('GRN')) {
     const q = { ...baseEntity, ...notReversed, status: 'APPROVED' };
     if (dateFilter) q.grn_date = dateFilter;
-    const { rows, cnt } = await fetchAndCount(GrnEntry, q, '_id grn_date entity_id bdm_id status po_number', 'grn_date');
+    const { rows, cnt } = await fetchAndCount(GrnEntry, q, '_id grn_number grn_date entity_id bdm_id status po_number', 'grn_date');
     totalCount += cnt;
-    rows.forEach(r => out.push({ doc_type: 'GRN', doc_id: r._id, doc_ref: `GRN ${r.grn_date?.toISOString().slice(0,10)}`, entity_id: r.entity_id, bdm_id: r.bdm_id, posted_at: r.grn_date, status: r.status, label: REVERSAL_HANDLERS.GRN.label, sub: r.po_number }));
+    rows.forEach(r => out.push({
+      doc_type: 'GRN',
+      doc_id: r._id,
+      // Prefer the human-readable grn_number (Phase 32R-GRN#); legacy rows
+      // pre-numbering fall back to the ISO date label.
+      doc_ref: r.grn_number || `GRN ${r.grn_date?.toISOString().slice(0,10)}`,
+      entity_id: r.entity_id,
+      bdm_id: r.bdm_id,
+      posted_at: r.grn_date,
+      status: r.status,
+      label: REVERSAL_HANDLERS.GRN.label,
+      sub: r.po_number
+    }));
+  }
+
+  if (wantedTypes.includes('UNDERTAKING')) {
+    const Undertaking = require('../models/Undertaking');
+    const q = { ...baseEntity, ...notReversed, status: 'ACKNOWLEDGED' };
+    if (dateFilter) q.acknowledged_at = dateFilter;
+    const { rows, cnt } = await fetchAndCount(Undertaking, q, '_id undertaking_number entity_id bdm_id acknowledged_at status linked_grn_id', 'acknowledged_at');
+    totalCount += cnt;
+    // Phase 32R-GRN#: surface the linked GRN's human-readable number in the sub
+    // label. Single batched lookup keeps the reversal console query count flat.
+    const grnIds = rows.map(r => r.linked_grn_id).filter(Boolean);
+    const grnNumberMap = new Map();
+    if (grnIds.length) {
+      const grnRows = await GrnEntry.find({ _id: { $in: grnIds } }).select('_id grn_number').lean();
+      grnRows.forEach(g => { if (g.grn_number) grnNumberMap.set(String(g._id), g.grn_number); });
+    }
+    rows.forEach(r => {
+      const grnNum = r.linked_grn_id ? grnNumberMap.get(String(r.linked_grn_id)) : null;
+      out.push({
+        doc_type: 'UNDERTAKING',
+        doc_id: r._id,
+        doc_ref: r.undertaking_number || `UT-${String(r._id).slice(-6)}`,
+        entity_id: r.entity_id,
+        bdm_id: r.bdm_id,
+        posted_at: r.acknowledged_at,
+        status: r.status,
+        label: REVERSAL_HANDLERS.UNDERTAKING.label,
+        sub: r.linked_grn_id ? (grnNum || `GRN ${String(r.linked_grn_id).slice(-6)}`) : ''
+      });
+    });
   }
 
   if (wantedTypes.includes('IC_TRANSFER')) {

@@ -25,7 +25,7 @@
  *   items — same pattern as Expenses / SMER.
  */
 import { Fragment, useState, useEffect, useMemo, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -168,6 +168,8 @@ export default function OpeningArEntry() {
   const customers = useCustomers();
   const erpApi = useErpApi();
   const { hasSubPermission } = useErpSubAccess();
+  const [searchParams] = useSearchParams();
+  const editId = searchParams.get('edit');
 
   const liveDate = user?.live_date ? toDateInput(user.live_date) : '';
   const defaultBackdate = liveDate ? oneDayBefore(liveDate) : '';
@@ -226,32 +228,55 @@ export default function OpeningArEntry() {
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Load any existing pre-go-live drafts/valid/error rows belonging to user ──
-  const loadExistingRows = useCallback(async () => {
-    try {
-      const drafts = await sales.getSales({ limit: 50, status: 'DRAFT', source: 'OPENING_AR' });
-      const valids = await sales.getSales({ limit: 50, status: 'VALID', source: 'OPENING_AR' });
-      const errors = await sales.getSales({ limit: 50, status: 'ERROR', source: 'OPENING_AR' });
-      const existing = [
-        ...(drafts?.data || []),
-        ...(valids?.data || []),
-        ...(errors?.data || [])
-      ];
-      if (existing.length) {
-        setRows(existing.map(s => ({
-          ...s,
-          csi_date: toDateInput(s.csi_date),
-          _isNew: false
-        })));
-      } else {
-        setRows([buildEmptyRow(defaultBackdate)]);
-      }
-    } catch (err) {
-      console.error('[OpeningArEntry] load existing:', err.message);
-    }
-  }, [sales, defaultBackdate]);
+  // ── Single-row edit mode (arrived via `?edit=<id>` from Opening AR Transactions) ──
+  // Entry page no longer auto-loads the full backlog of DRAFT/VALID/ERROR rows — those
+  // live on /erp/sales/opening-ar/list (the Transactions surface). Rationale: mirror the
+  // SalesEntry/SalesList split so the Entry surface stays a clean slate for new CSIs and
+  // the List surface owns the backlog. Subscription-model note: the sub-permissions
+  // `sales.opening_ar` (Entry) and `sales.opening_ar_list` (Transactions) are already
+  // independently gated in lookupGenericController.js — no new lookup is introduced by
+  // this behavior change, so multi-tenant rollout is a zero-config cut-over.
+  //
+  // When a reviewer taps "Re-upload" / "Edit" on the List, we deep-link here with the
+  // row id and hydrate just that one row for correction.
+  useEffect(() => {
+    if (!editId) return;
+    let cancelled = false;
+    sales.getSaleById(editId)
+      .then(res => {
+        if (cancelled || !res?.data) return;
+        const row = res.data;
+        if (row.source !== 'OPENING_AR') return;
+        setRows([{ ...row, csi_date: toDateInput(row.csi_date), _isNew: false }]);
+      })
+      .catch(err => {
+        if (!cancelled) console.error('[OpeningArEntry] load edit row:', err.message);
+      });
+    return () => { cancelled = true; };
+  }, [editId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadExistingRows(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Re-fetch ONLY the rows currently visible on the page (by _id) — used after
+  // validate/submit so the user sees the updated status chip without pulling the
+  // whole backlog back onto Entry. If a row has no _id yet (unsaved), it's left
+  // untouched.
+  const refreshCurrentRows = useCallback(async () => {
+    const ids = rows.filter(r => r._id).map(r => r._id);
+    if (!ids.length) return;
+    try {
+      const fresh = await Promise.all(
+        ids.map(id => sales.getSaleById(id).then(r => r?.data).catch(() => null))
+      );
+      const byId = new Map(fresh.filter(Boolean).map(s => [String(s._id), s]));
+      setRows(prev => prev.map(r => {
+        if (!r._id) return r;
+        const updated = byId.get(String(r._id));
+        if (!updated) return r;
+        return { ...updated, csi_date: toDateInput(updated.csi_date), _isNew: false };
+      }));
+    } catch (err) {
+      console.error('[OpeningArEntry] refresh rows:', err.message);
+    }
+  }, [rows, sales]);
 
   // ── Build product dropdown options from ProductMaster (no stock filter) ──
   const productOptions = useMemo(() => {
@@ -415,50 +440,70 @@ export default function OpeningArEntry() {
     return errs;
   };
 
+  // Internal save routine — persists every `_isNew` row, returns the saved ids and
+  // collected warnings. Separated from the user-facing "Save Drafts" handler so
+  // that Validate / Post can chain a save without triggering the Entry→Transactions
+  // reset that Save Drafts does on its own.
+  const persistNewRows = async () => {
+    const warnings = [];
+    const savedIds = [];
+    const savedFull = [];
+    for (const row of rows) {
+      if (!row._isNew) continue;
+
+      const rowErrs = validateRowForSave(row);
+      if (rowErrs.length) { warnings.push(`Row skipped: ${rowErrs.join('; ')}`); continue; }
+
+      const validItems = row.line_items.filter(li => li.product_id && li.qty && parseFloat(li.qty) > 0);
+      const dropped = row.line_items.filter(li => li.product_id && (!li.qty || parseFloat(li.qty) <= 0));
+      if (dropped.length) warnings.push(`${dropped.length} line item(s) dropped: qty must be > 0`);
+      const zeroPrice = validItems.filter(li => !li.unit_price || parseFloat(li.unit_price) <= 0);
+      if (zeroPrice.length) warnings.push(`${zeroPrice.length} line item(s) have ₱0 unit price`);
+
+      if (validItems.length === 0) { warnings.push('Row skipped: no valid line items'); continue; }
+
+      const payload = {
+        sale_type: 'CSI',
+        hospital_id: row.hospital_id || undefined,
+        customer_id: row.customer_id || undefined,
+        csi_date: row.csi_date,
+        doc_ref: row.doc_ref,
+        // No warehouse_id — opening AR has no inventory impact
+        csi_photo_url: row.csi_photo_url || undefined,
+        csi_attachment_id: row.csi_attachment_id || undefined,
+        line_items: validItems.map(li => ({
+          product_id: li.product_id,
+          item_key: li.item_key,
+          qty: parseFloat(li.qty),
+          unit: li.unit,
+          unit_price: parseFloat(li.unit_price)
+        }))
+      };
+
+      const res = await sales.createSale(payload);
+      if (res?.data) {
+        savedIds.push(res.data._id);
+        savedFull.push(res.data);
+      }
+    }
+    return { warnings, savedIds, savedFull };
+  };
+
   const saveAll = async () => {
     setActionLoading('save');
     try {
-      const warnings = [];
-      const savedIds = [];
-      for (const row of rows) {
-        if (!row._isNew) continue;
-
-        const rowErrs = validateRowForSave(row);
-        if (rowErrs.length) { warnings.push(`Row skipped: ${rowErrs.join('; ')}`); continue; }
-
-        const validItems = row.line_items.filter(li => li.product_id && li.qty && parseFloat(li.qty) > 0);
-        const dropped = row.line_items.filter(li => li.product_id && (!li.qty || parseFloat(li.qty) <= 0));
-        if (dropped.length) warnings.push(`${dropped.length} line item(s) dropped: qty must be > 0`);
-        const zeroPrice = validItems.filter(li => !li.unit_price || parseFloat(li.unit_price) <= 0);
-        if (zeroPrice.length) warnings.push(`${zeroPrice.length} line item(s) have ₱0 unit price`);
-
-        if (validItems.length === 0) { warnings.push('Row skipped: no valid line items'); continue; }
-
-        const payload = {
-          sale_type: 'CSI',
-          hospital_id: row.hospital_id || undefined,
-          customer_id: row.customer_id || undefined,
-          csi_date: row.csi_date,
-          doc_ref: row.doc_ref,
-          // No warehouse_id — opening AR has no inventory impact
-          csi_photo_url: row.csi_photo_url || undefined,
-          csi_attachment_id: row.csi_attachment_id || undefined,
-          line_items: validItems.map(li => ({
-            product_id: li.product_id,
-            item_key: li.item_key,
-            qty: parseFloat(li.qty),
-            unit: li.unit,
-            unit_price: parseFloat(li.unit_price)
-          }))
-        };
-
-        const res = await sales.createSale(payload);
-        if (res?.data) savedIds.push(res.data._id);
-      }
-
+      const { warnings, savedIds } = await persistNewRows();
       if (warnings.length) showError(null, warnings.join('\n'));
-      if (savedIds.length) await loadExistingRows();
-      else if (!warnings.length) showError(null, 'No rows saved. Each row needs a hospital/customer, CSI #, backdated date, and at least one valid line item.');
+      if (savedIds.length) {
+        // Saved drafts now belong to Opening AR Transactions — do NOT re-hydrate
+        // them back onto Entry. Reset to a blank row so the user can keep typing
+        // new CSIs, and surface a success banner directing them to the List.
+        showSuccess(`${savedIds.length} draft${savedIds.length === 1 ? '' : 's'} saved. View in Opening AR Transactions.`);
+        setRows([buildEmptyRow(defaultBackdate)]);
+        setValidationErrors([]);
+      } else if (!warnings.length) {
+        showError(null, 'No rows saved. Each row needs a hospital/customer, CSI #, backdated date, and at least one valid line item.');
+      }
     } catch (err) {
       console.error('[OpeningArEntry] save:', err);
       showError(err, 'Could not save opening AR row');
@@ -470,11 +515,29 @@ export default function OpeningArEntry() {
   const handleValidate = async () => {
     setActionLoading('validate');
     try {
-      await saveAll();
-      const ids = rows.filter(r => r._id && editableStatuses.includes(r.status)).map(r => r._id);
+      // Persist any unsaved rows inline, then hydrate them back so validate sees
+      // their new _ids. Unlike Save Drafts, we keep the rows on-screen so the user
+      // immediately sees the VALID / ERROR outcome.
+      const { warnings, savedFull } = await persistNewRows();
+      if (warnings.length) showError(null, warnings.join('\n'));
+      if (savedFull.length) {
+        setRows(prev => {
+          const newIds = savedFull.map(s => s);
+          let cursor = 0;
+          return prev.map(r => {
+            if (!r._isNew) return r;
+            const replacement = newIds[cursor++];
+            if (!replacement) return r;
+            return { ...replacement, csi_date: toDateInput(replacement.csi_date), _isNew: false };
+          });
+        });
+      }
+      // Build id list from the freshly-saved rows + any pre-existing editable rows.
+      const preExistingIds = rows.filter(r => r._id && editableStatuses.includes(r.status)).map(r => r._id);
+      const ids = [...preExistingIds, ...savedFull.map(s => s._id)];
       const res = await sales.validateSales(ids.length ? ids : undefined);
       setValidationErrors(res?.errors || []);
-      await loadExistingRows();
+      await refreshCurrentRows();
     } catch (err) {
       console.error('[OpeningArEntry] validate:', err);
       showError(err, 'Validation failed');
@@ -495,14 +558,17 @@ export default function OpeningArEntry() {
       if (res?.approval_pending) {
         showApprovalPending(res.message);
       } else if (res?.posted_count) {
-        showSuccess(`${res.posted_count} opening AR row(s) posted to AR + Sales Revenue (no inventory impact).`);
+        // Posted rows belong to Opening AR Transactions — reset Entry to a blank row.
+        showSuccess(`${res.posted_count} opening AR row(s) posted to AR + Sales Revenue (no inventory impact). View in Opening AR Transactions.`);
         setValidationErrors([]);
+        setRows([buildEmptyRow(defaultBackdate)]);
+        return;
       }
-      await loadExistingRows();
+      await refreshCurrentRows();
     } catch (err) {
       if (err?.response?.data?.approval_pending) {
         showApprovalPending(err.response.data.message);
-        await loadExistingRows();
+        await refreshCurrentRows();
       } else {
         showError(err, 'Submit failed');
       }
@@ -570,8 +636,12 @@ export default function OpeningArEntry() {
               Your live date is <strong>{liveDate}</strong>. CSIs dated before this go to AR + Sales Revenue
               with <strong>no inventory deduction and no COGS</strong> (opening inventory is loaded separately
               via the import script). All entries route through the same Approval Hub as live sales.
-              {' '}
-              {canOpeningArList && <Link to="/erp/sales/opening-ar/list" style={{ color: '#1e40af', fontWeight: 600 }}>View posted Opening AR history →</Link>}
+              <br />
+              After you click <strong>Save Drafts</strong>, rows move to{' '}
+              {canOpeningArList
+                ? <Link to="/erp/sales/opening-ar/list" style={{ color: '#1e40af', fontWeight: 600 }}>Opening AR Transactions →</Link>
+                : <strong>Opening AR Transactions</strong>}{' '}
+              where you continue validating, posting, or editing them.
             </div>
           </div>
 

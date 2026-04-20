@@ -77,24 +77,11 @@ const WORKFLOW_GUIDES = {
     ],
     tip: 'Channels (email / in-app / SMS) are kill-switched per entity via NOTIFICATION_CHANNELS lookup. Per-user opt-in lives on the user\'s NotificationPreference. Disabling IN_APP for the entity hides ALL future inbox writes — existing rows stay visible. Badge colors on the folder nav: blue = unread, amber ⚑ = unacknowledged, red = action required.',
   },
-  // ── Phase G9.R8 — Inbox Retention Admin ──
-  'inbox-retention-settings': {
-    title: 'Inbox Retention Settings',
-    steps: [
-      'Each row under "Retention Thresholds" is a Lookup entry in INBOX_RETENTION. Edit the days value to tighten or relax how long the agent keeps a class of messages. ENABLED acts as the entity-wide kill-switch — flip it to Inactive to halt all purges for this entity.',
-      'ARCHIVED_DAYS / READ_DAYS / UNREAD_DAYS / AI_AGENT_DAYS / BROADCAST_DAYS are OR-combined — a message matching ANY enabled rule becomes a stage-1 candidate. Safety guards always apply: unacknowledged must-ack messages and open approvals are never purged, even if they match an age rule.',
-      'GRACE_PERIOD_DAYS sits between stage-1 (soft-delete — row is flagged and hidden from the list) and stage-2 (hard-delete). Treat it as your recovery window. Lowering it to 1–2 days purges faster but also shortens admin recovery time; keeping it at 7+ days preserves a week of "oops, undo".',
-      '"Acknowledgement Defaults" (INBOX_ACK_DEFAULTS) drive the auto-must-acknowledge flag on newly-composed messages — applied via the MessageInbox pre-save hook. Disable a row to stop auto-flagging; compose-time "Require acknowledgement" always wins over defaults.',
-      'Preview runs a dry-count across all active entities — no writes. Use it to verify expected volumes before Run Now. Run Now is destructive (hard-deletes stage-2 candidates) and requires messaging.retention_manage — pending drafts must be saved or discarded first.',
-      'Missing rows? Click Seed Defaults. Deeper metadata edits (min/max clamps, sender role lists, per-folder/category scoping) live in Control Center → Lookup Tables → INBOX_RETENTION or INBOX_ACK_DEFAULTS — both categories share the same entity-scoped storage.',
-    ],
-    next: [
-      { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
-      { label: 'Agent Dashboard', path: '/erp/agent-dashboard' },
-      { label: 'Access Templates', path: '/erp/control-center?section=access-templates' },
-    ],
-    tip: 'The agent runs nightly at 02:00 Manila (#MR Inbox Retention). Saves here take effect on the next run — no restart required. Run Now is safe to call repeatedly: stage-1 is idempotent (already-marked rows are not re-touched) and stage-2 only hard-deletes what has been sitting in the grace window.',
-  },
+  // Inbox Retention Settings: embedded in Control Center only (standalone
+  // routes redirect to /erp/control-center?section=inbox-retention). Per
+  // CLAUDE.md Rule #1, embedded Control Center panels use DependencyBanner —
+  // see DEPENDENCY_GUIDE['inbox-retention'] in ControlCenter.jsx. No
+  // WorkflowGuide entry needed here; adding one would create duplicate copy.
   'erp-dashboard': {
     title: 'Your Daily Workflow',
     steps: [
@@ -120,7 +107,7 @@ const WORKFLOW_GUIDES = {
       'Add line items — qty × unit_price feeds the AR balance. There is no FIFO override and no batch picker because no inventory is consumed (opening stock is loaded separately via the importOpeningStock script).',
       'Optional: Scan CSI captures a photo + auto-fills doc_ref/date/hospital/line items via OCR. The photo is stored on the row (csi_photo_url) for audit.',
       'Duplicate rule: the same CSI # (doc_ref) cannot be used twice for the same hospital/customer within the Opening AR bucket. CSI numbers are canonicalized on save — prefixes ("CSI ", "INV ", "#") and leading zeros are stripped, so "4852", "004852", "CSI 004852", and "INV 004852" are all the same booklet page and stored as "4852". Live Sales and Opening AR are separate buckets — a live CSI #4852 does not conflict with an Opening AR #4852, and vice versa. A row with no hospital/customer yet will NOT trigger a duplicate error (it fails on the required-field check instead). If validation flags a duplicate, edit the existing row rather than creating a new one.',
-      'Save Drafts → Validate → Post Opening AR. Posting auto-routes through gateApproval (module=SALES). Period lock for the historical month is bypassed because source=OPENING_AR (set automatically when csi_date < live_date).',
+      'Save Drafts → saved rows move to Opening AR Transactions (this page resets to a blank row for the next CSI). Click "View in Opening AR Transactions" in the success banner — or use the Transactions tab — to Validate and Post. Posting auto-routes through gateApproval (module=SALES). Period lock for the historical month is bypassed because source=OPENING_AR (set automatically when csi_date < live_date).',
       'Posted opening AR shows up in AR Aging, Collections (CSI dropdown), and Hospital SOA — same as live CSIs. The journal entry posts AR debit / Sales Revenue + Output VAT credit. No COGS, no inventory ledger entry.',
       'If an approver rejects: a red banner with the reason appears on the row. Click Re-upload CSI Photo to attach a clearer image without re-keying line items, then Validate + Post again.',
     ],
@@ -160,7 +147,7 @@ const WORKFLOW_GUIDES = {
     steps: [
       'Select sale type: CSI (credit), Cash Receipt (cash), or Service Invoice (services)',
       'Select the hospital/customer and set the invoice date',
-      'CSI/Cash Receipt: add line items — product, quantity, price. Service Invoice: enter description + total.',
+      'CSI/Cash Receipt: add one or more line items per CSI — each line has its own product (warehouse-stock filtered), batch/lot (auto-picked by FIFO), quantity, and unit price. Use + Line Item to add another product under the same CSI; the row shows a running Total that sums every line. Service Invoice: enter description + total (no line items).',
       'CSI only: the CSI # input shows your available booklet numbers (if you have an allocation). This is a monitoring hint — you can still type any number, but posting an unknown number will raise a yellow audit warning.',
       'For Cash Receipt or Service Invoice with CASH payment: optionally select a Petty Cash Fund to deposit cash directly',
       'Duplicate rule (CSI): same CSI # cannot be reused for the same hospital/customer within the live Sales bucket. CSI numbers are canonicalized on save — prefixes ("CSI ", "INV ", "#") and leading zeros are stripped, so "4852", "004852", "CSI 004852", and "INV 004852" are the same booklet page. Opening AR is a separate bucket, so historical numbers do not collide with live ones. (CASH_RECEIPT and SERVICE_INVOICE doc-refs are system-generated and kept in their exact format.) If a duplicate is flagged, edit the existing row rather than creating a new one.',
@@ -472,20 +459,54 @@ const WORKFLOW_GUIDES = {
     tip: 'Products tagged "Parent" are inherited from the parent entity — you can use them in POs and GRNs but only the parent admin can edit them. Click "+ New Product" to add entity-specific products. Set Purchase UOM when your supplier sells in a different unit than inventory.',
   },
   'grn-entry': {
-    title: 'Goods Receipt Note (GRN)',
+    title: 'Goods Receipt Note (GRN) — Capture',
     steps: [
-      'Optionally link a Purchase Order — line items and warehouse auto-populate with remaining receivable qty',
-      'Select warehouse to receive into (auto-filled from PO when linked)',
-      'Subsidiary entities see parent company products in the dropdown — configurable via Control Center → Lookup Tables → PRODUCT_CATALOG_ACCESS',
-      'Scan or enter batch numbers and expiry dates for each line',
-      'Submit for approval — once approved, stock is added and linked PO auto-updates to PARTIALLY_RECEIVED or RECEIVED',
+      'Optionally link a Purchase Order or internal transfer — products, warehouse, and expected qty auto-fill from the source document',
+      'Upload the courier waybill photo (required evidence that the goods physically arrived) — configurable via Control Center → GRN Settings → WAYBILL_REQUIRED',
+      'Tap "Scan Undertaking Paper" to OCR the physical Undertaking — batch, expiry, and qty auto-fill for every matched product line (marked ✓). Unmatched rows stay open for manual entry.',
+      'For any line not covered by the scan: type the batch/lot # from the packaging (optional when GRN_SETTINGS → REQUIRE_BATCH = 0), pick expiry via calendar (optional when REQUIRE_EXPIRY = 0; floored at today + MIN_EXPIRY_DAYS when provided), enter received qty',
+      'Tap "Save & Validate" — backend checks batch/expiry/qty/waybill (skipping the checks turned off in GRN_SETTINGS), then auto-creates the Undertaking and deep-links you there for a read-only double-check before routing for approval',
     ],
     next: [
+      { label: 'Undertaking (Review)', path: '/erp/undertaking' },
       { label: 'My Stock', path: '/erp/my-stock' },
       { label: 'Purchase Orders', path: '/erp/purchase-orders' },
-      { label: 'Supplier Invoices', path: '/erp/supplier-invoices' },
     ],
-    tip: 'Click "Receive" on a PO to jump here with lines pre-filled. OCR can auto-read batch/expiry from undertaking photos. Product catalog for subsidiaries is lookup-driven.',
+    tip: 'Phase 32R — GRN is the capture surface. All batch/lot + expiry + qty data is entered here, and the paper Undertaking becomes the OCR source that auto-fills lines in bulk. The Undertaking page downstream is a read-only approval wrapper, not another data-entry form. Every GRN auto-assigns a human-readable number on create — `GRN-{TERR|ENTITY}{MMDDYY}-{NNN}` (e.g. `GRN-ILO042026-001`, matching the CALF/PO/JE format) — sequenced atomically per territory-per-day. Subscribers in non-pharmacy verticals can relax batch/expiry requirements in Control Center → GRN Settings — FIFO stays intact because blanks become safe sentinels (batch="N/A", expiry=9999-12-31).',
+  },
+  // Phase 32R — Undertaking (read-only approval wrapper over a captured GRN)
+  'undertaking-entry': {
+    title: 'Undertaking (Review & Approval)',
+    steps: [
+      'Auto-created on every GRN — open the DRAFT for the GRN you just captured. Every line mirrors what you entered on GrnEntry (product, qty, batch, expiry).',
+      'Double-check the mirrored details and the attached waybill + scanned Undertaking paper thumbnails. Lines show ✓ when they were OCR-confirmed from the paper.',
+      'Tap "Validate & Submit" — DRAFT → SUBMITTED. If your role is not in MODULE_DEFAULT_ROLES.UNDERTAKING the request is held in the Approval Hub (HTTP 202) for a president/finance/admin approver.',
+      'Approver acknowledges → linked GRN auto-approves and InventoryLedger is written atomically in one session. FIFO picks the batch automatically downstream.',
+      'Approver rejects → Undertaking becomes REJECTED (terminal). GRN stays PENDING so the BDM can reverse the GRN entirely and re-capture from scratch.',
+    ],
+    next: [
+      { label: 'GRN Entry', path: '/erp/grn' },
+      { label: 'Approval Hub', path: '/erp/approvals' },
+      { label: 'My Stock', path: '/erp/my-stock' },
+      { label: 'Batch Trace', path: '/erp/batch-trace' },
+    ],
+    tip: 'Variance flags (yellow/red): qty-under, qty-over (VARIANCE_TOLERANCE_PCT lookup), near-expiry. Data entry has already happened on GrnEntry — no inputs here on purpose. If something is wrong, reject the UT and reverse the GRN to recapture. The "Linked GRN" link now shows the GRN\'s human-readable number (`GRN-{TERR|ENTITY}{MMDDYY}-{NNN}`) — legacy GRNs created before Phase 32R-GRN# still display the last-6 id tail.',
+  },
+  'grn-audit': {
+    title: 'GRN Audit Trail',
+    steps: [
+      'Read-only view: GRN header + the 1:1 Undertaking + InventoryLedger postings per batch — everything that happened to this receipt in one place',
+      'GRN panel shows source (Standalone / PO / Internal Transfer), vendor, waybill thumbnail, and current status',
+      'Undertaking panel shows scan ratio (✓ lines), variance flags, acknowledged-by, and rejection reason if any',
+      'Use the "Open Undertaking →" button if you need to act (submit / acknowledge / reject / reverse) — this audit page is read-only',
+      'For batch-level lookups across multiple GRNs, jump to Batch Trace from the sidebar instead',
+    ],
+    next: [
+      { label: 'Undertaking', path: '/erp/undertaking' },
+      { label: 'GRN List', path: '/erp/grn' },
+      { label: 'Batch Trace', path: '/erp/batch-trace' },
+    ],
+    tip: 'No edits here on purpose — this is a forensic snapshot. Reversals route through the Undertaking page so the cascade (UT → GRN → InventoryLedger → PO/Reassignment status) stays consistent.',
   },
   'ocr-test': {
     title: 'Document Scanner (OCR)',
@@ -572,15 +593,15 @@ const WORKFLOW_GUIDES = {
   'agent-dashboard': {
     title: 'AI Agent Intelligence',
     steps: [
-      'View status of all 12 agents (6 AI-powered + 6 rule-based)',
-      'Check recent runs, alerts generated, and key findings',
-      'Click "Run Now" on any agent for instant data gathering',
-      'Configure agent settings in Control Center → Intelligence',
+      'View status of every registered agent (Claude AI + rule-based), sourced from the backend agent registry so new agents surface here automatically',
+      'Check recent runs, alerts generated, messages sent, and key findings per agent',
+      'Click "Run Now" on any agent for an on-demand execution (president/admin only)',
+      'Configure enable/disable, notification routing, and run agents from Control Center → Intelligence',
     ],
     next: [
       { label: 'Control Center', path: '/erp/control-center?section=agent-settings' },
     ],
-    tip: 'Free agents always run on schedule. AI agents require ANTHROPIC_API_KEY.',
+    tip: 'Rule-based agents always run on schedule (no cost). Claude AI agents require ANTHROPIC_API_KEY and a funded AI budget cap (Control Center → AI Budget). Every agent schedule is governed by the central cron in backend/agents/agentScheduler.js — per-agent thresholds and toggles live in Lookup Tables (subscription-ready, no code changes needed).',
   },
   'approval-manager': {
     title: 'Universal Approval Hub',

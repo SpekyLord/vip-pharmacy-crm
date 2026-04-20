@@ -354,6 +354,21 @@ const DEPENDENCY_GUIDE = {
       { action: 'When you change Commission/Rebate rates', deps: 'Affects Collection commission and PRF computations', section: null },
     ]
   },
+  // Phase 32R — GRN capture + Undertaking approval wrapper
+  'grn-settings': {
+    title: 'GRN Capture & Undertaking Dependencies',
+    items: [
+      { action: 'WAYBILL_REQUIRED (GRN_SETTINGS lookup)', deps: 'When 1 (default) the GRN capture screen blocks submit until a waybill photo is uploaded. Set to 0 for workflows where courier evidence is not practical (e.g. internal transfers with no third-party courier).', section: 'lookups' },
+      { action: 'MIN_EXPIRY_DAYS (GRN_SETTINGS lookup)', deps: 'Expiry floor enforced at GRN capture time. Default 30 days. Tighten per-entity if you need a longer shelf-life buffer; backend rejects lines with expiry within this many days.', section: 'lookups' },
+      { action: 'VARIANCE_TOLERANCE_PCT (GRN_SETTINGS lookup)', deps: 'Received vs expected qty delta above this percent flags the line yellow in the Approval Hub and sets variance_flag. Default 10%.', section: 'lookups' },
+      { action: 'REQUIRE_BATCH (GRN_SETTINGS lookup)', deps: 'Default 1 (pharmacy — FDA batch/lot traceability). Set to 0 for subscribers who do not track batch/lot (services, electronics, industrial supplies). Blank batch on a GRN line is persisted as "N/A" so FIFO groups consistently and the Undertaking mirror stays stable.', section: 'lookups' },
+      { action: 'REQUIRE_EXPIRY (GRN_SETTINGS lookup)', deps: 'Default 1 (pharmacy). Set to 0 for non-perishable inventory. Blank expiry is stored as 9999-12-31 so FIFO sorts real-expiry stock first and the {$gt: new Date()} filter still finds the batch. MIN_EXPIRY_DAYS floor still applies when the user voluntarily enters an expiry date.', section: 'lookups' },
+      { action: 'MODULE_DEFAULT_ROLES.UNDERTAKING', deps: 'Which roles can acknowledge an Undertaking directly (skip Approval Hub). Default admin/finance/bdm/president. Remove "bdm" via Lookup Tables to force every BDM-captured receipt through the Hub.', section: 'lookups' },
+      { action: 'ERP_DANGER_SUB_PERMISSIONS.INVENTORY__REVERSE_UNDERTAKING', deps: 'President-Reverse button gate. Delegate via Access Templates so a non-president admin can cascade-reverse an acknowledged Undertaking (also reverses the linked GRN + InventoryLedger).', section: 'access-templates' },
+      { action: 'Legacy UNDERTAKING_SETTINGS rows', deps: 'Phase 32 tenants have legacy UNDERTAKING_SETTINGS rows. getGrnSetting() falls back to them automatically, so upgrades are non-breaking. Re-seed GRN_SETTINGS at your convenience to get the clean category label.', section: 'lookups' },
+      { action: 'When you change a setting', deps: 'Next GRN capture on this entity picks up the new value (5-min lookup cache). Create a dummy GRN or wait 5 min to verify.', section: null },
+    ]
+  },
   'lookups': {
     title: 'Lookup Table Dependencies',
     items: [
@@ -364,6 +379,12 @@ const DEPENDENCY_GUIDE = {
       { action: 'GROWTH_DRIVER — Sales growth drivers', deps: 'Used when creating Sales Goal Plans. Add new drivers here before adding them to a plan.', section: null },
       { action: 'KPI_CODE — KPI metric definitions', deps: 'Defines auto/manual computation, units, and direction. Add here before linking to a growth driver.', section: null },
       { action: 'VENDOR_AUTO_LEARN_BLOCKLIST / VENDOR_AUTO_LEARN_THRESHOLDS', deps: 'Controls which words OCR skips when auto-learning vendors (e.g. RECEIPT, INVOICE) and the min/max vendor name length. Tune per-entity if receipts keep misidentifying generic words as vendors. Cache refreshes within 5 min of save.', section: null },
+      { action: 'NOTIFICATION_CHANNELS / NOTIFICATION_ESCALATION', deps: 'Master kill-switches for email/in-app/SMS channels (above per-user prefs) + max hops up the reports_to chain when escalating. Changes take effect within 60s. SMS stays false until SEMAPHORE_API_KEY is set and user.phone is populated.', section: null },
+      { action: 'PDF_RENDERER — printable statement engine', deps: 'Flip metadata.enabled=true AND run "npm install puppeteer" in backend/ to emit real PDFs. Otherwise /statement/print emits HTML that the browser prints via Save-as-PDF.', section: null },
+      { action: 'COMPLIANCE_DEADLINES — BIR/SSS/PhilHealth/HDMF calendar', deps: 'Rows drive the weekly Compliance Deadline Agent (Mon 5 AM). Add DOH LTO renewal, local permit deadlines, etc. as new rows — no code change needed.', section: null },
+      { action: 'KPI_VARIANCE_THRESHOLDS — variance alert severity', deps: 'GLOBAL row is the fallback; add a row per KPI_CODE to override. warning_pct triggers "warning", critical_pct triggers "critical". kpiVarianceAgent (cron 6 AM daily) reads these.', section: null },
+      { action: 'EXPANSION_READINESS_CONFIG — BDM graduation thresholds', deps: 'DEFAULT row controls bdm_graduation_monthly_sales_min and months_required for the monthly Expansion Readiness Agent (1st of month 10 AM). Raise the bar to slow promotions; lower to accelerate.', section: null },
+      { action: 'TASK_OVERDUE_COOLDOWN_DAYS — notification dedup', deps: 'GLOBAL row controls the cooldown window for the overdue-task agent. 0 = notify every run (test only). Default: 1 day.', section: null },
     ]
   },
   'org-chart': {

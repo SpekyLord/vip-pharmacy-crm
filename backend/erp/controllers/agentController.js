@@ -119,13 +119,15 @@ exports.getConfig = catchAsync(async (req, res) => {
 
 // Phase G8 — Expose the agent registry so the frontend AgentDashboard renders
 // every registered agent dynamically (no hardcoded list on either side).
-// Returns { key, label, type } for each agent. UI metadata (icon, color, cron
-// description) stays in the frontend as a lookup keyed by agent key, with a
-// safe default for unknown keys so a new backend agent automatically surfaces.
+// Returns { key, label, type, schedule } for each agent. Phase G9.R9 extended
+// the payload with `schedule` (display-only, human-readable — source of truth
+// is the agentScheduler cron). Icon/color still live on the frontend keyed by
+// agent key, with a DEFAULT_META fallback so a new backend agent auto-surfaces
+// without a frontend code change.
 exports.getRegistry = catchAsync(async (req, res) => {
   const items = AGENT_KEYS.map((key) => {
     const def = AGENT_DEFINITIONS[key];
-    return { key, label: def.label, type: def.type };
+    return { key, label: def.label, type: def.type, schedule: def.schedule || null };
   });
   res.json({ success: true, data: items });
 });

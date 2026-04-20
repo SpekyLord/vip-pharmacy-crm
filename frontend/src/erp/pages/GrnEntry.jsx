@@ -1,5 +1,21 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+/**
+ * GrnEntry — Phase 32R capture surface
+ *
+ * The BDM captures a Goods Received Note here:
+ *   1. Link to PO/internal-transfer (optional — auto-fills products + expected qty)
+ *   2. Per-line: product dropdown (standalone) OR auto-filled, received qty,
+ *      batch/lot # (OCR-autofilled via the bulk paper scan, or typed from the
+ *      packaging label), expiry date (calendar picker, floor = today + MIN_EXPIRY_DAYS)
+ *   3. Doc-level: waybill photo upload (required — courier delivery evidence)
+ *   4. Optional: "OCR Undertaking Paper" button bulk-fills all lines from the
+ *      scanned physical Undertaking — unmatched OCR rows are surfaced so the
+ *      BDM can manually complete them before submitting.
+ *   5. Save & Validate → backend gates batch+expiry+waybill → auto-creates a
+ *      DRAFT Undertaking and deep-links the BDM there for a double-check +
+ *      Validate & Submit.
+ */
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -8,12 +24,13 @@ import useGrn from '../hooks/useGrn';
 import usePurchasing from '../hooks/usePurchasing';
 import useProducts from '../hooks/useProducts';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
+import { getGrnSettings } from '../services/undertakingService';
 import WarehousePicker from '../components/WarehousePicker';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
 import RejectionBanner from '../components/RejectionBanner';
-import { showApprovalPending } from '../utils/errorToast';
+import { showApprovalPending, showSuccess, showError } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   PENDING: { bg: '#fef3c7', text: '#92400e', label: 'Pending' },
@@ -21,7 +38,7 @@ const STATUS_COLORS = {
   REJECTED: { bg: '#fef2f2', text: '#991b1b', label: 'Rejected' }
 };
 
-const emptyLine = () => ({ product_id: '', batch_lot_no: '', expiry_date: '', qty: '' });
+const emptyLine = () => ({ product_id: '', batch_lot_no: '', expiry_date: '', qty: '', scan_confirmed: false });
 
 const pageStyles = `
   .grn-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -56,16 +73,26 @@ const pageStyles = `
   .grn-line-header p { margin: 0; font-size: 12px; color: var(--erp-muted); }
   .grn-line-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
   .grn-chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; background: #f8fafc; border: 1px solid var(--erp-border); border-radius: 999px; font-size: 12px; color: var(--erp-text); font-weight: 600; }
+  .grn-chip.scan-ok { color: #166534; background: #dcfce7; border-color: #86efac; }
+
+  .waybill-panel { background: #f8fafc; border: 1px dashed #cbd5f5; border-radius: 12px; padding: 14px; margin: 12px 0; display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+  .waybill-panel .waybill-info { flex: 1; min-width: 200px; }
+  .waybill-panel label.waybill-label { font-size: 11px; color: var(--erp-muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+  .waybill-panel .waybill-desc { font-size: 12px; color: var(--erp-muted); margin: 4px 0; }
+  .waybill-thumb { max-width: 120px; max-height: 90px; border-radius: 8px; border: 1px solid var(--erp-border); cursor: zoom-in; }
+  .waybill-req { color: #dc2626; font-weight: 700; }
 
   .line-items-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0; table-layout: fixed; }
-  .line-items-table col.col-product { width: 42%; }
-  .line-items-table col.col-batch  { width: 22%; }
+  .line-items-table col.col-product { width: 36%; }
+  .line-items-table col.col-batch  { width: 20%; }
   .line-items-table col.col-expiry { width: 18%; }
   .line-items-table col.col-qty    { width: 10%; }
   .line-items-table col.col-remove { width: 8%; }
   .line-items-table th { background: var(--erp-bg); padding: 8px 10px; text-align: left; font-weight: 600; color: var(--erp-muted); font-size: 11px; text-transform: uppercase; }
   .line-items-table td { padding: 6px 8px; border-top: 1px solid var(--erp-border); vertical-align: middle; }
   .line-items-table input, .line-items-table select { width: 100%; padding: 6px 8px; border: 1px solid var(--erp-border); border-radius: 6px; font-size: 13px; }
+  .line-items-table input.scan-ok { background: #f0fdf4; }
+  .scan-tick { color: #16a34a; font-weight: 800; font-size: 14px; margin-left: 4px; }
   .add-line-btn { background: none; border: 2px dashed var(--erp-border); width: 100%; padding: 8px; text-align: center; color: var(--erp-accent); font-weight: 600; cursor: pointer; border-radius: 8px; }
   .btn-remove-line { background: none; border: none; color: #dc2626; cursor: pointer; font-size: 18px; line-height: 1; padding: 4px 6px; border-radius: 6px; transition: background 0.15s; }
   .btn-remove-line:hover { background: #fee2e2; }
@@ -166,7 +193,7 @@ const pageStyles = `
 
 function normalizeStr(s) { return (s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
 
-function matchProduct(ocrBrand, ocrDosage, products) {
+function matchProduct(ocrBrand, _ocrDosage, products) {
   if (!ocrBrand || !products?.length) return null;
   const cleaned = normalizeStr(ocrBrand);
   if (!cleaned) return null;
@@ -186,8 +213,23 @@ function fieldVal(f) {
   return String(f);
 }
 
-// --- Scan Undertaking Modal ---
- 
+function toIsoDate(str) {
+  if (!str) return '';
+  const d = new Date(str);
+  if (isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * OCR Undertaking Paper modal.
+ *
+ * Bulk-fills every matched line from the scanned physical Undertaking paper.
+ * Unmatched OCR rows are surfaced so the BDM can decide whether to retake the
+ * photo or fall back to manual entry.
+ */
 function ScanUndertakingModal({ open, onClose, onApply, products }) {
   const [step, setStep] = useState('capture');
   const [preview, setPreview] = useState(null);
@@ -197,7 +239,10 @@ function ScanUndertakingModal({ open, onClose, onApply, products }) {
   const cameraRef = useRef(null);
   const galleryRef = useRef(null);
 
-  const reset = () => { if (preview) URL.revokeObjectURL(preview); setStep('capture'); setPreview(null); setOcrData(null); setMatchedItems([]); setErrorMsg(''); };
+  const reset = () => {
+    if (preview) URL.revokeObjectURL(preview);
+    setStep('capture'); setPreview(null); setOcrData(null); setMatchedItems([]); setErrorMsg('');
+  };
   const handleClose = () => { reset(); onClose(); };
 
   const handleFile = async (file) => {
@@ -208,14 +253,17 @@ function ScanUndertakingModal({ open, onClose, onApply, products }) {
       const exif = await extractExifDateTime(file);
       const result = await processDocument(file, 'UNDERTAKING', exif);
       setOcrData(result);
-      const items = result.extracted?.line_items || [];
+      const items = result?.extracted?.line_items || result?.extracted?.items || [];
       const matched = items.map(item => {
-        const brand = fieldVal(item.brand_name);
+        const brand = fieldVal(item.brand_name || item.brand);
         const pMatch = matchProduct(brand, fieldVal(item.dosage), products);
         return {
-          ocr_brand: brand, ocr_dosage: fieldVal(item.dosage),
-          ocr_batch: fieldVal(item.batch_lot_no), ocr_expiry: fieldVal(item.expiry_date),
-          ocr_qty: fieldVal(item.qty), product_match: pMatch
+          ocr_brand: brand,
+          ocr_dosage: fieldVal(item.dosage),
+          ocr_batch: fieldVal(item.batch_lot_no || item.batch),
+          ocr_expiry: fieldVal(item.expiry_date || item.expiry),
+          ocr_qty: fieldVal(item.qty),
+          product_match: pMatch
         };
       });
       setMatchedItems(matched);
@@ -229,11 +277,15 @@ function ScanUndertakingModal({ open, onClose, onApply, products }) {
   const handleApply = () => {
     const lines = matchedItems.map(mi => ({
       product_id: mi.product_match?.product?._id || '',
-      batch_lot_no: mi.ocr_batch,
-      expiry_date: mi.ocr_expiry ? (() => { const d = new Date(mi.ocr_expiry); return isNaN(d) ? '' : d.toISOString().split('T')[0]; })() : '',
-      qty: String(parseFloat(mi.ocr_qty) || '')
+      batch_lot_no: (mi.ocr_batch || '').toUpperCase(),
+      expiry_date: toIsoDate(mi.ocr_expiry),
+      qty: String(parseFloat(mi.ocr_qty) || ''),
+      scan_confirmed: !!(mi.product_match && mi.ocr_batch)
     }));
-    onApply(lines, { undertaking_attachment_id: ocrData?.attachment_id || null, undertaking_photo_url: ocrData?.s3_url || '' });
+    onApply(lines, {
+      undertaking_attachment_id: ocrData?.attachment_id || null,
+      undertaking_photo_url: ocrData?.s3_url || ''
+    });
     handleClose();
   };
 
@@ -242,38 +294,63 @@ function ScanUndertakingModal({ open, onClose, onApply, products }) {
     <div className="scan-modal-overlay" onClick={handleClose}>
       <div className="scan-modal" onClick={e => e.stopPropagation()}>
         <button className="close-btn" onClick={handleClose}>&times;</button>
-        <h2>Scan Undertaking</h2>
+        <h2>Scan Undertaking Paper</h2>
         <input ref={cameraRef} type="file" accept="image/*" capture="environment" style={{ display: 'none' }} onChange={e => handleFile(e.target.files?.[0])} />
         <input ref={galleryRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => handleFile(e.target.files?.[0])} />
 
         {step === 'capture' && (
           <>
-            <p style={{ fontSize: 13, color: 'var(--erp-muted)', marginBottom: 16 }}>Scan an Undertaking of Receipt to auto-fill product lines.</p>
+            <p style={{ fontSize: 13, color: 'var(--erp-muted)', marginBottom: 16 }}>
+              Take a photo of the physical Undertaking of Receipt. We&apos;ll auto-fill every matched product line with batch, expiry, and qty.
+            </p>
             <div className="scan-capture-btns">
               <button className="btn btn-primary" onClick={() => cameraRef.current?.click()}>Take Photo</button>
               <button className="btn btn-outline" onClick={() => galleryRef.current?.click()}>Gallery</button>
             </div>
           </>
         )}
-        {step === 'scanning' && (<>{preview && <img src={preview} alt="preview" className="scan-preview" />}<div className="scan-progress"><div className="spinner" /><div style={{ fontSize: 14, color: 'var(--erp-muted)' }}>Processing...</div></div></>)}
-        {step === 'error' && (<>{preview && <img src={preview} alt="preview" className="scan-preview" />}<div className="scan-error">{errorMsg}</div><div className="scan-capture-btns"><button className="btn btn-primary" onClick={() => { reset(); cameraRef.current?.click(); }}>Retry</button><button className="btn btn-outline" onClick={handleClose}>Cancel</button></div></>)}
+        {step === 'scanning' && (
+          <>
+            {preview && <img src={preview} alt="preview" className="scan-preview" />}
+            <div className="scan-progress"><div className="spinner" /><div style={{ fontSize: 14, color: 'var(--erp-muted)' }}>Processing…</div></div>
+          </>
+        )}
+        {step === 'error' && (
+          <>
+            {preview && <img src={preview} alt="preview" className="scan-preview" />}
+            <div className="scan-error">{errorMsg}</div>
+            <div className="scan-capture-btns">
+              <button className="btn btn-primary" onClick={() => { reset(); cameraRef.current?.click(); }}>Retry</button>
+              <button className="btn btn-outline" onClick={handleClose}>Cancel</button>
+            </div>
+          </>
+        )}
         {step === 'results' && (
           <>
             {preview && <img src={preview} alt="preview" className="scan-preview" />}
-            {matchedItems.length > 0 && (
+            {matchedItems.length > 0 ? (
               <table className="scan-item-table">
-                <thead><tr><th>Product (OCR)</th><th>Matched</th><th>Batch</th><th>Qty</th></tr></thead>
+                <thead><tr><th>Product (OCR)</th><th>Matched</th><th>Batch</th><th>Expiry</th><th>Qty</th></tr></thead>
                 <tbody>
                   {matchedItems.map((mi, i) => (
                     <tr key={i}>
                       <td>{mi.ocr_brand} {mi.ocr_dosage && <span style={{ color: 'var(--erp-muted)' }}>{mi.ocr_dosage}</span>}</td>
-                      <td>{mi.product_match ? <><span>{mi.product_match.product.brand_name}</span><span className={`match-badge match-${mi.product_match.confidence.toLowerCase()}`}>{mi.product_match.confidence}</span></> : <span className="match-badge match-none">No match</span>}</td>
+                      <td>
+                        {mi.product_match
+                          ? <><span>{mi.product_match.product.brand_name}</span><span className={`match-badge match-${mi.product_match.confidence.toLowerCase()}`}>{mi.product_match.confidence}</span></>
+                          : <span className="match-badge match-none">No match</span>}
+                      </td>
                       <td>{mi.ocr_batch || '—'}</td>
+                      <td>{mi.ocr_expiry || '—'}</td>
                       <td>{mi.ocr_qty || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            ) : (
+              <div style={{ fontSize: 13, color: 'var(--erp-muted)', padding: '8px 0' }}>
+                OCR completed but no line items parsed. You can still apply the photo as supporting evidence and fill in the lines manually.
+              </div>
             )}
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
               <button className="btn btn-success" onClick={handleApply} style={{ flex: 1 }}>Apply to GRN</button>
@@ -286,7 +363,6 @@ function ScanUndertakingModal({ open, onClose, onApply, products }) {
     </div>
   );
 }
- 
 
 export default function GrnEntry() {
   const { user } = useAuth();
@@ -294,6 +370,7 @@ export default function GrnEntry() {
   const purchasing = usePurchasing();
   const { products } = useProducts();
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
 
   const [warehouseId, setWarehouseId] = useState('');
   const [lineItems, setLineItems] = useState([emptyLine()]);
@@ -305,10 +382,22 @@ export default function GrnEntry() {
   const [scanOpen, setScanOpen] = useState(false);
 
   // PO cross-reference state
-  const [linkedPO, setLinkedPO] = useState(null);       // full PO prefill data
+  const [linkedPO, setLinkedPO] = useState(null);
   const [poLoading, setPOLoading] = useState(false);
-  const [receivablePOs, setReceivablePOs] = useState([]); // dropdown options
-  const [_scanMeta, setScanMeta] = useState({}); // eslint-disable-line no-unused-vars
+  const [receivablePOs, setReceivablePOs] = useState([]);
+
+  // Waybill + OCR paper attachment state
+  const [waybillPhotoUrl, setWaybillPhotoUrl] = useState('');
+  const [waybillPreview, setWaybillPreview] = useState('');
+  const [waybillUploading, setWaybillUploading] = useState(false);
+  const [undertakingPhotoUrl, setUndertakingPhotoUrl] = useState('');
+  const [undertakingAttachmentId, setUndertakingAttachmentId] = useState(null);
+  const [ocrData, setOcrData] = useState(null);
+
+  // Per-entity capture settings (expiry floor, variance tolerance, waybill required)
+  const [grnSettings, setGrnSettings] = useState({ minExpiryDays: 30, varianceTolerancePct: 10, waybillRequired: true, requireBatch: true, requireExpiry: true });
+
+  const waybillRef = useRef(null);
 
   const productOptions = useMemo(() => (products || []).filter(p => p.is_active !== false), [products]);
   const grnStats = useMemo(() => {
@@ -319,16 +408,42 @@ export default function GrnEntry() {
     return { total, pending, approved, rejected };
   }, [grnList]);
 
+  const expiryFloor = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() + (Number(grnSettings.minExpiryDays) || 0));
+    return toIsoDate(d);
+  }, [grnSettings.minExpiryDays]);
+
+  const scannedCount = useMemo(() => lineItems.filter(l => l.scan_confirmed).length, [lineItems]);
+  // Phase 32R-S1: batch/expiry required-ness is lookup-driven per entity.
+  // Pharmacy defaults (requireBatch=true, requireExpiry=true) keep the original
+  // gate. Non-pharmacy subscribers flip either off in Control Center → GRN
+  // Settings and the form accepts blanks — backend sentinel-normalizes before
+  // persist so FIFO + Undertaking mirror stay consistent.
+  const allLinesComplete = useMemo(() => (
+    lineItems.length > 0 &&
+    lineItems.every(li =>
+      li.product_id &&
+      Number(li.qty) > 0 &&
+      (!grnSettings.requireBatch  || String(li.batch_lot_no || '').trim()) &&
+      (!grnSettings.requireExpiry || li.expiry_date)
+    )
+  ), [lineItems, grnSettings.requireBatch, grnSettings.requireExpiry]);
+  const canSubmit = allLinesComplete && (!grnSettings.waybillRequired || !!waybillPhotoUrl) && !saving;
+
   useEffect(() => { loadList(); }, [listFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Load receivable POs for the dropdown
+  useEffect(() => {
+    getGrnSettings().then(setGrnSettings).catch(() => {});
+  }, []);
+
   useEffect(() => {
     purchasing.listPOs({ status: 'APPROVED,PARTIALLY_RECEIVED', limit: 200 })
       .then(res => setReceivablePOs(res?.data || []))
       .catch(() => setReceivablePOs([]));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-load PO from URL query param (?po_id=...)
   useEffect(() => {
     const poId = searchParams.get('po_id');
     if (poId) handleSelectPO(poId);
@@ -343,7 +458,6 @@ export default function GrnEntry() {
         const d = res.data;
         setLinkedPO(d);
         if (d.warehouse_id?._id) setWarehouseId(d.warehouse_id._id);
-        // Pre-fill line items from PO remaining receivable lines
         if (d.prefill_lines?.length) {
           setLineItems(d.prefill_lines.map(pl => ({
             product_id: pl.product_id || '',
@@ -351,7 +465,8 @@ export default function GrnEntry() {
             expiry_date: '',
             qty: String(pl.qty_remaining),
             po_line_index: pl.po_line_index,
-            _po_qty_remaining: pl.qty_remaining
+            _po_qty_remaining: pl.qty_remaining,
+            scan_confirmed: false
           })));
         }
       }
@@ -380,7 +495,10 @@ export default function GrnEntry() {
   const updateLine = (idx, field, value) => {
     setLineItems(prev => {
       const updated = [...prev];
-      updated[idx] = { ...updated[idx], [field]: value };
+      const next = { ...updated[idx], [field]: value };
+      // Manual edit of batch clears scan_confirmed so approver knows user overrode OCR
+      if (field === 'batch_lot_no') next.scan_confirmed = false;
+      updated[idx] = next;
       return updated;
     });
   };
@@ -388,35 +506,130 @@ export default function GrnEntry() {
   const addLine = () => setLineItems(prev => [...prev, emptyLine()]);
   const removeLine = (idx) => setLineItems(prev => prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx));
 
+  const handleWaybillUpload = async (file) => {
+    if (!file) return;
+    setWaybillUploading(true);
+    try {
+      // Reuse the OCR endpoint in skip-OCR mode: WAYBILL isn't a parser docType,
+      // so the backend uploads to S3 and returns the signed URL without running
+      // OCR. Keeps us on one attachment pipeline (DocumentAttachment + S3).
+      const res = await processDocument(file, 'WAYBILL');
+      if (res?.s3_url) {
+        setWaybillPhotoUrl(res.s3_url);
+        setWaybillPreview(URL.createObjectURL(file));
+        showSuccess('Waybill uploaded');
+      } else {
+        showError(null, 'Waybill upload did not return a URL — please retry');
+      }
+    } catch (err) {
+      showError(err, 'Waybill upload failed');
+    } finally {
+      setWaybillUploading(false);
+    }
+  };
+
+  const handleScanApply = (lines, meta) => {
+    if (lines.length) {
+      setLineItems(prev => {
+        // Prefer to overlay OCR data onto existing lines by product match; if the
+        // existing form only has the empty skeleton, just replace with OCR lines.
+        const empty = prev.length === 1 && !prev[0].product_id;
+        if (empty) {
+          return lines.map(l => ({ ...emptyLine(), ...l }));
+        }
+        // Merge: keep prev lines, add OCR-matched lines that don't collide by product
+        const existingPids = new Set(prev.map(p => p.product_id).filter(Boolean));
+        const additions = lines.filter(l => l.product_id && !existingPids.has(l.product_id));
+        const mergedExisting = prev.map(p => {
+          const match = lines.find(l => l.product_id && l.product_id === p.product_id);
+          return match
+            ? {
+                ...p,
+                batch_lot_no: p.batch_lot_no || match.batch_lot_no || '',
+                expiry_date: p.expiry_date || match.expiry_date || '',
+                qty: p.qty || match.qty || '',
+                scan_confirmed: match.scan_confirmed || p.scan_confirmed
+              }
+            : p;
+        });
+        return [...mergedExisting, ...additions].map(l => ({ ...emptyLine(), ...l }));
+      });
+    }
+    if (meta?.undertaking_photo_url) {
+      setUndertakingPhotoUrl(meta.undertaking_photo_url);
+      setUndertakingAttachmentId(meta.undertaking_attachment_id || null);
+      setOcrData({ scanned_at: new Date().toISOString(), attachment_id: meta.undertaking_attachment_id });
+    }
+  };
+
   const handleSubmit = async () => {
-    const validLines = lineItems.filter(li => li.product_id && li.batch_lot_no && li.qty);
-    if (!validLines.length) return;
+    if (!canSubmit) {
+      if (!allLinesComplete) {
+        const missing = ['product', 'qty'];
+        if (grnSettings.requireBatch) missing.push('batch/lot #');
+        if (grnSettings.requireExpiry) missing.push('expiry');
+        showError(null, `Every line needs: ${missing.join(', ')}.`);
+        return;
+      }
+      if (grnSettings.waybillRequired && !waybillPhotoUrl) {
+        showError(null, 'Waybill photo is required. Upload the courier delivery waybill to proceed.');
+        return;
+      }
+      return;
+    }
     setSaving(true);
     try {
-      await grn.createGrn({
+      const res = await grn.createGrn({
         grn_date: grnDate,
         warehouse_id: warehouseId || undefined,
         po_id: linkedPO?.po_id || undefined,
-        line_items: validLines.map(li => ({
+        line_items: lineItems.map(li => ({
           product_id: li.product_id,
-          batch_lot_no: li.batch_lot_no,
-          expiry_date: li.expiry_date || undefined,
+          batch_lot_no: String(li.batch_lot_no || '').trim().toUpperCase(),
+          expiry_date: li.expiry_date,
           qty: parseFloat(li.qty),
+          scan_confirmed: !!li.scan_confirmed,
           po_line_index: li.po_line_index != null ? li.po_line_index : undefined
         })),
+        waybill_photo_url: waybillPhotoUrl || undefined,
+        undertaking_photo_url: undertakingPhotoUrl || undefined,
+        ocr_data: ocrData || undefined,
         notes: notes || undefined
       });
+      if (res?.approval_pending) { showApprovalPending(res.message); }
+      // Reset form
       setLineItems([emptyLine()]);
       setNotes('');
       setLinkedPO(null);
       setSearchParams({});
+      if (waybillPreview) URL.revokeObjectURL(waybillPreview);
+      setWaybillPhotoUrl(''); setWaybillPreview('');
+      setUndertakingPhotoUrl(''); setUndertakingAttachmentId(null); setOcrData(null);
       await loadList();
-      // Refresh receivable POs (qty may have changed)
       purchasing.listPOs({ status: 'APPROVED,PARTIALLY_RECEIVED', limit: 200 })
-        .then(res => setReceivablePOs(res?.data || []))
+        .then(r => setReceivablePOs(r?.data || []))
         .catch(() => {});
-    } catch (err) { console.error('GRN save error:', err); }
-    finally { setSaving(false); }
+
+      const ut = res?.undertaking;
+      const grnLabel = res?.data?.grn_number ? `GRN ${res.data.grn_number}` : 'GRN';
+      if (ut?._id) {
+        showSuccess(`${grnLabel} captured. Review & submit Undertaking ${ut.undertaking_number} →`);
+        setTimeout(() => navigate(`/erp/undertaking/${ut._id}`), 900);
+      } else {
+        showSuccess(res?.message || `${grnLabel} created.`);
+      }
+    } catch (err) {
+      if (err?.response?.data?.approval_pending) { showApprovalPending(err.response.data.message); await loadList(); }
+      else {
+        const msg = err?.response?.data?.message || err.message || 'GRN save failed';
+        const errors = err?.response?.data?.errors;
+        if (Array.isArray(errors) && errors.length) {
+          showError(null, `${msg}: ${errors.slice(0, 3).join('; ')}`);
+        } else {
+          showError(err, msg);
+        }
+      }
+    } finally { setSaving(false); }
   };
 
   const handleApprove = async (id, action, reason) => {
@@ -430,11 +643,6 @@ export default function GrnEntry() {
     }
   };
 
-  const handleScanApply = (lines, meta) => {
-    if (lines.length) setLineItems(lines.map(l => ({ ...emptyLine(), ...l })));
-    if (meta?.undertaking_photo_url) setScanMeta({ undertaking_photo_url: meta.undertaking_photo_url, undertaking_attachment_id: meta.undertaking_attachment_id });
-  };
-
   return (
     <div className="admin-page erp-page grn-page">
       <style>{pageStyles}</style>
@@ -446,10 +654,13 @@ export default function GrnEntry() {
           <div className="grn-header">
             <div>
               <h1>Goods Received Notes</h1>
-              <p>Select supplier and warehouse, add batch/expiry lines, then submit for approval. You can also OCR a delivery undertaking to auto-fill line items.</p>
+              <p>
+                Capture the receipt: pick products, enter qty, scan the paper Undertaking to auto-fill batch &amp; expiry (or type them from the packaging label + calendar picker), upload the courier waybill, and submit. We&apos;ll auto-create the Undertaking for you to double-check and route for approval.
+              </p>
             </div>
             <div className="grn-actions">
-              <button className="btn btn-primary" onClick={() => setScanOpen(true)} style={{ background: '#7c3aed' }}>Scan Undertaking</button>
+              <button className="btn btn-primary" onClick={() => setScanOpen(true)} style={{ background: '#7c3aed' }}>Scan Undertaking Paper</button>
+              <button className="btn btn-outline" onClick={() => navigate('/erp/undertaking')}>Open Undertakings →</button>
             </div>
           </div>
 
@@ -519,24 +730,67 @@ export default function GrnEntry() {
               </div>
             </div>
 
+            {/* Waybill upload panel */}
+            <div className="waybill-panel">
+              <div className="waybill-info">
+                <label className="waybill-label">
+                  Waybill Photo {grnSettings.waybillRequired && <span className="waybill-req">*required</span>}
+                </label>
+                <div className="waybill-desc">
+                  Upload the courier&apos;s delivery waybill (proof the goods physically arrived).
+                </div>
+                <input
+                  ref={waybillRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  style={{ display: 'none' }}
+                  onChange={e => handleWaybillUpload(e.target.files?.[0])}
+                />
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" className="btn btn-outline btn-sm" onClick={() => waybillRef.current?.click()} disabled={waybillUploading}>
+                    {waybillUploading ? 'Uploading…' : (waybillPhotoUrl ? 'Replace Waybill' : 'Take/Choose Photo')}
+                  </button>
+                  {waybillPhotoUrl && (
+                    <button type="button" className="btn-remove-line" onClick={() => { setWaybillPhotoUrl(''); setWaybillPreview(''); }} title="Remove waybill">×</button>
+                  )}
+                </div>
+              </div>
+              {(waybillPreview || waybillPhotoUrl) && (
+                <a href={waybillPhotoUrl || waybillPreview} target="_blank" rel="noreferrer">
+                  <img src={waybillPreview || waybillPhotoUrl} alt="Waybill" className="waybill-thumb" />
+                </a>
+              )}
+            </div>
+
             <div className="grn-line-header">
               <div>
                 <h3>Line Items</h3>
-                <p>Add the products received, together with batch and expiry details.</p>
+                <p>Enter each product + qty + batch/lot # + expiry. Tap <em>Scan Undertaking Paper</em> above to OCR-fill all lines at once.</p>
               </div>
               <div className="grn-line-meta">
                 <span className="grn-chip">{lineItems.length} line(s)</span>
-                <span className="grn-chip">Qty required before submit</span>
+                {scannedCount > 0 && <span className="grn-chip scan-ok">{scannedCount}/{lineItems.length} OCR-scanned ✓</span>}
+                <span className="grn-chip">Expiry floor: {grnSettings.minExpiryDays}d</span>
               </div>
             </div>
 
             <table className="line-items-table">
               <colgroup>
-                <col className="col-product" /><col className="col-batch" />
-                <col className="col-expiry" /><col className="col-qty" /><col className="col-remove" />
+                <col className="col-product" />
+                <col className="col-batch" />
+                <col className="col-expiry" />
+                <col className="col-qty" />
+                <col className="col-remove" />
               </colgroup>
               <thead>
-                <tr><th>Product</th><th>Batch/Lot #</th><th>Expiry</th><th>Qty</th><th></th></tr>
+                <tr>
+                  <th>Product</th>
+                  <th>Batch/Lot #{!grnSettings.requireBatch && <span className="grn-chip" style={{ marginLeft: 6, fontSize: 10 }}>optional</span>}</th>
+                  <th>Expiry{!grnSettings.requireExpiry && <span className="grn-chip" style={{ marginLeft: 6, fontSize: 10 }}>optional</span>}</th>
+                  <th>Qty</th>
+                  <th></th>
+                </tr>
               </thead>
               <tbody>
                 {lineItems.map((li, idx) => (
@@ -544,16 +798,48 @@ export default function GrnEntry() {
                     <td>
                       <SelectField value={li.product_id} onChange={e => updateLine(idx, 'product_id', e.target.value)}>
                         <option value="">Select product...</option>
-                        {productOptions.map(p => <option key={p._id} value={p._id}>{p.brand_name}{p.dosage_strength ? ` ${p.dosage_strength}` : ''} — {p.unit_code || 'PC'}</option>)}
+                        {productOptions.map(p => (
+                          <option key={p._id} value={p._id}>
+                            {p.brand_name}{p.dosage_strength ? ` ${p.dosage_strength}` : ''} — {p.unit_code || 'PC'}
+                          </option>
+                        ))}
                       </SelectField>
                     </td>
-                    <td><input value={li.batch_lot_no} onChange={e => updateLine(idx, 'batch_lot_no', e.target.value)} placeholder="Batch #" /></td>
-                    <td><input type="date" value={li.expiry_date} onChange={e => updateLine(idx, 'expiry_date', e.target.value)} /></td>
                     <td>
-                      <input type="number" min="1" max={li._po_qty_remaining || undefined} value={li.qty} onChange={e => updateLine(idx, 'qty', e.target.value)} placeholder="Qty" />
+                      <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                        <input
+                          value={li.batch_lot_no}
+                          onChange={e => updateLine(idx, 'batch_lot_no', e.target.value.toUpperCase())}
+                          placeholder={grnSettings.requireBatch ? 'Batch #' : 'Batch # (optional)'}
+                          className={li.scan_confirmed ? 'scan-ok' : ''}
+                          style={{ textTransform: 'uppercase' }}
+                        />
+                        {li.scan_confirmed && <span className="scan-tick" title="OCR-confirmed">✓</span>}
+                      </div>
+                    </td>
+                    <td>
+                      <input
+                        type="date"
+                        value={li.expiry_date}
+                        min={expiryFloor}
+                        onChange={e => updateLine(idx, 'expiry_date', e.target.value)}
+                        placeholder={grnSettings.requireExpiry ? '' : 'optional'}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        min="1"
+                        max={li._po_qty_remaining || undefined}
+                        value={li.qty}
+                        onChange={e => updateLine(idx, 'qty', e.target.value)}
+                        placeholder="Qty"
+                      />
                       {li._po_qty_remaining != null && <div style={{ fontSize: 10, color: '#92400e', marginTop: 2 }}>max: {li._po_qty_remaining}</div>}
                     </td>
-                    <td style={{ textAlign: 'center' }}><button className="btn-remove-line" onClick={() => removeLine(idx)} title="Remove line">×</button></td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button className="btn-remove-line" onClick={() => removeLine(idx)} title="Remove line">×</button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -563,7 +849,9 @@ export default function GrnEntry() {
               {lineItems.map((li, idx) => (
                 <div className="line-item-card" key={`mobile-line-${idx}`}>
                   <div className="line-item-card-head">
-                    <div className="line-item-card-title">Line {idx + 1}</div>
+                    <div className="line-item-card-title">
+                      Line {idx + 1} {li.scan_confirmed && <span className="scan-tick" title="OCR-confirmed">✓</span>}
+                    </div>
                     <button className="btn-remove-line" onClick={() => removeLine(idx)} title="Remove line">×</button>
                   </div>
                   <div className="line-item-grid">
@@ -571,20 +859,41 @@ export default function GrnEntry() {
                       <label>Product</label>
                       <SelectField value={li.product_id} onChange={e => updateLine(idx, 'product_id', e.target.value)}>
                         <option value="">Select product...</option>
-                        {productOptions.map(p => <option key={p._id} value={p._id}>{p.brand_name}{p.dosage_strength ? ` ${p.dosage_strength}` : ''} — {p.unit_code || 'PC'}</option>)}
+                        {productOptions.map(p => (
+                          <option key={p._id} value={p._id}>
+                            {p.brand_name}{p.dosage_strength ? ` ${p.dosage_strength}` : ''} — {p.unit_code || 'PC'}
+                          </option>
+                        ))}
                       </SelectField>
                     </div>
                     <div className="form-group">
                       <label>Batch/Lot #</label>
-                      <input value={li.batch_lot_no} onChange={e => updateLine(idx, 'batch_lot_no', e.target.value)} placeholder="Batch #" />
+                      <input
+                        value={li.batch_lot_no}
+                        onChange={e => updateLine(idx, 'batch_lot_no', e.target.value.toUpperCase())}
+                        placeholder="Batch #"
+                        className={li.scan_confirmed ? 'scan-ok' : ''}
+                        style={{ textTransform: 'uppercase' }}
+                      />
                     </div>
                     <div className="form-group">
                       <label>Expiry</label>
-                      <input type="date" value={li.expiry_date} onChange={e => updateLine(idx, 'expiry_date', e.target.value)} />
+                      <input
+                        type="date"
+                        value={li.expiry_date}
+                        min={expiryFloor}
+                        onChange={e => updateLine(idx, 'expiry_date', e.target.value)}
+                      />
                     </div>
                     <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                       <label>Qty</label>
-                      <input type="number" min="1" value={li.qty} onChange={e => updateLine(idx, 'qty', e.target.value)} placeholder="Qty" />
+                      <input
+                        type="number"
+                        min="1"
+                        value={li.qty}
+                        onChange={e => updateLine(idx, 'qty', e.target.value)}
+                        placeholder="Qty"
+                      />
                     </div>
                   </div>
                 </div>
@@ -592,9 +901,15 @@ export default function GrnEntry() {
             </div>
             <button className="add-line-btn" onClick={addLine}>+ Add Line</button>
 
-            <div style={{ marginTop: 16, display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
-                {saving ? 'Submitting...' : 'Submit GRN (Pending Approval)'}
+            <div style={{ marginTop: 16, display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap' }}>
+              {!allLinesComplete && (
+                <span style={{ fontSize: 12, color: '#92400e' }}>Every line needs product, batch, expiry, and qty.</span>
+              )}
+              {grnSettings.waybillRequired && !waybillPhotoUrl && (
+                <span style={{ fontSize: 12, color: '#92400e' }}>Waybill photo is required.</span>
+              )}
+              <button className="btn btn-primary" onClick={handleSubmit} disabled={!canSubmit}>
+                {saving ? 'Saving…' : 'Save & Validate'}
               </button>
             </div>
           </div>
@@ -612,11 +927,13 @@ export default function GrnEntry() {
             </div>
               <table className="grn-table">
                 <thead>
-                  <tr><th>Date</th><th>PO Ref</th><th>Vendor</th><th>Items</th><th>BDM</th><th>Status</th><th>Reviewed By</th><th>Actions</th></tr>
+                  <tr><th>GRN#</th><th>Date</th><th>PO Ref</th><th>Vendor</th><th>Items</th><th>BDM</th><th>Status</th><th>Undertaking</th><th>Reviewed By</th><th>Actions</th></tr>
                 </thead>
                 <tbody>
                   {grnList.map(g => (
                     <tr key={g._id}>
+                      {/* Phase 32R-GRN#: human-readable number; legacy rows show id-tail */}
+                      <td style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700 }}>{g.grn_number || g._id.slice(-6)}</td>
                       <td>{new Date(g.grn_date).toLocaleDateString('en-PH')}</td>
                       <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{g.po_number || '—'}</td>
                       <td>{g.vendor_id?.vendor_name || '—'}</td>
@@ -627,20 +944,34 @@ export default function GrnEntry() {
                           {STATUS_COLORS[g.status]?.label}
                         </span>
                       </td>
+                      <td>
+                        <a
+                          onClick={e => { e.preventDefault(); navigate(`/erp/grn/${g._id}/audit`); }}
+                          href={`/erp/grn/${g._id}/audit`}
+                          style={{ fontSize: 12, color: '#2563eb', cursor: 'pointer' }}
+                        >
+                          View →
+                        </a>
+                      </td>
                       <td>{g.reviewed_by?.name || '—'}</td>
                       <td>
                         {g.status === 'PENDING' && (ROLE_SETS.MANAGEMENT.includes(user?.role)) && (
                           <div style={{ display: 'flex', gap: 4 }}>
-                            <button className="btn btn-success btn-sm" onClick={() => handleApprove(g._id, 'APPROVED')}>Approve</button>
+                            <button
+                              className="btn btn-success btn-sm"
+                              onClick={() => handleApprove(g._id, 'APPROVED')}
+                              title="Blocked until the Undertaking is ACKNOWLEDGED"
+                            >
+                              Approve
+                            </button>
                             <button className="btn btn-danger btn-sm" onClick={() => handleApprove(g._id, 'REJECTED', prompt('Rejection reason:') || '')}>Reject</button>
                           </div>
                         )}
                         <RejectionBanner row={g} moduleKey="INVENTORY" variant="row" />
-
                       </td>
                     </tr>
                   ))}
-                  {!grnList.length && <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>No GRNs found</td></tr>}
+                  {!grnList.length && <tr><td colSpan={10} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>No GRNs found</td></tr>}
                 </tbody>
               </table>
 
@@ -649,8 +980,12 @@ export default function GrnEntry() {
                   <div key={g._id} className="grn-card">
                     <div className="grn-card-header">
                       <div>
-                        <div className="grn-card-title">{new Date(g.grn_date).toLocaleDateString('en-PH')}</div>
-                        <div className="grn-card-sub">{g.line_items?.length || 0} item(s)</div>
+                        {/* Phase 32R-GRN#: lead with the doc number; date/item count go underneath */}
+                        <div className="grn-card-title" style={{ fontFamily: 'monospace' }}>{g.grn_number || new Date(g.grn_date).toLocaleDateString('en-PH')}</div>
+                        <div className="grn-card-sub">
+                          {g.grn_number ? `${new Date(g.grn_date).toLocaleDateString('en-PH')} · ` : ''}
+                          {g.line_items?.length || 0} item(s)
+                        </div>
                       </div>
                       <span className="status-badge" style={{ background: STATUS_COLORS[g.status]?.bg, color: STATUS_COLORS[g.status]?.text }}>
                         {STATUS_COLORS[g.status]?.label}
@@ -684,9 +1019,26 @@ export default function GrnEntry() {
                       <RejectionBanner row={g} moduleKey="INVENTORY" variant="row" />
                     </div>
 
+                    <div style={{ marginTop: 6 }}>
+                      <a
+                        onClick={e => { e.preventDefault(); navigate(`/erp/grn/${g._id}/audit`); }}
+                        href={`/erp/grn/${g._id}/audit`}
+                        style={{ fontSize: 12, color: '#2563eb' }}
+                      >
+                        View Undertaking →
+                      </a>
+                    </div>
+
                     {g.status === 'PENDING' && (ROLE_SETS.MANAGEMENT.includes(user?.role)) && (
                       <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
-                        <button className="btn btn-success btn-sm" style={{ flex: 1 }} onClick={() => handleApprove(g._id, 'APPROVED')}>Approve</button>
+                        <button
+                          className="btn btn-success btn-sm"
+                          style={{ flex: 1 }}
+                          onClick={() => handleApprove(g._id, 'APPROVED')}
+                          title="Blocked until the Undertaking is ACKNOWLEDGED"
+                        >
+                          Approve
+                        </button>
                         <button className="btn btn-danger btn-sm" style={{ flex: 1 }} onClick={() => handleApprove(g._id, 'REJECTED', prompt('Rejection reason:') || '')}>Reject</button>
                       </div>
                     )}

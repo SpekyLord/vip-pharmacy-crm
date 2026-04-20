@@ -103,6 +103,88 @@ function buildInventoryDetails(item) {
   };
 }
 
+/**
+ * Phase 32 — Undertaking detail builder for the Approval Hub.
+ *
+ * The approver needs every signal on one card to acknowledge confidently:
+ *   - Undertaking header (number, receipt date, scan-confirmed ratio, variance count)
+ *   - Linked GRN summary (source, vendor/warehouse, current GRN status)
+ *   - Waybill photo from the GRN (courier delivery evidence — clickable enlarge)
+ *   - Per-line: product brand + dosage (rule #4), expected vs received qty,
+ *     batch_lot_no, expiry + days-to-expiry, variance_flag badge, scan flag
+ *
+ * The `linked_grn_id` populate happens in MODULE_QUERIES.UNDERTAKING.query;
+ * this builder safely reads through the populated object or bare ID.
+ */
+function buildUndertakingDetails(item) {
+  const grn = (item.linked_grn_id && typeof item.linked_grn_id === 'object')
+    ? item.linked_grn_id
+    : null;
+  const totalLines = (item.line_items || []).length;
+  const scanned = (item.line_items || []).filter(l => l.scan_confirmed).length;
+  const variances = (item.line_items || []).filter(l => l.variance_flag).length;
+
+  return {
+    undertaking_number: item.undertaking_number,
+    status: item.status,
+    receipt_date: item.receipt_date,
+    acknowledged_by: item.acknowledged_by?.name || null,
+    acknowledged_at: item.acknowledged_at || null,
+    reopen_count: item.reopen_count || 0,
+    rejection_reason: item.rejection_reason || null,
+    notes: item.notes || null,
+
+    // Scan-quality signals
+    scan_confirmed_count: scanned,
+    scan_manual_count: totalLines - scanned,
+    scan_total_count: totalLines,
+    variance_count: variances,
+
+    // Linked GRN summary (for approver context)
+    linked_grn: grn ? {
+      _id: grn._id,
+      grn_number: grn.grn_number || null,
+      grn_date: grn.grn_date,
+      source_type: grn.source_type || 'STANDALONE',
+      po_number: grn.po_number || null,
+      vendor_name: grn.vendor_id?.vendor_name || null,
+      reassignment_id: grn.reassignment_id || null,
+      status: grn.status
+    } : { _id: item.linked_grn_id },
+
+    // Waybill + legacy evidence — keys come from the linked GRN. They'll be signed
+    // by universalApprovalService URL-signing switch (case 'UNDERTAKING').
+    waybill_photo_url: grn?.waybill_photo_url || null,
+    undertaking_photo_url: grn?.undertaking_photo_url || null,
+
+    // Warehouse/BDM for enrichment (same pattern as buildInventoryDetails)
+    warehouse_name: item.warehouse_id?.warehouse_name
+      ? `${item.warehouse_id.warehouse_name} (${item.warehouse_id.warehouse_code})`
+      : null,
+    _warehouse_id: item.warehouse_id?._id || item.warehouse_id,
+    _bdm_id: item.bdm_id?._id || item.bdm_id,
+
+    line_items: (item.line_items || []).map(li => ({
+      product_id: li.product_id,
+      item_key: li.item_key,
+      expected_qty: li.expected_qty,
+      received_qty: li.received_qty,
+      qty: li.received_qty, // alias for enrichment (product_name + available_stock reuse)
+      batch_lot_no: li.batch_lot_no,
+      expiry_date: li.expiry_date,
+      days_to_expiry: li.expiry_date
+        ? Math.round((new Date(li.expiry_date) - new Date()) / (1000 * 60 * 60 * 24))
+        : null,
+      scan_confirmed: !!li.scan_confirmed,
+      variance_flag: li.variance_flag || null,
+      purchase_uom: li.purchase_uom || null,
+      selling_uom: li.selling_uom || null,
+      conversion_factor: li.conversion_factor || 1,
+      qty_selling_units: li.qty_selling_units || null,
+    })),
+  };
+}
+
 function buildPayrollDetails(item) {
   return {
     period: item.period, cycle: item.cycle,
@@ -491,6 +573,42 @@ function buildIcTransferDetails(item) {
  * module sub-permission.
  */
 function buildJournalDetails(item) {
+  // Batch shape — DEPRECIATION / INTEREST monthly batches. The universal service
+  // hydrates asset / loan staging and passes it via `_batch_kind`. For these we
+  // render a staging table (one row per asset/loan) instead of a JE line table.
+  if (item._batch_kind === 'DEPRECIATION' || item._batch_kind === 'INTEREST') {
+    const lines = (item.staging || []).map(r =>
+      item._batch_kind === 'DEPRECIATION'
+        ? {
+            line_kind: 'DEPRECIATION',
+            ref_code: r.asset_code,
+            ref_name: r.asset_name,
+            amount: r.amount || 0,
+            period: r.period,
+          }
+        : {
+            line_kind: 'INTEREST',
+            ref_code: r.loan_code,
+            ref_name: r.lender,
+            interest_amount: r.interest_amount || 0,
+            principal_amount: r.principal_amount || 0,
+            outstanding_balance: r.outstanding_balance || 0,
+            period: r.period,
+          }
+    );
+    return {
+      is_batch:     true,
+      batch_kind:   item._batch_kind,
+      period:       item.period,
+      doc_ref:      item.doc_ref,
+      status:       item.status,
+      memo:         item.memo,
+      line_count:   lines.length,
+      total_amount: item.total_amount || 0,
+      batch_lines:  lines,
+    };
+  }
+
   const totalDebit = (item.lines || []).reduce((s, l) => s + (l.debit || 0), 0);
   const totalCredit = (item.lines || []).reduce((s, l) => s + (l.credit || 0), 0);
   return {
@@ -525,9 +643,17 @@ function buildJournalDetails(item) {
  */
 function buildBankingDetails(item) {
   const entries = item.entries || [];
-  const matched = entries.filter(e => e.match_status === 'MATCHED').length;
-  const unmatched = entries.filter(e => e.match_status === 'UNMATCHED').length;
-  const reconcilingItems = entries.filter(e => e.match_status === 'RECONCILING_ITEM').length;
+  const matchedList = entries.filter(e => e.match_status === 'MATCHED');
+  const unmatchedList = entries.filter(e => e.match_status === 'UNMATCHED');
+  const reconcilingList = entries.filter(e => e.match_status === 'RECONCILING_ITEM');
+  // Cap the total serialized payload so a huge statement (200+ lines) doesn't
+  // bloat the Approval Hub response. Full unmatched + reconciling are always
+  // included (that's the approver's job); matched entries are capped.
+  const MATCHED_CAP = 20;
+  const serializeEntry = (e) => ({
+    txn_date: e.txn_date, description: e.description, reference: e.reference,
+    debit: e.debit, credit: e.credit, balance: e.balance, match_status: e.match_status,
+  });
   return {
     bank_account: item.bank_account_id?.bank_name
       ? `${item.bank_account_id.bank_name}${item.bank_account_id.bank_code ? ` (${item.bank_account_id.bank_code})` : ''}`
@@ -538,16 +664,19 @@ function buildBankingDetails(item) {
     status: item.status,
     closing_balance: item.closing_balance,
     entries_count: entries.length,
-    matched_count: matched,
-    unmatched_count: unmatched,
-    reconciling_items_count: reconcilingItems,
+    matched_count: matchedList.length,
+    unmatched_count: unmatchedList.length,
+    reconciling_items_count: reconcilingList.length,
     uploaded_at: item.uploaded_at,
     uploaded_by: item.uploaded_by?.name || null,
-    // Show first 10 entries for quick glance
-    entries_preview: entries.slice(0, 10).map(e => ({
-      txn_date: e.txn_date, description: e.description, reference: e.reference,
-      debit: e.debit, credit: e.credit, balance: e.balance, match_status: e.match_status,
-    })),
+    // Full unmatched + reconciling lists — the approver must review every one
+    // of these to decide whether to post or send back for fixes.
+    unmatched_entries: unmatchedList.map(serializeEntry),
+    reconciling_entries: reconcilingList.map(serializeEntry),
+    // Matched entries capped — surfaced as preview only. `matched_truncated`
+    // lets the UI render a "Showing first N of M matched" hint.
+    matched_preview: matchedList.slice(0, MATCHED_CAP).map(serializeEntry),
+    matched_truncated: matchedList.length > MATCHED_CAP,
   };
 }
 
@@ -638,6 +767,11 @@ function buildPettyCashDetails(item) {
     amount: item.amount,
     running_balance: item.running_balance,
     fund_current_balance: item.fund_id?.current_balance,
+    // Requester context — for disbursements the approver needs to know who cut
+    // the PCV. PettyCashTransaction uses `created_by` as the requester / BDM scope
+    // (model has no separate bdm_id field — see PettyCashTransaction.js line 79).
+    requested_by: item.created_by?.name || null,
+    requested_by_email: item.created_by?.email || null,
     // DEPOSIT-flavored
     source_description: item.source_description,
     linked_collection_id: item.linked_collection_id || null,
@@ -839,6 +973,8 @@ const DETAIL_BUILDERS = {
   // Phase G6.7 closeout — sales-goal / incentive approval hub panels
   SALES_GOAL_PLAN:    buildSalesGoalPlanDetails,
   INCENTIVE_PAYOUT:   buildIncentivePayoutDetails,
+  // Phase 32 — Undertaking (GRN receipt confirmation)
+  UNDERTAKING:        buildUndertakingDetails,
 };
 
 /**
@@ -883,6 +1019,8 @@ const REVERSAL_DOC_TYPE_TO_MODULE = {
   // Sales Goal plan reversals. IncentivePayout has no entry in REVERSAL_HANDLERS
   // (its own route handles reversal), so it is intentionally omitted here.
   SALES_GOAL_PLAN:      'SALES_GOAL_PLAN',
+  // Phase 32 — Reversal Console reuses the Approval Hub panel for Undertaking.
+  UNDERTAKING:          'UNDERTAKING',
 };
 
 module.exports = {

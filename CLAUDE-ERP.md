@@ -179,6 +179,27 @@ The same entity-code path now powers `InterCompanyTransfer.transfer_ref`:
 - **`WorkflowGuide.jsx#transfers`** banner updated with the new format and subsidiary-prefix note.
 - **Subscription-ready**: same guarantees as JE — `Entity.short_name` is admin-editable, cache invalidated by `entityController.update` via the shared `invalidateEntityCodeCache`, atomic sequencing via `DocSequence.getNext`.
 
+### Extended to Goods Receipt Notes — Phase 32R-GRN# (Apr 2026)
+
+`GrnEntry` previously had no doc number. Frontend fell back to `po_number || _id.slice(-6)`, so STANDALONE GRNs (no PO) displayed as a last-6-hex tail across the Undertaking list, Undertaking detail, GRN audit view, Approval Hub detail card, Reversal Console, and the GRN list under the capture page. Out of line with every other transactional document.
+
+- **`models/GrnEntry.js`** — new `grn_number: String` field with a sparse non-unique index. Sparse so pre-numbering legacy rows (no backfill) don't collide on null.
+- **`controllers/inventoryController.js#createGrn`** — calls `generateDocNumber({ prefix: 'GRN', bdmId: req.bdmId, entityId: req.entityId, date: grn_date })` BEFORE the `withTransaction` block. `DocSequence.getNext` is atomic on its own; keeping it outside the session avoids entangling sequence allocation with GRN+Undertaking rollback semantics (gaps on aborted sessions are acceptable — same behavior as every other doc number). Resolution priority: BDM's territory code → `Entity.short_name` → fallback (so admin/president-created GRNs without a territory binding still get an entity-prefixed number).
+- **Format**: `GRN-{TERR|ENTITY}{MMDDYY}-{NNN}`. Examples: `GRN-ILO042026-001` (BDM with Iloilo territory), `GRN-VIP042026-003` (admin-created at VIP parent).
+- **Populate selects extended** — `controllers/undertakingController.js`, `services/universalApprovalService.js`, and `services/documentDetailHydrator.js` all added `grn_number` to their `linked_grn_id` populate select so the approval hub card, undertaking detail page, and undertaking list row surface it uniformly.
+- **`services/documentDetailBuilder.js#buildUndertakingDetails`** — `linked_grn.grn_number` included in the summary object passed to `DocumentDetailPanel`.
+- **`services/documentReversalService.js`** — GRN reversal row now uses `grn_number` as `doc_ref` (falls back to the ISO-date label for legacy rows). Undertaking reversal row's `sub` label does one batched `GrnEntry.find({_id: {$in: ...}}).select('grn_number')` lookup to surface the linked GRN's number in the console without per-row N+1.
+- **Frontend display surfaces** updated with the precedence `grn_number → po_number → id.slice(-6)` (legacy-safe fallback):
+  - `pages/UndertakingList.jsx` (row link)
+  - `pages/UndertakingDetail.jsx` (header link)
+  - `pages/GrnAuditView.jsx` (header sub-line + new `GRN#` grid cell)
+  - `pages/GrnEntry.jsx` (GRN list — new `GRN#` column on the desktop table, GRN# as card title on mobile, success toast reads back the number)
+  - `components/DocumentDetailPanel.jsx` (Approval Hub linked-GRN card)
+- **`WorkflowGuide.jsx#grn-entry`** tip expanded with the new format; `undertaking-entry` tip updated to note the Linked GRN link now shows the number.
+- **Approval flow unchanged** — `grn_number` is purely identity + display. GRN create → Undertaking auto-create → Acknowledge cascade-approves GRN (`postSingleUndertaking` via `approveGrnCore`) → `gateApproval({ module: 'INVENTORY' })` on the GRN path. No changes to `erpSubAccessCheck`, `periodLockCheck`, `REVERSAL_HANDLERS`, or `MODULE_DEFAULT_ROLES.INVENTORY`. Reversal cascade still keys on `linked_grn_id` ObjectId.
+- **Subscription-ready**: territory code is admin-managed in `Territory` (lookup-driven via `Territory.getCodeForBdm`); entity-fallback code is admin-editable in `Entity.short_name` and cached with shared invalidation. New subsidiaries pick `short_name` on creation and their GRNs use it immediately — no code deploy required.
+- **No backfill**: legacy GRNs keep rendering via the `po_number || id.slice(-6)` tail; all display sites accept either. The sparse index means null legacy values don't block the new unique-sequence guarantee (which is per-seqKey, not per-field — we don't force uniqueness on `grn_number` itself, only on the allocation key inside `DocSequence`).
+
 ---
 
 ## Phase 3a — Lookup-Driven Danger Sub-Permission Gate + President-Reverse Rollout (Apr 2026)
@@ -3469,3 +3490,98 @@ A new subsidiary tomorrow gets:
 - Inbox bulk-archive / bulk-mark-read (admin convenience; not blocking).
 - Cross-entity inbox view for presidents (currently surfaces all entities when `?entity_id=` omitted; no per-entity grouping pill in the list yet).
 - Dual-route POSTED-event notifications (Phase G8 SoD pattern): currently `notifyDocumentPosted` writes one row to all of management; subscribers complaining of in-app noise can later split into PRESIDENT-with-all-channels + FINANCE/ADMIN-in-app-only without schema changes.
+
+---
+
+## Phase 32R — GRN Capture + Undertaking Approval Wrapper (April 20, 2026)
+
+### Why-pivot
+Phase 32 (shipped earlier April 20) moved batch/expiry capture off the GRN onto a new Undertaking model, with packaging barcode scans as the primary input. In practice that split the capture surface (GRN had the product + qty, Undertaking had the batch + expiry), doubled the steps for a BDM, and made the CALF→Expense analogy backwards — the approval wrapper had fields the original doesn't. User confirmed the pre-Phase 32 flow (GRN captures everything, BDM scans/OCRs the paper Undertaking as auto-fill) was the right one. Phase 32R restores that and keeps the Undertaking only as a read-only, always-on approval wrapper over the captured GRN.
+
+### Shipped design
+| Layer | Behavior |
+|---|---|
+| GRN Entry (`/erp/grn`) | Capture page. Per-line: product + received qty + batch/lot # + expiry (calendar, floored today + MIN_EXPIRY_DAYS). Doc-level: waybill photo upload (required when `GRN_SETTINGS.WAYBILL_REQUIRED=1`). Optional: one-tap "Scan Undertaking Paper" OCR modal that bulk-fills every matched line from the physical Undertaking (`undertaking_photo_url` is recorded alongside). |
+| Undertaking Detail (`/erp/undertaking/:id`) | Read-only review. Mirrors GRN line items, shows waybill + Undertaking-paper thumbnails. BDM (or privileged) hits "Validate & Submit" → DRAFT → SUBMITTED. May return 202 when role not in `MODULE_DEFAULT_ROLES.UNDERTAKING`. |
+| Approval Hub (`/erp/approvals`) | Approver (admin/finance/president, or any role added to `MODULE_DEFAULT_ROLES.UNDERTAKING`) acknowledges → UT ACKNOWLEDGED + linked GRN APPROVED + InventoryLedger written in one mongoose session (atomic). Reject → UT REJECTED (terminal). Linked GRN stays PENDING so the BDM can reverse it via the standard reversal path and re-capture. |
+
+### Backend invariants preserved
+- **Rule #20 (two-layer gate)** — `gateApproval()` still runs on `grn/approve` and `undertaking/submit`. Authority Matrix layer is unaffected.
+- **Reversal handlers count = 21** — `REVERSAL_HANDLERS.UNDERTAKING` handles DRAFT/SUBMITTED/REJECTED (hard-delete) + ACKNOWLEDGED (SAP-storno cascade to GRN + InventoryLedger).
+- **Period locks** — `PERIOD_LOCK_MODULE.UNDERTAKING` enforced on every status transition (checks `dateToPeriod(doc.receipt_date)`).
+- **Danger sub-perm** — `inventory.reverse_undertaking` baseline-off, subscriber-delegatable via Access Template.
+- **Rule #21 (privileged user filter)** — `getUndertakingList` uses the corrected `privileged ? (req.query.bdm_id || null) : req.bdmId` pattern.
+- **Entity scoping** — every create/read respects `req.entityId`.
+
+### Subscription-readiness (Rule #19 + #3)
+- **`GRN_SETTINGS` lookup (new category, seeded with defaults)** drives MIN_EXPIRY_DAYS, VARIANCE_TOLERANCE_PCT, WAYBILL_REQUIRED. Subscribers tune via Control Center → Lookup Tables.
+- **Back-compat**: `getGrnSetting(entityId, code, fallback)` in `undertakingService.js` reads `GRN_SETTINGS` first, falls back to legacy `UNDERTAKING_SETTINGS` so Phase 32 tenants keep working without a re-seed.
+- **`MODULE_DEFAULT_ROLES.UNDERTAKING`** lookup controls who can acknowledge directly. Editable per-entity via Control Center.
+- **No hardcoded capture validation** — every threshold (expiry floor, variance tolerance, waybill requirement) reads from the lookup category on every capture.
+
+### Shipped files (frontend)
+- `frontend/src/erp/services/undertakingService.js` — trimmed. Dropped `updateUndertaking`, `matchBarcode`. Renamed `getUndertakingSettings` → `getGrnSettings` (with back-compat export). Category fallback logic: `GRN_SETTINGS` → `UNDERTAKING_SETTINGS`.
+- `frontend/src/erp/pages/GrnEntry.jsx` — rebuilt. Per-line batch + expiry + qty inputs, waybill photo upload panel (required gate), bulk `ScanUndertakingModal` (OCR paper via `processDocument(file, 'UNDERTAKING')`), auto-navigate to Undertaking Detail on success.
+- `frontend/src/erp/pages/UndertakingDetail.jsx` — rewritten as read-only review. Header with waybill + Undertaking-paper thumbnails, read-only line table, action row driven by status (Validate & Submit / Acknowledge + Reject / President-Reverse).
+- `frontend/src/erp/components/UndertakingLineRow.jsx` — rewritten. No inputs at all. Product label (Rule #4), expected/received qty, batch + scan ✓, expiry + days-to-expiry color band, variance badge from `line.variance_flag`.
+- `frontend/src/erp/pages/UndertakingList.jsx` — minor. DRAFT tab label renamed "Review Pending" to match the approval-wrapper framing. Page header copy refreshed.
+- `frontend/src/erp/components/WorkflowGuide.jsx` — `grn-entry` + `undertaking-entry` steps rewritten to match the new flow (capture-on-GRN, read-only-on-UT).
+- `frontend/src/erp/pages/ControlCenter.jsx` — `undertaking-settings` section renamed `grn-settings`. Dependency guide now lists WAYBILL_REQUIRED + MIN_EXPIRY_DAYS + VARIANCE_TOLERANCE_PCT + MODULE_DEFAULT_ROLES.UNDERTAKING + ERP_DANGER_SUB_PERMISSIONS.INVENTORY__REVERSE_UNDERTAKING + legacy `UNDERTAKING_SETTINGS` fallback note.
+
+### Shipped files (backend — unchanged since the Phase 32R backend session)
+- `backend/erp/models/GrnEntry.js` — per-line `scan_confirmed`, `expected_qty` (pre-save mirror when absent).
+- `backend/erp/controllers/inventoryController.js` — `createGrn` enforces waybill gate + per-line capture validation (batch/expiry/qty) + MIN_EXPIRY_DAYS floor before DB write. Session-wrapped GRN create + `autoUndertakingForGrn`.
+- `backend/erp/services/undertakingService.js` — `autoUndertakingForGrn`, `getGrnSetting` (with UNDERTAKING_SETTINGS fallback), `computeLineVariance`. Removed `syncUndertakingToGrn` and `validateUndertaking` (validation moved to capture time).
+- `backend/erp/controllers/undertakingController.js` — `submitUndertaking` (DRAFT→SUBMITTED + gate), `acknowledgeUndertaking` (SUBMITTED→ACKNOWLEDGED + `approveGrnCore`), `rejectUndertaking` (SUBMITTED→REJECTED terminal), `presidentReverseUndertaking`. Dropped `updateUndertaking`, `matchBarcodeToLine`.
+- `backend/erp/routes/undertakingRoutes.js` — dropped `PUT /:id` and `POST /:id/match-barcode`.
+- `backend/erp/controllers/universalApprovalController.js` — `approvalHandlers.undertaking.reject` → terminal REJECTED. `EDITABLE_STATUSES.undertaking = []`.
+- `backend/erp/controllers/lookupGenericController.js` — seed block renamed `UNDERTAKING_SETTINGS` → `GRN_SETTINGS`, added `WAYBILL_REQUIRED`.
+
+### Gotchas
+1. **Waybill upload reuses `/erp/ocr/process`** with `docType='WAYBILL'`. OCR parser doesn't recognize WAYBILL so the backend uploads to S3, skips OCR, returns `s3_url`. Keeps us on one DocumentAttachment pipeline instead of adding a new upload endpoint.
+2. **Scan is OCR, not BarcodeDetector.** The capture surface OCRs the physical paper Undertaking (same endpoint receipts use); it is NOT BarcodeDetector on packaging. Do not confuse with pre-backend-session plans.
+3. **REJECTED is terminal.** Unlike the Phase 32 shipped version, a reject does NOT flip the UT back to DRAFT. The GRN stays PENDING so the BDM reverses and re-creates from scratch. This closes the loophole where a BDM could re-edit a rejected UT and submit without approver knowing.
+4. **Existing Phase 32 DRAFT UTs** (where batch/expiry were blank waiting for packaging-barcode scan) must be reversed via Reversal Console → UNDERTAKING → hard-delete. The linked PENDING GRN hard-deletes with them. BDM then re-captures on the new GrnEntry.
+5. **Existing Phase 32 SUBMITTED UTs** (batch/expiry already populated by the Phase 32 scan flow) acknowledge normally — the acknowledge handler was unchanged.
+
+### Verification
+```bash
+# Backend
+node -e "const inv=require('./backend/erp/controllers/inventoryController'); const ut=require('./backend/erp/controllers/undertakingController'); const svc=require('./backend/erp/services/undertakingService'); const {REVERSAL_HANDLERS}=require('./backend/erp/services/documentReversalService'); console.log('handlers:',Object.keys(REVERSAL_HANDLERS).length,'getGrnSetting:',typeof svc.getGrnSetting,'syncUndertakingToGrn(gone):',typeof svc.syncUndertakingToGrn)"
+# Expected: handlers: 21  getGrnSetting: function  syncUndertakingToGrn(gone): undefined
+
+# Frontend
+cd frontend && npx vite build
+# Expected: build completes clean; chunks show GrnEntry-*.js bigger (scan modal restored), UndertakingDetail-*.js smaller (scan + edit fields removed).
+```
+
+---
+
+## Phase (Future) — Unified Party Master [DEFERRED until subscription rollout]
+
+**Status:** design recorded, execution postponed. Full design, migration plan, PR sequence, and verification checklist live in `docs/PHASETASK-ERP.md` under `PHASE (FUTURE, SUBSCRIPTION-TRIGGERED) — Unified Party Master (Customer + Hospital Fusion)`.
+
+### Trigger Conditions (when to revisit)
+
+- Onboarding of subsidiary #2 beyond MG AND CO., **OR**
+- Start of multi-tenant subscription rollout / generic-ERP extraction work.
+
+Until one of those fires, VIP continues with the existing two-model design.
+
+### Guardrails for Future Work (what Claude must NOT do in regular edits)
+
+1. **Do not propose fusion in regular work.** When editing `Customer`, `Hospital`, or any txn model carrying `hospital_id`/`customer_id` (`SalesLine`, `Collection`, `CreditNote`, `Collateral`, `SmerEntry`, `ConsignmentTracker`, `CwtLedger`, `CreditRule`), keep the existing dual-reference OR pattern. Do not sneak in a Party refactor as part of an unrelated change.
+2. **Preserve hospital global sharing.** `Hospital.entity_id` stays optional. `hospital_name_clean` stays globally unique. One `St Luke's` record is shared across VIP + MG AND CO. + any future subsidiary.
+3. **Preserve customer entity-scoping.** `Customer.entity_id` stays required. Unique index stays on `(entity_id, customer_name_clean)`.
+4. **Preserve the two split access patterns.** Do not migrate hospitals to direct `tagged_bdms`, and do not add `warehouse_ids` to `Customer`. Territorial access applies to hospital networks; retail/pharmacy/diagnostic customers are per-BDM direct tagging:
+   - Hospitals → [backend/erp/utils/hospitalAccess.js:21-38](backend/erp/utils/hospitalAccess.js#L21-L38) (`buildHospitalAccessFilter`, warehouse-driven).
+   - Customers → [backend/erp/controllers/customerController.js:20-24](backend/erp/controllers/customerController.js#L20-L24) (direct `tagged_bdms.$elemMatch`).
+5. **Warehouse model stays party-agnostic.** [backend/erp/models/Warehouse.js](backend/erp/models/Warehouse.js) has no refs to hospitals/customers; the arrow goes the other way. Don't add any.
+
+### Optional Prep (can ship anytime, doesn't count as "starting the fusion")
+
+Extracting a shared `buildPartyAccessFilter(user, partyType)` that funnels both existing filters through one helper is a safe, zero-schema, ~30-line refactor. It makes the eventual fusion PR roughly half the size. Not urgent; do only if touching hospital/customer access code for another reason.
+
+### What a Future Claude Should Do When the Trigger Fires
+
+Jump to `docs/PHASETASK-ERP.md` → `PHASE (FUTURE, SUBSCRIPTION-TRIGGERED) — Unified Party Master`. Follow the 6-PR sequence (additive → backfill+dual-write → txn schema → service cutover → require `party_id` → retire old collections). Use `_id` reuse during migration so txn FKs map 1:1 without rewrite. Feature flags `ERP_PARTY_READ_FROM_PARTIES` and `ERP_PARTY_DUAL_WRITE` gate read/write paths independently for bidirectional rollback.

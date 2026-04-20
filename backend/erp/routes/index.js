@@ -100,6 +100,9 @@ router.use('/sales', erpAccessCheck('sales'), require('./salesRoutes'));
 router.use('/credit-notes', erpAccessCheck('sales'), require('./creditNoteRoutes'));
 router.use('/inventory', erpAccessCheck('inventory'), require('./inventoryRoutes'));
 
+// Phase 32 — Undertaking (GRN receipt confirmation)
+router.use('/undertaking', erpAccessCheck('inventory'), require('./undertakingRoutes'));
+
 // ═══ Phase 4 — Consignment ═══
 router.use('/consignment', erpAccessCheck('inventory'), require('./consignmentRoutes'));
 
