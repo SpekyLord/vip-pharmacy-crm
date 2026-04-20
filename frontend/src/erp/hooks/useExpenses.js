@@ -25,7 +25,7 @@ export default function useExpenses() {
   const getCarLogbookById = (id) => api.get(`/expenses/car-logbook/${id}`);
   const createCarLogbook = (data) => api.post('/expenses/car-logbook', data);
   const updateCarLogbook = (id, data) => api.put(`/expenses/car-logbook/${id}`, data);
-  const deleteDraftCarLogbook = (id) => api.del(`/expenses/car-logbook/${id}`);
+  const deleteDraftCarLogbook = (id, params) => api.del(`/expenses/car-logbook/${id}`, params ? { params } : undefined);
   // Phase 33: validate/submit accept { period, cycle } to scope to a single wrapper cycle
   const validateCarLogbook = (scope) => api.post('/expenses/car-logbook/validate', scope || {});
   const submitCarLogbook = (scope) => api.post('/expenses/car-logbook/submit', scope || {});
@@ -37,7 +37,7 @@ export default function useExpenses() {
   };
   // Per-fuel-entry approval (mirrors per-diem override). Submits one fuel_entries[i]
   // for independent Approval Hub routing.
-  const submitFuelForApproval = (dayId, fuelId) => api.post(`/expenses/car-logbook/${dayId}/fuel/${fuelId}/submit`, {});
+  const submitFuelForApproval = (dayId, fuelId, body) => api.post(`/expenses/car-logbook/${dayId}/fuel/${fuelId}/submit`, body || {});
   // Linked expenses audit under a CALF (fuel + expense lines that reference it).
   const getLinkedExpenses = (calfId) => api.get(`/expenses/prf-calf/${calfId}/linked-expenses`);
   const getSmerDestinationByDate = (date) => api.get(`/expenses/car-logbook/smer-destination/${date}`);

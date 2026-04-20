@@ -479,10 +479,9 @@ const bdmId = privileged ? (req.query.bdm_id || req.body.bdm_id || null) : req.b
 
 ### Fix — Frontend (`frontend/src/erp/pages/CarLogbook.jsx`)
 - Added `selectedBdmId` state + BDM picker (privileged viewers only) — data source is `getBdmsByEntity()` from `useTransfers`.
-- `viewingSelf = !!selectedBdmId && selectedBdmId === user._id` — privileged user without a picked BDM is treated as "not viewing self" → Save/Validate/Submit buttons disabled.
+- `viewingSelf = !!selectedBdmId && selectedBdmId === user._id` — **strict gate**. Because `ROLE_SETS.MANAGEMENT` (admin/finance/president) and `ROLES.CONTRACTOR` (BDM) are mutually exclusive, a privileged user's `_id` never matches any BDM's `_id`, so `viewingSelf` is always `false` for privileged users. All write handlers (`saveRow`, `handleValidate`, `handleSubmit`, `handleSubmitFuel`, `handleDelete`) short-circuit with a read-only toast when `!viewingSelf`.
 - `loadAndMerge` passes `bdm_id` on list calls when privileged; returns an empty grid immediately when privileged + no BDM picked (avoids the 400 round-trip).
-- `saveRow` stamps `data.bdm_id = selectedBdmId` on create/update when privileged.
-- `handleValidate`/`handleSubmit` stamp `scope.bdm_id` in the POST body.
+- **No on-behalf writes from this page.** Privileged users audit read-only. The backend still accepts `bdm_id` in body/query defensively (for scripts or a future on-behalf flow), but the current UI never sends it on writes. If on-behalf becomes a business need later: relax `viewingSelf` to `!!selectedBdmId && (selectedBdmId === user._id || isPrivileged)` and re-add `data.bdm_id` / `scope.bdm_id` stamping in the write handlers (~6 lines). Audit logging should be added at the same time.
 
 ### Banner (`frontend/src/erp/components/WorkflowGuide.jsx`)
 `car-logbook.tip` extended with: *"Privileged viewers (president/admin/finance) use the BDM picker to audit someone else's cycle — the page is read-only until they pick themselves (Rule #21 — no silent self-fallback; backend requires an explicit bdm_id to create/validate/submit)."*
@@ -494,7 +493,7 @@ const bdmId = privileged ? (req.query.bdm_id || req.body.bdm_id || null) : req.b
 ### Key Files
 ```
 backend/erp/controllers/expenseController.js          # 8 endpoints + resolveCarLogbookScope helper
-frontend/src/erp/pages/CarLogbook.jsx                 # BDM picker, viewingSelf, bdm_id on all writes
+frontend/src/erp/pages/CarLogbook.jsx                 # BDM picker, strict viewingSelf gate, read-only short-circuits on writes
 frontend/src/erp/components/WorkflowGuide.jsx         # car-logbook tip mentions Rule #21 + picker
 ```
 

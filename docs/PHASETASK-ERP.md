@@ -6064,10 +6064,10 @@ Extract the two existing access filters into one shared util, `buildPartyAccessF
    - `validateCarLogbook` now also scopes by `period`+`cycle` from body so it validates the active cycle, not every open draft month-wide.
    - `submitCarLogbook` binds `CarLogbookCycle` wrapper to the resolved `bdmId`, not `req.bdmId` (critical — prevents cycle-wrapper ghost ownership).
 
-3. **Frontend tightening** (`frontend/src/erp/pages/CarLogbook.jsx`):
+3. **Frontend tightening** (`frontend/src/erp/pages/CarLogbook.jsx`) — strict model:
    - `viewingSelf = !!selectedBdmId && selectedBdmId === user._id` — privileged without a selection is now `false` (previously `true`, which enabled Save/Validate/Submit buttons that would have 400'd backend).
-   - `saveRow` stamps `data.bdm_id = selectedBdmId` on create/update when privileged.
-   - `handleValidate` / `handleSubmit` stamp `scope.bdm_id` in POST body.
+   - All write handlers (`saveRow`, `handleValidate`, `handleSubmit`, `handleSubmitFuel`, `handleDelete`) short-circuit with a read-only toast when `!viewingSelf`.
+   - `MANAGEMENT` roles and `CONTRACTOR` are mutually exclusive, so `viewingSelf` is always false for privileged users — the page is strictly read-only for them. No `bdm_id` stamping on writes (would be dead code under the strict gate). Backend still accepts `bdm_id` defensively for scripts / future on-behalf flows.
 
 4. **Banner update** (`frontend/src/erp/components/WorkflowGuide.jsx`):
    - `car-logbook.tip` extended with: *"Privileged viewers (president/admin/finance) use the BDM picker to audit someone else's cycle — the page is read-only until they pick themselves (Rule #21 — no silent self-fallback; backend requires an explicit bdm_id to create/validate/submit)."*

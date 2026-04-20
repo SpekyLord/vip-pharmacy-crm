@@ -356,6 +356,10 @@ export default function CarLogbook() {
     const hasData = row.starting_km > 0 || row.ending_km > 0 || row.fuel_entries.length > 0 || row.destination || row.notes;
     if (!hasData && !row._id) return; // nothing to save
 
+    // Strict ownership: BDM saves to their own logbook; the backend stamps bdm_id
+    // from req.bdmId. Writes by privileged users are blocked upstream by viewingSelf,
+    // so no body.bdm_id stamping is needed here. Backend still accepts body.bdm_id
+    // defensively if a future on-behalf flow or script calls the API directly.
     const data = {
       entry_date: row.entry_date,
       starting_km: row.starting_km,
@@ -367,9 +371,6 @@ export default function CarLogbook() {
       period, cycle,
       km_per_liter: settings?.FUEL_EFFICIENCY_DEFAULT || 12
     };
-    // Rule #21 — privileged users must stamp the chosen BDM onto create/update calls.
-    // Non-privileged users let the backend default to their own req.bdmId.
-    if (isPrivileged && selectedBdmId) data.bdm_id = selectedBdmId;
 
     setSavingRow(idx);
     try {
@@ -474,17 +475,13 @@ export default function CarLogbook() {
   const handleValidate = async () => {
     if (!viewingSelf) { showMsg('Read-only: you are viewing another BDM\'s logbook', true); return; }
     for (let i = 0; i < rows.length; i++) { if (rows[i].dirty) await saveRow(i); }
-    const scope = { period, cycle };
-    if (isPrivileged && selectedBdmId) scope.bdm_id = selectedBdmId;
-    try { const r = await validateCarLogbook(scope); showMsg(r?.message || 'Validated'); loadAndMerge(); } catch (e) { showMsg(e.response?.data?.message || 'Validation failed', true); }
+    try { const r = await validateCarLogbook({ period, cycle }); showMsg(r?.message || 'Validated'); loadAndMerge(); } catch (e) { showMsg(e.response?.data?.message || 'Validation failed', true); }
   };
   const handleSubmit = async () => {
     if (!viewingSelf) { showMsg('Read-only: you are viewing another BDM\'s logbook', true); return; }
     for (let i = 0; i < rows.length; i++) { if (rows[i].dirty) await saveRow(i); }
-    const scope = { period, cycle };
-    if (isPrivileged && selectedBdmId) scope.bdm_id = selectedBdmId;
     try {
-      const r = await submitCarLogbook(scope);
+      const r = await submitCarLogbook({ period, cycle });
       if (r?.approval_pending) { showApprovalPending(r.message); }
       else showMsg(r?.message || 'Submitted');
       loadAndMerge();
@@ -499,6 +496,7 @@ export default function CarLogbook() {
   // POST /expenses/car-logbook/:id/fuel/:fuel_id/submit. Handle 202 (gateApproval
   // held in Approval Hub) the same way SMER per-diem override does.
   const handleSubmitFuel = async (rowIdx, fuelIdx) => {
+    if (!viewingSelf) { showMsg('Read-only: you are viewing another BDM\'s logbook', true); return; }
     const row = rows[rowIdx];
     if (!row?._id) { showMsg('Save the day first before submitting fuel for approval', true); return; }
     if (row.dirty) { await saveRow(rowIdx); }
@@ -517,6 +515,7 @@ export default function CarLogbook() {
     }
   };
   const handleDelete = async (id, idx) => {
+    if (!viewingSelf) { showMsg('Read-only: you are viewing another BDM\'s logbook', true); return; }
     try {
       await deleteDraftCarLogbook(id);
       showMsg('Deleted');
@@ -730,7 +729,7 @@ export default function CarLogbook() {
                           {row.overconsumption_flag && <span style={{ marginLeft: 2, padding: '1px 4px', borderRadius: 4, fontSize: 8, color: '#dc2626', background: '#fef2f2', border: '1px solid #fca5a5' }}>OVER</span>}
                           {savingRow === idx && <span style={{ marginLeft: 2, fontSize: 9, color: '#6b7280' }}>...</span>}
                           {row.dirty && savingRow !== idx && <span style={{ marginLeft: 2, fontSize: 9, color: '#d97706' }}>*</span>}
-                          {row.status === 'DRAFT' && row._id && (
+                          {row.status === 'DRAFT' && row._id && viewingSelf && (
                             <button onClick={() => handleDelete(row._id, idx)} title="Delete draft" style={{ marginLeft: 2, padding: '0 3px', fontSize: 9, borderRadius: 3, border: '1px solid #ef4444', color: '#ef4444', background: '#fff', cursor: 'pointer' }}>X</button>
                           )}
                           {row.status === 'POSTED' && isAdmin && (
