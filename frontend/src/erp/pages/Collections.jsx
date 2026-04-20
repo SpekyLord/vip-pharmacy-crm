@@ -14,6 +14,7 @@ import PresidentReverseModal from '../components/PresidentReverseModal';
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
 import RejectionBanner from '../components/RejectionBanner';
+import { useRejectionConfig } from '../hooks/useRejectionConfig';
 import { showError, showSuccess, showApprovalPending } from '../utils/errorToast';
 
 const STATUS_COLORS = {
@@ -80,6 +81,13 @@ export default function Collections() {
   const { hospitals } = useHospitals();
   const { hasSubPermission } = useErpSubAccess();
   const canPresidentReverse = hasSubPermission('accounting', 'reverse_posted');
+
+  // Lookup-driven rejection config (MODULE_REJECTION_CONFIG → COLLECTION).
+  // Drives which statuses still accept Validate / re-submit.
+  // Fallback preserves prior hardcoded behavior if the lookup is not yet seeded.
+  const { config: rejectionConfig } = useRejectionConfig('COLLECTION');
+  const editableStatuses = rejectionConfig?.editable_statuses || ['DRAFT', 'ERROR'];
+
   const [data, setData] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 0 });
   const [filters, setFilters] = useState({ status: '', hospital_id: '' });
@@ -202,7 +210,7 @@ export default function Collections() {
                       </div>
                     </td>
                     <td onClick={e => e.stopPropagation()} style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-                      {(c.status === 'DRAFT' || c.status === 'ERROR') && <button className="btn btn-sm btn-primary" onClick={() => handleValidate([c._id])}>Validate</button>}
+                      {editableStatuses.includes(c.status) && <button className="btn btn-sm btn-primary" onClick={() => handleValidate([c._id])}>Validate</button>}
                       {c.status === 'DRAFT' && <button className="btn btn-sm" style={{ border: '1px solid #ef4444', color: '#ef4444', background: '#fff' }} onClick={() => handleDeleteDraft(c._id)}>Del</button>}
                       {c.status === 'VALID' && <button className="btn btn-sm btn-success" onClick={() => handleSubmit(c._id)}>Submit</button>}
                       {c.status === 'POSTED' && isAdmin && <button className="btn btn-sm btn-warning" onClick={() => handleReopen(c._id)}>Re-open</button>}
@@ -257,7 +265,7 @@ export default function Collections() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
-                    {(c.status === 'DRAFT' || c.status === 'ERROR') && <button className="btn btn-sm btn-primary" onClick={() => handleValidate([c._id])}>Validate</button>}
+                    {editableStatuses.includes(c.status) && <button className="btn btn-sm btn-primary" onClick={() => handleValidate([c._id])}>Validate</button>}
                     {c.status === 'DRAFT' && <button className="btn btn-sm" style={{ border: '1px solid #ef4444', color: '#ef4444', background: '#fff' }} onClick={() => handleDeleteDraft(c._id)}>Del</button>}
                     {c.status === 'VALID' && <button className="btn btn-sm btn-success" onClick={() => handleSubmit(c._id)}>Submit</button>}
                     {c.status === 'POSTED' && isAdmin && <button className="btn btn-sm btn-warning" onClick={() => handleReopen(c._id)}>Re-open</button>}

@@ -34,6 +34,10 @@ export default function useInventory() {
     ...(warehouseId && { warehouse_id: warehouseId }),
   });
 
+  // Fix wrong batch_lot_no / expiry_date on stocks on hand. Narrow endpoint —
+  // quantities + costs are immutable here; use physical count for qty fixes.
+  const correctBatchMetadata = (payload) => api.patch('/inventory/batches/correct-metadata', payload);
+
   const getAlerts = (bdmId, warehouseId) => api.get('/inventory/alerts', {
     params: {
       ...(bdmId && { bdm_id: bdmId }),
@@ -43,6 +47,6 @@ export default function useInventory() {
 
   return {
     ...api,
-    getMyStock, getBatches, getLedger, getVariance, recordPhysicalCount, getAlerts
+    getMyStock, getBatches, getLedger, getVariance, recordPhysicalCount, correctBatchMetadata, getAlerts
   };
 }

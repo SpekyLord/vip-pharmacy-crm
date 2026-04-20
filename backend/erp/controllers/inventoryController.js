@@ -1092,6 +1092,181 @@ const seedStockOnHand = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * PATCH /batches/correct-metadata — Fix typo in batch_lot_no / expiry_date
+ * across every InventoryLedger row (IN/OUT/ADJUSTMENT) and the originating
+ * GRN line for a batch the user already sees on stocks-on-hand.
+ *
+ * Gated by erpSubAccessCheck('inventory', 'edit_batch_metadata'). President
+ * bypasses at middleware level. Non-privileged callers are hard-scoped to
+ * their own bdm_id so they cannot rewrite another BDM's batches.
+ *
+ * Deliberately narrow: only batch_lot_no and expiry_date are editable.
+ * Quantities, costs, and journal entries are untouched (no GL impact) —
+ * physical count / President-Reverse GRN remain the paths for qty fixes.
+ */
+const correctBatchMetadata = catchAsync(async (req, res) => {
+  const {
+    product_id,
+    old_batch_lot_no,
+    new_batch_lot_no,
+    new_expiry_date,
+    warehouse_id,
+    bdm_id: bodyBdmId,
+    reason
+  } = req.body;
+
+  // Validation
+  if (!product_id || !mongoose.isValidObjectId(product_id)) {
+    return res.status(400).json({ success: false, message: 'product_id is required and must be a valid id' });
+  }
+  if (!old_batch_lot_no || !String(old_batch_lot_no).trim()) {
+    return res.status(400).json({ success: false, message: 'old_batch_lot_no is required' });
+  }
+  if (!reason || !String(reason).trim()) {
+    return res.status(400).json({ success: false, message: 'reason is required for audit' });
+  }
+  const hasNewBatch = new_batch_lot_no != null && String(new_batch_lot_no).trim() !== '';
+  const hasNewExpiry = new_expiry_date != null && String(new_expiry_date).trim() !== '';
+  if (!hasNewBatch && !hasNewExpiry) {
+    return res.status(400).json({ success: false, message: 'Provide new_batch_lot_no and/or new_expiry_date' });
+  }
+
+  const normalizedOld = cleanBatchNo(old_batch_lot_no);
+  const normalizedNew = hasNewBatch ? cleanBatchNo(new_batch_lot_no) : null;
+  const parsedExpiry = hasNewExpiry ? new Date(new_expiry_date) : null;
+  if (hasNewExpiry && isNaN(parsedExpiry?.getTime())) {
+    return res.status(400).json({ success: false, message: 'new_expiry_date is not a valid date' });
+  }
+
+  // Scope — privileged users may target any bdm (entity-wide if omitted);
+  // non-privileged users are pinned to their own bdm_id.
+  const privileged = req.isAdmin || req.isFinance || req.isPresident;
+  const effectiveBdmId = privileged ? (bodyBdmId || null) : req.bdmId;
+
+  const scopeFilter = {
+    entity_id: new mongoose.Types.ObjectId(req.entityId),
+    product_id: new mongoose.Types.ObjectId(product_id),
+    batch_lot_no: normalizedOld,
+  };
+  if (warehouse_id) {
+    if (!mongoose.isValidObjectId(warehouse_id)) {
+      return res.status(400).json({ success: false, message: 'warehouse_id is not a valid id' });
+    }
+    scopeFilter.warehouse_id = new mongoose.Types.ObjectId(warehouse_id);
+  } else if (effectiveBdmId) {
+    if (!mongoose.isValidObjectId(effectiveBdmId)) {
+      return res.status(400).json({ success: false, message: 'bdm_id is not a valid id' });
+    }
+    scopeFilter.bdm_id = new mongoose.Types.ObjectId(effectiveBdmId);
+  }
+
+  // Confirm at least one matching ledger row exists and capture old expiry for audit
+  const existing = await InventoryLedger.findOne(scopeFilter).select('batch_lot_no expiry_date').lean();
+  if (!existing) {
+    return res.status(404).json({ success: false, message: 'Batch not found in the current scope' });
+  }
+
+  // No-op detection — reject so the caller understands nothing changed
+  const renaming = hasNewBatch && normalizedNew && normalizedNew !== normalizedOld;
+  const expiryMs = parsedExpiry ? parsedExpiry.getTime() : null;
+  const existingExpiryMs = existing.expiry_date ? new Date(existing.expiry_date).getTime() : null;
+  const reExpiring = hasNewExpiry && expiryMs !== existingExpiryMs;
+  if (!renaming && !reExpiring) {
+    return res.status(400).json({ success: false, message: 'No changes requested (values match existing batch)' });
+  }
+
+  // Collision check: renaming into an already-used batch label in the same scope
+  // would cause FEFO to merge two physically distinct lots — block it.
+  if (renaming) {
+    const collisionFilter = { ...scopeFilter, batch_lot_no: normalizedNew };
+    const collision = await InventoryLedger.findOne(collisionFilter).select('_id').lean();
+    if (collision) {
+      return res.status(409).json({
+        success: false,
+        message: `Cannot rename: batch "${normalizedNew}" already exists for this product in the same scope. Two distinct batches cannot share a label.`
+      });
+    }
+  }
+
+  // Build the $set patch — only the fields actually changing
+  const patch = {};
+  if (renaming) patch.batch_lot_no = normalizedNew;
+  if (reExpiring) patch.expiry_date = parsedExpiry;
+
+  // Rewrite all ledger rows matching the scope. updateMany bypasses the
+  // pre('save') immutability hook by design — this endpoint is the sanctioned
+  // path for metadata corrections.
+  const ledgerResult = await InventoryLedger.updateMany(scopeFilter, { $set: patch });
+
+  // Patch the originating GRN line items for historical display consistency.
+  // arrayFilters match the specific line by product_id + old batch_lot_no.
+  // Entity-scoped. No status restriction — applies to PENDING and APPROVED alike.
+  const grnArrayFilter = {
+    'elem.product_id': new mongoose.Types.ObjectId(product_id),
+    'elem.batch_lot_no': normalizedOld,
+  };
+  const grnSet = {};
+  if (renaming) grnSet['line_items.$[elem].batch_lot_no'] = normalizedNew;
+  if (reExpiring) grnSet['line_items.$[elem].expiry_date'] = parsedExpiry;
+
+  const grnFilter = {
+    entity_id: new mongoose.Types.ObjectId(req.entityId),
+    'line_items.product_id': new mongoose.Types.ObjectId(product_id),
+    'line_items.batch_lot_no': normalizedOld,
+  };
+  if (warehouse_id) grnFilter.warehouse_id = new mongoose.Types.ObjectId(warehouse_id);
+  if (!privileged && req.bdmId) grnFilter.bdm_id = new mongoose.Types.ObjectId(req.bdmId);
+
+  const grnResult = await GrnEntry.updateMany(grnFilter, { $set: grnSet }, { arrayFilters: [grnArrayFilter] });
+
+  // Audit log — one entry per field changed. target_ref = "{product_id}:{old_batch}"
+  // so the trail is queryable by batch identity even after the rename.
+  const targetRef = `${product_id}:${normalizedOld}`;
+  if (renaming) {
+    await ErpAuditLog.logChange({
+      entity_id: req.entityId,
+      bdm_id: effectiveBdmId || req.bdmId,
+      log_type: 'ITEM_CHANGE',
+      target_ref: targetRef,
+      target_model: 'InventoryLedger',
+      field_changed: 'batch_lot_no',
+      old_value: normalizedOld,
+      new_value: normalizedNew,
+      changed_by: req.user._id,
+      note: `Batch metadata correction: ${reason}`,
+    });
+  }
+  if (reExpiring) {
+    await ErpAuditLog.logChange({
+      entity_id: req.entityId,
+      bdm_id: effectiveBdmId || req.bdmId,
+      log_type: 'ITEM_CHANGE',
+      target_ref: targetRef,
+      target_model: 'InventoryLedger',
+      field_changed: 'expiry_date',
+      old_value: existing.expiry_date,
+      new_value: parsedExpiry,
+      changed_by: req.user._id,
+      note: `Batch metadata correction: ${reason}`,
+    });
+  }
+
+  res.json({
+    success: true,
+    message: 'Batch metadata corrected',
+    data: {
+      ledger_rows_updated: ledgerResult.modifiedCount || 0,
+      grn_docs_updated: grnResult.modifiedCount || 0,
+      old: { batch_lot_no: normalizedOld, expiry_date: existing.expiry_date },
+      new: {
+        batch_lot_no: renaming ? normalizedNew : normalizedOld,
+        expiry_date: reExpiring ? parsedExpiry : existing.expiry_date,
+      },
+    },
+  });
+});
+
 // President-only: SAP Storno reversal of an APPROVED GRN. PENDING/REJECTED rows
 // are hard-deleted. Blocks if downstream POSTED docs (Sales, IC Transfers) have
 // already consumed batches received via this GRN. See documentReversalService.js.
@@ -1104,6 +1279,7 @@ module.exports = {
   getLedger,
   getVariance,
   recordPhysicalCount,
+  correctBatchMetadata,
   createGrn,
   approveGrn,
   getGrnList,

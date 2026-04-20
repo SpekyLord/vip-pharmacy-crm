@@ -706,6 +706,12 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     if (salesHomePath !== '/erp/sales') {
       salesItems.push({ path: '/erp/sales', label: 'Sales Transactions', icon: FileText, isChild: true });
     }
+    // Opening AR Entry — historical (pre-go-live) CSI capture. Sub-permission gated
+    // (lookup-driven via ERP_SUB_PERMISSIONS.sales.opening_ar) so subscribers can
+    // hide it after cutover is complete without code changes.
+    if (hasSub('sales', 'opening_ar')) {
+      salesItems.push({ path: '/erp/sales/opening-ar', label: 'Opening AR', icon: FileInput, isChild: true });
+    }
     // Sub-permission gated — also visible to contractors with purchasing.credit_notes
     if (hasSub('sales', 'credit_notes') || hasSub('purchasing', 'credit_notes')) salesItems.push({ path: '/erp/credit-notes', label: 'Returns / CN', icon: RotateCcw });
     sections.push({

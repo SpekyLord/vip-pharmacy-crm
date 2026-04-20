@@ -6,6 +6,7 @@ import useExpenses from '../hooks/useExpenses';
 import useSettings from '../hooks/useSettings';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 import { useLookupOptions } from '../hooks/useLookups';
+import { useRejectionConfig } from '../hooks/useRejectionConfig';
 import WorkflowGuide from '../components/WorkflowGuide';
 import RejectionBanner from '../components/RejectionBanner';
 import { showError, showApprovalPending } from '../utils/errorToast';
@@ -139,6 +140,12 @@ export default function CarLogbook() {
   const { options: pmOpts } = useLookupOptions('PAYMENT_MODE_TYPE');
   const PAYMENT_MODES = pmOpts.map(o => o.code);
   const FUEL_TYPES = fuelTypeOpts.map(o => o.code);
+
+  // Lookup-driven rejection config (MODULE_REJECTION_CONFIG → CAR_LOGBOOK).
+  // Drives which statuses still accept edits. Fallback preserves prior hardcoded behavior
+  // if the lookup is not yet seeded for the current entity.
+  const { config: rejectionConfig } = useRejectionConfig('CAR_LOGBOOK');
+  const editableStatuses = rejectionConfig?.editable_statuses || ['DRAFT', 'ERROR'];
 
   const [rows, setRows] = useState([]);
   const [period, setPeriod] = useState(() => {
@@ -324,7 +331,7 @@ export default function CarLogbook() {
 
     setSavingRow(idx);
     try {
-      if (row._id && ['DRAFT', 'ERROR'].includes(row.status)) {
+      if (row._id && editableStatuses.includes(row.status)) {
         const res = await updateCarLogbook(row._id, data);
         const doc = res?.data;
         setRows(prev => {
@@ -459,7 +466,7 @@ export default function CarLogbook() {
 
   const inp = { padding: '2px 4px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 11 };
   const scanBtn = { padding: '1px 4px', borderRadius: 3, background: '#16a34a', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 9, fontWeight: 600 };
-  const isEditable = (row) => !row.status || ['DRAFT', 'ERROR'].includes(row.status);
+  const isEditable = (row) => !row.status || editableStatuses.includes(row.status);
 
   return (
     <div className="admin-page erp-page">

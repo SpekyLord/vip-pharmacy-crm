@@ -69,6 +69,7 @@ const MessageTemplatesPage = lazyRetry(() => import('./pages/admin/MessageTempla
 // ERP pages
 const ErpDashboard = lazyRetry(() => import('./erp/pages/ErpDashboard'));
 const SalesEntry = lazyRetry(() => import('./erp/pages/SalesEntry'));
+const OpeningArEntry = lazyRetry(() => import('./erp/pages/OpeningArEntry'));
 const SalesList = lazyRetry(() => import('./erp/pages/SalesList'));
 const MyStock = lazyRetry(() => import('./erp/pages/MyStock'));
 const GrnEntry = lazyRetry(() => import('./erp/pages/GrnEntry'));
@@ -493,6 +494,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.BDM_ADMIN} requiredErpModule="sales">
                 <SalesEntry />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/sales/opening-ar"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BDM_ADMIN} requiredErpModule="sales">
+                <OpeningArEntry />
               </ProtectedRoute>
             }
           />

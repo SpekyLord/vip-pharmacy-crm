@@ -9,6 +9,7 @@ import useSettings from '../hooks/useSettings';
 import useHospitals from '../hooks/useHospitals';
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
+import { useRejectionConfig } from '../hooks/useRejectionConfig';
 import WorkflowGuide from '../components/WorkflowGuide';
 import RejectionBanner from '../components/RejectionBanner';
 import { showError, showApprovalPending } from '../utils/errorToast';
@@ -134,6 +135,12 @@ export default function Smer() {
   const { settings } = useSettings();
   const { options: activityTypeOpts } = useLookupOptions('ACTIVITY_TYPE');
   const ACTIVITY_TYPES = activityTypeOpts.map(o => o.code);
+
+  // Lookup-driven rejection config (MODULE_REJECTION_CONFIG → SMER).
+  // Drives which statuses can still be edited / re-submitted by the contractor.
+  // Fallback preserves prior hardcoded behavior if the lookup is not yet seeded.
+  const { config: rejectionConfig } = useRejectionConfig('SMER');
+  const editableStatuses = rejectionConfig?.editable_statuses || ['DRAFT', 'ERROR'];
 
   const [smers, setSmers] = useState([]);
   const [editingSmer, setEditingSmer] = useState(null);
@@ -645,7 +652,7 @@ export default function Smer() {
                         <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 12, color: '#fff', background: STATUS_COLORS[s.status] || '#6b7280' }}>{s.status}</span>
                       </td>
                       <td style={{ padding: 8, textAlign: 'center' }}>
-                        {['DRAFT', 'ERROR'].includes(s.status) && (
+                        {editableStatuses.includes(s.status) && (
                           <button onClick={() => handleEditSmer(s)} style={{ marginRight: 4, padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', cursor: 'pointer' }}>Edit</button>
                         )}
                         {s.status === 'DRAFT' && (

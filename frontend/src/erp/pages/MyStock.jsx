@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, Fragment } from 'react';
+import { useState, useEffect, useCallback, useMemo, Fragment } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -9,6 +9,30 @@ import WarehousePicker from '../components/WarehousePicker';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { showError, showSuccess } from '../utils/errorToast';
+
+/**
+ * Mirror of backend erpSubAccessCheck('inventory','edit_batch_metadata'):
+ *   - president  → always
+ *   - admin w/o erp_access enabled → always (backward compat)
+ *   - explicit sub_permissions.inventory.edit_batch_metadata = true
+ *   - FULL module with NO truthy sub_permissions entries (fall-through)
+ *
+ * Keep in sync with backend/erp/middleware/erpAccessCheck.js erpSubAccessCheck.
+ */
+function canEditBatchMetadata(user) {
+  if (!user) return false;
+  if (user.role === 'president') return true;
+  const acc = user.erp_access;
+  if (user.role === 'admin' && (!acc || !acc.enabled)) return true;
+  if (!acc || !acc.enabled) return false;
+  const modLevel = acc.modules?.inventory;
+  if (modLevel !== 'FULL' && modLevel !== 'VIEW') return false;
+  const subs = acc.sub_permissions?.inventory;
+  const truthyCount = subs ? Object.values(subs).filter(Boolean).length : 0;
+  if (subs && truthyCount > 0) return !!subs.edit_batch_metadata;
+  return modLevel === 'FULL';
+}
 
 const TABS = ['Stock on Hand', 'Transaction Ledger', 'Variance Report', 'Alerts'];
 
@@ -87,6 +111,16 @@ const pageStyles = `
   .pc-variance.zero { color: var(--erp-muted); }
   .pc-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
   .pc-summary { margin-top: 12px; padding: 12px; background: var(--erp-bg); border-radius: 8px; font-size: 13px; color: var(--erp-text); }
+
+  /* Batch-metadata edit button + modal */
+  .batch-edit-btn { background: none; border: 1px solid var(--erp-border); color: var(--erp-muted); border-radius: 6px; padding: 2px 8px; font-size: 11px; cursor: pointer; margin-left: 6px; }
+  .batch-edit-btn:hover { background: var(--erp-accent-soft, #e8efff); color: var(--erp-accent, #1e5eff); border-color: var(--erp-accent, #1e5eff); }
+  .bme-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+  .bme-field label { font-size: 12px; font-weight: 600; color: var(--erp-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .bme-field input, .bme-field textarea { padding: 8px 10px; border: 1px solid var(--erp-border); border-radius: 6px; font-size: 13px; font-family: inherit; }
+  .bme-field input:focus, .bme-field textarea:focus { outline: none; border-color: var(--erp-accent); }
+  .bme-hint { font-size: 11px; color: var(--erp-muted); margin-top: 2px; }
+  .bme-warning { background: #fffbeb; border: 1px solid #fbbf24; color: #92400e; padding: 10px 12px; border-radius: 8px; font-size: 12px; margin-bottom: 12px; }
 
   @media (max-width: 768px) {
     .summary-bar { grid-template-columns: repeat(2, 1fr); }
@@ -264,6 +298,141 @@ function PhysicalCountModal({ open, onClose, stockData, onSubmit, submitting }) 
   );
 }
 
+// --- Batch Metadata Edit Modal ---
+// Fixes wrong batch_lot_no or expiry_date typos on existing stock. Does NOT
+// change quantities or cost (physical count + President-Reverse cover those).
+function BatchMetadataEditModal({ open, target, onClose, onSubmit, submitting }) {
+  const [batchLotNo, setBatchLotNo] = useState('');
+  const [expiryMonth, setExpiryMonth] = useState('');
+  const [reason, setReason] = useState('');
+
+  useEffect(() => {
+    if (!open || !target) return;
+    setBatchLotNo(target.batch_lot_no || '');
+    // Pre-fill <input type="month"> with YYYY-MM from the existing expiry
+    if (target.expiry_date) {
+      const d = new Date(target.expiry_date);
+      if (!isNaN(d.getTime())) {
+        const yy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        setExpiryMonth(`${yy}-${mm}`);
+      } else {
+        setExpiryMonth('');
+      }
+    } else {
+      setExpiryMonth('');
+    }
+    setReason('');
+  }, [open, target]);
+
+  if (!open || !target) return null;
+
+  const originalMonth = (() => {
+    if (!target.expiry_date) return '';
+    const d = new Date(target.expiry_date);
+    if (isNaN(d.getTime())) return '';
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  })();
+
+  const normalizedOriginalBatch = String(target.batch_lot_no || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const normalizedNewBatch = String(batchLotNo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const batchChanged = normalizedNewBatch !== normalizedOriginalBatch && normalizedNewBatch.length > 0;
+  const expiryChanged = expiryMonth && expiryMonth !== originalMonth;
+  const canSubmit = (batchChanged || expiryChanged) && reason.trim().length > 0 && !submitting;
+
+  const handleSubmit = () => {
+    if (!canSubmit) return;
+    const payload = {
+      product_id: target.product_id,
+      old_batch_lot_no: target.batch_lot_no,
+      reason: reason.trim(),
+    };
+    if (batchChanged) payload.new_batch_lot_no = batchLotNo;
+    if (expiryChanged) {
+      // Convert YYYY-MM → first-of-month ISO to match how FIFO stores expiry
+      payload.new_expiry_date = `${expiryMonth}-01`;
+    }
+    if (target.warehouse_id) payload.warehouse_id = target.warehouse_id;
+    onSubmit(payload);
+  };
+
+  return (
+    <div className="pc-modal-overlay" onClick={onClose}>
+      <div className="pc-modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+        <button className="close-btn" onClick={onClose}>&times;</button>
+        <h2>Correct Batch Metadata</h2>
+        <p className="subtitle">
+          Fix a wrong batch number or expiry date on stock already on hand.
+          Quantity is not affected — use Physical Count to adjust quantity.
+        </p>
+
+        <div className="bme-warning">
+          <strong>Audited action.</strong> This rewrites every ledger row and the source GRN line for this batch.
+          The change is logged with your name, reason, and before/after values.
+        </div>
+
+        <div className="bme-field">
+          <label>Product</label>
+          <div style={{ fontSize: 13, color: 'var(--erp-text)', fontWeight: 600 }}>
+            {target.brand_name || 'Unknown'}
+            {target.dosage && <span style={{ color: 'var(--erp-muted)', fontWeight: 400, marginLeft: 6 }}>{target.dosage}</span>}
+          </div>
+        </div>
+
+        <div className="bme-field">
+          <label>Batch / Lot No.</label>
+          <input
+            type="text"
+            value={batchLotNo}
+            onChange={e => setBatchLotNo(e.target.value)}
+            placeholder="e.g. ABC12345"
+          />
+          <span className="bme-hint">
+            Letters and digits only. Dashes/spaces are stripped on save (so "B-1234" becomes "B1234").
+            Original: <strong>{target.batch_lot_no}</strong>
+          </span>
+        </div>
+
+        <div className="bme-field">
+          <label>Expiry (month / year)</label>
+          <input
+            type="month"
+            value={expiryMonth}
+            onChange={e => setExpiryMonth(e.target.value)}
+          />
+          <span className="bme-hint">
+            FIFO tracks expiry at month granularity.
+            Original: <strong>{originalMonth || 'n/a'}</strong>
+          </span>
+        </div>
+
+        <div className="bme-field">
+          <label>Reason (required — audit trail)</label>
+          <textarea
+            rows={2}
+            value={reason}
+            onChange={e => setReason(e.target.value)}
+            placeholder="e.g. GRN typo caught during cycle count — original receipt shows ABC12345, not ABC1234S"
+          />
+        </div>
+
+        <div className="pc-actions">
+          <button
+            className="btn"
+            style={{ background: 'transparent', border: '1px solid var(--erp-border)', color: 'var(--erp-text)' }}
+            onClick={onClose}
+          >
+            Cancel
+          </button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={!canSubmit}>
+            {submitting ? 'Saving...' : 'Save Correction'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function MyStock() {
   const { user } = useAuth();
   const inventory = useInventory();
@@ -283,6 +452,10 @@ export default function MyStock() {
   const [pcSubmitting, setPcSubmitting] = useState(false);
   const [alertData, setAlertData] = useState({ expiry_alerts: [], reorder_alerts: [] });
   const [, setAlertSummary] = useState({});
+  const [bmeTarget, setBmeTarget] = useState(null); // { product_id, batch_lot_no, expiry_date, brand_name, dosage, warehouse_id }
+  const [bmeSubmitting, setBmeSubmitting] = useState(false);
+
+  const canEditBatch = useMemo(() => canEditBatchMetadata(user), [user]);
 
   // Load stock when warehouse changes
   useEffect(() => {
@@ -370,6 +543,37 @@ export default function MyStock() {
       console.error('Physical count error:', err);
     } finally { setPcSubmitting(false); }
   }, [inventory, activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const openBatchEdit = useCallback((productItem, batch) => {
+    setBmeTarget({
+      product_id: productItem.product_id,
+      brand_name: productItem.product?.brand_name || '',
+      dosage: productItem.product?.dosage_strength || '',
+      batch_lot_no: batch.batch_lot_no,
+      expiry_date: batch.expiry_date,
+      warehouse_id: warehouseId || undefined,
+    });
+  }, [warehouseId]);
+
+  const handleBatchEditSubmit = useCallback(async (payload) => {
+    setBmeSubmitting(true);
+    try {
+      const res = await inventory.correctBatchMetadata(payload);
+      showSuccess(res?.message || 'Batch metadata corrected');
+      setBmeTarget(null);
+      // Clear ledger/variance caches — the batch string or expiry may have changed
+      setLedgerEntries([]);
+      setVarianceData([]);
+      await loadStock();
+      if (activeTab === 1 && ledgerProduct) await loadLedger(ledgerProduct);
+      if (activeTab === 2) await loadVariance();
+      if (activeTab === 3) await loadAlerts();
+    } catch (err) {
+      showError(err, 'Could not correct batch metadata');
+    } finally {
+      setBmeSubmitting(false);
+    }
+  }, [inventory, activeTab, ledgerProduct]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="admin-page erp-page mystock-page">
@@ -459,7 +663,19 @@ export default function MyStock() {
                     </tr>
                     {expandedProduct === item.product_id && item.batches?.map((batch, bi) => (
                       <tr key={`${item.product_id}-${bi}`} className="batch-row">
-                        <td data-label="Batch" colSpan={2}>Batch: <strong>{batch.batch_lot_no}</strong></td>
+                        <td data-label="Batch" colSpan={2}>
+                          Batch: <strong>{batch.batch_lot_no}</strong>
+                          {canEditBatch && (
+                            <button
+                              type="button"
+                              className="batch-edit-btn"
+                              title="Fix wrong batch number or expiry (metadata only — qty unchanged)"
+                              onClick={e => { e.stopPropagation(); openBatchEdit(item, batch); }}
+                            >
+                              Edit
+                            </button>
+                          )}
+                        </td>
                         <td data-label="Qty">{batch.available_qty}</td>
                         <td data-label=""></td>
                         <td data-label="Expiry">
@@ -641,6 +857,14 @@ export default function MyStock() {
         stockData={stockData}
         onSubmit={handlePhysicalCountSubmit}
         submitting={pcSubmitting}
+      />
+      {/* Batch Metadata Edit Modal */}
+      <BatchMetadataEditModal
+        open={!!bmeTarget}
+        target={bmeTarget}
+        onClose={() => setBmeTarget(null)}
+        onSubmit={handleBatchEditSubmit}
+        submitting={bmeSubmitting}
       />
     </div>
   );

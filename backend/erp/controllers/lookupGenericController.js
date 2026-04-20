@@ -495,6 +495,7 @@ const SEED_DEFAULTS = {
     // Sales
     { code: 'SALES__REOPEN', label: 'Re-open Posted Sales', metadata: { module: 'sales', key: 'reopen', sort_order: 1 } },
     { code: 'SALES__CREDIT_NOTES', label: 'Returns / Credit Notes', metadata: { module: 'sales', key: 'credit_notes', sort_order: 2 } },
+    { code: 'SALES__OPENING_AR', label: 'Opening AR Entry (pre-go-live CSIs)', metadata: { module: 'sales', key: 'opening_ar', sort_order: 3 } },
     // Collections
     { code: 'COLLECTIONS__REOPEN', label: 'Re-open Posted Collections', metadata: { module: 'collections', key: 'reopen', sort_order: 1 } },
     // Expenses
