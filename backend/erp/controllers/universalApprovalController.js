@@ -41,11 +41,80 @@ const TYPE_TO_MODULE = {
   undertaking: 'UNDERTAKING',
 };
 
+// Phase G4.1 follow-up (April 2026) — Auto-post on orphan approval path.
+//
+// When an ApprovalRequest has no module sibling in the Hub (the raw module
+// query missed the underlying doc), approving via type='approval_request'
+// previously only flipped the request to APPROVED and left the source doc
+// stuck in VALID. The BDM had to re-submit to close the loop.
+//
+// This map lets the `approval_request` handler re-enter the module's own
+// handler on final approval so the doc moves VALID → POSTED in the same
+// round-trip. Scope is limited to Group A handlers that own a `postSingleXxx`
+// helper with its own VALID-status guard — safe to invoke idempotently.
+//
+// Intentionally excluded:
+//   - Group B (PURCHASING, JOURNAL, BANKING, IC_TRANSFER, PETTY_CASH,
+//     SALES_GOAL_PLAN, INCENTIVE_PAYOUT) — approve path is consumed by each
+//     module's controller on next call via isFullyApproved(); no uniform
+//     post hook exists in this handler yet.
+//   - Multi-step state machines (payslip, kpi_rating, income_report) —
+//     review/approve/credit semantics require explicit human acknowledgement
+//     between steps.
+//   - GRN / deduction_schedule / undertaking — the request IS the approval
+//     target (no separate underlying doc to post).
+const MODULE_AUTO_POST = {
+  SMER:        { type: 'smer_entry',    action: 'post' },
+  EXPENSES:    { type: 'expense_entry', action: 'post' },
+  PRF_CALF:    { type: 'prf_calf',      action: 'post' },
+  SALES:       { type: 'sales_line',    action: 'post' },
+  COLLECTION:  { type: 'collection',    action: 'post' },
+  CAR_LOGBOOK: { type: 'car_logbook',   action: 'post' },
+  CREDIT_NOTE: { type: 'credit_note',   action: 'post' },
+};
+
 // Module-specific approval handlers (lazy-loaded to avoid circular deps)
 const approvalHandlers = {
   approval_request: async (id, action, userId, reason) => {
     const { processDecision } = require('../services/approvalService');
-    return processDecision(id, action === 'approve' ? 'APPROVED' : 'REJECTED', userId, reason);
+    const result = await processDecision(
+      id,
+      action === 'approve' ? 'APPROVED' : 'REJECTED',
+      userId,
+      reason
+    );
+
+    // Phase G4.1 follow-up — Auto-post on orphan approval path.
+    // Fire the module's own handler on final APPROVE (no escalation queued)
+    // so the BDM doesn't have to re-submit. Failure is logged, not thrown:
+    // the approval decision is already persisted and must stand. If post
+    // fails (e.g. doc already POSTED via sibling race, CALF not yet posted),
+    // the BDM fixes the prerequisite and resubmits.
+    if (
+      action === 'approve' &&
+      result?.request?.status === 'APPROVED' &&
+      !result.nextLevel
+    ) {
+      const req = result.request;
+      const autoPost = MODULE_AUTO_POST[req.module];
+      if (autoPost && req.doc_id && approvalHandlers[autoPost.type]) {
+        try {
+          await approvalHandlers[autoPost.type](
+            req.doc_id,
+            autoPost.action,
+            userId,
+            reason
+          );
+        } catch (err) {
+          console.error(
+            `Auto-post on orphan approval failed (module=${req.module}, doc_id=${req.doc_id}):`,
+            err.message
+          );
+        }
+      }
+    }
+
+    return result;
   },
 
   perdiem_override: async (id, action, userId, reason) => {
