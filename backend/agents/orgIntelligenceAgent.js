@@ -15,6 +15,7 @@ const AgentRun = require('../erp/models/AgentRun');
 const MessageInbox = require('../models/MessageInbox');
 const User = require('../models/User');
 const { ROLES } = require('../constants/roles');
+const { getParentEntityIds } = require('../erp/utils/parentEntityResolver');
 
 function currentPeriod() {
   const now = new Date();
@@ -134,15 +135,15 @@ Keep it concise, specific, and actionable. Use real names and numbers from the d
 
     const digest = response.content[0]?.text || 'Unable to generate digest.';
 
-    // Send message to President.
-    // Phase G9.R2 — also pull entity_id so the row is properly scoped in the
-    // unified inbox; folder=AI_AGENT_REPORTS surfaces it under "AI Agents".
-    // Cross-entity org-intelligence digest goes to each president scoped to
-    // their own primary entity (so list endpoints filtered by entity still
-    // see it). Presidents without entity_id get null — visible to them via
-    // cross-entity privilege.
-    const presidents = await User.find({ role: ROLES.PRESIDENT })
-      .select('_id entity_id entity_ids').lean();
+    // Send message to parent-entity presidents only. The org-intelligence
+    // digest is a cross-entity analysis (VIP + all subsidiaries) intended
+    // for company owners, not for subsidiary presidents who should only see
+    // their own subsidiary's data.
+    const parentEntityIds = await getParentEntityIds();
+    const presidents = await User.find({
+      role: ROLES.PRESIDENT,
+      entity_id: { $in: parentEntityIds },
+    }).select('_id entity_id entity_ids').lean();
     const messageIds = [];
 
     for (const pres of presidents) {

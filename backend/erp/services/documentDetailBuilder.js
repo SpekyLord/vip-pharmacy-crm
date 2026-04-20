@@ -572,6 +572,44 @@ function buildPurchasingDetails(item) {
 }
 
 /**
+ * CREDIT_NOTE — product return credit note (Phase 31R).
+ */
+function buildCreditNoteDetails(item) {
+  return {
+    cn_number: item.cn_number || null,
+    cn_date: item.cn_date,
+    status: item.status,
+    hospital: item.hospital_id?.hospital_name || null,
+    customer: item.customer_id?.customer_name || null,
+    original_doc_ref: item.original_doc_ref || null,
+    original_sale_id: item.original_sale_id || null,
+    credit_total: item.credit_total,
+    total_vat: item.total_vat,
+    total_net_of_vat: item.total_net_of_vat,
+    _warehouse_id: item.warehouse_id?._id || item.warehouse_id,
+    _bdm_id: item.bdm_id?._id || item.bdm_id,
+    line_items: (item.line_items || []).map(li => ({
+      product_id: li.product_id,
+      item_key: li.item_key,
+      batch_lot_no: li.batch_lot_no,
+      expiry_date: li.expiry_date,
+      qty: li.qty,
+      unit: li.unit,
+      unit_price: li.unit_price,
+      line_total: li.line_total,
+      return_reason: li.return_reason,
+      return_condition: li.return_condition,
+      notes: li.notes || null,
+    })),
+    photo_urls: item.photo_urls || [],
+    notes: item.notes || null,
+    posted_at: item.posted_at || null,
+    posted_by: item.posted_by?.name || null,
+    validation_errors: item.validation_errors || [],
+  };
+}
+
+/**
  * PETTY_CASH — disbursement or deposit pending fund admin's approval.
  */
 function buildPettyCashDetails(item) {
@@ -632,6 +670,8 @@ const DETAIL_BUILDERS = {
   BANKING:            buildBankingDetails,
   PURCHASING:         buildPurchasingDetails,
   PETTY_CASH:         buildPettyCashDetails,
+  // Phase 31R
+  CREDIT_NOTE:        buildCreditNoteDetails,
 };
 
 /**
@@ -662,6 +702,12 @@ const REVERSAL_DOC_TYPE_TO_MODULE = {
   PAYSLIP:              'PAYROLL',
   PETTY_CASH_TXN:       'PETTY_CASH',
   JOURNAL_ENTRY:        'JOURNAL',
+  // Phase 31R — reuse existing builders where shape is identical
+  SMER_ENTRY:           'SMER',            // buildSmerDetails
+  CAR_LOGBOOK:          'CAR_LOGBOOK',     // buildCarLogbookDetails
+  SUPPLIER_INVOICE:     'PURCHASING',      // buildPurchasingDetails
+  CREDIT_NOTE:          'CREDIT_NOTE',     // buildCreditNoteDetails (new)
+  IC_SETTLEMENT:        'IC_TRANSFER',     // buildIcTransferDetails branches on item.cr_no
 };
 
 module.exports = {

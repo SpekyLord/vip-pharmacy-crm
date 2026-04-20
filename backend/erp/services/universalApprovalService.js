@@ -343,6 +343,46 @@ const MODULE_QUERIES = [
     // Roles: lookup-driven via MODULE_DEFAULT_ROLES
   },
   {
+    // Phase 31R follow-up — Credit Note (product returns) pending-approval surface.
+    // Native pattern (mirrors SMER): query CreditNote.status='VALID' directly so the
+    // approver sees the actual document, not an ApprovalRequest stub. gateApproval
+    // on submit uses module='CREDIT_NOTE' so MODULE_DEFAULT_ROLES is consulted; the
+    // level-0 ApprovalRequest that's created when a non-authorized BDM submits is
+    // excluded by the APPROVAL_REQUEST query filter (`level: { $gt: 0 }`) — so this
+    // surface is the single, non-duplicated view for approvers.
+    module: 'CREDIT_NOTE',
+    label: 'Credit Notes / Returns',
+    sub_key: 'approve_sales',
+    query: async (entityId) => {
+      const CreditNote = getModel('CreditNote');
+      if (!CreditNote) return [];
+      const items = await CreditNote.find({ entity_id: entityId, status: 'VALID' })
+        .populate('bdm_id', 'name email')
+        .populate('hospital_id', 'hospital_name')
+        .populate('customer_id', 'customer_name')
+        .populate('warehouse_id', 'warehouse_name warehouse_code')
+        .sort({ createdAt: -1 })
+        .lean();
+      return items.map(item => ({
+        id: `CREDIT_NOTE:${item._id}`,
+        module: 'CREDIT_NOTE',
+        doc_type: 'CREDIT_NOTE',
+        doc_id: item._id,
+        doc_ref: item.cn_number || `CN-${String(item._id).slice(-6)}`,
+        description: `${item.bdm_id?.name || 'BDM'} — ${item.cn_number || ''} — Return from ${(item.hospital_id?.hospital_name || item.customer_id?.customer_name || 'Customer')} — ₱${(item.credit_total || 0).toLocaleString()}`,
+        amount: item.credit_total || 0,
+        submitted_by: item.bdm_id?.name || 'Unknown',
+        submitted_at: item.createdAt,
+        status: 'PENDING_POST',
+        current_action: 'Post',
+        action_key: 'POST',
+        approve_data: { type: 'credit_note', id: item._id, action: 'post' },
+        details: buildDocumentDetails('CREDIT_NOTE', item),
+      }));
+    },
+    // Roles: lookup-driven via MODULE_DEFAULT_ROLES['CREDIT_NOTE']
+  },
+  {
     module: 'CAR_LOGBOOK',
     label: 'Car Logbook',
     sub_key: 'approve_expenses',
@@ -772,6 +812,12 @@ const MODULE_TO_SUB_KEY = {
   INVENTORY:        'approve_inventory',
   SMER:             'approve_expenses',
   CAR_LOGBOOK:      'approve_expenses',
+  // Phase 31R follow-up — Credit Note shares the sales approve sub-permission.
+  // Adding a dedicated `approve_credit_notes` sub-key would be subscription-cleaner,
+  // but reusing `approve_sales` avoids a second Access Template grant for the same
+  // commercial-ops decision (return = reverse of a sale). Subscribers who want to
+  // separate the two can add a new ERP_SUB_PERMISSION lookup row + remap here.
+  CREDIT_NOTE:      'approve_sales',
   EXPENSES:         'approve_expenses',
   PRF_CALF:         'approve_expenses',
   PURCHASING:       'approve_purchasing',

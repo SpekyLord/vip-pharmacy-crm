@@ -18,6 +18,8 @@ const TYPE_TO_MODULE = {
   grn: 'INVENTORY',
   smer_entry: 'SMER',
   car_logbook: 'CAR_LOGBOOK',
+  // Phase 31R follow-up — Credit Note approval-hub routing
+  credit_note: 'CREDIT_NOTE',
   expense_entry: 'EXPENSES',
   prf_calf: 'PRF_CALF',
   payslip: 'PAYROLL',
@@ -310,6 +312,26 @@ const approvalHandlers = {
     return doc;
   },
 
+  // Phase 31R follow-up — Credit Note (product return) approval handler.
+  // Mirrors smer_entry / car_logbook / expense_entry: approver posts one CN via
+  // the extracted `postSingleCreditNote` helper (which handles event+inventory+JE);
+  // reject flips status to ERROR so the submitter can edit and resubmit.
+  credit_note: async (id, action, userId, reason) => {
+    const CreditNote = require('../models/CreditNote');
+    const doc = await CreditNote.findById(id);
+    if (!doc) throw new Error('Credit note not found');
+    if (doc.status !== 'VALID') throw new Error('Credit note not in VALID status');
+    if (action === 'post') {
+      const { postSingleCreditNote } = require('./creditNoteController');
+      await postSingleCreditNote(doc, userId);
+    } else if (action === 'reject') {
+      doc.status = 'ERROR';
+      doc.validation_errors = [reason];
+      await doc.save();
+    }
+    return doc;
+  },
+
   // ── Phase G6.7 — Group B reject handlers ──
   // Group B modules are routed through `ApprovalRequest` (see universalApprovalService
   // `buildGapModulePendingItems`). The Approval Hub passes `id = ApprovalRequest._id` here
@@ -541,6 +563,7 @@ const MODEL_MAP = {
   collection:         () => require('../models/Collection'),
   smer_entry:         () => require('../models/SmerEntry'),
   car_logbook:        () => require('../models/CarLogbookEntry'),
+  credit_note:        () => require('../models/CreditNote'),
   expense_entry:      () => require('../models/ExpenseEntry'),
   prf_calf:           () => require('../models/PrfCalf'),
   grn:                () => require('../models/GrnEntry'),
@@ -554,6 +577,7 @@ const EDITABLE_STATUSES = {
   collection:         ['VALID'],
   smer_entry:         ['VALID'],
   car_logbook:        ['VALID'],
+  credit_note:        ['VALID'],
   expense_entry:      ['VALID'],
   prf_calf:           ['VALID'],
   grn:                ['PENDING'],

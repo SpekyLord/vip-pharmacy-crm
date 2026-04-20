@@ -20,6 +20,7 @@
 const MessageInbox = require('../models/MessageInbox');
 const User = require('../models/User');
 const { ROLES, ROLE_SETS } = require('../constants/roles');
+const { getParentEntityIds } = require('../erp/utils/parentEntityResolver');
 
 // ═══════════════════════════════════════════
 // Channel: In-App Message (ready now)
@@ -187,7 +188,14 @@ async function sendMessenger({ recipientFbId, body }) {
  */
 async function resolveRecipients(recipientId) {
   if (recipientId === 'PRESIDENT') {
-    const users = await User.find({ role: { $in: ROLE_SETS.PRESIDENT_ROLES }, isActive: true }).lean();
+    // Only PARENT-entity presidents/CEOs — subsidiary presidents (e.g. BLW's
+    // Angeline) must not receive broadcasts meant for the company owner.
+    const parentEntityIds = await getParentEntityIds();
+    const users = await User.find({
+      role: { $in: ROLE_SETS.PRESIDENT_ROLES },
+      entity_id: { $in: parentEntityIds },
+      isActive: true,
+    }).lean();
     return users;
   }
   if (recipientId === 'ALL_BDMS') {

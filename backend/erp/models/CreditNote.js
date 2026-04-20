@@ -83,6 +83,7 @@ const creditNoteSchema = new mongoose.Schema({
 
   // Journal + inventory event refs
   event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
+  deletion_event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
 
   notes: { type: String, trim: true },
 

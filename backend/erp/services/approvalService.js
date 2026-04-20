@@ -20,6 +20,7 @@ const Lookup = require('../models/Lookup');
 const User = require('../../models/User');
 const PeopleMaster = require('../models/PeopleMaster');
 const { notifyApprovalRequest, notifyApprovalDecision } = require('./erpNotificationService');
+const { getParentEntityIds } = require('../utils/parentEntityResolver');
 
 // Module key aliases — controllers historically used inconsistent keys.
 // Normalize to the canonical lookup code so the gate finds the right MODULE_DEFAULT_ROLES entry.
@@ -200,6 +201,7 @@ const findMatchingRules = async (entityId, module, docType, amount) => {
 const resolveApprovers = async (rule, entityId, requesterId) => {
   switch (rule.approver_type) {
     case 'ROLE': {
+      const parentEntityIds = await getParentEntityIds();
       return User.find({
         role: { $in: rule.approver_roles },
         isActive: true,
@@ -207,7 +209,10 @@ const resolveApprovers = async (rule, entityId, requesterId) => {
         $or: [
           { entity_id: entityId },
           { entity_ids: entityId },
-          { role: { $in: ROLE_SETS.PRESIDENT_ROLES } },
+          // Cross-entity escape: only presidents/CEOs of a PARENT entity —
+          // subsidiary presidents are excluded so they see only their own
+          // subsidiary's approvals (matched via entity_id above).
+          { role: { $in: ROLE_SETS.PRESIDENT_ROLES }, entity_id: { $in: parentEntityIds } },
         ],
       }).select('_id email name role').lean();
     }
@@ -318,7 +323,11 @@ const checkApprovalRequired = async (opts) => {
         }],
       });
 
-      // Resolve approvers: users with allowed roles in this entity (or president — global).
+      // Resolve approvers: users with allowed roles in this entity, plus
+      // parent-entity presidents/CEOs (true cross-entity superusers).
+      // Subsidiary presidents are scoped to their own entity only — they
+      // must NOT receive approval requests for unrelated entities.
+      const parentEntityIds = await getParentEntityIds();
       const approvers = await User.find({
         role: { $in: allowedRoles },
         isActive: true,
@@ -326,7 +335,7 @@ const checkApprovalRequired = async (opts) => {
         $or: [
           { entity_id: opts.entityId },
           { entity_ids: opts.entityId },
-          { role: { $in: ROLE_SETS.PRESIDENT_ROLES } },
+          { role: { $in: ROLE_SETS.PRESIDENT_ROLES }, entity_id: { $in: parentEntityIds } },
         ],
       }).select('_id email name role').lean();
 

@@ -83,6 +83,7 @@ const smerEntrySchema = new mongoose.Schema({
   validation_errors: [String],
   rejection_reason: { type: String },
   event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
+  deletion_event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
 
   // Audit
   created_at: { type: Date, default: Date.now, immutable: true },

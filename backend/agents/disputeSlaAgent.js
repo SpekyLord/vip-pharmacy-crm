@@ -31,6 +31,7 @@ const Lookup = require('../erp/models/Lookup');
 const User = require('../models/User');
 const PeopleMaster = require('../erp/models/PeopleMaster');
 const { ROLE_SETS } = require('../constants/roles');
+const { getParentEntityIds } = require('../erp/utils/parentEntityResolver');
 const {
   resolveEntityName,
   buildBdmEscalationAudience,
@@ -88,23 +89,26 @@ async function buildAudience(dispute, escalateToRole) {
     if (id) ids.add(String(id));
   }
 
-  // Pull users matching escalate_to_role + presidents (cross-entity)
+  // Pull users matching escalate_to_role + parent-entity presidents only.
+  // Subsidiary presidents are scoped to their own entity via the entity_id
+  // / entity_ids clauses — they must NOT receive disputes from other entities.
+  const parentEntityIds = await getParentEntityIds();
+  const presidentRoles = ROLE_SETS.PRESIDENT_ROLES || ['president'];
   const roleQuery = {
     isActive: true,
     email: { $exists: true, $ne: '' },
     $or: [
       { role: escalateToRole },
-      { role: { $in: ROLE_SETS.PRESIDENT_ROLES || ['president'] } },
+      { role: { $in: presidentRoles } },
     ],
   };
-  // Scope to entity for non-presidents
   const scopedRole = await User.find({
     ...roleQuery,
     $and: [{
       $or: [
         { entity_id: dispute.entity_id },
         { entity_ids: dispute.entity_id },
-        { role: { $in: ROLE_SETS.PRESIDENT_ROLES || ['president'] } },
+        { role: { $in: presidentRoles }, entity_id: { $in: parentEntityIds } },
       ],
     }],
   }).select('_id email name phone role').lean();

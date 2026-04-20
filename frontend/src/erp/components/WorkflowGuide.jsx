@@ -1329,9 +1329,9 @@ const WORKFLOW_GUIDES = {
   'president-reversals': {
     title: 'President Reversal Console — SAP Storno across all modules',
     steps: [
-      'Pick the Reversible Transactions tab to see POSTED docs across Sales, Collections, Expenses, CALF/PRF, GRN, IC Transfers, DR, Income, Payroll, Petty Cash, and manual JEs.',
+      'Pick the Reversible Transactions tab to see POSTED docs across Sales, Collections, Expenses, CALF/PRF, SMER, Car Logbook, GRN, Supplier Invoices, Credit Notes, IC Transfers + Settlements, DR, Income, Payroll, Petty Cash, Sales Goal Plans, and manual JEs.',
       'Filter by document type and date range. The type list is lookup-driven — new modules appear automatically once their handler is registered.',
-      'Click "Reverse…" on a row. The modal shows the dependent-doc preview: if any downstream POSTED doc consumed funds/stock, you must reverse those first.',
+      'Click "Reverse…" on a row. The modal shows the dependent-doc preview: if any downstream POSTED doc consumed funds/stock (e.g., AP payment on a Supplier Invoice, Collection settling a CSI), you must reverse those first.',
       'Type the reason and DELETE to confirm. SAP Storno reversal posts to the current open period; the original document stays POSTED with a deletion_event_id link.',
       'Switch to the Reversal History tab to audit every prior reversal — actor, timestamp, side effects, reason.',
     ],

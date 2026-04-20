@@ -2643,11 +2643,18 @@ no code changes needed per tenant.
 | Payroll      | `POST /api/erp/payroll/:id/president-reverse`            | `payrollController.presidentReversePayslip` |
 | Petty Cash   | (via central console)                                    | `documentReversalService` registry: `PETTY_CASH_TXN` |
 | Manual JE    | (via central console)                                    | `documentReversalService` registry: `JOURNAL_ENTRY` |
+| Sales Goal Plan  | (via central console)                                | `documentReversalService` registry: `SALES_GOAL_PLAN` (Phase SG-3R) |
+| SMER         | (via central console)                                    | `documentReversalService` registry: `SMER_ENTRY` (Phase 31R) |
+| Car Logbook  | (via central console)                                    | `documentReversalService` registry: `CAR_LOGBOOK` (Phase 31R) |
+| Supplier Invoice | (via central console)                                | `documentReversalService` registry: `SUPPLIER_INVOICE` (Phase 31R) |
+| Credit Note  | (via central console)                                    | `documentReversalService` registry: `CREDIT_NOTE` (Phase 31R) |
+| IC Settlement | (via central console)                                   | `documentReversalService` registry: `IC_SETTLEMENT` (Phase 31R) |
 
 ### Schema Additions
 
 Added `deletion_event_id: ObjectId` (and `reopen_count` where missing) to:
-`GrnEntry`, `InterCompanyTransfer`, `PrfCalf`, `IncomeReport`, `Payslip`, `ExpenseEntry`.
+`GrnEntry`, `InterCompanyTransfer`, `PrfCalf`, `IncomeReport`, `Payslip`, `ExpenseEntry`
+(Phase 31), and `SmerEntry`, `CarLogbookEntry`, `SupplierInvoice`, `CreditNote`, `IcSettlement` (Phase 31R).
 `Payslip` also gained `event_id` (reverse handler falls back to JE lookup when missing for legacy rows).
 `GrnEntry.status` enum extended with `DELETION_REQUESTED`.
 
@@ -2674,6 +2681,34 @@ Wired into: `getSales`, `getCollections`, `getExpenseList`, `getPrfCalfList`,
   the President Console (which calls `documentReversalService.reverseCollection`).
 - **CALF/PRF share one route** (`/prf-calf/:id/president-reverse`) — wrapper peeks
   at `doc_type` and dispatches to the matching handler.
+- **SupplierInvoice stores `event_id = JournalEntry._id` directly** (not TransactionEvent).
+  `purchasingController.postInvoice` writes the JE first then stamps `invoice.event_id = je._id`,
+  and the JE's `source_event_id` stays `null`. The Phase 31R handler therefore calls
+  `reverseJournal(doc.event_id, ...)` directly instead of `reverseLinkedJEs({ event_id })` —
+  the latter searches by `JournalEntry.source_event_id` and would find nothing.
+- **IC Settlement posts no JE today** — `icSettlementController.postSettlement`
+  creates only a `TransactionEvent`, no `createAndPostJournal` call. Phase 31R
+  handler's `reverseLinkedJEs` branch is an idempotent no-op for current data;
+  if future refactors add a settlement JE, reversal becomes live automatically.
+  Reversal flips `IcSettlement.status → 'REJECTED'` + stamps `rejection_reason`
+  so the settlement no longer shows in open-AR lists.
+- **CreditNote inventory reversal swaps qty_in↔qty_out** — POSTED CN creates
+  `RETURN_IN` ledger entries with `qty_in > 0`; reversal uses the generic
+  `reverseInventoryFor()` which creates an opposite `ADJUSTMENT` with
+  `qty_out = original.qty_in`. Net ledger effect for the batch returns to zero.
+- **SMER + CarLogbook PERIOD_LOCK key is `'EXPENSE'`** (not `'SMER'` / `'CAR_LOGBOOK'`).
+  The `PeriodLock.module` enum has no SMER/CAR_LOGBOOK values — both modules
+  route through the EXPENSE period lock the same way `expenseRoutes.js` gates
+  their submit/reopen paths with `periodLockCheck('EXPENSE')`.
+- **CreditNote uses dedicated `CREDIT_NOTE` approval module key** (Phase 31R follow-up).
+  Before this change, `creditNoteController` called `gateApproval({ module: 'SALES', ... })`
+  and unauthorized-BDM submissions were invisible in the Approval Hub (the SALES
+  MODULE_QUERIES entry only queries SalesLine). `CREDIT_NOTE` now has its own
+  MODULE_QUERIES entry (native pattern — queries `CreditNote.status='VALID'`),
+  its own SEED_DEFAULTS lazy-seed (APPROVAL_MODULE + MODULE_DEFAULT_ROLES), and
+  its own universalApprovalController wiring. It reuses `approve_sales` sub-permission
+  so subscribers get the new surface without configuring an extra Access Template
+  grant; splitting into `approve_credit_notes` is a future-proof one-row lookup change.
 
 ### Shared Detail Panel + Universal Approval Coverage (Phase 31 extension, April 2026)
 

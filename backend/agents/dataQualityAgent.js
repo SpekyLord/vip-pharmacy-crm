@@ -18,20 +18,28 @@ function tryModel(name) { try { return mongoose.model(name); } catch { return nu
 
 async function duplicateHospitals() {
   const Hospital = tryModel('Hospital');
-  if (!Hospital) return [];
-  const agg = await Hospital.aggregate([
-    { $match: { is_active: { $ne: false } } },
-    {
-      $group: {
-        _id: { $toLower: { $trim: { input: '$name' } } },
-        ids: { $addToSet: '$_id' },
-        count: { $sum: 1 },
+  if (!Hospital) return { dupes: [], missingName: 0 };
+  const [dupes, missingName] = await Promise.all([
+    Hospital.aggregate([
+      { $match: { status: { $ne: 'INACTIVE' }, hospital_name: { $nin: [null, ''] } } },
+      {
+        $group: {
+          _id: { $toLower: { $trim: { input: '$hospital_name' } } },
+          sample_name: { $first: '$hospital_name' },
+          ids: { $addToSet: '$_id' },
+          count: { $sum: 1 },
+        },
       },
-    },
-    { $match: { count: { $gt: 1 } } },
-    { $limit: 10 },
+      { $match: { count: { $gt: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 10 },
+    ]),
+    Hospital.countDocuments({
+      status: { $ne: 'INACTIVE' },
+      $or: [{ hospital_name: { $in: [null, ''] } }, { hospital_name: { $exists: false } }],
+    }),
   ]);
-  return agg;
+  return { dupes, missingName };
 }
 
 async function incompleteParties() {
@@ -59,16 +67,18 @@ async function orphanPeople() {
 
 async function run() {
   try {
-    const [dupes, parties, orphans] = await Promise.all([duplicateHospitals(), incompleteParties(), orphanPeople()]);
+    const [hospitalResult, parties, orphans] = await Promise.all([duplicateHospitals(), incompleteParties(), orphanPeople()]);
+    const { dupes, missingName } = hospitalResult;
 
     const lines = [];
     lines.push(`Duplicate hospital names: ${dupes.length}`);
-    dupes.slice(0, 3).forEach(d => lines.push(`  "${d._id}" appears ${d.count}× (ids: ${d.ids.slice(0, 2).join(', ')}${d.ids.length > 2 ? '…' : ''})`));
+    dupes.slice(0, 3).forEach(d => lines.push(`  "${d.sample_name}" appears ${d.count}×`));
+    if (missingName > 0) lines.push(`Hospitals missing a name: ${missingName}`);
     lines.push(`Customers without TIN: ${parties.custNoTin}`);
     lines.push(`Vendors without TIN: ${parties.vendNoTin}`);
     lines.push(`People without person_type or reports_to: ${orphans}`);
 
-    const total = dupes.length + parties.custNoTin + parties.vendNoTin + orphans;
+    const total = dupes.length + missingName + parties.custNoTin + parties.vendNoTin + orphans;
     if (total === 0) lines.push('Master data looks clean. ✓');
 
     const body = lines.join('\n');

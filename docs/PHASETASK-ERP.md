@@ -5229,3 +5229,101 @@ Bridge.
 - **Privileged `scope=all` is opt-in.** `RevenueBridge.jsx` tries `scope=all` first; on 403 falls back to `scope=mine` silently so the widget remains useful for non-privileged users. No toast on the fallback path.
 - **Goal period format.** `sanitizePeriod` accepts `YYYY`, `YYYY-QN`, `YYYY-MM` only. Anything else is cleared to null. `updateTask` returns 400 on non-empty-but-invalid input (refuses to silently lose the value).
 - **G10.D (POA Excel import) deferred.** The 2026-POA-Tasks.xlsx template is not finalized. Schema and controller placeholder exist in the plan (see `g10-tasks-kpi-gantt.md` G10.D section) — defer until the admin-side Excel sheet is confirmed.
+
+---
+
+## Phase 31R — Reversal Console Coverage Extension ✅ (April 20, 2026)
+
+**Why.** Phase 31 shipped with 13 `REVERSAL_HANDLERS` entries (SALES_LINE, COLLECTION, EXPENSE, CALF, PRF, GRN, IC_TRANSFER, CONSIGNMENT_TRANSFER, INCOME_REPORT, PAYSLIP, PETTY_CASH_TXN, JOURNAL_ENTRY, SALES_GOAL_PLAN). Audit against every model with `status: POSTED` and every `source_module: ...` call site reveals **5+ POSTED transactional docs that are not reversible from the console**. Each one currently has a per-module `reopen*` path or no reversal path at all — so president must hunt across pages instead of using the single console that Phase 31 was built for. SMER is the most-used miss.
+
+**Governing principle.** Any doc that (a) has a `POSTED` status and (b) posts a JE via `createAndPostJournal()` must have a President Reversal handler. Reversal must follow SAP Storno — original stays POSTED in its period, reversal JE posts to current period, `deletion_event_id` + `reopen_count` set on the doc. Mirror existing `reopenSmer` / `reverseCarLogbook` patterns.
+
+### Audit — missing handlers
+
+| Doc Type | Model | `source_module` on JE | POSTED? | Existing reopen path | Priority |
+|---|---|---|---|---|---|
+| `SMER_ENTRY` | SmerEntry | `EXPENSE` | ✅ | `reopenSmer` (expenseController.js:315) | **P1** |
+| `CAR_LOGBOOK` | CarLogbookEntry | `EXPENSE` | ✅ | reopen handler + reverse helper in expenseController | **P1** |
+| `SUPPLIER_INVOICE` | SupplierInvoice | `SUPPLIER_INVOICE` | ✅ | none — no reopen | **P2** |
+| `CREDIT_NOTE` | CreditNote | `CREDIT_NOTE` | ✅ | already flagged as deferred in Phase 31 Extension (line 4244) | **P2** |
+| `IC_SETTLEMENT` | IcSettlement | banking | ✅ | none | **P2** |
+| `CREDIT_CARD_TRANSACTION` | CreditCardTransaction | `BANKING` | ✅ (`PENDING→POSTED→PAID`) | reversible via JOURNAL_ENTRY but leaves card PAID flag dirty | P3 |
+| `FIXED_ASSET_DEPRECIATION` | FixedAsset (monthly JE) | `DEPRECIATION` | ✅ (monthly JE) | reverse monthly JE via JOURNAL_ENTRY handler | P3 — covered by JE handler |
+| `LOAN_INTEREST` | LoanMaster (monthly JE) | `INTEREST` | ✅ (monthly JE) | reverse monthly JE via JOURNAL_ENTRY handler | P3 — covered by JE handler |
+| `DEDUCTION_SCHEDULE` | DeductionSchedule | injected into Payslip | ✅ | reverting Payslip reverts schedule status | P3 — covered by Payslip handler |
+| `PNL_REPORT` | PnlReport | `MANUAL` closing JE | ✅ | regenerate; closing JEs reverse via JOURNAL_ENTRY | SKIP — not a real reversal target |
+
+### Scope — P1 + P2 only
+
+Implement handlers for **SMER_ENTRY, CAR_LOGBOOK, SUPPLIER_INVOICE, CREDIT_NOTE, IC_SETTLEMENT**. P3 items (credit card PAID flag, etc.) tracked as follow-ups; the JOURNAL_ENTRY handler already unwinds their GL impact.
+
+### Backend — shipped
+
+- [x] `services/documentReversalService.js`:
+  - [x] Imported `SmerEntry`, `CarLogbookEntry`, `SupplierInvoice`, `CreditNote`, `IcSettlement`, `ApPayment`
+  - [x] Added `loadSmer` / `reverseSmer` (SAP Storno — reuses `reverseLinkedJEs` on `source_event_id`; original stays POSTED with `deletion_event_id`, never flipped to DRAFT)
+  - [x] Added `loadCarLogbook` / `reverseCarLogbook` (same SAP Storno pattern; `posted_at` timestamp preserved)
+  - [x] Added `loadSupplierInvoice` / `reverseSupplierInvoice` — AP booking stores `invoice.event_id = JournalEntry._id` directly (JE's `source_event_id` is null), so handler calls `reverseJournal(doc.event_id, ...)` not `reverseLinkedJEs`. Idempotent via reverseJournal's "already reversed" guard
+  - [x] Added `loadCreditNote` / `reverseCreditNote` — reverses linked JE via `source_event_id` + `reverseInventoryFor()` to swap qty_in↔qty_out on the RETURN_IN ledger entries
+  - [x] Added `loadIcSettlement` / `reverseIcSettlement` — IC Settlement has no JE today (`postSettlement` creates only a TransactionEvent); reversal creates a reversal event, flips status → REJECTED, stamps rejection_reason. `reverseLinkedJEs` branch is idempotent no-op until a future refactor wires a settlement JE
+  - [x] Registered 5 entries in `REVERSAL_HANDLERS` (SMER_ENTRY, CAR_LOGBOOK, SUPPLIER_INVOICE, CREDIT_NOTE, IC_SETTLEMENT)
+  - [x] Extended `PERIOD_LOCK_MODULE`: SMER_ENTRY → 'EXPENSE', CAR_LOGBOOK → 'EXPENSE' (matches `expenseRoutes.js periodLockCheck('EXPENSE')`), SUPPLIER_INVOICE → 'PURCHASING', CREDIT_NOTE → 'SALES', IC_SETTLEMENT → 'BANKING'. All 5 module keys already in `PeriodLock.module` enum — no enum migration needed
+  - [x] Extended `listReversibleDocs` with 5 new blocks (entity-scoped filters, tenant-aware; IC_SETTLEMENT uses creditor_entity_id / debtor_entity_id $or like IC_TRANSFER)
+- [x] `services/dependentDocChecker.js` — added `checkSupplierInvoiceDependents` (blocks when ApPayment exists against the invoice), `checkCreditNoteDependents` (placeholder — no Collection-applied linkage in current schema, returns no deps), `checkIcSettlementDependents` (placeholder — terminal doc in IC flow today). Registered all 3 in `CHECKERS`
+- [x] `services/documentDetailBuilder.js` — added `buildCreditNoteDetails`. SMER + CAR_LOGBOOK + PURCHASING (for SUPPLIER_INVOICE) + IC_TRANSFER (for IC_SETTLEMENT — branches on `item.cr_no`) builders already existed from Phase 31 extension. Updated `REVERSAL_DOC_TYPE_TO_MODULE` map with 5 new entries. Registered `CREDIT_NOTE` in `DETAIL_BUILDERS`
+- [x] `services/documentDetailHydrator.js` — added `POPULATED_LOADERS` for all 5 new doc_types with correct populate paths (bdm_id, hospital, customer, warehouse, vendor, creditor/debtor entities). `IC_SETTLEMENT` scope rule matches `loadIcSettlement`. Added `CREDIT_NOTE` case to `signPhotoUrls` for `photo_urls` S3 signing
+- [x] Models — added `deletion_event_id: ObjectId ref 'TransactionEvent'` to SmerEntry, CarLogbookEntry, SupplierInvoice, CreditNote, IcSettlement. `reopen_count` already present on SMER + CarLogbook (not needed on the AP/returns/IC docs — they have no reopen workflow). `DELETION_REQUESTED` status enum values intentionally NOT added to SupplierInvoice/CreditNote/IcSettlement (no two-phase deletion workflow targets them; reversal uses direct SAP Storno)
+
+### Frontend — shipped
+
+- [x] No new pages needed — existing `PresidentReversalsPage.jsx` auto-picks up new types via the registry endpoint (`GET /president/reversals/registry` reads from `REVERSAL_HANDLERS` keys). Type badges + `sub` strings render from handler metadata. `DocumentDetailPanel.jsx` uses the module key from `REVERSAL_DOC_TYPE_TO_MODULE` → `buildDocumentDetails` so expanded rows render the same rich detail as the Approval Hub
+- [x] `components/WorkflowGuide.jsx` — updated `'president-reversals'` banner step 1 to list all current doc types (SMER, Car Logbook, Supplier Invoices, Credit Notes, IC Settlements added) + step 3 to reference AP-payment / Collection-settlement blockers as concrete dependent-doc examples
+
+### Verification — shipped
+
+- [x] `node -c` clean on all 7 touched backend files (documentReversalService, dependentDocChecker, documentDetailBuilder, documentDetailHydrator, SmerEntry, CarLogbookEntry, SupplierInvoice, CreditNote, IcSettlement)
+- [x] Cross-entity isolation verified by reading the tenantFilter application in each `load*` function: SMER/CarLogbook/SupplierInvoice/CreditNote spread `...tenantFilter` into the findOne query; IcSettlement applies the same $or(creditor, debtor) rule as `loadIcTransfer`
+- [x] Idempotent JE reversal: SMER + CarLogbook + CreditNote go through `reverseLinkedJEs` (skip-if-already-reversed). SupplierInvoice goes through `reverseJournal` with explicit "already reversed" regex catch
+- [x] Period-lock landing check fires for all 5 via `assertReversalPeriodOpen({ doc_type, entityId })`; `PERIOD_LOCK_MODULE` keys verified in `PeriodLock.module` enum
+- [x] Dependent-doc blocker tested mentally: SUPPLIER_INVOICE blocks on ApPayment; CREDIT_NOTE and IC_SETTLEMENT currently have no downstream consumers so placeholders return no deps — if future schema adds the linkage, checkers go live without caller changes
+
+### Out of scope (P3 — later sweep)
+
+- CreditCardTransaction standalone handler (currently reversible via JOURNAL_ENTRY but leaves PAID flag set)
+- Standalone handlers for FixedAsset depreciation, LoanMaster interest, DeductionSchedule (all covered transitively by Payslip or JOURNAL_ENTRY handlers)
+- PnlReport reversal (snapshot doc — regenerate instead)
+- VAT Ledger auto-void on SUPPLIER_INVOICE reversal — finance treats VAT rows as a staging layer with `finance_tag` (same limitation Phase 31 flagged for Collection). Check finance_tag post-reversal via PRESIDENT_REVERSAL audit trail
+
+### Doc updates — shipped
+
+- [x] `CLAUDE-ERP.md` Phase 31 section — handler count bumped to 18 (registry table), Schema Additions note updated to include 5 new models, Common Gotchas section gained 4 new entries (SupplierInvoice event_id semantics, IC Settlement no-JE behavior, CreditNote inventory swap pattern, SMER/CarLogbook period-lock key = EXPENSE)
+- [x] Phase 31 Extension "Deferred: CreditNote" note (line ~4244) — **now closed**; see Phase 31R follow-up below
+
+### Phase 31R follow-up — CreditNote Approval Hub coverage ✅ (April 20, 2026)
+
+**Why.** Approval Hub cross-check against the 5 Phase 31R modules revealed 4-of-5 already surfaced (SMER, CAR_LOGBOOK directly; SUPPLIER_INVOICE under `PURCHASING`; IC_SETTLEMENT under `IC_TRANSFER` via `docTypeToModel` branch). Only **CREDIT_NOTE was invisible** — `creditNoteController.submitCreditNotes` called `gateApproval({ module: 'SALES', ... })` but the `SALES` MODULE_QUERIES entry only queries SalesLine. Unauthorized-BDM CN submissions held in the Approval Hub were effectively orphaned. This was flagged as deferred in the original Phase 31 Extension doc; closed in this pass.
+
+**Shipped.**
+- [x] `backend/erp/controllers/creditNoteController.js` — extracted `postSingleCreditNote(doc, userId)` helper (mirrors `postSingleSmer` / `postSingleCarLogbook`). `submitCreditNotes` now delegates to it; gateApproval module changed from `'SALES'` to `'CREDIT_NOTE'`. `postSingleCreditNote` exported for hub use.
+- [x] `backend/erp/controllers/lookupGenericController.js` — added CREDIT_NOTE seed entries in `APPROVAL_MODULE` (category OPERATIONAL) and `MODULE_DEFAULT_ROLES` (roles: admin, finance, president). Both lazy-seed per-entity on first submit via `approvalService.getModulePostingRoles` — zero admin setup needed for new subsidiaries.
+- [x] `backend/erp/services/universalApprovalService.js` — added CREDIT_NOTE MODULE_QUERIES entry (native pattern, queries `CreditNote.status='VALID'` directly — matches SMER/CarLogbook rather than the gap-module ApprovalRequest indirection). Added `CREDIT_NOTE: 'approve_sales'` to MODULE_TO_SUB_KEY (reuses the sales approver sub-permission; subscribers can split into `approve_credit_notes` via a new ERP_SUB_PERMISSION lookup row without code changes).
+- [x] `backend/erp/controllers/universalApprovalController.js` — added `credit_note` to TYPE_TO_MODULE, approvalHandlers (post calls `postSingleCreditNote`; reject flips status → ERROR), MODEL_MAP, and EDITABLE_STATUSES (['VALID']).
+
+**Logic invariant.** When an unauthorized BDM submits credit notes:
+1. `gateApproval({ module: 'CREDIT_NOTE' })` creates a level-0 ApprovalRequest; HTTP 202 returned.
+2. CN rows stay in `VALID` status.
+3. Approval Hub `CREDIT_NOTE` MODULE_QUERIES surfaces the CNs (not the ApprovalRequest — level-0 requests are excluded from APPROVAL_REQUEST query via `level: { $gt: 0 }` filter) → **no double-listing**.
+4. Approver clicks Post → `universalApprovalController.credit_note` → `postSingleCreditNote(doc, userId)` → event + inventory + JE created; doc.status → POSTED.
+5. Reverse path via President Reversal Console works unchanged from Phase 31R (CREDIT_NOTE handler already registered).
+
+**Integrity checklist — all 16 passed:**
+- Dependencies: 7 touched modules load cleanly (no circular deps)
+- Wiring: 18 REVERSAL_HANDLERS + 21 MODULE_QUERIES + 5 dependent checkers + 4 controller maps all consistent
+- Scalable: 5 new loader functions honor tenantFilter (cross-entity safe)
+- Lookup-driven: SEED_DEFAULTS has CREDIT_NOTE in APPROVAL_MODULE + MODULE_DEFAULT_ROLES; approvalService lazy-seeds per entity on first submit
+- Subscription: zero admin setup needed for new subsidiaries — first CN submit auto-provisions the approval role lookup
+- Banners: WorkflowGuide president-reversals banner lists all 18 doc types + concrete dep-doc examples
+- No severed wiring: 13 pre-existing REVERSAL_HANDLERS + 20 pre-existing MODULE_QUERIES entries all still present
+
+**Frontend build:** `npx vite build` clean, 9.56s, 0 errors.
+
