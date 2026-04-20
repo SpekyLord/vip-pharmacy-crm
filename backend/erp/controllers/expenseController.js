@@ -7,6 +7,7 @@
 const mongoose = require('mongoose');
 const SmerEntry = require('../models/SmerEntry');
 const CarLogbookEntry = require('../models/CarLogbookEntry');
+const CarLogbookCycle = require('../models/CarLogbookCycle');
 const ExpenseEntry = require('../models/ExpenseEntry');
 const PrfCalf = require('../models/PrfCalf');
 const TransactionEvent = require('../models/TransactionEvent');
@@ -757,134 +758,315 @@ const validateCarLogbook = catchAsync(async (req, res) => {
   res.json({ success: true, message: `Validated ${entries.length} logbook(s)`, data: entries.map(e => ({ _id: e._id, status: e.status, errors: e.validation_errors })) });
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// Submit a single fuel entry for independent approval (per-fuel-entry flow,
+// mirrors SmerEntry perdiem_override). Auto-generates FUEL-XXXXXX doc_ref
+// via existing docNumbering.js (no new function needed — reuses generateDocNumber).
+// ─────────────────────────────────────────────────────────────────────────
+const submitFuelEntryForApproval = catchAsync(async (req, res) => {
+  const { id, fuel_id } = req.params;   // id = CarLogbookEntry day doc id
+  const editable = await getEditableStatuses(req.entityId, 'CAR_LOGBOOK');
+  const dayDoc = await CarLogbookEntry.findOne({ _id: id, ...req.tenantFilter, status: { $in: editable } });
+  if (!dayDoc) return res.status(404).json({ success: false, message: 'Car logbook day not found or not editable' });
+  const fuel = dayDoc.fuel_entries.id(fuel_id);
+  if (!fuel) return res.status(404).json({ success: false, message: 'Fuel entry not found' });
+  if (fuel.approval_status === 'APPROVED') {
+    return res.status(400).json({ success: false, message: 'Fuel entry already approved' });
+  }
+
+  // Assign sequencing doc_ref (FUEL-{ENTITY}{MMDDYY}-{NNN}) if not yet set
+  if (!fuel.doc_ref) {
+    try {
+      const { generateDocNumber } = require('../services/docNumbering');
+      fuel.doc_ref = await generateDocNumber({
+        prefix: 'FUEL',
+        entityId: dayDoc.entity_id,
+        date: dayDoc.entry_date || new Date(),
+      });
+    } catch (e) {
+      console.error('FUEL doc_ref generation failed:', e.message);
+    }
+  }
+
+  const { gateApproval } = require('../services/approvalService');
+  const dateStr = dayDoc.entry_date ? new Date(dayDoc.entry_date).toISOString().split('T')[0] : '';
+  const calfLabel = fuel.calf_id ? `CALF:${fuel.calf_id}` : (fuel.payment_mode || 'CASH');
+  const gated = await gateApproval({
+    entityId: dayDoc.entity_id,
+    module: 'EXPENSES',
+    docType: 'FUEL_ENTRY',
+    docId: fuel._id,
+    docRef: fuel.doc_ref || `FUEL-${dayDoc.period}-${dayDoc._id}`,
+    amount: fuel.total_amount || 0,
+    description: `Fuel ₱${(fuel.total_amount || 0).toLocaleString()} @ ${fuel.station_name || 'unknown'} on ${dateStr} [${calfLabel}]`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+
+  if (gated) {
+    fuel.approval_status = 'PENDING';
+    await dayDoc.save();
+    return;    // gateApproval already sent the 202
+  }
+
+  // Open-post path (no gate): mark APPROVED immediately
+  fuel.approval_status = 'APPROVED';
+  fuel.approved_by = req.user._id;
+  fuel.approved_at = new Date();
+  await dayDoc.save();
+  res.json({ success: true, data: { approval_status: fuel.approval_status, doc_ref: fuel.doc_ref } });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Submit the cycle (period+cycle) as ONE unit via CarLogbookCycle wrapper.
+// Replaces the legacy per-day aggregation that produced the "16× LOGBOOK-2026-04"
+// display bug. Per-day CarLogbookEntry docs remain the source of truth for
+// odometer/fuel/efficiency; the wrapper only carries submit/approve/post state.
+// ─────────────────────────────────────────────────────────────────────────
 const submitCarLogbook = catchAsync(async (req, res) => {
-  const entries = await CarLogbookEntry.find({ ...req.tenantFilter, status: 'VALID' });
+  // Scope to a specific cycle when period+cycle provided (frontend always passes them)
+  const period = req.body?.period || req.query?.period;
+  const cycle = req.body?.cycle || req.query?.cycle;
+  const scopedFilter = { ...req.tenantFilter, status: 'VALID' };
+  if (period) scopedFilter.period = period;
+  if (cycle) scopedFilter.cycle = cycle;
+
+  const entries = await CarLogbookEntry.find(scopedFilter);
   if (!entries.length) return res.status(400).json({ success: false, message: 'No VALID logbook entries to submit' });
 
-  // Authority matrix gate
+  // Require period+cycle for the cycle wrapper. If not provided, we group by first entry's period+cycle
+  // (legacy behavior) — and reject if multiple different cycles are mixed under one unscoped submit.
+  const effPeriod = period || entries[0].period;
+  const effCycle = cycle || entries[0].cycle;
+  const mismatched = entries.filter(e => e.period !== effPeriod || e.cycle !== effCycle);
+  if (mismatched.length) {
+    return res.status(400).json({
+      success: false,
+      message: `Multiple cycles in VALID state. Please submit one period+cycle at a time. Found: ${[...new Set(entries.map(e => `${e.period} ${e.cycle}`))].join(', ')}`
+    });
+  }
+
+  // Upsert the CarLogbookCycle wrapper and aggregate totals from the per-day docs
+  const upsertFilter = { entity_id: req.entityId, bdm_id: req.bdmId, period: effPeriod, cycle: effCycle };
+  let cycleDoc = await CarLogbookCycle.findOne(upsertFilter);
+  if (!cycleDoc) {
+    cycleDoc = new CarLogbookCycle({ ...upsertFilter, created_by: req.user._id, km_per_liter: entries[0].km_per_liter || 12 });
+  }
+  await cycleDoc.refreshTotalsFromDays();
+  cycleDoc.status = 'VALID';
+  await cycleDoc.save();
+
+  // Link every per-day doc back to the cycle wrapper (idempotent)
+  for (const e of entries) {
+    if (String(e.cycle_id) !== String(cycleDoc._id)) {
+      e.cycle_id = cycleDoc._id;
+      await e.save();
+    }
+  }
+
+  // Authority-matrix gate on the cycle wrapper (one clean ApprovalRequest per cycle)
   const { gateApproval } = require('../services/approvalService');
-  const logbookTotal = entries.reduce((sum, e) => sum + (e.total_fuel_amount || 0), 0);
+  const docRef = `LOGBOOK-${effPeriod}-${effCycle}`;
+  const desc = `Submit Car Logbook ${effPeriod} ${effCycle} (${cycleDoc.working_days} working day${cycleDoc.working_days === 1 ? '' : 's'}, total ₱${(cycleDoc.total_fuel_amount || 0).toLocaleString()})`;
   const gated = await gateApproval({
     entityId: req.entityId,
     module: 'EXPENSES',
     docType: 'CAR_LOGBOOK',
-    docId: entries[0]._id,
-    docRef: entries.map(e => `LOGBOOK-${e.period}`).join(', '),
-    amount: logbookTotal,
-    description: `Submit ${entries.length} car logbook entr${entries.length === 1 ? 'y' : 'ies'} (total ₱${logbookTotal.toLocaleString()})`,
+    docId: cycleDoc._id,
+    docRef,
+    amount: cycleDoc.total_fuel_amount || 0,
+    description: desc,
     requesterId: req.user._id,
     requesterName: req.user.name || req.user.email,
   }, res);
-  if (gated) return;
+  if (gated) return;   // held in Approval Hub (202 sent)
 
   // Period lock check
   const { checkPeriodOpen } = require('../utils/periodLock');
-  for (const entry of entries) { await checkPeriodOpen(entry.entity_id, entry.period); }
+  await checkPeriodOpen(req.entityId, effPeriod);
 
-  // Pre-submit gate: verify all linked CALFs are POSTED
+  // Pre-post gates:
+  //  1. Non-CASH fuel must have approval_status = APPROVED (unless President bypass)
+  //  2. Non-CASH fuel with CALF required: linked CALF must be POSTED
   for (const entry of entries) {
     for (const fuel of (entry.fuel_entries || [])) {
+      if (fuel.payment_mode && fuel.payment_mode !== 'CASH' && fuel.approval_status !== 'APPROVED' && req.user.role !== ROLES.PRESIDENT) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot post: fuel @ ${fuel.station_name || 'unknown'} on ${new Date(entry.entry_date).toISOString().split('T')[0]} is not APPROVED (currently ${fuel.approval_status || 'unsubmitted'}). Submit the fuel entry for approval first.`
+        });
+      }
       if (fuel.calf_required && fuel.calf_id && req.user.role !== ROLES.PRESIDENT) {
         const calf = await PrfCalf.findById(fuel.calf_id).select('status').lean();
         if (!calf || calf.status !== 'POSTED') {
           return res.status(400).json({
             success: false,
-            message: `Cannot post: fuel entry "${fuel.station_name || ''}" has CALF that is not POSTED (status: ${calf?.status || 'NOT_FOUND'}). Post the CALF first.`
+            message: `Cannot post: fuel "${fuel.station_name || ''}" has CALF not POSTED (${calf?.status || 'NOT_FOUND'}). Post the CALF first.`
           });
         }
       }
     }
   }
 
+  // Transactional post: one TransactionEvent for the cycle, flip cycle + per-day docs to POSTED
   const session = await mongoose.startSession();
   await session.withTransaction(async () => {
-    for (const entry of entries) {
-      const event = await TransactionEvent.create([{
-        entity_id: entry.entity_id,
-        bdm_id: entry.bdm_id,
-        event_type: 'CAR_LOGBOOK',
-        event_date: entry.entry_date,
-        document_ref: `LOGBOOK-${entry.period}-${entry.entry_date.toISOString().split('T')[0]}`,
-        payload: { logbook_id: entry._id, total_km: entry.total_km, total_fuel: entry.total_fuel_amount },
-        status: 'ACTIVE',
-        created_by: req.user._id
-      }], { session });
+    const event = await TransactionEvent.create([{
+      entity_id: cycleDoc.entity_id,
+      bdm_id: cycleDoc.bdm_id,
+      event_type: 'CAR_LOGBOOK',
+      event_date: new Date(),
+      document_ref: docRef,
+      payload: {
+        cycle_id: cycleDoc._id,
+        period: effPeriod,
+        cycle: effCycle,
+        working_days: cycleDoc.working_days,
+        total_km: cycleDoc.total_km,
+        total_fuel: cycleDoc.total_fuel_amount,
+        daily_entry_ids: cycleDoc.daily_entry_ids,
+      },
+      status: 'ACTIVE',
+      created_by: req.user._id
+    }], { session });
 
+    cycleDoc.status = 'POSTED';
+    cycleDoc.posted_at = new Date();
+    cycleDoc.posted_by = req.user._id;
+    cycleDoc.event_id = event[0]._id;
+    await cycleDoc.save({ session });
+
+    for (const entry of entries) {
       entry.status = 'POSTED';
       entry.posted_at = new Date();
       entry.posted_by = req.user._id;
       entry.event_id = event[0]._id;
+      entry.cycle_id = cycleDoc._id;
       await entry.save({ session });
     }
   });
   session.endSession();
 
-  // Phase 9.1b: Link DocumentAttachments to events (non-blocking)
-  for (const entry of entries) {
-    if (entry.event_id) {
-      await DocumentAttachment.updateMany(
-        { source_model: 'CarLogbookEntry', source_id: entry._id },
-        { $set: { event_id: entry.event_id } }
-      ).catch(() => {});
-    }
+  // Non-blocking DocumentAttachment event linkage (both per-day + cycle)
+  if (cycleDoc.event_id) {
+    await DocumentAttachment.updateMany(
+      { source_model: 'CarLogbookEntry', source_id: { $in: entries.map(e => e._id) } },
+      { $set: { event_id: cycleDoc.event_id } }
+    ).catch(() => {});
+    await DocumentAttachment.updateMany(
+      { source_model: 'CarLogbookCycle', source_id: cycleDoc._id },
+      { $set: { event_id: cycleDoc.event_id } }
+    ).catch(() => {});
   }
 
-  // Phase 11/22: Auto-journal — Car Logbook (COA from Settings.COA_MAP)
-  const coaMap = await getCoaMap();
-  for (const entry of entries) {
-    try {
-      if (!entry.total_fuel_amount || entry.total_fuel_amount <= 0) continue;
-      // Split fuel by payment mode: cash → CR 1110, non-cash → CR funding COA
-      let cashTotal = 0;
-      let fundedTotal = 0;
-      let fundedCoa = null;
-      for (const fuel of (entry.fuel_entries || [])) {
-        if (!fuel.payment_mode || fuel.payment_mode === 'CASH') {
-          cashTotal += fuel.total_amount || 0;
-        } else {
-          fundedTotal += fuel.total_amount || 0;
-          if (!fundedCoa) fundedCoa = await resolveFundingCoa(fuel);
+  // Auto-journal: ONE JE for the whole cycle (COA from Settings.COA_MAP — subscription-safe)
+  try {
+    if (cycleDoc.total_fuel_amount > 0) {
+      const coaMap = await getCoaMap();
+      let cashTotal = 0, fundedTotal = 0, fundedCoa = null;
+      for (const entry of entries) {
+        for (const fuel of (entry.fuel_entries || [])) {
+          if (!fuel.payment_mode || fuel.payment_mode === 'CASH') {
+            cashTotal += fuel.total_amount || 0;
+          } else {
+            fundedTotal += fuel.total_amount || 0;
+            if (!fundedCoa) fundedCoa = await resolveFundingCoa(fuel);
+          }
         }
       }
-      const desc = `Logbook ${entry.period} ${entry.entry_date.toISOString().split('T')[0]}`;
+      const jeDesc = `Car Logbook ${effPeriod} ${effCycle}`;
       const lines = [];
       const totalFuel = cashTotal + fundedTotal;
-      if (totalFuel > 0) lines.push({ account_code: coaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas Expense', debit: totalFuel, credit: 0, description: desc });
-      if (cashTotal > 0) lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: cashTotal, description: desc });
-      if (fundedTotal > 0 && fundedCoa) lines.push({ account_code: fundedCoa.coa_code, account_name: fundedCoa.coa_name, debit: 0, credit: fundedTotal, description: desc });
+      if (totalFuel > 0) lines.push({ account_code: coaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas Expense', debit: totalFuel, credit: 0, description: jeDesc });
+      if (cashTotal > 0) lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: cashTotal, description: jeDesc });
+      if (fundedTotal > 0 && fundedCoa) lines.push({ account_code: fundedCoa.coa_code, account_name: fundedCoa.coa_name, debit: 0, credit: fundedTotal, description: jeDesc });
       if (lines.length >= 2) {
-        await createAndPostJournal(entry.entity_id, {
-          je_date: entry.entry_date || new Date(),
-          period: entry.period,
-          description: `Car Logbook: ${desc}`,
+        await createAndPostJournal(cycleDoc.entity_id, {
+          je_date: new Date(),
+          period: effPeriod,
+          description: jeDesc,
           source_module: 'EXPENSE',
-          source_event_id: entry.event_id,
-          source_doc_ref: `LOGBOOK-${entry.period}-${entry.entry_date.toISOString().split('T')[0]}`,
+          source_event_id: cycleDoc.event_id,
+          source_doc_ref: docRef,
           lines,
           bir_flag: 'BOTH',
           vat_flag: 'N/A',
-          bdm_id: entry.bdm_id,
+          bdm_id: cycleDoc.bdm_id,
           created_by: req.user._id
         });
       }
-    } catch (jeErr) {
-      console.error('Auto-journal failed for logbook:', entry._id, jeErr.message);
     }
+  } catch (jeErr) {
+    console.error('Auto-journal failed for logbook cycle:', cycleDoc._id, jeErr.message);
   }
 
-  res.json({ success: true, message: `Posted ${entries.length} logbook(s)` });
+  res.json({
+    success: true,
+    message: `Posted Car Logbook ${effPeriod} ${effCycle} (${entries.length} day${entries.length === 1 ? '' : 's'})`,
+    data: { cycle_id: cycleDoc._id, event_id: cycleDoc.event_id, working_days: cycleDoc.working_days, total_fuel_amount: cycleDoc.total_fuel_amount }
+  });
 });
 
 const reopenCarLogbook = catchAsync(async (req, res) => {
-  const { logbook_ids } = req.body;
-  const entries = await CarLogbookEntry.find({ _id: { $in: logbook_ids }, ...req.tenantFilter, status: 'POSTED' });
+  // Accept cycle_ids (new) or logbook_ids (legacy: per-day ids). For legacy ids,
+  // resolve to their parent cycle wrapper. If no wrapper exists (pre-Phase 33 data),
+  // fall back to the old per-day reopen path.
+  const cycleIds = req.body?.cycle_ids || [];
+  const legacyIds = req.body?.logbook_ids || [];
+
+  // Preferred path: reopen the cycle wrapper
+  if (cycleIds.length) {
+    const cycles = await CarLogbookCycle.find({ _id: { $in: cycleIds }, ...req.tenantFilter, status: 'POSTED' });
+    if (!cycles.length) return res.status(400).json({ success: false, message: 'No POSTED cycles to reopen' });
+
+    const reopened = [], failed = [];
+    for (const cycleDoc of cycles) {
+      if (cycleDoc.event_id) {
+        try {
+          const jes = await JournalEntry.find({ source_event_id: cycleDoc.event_id, status: 'POSTED', is_reversal: { $ne: true } });
+          for (const je of jes) { await reverseJournal(je._id, 'Auto-reversal: CarLogbook cycle reopen', req.user._id); }
+        } catch (jeErr) {
+          console.error('JE reversal failed on cycle reopen:', cycleDoc._id, jeErr.message);
+          failed.push({ _id: cycleDoc._id, error: `Journal reversal failed: ${jeErr.message}` });
+          continue;    // Rule #20: keep POSTED, ledger stays balanced
+        }
+      }
+      // Flip cycle + per-day docs back to DRAFT
+      cycleDoc.status = 'DRAFT';
+      cycleDoc.reopen_count = (cycleDoc.reopen_count || 0) + 1;
+      cycleDoc.posted_at = undefined;
+      cycleDoc.posted_by = undefined;
+      await cycleDoc.save();
+
+      await CarLogbookEntry.updateMany(
+        { cycle_id: cycleDoc._id, status: 'POSTED' },
+        { $set: { status: 'DRAFT' }, $unset: { posted_at: 1, posted_by: 1 }, $inc: { reopen_count: 1 } }
+      );
+
+      await ErpAuditLog.logChange({
+        entity_id: cycleDoc.entity_id,
+        bdm_id: cycleDoc.bdm_id,
+        log_type: 'REOPEN',
+        target_ref: cycleDoc._id.toString(),
+        target_model: 'CarLogbookCycle',
+        changed_by: req.user._id,
+        note: `Cycle reopened (count: ${cycleDoc.reopen_count})`
+      });
+      reopened.push(cycleDoc._id);
+    }
+    if (failed.length && !reopened.length) {
+      return res.status(500).json({ success: false, message: 'All cycle reopens failed due to journal reversal errors', failed });
+    }
+    return res.json({ success: true, message: `Reopened ${reopened.length} cycle(s)${failed.length ? `, ${failed.length} failed` : ''}`, reopened, failed });
+  }
+
+  // Legacy fallback: per-day ids passed in. Group by cycle_id (or by period+cycle) and reopen.
+  const entries = await CarLogbookEntry.find({ _id: { $in: legacyIds }, ...req.tenantFilter, status: 'POSTED' });
   if (!entries.length) return res.status(400).json({ success: false, message: 'No POSTED logbooks to reopen' });
 
-  const reopened = [];
-  const failed = [];
-
+  const cyclesTouched = new Set();
+  const reopened = [], failed = [];
   for (const entry of entries) {
-    // Reverse journal entries — if reversal fails, skip (keep POSTED, ledger stays balanced)
     if (entry.event_id) {
       try {
         const jes = await JournalEntry.find({ source_event_id: entry.event_id, status: 'POSTED', is_reversal: { $ne: true } });
@@ -895,12 +1077,12 @@ const reopenCarLogbook = catchAsync(async (req, res) => {
         continue;
       }
     }
-
     entry.status = 'DRAFT';
     entry.reopen_count = (entry.reopen_count || 0) + 1;
     entry.posted_at = undefined;
     entry.posted_by = undefined;
     await entry.save();
+    if (entry.cycle_id) cyclesTouched.add(String(entry.cycle_id));
 
     await ErpAuditLog.logChange({
       entity_id: entry.entity_id,
@@ -912,6 +1094,18 @@ const reopenCarLogbook = catchAsync(async (req, res) => {
       note: `Reopened (count: ${entry.reopen_count})`
     });
     reopened.push(entry._id);
+  }
+
+  // Sync parent cycle wrappers back to DRAFT when any of their days reverted
+  for (const cid of cyclesTouched) {
+    const cycleDoc = await CarLogbookCycle.findById(cid);
+    if (cycleDoc && cycleDoc.status === 'POSTED') {
+      cycleDoc.status = 'DRAFT';
+      cycleDoc.reopen_count = (cycleDoc.reopen_count || 0) + 1;
+      cycleDoc.posted_at = undefined;
+      cycleDoc.posted_by = undefined;
+      await cycleDoc.save();
+    }
   }
 
   if (failed.length && !reopened.length) {
@@ -1570,6 +1764,85 @@ const getPrfCalfById = catchAsync(async (req, res) => {
     .populate('posted_by', 'name').lean();
   if (!doc) return res.status(404).json({ success: false, message: 'PRF/CALF not found' });
   res.json({ success: true, data: doc });
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Linked Expenses — unified view of every fuel entry + expense line that
+// references this CALF. Used by the PrfCalf drill-down to audit "which
+// expenses drew against this CALF" in one place (Phase 33).
+// ─────────────────────────────────────────────────────────────────────────
+const getLinkedExpenses = catchAsync(async (req, res) => {
+  const calf = await PrfCalf.findOne({ _id: req.params.id, ...req.tenantFilter }).lean();
+  if (!calf) return res.status(404).json({ success: false, message: 'CALF not found' });
+
+  // Fuel entries (per-day CarLogbookEntry.fuel_entries[j] with calf_id = this CALF)
+  const dayDocs = await CarLogbookEntry.find({
+    entity_id: calf.entity_id,
+    'fuel_entries.calf_id': calf._id,
+  }).select('period cycle entry_date bdm_id status fuel_entries cycle_id').lean();
+
+  const fuelLinks = [];
+  for (const d of dayDocs) {
+    for (const fe of (d.fuel_entries || [])) {
+      if (String(fe.calf_id) !== String(calf._id)) continue;
+      fuelLinks.push({
+        source: 'FUEL',
+        doc_ref: fe.doc_ref || `FUEL-${d.period}-${d._id}`,
+        date: d.entry_date,
+        period: d.period,
+        cycle: d.cycle,
+        description: `${fe.station_name || 'Fuel'} ${fe.liters || 0}L`,
+        amount: fe.total_amount || 0,
+        approval_status: fe.approval_status,
+        payment_mode: fe.payment_mode,
+        cycle_status: d.status,
+        cycle_id: d.cycle_id,
+        bdm_id: d.bdm_id,
+      });
+    }
+  }
+
+  // Expense lines (ExpenseEntry.lines[k] with calf_id = this CALF)
+  const expenseDocs = await ExpenseEntry.find({
+    entity_id: calf.entity_id,
+    'lines.calf_id': calf._id,
+  }).select('period cycle bdm_id status lines').lean();
+
+  const expenseLinks = [];
+  for (const e of expenseDocs) {
+    for (const line of (e.lines || [])) {
+      if (String(line.calf_id) !== String(calf._id)) continue;
+      expenseLinks.push({
+        source: 'EXPENSE',
+        doc_ref: `EXP-${e.period}-${e.cycle}`,
+        date: line.date || null,
+        period: e.period,
+        cycle: e.cycle,
+        description: line.establishment || line.description || 'Expense',
+        amount: line.amount || 0,
+        payment_mode: line.payment_mode,
+        cycle_status: e.status,
+        bdm_id: e.bdm_id,
+      });
+    }
+  }
+
+  const all = [...fuelLinks, ...expenseLinks].sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+  const total_linked = Math.round(all.reduce((s, r) => s + (r.amount || 0), 0) * 100) / 100;
+  const variance = Math.round(((calf.amount || 0) - total_linked) * 100) / 100;
+
+  res.json({
+    success: true,
+    data: {
+      calf: { _id: calf._id, doc_type: calf.doc_type, calf_number: calf.calf_number, amount: calf.amount, period: calf.period, status: calf.status },
+      linked: all,
+      total_linked,
+      calf_amount: calf.amount || 0,
+      variance,
+      fuel_count: fuelLinks.length,
+      expense_count: expenseLinks.length,
+    }
+  });
 });
 
 const deleteDraftPrfCalf = catchAsync(async (req, res) => {
@@ -2582,6 +2855,87 @@ const postSingleSmer = async (doc, userId) => {
 };
 
 const postSingleCarLogbook = async (doc, userId) => {
+  // Phase 33: `doc` may be a CarLogbookCycle wrapper (preferred) OR a legacy
+  // per-day CarLogbookEntry (backward-compat path). We branch on collection.
+  const isCycle = doc.constructor && doc.constructor.modelName === 'CarLogbookCycle';
+
+  if (isCycle) {
+    // Fetch all VALID per-day entries belonging to this cycle
+    const days = await CarLogbookEntry.find({
+      entity_id: doc.entity_id,
+      bdm_id: doc.bdm_id,
+      period: doc.period,
+      cycle: doc.cycle,
+      status: { $in: ['VALID', 'POSTED'] }
+    });
+    // Refresh header totals from the per-day docs (in case nothing changed since validate)
+    if (typeof doc.refreshTotalsFromDays === 'function') await doc.refreshTotalsFromDays();
+
+    const docRef = `LOGBOOK-${doc.period}-${doc.cycle}`;
+    const session = await mongoose.startSession();
+    try {
+      await session.withTransaction(async () => {
+        const [event] = await TransactionEvent.create([{
+          entity_id: doc.entity_id, bdm_id: doc.bdm_id, event_type: 'CAR_LOGBOOK',
+          event_date: new Date(), document_ref: docRef,
+          payload: { cycle_id: doc._id, period: doc.period, cycle: doc.cycle, working_days: doc.working_days, total_km: doc.total_km, total_fuel: doc.total_fuel_amount },
+          status: 'ACTIVE', created_by: userId
+        }], { session });
+        doc.status = 'POSTED';
+        doc.posted_at = new Date();
+        doc.posted_by = userId;
+        doc.event_id = event._id;
+        await doc.save({ session });
+        for (const d of days) {
+          d.status = 'POSTED';
+          d.posted_at = new Date();
+          d.posted_by = userId;
+          d.event_id = event._id;
+          d.cycle_id = doc._id;
+          await d.save({ session });
+        }
+      });
+    } finally { session.endSession(); }
+
+    await DocumentAttachment.updateMany(
+      { source_model: 'CarLogbookEntry', source_id: { $in: days.map(d => d._id) } },
+      { $set: { event_id: doc.event_id } }
+    ).catch(() => {});
+    await DocumentAttachment.updateMany(
+      { source_model: 'CarLogbookCycle', source_id: doc._id },
+      { $set: { event_id: doc.event_id } }
+    ).catch(() => {});
+
+    // ONE journal entry for the whole cycle
+    try {
+      if (doc.total_fuel_amount > 0) {
+        const coaMap = await getCoaMap();
+        let cashTotal = 0, fundedTotal = 0, fundedCoa = null;
+        for (const d of days) {
+          for (const fuel of (d.fuel_entries || [])) {
+            if (!fuel.payment_mode || fuel.payment_mode === 'CASH') cashTotal += fuel.total_amount || 0;
+            else { fundedTotal += fuel.total_amount || 0; if (!fundedCoa) fundedCoa = await resolveFundingCoa(fuel); }
+          }
+        }
+        const jeDesc = `Car Logbook ${doc.period} ${doc.cycle}`;
+        const lines = [];
+        const totalFuel = cashTotal + fundedTotal;
+        if (totalFuel > 0) lines.push({ account_code: coaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas Expense', debit: totalFuel, credit: 0, description: jeDesc });
+        if (cashTotal > 0) lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: cashTotal, description: jeDesc });
+        if (fundedTotal > 0 && fundedCoa) lines.push({ account_code: fundedCoa.coa_code, account_name: fundedCoa.coa_name, debit: 0, credit: fundedTotal, description: jeDesc });
+        if (lines.length >= 2) {
+          await createAndPostJournal(doc.entity_id, {
+            je_date: new Date(), period: doc.period, description: jeDesc,
+            source_module: 'EXPENSE', source_event_id: doc.event_id, source_doc_ref: docRef,
+            lines, bir_flag: 'BOTH', vat_flag: 'N/A', bdm_id: doc.bdm_id, created_by: userId
+          });
+        }
+      }
+    } catch (jeErr) { console.error('Auto-journal failed for logbook cycle (approval hub):', doc._id, jeErr.message); }
+    return;
+  }
+
+  // ──────────────── Legacy per-day path (backward-compat) ────────────────
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
@@ -2856,13 +3210,15 @@ module.exports = {
   overridePerdiemDay, applyPerdiemOverride, getSmerCrmMdCounts, getSmerCrmVisitDetail,
   // Car Logbook
   createCarLogbook, updateCarLogbook, getCarLogbookList, getCarLogbookById, deleteDraftCarLogbook,
-  validateCarLogbook, submitCarLogbook, reopenCarLogbook, getSmerDailyByDate, getSmerDestinationsBatch,
+  validateCarLogbook, submitCarLogbook, reopenCarLogbook, submitFuelEntryForApproval,
+  getSmerDailyByDate, getSmerDestinationsBatch,
   // Expenses (ORE/ACCESS)
   createExpense, updateExpense, getExpenseList, getExpenseById, deleteDraftExpense,
   validateExpenses, submitExpenses, reopenExpenses,
   // PRF/CALF
   createPrfCalf, updatePrfCalf, getPrfCalfList, getPrfCalfById, deleteDraftPrfCalf,
   validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines,
+  getLinkedExpenses,
   // Batch Upload
   batchUploadExpenses, saveBatchExpenses,
   // Summary

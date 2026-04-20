@@ -348,51 +348,167 @@ function buildSmerDetails(item) {
 }
 
 function buildCarLogbookDetails(item) {
-  // Derive day-of-week in PH timezone (matches SMER daily_entries day_of_week semantics)
-  let dayOfWeek = null;
-  if (item.entry_date) {
+  // Phase 33: dual-shape support.
+  //  (a) CarLogbookCycle wrapper — `item` has period, cycle, working_days, total_*
+  //      and optional `daily_entries: []` hydrated by the caller.
+  //  (b) Legacy per-day CarLogbookEntry — `item` has entry_date, starting_km, etc.
+  //      Detected by presence of `entry_date` + absence of `working_days`.
+  const isLegacyDay = item && item.entry_date && typeof item.working_days === 'undefined';
+
+  if (isLegacyDay) {
+    let dayOfWeek = null;
     try {
-      dayOfWeek = new Date(item.entry_date).toLocaleDateString('en-US', {
-        weekday: 'long', timeZone: 'Asia/Manila',
-      });
+      dayOfWeek = new Date(item.entry_date).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Asia/Manila' });
     } catch { dayOfWeek = null; }
+    return {
+      shape: 'DAY',
+      period: item.period,
+      cycle: item.cycle,
+      status: item.status,
+      entry_date: item.entry_date,
+      day_of_week: dayOfWeek,
+      starting_km: item.starting_km,
+      ending_km: item.ending_km,
+      starting_km_photo_url: item.starting_km_photo_url,
+      ending_km_photo_url: item.ending_km_photo_url,
+      total_km: item.total_km,
+      official_km: item.official_km,
+      personal_km: item.personal_km,
+      total_fuel_amount: item.total_fuel_amount,
+      official_gas_amount: item.official_gas_amount,
+      personal_gas_amount: item.personal_gas_amount,
+      actual_liters: item.actual_liters,
+      efficiency_variance: item.efficiency_variance,
+      km_per_liter: item.km_per_liter,
+      overconsumption_flag: item.overconsumption_flag,
+      destination: item.destination,
+      notes: item.notes,
+      rejection_reason: item.rejection_reason || null,
+      validation_errors: item.validation_errors || [],
+      // Surface as line_count for generic card renderer (1 day = 1 line)
+      line_count: 1,
+      fuel_entries_count: (item.fuel_entries || []).length,
+      fuel_receipts: (item.fuel_entries || [])
+        .filter(fe => fe.receipt_url || fe.backup_photo_url)
+        .map(fe => ({ receipt_url: fe.receipt_url, backup_photo_url: fe.backup_photo_url, station_name: fe.station_name })),
+    };
   }
+
+  // CYCLE shape (primary path under Phase 33)
+  const days = Array.isArray(item.daily_entries) ? item.daily_entries : [];
+  const pendingFuel = days.reduce((n, d) => n + (d.fuel_entries || []).filter(f => f.approval_status === 'PENDING').length, 0);
+  const approvedFuel = days.reduce((n, d) => n + (d.fuel_entries || []).filter(f => f.approval_status === 'APPROVED').length, 0);
+  const rejectedFuel = days.reduce((n, d) => n + (d.fuel_entries || []).filter(f => f.approval_status === 'REJECTED').length, 0);
+  const totalFuelEntries = days.reduce((n, d) => n + (d.fuel_entries || []).length, 0);
+
   return {
+    shape: 'CYCLE',
     period: item.period,
     cycle: item.cycle,
     status: item.status,
-    entry_date: item.entry_date,
-    day_of_week: dayOfWeek,
-    starting_km: item.starting_km,
-    ending_km: item.ending_km,
-    starting_km_photo_url: item.starting_km_photo_url,
-    ending_km_photo_url: item.ending_km_photo_url,
-    total_km: item.total_km,
-    official_km: item.official_km,
-    personal_km: item.personal_km,
-    total_fuel_amount: item.total_fuel_amount,
-    official_gas_amount: item.official_gas_amount,
-    personal_gas_amount: item.personal_gas_amount,
-    actual_liters: item.actual_liters,
-    expected_official_liters: item.expected_official_liters,
-    expected_personal_liters: item.expected_personal_liters,
-    efficiency_variance: item.efficiency_variance,
-    km_per_liter: item.km_per_liter,
-    overconsumption_flag: item.overconsumption_flag,
-    destination: item.destination,
-    notes: item.notes,
+    working_days: item.working_days || 0,
+    total_km: item.total_km || 0,
+    total_official_km: item.total_official_km || 0,
+    total_personal_km: item.total_personal_km || 0,
+    total_actual_liters: item.total_actual_liters || 0,
+    total_expected_liters: item.total_expected_liters || 0,
+    cycle_efficiency_variance: item.cycle_efficiency_variance || 0,
+    cycle_overconsumption_flag: !!item.cycle_overconsumption_flag,
+    total_fuel_amount: item.total_fuel_amount || 0,
+    total_official_gas_amount: item.total_official_gas_amount || 0,
+    total_personal_gas_amount: item.total_personal_gas_amount || 0,
+    km_per_liter: item.km_per_liter || 12,
+    // Aliases for the generic Approval Hub card renderer (matches EXPENSES shape)
+    line_count: days.length,
+    total_amount: item.total_fuel_amount || 0,
+    // Fuel approval counters for the approver summary
+    fuel_entries_total: totalFuelEntries,
+    fuel_entries_pending: pendingFuel,
+    fuel_entries_approved: approvedFuel,
+    fuel_entries_rejected: rejectedFuel,
+    // Per-day rows (trimmed projection so the Hub card doesn't ship the raw docs)
+    daily_entries: days.map(d => ({
+      _id: d._id,
+      day: d.entry_date ? new Date(d.entry_date).getDate() : null,
+      entry_date: d.entry_date,
+      starting_km: d.starting_km,
+      ending_km: d.ending_km,
+      total_km: d.total_km,
+      personal_km: d.personal_km,
+      official_km: d.official_km,
+      total_fuel_amount: d.total_fuel_amount,
+      actual_liters: d.actual_liters,
+      overconsumption_flag: d.overconsumption_flag,
+      destination: d.destination,
+      notes: d.notes,
+      fuel_entries_count: (d.fuel_entries || []).length,
+      fuel_entries: (d.fuel_entries || []).map(fe => ({
+        _id: fe._id,
+        doc_ref: fe.doc_ref,
+        station_name: fe.station_name,
+        liters: fe.liters,
+        total_amount: fe.total_amount,
+        payment_mode: fe.payment_mode,
+        calf_id: fe.calf_id,
+        approval_status: fe.approval_status,
+        receipt_url: fe.receipt_url,
+        backup_photo_url: fe.backup_photo_url,
+        manual_override_flag: fe.manual_override_flag,
+      })),
+    })),
+    // Flat receipt list for the detail panel's "Proof" strip
+    fuel_receipts: days.flatMap(d => (d.fuel_entries || [])
+      .filter(fe => fe.receipt_url || fe.backup_photo_url)
+      .map(fe => ({
+        date: d.entry_date,
+        doc_ref: fe.doc_ref,
+        station_name: fe.station_name,
+        receipt_url: fe.receipt_url,
+        backup_photo_url: fe.backup_photo_url,
+      }))
+    ),
     rejection_reason: item.rejection_reason || null,
     validation_errors: item.validation_errors || [],
-    fuel_entries_count: (item.fuel_entries || []).length,
-    fuel_receipts: (item.fuel_entries || [])
-      .filter(fe => fe.receipt_url || fe.starting_km_photo_url || fe.ending_km_photo_url)
-      .map(fe => ({
-        day: fe.day, receipt_url: fe.receipt_url,
-        starting_km_photo_url: fe.starting_km_photo_url,
-        ending_km_photo_url: fe.ending_km_photo_url,
-      })),
-    // crm_visits, cities_visited are injected by the caller (universalApprovalService)
-    // via smerCrmBridge after this pure builder runs.
+  };
+}
+
+// Per-fuel-entry detail card (used when a fuel_entry routes through the Approval
+// Hub independently — mirrors per-diem override panel).
+function buildFuelEntryDetails(payload) {
+  // payload shape from MODULE_QUERIES['FUEL_ENTRY']: { day: CarLogbookEntry, fuel }
+  const day = payload.day || {};
+  const fuel = payload.fuel || payload;   // fallback if caller passes just the fuel subdoc
+  const dateStr = day.entry_date ? new Date(day.entry_date).toISOString().split('T')[0] : null;
+  return {
+    shape: 'FUEL_ENTRY',
+    doc_ref: fuel.doc_ref,
+    period: day.period,
+    cycle: day.cycle,
+    entry_date: day.entry_date,
+    date_iso: dateStr,
+    station_name: fuel.station_name,
+    fuel_type: fuel.fuel_type,
+    liters: fuel.liters,
+    price_per_liter: fuel.price_per_liter,
+    total_amount: fuel.total_amount,
+    // Aliases for generic card renderer
+    line_count: 1,
+    amount: fuel.total_amount,
+    // Proof evidence
+    receipt_url: fuel.receipt_url,
+    receipt_ocr_source: fuel.receipt_ocr_source,
+    receipt_ocr_data: fuel.receipt_ocr_data,
+    backup_photo_url: fuel.backup_photo_url,
+    manual_override_flag: !!fuel.manual_override_flag,
+    manual_override_reason: fuel.manual_override_reason,
+    // Payment + CALF linkage
+    payment_mode: fuel.payment_mode,
+    calf_id: fuel.calf_id,
+    calf_required: !!fuel.calf_required,
+    // Approval state (read-only display)
+    approval_status: fuel.approval_status,
+    approved_at: fuel.approved_at,
+    rejection_reason: fuel.rejection_reason,
   };
 }
 
@@ -957,6 +1073,7 @@ const DETAIL_BUILDERS = {
   COLLECTION:         buildCollectionDetails,
   SMER:               buildSmerDetails,
   CAR_LOGBOOK:        buildCarLogbookDetails,
+  FUEL_ENTRY:         buildFuelEntryDetails,
   EXPENSES:           buildExpensesDetails,
   PRF_CALF:           buildPrfCalfDetails,
   PERDIEM_OVERRIDE:   buildPerdiemOverrideDetails,

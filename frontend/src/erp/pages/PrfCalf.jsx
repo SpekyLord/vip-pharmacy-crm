@@ -23,7 +23,7 @@ const STATUS_COLORS = {
 
 export default function PrfCalf() {
   const { user } = useAuth();
-  const { getPrfCalfList, getPrfCalfById, createPrfCalf, updatePrfCalf, deleteDraftPrfCalf, validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines, presidentReversePrfCalf, loading } = useExpenses();
+  const { getPrfCalfList, getPrfCalfById, createPrfCalf, updatePrfCalf, deleteDraftPrfCalf, validatePrfCalf, submitPrfCalf, reopenPrfCalf, getPendingPartnerRebates, getPendingCalfLines, presidentReversePrfCalf, getLinkedExpenses, loading } = useExpenses();
   const { getMyCards, getMyBankAccounts } = useAccounting();
   const lookupApi = useErpApi();
   const { hasSubPermission } = useErpSubAccess();
@@ -38,6 +38,9 @@ export default function PrfCalf() {
   const [docs, setDocs] = useState([]);
   const [editingDoc, setEditingDoc] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  // Phase 33 — Linked-expenses inline drill-down cache keyed by CALF _id
+  const [linksByCalfId, setLinksByCalfId] = useState({});
+  const [openLinkRowId, setOpenLinkRowId] = useState(null);
   const [reverseTarget, setReverseTarget] = useState(null);
   const [pendingRebates, setPendingRebates] = useState([]);
   const [pendingCalfLines, setPendingCalfLines] = useState([]);
@@ -50,6 +53,7 @@ export default function PrfCalf() {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
   const [cycle, setCycle] = useState('C1');
+  const [listTab, setListTab] = useState('working');
 
   // Form state
   const [form, setForm] = useState({
@@ -252,6 +256,11 @@ export default function PrfCalf() {
   const calfBalance = (form.advance_amount || 0) - (form.liquidation_amount || 0);
   const selectedModeType = paymentModes.find(pm => pm.mode_code === form.payment_mode)?.mode_type || form.payment_mode;
 
+  // Split docs into Working (actionable) vs Posted (archive) — same pattern as ApprovalManager's All Pending vs History
+  const workingDocs = docs.filter(d => d.status !== 'POSTED');
+  const postedDocs = docs.filter(d => d.status === 'POSTED');
+  const visibleDocs = listTab === 'working' ? workingDocs : postedDocs;
+
   return (
     <div className="admin-page erp-page prf-calf-page">
       <style>{`
@@ -437,6 +446,25 @@ export default function PrfCalf() {
             </div>
           )}
 
+          {/* Working vs Posted tabs — separates actionable docs from archive */}
+          {!showForm && (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setListTab('working')}
+                style={{ padding: '7px 14px', minHeight: 40, borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, background: listTab === 'working' ? 'var(--erp-accent, #2563eb)' : 'transparent', color: listTab === 'working' ? '#fff' : 'var(--erp-text)', borderWidth: 1, borderStyle: 'solid', borderColor: listTab === 'working' ? 'transparent' : 'var(--erp-border, #dbe4f0)' }}
+              >
+                Working {workingDocs.length > 0 ? `(${workingDocs.length})` : ''}
+              </button>
+              <button
+                onClick={() => setListTab('posted')}
+                title="Already-posted PRF/CALF (archive)"
+                style={{ padding: '7px 14px', minHeight: 40, borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, background: listTab === 'posted' ? 'var(--erp-accent, #2563eb)' : 'transparent', color: listTab === 'posted' ? '#fff' : 'var(--erp-text)', borderWidth: 1, borderStyle: 'solid', borderColor: listTab === 'posted' ? 'transparent' : 'var(--erp-border, #dbe4f0)' }}
+              >
+                Posted {postedDocs.length > 0 ? `(${postedDocs.length})` : ''}
+              </button>
+            </div>
+          )}
+
           {/* Document List */}
           {!showForm && (
             <div className="prf-calf-table-wrap" style={{ overflowX: 'auto' }}>
@@ -453,7 +481,7 @@ export default function PrfCalf() {
                   </tr>
                 </thead>
                 <tbody>
-                  {docs.map(d => (
+                  {visibleDocs.map(d => (
                     <Fragment key={d._id}>
                     <tr style={{ borderBottom: d.status === 'ERROR' && d.rejection_reason ? 'none' : '1px solid var(--erp-border, #dbe4f0)' }}>
                       <td style={{ padding: 8, textAlign: 'center' }}>
@@ -477,6 +505,21 @@ export default function PrfCalf() {
                       <td style={{ padding: 8, textAlign: 'center' }}>
                         {editableStatuses.includes(d.status) && (
                           <button onClick={() => handleEdit(d)} style={{ marginRight: 4, padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', cursor: 'pointer' }}>Edit</button>
+                        )}
+                        {d.doc_type === 'CALF' && (
+                          <button
+                            onClick={async () => {
+                              const id = String(d._id);
+                              if (openLinkRowId === id) { setOpenLinkRowId(null); return; }
+                              if (!linksByCalfId[id]) {
+                                try { const r = await getLinkedExpenses(id); setLinksByCalfId(prev => ({ ...prev, [id]: r?.data })); }
+                                catch (e) { setLinksByCalfId(prev => ({ ...prev, [id]: { error: e.response?.data?.message || 'Failed to load' } })); }
+                              }
+                              setOpenLinkRowId(id);
+                            }}
+                            title="View fuel / expense entries drawing against this CALF"
+                            style={{ marginRight: 4, padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #0891b2', background: '#ecfeff', color: '#0e7490', cursor: 'pointer' }}
+                          >View Links{linksByCalfId[String(d._id)]?.linked ? ` (${linksByCalfId[String(d._id)].linked.length})` : ''}</button>
                         )}
                         {d.status === 'DRAFT' && (
                           <button onClick={() => handleDelete(d._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #ef4444', background: '#fff', color: '#ef4444', cursor: 'pointer' }}>Del</button>
@@ -506,9 +549,53 @@ export default function PrfCalf() {
                         </td>
                       </tr>
                     )}
+                    {/* Phase 33 — inline Linked Expenses drill-down */}
+                    {d.doc_type === 'CALF' && openLinkRowId === String(d._id) && (
+                      <tr style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)', background: '#f8fafc' }}>
+                        <td colSpan={7} style={{ padding: '8px 16px' }}>
+                          {linksByCalfId[String(d._id)]?.error && <div style={{ color: '#dc2626', fontSize: 12 }}>{linksByCalfId[String(d._id)].error}</div>}
+                          {linksByCalfId[String(d._id)]?.linked && (
+                            <div>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: '#0e7490', marginBottom: 6 }}>
+                                Linked Expenses — Fuel: {linksByCalfId[String(d._id)].fuel_count} · Expense: {linksByCalfId[String(d._id)].expense_count} · Drawn: ₱{(linksByCalfId[String(d._id)].total_linked || 0).toLocaleString()} of ₱{(linksByCalfId[String(d._id)].calf_amount || 0).toLocaleString()} · Variance: ₱{(linksByCalfId[String(d._id)].variance || 0).toLocaleString()}
+                              </div>
+                              {linksByCalfId[String(d._id)].linked.length === 0 && <div style={{ fontSize: 12, color: '#64748b' }}>No linked fuel or expense lines yet.</div>}
+                              {linksByCalfId[String(d._id)].linked.length > 0 && (
+                                <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}>
+                                  <thead>
+                                    <tr style={{ color: '#475569' }}>
+                                      <th style={{ textAlign: 'left', padding: 4 }}>Source</th>
+                                      <th style={{ textAlign: 'left', padding: 4 }}>Doc Ref</th>
+                                      <th style={{ textAlign: 'left', padding: 4 }}>Date</th>
+                                      <th style={{ textAlign: 'left', padding: 4 }}>Period/Cycle</th>
+                                      <th style={{ textAlign: 'left', padding: 4 }}>Description</th>
+                                      <th style={{ textAlign: 'right', padding: 4 }}>Amount</th>
+                                      <th style={{ textAlign: 'center', padding: 4 }}>Status</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {linksByCalfId[String(d._id)].linked.map((r, i) => (
+                                      <tr key={i} style={{ borderTop: '1px solid #e2e8f0' }}>
+                                        <td style={{ padding: 4 }}><span style={{ padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, color: '#fff', background: r.source === 'FUEL' ? '#ea580c' : '#0891b2' }}>{r.source}</span></td>
+                                        <td style={{ padding: 4 }}>{r.doc_ref}</td>
+                                        <td style={{ padding: 4 }}>{r.date ? new Date(r.date).toLocaleDateString() : '—'}</td>
+                                        <td style={{ padding: 4 }}>{r.period} {r.cycle}</td>
+                                        <td style={{ padding: 4 }}>{r.description}</td>
+                                        <td style={{ padding: 4, textAlign: 'right', fontWeight: 600 }}>₱{(r.amount || 0).toLocaleString()}</td>
+                                        <td style={{ padding: 4, textAlign: 'center' }}>{r.approval_status || r.cycle_status || '—'}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
                     </Fragment>
                   ))}
-                  {!docs.length && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)' }}>No PRF/CALF documents</td></tr>}
+                  {!visibleDocs.length && <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)' }}>{listTab === 'working' ? 'No unposted PRF/CALF' : 'No posted PRF/CALF for this period'}</td></tr>}
                 </tbody>
               </table>
             </div>
@@ -517,7 +604,7 @@ export default function PrfCalf() {
           {/* Mobile Card List */}
           {!showForm && (
             <div className="prf-calf-cards">
-              {docs.map(d => (
+              {visibleDocs.map(d => (
                 <div key={d._id} className="prf-calf-card">
                   <div className="prf-calf-card-header">
                     <span style={{ padding: '2px 10px', borderRadius: 4, fontSize: 12, fontWeight: 700, color: '#fff', background: d.doc_type === 'PRF' ? '#7c3aed' : '#0891b2' }}>{d.doc_type}</span>
@@ -576,8 +663,8 @@ export default function PrfCalf() {
                   </div>
                 </div>
               ))}
-              {!docs.length && (
-                <div style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)', fontSize: 14 }}>No PRF/CALF documents</div>
+              {!visibleDocs.length && (
+                <div style={{ padding: 24, textAlign: 'center', color: 'var(--erp-muted, #5f7188)', fontSize: 14 }}>{listTab === 'working' ? 'No unposted PRF/CALF' : 'No posted PRF/CALF for this period'}</div>
               )}
             </div>
           )}

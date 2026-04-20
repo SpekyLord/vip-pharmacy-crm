@@ -8,19 +8,44 @@
 const mongoose = require('mongoose');
 
 const fuelEntrySchema = new mongoose.Schema({
+  // Document-sequence ref (FUEL-{ENTITY}{MMDDYY}-{NNN}) — assigned on first submit-for-approval
+  doc_ref: { type: String, trim: true },
+
   station_name: { type: String, trim: true },
   fuel_type: { type: String, trim: true },
   liters: { type: Number, default: 0 },
   price_per_liter: { type: Number, default: 0 },
   total_amount: { type: Number, default: 0 },
+
+  // Primary proof: OCR scan OR URL upload of the official fuel receipt
   receipt_url: String,
   receipt_attachment_id: String,
   receipt_ocr_data: { type: mongoose.Schema.Types.Mixed },
+  receipt_ocr_source: { type: String, enum: ['SCAN', 'URL_UPLOAD', null], default: null },
   receipt_date: { type: String, trim: true }, // OCR-extracted date for cross-check against entry_date
+
+  // Manual override (when OCR fails or receipt illegible — requires reason)
+  manual_override_flag: { type: Boolean, default: false },
+  manual_override_reason: { type: String, trim: true },
+
+  // Backup evidence photo (upload-only, NO OCR — redundancy/audit)
+  backup_photo_url: String,
+  backup_photo_attachment_id: String,
+
   payment_mode: { type: String, default: 'CASH' }, // Validated against PaymentMode lookup
   funding_card_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CreditCard' },
   calf_required: { type: Boolean, default: false },
-  calf_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PrfCalf' }
+  calf_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PrfCalf' },
+
+  // Per-fuel approval — mirrors SmerEntry daily_entries perdiem_override approval fields.
+  // Allows non-CASH fuel receipts to route independently to the Approval Hub before the
+  // cycle submit. CASH entries default null (no approval needed); non-CASH submit flips
+  // to PENDING → APPROVED|REJECTED via gateApproval({ docType: 'FUEL_ENTRY' }).
+  approval_status: { type: String, enum: ['PENDING', 'APPROVED', 'REJECTED', null], default: null },
+  approval_request_id: { type: mongoose.Schema.Types.ObjectId, ref: 'ApprovalRequest' },
+  approved_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  approved_at: { type: Date },
+  rejection_reason: { type: String, trim: true },
 }, { _id: true });
 
 const carLogbookEntrySchema = new mongoose.Schema({
@@ -75,6 +100,9 @@ const carLogbookEntrySchema = new mongoose.Schema({
   rejection_reason: { type: String },
   event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
   deletion_event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
+
+  // Parent cycle wrapper (set lazily when the CarLogbookCycle doc is created)
+  cycle_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CarLogbookCycle', index: true },
 
   // Audit
   created_at: { type: Date, default: Date.now, immutable: true },

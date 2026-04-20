@@ -71,6 +71,10 @@ const MODULE_AUTO_POST = {
   COLLECTION:  { type: 'collection',    action: 'post' },
   CAR_LOGBOOK: { type: 'car_logbook',   action: 'post' },
   CREDIT_NOTE: { type: 'credit_note',   action: 'post' },
+  // Per-fuel-entry gate is held under module:'EXPENSES' + docType:'FUEL_ENTRY'.
+  // Keyed here by doc_type so the auto-post dispatcher (below) routes to the
+  // fuel_entry handler, not the generic expense_entry one.
+  FUEL_ENTRY:  { type: 'fuel_entry',    action: 'post' },
 };
 
 // Module-specific approval handlers (lazy-loaded to avoid circular deps)
@@ -96,7 +100,8 @@ const approvalHandlers = {
       !result.nextLevel
     ) {
       const req = result.request;
-      const autoPost = MODULE_AUTO_POST[req.module];
+      // Prefer doc_type (more specific — e.g. FUEL_ENTRY under EXPENSES) over module
+      const autoPost = MODULE_AUTO_POST[req.doc_type] || MODULE_AUTO_POST[req.module];
       if (autoPost && req.doc_id && approvalHandlers[autoPost.type]) {
         try {
           await approvalHandlers[autoPost.type](
@@ -330,15 +335,40 @@ const approvalHandlers = {
   },
 
   car_logbook: async (id, action, userId, reason) => {
+    const CarLogbookCycle = require('../models/CarLogbookCycle');
     const CarLogbookEntry = require('../models/CarLogbookEntry');
+    const { postSingleCarLogbook } = require('./expenseController');
+
+    // Phase 33: the Approval Hub references the CarLogbookCycle wrapper doc_id.
+    // Legacy approvals (pre-Phase 33) may still carry a per-day CarLogbookEntry id
+    // — fall through to that path when no cycle wrapper matches.
+    const cycle = await CarLogbookCycle.findById(id);
+    if (cycle) {
+      if (action === 'post') {
+        await postSingleCarLogbook(cycle, userId);
+        return cycle;
+      }
+      if (action === 'reject') {
+        cycle.status = 'ERROR';
+        cycle.rejection_reason = reason;
+        cycle.validation_errors = [reason];
+        await cycle.save();
+        // Propagate rejection onto every VALID per-day doc belonging to this cycle
+        await CarLogbookEntry.updateMany(
+          { cycle_id: cycle._id, status: 'VALID' },
+          { $set: { status: 'ERROR', rejection_reason: reason, validation_errors: [reason] } }
+        );
+        return cycle;
+      }
+      return cycle;
+    }
+
+    // Legacy per-day fallback (ensures old pending approvals still dispatch)
     const doc = await CarLogbookEntry.findById(id);
     if (!doc) throw new Error('Car logbook entry not found');
-    // Post/reject ALL VALID entries for same BDM + period + cycle (not just this one)
-    // Car logbook has separate documents per day, but approval is per-batch
     const batchFilter = { entity_id: doc.entity_id, bdm_id: doc.bdm_id, period: doc.period, cycle: doc.cycle, status: 'VALID' };
     if (action === 'post') {
       const allValid = await CarLogbookEntry.find(batchFilter);
-      const { postSingleCarLogbook } = require('./expenseController');
       for (const entry of allValid) {
         await postSingleCarLogbook(entry, userId);
       }
@@ -350,6 +380,28 @@ const approvalHandlers = {
       return doc;
     }
     return doc;
+  },
+
+  // Per-fuel approval (mirrors per-diem override dispatcher)
+  fuel_entry: async (id, action, userId, reason) => {
+    const CarLogbookEntry = require('../models/CarLogbookEntry');
+    // The fuel entry id is a subdoc _id on a CarLogbookEntry.fuel_entries array.
+    const dayDoc = await CarLogbookEntry.findOne({ 'fuel_entries._id': id });
+    if (!dayDoc) throw new Error('Fuel entry not found');
+    const fuel = dayDoc.fuel_entries.id(id);
+    if (!fuel) throw new Error('Fuel entry not found on day doc');
+
+    if (action === 'post' || action === 'approve') {
+      fuel.approval_status = 'APPROVED';
+      fuel.approved_by = userId;
+      fuel.approved_at = new Date();
+      fuel.rejection_reason = undefined;
+    } else if (action === 'reject') {
+      fuel.approval_status = 'REJECTED';
+      fuel.rejection_reason = reason || 'Rejected';
+    }
+    await dayDoc.save();
+    return { _id: fuel._id, parent_id: dayDoc._id, approval_status: fuel.approval_status };
   },
 
   expense_entry: async (id, action, userId, reason) => {

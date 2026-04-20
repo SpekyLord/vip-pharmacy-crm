@@ -53,6 +53,7 @@ const IncentivePayout = require('../models/IncentivePayout');
 // Phase 31R — SMER, Car Logbook, Supplier Invoice, Credit Note, IC Settlement
 const SmerEntry = require('../models/SmerEntry');
 const CarLogbookEntry = require('../models/CarLogbookEntry');
+const CarLogbookCycle = require('../models/CarLogbookCycle');
 const SupplierInvoice = require('../models/SupplierInvoice');
 const CreditNote = require('../models/CreditNote');
 const IcSettlement = require('../models/IcSettlement');
@@ -1108,6 +1109,13 @@ async function reverseSmer({ doc, userId, reason, tenantFilter }) {
 // ───────────────────────────────────────────────────────────────────────────────
 
 async function loadCarLogbook({ doc_id, tenantFilter }) {
+  // Phase 33: prefer the CarLogbookCycle wrapper — it owns the JE/event_id
+  // and is the unit of reversal. Fall back to legacy per-day CarLogbookEntry.
+  const cycle = await CarLogbookCycle.findOne({ _id: doc_id, ...tenantFilter });
+  if (cycle) {
+    if (cycle.deletion_event_id) { const e = new Error('Car Logbook cycle already reversed'); e.statusCode = 409; throw e; }
+    return cycle;
+  }
   const c = await CarLogbookEntry.findOne({ _id: doc_id, ...tenantFilter });
   if (!c) { const e = new Error('Car Logbook not found in your scope'); e.statusCode = 404; throw e; }
   if (c.deletion_event_id) { const e = new Error('Car Logbook already reversed'); e.statusCode = 409; throw e; }
@@ -1116,6 +1124,42 @@ async function loadCarLogbook({ doc_id, tenantFilter }) {
 
 async function reverseCarLogbook({ doc, userId, reason, tenantFilter }) {
   const sideEffects = [];
+  const isCycle = doc.constructor && doc.constructor.modelName === 'CarLogbookCycle';
+
+  if (isCycle) {
+    // Pre-POSTED cycle: hard-delete the wrapper AND any DRAFT/VALID/ERROR per-day docs that reference it
+    if (doc.status !== 'POSTED' && doc.status !== 'DELETION_REQUESTED') {
+      await CarLogbookEntry.deleteMany({ cycle_id: doc._id, status: { $in: ['DRAFT', 'VALID', 'ERROR'] }, ...tenantFilter });
+      await CarLogbookCycle.deleteOne({ _id: doc._id, ...tenantFilter });
+      return { doc_type: 'CAR_LOGBOOK', doc_id: doc._id, doc_ref: `LOGBOOK-${doc.period}-${doc.cycle}`, mode: 'HARD_DELETE', reversal_event_id: null, side_effects: ['hard_deleted_cycle_and_days'] };
+    }
+    await assertReversalPeriodOpen({ doc_type: 'CAR_LOGBOOK', entityId: doc.entity_id });
+
+    const { reversed, already } = await reverseLinkedJEs({ event_id: doc.event_id, reason, userId, entityId: doc.entity_id });
+    if (reversed) sideEffects.push(`journals_reversed=${reversed}`);
+    if (already) sideEffects.push(`journals_already_reversed=${already}`);
+
+    const session = await mongoose.startSession();
+    let reversalEvent;
+    try {
+      await session.withTransaction(async () => {
+        reversalEvent = await createReversalEvent({ doc, doc_type: 'CAR_LOGBOOK', entity_id: doc.entity_id, bdm_id: doc.bdm_id, reason, userId, session });
+        doc.deletion_event_id = reversalEvent._id;
+        await doc.save({ session });
+        // Stamp deletion_event_id on all per-day docs belonging to this cycle
+        await CarLogbookEntry.updateMany(
+          { cycle_id: doc._id, status: 'POSTED' },
+          { $set: { deletion_event_id: reversalEvent._id } },
+          { session }
+        );
+      });
+    } finally { session.endSession(); }
+
+    sideEffects.push('per_day_docs_marked');
+    return { doc_type: 'CAR_LOGBOOK', doc_id: doc._id, doc_ref: `LOGBOOK-${doc.period}-${doc.cycle}`, mode: 'SAP_STORNO', reversal_event_id: reversalEvent?._id, side_effects: sideEffects };
+  }
+
+  // ──────────────── Legacy per-day reversal (backward-compat) ────────────────
   if (doc.status !== 'POSTED' && doc.status !== 'DELETION_REQUESTED') {
     await CarLogbookEntry.deleteOne({ _id: doc._id, ...tenantFilter });
     return { doc_type: 'CAR_LOGBOOK', doc_id: doc._id, doc_ref: `LOGBOOK-${doc.period}-${doc.entry_date?.toISOString?.().slice(0,10) || ''}`, mode: 'HARD_DELETE', reversal_event_id: null, side_effects: ['hard_deleted'] };
@@ -1706,6 +1750,17 @@ async function listReversibleDocs({ doc_types, entityId, fromDate, toDate, page 
   }
 
   if (wantedTypes.includes('CAR_LOGBOOK')) {
+    // Phase 33: list CarLogbookCycle wrappers (preferred reversal target)
+    const qc = { ...baseEntity, ...notReversed, status: 'POSTED' };
+    if (dateFilter) qc.posted_at = dateFilter;
+    try {
+      const { rows: crows, cnt: ccnt } = await fetchAndCount(CarLogbookCycle, qc, '_id period cycle entity_id bdm_id posted_at status total_km total_fuel_amount', 'posted_at');
+      totalCount += ccnt;
+      crows.forEach(r => out.push({ doc_type: 'CAR_LOGBOOK', doc_id: r._id, doc_ref: `LOGBOOK ${r.period}-${r.cycle}`, entity_id: r.entity_id, bdm_id: r.bdm_id, posted_at: r.posted_at, status: r.status, label: REVERSAL_HANDLERS.CAR_LOGBOOK.label, sub: `${r.total_km || 0} km / ₱${r.total_fuel_amount || 0}` }));
+    } catch (e) { /* CarLogbookCycle may be absent pre-migration — fall through to per-day */ }
+  }
+
+  if (false && wantedTypes.includes('CAR_LOGBOOK')) {
     const q = { ...baseEntity, ...notReversed, status: 'POSTED' };
     if (dateFilter) q.posted_at = dateFilter;
     const { rows, cnt } = await fetchAndCount(CarLogbookEntry, q, '_id period cycle entry_date entity_id bdm_id posted_at status total_km total_fuel_amount', 'posted_at');
