@@ -50,6 +50,7 @@ const icSettlementSchema = new mongoose.Schema({
   posted_at: { type: Date },
   posted_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
+  deletion_event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
 
   // Rejection (Phase G6)
   rejection_reason: { type: String, trim: true, default: '' },

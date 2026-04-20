@@ -25,6 +25,8 @@ const IncomeReport = require('../models/IncomeReport');
 const Payslip = require('../models/Payslip');
 const Collection = require('../models/Collection');
 const PurchaseOrder = require('../models/PurchaseOrder');
+// Phase 31R — AP payment blocker for Supplier Invoice reversal
+const ApPayment = require('../models/ApPayment');
 
 /**
  * GRN dependent check — block reversal if any batch from this GRN has been
@@ -342,6 +344,53 @@ async function checkPoDependents({ doc /* , tenantFilter */ }) {
   return { has_deps: dependents.length > 0, dependents };
 }
 
+/**
+ * Supplier Invoice dependent check (Phase 31R) — block if any ApPayment has
+ * been recorded against the invoice. Payments consume AP balance; reversing
+ * the invoice with a payment in-flight would leave the AP ledger unbalanced
+ * (payment JE credits cash + debits AP-Trade against an invoice that no
+ * longer exists in AR/AP reconciliation).
+ */
+async function checkSupplierInvoiceDependents({ doc /* , tenantFilter */ }) {
+  const dependents = [];
+  const payments = await ApPayment.find({
+    entity_id: doc.entity_id,
+    supplier_invoice_id: doc._id,
+  }).select('_id reference payment_date amount').lean();
+  for (const p of payments) {
+    dependents.push({
+      type: 'AP_PAYMENT',
+      ref: p.reference || `AP-PAY-${p._id}`,
+      doc_id: p._id,
+      message: `AP Payment of ₱${p.amount} on ${p.payment_date?.toISOString?.().slice(0, 10) || ''} references this invoice — reverse the payment first.`,
+    });
+  }
+  return { has_deps: dependents.length > 0, dependents };
+}
+
+/**
+ * Credit Note dependent check (Phase 31R) — block if the CN has been applied
+ * to a Collection (future: Collection.applied_credit_notes). Today we treat
+ * CreditNote as standalone (no Collection-linkage field exists yet), so this
+ * returns no blockers. Placeholder keeps the registry symmetric — if a
+ * `Collection.applied_credit_note_ids` field is added later, this checker
+ * will surface dependents without touching callers.
+ */
+async function checkCreditNoteDependents({ /* doc, tenantFilter */ }) {
+  return { has_deps: false, dependents: [] };
+}
+
+/**
+ * IC Settlement dependent check (Phase 31R) — for now, no downstream
+ * consumers exist (settlement is a terminal doc in the IC flow: VIP CSI →
+ * MG Settlement → closed). Placeholder keeps the registry symmetric. If a
+ * future downstream doc consumes the settlement (e.g., refund flow), add
+ * the check here.
+ */
+async function checkIcSettlementDependents({ /* doc, tenantFilter */ }) {
+  return { has_deps: false, dependents: [] };
+}
+
 // Registry — one entry per module that supports president-reverse.
 // Caller passes `doc_type`; checker returns `{ has_deps, dependents }`.
 const CHECKERS = {
@@ -356,6 +405,10 @@ const CHECKERS = {
   COLLECTION: checkCollectionDependents,
   EXPENSE: checkExpenseDependents,
   PURCHASE_ORDER: checkPoDependents,
+  // Phase 31R
+  SUPPLIER_INVOICE: checkSupplierInvoiceDependents,
+  CREDIT_NOTE: checkCreditNoteDependents,
+  IC_SETTLEMENT: checkIcSettlementDependents,
 };
 
 /**

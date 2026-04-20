@@ -167,6 +167,86 @@ const validateCreditNotes = catchAsync(async (req, res) => {
 // SUBMIT — POST ALL VALID CREDIT NOTES
 // ═══════════════════════════════════════════════════════════
 
+/**
+ * Phase 31R follow-up — extracted per-CN posting so the Universal Approval Hub
+ * can post one CN at a time when an unauthorized submitter was gated. Mirrors
+ * the `postSingleSmer` / `postSingleCarLogbook` pattern in expenseController.
+ *
+ * Side effects performed:
+ *   1. TransactionEvent (event_type: 'CREDIT_NOTE')
+ *   2. InventoryLedger RETURN_IN entries for RESALEABLE lines
+ *   3. Sales-returns JE (DR 4000 Sales Returns / CR 1100 AR Trade) with
+ *      source_module='CREDIT_NOTE' + source_event_id pointing at the event
+ *   4. CreditNote.status → 'POSTED', stamp posted_at/posted_by/event_id
+ *
+ * JE failures are logged but do not abort — matches the existing bulk path.
+ */
+const postSingleCreditNote = async (doc, userId) => {
+  const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
+  await checkPeriodOpen(doc.entity_id, dateToPeriod(doc.cn_date || new Date()));
+
+  const session = await mongoose.startSession();
+  try {
+    await session.withTransaction(async () => {
+      const event = await TransactionEvent.create([{
+        entity_id: doc.entity_id,
+        event_type: 'CREDIT_NOTE',
+        source_ref: doc._id,
+        source_model: 'CreditNote',
+        description: `Credit Note ${doc.cn_number} — return from ${doc.hospital_id || doc.customer_id}`,
+        event_date: doc.cn_date,
+        created_by: userId,
+      }], { session });
+
+      for (const item of doc.line_items) {
+        if (item.return_condition === 'RESALEABLE') {
+          await InventoryLedger.create([{
+            entity_id: doc.entity_id,
+            bdm_id: doc.bdm_id,
+            warehouse_id: doc.warehouse_id,
+            product_id: item.product_id,
+            batch_lot_no: item.batch_lot_no,
+            expiry_date: item.expiry_date || new Date(),
+            transaction_type: 'RETURN_IN',
+            qty_in: item.qty,
+            qty_out: 0,
+            event_id: event[0]._id,
+            recorded_by: userId,
+          }], { session });
+        }
+      }
+
+      doc.status = 'POSTED';
+      doc.posted_at = new Date();
+      doc.posted_by = userId;
+      doc.event_id = event[0]._id;
+      await doc.save({ session });
+    });
+  } finally { session.endSession(); }
+
+  // JE posted outside the txn (same as other approval-hub post helpers —
+  // journalEngine runs its own session; failures log but don't break posting).
+  try {
+    const coa = await getCoaMap();
+    const cnPeriod = dateToPeriod(doc.cn_date || new Date());
+    await createAndPostJournal(doc.entity_id, {
+      je_date: doc.cn_date,
+      period: cnPeriod,
+      description: `Credit Note ${doc.cn_number}`,
+      source_module: 'CREDIT_NOTE',
+      source_event_id: doc.event_id,
+      source_doc_ref: doc.cn_number || doc._id.toString(),
+      lines: [
+        { account_code: coa.SALES_REVENUE || '4000', account_name: 'Sales Returns', debit: doc.credit_total, credit: 0, description: `CN ${doc.cn_number}` },
+        { account_code: coa.AR_TRADE || '1100', account_name: 'AR Trade', debit: 0, credit: doc.credit_total, description: `CN ${doc.cn_number}` },
+      ],
+      bir_flag: 'BOTH',
+      vat_flag: 'N/A',
+      created_by: userId,
+    });
+  } catch (jeErr) { console.error(`[CreditNote] Journal failed for ${doc.cn_number}:`, jeErr.message); }
+};
+
 const submitCreditNotes = catchAsync(async (req, res) => {
   const filter = { ...req.tenantFilter, status: 'VALID' };
   if (req.body.cn_ids?.length) {
@@ -178,12 +258,15 @@ const submitCreditNotes = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'No VALID credit notes to submit. Run validation first.' });
   }
 
-  // Authority matrix gate
+  // Authority matrix gate — Phase 31R follow-up: use dedicated CREDIT_NOTE module
+  // key so the Approval Hub surfaces pending CNs (previously filed under 'SALES'
+  // where only SalesLine surfaced; CN approvals were invisible to approvers).
+  // MODULE_DEFAULT_ROLES['CREDIT_NOTE'] lazy-seeds on first call.
   const { gateApproval } = require('../services/approvalService');
   const cnTotal = validRows.reduce((sum, cn) => sum + (cn.credit_total || 0), 0);
   const gated = await gateApproval({
     entityId: req.entityId,
-    module: 'SALES',
+    module: 'CREDIT_NOTE',
     docType: 'CREDIT_NOTE',
     docId: validRows[0]._id,
     docRef: validRows.map(cn => cn.cn_number).filter(Boolean).join(', '),
@@ -194,96 +277,17 @@ const submitCreditNotes = catchAsync(async (req, res) => {
   }, res);
   if (gated) return;
 
-  // Period lock check
-  const { checkPeriodOpen } = require('../utils/periodLock');
-  const { dateToPeriod } = require('../utils/periodLock');
+  let postedCount = 0;
   for (const cn of validRows) {
-    await checkPeriodOpen(cn.entity_id, dateToPeriod(cn.cn_date || new Date()));
+    await postSingleCreditNote(cn, req.user._id);
+    postedCount++;
   }
-
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
-  try {
-    let postedCount = 0;
-
-    for (const cn of validRows) {
-      // 1. Create transaction event
-      const event = await TransactionEvent.create([{
-        entity_id: cn.entity_id,
-        event_type: 'CREDIT_NOTE',
-        source_ref: cn._id,
-        source_model: 'CreditNote',
-        description: `Credit Note ${cn.cn_number} — return from ${cn.hospital_id || cn.customer_id}`,
-        event_date: cn.cn_date,
-        created_by: req.user._id
-      }], { session });
-
-      // 2. Create RETURN_IN inventory entries for resaleable items
-      for (const item of cn.line_items) {
-        if (item.return_condition === 'RESALEABLE') {
-          await InventoryLedger.create([{
-            entity_id: cn.entity_id,
-            bdm_id: cn.bdm_id,
-            warehouse_id: cn.warehouse_id,
-            product_id: item.product_id,
-            batch_lot_no: item.batch_lot_no,
-            expiry_date: item.expiry_date || new Date(),
-            transaction_type: 'RETURN_IN',
-            qty_in: item.qty,
-            qty_out: 0,
-            event_id: event[0]._id,
-            recorded_by: req.user._id
-          }], { session });
-        }
-      }
-
-      // 3. Create reversal journal (Debit: Sales Revenue contra, Credit: AR Trade)
-      try {
-        const coa = await getCoaMap();
-        const cnPeriod = dateToPeriod(cn.cn_date || new Date());
-        const jeData = {
-          je_date: cn.cn_date,
-          period: cnPeriod,
-          description: `Credit Note ${cn.cn_number}`,
-          source_module: 'CREDIT_NOTE',
-          source_event_id: event[0]._id,
-          source_doc_ref: cn.cn_number || cn._id.toString(),
-          lines: [
-            { account_code: coa.SALES_REVENUE || '4000', account_name: 'Sales Returns', debit: cn.credit_total, credit: 0, description: `CN ${cn.cn_number}` },
-            { account_code: coa.AR_TRADE || '1100', account_name: 'AR Trade', debit: 0, credit: cn.credit_total, description: `CN ${cn.cn_number}` }
-          ],
-          bir_flag: 'BOTH',
-          vat_flag: 'N/A',
-          created_by: req.user._id
-        };
-        await createAndPostJournal(cn.entity_id, jeData, { session });
-      } catch (jeErr) {
-        console.error(`[CreditNote] Journal failed for ${cn.cn_number}:`, jeErr.message);
-      }
-
-      // 4. Update credit note status
-      cn.status = 'POSTED';
-      cn.posted_at = new Date();
-      cn.posted_by = req.user._id;
-      cn.event_id = event[0]._id;
-      await cn.save({ session });
-
-      postedCount++;
-    }
-
-    await session.commitTransaction();
-    res.json({ success: true, posted_count: postedCount });
-  } catch (err) {
-    await session.abortTransaction();
-    throw err;
-  } finally {
-    session.endSession();
-  }
+  res.json({ success: true, posted_count: postedCount });
 });
 
 module.exports = {
   createCreditNote, updateCreditNote, deleteCreditNote,
   getCreditNotes, getCreditNoteById,
-  validateCreditNotes, submitCreditNotes
+  validateCreditNotes, submitCreditNotes,
+  postSingleCreditNote,
 };

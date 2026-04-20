@@ -46,6 +46,12 @@ const ConsignmentTracker = require('../models/ConsignmentTracker');
 const PettyCashTransaction = require('../models/PettyCashTransaction');
 const JournalEntry = require('../models/JournalEntry');
 const InventoryLedger = require('../models/InventoryLedger');
+// Phase 31R
+const SmerEntry = require('../models/SmerEntry');
+const CarLogbookEntry = require('../models/CarLogbookEntry');
+const SupplierInvoice = require('../models/SupplierInvoice');
+const CreditNote = require('../models/CreditNote');
+const IcSettlement = require('../models/IcSettlement');
 
 const { buildDocumentDetails, REVERSAL_DOC_TYPE_TO_MODULE } = require('./documentDetailBuilder');
 
@@ -172,6 +178,57 @@ const POPULATED_LOADERS = {
       .populate('posted_by', 'name')
       .populate('created_by', 'name')
       .populate('corrects_je_id', 'je_number je_date')
+      .lean();
+  },
+
+  // ── Phase 31R ──
+  SMER_ENTRY: async (id, filter) => {
+    return SmerEntry.findOne({ _id: id, ...filter })
+      .populate('bdm_id', 'name email')
+      .populate('posted_by', 'name')
+      .populate({ path: 'daily_entries.overridden_by', select: 'name' })
+      .lean();
+  },
+
+  CAR_LOGBOOK: async (id, filter) => {
+    return CarLogbookEntry.findOne({ _id: id, ...filter })
+      .populate('bdm_id', 'name email')
+      .populate('posted_by', 'name')
+      .lean();
+  },
+
+  SUPPLIER_INVOICE: async (id, filter) => {
+    return SupplierInvoice.findOne({ _id: id, ...filter })
+      .populate('vendor_id', 'vendor_name tin')
+      .populate('po_id', 'po_number')
+      .populate('warehouse_id', 'warehouse_name warehouse_code')
+      .lean();
+  },
+
+  CREDIT_NOTE: async (id, filter) => {
+    return CreditNote.findOne({ _id: id, ...filter })
+      .populate('bdm_id', 'name email')
+      .populate('hospital_id', 'hospital_name')
+      .populate('customer_id', 'customer_name')
+      .populate('warehouse_id', 'warehouse_name warehouse_code')
+      .populate('posted_by', 'name')
+      .lean();
+  },
+
+  IC_SETTLEMENT: async (id, filter) => {
+    // IcSettlement uses creditor_entity_id / debtor_entity_id (not entity_id).
+    // Mirror loadIcSettlement's scope rule: caller entity matches either side.
+    const q = { _id: id };
+    if (filter?.entity_id) {
+      q.$or = [
+        { creditor_entity_id: filter.entity_id },
+        { debtor_entity_id: filter.entity_id },
+      ];
+    }
+    return IcSettlement.findOne(q)
+      .populate('creditor_entity_id', 'entity_name entity_code')
+      .populate('debtor_entity_id', 'entity_name entity_code')
+      .populate('posted_by', 'name')
       .lean();
   },
 };
@@ -324,6 +381,9 @@ async function signPhotoUrls(details, moduleKey) {
       ]);
       break;
     case 'PRF_CALF':
+      details.photo_urls = await signUrls(details.photo_urls);
+      break;
+    case 'CREDIT_NOTE':
       details.photo_urls = await signUrls(details.photo_urls);
       break;
     case 'IC_TRANSFER':

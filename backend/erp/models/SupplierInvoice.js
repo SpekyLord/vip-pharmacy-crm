@@ -53,6 +53,7 @@ const supplierInvoiceSchema = new mongoose.Schema({
   },
   amount_paid: { type: Number, default: 0 },
   event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
+  deletion_event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   created_at: { type: Date, default: Date.now, immutable: true }
 }, {

@@ -14,6 +14,10 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const { ALL_ROLES, ROLES } = require('../constants/roles');
+const {
+  getLoginMaxAttempts,
+  getLoginLockoutDurationMs,
+} = require('../config/runtime');
 
 const userSchema = new mongoose.Schema(
   {
@@ -223,11 +227,10 @@ userSchema.statics.findActiveByRole = function (role) {
   return this.find({ role, isActive: true });
 };
 
-// Account lockout configuration
-const LOCKOUT_CONFIG = {
-  MAX_ATTEMPTS: 999, // TODO: revert to 5 for production
-  LOCKOUT_DURATION_MS: 15 * 60 * 1000, // 15 minutes
-};
+const getLockoutConfig = () => ({
+  MAX_ATTEMPTS: getLoginMaxAttempts(),
+  LOCKOUT_DURATION_MS: getLoginLockoutDurationMs(),
+});
 
 // Instance method to check if account is locked
 userSchema.methods.isLocked = function () {
@@ -244,11 +247,12 @@ userSchema.methods.getLockoutRemaining = function () {
 
 // Instance method to handle failed login
 userSchema.methods.handleFailedLogin = async function () {
+  const lockoutConfig = getLockoutConfig();
   this.failedLoginAttempts = (this.failedLoginAttempts || 0) + 1;
 
   // Lock account after MAX_ATTEMPTS failed attempts
-  if (this.failedLoginAttempts >= LOCKOUT_CONFIG.MAX_ATTEMPTS) {
-    this.lockoutUntil = new Date(Date.now() + LOCKOUT_CONFIG.LOCKOUT_DURATION_MS);
+  if (this.failedLoginAttempts >= lockoutConfig.MAX_ATTEMPTS) {
+    this.lockoutUntil = new Date(Date.now() + lockoutConfig.LOCKOUT_DURATION_MS);
   }
 
   await this.save();

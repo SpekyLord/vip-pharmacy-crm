@@ -50,6 +50,13 @@ const SalesGoalPlan = require('../models/SalesGoalPlan');
 const SalesGoalTarget = require('../models/SalesGoalTarget');
 const KpiSnapshot = require('../models/KpiSnapshot');
 const IncentivePayout = require('../models/IncentivePayout');
+// Phase 31R — SMER, Car Logbook, Supplier Invoice, Credit Note, IC Settlement
+const SmerEntry = require('../models/SmerEntry');
+const CarLogbookEntry = require('../models/CarLogbookEntry');
+const SupplierInvoice = require('../models/SupplierInvoice');
+const CreditNote = require('../models/CreditNote');
+const IcSettlement = require('../models/IcSettlement');
+const ApPayment = require('../models/ApPayment');
 
 const { reverseJournal } = require('./journalEngine');
 const { checkHardBlockers } = require('./dependentDocChecker');
@@ -80,6 +87,16 @@ const PERIOD_LOCK_MODULE = {
   // (Phase SG-Q2 W4: INCENTIVE_PAYOUT is now a valid PeriodLock.module enum
   // value, so future variants could choose it explicitly if needed.)
   SALES_GOAL_PLAN: 'JOURNAL',
+  // Phase 31R — SMER + Car Logbook route through the EXPENSE period lock (same
+  // as ExpenseEntry/CALF/PRF — see expenseRoutes.js where all four submit/reopen
+  // routes use periodLockCheck('EXPENSE')). Supplier Invoice lands in PURCHASING,
+  // Credit Note in SALES (its JE is a Sales Returns reversal), and IC Settlement
+  // in BANKING (cash receipt from subsidiary).
+  SMER_ENTRY:       'EXPENSE',
+  CAR_LOGBOOK:      'EXPENSE',
+  SUPPLIER_INVOICE: 'PURCHASING',
+  CREDIT_NOTE:      'SALES',
+  IC_SETTLEMENT:    'BANKING',
 };
 
 // ───────────────────────────────────────────────────────────────────────────────
@@ -915,7 +932,268 @@ async function reverseSalesGoalPlan({ doc, userId, reason }) {
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
-// Registry — Phase 1-4 complete
+// SMER_ENTRY handler — Phase 31R
+//
+// SMER posts a multi-line JE (PER_DIEM/TRANSPORT/SPECIAL_TRANSPORT/OTHER_REIMBURSABLE
+// debits, AR_BDM credit) via `createAndPostJournal` with source_event_id = event_id.
+// Reversal mirrors `reopenSmer` (expenseController.js:315) but is SAP Storno:
+// original stays POSTED with deletion_event_id stamped — NOT flipped to DRAFT.
+// ───────────────────────────────────────────────────────────────────────────────
+
+async function loadSmer({ doc_id, tenantFilter }) {
+  const s = await SmerEntry.findOne({ _id: doc_id, ...tenantFilter });
+  if (!s) { const e = new Error('SMER not found in your scope'); e.statusCode = 404; throw e; }
+  if (s.deletion_event_id) { const e = new Error('SMER already reversed'); e.statusCode = 409; throw e; }
+  return s;
+}
+
+async function reverseSmer({ doc, userId, reason, tenantFilter }) {
+  const sideEffects = [];
+  if (doc.status !== 'POSTED' && doc.status !== 'DELETION_REQUESTED') {
+    await SmerEntry.deleteOne({ _id: doc._id, ...tenantFilter });
+    return { doc_type: 'SMER_ENTRY', doc_id: doc._id, doc_ref: `SMER-${doc.period}-${doc.cycle}`, mode: 'HARD_DELETE', reversal_event_id: null, side_effects: ['hard_deleted'] };
+  }
+  await assertReversalPeriodOpen({ doc_type: 'SMER_ENTRY', entityId: doc.entity_id });
+
+  const { reversed, already } = await reverseLinkedJEs({ event_id: doc.event_id, reason, userId, entityId: doc.entity_id });
+  if (reversed) sideEffects.push(`journals_reversed=${reversed}`);
+  if (already) sideEffects.push(`journals_already_reversed=${already}`);
+
+  const session = await mongoose.startSession();
+  let reversalEvent;
+  try {
+    await session.withTransaction(async () => {
+      reversalEvent = await createReversalEvent({ doc, doc_type: 'SMER_ENTRY', entity_id: doc.entity_id, bdm_id: doc.bdm_id, reason, userId, session });
+      doc.deletion_event_id = reversalEvent._id;
+      await doc.save({ session });
+    });
+  } finally { session.endSession(); }
+
+  return { doc_type: 'SMER_ENTRY', doc_id: doc._id, doc_ref: `SMER-${doc.period}-${doc.cycle}`, mode: 'SAP_STORNO', reversal_event_id: reversalEvent?._id, side_effects: sideEffects };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// CAR_LOGBOOK handler — Phase 31R
+//
+// Logbook posts a JE (FUEL_GAS debit, AR_BDM credit for cash portion, funding COA
+// for company-funded portion) via `createAndPostJournal` with source_event_id =
+// event_id. Reversal mirrors `reopenCarLogbook` (expenseController.js:837) but is
+// SAP Storno — original stays POSTED with deletion_event_id stamped.
+// ───────────────────────────────────────────────────────────────────────────────
+
+async function loadCarLogbook({ doc_id, tenantFilter }) {
+  const c = await CarLogbookEntry.findOne({ _id: doc_id, ...tenantFilter });
+  if (!c) { const e = new Error('Car Logbook not found in your scope'); e.statusCode = 404; throw e; }
+  if (c.deletion_event_id) { const e = new Error('Car Logbook already reversed'); e.statusCode = 409; throw e; }
+  return c;
+}
+
+async function reverseCarLogbook({ doc, userId, reason, tenantFilter }) {
+  const sideEffects = [];
+  if (doc.status !== 'POSTED' && doc.status !== 'DELETION_REQUESTED') {
+    await CarLogbookEntry.deleteOne({ _id: doc._id, ...tenantFilter });
+    return { doc_type: 'CAR_LOGBOOK', doc_id: doc._id, doc_ref: `LOGBOOK-${doc.period}-${doc.entry_date?.toISOString?.().slice(0,10) || ''}`, mode: 'HARD_DELETE', reversal_event_id: null, side_effects: ['hard_deleted'] };
+  }
+  await assertReversalPeriodOpen({ doc_type: 'CAR_LOGBOOK', entityId: doc.entity_id });
+
+  const { reversed, already } = await reverseLinkedJEs({ event_id: doc.event_id, reason, userId, entityId: doc.entity_id });
+  if (reversed) sideEffects.push(`journals_reversed=${reversed}`);
+  if (already) sideEffects.push(`journals_already_reversed=${already}`);
+
+  const session = await mongoose.startSession();
+  let reversalEvent;
+  try {
+    await session.withTransaction(async () => {
+      reversalEvent = await createReversalEvent({ doc, doc_type: 'CAR_LOGBOOK', entity_id: doc.entity_id, bdm_id: doc.bdm_id, reason, userId, session });
+      doc.deletion_event_id = reversalEvent._id;
+      await doc.save({ session });
+    });
+  } finally { session.endSession(); }
+
+  return { doc_type: 'CAR_LOGBOOK', doc_id: doc._id, doc_ref: `LOGBOOK-${doc.period}-${doc.entry_date?.toISOString?.().slice(0,10) || ''}`, mode: 'SAP_STORNO', reversal_event_id: reversalEvent?._id, side_effects: sideEffects };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// SUPPLIER_INVOICE handler — Phase 31R
+//
+// AP bookings differ from other modules: purchasingController.postInvoice stores
+// the JournalEntry._id itself in `invoice.event_id` (not a TransactionEvent id),
+// and the JE is written with source_event_id=null. That means the generic
+// `reverseLinkedJEs({ event_id })` helper — which searches JournalEntry.source_event_id
+// — would find nothing. We reverse by calling `reverseJournal(doc.event_id, ...)`
+// directly, treating the stored id as the JE id.
+//
+// Dependent-doc blocker: refuses if any ApPayment exists against the invoice
+// (payment consumed the invoice; need to reverse the payment first to keep AP
+// balances consistent).
+// ───────────────────────────────────────────────────────────────────────────────
+
+async function loadSupplierInvoice({ doc_id, tenantFilter }) {
+  const s = await SupplierInvoice.findOne({ _id: doc_id, ...tenantFilter });
+  if (!s) { const e = new Error('Supplier Invoice not found in your scope'); e.statusCode = 404; throw e; }
+  if (s.deletion_event_id) { const e = new Error('Supplier Invoice already reversed'); e.statusCode = 409; throw e; }
+  return s;
+}
+
+async function reverseSupplierInvoice({ doc, userId, reason, tenantFilter }) {
+  const sideEffects = [];
+  if (doc.status !== 'POSTED') {
+    await SupplierInvoice.deleteOne({ _id: doc._id, ...tenantFilter });
+    return { doc_type: 'SUPPLIER_INVOICE', doc_id: doc._id, doc_ref: doc.invoice_ref, mode: 'HARD_DELETE', reversal_event_id: null, side_effects: ['hard_deleted'] };
+  }
+  await assertReversalPeriodOpen({ doc_type: 'SUPPLIER_INVOICE', entityId: doc.entity_id });
+
+  const { has_deps, dependents } = await checkHardBlockers({ doc_type: 'SUPPLIER_INVOICE', doc, tenantFilter });
+  if (has_deps) {
+    const err = new Error(`Cannot reverse Supplier Invoice — ${dependents.length} AP payment(s) already applied. Reverse the payment(s) first.`);
+    err.statusCode = 409; err.dependents = dependents; throw err;
+  }
+
+  // invoice.event_id stores the JE._id directly (see purchasingController.postInvoice
+  // line 476). reverseJournal is idempotent via its own "already reversed" guard.
+  let reversalJeId = null;
+  if (doc.event_id) {
+    try {
+      const rev = await reverseJournal(doc.event_id, `President reversal: ${reason}`, userId, doc.entity_id);
+      reversalJeId = rev?._id || null;
+      sideEffects.push(`reversal_je=${rev?.je_number || rev?._id || 'created'}`);
+    } catch (err) {
+      if (!/already reversed/i.test(err.message || '')) throw err;
+      sideEffects.push('journal_already_reversed');
+    }
+  }
+
+  const session = await mongoose.startSession();
+  let reversalEvent;
+  try {
+    await session.withTransaction(async () => {
+      reversalEvent = await createReversalEvent({ doc, doc_type: 'SUPPLIER_INVOICE', entity_id: doc.entity_id, bdm_id: null, reason, userId, session });
+      doc.deletion_event_id = reversalEvent._id;
+      await doc.save({ session });
+    });
+  } finally { session.endSession(); }
+
+  return { doc_type: 'SUPPLIER_INVOICE', doc_id: doc._id, doc_ref: doc.invoice_ref, mode: 'SAP_STORNO', reversal_event_id: reversalEvent?._id, reversal_je_id: reversalJeId, side_effects: sideEffects };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// CREDIT_NOTE handler — Phase 31R
+//
+// CN posts: (1) TransactionEvent, (2) RETURN_IN InventoryLedger entries for
+// RESALEABLE lines, (3) JE: DR Sales Returns (4000) / CR AR Trade (1100).
+// Reversal removes all three: reverse linked JE (source_event_id path),
+// reverse inventory (swap qty_in↔qty_out ADJUSTMENT), stamp deletion_event_id.
+// ───────────────────────────────────────────────────────────────────────────────
+
+async function loadCreditNote({ doc_id, tenantFilter }) {
+  const c = await CreditNote.findOne({ _id: doc_id, ...tenantFilter });
+  if (!c) { const e = new Error('Credit Note not found in your scope'); e.statusCode = 404; throw e; }
+  if (c.deletion_event_id) { const e = new Error('Credit Note already reversed'); e.statusCode = 409; throw e; }
+  return c;
+}
+
+async function reverseCreditNote({ doc, userId, reason, tenantFilter }) {
+  const sideEffects = [];
+  if (doc.status !== 'POSTED') {
+    await CreditNote.deleteOne({ _id: doc._id, ...tenantFilter });
+    return { doc_type: 'CREDIT_NOTE', doc_id: doc._id, doc_ref: doc.cn_number || String(doc._id), mode: 'HARD_DELETE', reversal_event_id: null, side_effects: ['hard_deleted'] };
+  }
+  await assertReversalPeriodOpen({ doc_type: 'CREDIT_NOTE', entityId: doc.entity_id });
+
+  const { has_deps, dependents } = await checkHardBlockers({ doc_type: 'CREDIT_NOTE', doc, tenantFilter });
+  if (has_deps) {
+    const err = new Error(`Cannot reverse Credit Note — ${dependents.length} downstream doc(s) still reference this return.`);
+    err.statusCode = 409; err.dependents = dependents; throw err;
+  }
+
+  const { reversed, already } = await reverseLinkedJEs({ event_id: doc.event_id, reason, userId, entityId: doc.entity_id });
+  if (reversed) sideEffects.push(`journals_reversed=${reversed}`);
+  if (already) sideEffects.push(`journals_already_reversed=${already}`);
+
+  const session = await mongoose.startSession();
+  let reversalEvent;
+  try {
+    await session.withTransaction(async () => {
+      reversalEvent = await createReversalEvent({ doc, doc_type: 'CREDIT_NOTE', entity_id: doc.entity_id, bdm_id: doc.bdm_id, reason, userId, session });
+      const restored = await reverseInventoryFor({ event_id: doc.event_id, reversalEventId: reversalEvent._id, userId, session });
+      if (restored) sideEffects.push(`inventory_adjusted=${restored}`);
+      doc.deletion_event_id = reversalEvent._id;
+      await doc.save({ session });
+    });
+  } finally { session.endSession(); }
+
+  return { doc_type: 'CREDIT_NOTE', doc_id: doc._id, doc_ref: doc.cn_number || String(doc._id), mode: 'SAP_STORNO', reversal_event_id: reversalEvent?._id, side_effects: sideEffects };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// IC_SETTLEMENT handler — Phase 31R
+//
+// IcSettlement currently does not post a JE (see icSettlementController.postSettlement):
+// it creates a TransactionEvent but no createAndPostJournal call. Reversal therefore:
+//   - no JE to reverse
+//   - create reversal TransactionEvent
+//   - stamp deletion_event_id, flip status to REJECTED (existing enum value)
+// Scope rule mirrors loadIcTransfer: doc is visible to caller if their entity is
+// either creditor or debtor.
+// ───────────────────────────────────────────────────────────────────────────────
+
+async function loadIcSettlement({ doc_id, tenantFilter }) {
+  const s = await IcSettlement.findById(doc_id);
+  if (!s) { const e = new Error('IC Settlement not found'); e.statusCode = 404; throw e; }
+  if (s.deletion_event_id) { const e = new Error('IC Settlement already reversed'); e.statusCode = 409; throw e; }
+
+  if (tenantFilter?.entity_id) {
+    const ent = String(tenantFilter.entity_id);
+    if (String(s.creditor_entity_id) !== ent && String(s.debtor_entity_id) !== ent) {
+      const e = new Error('IC Settlement not in your scope'); e.statusCode = 403; throw e;
+    }
+  }
+  return s;
+}
+
+async function reverseIcSettlement({ doc, userId, reason /* , tenantFilter */ }) {
+  const sideEffects = [];
+  if (doc.status !== 'POSTED') {
+    await IcSettlement.deleteOne({ _id: doc._id });
+    return { doc_type: 'IC_SETTLEMENT', doc_id: doc._id, doc_ref: doc.cr_no, mode: 'HARD_DELETE', reversal_event_id: null, side_effects: ['hard_deleted'] };
+  }
+  await assertReversalPeriodOpen({ doc_type: 'IC_SETTLEMENT', entityId: doc.creditor_entity_id });
+
+  // IC Settlement does not currently post a JE (postSettlement only creates a
+  // TransactionEvent + stamps event_id). If future refactors add a JE, this
+  // reverseLinkedJEs call becomes live automatically — idempotent no-op today.
+  if (doc.event_id) {
+    const { reversed, already } = await reverseLinkedJEs({ event_id: doc.event_id, reason, userId, entityId: doc.creditor_entity_id });
+    if (reversed) sideEffects.push(`journals_reversed=${reversed}`);
+    if (already) sideEffects.push(`journals_already_reversed=${already}`);
+  }
+
+  const session = await mongoose.startSession();
+  let reversalEvent;
+  try {
+    await session.withTransaction(async () => {
+      reversalEvent = await createReversalEvent({
+        doc, doc_type: 'IC_SETTLEMENT',
+        entity_id: doc.creditor_entity_id,
+        bdm_id: null, reason, userId, session,
+      });
+      doc.deletion_event_id = reversalEvent._id;
+      // Flip status to REJECTED (existing enum value) so the settlement no
+      // longer shows in open-AR lists. Original posted_at/posted_by/event_id
+      // preserved for audit.
+      doc.status = 'REJECTED';
+      doc.rejection_reason = `President-reversed: ${reason}`;
+      doc.rejected_by = userId;
+      doc.rejected_at = new Date();
+      await doc.save({ session });
+    });
+  } finally { session.endSession(); }
+
+  return { doc_type: 'IC_SETTLEMENT', doc_id: doc._id, doc_ref: doc.cr_no, mode: 'SAP_STORNO', reversal_event_id: reversalEvent?._id, side_effects: sideEffects };
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// Registry — Phase 1-4 complete + Phase 31R
 // ───────────────────────────────────────────────────────────────────────────────
 
 const REVERSAL_HANDLERS = {
@@ -933,6 +1211,12 @@ const REVERSAL_HANDLERS = {
   JOURNAL_ENTRY:        { load: loadJournal,        reverse: reverseManualJournal,  label: 'Manual Journal Entry',  module: 'accounting' },
   // Phase SG-3R — plan reversal cascades to payouts/snapshots/targets/journals.
   SALES_GOAL_PLAN:      { load: loadSalesGoalPlan,  reverse: reverseSalesGoalPlan,  label: 'Sales Goal Plan',       module: 'sales_goals' },
+  // Phase 31R — expense companions + AP/returns/IC cash leg
+  SMER_ENTRY:           { load: loadSmer,            reverse: reverseSmer,           label: 'SMER (Monthly Expense)',module: 'expenses' },
+  CAR_LOGBOOK:          { load: loadCarLogbook,      reverse: reverseCarLogbook,     label: 'Car Logbook',           module: 'expenses' },
+  SUPPLIER_INVOICE:     { load: loadSupplierInvoice, reverse: reverseSupplierInvoice,label: 'Supplier Invoice (AP)', module: 'purchasing' },
+  CREDIT_NOTE:          { load: loadCreditNote,      reverse: reverseCreditNote,     label: 'Credit Note (Return)',  module: 'sales' },
+  IC_SETTLEMENT:        { load: loadIcSettlement,    reverse: reverseIcSettlement,   label: 'IC Settlement (CR)',    module: 'inter_company' },
 };
 
 /**
@@ -1056,6 +1340,47 @@ async function listReversibleDocs({ doc_types, entityId, fromDate, toDate, page 
     const reversed = await JournalEntry.find({ corrects_je_id: { $in: ids } }).select('corrects_je_id').lean();
     const skip = new Set(reversed.map(r => r.corrects_je_id.toString()));
     rows.filter(r => !skip.has(r._id.toString())).forEach(r => out.push({ doc_type: 'JOURNAL_ENTRY', doc_id: r._id, doc_ref: String(r.je_number || ''), entity_id: r.entity_id, posted_at: r.je_date, status: r.status, label: REVERSAL_HANDLERS.JOURNAL_ENTRY.label, sub: r.source_module }));
+  }
+
+  // ─── Phase 31R ───
+  if (wantedTypes.includes('SMER_ENTRY')) {
+    const q = { ...baseEntity, ...notReversed, status: 'POSTED' };
+    if (dateFilter) q.posted_at = dateFilter;
+    const rows = await SmerEntry.find(q).select('_id period cycle entity_id bdm_id posted_at status total_reimbursable').sort({ posted_at: -1 }).limit(sliceLimit).lean();
+    rows.forEach(r => out.push({ doc_type: 'SMER_ENTRY', doc_id: r._id, doc_ref: `SMER ${r.period}-${r.cycle}`, entity_id: r.entity_id, bdm_id: r.bdm_id, posted_at: r.posted_at, status: r.status, label: REVERSAL_HANDLERS.SMER_ENTRY.label, sub: `₱${r.total_reimbursable || 0}` }));
+  }
+
+  if (wantedTypes.includes('CAR_LOGBOOK')) {
+    const q = { ...baseEntity, ...notReversed, status: 'POSTED' };
+    if (dateFilter) q.posted_at = dateFilter;
+    const rows = await CarLogbookEntry.find(q).select('_id period cycle entry_date entity_id bdm_id posted_at status total_km total_fuel_amount').sort({ posted_at: -1 }).limit(sliceLimit).lean();
+    rows.forEach(r => out.push({ doc_type: 'CAR_LOGBOOK', doc_id: r._id, doc_ref: `LOGBOOK ${r.entry_date?.toISOString?.().slice(0,10) || r.period}`, entity_id: r.entity_id, bdm_id: r.bdm_id, posted_at: r.posted_at, status: r.status, label: REVERSAL_HANDLERS.CAR_LOGBOOK.label, sub: `${r.total_km || 0} km / ₱${r.total_fuel_amount || 0}` }));
+  }
+
+  if (wantedTypes.includes('SUPPLIER_INVOICE')) {
+    const q = { ...baseEntity, ...notReversed, status: 'POSTED' };
+    if (dateFilter) q.invoice_date = dateFilter;
+    const rows = await SupplierInvoice.find(q).select('_id invoice_ref invoice_date entity_id status total_amount vendor_name').sort({ invoice_date: -1 }).limit(sliceLimit).lean();
+    rows.forEach(r => out.push({ doc_type: 'SUPPLIER_INVOICE', doc_id: r._id, doc_ref: r.invoice_ref, entity_id: r.entity_id, posted_at: r.invoice_date, status: r.status, label: REVERSAL_HANDLERS.SUPPLIER_INVOICE.label, sub: `${r.vendor_name || ''} ₱${r.total_amount || 0}`.trim() }));
+  }
+
+  if (wantedTypes.includes('CREDIT_NOTE')) {
+    const q = { ...baseEntity, ...notReversed, status: 'POSTED' };
+    if (dateFilter) q.posted_at = dateFilter;
+    const rows = await CreditNote.find(q).select('_id cn_number cn_date entity_id bdm_id posted_at status credit_total').sort({ posted_at: -1 }).limit(sliceLimit).lean();
+    rows.forEach(r => out.push({ doc_type: 'CREDIT_NOTE', doc_id: r._id, doc_ref: r.cn_number || String(r._id), entity_id: r.entity_id, bdm_id: r.bdm_id, posted_at: r.posted_at, status: r.status, label: REVERSAL_HANDLERS.CREDIT_NOTE.label, sub: `₱${r.credit_total || 0}` }));
+  }
+
+  if (wantedTypes.includes('IC_SETTLEMENT')) {
+    // IC Settlement has creditor_entity_id, not entity_id. Scope by either side.
+    const q = {
+      ...notReversed,
+      status: 'POSTED',
+      ...(entityId ? { $or: [{ creditor_entity_id: entityId }, { debtor_entity_id: entityId }] } : {}),
+    };
+    if (dateFilter) q.posted_at = dateFilter;
+    const rows = await IcSettlement.find(q).select('_id cr_no cr_date creditor_entity_id debtor_entity_id posted_at status cr_amount').sort({ posted_at: -1 }).limit(sliceLimit).lean();
+    rows.forEach(r => out.push({ doc_type: 'IC_SETTLEMENT', doc_id: r._id, doc_ref: r.cr_no, entity_id: r.creditor_entity_id, posted_at: r.posted_at, status: r.status, label: REVERSAL_HANDLERS.IC_SETTLEMENT.label, sub: `₱${r.cr_amount || 0}` }));
   }
 
   out.sort((a, b) => new Date(b.posted_at || 0) - new Date(a.posted_at || 0));

@@ -374,6 +374,10 @@ const SEED_DEFAULTS = {
     { code: 'COLLECTION', label: 'Collection (Posting)', metadata: { category: 'OPERATIONAL' } },
     { code: 'SMER', label: 'SMER', metadata: { category: 'OPERATIONAL' } },
     { code: 'CAR_LOGBOOK', label: 'Car Logbook', metadata: { category: 'OPERATIONAL' } },
+    // Phase 31R follow-up — CreditNote (returns) surfaces under its own module key
+    // so pending CN approvals appear in the Approval Hub. Category=OPERATIONAL
+    // because returns are a sales-operations flow, not a finance approval.
+    { code: 'CREDIT_NOTE', label: 'Credit Notes / Returns', metadata: { category: 'OPERATIONAL' } },
     { code: 'PRF_CALF', label: 'PRF / CALF', metadata: { category: 'FINANCIAL' } },
     { code: 'APPROVAL_REQUEST', label: 'Authority Matrix Approvals', metadata: { category: 'FINANCIAL' } },
     { code: 'PERDIEM_OVERRIDE', label: 'Per Diem Override', metadata: { category: 'FINANCIAL' } },
@@ -843,6 +847,9 @@ const SEED_DEFAULTS = {
     { code: 'COLLECTION', label: 'Collections / CR', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated collection receipts' } },
     { code: 'SMER', label: 'SMER', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated travel/expense reimbursements' } },
     { code: 'CAR_LOGBOOK', label: 'Car Logbook', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated car logbook entries' } },
+    // Phase 31R follow-up — CreditNote posting authority. Subscribers can set
+    // metadata.roles = null for open-post (any BDM can post returns without approval).
+    { code: 'CREDIT_NOTE', label: 'Credit Notes / Returns', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post product returns / sales-returns credit notes' } },
     { code: 'EXPENSES', label: 'Expenses (ORE/ACCESS)', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated expense entries' } },
     { code: 'PRF_CALF', label: 'PRF / CALF', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated PRF/CALF documents' } },
     { code: 'PERDIEM_OVERRIDE', label: 'Per Diem Override', metadata: { roles: ['admin', 'finance', 'president'], description: 'Approve BDM per diem override requests' } },

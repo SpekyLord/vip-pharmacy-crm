@@ -21,6 +21,7 @@ const Lookup = require('../models/Lookup');
 const EmailLog = require('../../models/EmailLog');
 const MessageInbox = require('../../models/MessageInbox');
 const { sendEmail } = require('../../config/ses');
+const { getParentEntityIds } = require('../utils/parentEntityResolver');
 const {
   documentPostedTemplate,
   documentReopenedTemplate,
@@ -76,12 +77,16 @@ const findNotificationRecipients = async (entityId, filter = {}) => {
       ...filter,
     };
 
-    // Multi-entity users: check entity_ids array; single-entity: check entity_id
+    // Multi-entity users: check entity_ids array; single-entity: check entity_id.
+    // Cross-entity superusers = PARENT-entity presidents/CEOs only. Subsidiary
+    // presidents (e.g. BLW's Angeline) receive their own entity's notifications
+    // only, via the entity_id/entity_ids clauses above.
     if (entityId) {
+      const parentEntityIds = await getParentEntityIds();
       query.$or = [
         { entity_id: entityId },
         { entity_ids: entityId },
-        { role: { $in: ROLE_SETS.PRESIDENT_ROLES } }, // president/CEO see all entities
+        { role: { $in: ROLE_SETS.PRESIDENT_ROLES }, entity_id: { $in: parentEntityIds } },
       ];
     }
 
@@ -642,10 +647,14 @@ async function buildBdmEscalationAudience({ entityId, bdmId }) {
   const chain = await resolveReportsToChain(bdmId, { maxDepth: reportsToMaxHops });
   for (const mgr of chain) addUnique(mgr);
 
-  // Presidents (always notified for compensation/variance — they own the program)
+  // Parent-entity presidents/CEOs own the compensation/variance program
+  // across all subsidiaries. Subsidiary presidents are excluded here — the
+  // BDM's own entity is already covered by the manager chain.
   try {
+    const parentEntityIds = await getParentEntityIds();
     const presidents = await User.find({
       role: { $in: ROLE_SETS.PRESIDENT_ROLES },
+      entity_id: { $in: parentEntityIds },
       isActive: true,
       email: { $exists: true, $ne: '' },
     }).select('_id email name role phone').lean();

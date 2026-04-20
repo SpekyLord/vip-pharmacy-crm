@@ -2,7 +2,8 @@
  * copilotRoutes.js — Phase G7.2
  *
  * Mounted at /api/erp/copilot in erp/routes/index.js. Parent router runs
- * `protect` + `tenantFilter` so req.user + req.entityId are guaranteed.
+ * `protect` + `tenantFilter` so req.user is guaranteed. req.entityId may still
+ * be null for authenticated users without ERP entity context.
  *
  * Role gating:
  *   - /chat + /execute: filtered by lookup row PRESIDENT_COPILOT.allowed_roles
