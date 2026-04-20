@@ -1069,7 +1069,7 @@ Approver opens Approval Hub:
 - Phase 29 `ApprovalRequest` schema unchanged.
 - Phase G4 default-roles gate + Phase G6 rejection feedback unchanged.
 - Phase 31R "no double-listing" guarantee preserved by the by-doc_id dedup (raw module item wins).
-- `approval_request` handler in `universalApprovalController.js` unchanged — still calls `processDecision` via `approvalService`. Future enhancement: extend the handler to auto-post the underlying doc on APPROVE for the orphan case (Group A modules) so the approver doesn't need a second trip. Deferred — add only if orphan cases become common in practice.
+- `approval_request` handler in `universalApprovalController.js` — originally unchanged in G4.1; follow-up shipped April 21, 2026 extends it with a `MODULE_AUTO_POST` map ({SMER, EXPENSES, PRF_CALF, SALES, COLLECTION, CAR_LOGBOOK, CREDIT_NOTE} → {type, action: 'post'}). After `processDecision` flips to APPROVED on the final level (no `nextLevel`), the handler re-enters the matching module handler (`smer_entry`, `expense_entry`, etc.) so the orphan path posts the underlying doc in the same round-trip. Failure is logged, never thrown — the approval decision is already persisted and must stand (BDM fixes the prerequisite and resubmits). Group B modules intentionally excluded (no uniform POST hook — they stay on the existing isFullyApproved + re-submit pattern).
 - No new routes, no schema migration, no lookup migration. Auto-seeded Lookup categories unchanged.
 
 **Subscription readiness.**
