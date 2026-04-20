@@ -107,6 +107,13 @@ function initAgentScheduler() {
   cron.schedule('15 6 * * 1-5', () => triggerScheduled('task_overdue', 'Task Overdue Notifier'), { timezone: TIMEZONE });
   console.log('[AgentScheduler]   ✓ #TO Task Overdue - weekdays 6:15 AM');
 
+  // Phase G9.R8 — Inbox Retention. Nightly 02:00 Manila — low-traffic window.
+  // Two-stage soft-delete → hard-delete. Per-entity settings in INBOX_RETENTION
+  // lookup (Control Center → Inbox Retention Settings). Safety guards never
+  // purge unacknowledged must-ack messages or open approvals.
+  cron.schedule('0 2 * * *', () => triggerScheduled('message_retention', 'Inbox Retention'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #MR Inbox Retention - daily 2:00 AM');
+
   const hasAiKey = !!process.env.ANTHROPIC_API_KEY;
 
   if (hasAiKey) {

@@ -564,7 +564,6 @@ async function draftReplyToMessage(ctx, args = {}) {
     recipientRole: replyToRole || 'admin',
     recipientUserId: replyToUserId || null,
     readBy: [],
-    isArchived: false,
     entity_id: parent.entity_id,
     folder: parent.folder || 'CHAT',
     thread_id: parent.thread_id || parent._id,

@@ -754,27 +754,254 @@ export default function DocumentDetailPanel(props) {
       {module === 'PERDIEM_OVERRIDE' && (
         <div>
           <div style={{ marginBottom: 6 }}>
-            <strong>Type:</strong> {d.doc_type || '—'}
+            <strong>Type:</strong> {d.doc_type === 'SMER_DAILY_ENTRY' ? 'SMER Daily Entry' : (d.doc_type || '—')}
             <StatusChip status={d.status} />
           </div>
           <div style={{ marginBottom: 6 }}>
             <strong>Requested by:</strong> {d.requested_by || '—'}
             {d.requested_at && <> · {new Date(d.requested_at).toLocaleString()}</>}
           </div>
-          {d.requested_override_tier && (
-            <div style={{ marginBottom: 6, fontSize: 12 }}>
-              <strong>Requested tier:</strong>{' '}
-              <span style={{ padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#854d0e', fontWeight: 700 }}>{d.requested_override_tier}</span>
+
+          {(d.entry_date || d.current_tier || d.requested_override_tier) && (
+            <div style={{ marginTop: 8, padding: 8, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, fontSize: 12 }}>
+              <div style={{ fontWeight: 700, color: '#854d0e', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Coverage Summary</div>
+              {d.entry_date && (
+                <div style={{ marginBottom: 3 }}>
+                  <strong>Date:</strong>{' '}
+                  {new Date(d.entry_date).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                  {d.day_number && <> · Day {d.day_number}</>}
+                  {d.period && d.cycle && <> · {d.period} / {d.cycle}</>}
+                </div>
+              )}
+              {d.activity_type && <div style={{ marginBottom: 3 }}><strong>Activity:</strong> {d.activity_type}</div>}
+              {d.hospital_covered && <div style={{ marginBottom: 3 }}><strong>Hospitals covered:</strong> {d.hospital_covered}</div>}
+              {d.md_count != null && <div style={{ marginBottom: 3 }}><strong>MD count:</strong> {d.md_count}</div>}
+              {(d.current_tier || d.requested_override_tier) && (
+                <div style={{ marginBottom: 3 }}>
+                  <strong>Tier change:</strong>{' '}
+                  <span style={{ padding: '1px 6px', borderRadius: 4, background: '#e5e7eb', color: '#374151', fontWeight: 700 }}>{d.current_tier || '—'}</span>
+                  {' → '}
+                  <span style={{ padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#854d0e', fontWeight: 700 }}>{d.requested_override_tier || '—'}</span>
+                </div>
+              )}
+              {(d.current_amount != null || d.requested_amount != null) && (
+                <div style={{ marginBottom: 3 }}>
+                  <strong>Amount change:</strong> {fmt(d.current_amount || 0)} → {fmt(d.requested_amount || 0)}
+                  {d.amount_difference != null && (
+                    <span style={{ marginLeft: 6, color: d.amount_difference >= 0 ? '#166534' : '#991b1b', fontWeight: 700 }}>
+                      ({d.amount_difference >= 0 ? '+' : ''}{fmt(d.amount_difference)})
+                    </span>
+                  )}
+                </div>
+              )}
+              {d.override_reason && <div style={{ marginTop: 4, fontStyle: 'italic', color: 'var(--erp-muted)' }}>Reason: {d.override_reason}</div>}
             </div>
           )}
-          {d.amount != null && <div style={{ marginBottom: 6 }}><strong>Amount:</strong> {fmt(d.amount)}</div>}
-          {d.description && <div style={{ color: 'var(--erp-muted)' }}>{d.description}</div>}
+
+          {d.description && <div style={{ marginTop: 8, color: 'var(--erp-muted)', fontSize: 12 }}>{d.description}</div>}
           {(d.decided_by || d.decision_reason) && (
             <div style={{ marginTop: 6, padding: 6, background: 'var(--erp-accent-soft, #f1f5f9)', borderRadius: 4, fontSize: 12 }}>
               {d.decided_by && <div><strong>Decided by:</strong> {d.decided_by}{d.decided_at ? ` · ${new Date(d.decided_at).toLocaleString()}` : ''}</div>}
               {d.decision_reason && <div style={{ marginTop: 2 }}><strong>Reason:</strong> {d.decision_reason}</div>}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Credit Note Details — Phase 31R (builder existed; panel was missing) */}
+      {module === 'CREDIT_NOTE' && (
+        <div>
+          <div style={{ marginBottom: 6 }}>
+            {d.cn_number && <><strong>CN#:</strong> {d.cn_number} · </>}
+            <strong>Date:</strong> {d.cn_date ? new Date(d.cn_date).toLocaleDateString() : '—'}
+            {d.original_doc_ref && <> · <strong>Original CSI:</strong> {d.original_doc_ref}</>}
+            <StatusChip status={d.status} />
+          </div>
+          <div style={{ marginBottom: 6 }}>
+            <strong>Customer:</strong> {d.hospital || d.customer || '—'}
+          </div>
+          {(d.line_items || []).length > 0 && (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: 6 }}>
+              <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>Product</th><th style={{ padding: '4px 8px', textAlign: 'left' }}>Batch / Expiry</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Qty</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Unit Price</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Line Total</th><th style={{ padding: '4px 8px', textAlign: 'left' }}>Reason</th></tr></thead>
+              <tbody>
+                {(d.line_items || []).map((li, i) => (
+                  <tr key={i}>
+                    <td style={{ padding: '3px 8px' }}>
+                      {li.product_name || li.item_key || '—'}
+                      {li.return_condition && <div style={{ fontSize: 10, color: 'var(--erp-muted)' }}>Condition: {li.return_condition}</div>}
+                    </td>
+                    <td style={{ padding: '3px 8px' }}>
+                      {li.batch_lot_no || '—'}
+                      {li.expiry_date && <div style={{ fontSize: 10, color: 'var(--erp-muted)' }}>Exp: {new Date(li.expiry_date).toLocaleDateString()}</div>}
+                    </td>
+                    <td style={{ padding: '3px 8px', textAlign: 'right' }}>{li.qty}{li.unit ? ` ${li.unit}` : ''}</td>
+                    <td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(li.unit_price)}</td>
+                    <td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(li.line_total)}</td>
+                    <td style={{ padding: '3px 8px', fontSize: 11 }}>
+                      {li.return_reason || '—'}
+                      {li.notes && <div style={{ fontSize: 10, color: 'var(--erp-muted)' }}>{li.notes}</div>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <div style={{ display: 'flex', gap: 16, marginTop: 8, fontWeight: 700 }}>
+            <span>Net of VAT: {fmt(d.total_net_of_vat)}</span>
+            <span>VAT: {fmt(d.total_vat)}</span>
+            <span>Credit Total: {fmt(d.credit_total)}</span>
+          </div>
+          {(d.photo_urls || []).length > 0 && (
+            <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+              {(d.photo_urls || []).map((url, i) => (
+                <img key={i} src={url} alt={`Proof ${i + 1}`}
+                  style={{ maxWidth: 140, maxHeight: 110, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--erp-border)' }}
+                  onClick={() => onPreviewImage?.(url)} />
+              ))}
+            </div>
+          )}
+          {d.notes && <div style={{ marginTop: 8, color: 'var(--erp-muted)', fontSize: 12 }}>{d.notes}</div>}
+          <AuditFooter d={d} />
+        </div>
+      )}
+
+      {/* Sales Goal Plan Details — fiscal-year plan pending president approval */}
+      {module === 'SALES_GOAL_PLAN' && (
+        <div>
+          <div style={{ marginBottom: 6 }}>
+            <strong>FY {d.fiscal_year}:</strong> {d.plan_name || '—'}
+            {d.reference && <> · <strong>Ref:</strong> {d.reference}</>}
+            {d.version_no > 1 && <> · <strong>v{d.version_no}</strong></>}
+            <StatusChip status={d.status} />
+          </div>
+          <div style={{ marginTop: 8, padding: 8, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, fontSize: 12 }}>
+            <div style={{ fontWeight: 700, color: '#1e40af', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Revenue Commitment</div>
+            <div style={{ marginBottom: 3 }}>
+              <strong>Baseline → Target:</strong> {fmt(d.baseline_revenue)} → {fmt(d.target_revenue)}
+              {d.revenue_delta != null && (
+                <span style={{ marginLeft: 6, color: d.revenue_delta >= 0 ? '#166534' : '#991b1b', fontWeight: 700 }}>
+                  ({d.revenue_delta >= 0 ? '+' : ''}{fmt(d.revenue_delta)})
+                </span>
+              )}
+              {d.growth_pct != null && (
+                <span style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 4, background: d.growth_pct >= 0 ? '#dcfce7' : '#fee2e2', color: d.growth_pct >= 0 ? '#166534' : '#991b1b', fontWeight: 700 }}>
+                  {d.growth_pct >= 0 ? '+' : ''}{d.growth_pct.toFixed(1)}%
+                </span>
+              )}
+            </div>
+            <div><strong>Collection Target:</strong> {(d.collection_target_pct * 100).toFixed(0)}%</div>
+          </div>
+
+          {(d.growth_drivers || []).length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--erp-muted)', textTransform: 'uppercase', marginBottom: 4 }}>Growth Drivers ({d.growth_driver_count})</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>Driver</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Target Min</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Target Max</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>KPIs</th></tr></thead>
+                <tbody>
+                  {(d.growth_drivers || []).map((g, i) => (
+                    <tr key={i}>
+                      <td style={{ padding: '3px 8px' }}>{g.driver_label || g.driver_code}</td>
+                      <td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(g.revenue_target_min)}</td>
+                      <td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(g.revenue_target_max)}</td>
+                      <td style={{ padding: '3px 8px', textAlign: 'right' }}>{g.kpi_count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {(d.incentive_programs || []).length > 0 && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--erp-muted)', textTransform: 'uppercase', marginBottom: 4 }}>Incentive Programs ({d.incentive_program_count})</div>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12 }}>
+                {(d.incentive_programs || []).map((p, i) => (
+                  <li key={i}>
+                    {p.program_name || p.program_code} · <span style={{ color: 'var(--erp-muted)' }}>{p.qualification_metric}{p.use_tiers ? ' · tiered' : ''}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {d.effective_from && (
+            <div style={{ marginTop: 6, fontSize: 11, color: 'var(--erp-muted)' }}>
+              Effective: {new Date(d.effective_from).toLocaleDateString()}
+              {d.effective_to ? ` → ${new Date(d.effective_to).toLocaleDateString()}` : ' → open'}
+            </div>
+          )}
+          {d.rejection_reason && <div style={{ marginTop: 6, padding: 6, background: '#fee2e2', color: '#991b1b', borderRadius: 4, fontSize: 12 }}><strong>Rejected:</strong> {d.rejection_reason}</div>}
+          <AuditFooter d={d} />
+        </div>
+      )}
+
+      {/* Incentive Payout Details — accrued commission awaiting approval/payment */}
+      {module === 'INCENTIVE_PAYOUT' && (
+        <div>
+          <div style={{ marginBottom: 6 }}>
+            <strong>BDM:</strong> {d.bdm || '—'}
+            {d.bdm_email && <span style={{ color: 'var(--erp-muted)', fontSize: 11 }}> · {d.bdm_email}</span>}
+            <StatusChip status={d.status} />
+          </div>
+          <div style={{ marginBottom: 6 }}>
+            <strong>Plan:</strong> {d.plan_name || '—'}
+            {d.plan_reference && <> · <strong>Ref:</strong> {d.plan_reference}</>}
+            {' · '}<strong>FY {d.fiscal_year}</strong>
+            {' · '}<strong>Period:</strong> {d.period} ({d.period_type})
+          </div>
+          <div style={{ marginBottom: 6 }}>
+            <strong>Tier:</strong> <span style={{ padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#854d0e', fontWeight: 700 }}>{d.tier_label || d.tier_code}</span>
+            {d.program_code && <> · <strong>Program:</strong> {d.program_code}</>}
+          </div>
+
+          <div style={{ marginTop: 8, padding: 8, background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 6, fontSize: 12 }}>
+            <div style={{ fontWeight: 700, color: '#1e40af', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Attainment</div>
+            <div style={{ marginBottom: 3 }}>
+              <strong>Target vs Actual:</strong> {fmt(d.sales_target)} → {fmt(d.sales_actual)}
+              {d.sales_gap != null && (
+                <span style={{ marginLeft: 6, color: d.sales_gap >= 0 ? '#166534' : '#991b1b', fontWeight: 700 }}>
+                  ({d.sales_gap >= 0 ? '+' : ''}{fmt(d.sales_gap)})
+                </span>
+              )}
+            </div>
+            <div>
+              <strong>Attainment:</strong>{' '}
+              <span style={{ padding: '1px 6px', borderRadius: 4, background: (d.attainment_pct || 0) >= 100 ? '#dcfce7' : '#fef3c7', color: (d.attainment_pct || 0) >= 100 ? '#166534' : '#854d0e', fontWeight: 700 }}>
+                {(d.attainment_pct || 0).toFixed(1)}%
+              </span>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 8, padding: 8, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, fontSize: 12 }}>
+            <div style={{ fontWeight: 700, color: '#854d0e', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Payout</div>
+            <div style={{ marginBottom: 3 }}>
+              <strong>Accrued amount:</strong> {fmt(d.tier_budget)}
+              {d.cap_applied && (
+                <span style={{ marginLeft: 8, padding: '1px 6px', borderRadius: 4, background: '#fed7aa', color: '#9a3412', fontSize: 11, fontWeight: 700 }}>
+                  CAPPED − {fmt(d.cap_delta)}
+                </span>
+              )}
+            </div>
+            {d.cap_applied && (
+              <div style={{ color: 'var(--erp-muted)', fontSize: 11 }}>Uncapped tier budget was {fmt(d.uncapped_budget)}.</div>
+            )}
+          </div>
+
+          {d.journal_number && (
+            <div style={{ marginTop: 6, fontSize: 12 }}>
+              <strong>Accrual JE:</strong> {d.journal_number}
+              {d.journal_date && <> · {new Date(d.journal_date).toLocaleDateString()}</>}
+            </div>
+          )}
+          {(d.paid_via || d.paid_at) && (
+            <div style={{ marginTop: 6, fontSize: 12 }}>
+              <strong>Paid via:</strong> {d.paid_via || '—'}
+              {d.paid_at && <> · {new Date(d.paid_at).toLocaleString()}</>}
+            </div>
+          )}
+          {d.notes && <div style={{ marginTop: 8, color: 'var(--erp-muted)', fontSize: 12 }}>{d.notes}</div>}
+          {d.rejection_reason && <div style={{ marginTop: 6, padding: 6, background: '#fee2e2', color: '#991b1b', borderRadius: 4, fontSize: 12 }}><strong>Rejected:</strong> {d.rejection_reason}</div>}
+          <AuditFooter d={d} />
         </div>
       )}
 

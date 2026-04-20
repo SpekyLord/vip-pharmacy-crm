@@ -374,22 +374,37 @@ function buildPrfCalfDetails(item) {
 }
 
 function buildPerdiemOverrideDetails(req) {
+  const cov = req._coverage || null;
   return {
     module: 'PERDIEM_OVERRIDE',
-    doc_type: req.doc_type,
+    doc_type: req.doc_type || 'SMER_DAILY_ENTRY',
     doc_ref: req.doc_ref,
     description: req.description,
     amount: req.amount,
-    requested_by: req.requested_by?.name,
+    requested_by: req.requested_by?.name || null,
     requested_at: req.requested_at,
-    // ApprovalRequest fields surfaced for full lifecycle visibility
     status: req.status || null,
     rule_id: req.rule_id || null,
     decided_by: req.decided_by?.name || null,
     decided_at: req.decided_at || null,
     decision_reason: req.decision_reason || req.reject_reason || null,
-    // Linked SMER daily_entry context (when populated by caller)
-    requested_override_tier: req.requested_override_tier || null,
+    requested_override_tier: cov?.requested_tier || req.requested_override_tier || null,
+    // Coverage summary — dereferenced from the SMER daily entry so the approver has
+    // the exact calendar date, day-of-week, MD count, hospitals, and amount delta
+    // without having to cross-reference the source SMER.
+    entry_date: cov?.entry_date || null,
+    day_of_week: cov?.day_of_week || null,
+    day_number: cov?.day_number || null,
+    period: cov?.period || null,
+    cycle: cov?.cycle || null,
+    md_count: cov?.md_count != null ? cov.md_count : null,
+    hospital_covered: cov?.hospital_covered || null,
+    activity_type: cov?.activity_type || null,
+    current_tier: cov?.current_tier || null,
+    current_amount: cov?.current_amount != null ? cov.current_amount : null,
+    requested_amount: cov?.requested_amount != null ? cov.requested_amount : null,
+    amount_difference: cov?.difference != null ? cov.difference : null,
+    override_reason: cov?.override_reason || null,
   };
 }
 
@@ -706,6 +721,95 @@ function buildOfficeSupplyDetails(item) {
   };
 }
 
+/**
+ * SALES_GOAL_PLAN — fiscal-year sales/incentive plan pending president approval.
+ * Surfaces the commitments (baseline → target revenue, collection target %),
+ * growth-driver and incentive-program counts, and plan identifiers so the
+ * approver can judge the plan without opening the source page.
+ */
+function buildSalesGoalPlanDetails(item) {
+  const drivers = item.growth_drivers || [];
+  const programs = item.incentive_programs || [];
+  const growthPct = item.baseline_revenue
+    ? ((item.target_revenue - item.baseline_revenue) / item.baseline_revenue) * 100
+    : null;
+  return {
+    doc_class:             'SALES_GOAL_PLAN',
+    fiscal_year:           item.fiscal_year,
+    plan_name:             item.plan_name,
+    reference:             item.reference || null,
+    status:                item.status,
+    baseline_revenue:      item.baseline_revenue || 0,
+    target_revenue:        item.target_revenue || 0,
+    growth_pct:            growthPct,
+    revenue_delta:         (item.target_revenue || 0) - (item.baseline_revenue || 0),
+    collection_target_pct: item.collection_target_pct || 0,
+    growth_driver_count:   drivers.length,
+    growth_drivers:        drivers.map(d => ({
+      driver_code: d.driver_code,
+      driver_label: d.driver_label,
+      revenue_target_min: d.revenue_target_min,
+      revenue_target_max: d.revenue_target_max,
+      kpi_count: (d.kpi_definitions || []).length,
+    })),
+    incentive_program_count: programs.length,
+    incentive_programs:      programs.map(p => ({
+      program_code: p.program_code,
+      program_name: p.program_name,
+      qualification_metric: p.qualification_metric,
+      use_tiers: p.use_tiers,
+    })),
+    version_no:     item.version_no || 1,
+    effective_from: item.effective_from || null,
+    effective_to:   item.effective_to || null,
+    created_by:     item.created_by?.name || null,
+    approved_by:    item.approved_by?.name || null,
+    approved_at:    item.approved_at || null,
+    rejection_reason: item.rejection_reason || null,
+  };
+}
+
+/**
+ * INCENTIVE_PAYOUT — accrued commission awaiting president/finance approval
+ * before payment. Surfaces the attainment math (target vs actual + percentage)
+ * and the cap delta (uncapped vs capped) so the approver can see if the tier
+ * was capped and by how much.
+ */
+function buildIncentivePayoutDetails(item) {
+  const uncapped = item.uncapped_budget || 0;
+  const capped = item.tier_budget || 0;
+  return {
+    doc_class:        'INCENTIVE_PAYOUT',
+    status:           item.status,
+    bdm:              item.bdm_id?.name || null,
+    bdm_email:        item.bdm_id?.email || null,
+    plan_name:        item.plan_id?.plan_name || null,
+    plan_reference:   item.plan_id?.reference || null,
+    fiscal_year:      item.fiscal_year,
+    period:           item.period,
+    period_type:      item.period_type,
+    program_code:     item.program_code || null,
+    tier_code:        item.tier_code,
+    tier_label:       item.tier_label || null,
+    sales_target:     item.sales_target || 0,
+    sales_actual:     item.sales_actual || 0,
+    sales_gap:        (item.sales_actual || 0) - (item.sales_target || 0),
+    attainment_pct:   item.attainment_pct || 0,
+    tier_budget:      capped,
+    uncapped_budget:  uncapped,
+    cap_applied:      uncapped > capped,
+    cap_delta:        Math.max(0, uncapped - capped),
+    journal_number:   item.journal_id?.je_number || item.journal_number || null,
+    journal_date:     item.journal_id?.je_date || null,
+    approved_by:      item.approved_by?.name || null,
+    approved_at:      item.approved_at || null,
+    paid_via:         item.paid_via || null,
+    paid_at:          item.paid_at || null,
+    notes:            item.notes || null,
+    rejection_reason: item.rejection_reason || null,
+  };
+}
+
 // ─── Registry ───
 
 const DETAIL_BUILDERS = {
@@ -732,6 +836,9 @@ const DETAIL_BUILDERS = {
   CREDIT_NOTE:        buildCreditNoteDetails,
   // Phase 31R-OS — shared builder handles both item and txn shapes
   OFFICE_SUPPLY:      buildOfficeSupplyDetails,
+  // Phase G6.7 closeout — sales-goal / incentive approval hub panels
+  SALES_GOAL_PLAN:    buildSalesGoalPlanDetails,
+  INCENTIVE_PAYOUT:   buildIncentivePayoutDetails,
 };
 
 /**
@@ -772,6 +879,10 @@ const REVERSAL_DOC_TYPE_TO_MODULE = {
   // on the `txn_type` field to render item vs txn shape.
   OFFICE_SUPPLY_ITEM:   'OFFICE_SUPPLY',
   OFFICE_SUPPLY_TXN:    'OFFICE_SUPPLY',
+  // Phase G6.7 closeout — Reversal Console reuses the Approval Hub panel for
+  // Sales Goal plan reversals. IncentivePayout has no entry in REVERSAL_HANDLERS
+  // (its own route handles reversal), so it is intentionally omitted here.
+  SALES_GOAL_PLAN:      'SALES_GOAL_PLAN',
 };
 
 module.exports = {

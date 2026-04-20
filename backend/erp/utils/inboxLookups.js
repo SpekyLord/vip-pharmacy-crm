@@ -33,7 +33,7 @@ const FOLDER_DEFAULTS = [
   { code: 'ANNOUNCEMENTS',     label: 'Announcements',    sort_order: 6, metadata: { virtual: false, description: 'Broadcasts from admin / HR / system' } },
   { code: 'CHAT',              label: 'Chat',             sort_order: 7, metadata: { virtual: false, description: 'Direct messages and threaded conversations' } },
   { code: 'SENT',              label: 'Sent',             sort_order: 8, metadata: { virtual: true,  description: 'Messages you sent (not a real folder — sender filter)' } },
-  { code: 'ARCHIVE',           label: 'Archive',          sort_order: 9, metadata: { virtual: true,  description: 'Archived items (isArchived=true)' } },
+  { code: 'ARCHIVE',           label: 'Archive',          sort_order: 9, metadata: { virtual: true,  description: 'Archived items (per-recipient via archivedBy)' } },
 ];
 
 // Category → Folder mapping. Canonical source. backfillMessageInboxEntityId.js

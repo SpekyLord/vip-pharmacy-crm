@@ -959,6 +959,15 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
         adminItems.push({ path: '/erp/products', label: 'Product Master', icon: ShoppingCart });
       }
     }
+    // Phase G9.R8 — Inbox Retention shortcut. AND-gated on MANAGEMENT (matches
+    // ControlCenter + the App.jsx redirect route) AND the messaging.retention_manage
+    // sub-perm. president short-circuits hasSub to true, so the sub-perm gate is
+    // effectively just "admin/finance with explicit grant OR president". CEO is
+    // excluded because ControlCenter itself blocks CEO — showing the shortcut
+    // would take them to a 403.
+    if (ROLE_SETS.MANAGEMENT.includes(role) && hasSub('messaging', 'retention_manage')) {
+      adminItems.push({ path: '/admin/control-center/inbox-retention', label: 'Inbox Retention', icon: Archive });
+    }
     if (adminItems.length > 0) {
       adminItems.sort((a, b) => a.label.localeCompare(b.label));
       sections.splice(1, 0, { title: 'Administration', collapsible: true, defaultOpen: false, items: adminItems });

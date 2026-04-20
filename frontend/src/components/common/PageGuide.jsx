@@ -182,17 +182,20 @@ const PAGE_GUIDES = {
   'inbox': {
     title: 'Unified Inbox',
     steps: [
-      'Folders on the left group everything: Approvals, Tasks, AI Agents, Announcements, Chat. The red dot is "Action Required" — items waiting on your click ([Approve] / [Resolve] / [Mark done]).',
+      'Folders on the left group everything: Approvals, Tasks, AI Agents, Announcements, Chat. The red dot is "Action Required" — items waiting on your click ([Approve] / [Resolve] / [Mark done]). An amber ⚑ count on the Inbox folder means messages are awaiting your acknowledgement.',
       'Click a row to read it. Replies appear inline as a threaded conversation — approve/decision/reopen events all fold into the same thread by approval request.',
+      'Archive is per-recipient: archiving a message only hides it from your own inbox — senders still see it in their Sent folder and other recipients are unaffected (Gmail-style).',
+      'Flagged messages show an amber "⚑ Ack required" banner. Hit "I acknowledge" before approving/rejecting/resolving — that button is gated until you confirm you have read the message. Admin/president/ceo + sender can click "Read receipts" to see who has acknowledged and who is still pending.',
+      'Bulk mode: use "Select" in the list toolbar to tick several rows then "Archive selected" in one shot. "Mark all read" flips every unread message in the current folder so the counter clears.',
       'Tasks open with a mini-editor so you can change status / due date / assignee inline. Need the full Gantt / Kanban view? Use the "Open full page" button.',
-      'New message? Hit "+ New" to send a direct message or broadcast — backend enforces who can DM whom via the messaging.* sub-permissions and the MESSAGE_ACCESS_ROLES lookup.',
+      'New message? Hit "+ New" to send a direct message or broadcast — backend enforces who can DM whom via the messaging.* sub-permissions and the MESSAGE_ACCESS_ROLES lookup. Admin/president can require acknowledgement on the compose modal; the tri-state default is driven by INBOX_ACK_DEFAULTS (see Control Center → Inbox Retention).',
     ],
     next: [
       { label: 'Dashboard', path: '/bdm' },
       { label: 'Approvals', path: '/erp/approvals' },
       { label: 'My Tasks', path: '/erp/tasks' },
     ],
-    tip: 'The bell in the top navbar shows action-required (red) and unread (blue) totals. Cmd/Ctrl+click any item to open it in a new tab.',
+    tip: 'The bell in the top navbar shows action-required (red) and unread (blue) totals. Cmd/Ctrl+click any item to open it in a new tab. Old archived/read messages auto-purge via the nightly Inbox Retention agent — admins tune windows per entity in Control Center → Inbox Retention.',
   },
   'gps-verification': {
     title: 'GPS Verification',

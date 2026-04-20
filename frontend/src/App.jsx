@@ -214,6 +214,8 @@ const TasksPage = lazyRetry(() => import('./erp/pages/TasksPage'));
 const AgentSettingsRedirect = () => <Navigate to="/erp/control-center?section=agent-settings" replace />;
 const EntityManagerRedirect = () => <Navigate to="/erp/control-center?section=entities" replace />;
 const LookupManagerRedirect = () => <Navigate to="/erp/control-center?section=lookups" replace />;
+// Phase G9.R8 — deep-link for Inbox Retention admin (alias of the ControlCenter section).
+const InboxRetentionRedirect = () => <Navigate to="/erp/control-center?section=inbox-retention" replace />;
 
 // Phase G7 — Mount Copilot widget + Cmd+K palette only on ERP routes so the
 // chunks aren't downloaded on /admin or /bdm pages. Components themselves also
@@ -876,6 +878,13 @@ function App() {
           <Route path="/erp/agent-settings" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><AgentSettingsRedirect /></ProtectedRoute>} />
           <Route path="/erp/entity-manager" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><EntityManagerRedirect /></ProtectedRoute>} />
           <Route path="/erp/lookup-manager" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><LookupManagerRedirect /></ProtectedRoute>} />
+          {/* Phase G9.R8 — Inbox Retention deep-link. Matches the Control
+              Center's own MANAGEMENT gate because the redirect lands there;
+              showing the shortcut to a role that can't render Control Center
+              would be a UX footgun. Backend's erpSubAccessCheck enforces the
+              sub-perm on every Save/Run/Preview call. */}
+          <Route path="/admin/control-center/inbox-retention" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><InboxRetentionRedirect /></ProtectedRoute>} />
+          <Route path="/erp/inbox-retention" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><InboxRetentionRedirect /></ProtectedRoute>} />
 
           <Route path="/employee/*" element={<EmployeeRedirect />} />
           <Route path="/employee" element={<EmployeeRedirect />} />

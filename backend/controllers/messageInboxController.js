@@ -93,9 +93,16 @@ const buildAudienceFilter = (user) => ({
 
 const toInboxDTO = (doc, userId) => {
   const obj = typeof doc.toObject === 'function' ? doc.toObject() : doc;
+  const userIdStr = String(userId);
   const read = Array.isArray(obj.readBy)
-    ? obj.readBy.some((id) => String(id) === String(userId))
+    ? obj.readBy.some((id) => String(id) === userIdStr)
     : false;
+  // Phase G9.R8 — per-recipient archive + acknowledgement DTO projection.
+  const archived = Array.isArray(obj.archivedBy)
+    ? obj.archivedBy.some((id) => String(id) === userIdStr)
+    : false;
+  const ackList = Array.isArray(obj.acknowledgedBy) ? obj.acknowledgedBy : [];
+  const myAck = ackList.find((e) => String(e.user) === userIdStr);
   return {
     _id: String(obj._id),
     senderName: obj.senderName,
@@ -116,7 +123,14 @@ const toInboxDTO = (doc, userId) => {
     action_payload: obj.action_payload || null,
     action_completed_at: obj.action_completed_at || null,
     action_completed_by: obj.action_completed_by ? String(obj.action_completed_by) : null,
-    isArchived: !!obj.isArchived,
+    // Per-recipient state — what THIS caller sees:
+    archived,
+    must_acknowledge: !!obj.must_acknowledge,
+    acknowledged_by_me: !!myAck,
+    acknowledged_at: myAck ? myAck.at : null,
+    // Aggregate ack count (sender/admin uses this to decide if a read-receipts
+    // modal is worth opening). Full per-user breakdown is in GET /:id/ack-status.
+    acknowledged_count: ackList.length,
     createdAt: obj.createdAt,
     read,
   };
@@ -142,8 +156,14 @@ const getInboxMessages = catchAsync(async (req, res) => {
   const search = (req.query.search || '').trim();
   const wantCounts = req.query.counts === '1' || req.query.counts === 'true';
 
+  // Phase G9.R8 — archivedBy replaces the single isArchived bool. Default
+  // view hides messages archived BY the current caller; sibling recipients
+  // still see the message. Also hide retention-soft-deleted rows so soft-
+  // deleted items drop out of the inbox immediately without waiting for the
+  // grace-period hard purge.
   const filter = {
-    isArchived: false,
+    archivedBy: { $ne: req.user._id },
+    deletion_candidate: { $ne: true },
     ...buildAudienceFilter(req.user),
   };
 
@@ -155,10 +175,14 @@ const getInboxMessages = catchAsync(async (req, res) => {
   // ACTION_REQUIRED), real folders match folder field directly.
   if (folder && folder !== 'INBOX') {
     if (folder === 'ARCHIVE') {
-      filter.isArchived = true;
+      // Flip the archive filter: show only messages archived by me.
+      filter.archivedBy = req.user._id;
     } else if (folder === 'SENT') {
-      // SENT is a sender-side filter: drop audience filter, pin sender
+      // SENT is a sender-side filter: drop audience filter AND the
+      // per-recipient archive filter (sender's Sent list is their authoritative
+      // outbox regardless of what recipients did with their copies).
       delete filter.$or;
+      delete filter.archivedBy;
       filter.senderUserId = req.user._id;
     } else if (folder === 'ACTION_REQUIRED') {
       filter.requires_action = true;
@@ -229,6 +253,7 @@ const getInboxMessages = catchAsync(async (req, res) => {
 const ZERO_COUNTS = Object.freeze({
   inbox: 0,
   unread: 0,
+  unacknowledged: 0,
   action_required: 0,
   approvals: 0,
   tasks: 0,
@@ -240,7 +265,13 @@ const ZERO_COUNTS = Object.freeze({
 const computeFolderCounts = async (req, entityScope) => {
   const Message = getMessageModel();
   const baseAud = buildAudienceFilter(req.user);
-  const baseFilter = { isArchived: false, ...baseAud };
+  // Phase G9.R8 — hide per-user archived rows + soft-deleted rows from counts
+  // (so the folder badges reflect "what I'd actually see in my inbox").
+  const baseFilter = {
+    archivedBy: { $ne: req.user._id },
+    deletion_candidate: { $ne: true },
+    ...baseAud,
+  };
   if (entityScope) baseFilter.entity_id = entityScope;
 
   // Defensive cast: `$in` in aggregation does strict type-match. If auth
@@ -260,6 +291,37 @@ const computeFolderCounts = async (req, entityScope) => {
           $sum: {
             $cond: [
               { $not: [{ $in: [userId, { $ifNull: ['$readBy', []] }] }] },
+              1,
+              0,
+            ],
+          },
+        },
+        // Phase G9.R8 — Unacknowledged count.
+        //   Counts messages where must_acknowledge=true AND the current user's
+        //   id does NOT appear in acknowledgedBy.user. Uses a $filter over the
+        //   (small) acknowledgedBy array — cheap even for large inboxes since
+        //   the array rarely exceeds the role-members count.
+        unacknowledged: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ['$must_acknowledge', true] },
+                  {
+                    $eq: [
+                      {
+                        $size: {
+                          $filter: {
+                            input: { $ifNull: ['$acknowledgedBy', []] },
+                            cond: { $eq: ['$$this.user', userId] },
+                          },
+                        },
+                      },
+                      0,
+                    ],
+                  },
+                ],
+              },
               1,
               0,
             ],
@@ -313,9 +375,12 @@ const getThread = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Invalid thread_id' });
   }
 
+  // Phase G9.R8 — threads hide only the CALLER's archived rows + soft-deleted
+  // rows. Other recipients' archives don't affect my view of the same thread.
   const filter = {
     thread_id: new mongoose.Types.ObjectId(threadId),
-    isArchived: false,
+    archivedBy: { $ne: req.user._id },
+    deletion_candidate: { $ne: true },
   };
   // Entity scoping for non-privileged callers
   const entityScope = resolveEntityScope(req);
@@ -375,7 +440,8 @@ const createInboxMessage = catchAsync(async (req, res) => {
     recipientRole,
     recipientUserId,
     readBy: [],
-    isArchived: false,
+    archivedBy: [],
+    acknowledgedBy: [],
     entity_id: entityScope,
     folder: folder || folderForCategory(category),
   });
@@ -421,7 +487,8 @@ const createMessageNotify = catchAsync(async (req, res) => {
     recipientRole,
     recipientUserId,
     readBy: [],
-    isArchived: false,
+    archivedBy: [],
+    acknowledgedBy: [],
     entity_id: entityScope,
     folder: folderForCategory(category),
   });
@@ -437,6 +504,10 @@ const composeMessage = catchAsync(async (req, res) => {
   const {
     recipient_user_id, recipient_role, subject, body,
     category = 'chat', priority = 'normal',
+    // Phase G9.R8 — admin override for the ack-default pre-save hook. When
+    // omitted, the MessageInbox pre-save hook consults INBOX_ACK_DEFAULTS.
+    // When true/false, that value is authoritative (hook respects isModified).
+    must_acknowledge,
   } = req.body || {};
 
   if (!subject?.trim() || !body?.trim()) {
@@ -500,7 +571,7 @@ const composeMessage = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Could not resolve recipient role.' });
   }
 
-  const doc = await Message.create({
+  const docPayload = {
     senderName: req.user.full_name || req.user.name || req.user.email,
     senderRole: req.user.role,
     senderUserId: req.user._id,
@@ -511,10 +582,18 @@ const composeMessage = catchAsync(async (req, res) => {
     recipientRole: resolvedRole,
     recipientUserId: recipient_user_id || null,
     readBy: [],
-    isArchived: false,
+    archivedBy: [],
+    acknowledgedBy: [],
     entity_id: entityScope,
     folder: folderForCategory(category),
-  });
+  };
+  // Phase G9.R8 — admin-supplied must_acknowledge override. Passing only when
+  // explicitly set marks the field as modified on the doc, which tells the
+  // pre-save hook to respect the override instead of re-deriving from lookup.
+  if (must_acknowledge === true || must_acknowledge === false) {
+    docPayload.must_acknowledge = must_acknowledge;
+  }
+  const doc = await Message.create(docPayload);
   // thread_id for fresh chat = own _id
   doc.thread_id = doc._id;
   await doc.save();
@@ -570,7 +649,8 @@ const replyToMessage = catchAsync(async (req, res) => {
     recipientRole: replyToRole || 'admin',
     recipientUserId: replyToUserId || null,
     readBy: [],
-    isArchived: false,
+    archivedBy: [],
+    acknowledgedBy: [],
     entity_id: parent.entity_id,
     folder: parent.folder || folderForCategory(parent.category),
     thread_id: threadId,
@@ -760,7 +840,11 @@ const getSentMessages = catchAsync(async (req, res) => {
   const category = req.query.category;
   const search = (req.query.search || '').trim();
 
-  const filter = { isArchived: false, senderUserId: req.user._id };
+  // Phase G9.R8 — sender's Sent folder is the outbox of record. We don't
+  // hide messages based on any recipient's archive decision, and we don't
+  // hide soft-deleted rows either (admin reviewing "did this go out?" needs
+  // to see everything they sent until hard purge).
+  const filter = { senderUserId: req.user._id };
   const entityScope = resolveEntityScope(req);
   if (entityScope) filter.entity_id = entityScope;
 
@@ -786,6 +870,272 @@ const getSentMessages = catchAsync(async (req, res) => {
     data: docs.map((d) => toInboxDTO(d, req.user._id)),
     pagination: { page, limit, total, pages: Math.ceil(total / limit) || 1 },
   });
+});
+
+/* ------------------------------------------------------------------ */
+/* Phase G9.R8 — Archive / Unarchive / Bulk Archive                   */
+/* ------------------------------------------------------------------ */
+// All three are self-service: the caller can only toggle their OWN entry
+// in archivedBy. Any authenticated user who can see the message (audience
+// gate via isReadWriteAllowed + privileged bypass) can archive it.
+//
+// We deliberately allow the SENDER to archive their own copy too — a sender
+// who receives a reply to their own broadcast may want to tidy their inbox
+// view of that thread. isReadWriteAllowed already covers this.
+
+const archiveMessage = catchAsync(async (req, res) => {
+  const Message = getMessageModel();
+  const msg = await Message.findById(req.params.id);
+  if (!msg) throw new NotFoundError('Message not found');
+  if (!isReadWriteAllowed(msg, req.user) && !isPrivileged(req.user.role)) {
+    return res.status(403).json({ success: false, message: 'You are not allowed to archive this message.' });
+  }
+  await Message.updateOne(
+    { _id: msg._id },
+    { $addToSet: { archivedBy: req.user._id } }
+  );
+  const updated = await Message.findById(msg._id);
+  res.status(200).json({ success: true, data: toInboxDTO(updated, req.user._id) });
+});
+
+const unarchiveMessage = catchAsync(async (req, res) => {
+  const Message = getMessageModel();
+  const msg = await Message.findById(req.params.id);
+  if (!msg) throw new NotFoundError('Message not found');
+  if (!isReadWriteAllowed(msg, req.user) && !isPrivileged(req.user.role)) {
+    return res.status(403).json({ success: false, message: 'You are not allowed to unarchive this message.' });
+  }
+  await Message.updateOne(
+    { _id: msg._id },
+    { $pull: { archivedBy: req.user._id } }
+  );
+  const updated = await Message.findById(msg._id);
+  res.status(200).json({ success: true, data: toInboxDTO(updated, req.user._id) });
+});
+
+const bulkArchiveMessages = catchAsync(async (req, res) => {
+  const Message = getMessageModel();
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter(isObjectId) : [];
+  if (ids.length === 0) {
+    return res.status(400).json({ success: false, message: 'ids[] is required.' });
+  }
+  if (ids.length > 200) {
+    return res.status(400).json({ success: false, message: 'Max 200 ids per request.' });
+  }
+  // Only archive messages the caller can actually see (audience + entity scope).
+  // We compute a permissive authz filter and scope the $addToSet to it so a
+  // malicious caller can't archive-by-id across tenants.
+  const baseAud = buildAudienceFilter(req.user);
+  const entityScope = resolveEntityScope(req);
+  const filter = {
+    _id: { $in: ids.map((id) => new mongoose.Types.ObjectId(id)) },
+    ...baseAud,
+  };
+  if (entityScope) filter.entity_id = entityScope;
+
+  const result = await Message.updateMany(filter, {
+    $addToSet: { archivedBy: req.user._id },
+  });
+  res.status(200).json({
+    success: true,
+    data: { matched: result.matchedCount, modified: result.modifiedCount },
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Phase G9.R8 — Mark all as read (per folder)                        */
+/* ------------------------------------------------------------------ */
+// Bulk version of markMessageRead. Accepts the same folder filter vocabulary
+// as GET /messages (INBOX / ACTION_REQUIRED / APPROVALS / TASKS / ...).
+// Scope is strictly "messages the caller currently sees in that folder" —
+// the filter mirrors getInboxMessages so the effect matches what's on screen.
+const markAllRead = catchAsync(async (req, res) => {
+  const Message = getMessageModel();
+  const folder = (req.query.folder || req.body?.folder || '').toString().toUpperCase();
+
+  const filter = {
+    archivedBy: { $ne: req.user._id },
+    deletion_candidate: { $ne: true },
+    readBy: { $ne: req.user._id },
+    ...buildAudienceFilter(req.user),
+  };
+  const entityScope = resolveEntityScope(req);
+  if (entityScope) filter.entity_id = entityScope;
+
+  if (folder && folder !== 'INBOX') {
+    if (folder === 'ARCHIVE') {
+      filter.archivedBy = req.user._id;
+    } else if (folder === 'SENT') {
+      // Sender rarely needs "mark all read" over their own sent items, but we
+      // still honor the call for consistency. Drop audience filter + pin sender.
+      delete filter.$or;
+      delete filter.archivedBy;
+      filter.senderUserId = req.user._id;
+    } else if (folder === 'ACTION_REQUIRED') {
+      filter.requires_action = true;
+      filter.action_completed_at = null;
+    } else {
+      filter.folder = folder;
+    }
+  }
+
+  const result = await Message.updateMany(filter, {
+    $addToSet: { readBy: req.user._id },
+  });
+  res.status(200).json({
+    success: true,
+    data: { matched: result.matchedCount, modified: result.modifiedCount, folder: folder || 'INBOX' },
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Phase G9.R8 — Acknowledge                                          */
+/* ------------------------------------------------------------------ */
+// Explicit "I have read and understood this" click. Writes to
+// acknowledgedBy with a timestamp (audit trail). Also marks the message
+// read (acknowledge implies read — bot-opening a broadcast you never saw
+// then ack'ing it is the abuse case; we don't prevent it at this layer
+// because the actor is still identified in the log).
+//
+// Idempotent: if the user is already in acknowledgedBy, we return the
+// existing timestamp untouched. No 409 — callers can blindly click ack.
+const acknowledgeMessage = catchAsync(async (req, res) => {
+  const Message = getMessageModel();
+  const msg = await Message.findById(req.params.id);
+  if (!msg) throw new NotFoundError('Message not found');
+  if (!isReadWriteAllowed(msg, req.user) && !isPrivileged(req.user.role)) {
+    return res.status(403).json({ success: false, message: 'You are not allowed to acknowledge this message.' });
+  }
+
+  const userIdStr = String(req.user._id);
+  const alreadyAcked = Array.isArray(msg.acknowledgedBy)
+    && msg.acknowledgedBy.some((e) => String(e.user) === userIdStr);
+
+  if (!alreadyAcked) {
+    // Use a guarded updateOne so concurrent acks don't double-insert.
+    await Message.updateOne(
+      { _id: msg._id, 'acknowledgedBy.user': { $ne: req.user._id } },
+      {
+        $push: { acknowledgedBy: { user: req.user._id, at: new Date() } },
+        $addToSet: { readBy: req.user._id },
+      }
+    );
+  }
+
+  const updated = await Message.findById(msg._id);
+  res.status(200).json({ success: true, data: toInboxDTO(updated, req.user._id) });
+});
+
+/* ------------------------------------------------------------------ */
+/* Phase G9.R8 — Acknowledgement status (sender/admin read-receipts)  */
+/* ------------------------------------------------------------------ */
+// Returns { total, acknowledged: [{user_id, name, at}], pending: [{user_id, name}] }
+// for a broadcast OR DM. Only visible to:
+//   - the sender of the message, OR
+//   - privileged roles (president/ceo/admin/finance).
+// Non-broadcast DMs still work — pending just shows the single recipient.
+const getAckStatus = catchAsync(async (req, res) => {
+  const Message = getMessageModel();
+  const msg = await Message.findById(req.params.id);
+  if (!msg) throw new NotFoundError('Message not found');
+
+  const isSender = msg.senderUserId && String(msg.senderUserId) === String(req.user._id);
+  if (!isSender && !isPrivileged(req.user.role)) {
+    return res.status(403).json({ success: false, message: 'Only the sender or a privileged role can view read-receipts.' });
+  }
+
+  const User = require('../models/User');
+
+  // Determine the audience that SHOULD have acknowledged:
+  //   - targeted DM (recipientUserId set): audience = [recipientUserId]
+  //   - broadcast (recipientUserId null): audience = all active users in
+  //     recipientRole within the message's entity (if scoped) or across all
+  //     entities.
+  let audienceIds = [];
+  if (msg.recipientUserId) {
+    audienceIds = [msg.recipientUserId];
+  } else {
+    const userFilter = { role: msg.recipientRole, isActive: { $ne: false } };
+    if (msg.entity_id) {
+      userFilter.$or = [
+        { entity_id: msg.entity_id },
+        { entity_ids: msg.entity_id },
+      ];
+    }
+    const users = await User.find(userFilter).select('_id').lean();
+    audienceIds = users.map((u) => u._id);
+  }
+
+  const ackedUserIds = (msg.acknowledgedBy || []).map((e) => String(e.user));
+  const ackedSet = new Set(ackedUserIds);
+  const pendingIds = audienceIds.filter((uid) => !ackedSet.has(String(uid)));
+
+  // Enrich with display names (single bulk query for both sets).
+  const allIds = [...new Set([...ackedUserIds.map(String), ...pendingIds.map(String)])];
+  const users = allIds.length
+    ? await User.find({ _id: { $in: allIds } }).select('_id full_name name email').lean()
+    : [];
+  const nameMap = new Map(users.map((u) => [String(u._id), u.full_name || u.name || u.email || 'Unknown']));
+
+  const acknowledged = (msg.acknowledgedBy || []).map((e) => ({
+    user_id: String(e.user),
+    name: nameMap.get(String(e.user)) || 'Unknown',
+    at: e.at,
+  }));
+  const pending = pendingIds.map((uid) => ({
+    user_id: String(uid),
+    name: nameMap.get(String(uid)) || 'Unknown',
+  }));
+
+  res.status(200).json({
+    success: true,
+    data: {
+      message_id: String(msg._id),
+      title: msg.title,
+      must_acknowledge: !!msg.must_acknowledge,
+      is_broadcast: !msg.recipientUserId,
+      total: audienceIds.length,
+      acknowledged,
+      pending,
+    },
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* Phase G9.R8 — Retention run-now + preview                          */
+/* ------------------------------------------------------------------ */
+// Thin wrappers that delegate to messageRetentionAgent. Both are gated by
+// the messaging.retention_manage sub-perm at the route level.
+const runRetentionNow = catchAsync(async (req, res) => {
+  const retention = require('../erp/services/messageRetentionAgent');
+  const entityScope = resolveEntityScope(req)
+    || req.user.entity_id
+    || (Array.isArray(req.user.entity_ids) && req.user.entity_ids.length > 0 ? req.user.entity_ids[0] : null);
+  if (!entityScope && !isPrivileged(req.user.role)) {
+    return res.status(400).json({ success: false, message: 'Entity context required.' });
+  }
+  // Privileged caller with no explicit entity scope = run ALL entities.
+  // Non-privileged = pinned to their entity.
+  const result = await retention.runRetention({
+    entityId: entityScope,
+    triggeredBy: req.user._id,
+    dryRun: req.body?.dry_run === true || req.query?.dry_run === '1',
+  });
+  res.status(200).json({ success: true, data: result });
+});
+
+const previewRetention = catchAsync(async (req, res) => {
+  const retention = require('../erp/services/messageRetentionAgent');
+  const entityScope = resolveEntityScope(req)
+    || req.user.entity_id
+    || (Array.isArray(req.user.entity_ids) && req.user.entity_ids.length > 0 ? req.user.entity_ids[0] : null);
+  if (!entityScope && !isPrivileged(req.user.role)) {
+    return res.status(400).json({ success: false, message: 'Entity context required.' });
+  }
+  const result = await retention.previewRetention({
+    entityId: entityScope,
+  });
+  res.status(200).json({ success: true, data: result });
 });
 
 /* ------------------------------------------------------------------ */
@@ -835,4 +1185,13 @@ module.exports = {
   executeAction,
   markMessageRead,
   markMessageUnread,
+  // Phase G9.R8 — archive/ack/retention
+  archiveMessage,
+  unarchiveMessage,
+  bulkArchiveMessages,
+  markAllRead,
+  acknowledgeMessage,
+  getAckStatus,
+  runRetentionNow,
+  previewRetention,
 };
