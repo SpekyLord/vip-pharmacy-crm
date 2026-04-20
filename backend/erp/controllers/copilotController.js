@@ -67,7 +67,21 @@ exports.execute = catchAsync(async (req, res) => {
 // GET /status — returns visibility snapshot the widget uses to decide whether
 // to render itself + which tools are enabled + current monthly spend.
 exports.status = catchAsync(async (req, res) => {
-  if (!req.entityId) return res.status(400).json({ success: false, message: 'Entity context required' });
+  // Some authenticated users can enter ERP routes before they have an ERP
+  // entity assigned/selected. The widget should self-hide instead of logging a
+  // noisy 400 on every page mount.
+  if (!req.entityId) {
+    return res.json({
+      success: true,
+      data: {
+        widget_enabled: false,
+        feature: null,
+        tools: [],
+        spend: null,
+        reason: 'entity_context_missing',
+      },
+    });
+  }
 
   const featureRow = await Lookup.findOne({
     entity_id: req.entityId,
