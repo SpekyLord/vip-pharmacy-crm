@@ -11,7 +11,7 @@
  * Route: /admin/gps-verification
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   MapPin,
   AlertTriangle,
@@ -458,36 +458,42 @@ const GPSVerificationPage = () => {
   const [statusFilter, setStatusFilter] = useState('all');
   const [stats, setStats] = useState({ verified: 0, suspicious: 0, noData: 0 });
   const [thresholdM, setThresholdM] = useState(400);
+  const fetchControllerRef = useRef(null);
 
   /* ---------------------------------------------------------------------------
      Fetch GPS Review Data
      --------------------------------------------------------------------------- */
 
   const fetchData = useCallback(async () => {
+    if (fetchControllerRef.current) fetchControllerRef.current.abort();
+    const controller = new AbortController();
+    fetchControllerRef.current = controller;
+    const { signal } = controller;
     try {
       const res = await visitService.getGPSReview({
         limit: 50,
         status: statusFilter !== 'all' ? statusFilter : undefined,
       });
 
+      if (signal.aborted) return;
       setVisits(res.data || []);
-      if (res.stats) {
-        setStats(res.stats);
-      }
-      if (res.thresholdM) {
-        setThresholdM(res.thresholdM);
-      }
+      if (res.stats) setStats(res.stats);
+      if (res.thresholdM) setThresholdM(res.thresholdM);
     } catch (err) {
+      if (err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') return;
       console.error('Failed to fetch GPS review data:', err);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (!signal.aborted) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [statusFilter]);
 
   useEffect(() => {
     setLoading(true);
     fetchData();
+    return () => { if (fetchControllerRef.current) fetchControllerRef.current.abort(); };
   }, [fetchData]);
 
   const handleRefresh = () => {

@@ -641,6 +641,40 @@ const getSmerDailyByDate = catchAsync(async (req, res) => {
   });
 });
 
+const getSmerDestinationsBatch = catchAsync(async (req, res) => {
+  const { dates } = req.query; // comma-separated YYYY-MM-DD
+  if (!dates) return res.json({ success: true, data: {} });
+
+  const dateList = dates.split(',').filter(Boolean);
+  if (!dateList.length) return res.json({ success: true, data: {} });
+
+  const startDate = new Date(dateList[0] + 'T00:00:00.000Z');
+  const endDate = new Date(dateList[dateList.length - 1] + 'T00:00:00.000Z');
+  endDate.setDate(endDate.getDate() + 1);
+
+  const smers = await SmerEntry.find({
+    ...req.tenantFilter,
+    'daily_entries.entry_date': { $gte: startDate, $lt: endDate }
+  }).lean();
+
+  const result = {};
+  for (const smer of smers) {
+    for (const de of smer.daily_entries || []) {
+      const dateKey = new Date(de.entry_date).toISOString().split('T')[0];
+      if (dateList.includes(dateKey) && !result[dateKey]) {
+        result[dateKey] = {
+          hospital_covered: de.hospital_covered || '',
+          notes: de.notes || '',
+          activity_type: de.activity_type || '',
+          destination: [de.hospital_covered, de.notes].filter(Boolean).join(' — ')
+        };
+      }
+    }
+  }
+
+  res.json({ success: true, data: result });
+});
+
 const deleteDraftCarLogbook = catchAsync(async (req, res) => {
   const result = await CarLogbookEntry.findOneAndDelete({ _id: req.params.id, ...req.tenantFilter, status: 'DRAFT' });
   if (!result) return res.status(404).json({ success: false, message: 'Draft car logbook not found' });
@@ -2810,7 +2844,7 @@ module.exports = {
   overridePerdiemDay, applyPerdiemOverride, getSmerCrmMdCounts, getSmerCrmVisitDetail,
   // Car Logbook
   createCarLogbook, updateCarLogbook, getCarLogbookList, getCarLogbookById, deleteDraftCarLogbook,
-  validateCarLogbook, submitCarLogbook, reopenCarLogbook, getSmerDailyByDate,
+  validateCarLogbook, submitCarLogbook, reopenCarLogbook, getSmerDailyByDate, getSmerDestinationsBatch,
   // Expenses (ORE/ACCESS)
   createExpense, updateExpense, getExpenseList, getExpenseById, deleteDraftExpense,
   validateExpenses, submitExpenses, reopenExpenses,

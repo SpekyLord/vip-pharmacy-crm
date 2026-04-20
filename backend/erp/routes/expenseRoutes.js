@@ -17,7 +17,7 @@ const {
   overridePerdiemDay, applyPerdiemOverride, getSmerCrmMdCounts, getSmerCrmVisitDetail,
   // Car Logbook
   createCarLogbook, updateCarLogbook, getCarLogbookList, getCarLogbookById, deleteDraftCarLogbook,
-  validateCarLogbook, submitCarLogbook, reopenCarLogbook, getSmerDailyByDate,
+  validateCarLogbook, submitCarLogbook, reopenCarLogbook, getSmerDailyByDate, getSmerDestinationsBatch,
   // Expenses (ORE/ACCESS)
   createExpense, updateExpense, getExpenseList, getExpenseById, deleteDraftExpense,
   validateExpenses, submitExpenses, reopenExpenses,
@@ -64,6 +64,7 @@ router.post('/smer/:id/apply-override', applyPerdiemOverride);
 // ═══ Car Logbook ═══
 router.post('/car-logbook', createCarLogbook);
 router.get('/car-logbook', getCarLogbookList);
+router.get('/car-logbook/smer-destinations', getSmerDestinationsBatch);
 router.get('/car-logbook/smer-destination/:date', getSmerDailyByDate);
 router.post('/car-logbook/validate', validateCarLogbook);
 router.post('/car-logbook/submit', periodLockCheck('EXPENSE'), submitCarLogbook);

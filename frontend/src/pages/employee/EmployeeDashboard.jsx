@@ -8,7 +8,7 @@
  * - Weekly progress
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
@@ -487,6 +487,7 @@ const EmployeeDashboard = () => {
   const [dailyClientVisitCount, setDailyClientVisitCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const fetchControllerRef = useRef(null);
   const [mobileShowCount, setMobileShowCount] = useState(MOBILE_PAGE_SIZE);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 480);
   const [dashboardTab, setDashboardTab] = useState('vip');
@@ -513,6 +514,10 @@ const EmployeeDashboard = () => {
 
   // Fetch all dashboard data with graceful degradation
   const fetchDashboardData = useCallback(async () => {
+    if (fetchControllerRef.current) fetchControllerRef.current.abort();
+    const controller = new AbortController();
+    fetchControllerRef.current = controller;
+    const { signal } = controller;
     try {
       setLoading(true);
       setError(null);
@@ -627,15 +632,17 @@ const EmployeeDashboard = () => {
         setError('Failed to load dashboard data. Please try again.');
       }
     } catch (err) {
+      if (err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') return;
       console.error('Failed to fetch dashboard data:', err);
       setError(err.response?.data?.message || 'Failed to load dashboard data');
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     fetchDashboardData();
+    return () => { if (fetchControllerRef.current) fetchControllerRef.current.abort(); };
   }, [fetchDashboardData]);
 
   // Track mobile viewport for "Show More" pagination

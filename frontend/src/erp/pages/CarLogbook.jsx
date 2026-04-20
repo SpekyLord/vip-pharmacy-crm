@@ -132,7 +132,7 @@ export default function CarLogbook() {
   const {
     getCarLogbookList, createCarLogbook, updateCarLogbook, deleteDraftCarLogbook,
     validateCarLogbook, submitCarLogbook, reopenCarLogbook,
-    getSmerDestinationByDate, loading
+    getSmerDestinationByDate, getSmerDestinationsBatch, loading
   } = useExpenses();
   const { settings } = useSettings();
   const { options: fuelTypeOpts } = useLookupOptions('FUEL_TYPE');
@@ -225,16 +225,20 @@ export default function CarLogbook() {
       console.error('[CarLogbook] Load failed:', err.message);
       showError(err, 'Could not load logbook entries');
     }
-    // Bulk fetch SMER destinations for days without a saved destination
-    for (let i = 0; i < dayRows.length; i++) {
-      if (dayRows[i].destination) continue; // already has destination from saved doc
-      if (dayRows[i].isWeekend) continue;
+    // Batch fetch SMER destinations for days without a saved destination (single request)
+    const undecidedDates = dayRows
+      .filter(r => !r.destination && !r.isWeekend)
+      .map(r => r.entry_date);
+    if (undecidedDates.length > 0) {
       try {
-        const res = await getSmerDestinationByDate(dayRows[i].entry_date);
-        if (res?.data?.destination) {
-          dayRows[i].destination = res.data.destination;
+        const res = await getSmerDestinationsBatch(undecidedDates);
+        const destMap = res?.data || {};
+        for (let i = 0; i < dayRows.length; i++) {
+          if (!dayRows[i].destination && destMap[dayRows[i].entry_date]?.destination) {
+            dayRows[i].destination = destMap[dayRows[i].entry_date].destination;
+          }
         }
-      } catch { /* ignore individual fetch errors */ }
+      } catch { /* ignore, destinations stay empty */ }
     }
 
     setRows(dayRows);

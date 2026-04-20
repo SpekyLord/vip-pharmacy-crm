@@ -1674,7 +1674,7 @@ const StatisticsPage = () => {
     loadedTabsRef.current.add('overview');
     loadedTabsRef.current.add('bdm-performance'); // employees loaded with overview
     fetchOverviewData();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // Lazy-load tab data on first visit
   useEffect(() => {
@@ -1684,7 +1684,7 @@ const StatisticsPage = () => {
     if (activeTab === 'programs') fetchProgramsData();
     else if (activeTab === 'products') fetchProductsData();
     else if (activeTab === 'heatmap') fetchHeatmapData();
-  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeTab]);
 
   // Fetch DCR data when BDM or cycle changes
   useEffect(() => {
