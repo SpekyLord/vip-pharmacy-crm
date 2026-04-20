@@ -114,12 +114,31 @@ const pageStyles = `
   .btn-sm { padding: 4px 10px; font-size: 12px; }
 
   .sales-grid { background: var(--erp-panel, #fff); border: 1px solid var(--erp-border, #dbe4f0); border-radius: 12px; overflow-x: auto; }
-  .sales-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .sales-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: auto; min-width: 1000px; }
   .sales-table th { background: var(--erp-accent-soft, #e8efff); color: var(--erp-text); padding: 10px 8px; text-align: left; font-weight: 600; white-space: nowrap; position: sticky; top: 0; }
   .sales-table td { padding: 6px 8px; border-top: 1px solid var(--erp-border, #dbe4f0); vertical-align: top; }
   .sales-table input, .sales-table select { width: 100%; padding: 8px; border: 1px solid var(--erp-border, #dbe4f0); border-radius: 6px; font-size: 14px; background: var(--erp-panel, #fff); color: var(--erp-text); }
   .sales-table input:focus, .sales-table select:focus { outline: none; border-color: var(--erp-accent, #1e5eff); }
   .sales-table .readonly { background: var(--erp-bg, #f4f7fb); color: var(--erp-muted, #5f7188); border: none; }
+
+  /* Header + nested line-items pattern (mirrors OpeningArEntry's oar-row-main /
+     oar-row-items but kept page-local so the two pages stay decoupled).
+     Hospital / CSI# / Date / Total / Status live in the MAIN row. Products,
+     batches, qty, price, line-total live in a full-width sub-row below so the
+     product dropdown has room and the header fields don't compete for space. */
+  .sales-row-main td { border-top: 1px solid var(--erp-border, #dbe4f0); padding-bottom: 4px; vertical-align: top; }
+  .sales-row-items td { border-top: none; background: var(--erp-bg, #f4f7fb); padding-top: 4px; }
+  .sales-row-reject td { border-top: none; background: #fff5f5; padding: 8px 12px; }
+  .sales-li-section-label { font-size: 10px; color: var(--erp-muted, #5f7188); text-transform: uppercase; font-weight: 700; letter-spacing: 0.4px; margin: 2px 0 6px; }
+  /* 8 columns: Product / Batch / Expiry / Qty / Unit / Price / Line Total / × */
+  .sales-line-item { display: grid; grid-template-columns: minmax(220px, 2.6fr) 150px 110px 80px 70px 90px 100px 32px; gap: 8px; align-items: start; margin-bottom: 6px; }
+  .sales-line-item > * { min-width: 0; }
+  .sales-line-item .cell-stack { display: flex; flex-direction: column; gap: 4px; }
+  .sales-li-add { background: transparent; border: 1px dashed var(--erp-border); color: var(--erp-muted); padding: 4px 10px; font-size: 11px; border-radius: 6px; cursor: pointer; margin-top: 2px; }
+  .sales-li-add:hover { background: var(--erp-panel); }
+  .sales-li-remove { background: transparent; border: none; color: #dc2626; cursor: pointer; font-size: 16px; padding: 4px 6px; align-self: center; }
+  .sales-li-remove:disabled { color: var(--erp-muted); cursor: not-allowed; }
+  .sales-header-total { text-align: right; font-weight: 700; color: var(--erp-text); padding-top: 12px; }
 
   .status-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
   .error-panel { margin-top: 12px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 12px; padding: 16px; }
@@ -195,6 +214,7 @@ const pageStyles = `
       padding: 10px 8px;
     }
     .service-grid { grid-template-columns: 1fr; }
+    .sales-line-item { grid-template-columns: 1fr; }
   }
   @media (max-width: 480px) {
     .sales-main { padding: 12px; padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px)); }
@@ -707,6 +727,35 @@ export default function SalesEntry() {
     });
   }, [productOptions]);
 
+  // Header + nested line-items layout: a CSI row may carry N products. These
+  // helpers keep state shape compatible with the existing save/validate/submit
+  // flow (payload still ships `line_items[]` to salesController → createSale).
+  const addLineItem = useCallback((rowIdx) => {
+    setRows(prev => {
+      const updated = [...prev];
+      const row = { ...updated[rowIdx] };
+      row.line_items = [
+        ...row.line_items,
+        { product_id: '', qty: '', unit: '', unit_price: '', item_key: '', batch_lot_no: '', fifo_override: false, override_reason: '' }
+      ];
+      updated[rowIdx] = row;
+      return updated;
+    });
+  }, []);
+
+  const removeLineItem = useCallback((rowIdx, itemIdx) => {
+    setRows(prev => {
+      const updated = [...prev];
+      const row = { ...updated[rowIdx] };
+      row.line_items = row.line_items.filter((_, i) => i !== itemIdx);
+      if (row.line_items.length === 0) {
+        row.line_items = [{ product_id: '', qty: '', unit: '', unit_price: '', item_key: '', batch_lot_no: '', fifo_override: false, override_reason: '' }];
+      }
+      updated[rowIdx] = row;
+      return updated;
+    });
+  }, []);
+
   const addRow = () => setRows(prev => [...prev, emptyRow()]);
 
   // Rejection-fallback: attach a fresh CSI photo to an existing row without
@@ -1177,38 +1226,46 @@ export default function SalesEntry() {
             </div>
           )}
 
-          {/* Desktop Table (CSI + Cash Receipt modes) */}
+          {/* Desktop Table (CSI + Cash Receipt modes)
+              Header row = Hospital / CSI Date / CSI# / Total / Status.
+              Line items live in a nested sub-row spanning the full width so
+              each product has its own batch/expiry/qty/price/line-total cells
+              without fighting the header inputs for column width. Mirrors the
+              Opening AR Entry layout (oar-row-main / oar-row-items) but with
+              warehouse-filtered products, FIFO batch picking, override-reason
+              preserved per-line — matching current Sales Entry semantics. */}
           {saleType !== 'SERVICE_INVOICE' && <div className="sales-grid sales-table-wrapper">
             <table className="sales-table">
               <thead>
                 <tr>
                   <th style={{ width: 30 }}>#</th>
-                  <th style={{ width: 200 }}>Hospital</th>
-                  <th style={{ width: 120 }}>CSI Date</th>
-                  <th style={{ width: 100 }}>CSI #</th>
-                  <th style={{ width: 200 }}>Product</th>
-                  <th style={{ width: 160 }}>Batch / Lot</th>
-                  <th style={{ width: 100 }}>Expiry</th>
-                  <th style={{ width: 90 }}>Qty</th>
-                  <th style={{ width: 70 }}>Unit</th>
-                  <th style={{ width: 90 }}>Unit Price</th>
-                  <th style={{ width: 100 }}>Line Total</th>
-                  <th style={{ width: 80 }}>Status</th>
+                  <th style={{ minWidth: 220 }}>{saleType === 'CSI' ? 'Hospital' : 'Hospital / Customer'}</th>
+                  <th style={{ width: 140 }}>CSI Date</th>
+                  <th style={{ width: 160 }}>CSI #</th>
+                  <th style={{ width: 120 }} className="num">Total</th>
+                  <th style={{ width: 140 }}>Status</th>
                   <th style={{ width: 40 }}></th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, idx) => (
+                {rows.map((row, idx) => {
+                  const isPosted = row.status === 'POSTED';
+                  const rowCsiDate = row.csi_date
+                    ? (typeof row.csi_date === 'string' ? row.csi_date.split('T')[0] : new Date(row.csi_date).toISOString().split('T')[0])
+                    : '';
+                  const isBackdated = liveDate && rowCsiDate && rowCsiDate < liveDate;
+                  const rowTotal = (row.line_items || []).reduce((sum, li) => sum + (parseFloat(computeLineTotal(li)) || 0), 0);
+                  return (
                   <Fragment key={row._id || row._tempId}>
-                  <tr>
-                    <td style={{ color: 'var(--erp-muted)', fontSize: 12 }}>{idx + 1}</td>
+                  <tr className="sales-row-main">
+                    <td style={{ color: 'var(--erp-muted)', fontSize: 12, paddingTop: 12 }}>{idx + 1}</td>
                     <td>
                       <SelectField value={row.hospital_id?._id || row.hospital_id || row.customer_id?._id || row.customer_id || ''} onChange={e => {
                         const val = e.target.value;
                         const isCustomer = customerList.some(c => c._id === val);
                         if (isCustomer) { updateRow(idx, 'customer_id', val); updateRow(idx, 'hospital_id', ''); }
                         else { updateRow(idx, 'hospital_id', val); updateRow(idx, 'customer_id', ''); }
-                      }} disabled={row.status === 'POSTED'}>
+                      }} disabled={isPosted}>
                         <option value="">Select {saleType === 'CSI' ? 'hospital' : 'customer'}...</option>
                         <optgroup label="Hospitals">
                           {hospitals.map(h => (
@@ -1227,13 +1284,13 @@ export default function SalesEntry() {
                     <td>
                       <input
                         type="date"
-                        value={row.csi_date ? (typeof row.csi_date === 'string' ? row.csi_date.split('T')[0] : new Date(row.csi_date).toISOString().split('T')[0]) : ''}
+                        value={rowCsiDate}
                         onChange={e => updateRow(idx, 'csi_date', e.target.value)}
                         min={liveDate || undefined}
-                        disabled={row.status === 'POSTED'}
-                        style={liveDate && row.csi_date && (typeof row.csi_date === 'string' ? row.csi_date.split('T')[0] : new Date(row.csi_date).toISOString().split('T')[0]) < liveDate ? { borderColor: '#d97706' } : undefined}
+                        disabled={isPosted}
+                        style={isBackdated ? { borderColor: '#d97706' } : undefined}
                       />
-                      {liveDate && row.csi_date && (typeof row.csi_date === 'string' ? row.csi_date.split('T')[0] : new Date(row.csi_date).toISOString().split('T')[0]) < liveDate && row.status !== 'POSTED' && (
+                      {isBackdated && !isPosted && (
                         <div style={{ fontSize: 10, color: '#92400e', marginTop: 2, lineHeight: 1.3 }}>
                           Backdated (before {liveDate}).{' '}
                           <button
@@ -1249,7 +1306,7 @@ export default function SalesEntry() {
                         value={row.doc_ref || ''}
                         onChange={e => updateRow(idx, 'doc_ref', e.target.value)}
                         placeholder="CSI#"
-                        disabled={row.status === 'POSTED'}
+                        disabled={isPosted}
                         list={`available-csi-${idx}`}
                       />
                       {saleType === 'CSI' && availableCsi.length > 0 && (
@@ -1262,86 +1319,10 @@ export default function SalesEntry() {
                         </datalist>
                       )}
                     </td>
-                    <td>
-                      {row.line_items?.map((item, li) => (
-                        <div key={li}>
-                          <SelectField value={item.product_id?._id || item.product_id || ''} onChange={e => updateLineItem(idx, li, 'product_id', e.target.value)} disabled={row.status === 'POSTED'}>
-                            <option value="">Select product...</option>
-                            {productOptions.map(p => (
-                              <option key={p.product_id} value={p.product_id}>
-                                {p.label}
-                              </option>
-                            ))}
-                          </SelectField>
-                          {item.product_id && productOptions.find(p => (p.product_id?.toString() || p.product_id) === (item.product_id?.toString() || item.product_id))?.near_expiry && (
-                            <span className="near-expiry-badge">Near Expiry</span>
-                          )}
-                        </div>
-                      ))}
+                    <td className="num sales-header-total">
+                      ₱{rowTotal.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </td>
-                    <td>
-                      {row.line_items?.map((item, li) => {
-                        const prod = item.product_id ? productOptions.find(p => (p.product_id?.toString() || p.product_id) === (item.product_id?.toString() || item.product_id)) : null;
-                        const batches = prod?.batches || [];
-                        if (!item.product_id || batches.length === 0) return <div key={li} style={{ fontSize: 11, padding: '6px 8px', color: 'var(--erp-muted)' }}>—</div>;
-                        if (batches.length === 1) return <div key={li} style={{ fontSize: 12, fontWeight: 600 }}>{batches[0].batch_lot_no} ({batches[0].available_qty})</div>;
-                        return (
-                          <div key={li}>
-                            <SelectField value={item.batch_lot_no || ''} onChange={e => updateLineItem(idx, li, 'batch_lot_no', e.target.value)} disabled={row.status === 'POSTED'} className="batch-select">
-                              <option value="">Auto (FIFO)</option>
-                              {batches.map((b, bi) => (
-                                <option key={bi} value={b.batch_lot_no}>
-                                  {b.batch_lot_no} — {b.available_qty} avail{b.near_expiry ? ' ⚠' : ''}{bi === 0 ? ' ★FIFO' : ''}
-                                </option>
-                              ))}
-                            </SelectField>
-                            {item.fifo_override && (
-                              <select className="override-reason" value={item.override_reason || ''} onChange={e => updateLineItem(idx, li, 'override_reason', e.target.value)} disabled={row.status === 'POSTED'}>
-                                <option value="">Select reason...</option>
-                                <option value="HOSPITAL_POLICY">Hospital Policy</option>
-                                <option value="QA_REPLACEMENT">QA Replacement</option>
-                                <option value="DAMAGED_BATCH">Damaged Batch</option>
-                                <option value="BATCH_RECALL">Batch Recall</option>
-                              </select>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </td>
-                    <td>
-                      {row.line_items?.map((item, li) => {
-                        const prod = item.product_id ? productOptions.find(p => (p.product_id?.toString() || p.product_id) === (item.product_id?.toString() || item.product_id)) : null;
-                        const batches = prod?.batches || [];
-                        const selectedBatch = item.batch_lot_no
-                          ? batches.find(b => b.batch_lot_no === item.batch_lot_no)
-                          : batches[0]; // FIFO = first batch
-                        return <div key={li} style={{ fontSize: 12, color: 'var(--erp-muted)' }}>
-                          <div>{selectedBatch?.expiry_date ? new Date(selectedBatch.expiry_date).toLocaleDateString() : '—'}</div>
-                          {selectedBatch?.near_expiry && <div><span className="near-expiry-badge">Near Expiry</span></div>}
-                        </div>;
-                      })}
-                    </td>
-                    <td>
-                      {row.line_items?.map((item, li) => (
-                        <input key={li} type="number" min="1" value={item.qty || ''} onChange={e => updateLineItem(idx, li, 'qty', e.target.value)} disabled={row.status === 'POSTED'} />
-                      ))}
-                    </td>
-                    <td>
-                      {row.line_items?.map((item, li) => (
-                        <input key={li} className="readonly" value={item.unit || ''} readOnly tabIndex={-1} />
-                      ))}
-                    </td>
-                    <td>
-                      {row.line_items?.map((item, li) => (
-                        <input key={li} type="number" step="0.01" value={item.unit_price || ''} onChange={e => updateLineItem(idx, li, 'unit_price', e.target.value)} disabled={row.status === 'POSTED'} />
-                      ))}
-                    </td>
-                    <td>
-                      {row.line_items?.map((item, li) => (
-                        <input key={li} className="readonly" value={computeLineTotal(item)} readOnly tabIndex={-1} />
-                      ))}
-                    </td>
-                    <td>
+                    <td style={{ paddingTop: 12 }}>
                       <span className="status-badge" style={{ background: STATUS_COLORS[row.status]?.bg, color: STATUS_COLORS[row.status]?.text }}>
                         {STATUS_COLORS[row.status]?.label || row.status}
                       </span>
@@ -1349,15 +1330,92 @@ export default function SalesEntry() {
                         <span className="status-badge" style={{ background: '#fef3c7', color: '#92400e', marginLeft: 4 }} title="Pre-live-date — no inventory deduction">Opening AR</span>
                       )}
                     </td>
-                    <td>
+                    <td style={{ paddingTop: 10 }}>
                       {row.status === 'DRAFT' && (
                         <button className="btn btn-danger btn-sm" onClick={() => removeRow(idx)} title="Remove row">&times;</button>
                       )}
                     </td>
                   </tr>
+                  <tr className="sales-row-items">
+                    <td></td>
+                    <td colSpan={6}>
+                      <div className="sales-li-section-label">Line items · {row.line_items?.length || 0}</div>
+                      {(row.line_items || []).map((item, li) => {
+                        const prod = item.product_id ? productOptions.find(p => (p.product_id?.toString() || p.product_id) === (item.product_id?.toString() || item.product_id)) : null;
+                        const batches = prod?.batches || [];
+                        const selectedBatch = item.batch_lot_no
+                          ? batches.find(b => b.batch_lot_no === item.batch_lot_no)
+                          : batches[0]; // FIFO = first batch (nearest expiry)
+                        return (
+                          <div key={li} className="sales-line-item">
+                            {/* Product */}
+                            <div className="cell-stack">
+                              <SelectField value={item.product_id?._id || item.product_id || ''} onChange={e => updateLineItem(idx, li, 'product_id', e.target.value)} disabled={isPosted}>
+                                <option value="">Select product...</option>
+                                {productOptions.map(p => (
+                                  <option key={p.product_id} value={p.product_id}>{p.label}</option>
+                                ))}
+                              </SelectField>
+                              {prod?.near_expiry && (
+                                <span className="near-expiry-badge" style={{ alignSelf: 'flex-start' }}>Near Expiry</span>
+                              )}
+                            </div>
+                            {/* Batch / Lot */}
+                            <div className="cell-stack">
+                              {!item.product_id || batches.length === 0 ? (
+                                <div style={{ fontSize: 11, padding: '8px', color: 'var(--erp-muted)' }}>—</div>
+                              ) : batches.length === 1 ? (
+                                <div style={{ fontSize: 12, fontWeight: 600, padding: '8px 0' }}>{batches[0].batch_lot_no} ({batches[0].available_qty})</div>
+                              ) : (
+                                <>
+                                  <SelectField value={item.batch_lot_no || ''} onChange={e => updateLineItem(idx, li, 'batch_lot_no', e.target.value)} disabled={isPosted} className="batch-select">
+                                    <option value="">Auto (FIFO)</option>
+                                    {batches.map((b, bi) => (
+                                      <option key={bi} value={b.batch_lot_no}>
+                                        {b.batch_lot_no} — {b.available_qty} avail{b.near_expiry ? ' ⚠' : ''}{bi === 0 ? ' ★FIFO' : ''}
+                                      </option>
+                                    ))}
+                                  </SelectField>
+                                  {item.fifo_override && (
+                                    <select className="override-reason" value={item.override_reason || ''} onChange={e => updateLineItem(idx, li, 'override_reason', e.target.value)} disabled={isPosted}>
+                                      <option value="">Select reason...</option>
+                                      <option value="HOSPITAL_POLICY">Hospital Policy</option>
+                                      <option value="QA_REPLACEMENT">QA Replacement</option>
+                                      <option value="DAMAGED_BATCH">Damaged Batch</option>
+                                      <option value="BATCH_RECALL">Batch Recall</option>
+                                    </select>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                            {/* Expiry */}
+                            <div className="cell-stack" style={{ fontSize: 12, color: 'var(--erp-muted)', padding: '8px 0' }}>
+                              <div>{selectedBatch?.expiry_date ? new Date(selectedBatch.expiry_date).toLocaleDateString() : '—'}</div>
+                              {selectedBatch?.near_expiry && <span className="near-expiry-badge" style={{ alignSelf: 'flex-start' }}>Near Expiry</span>}
+                            </div>
+                            {/* Qty */}
+                            <input type="number" min="1" value={item.qty || ''} onChange={e => updateLineItem(idx, li, 'qty', e.target.value)} disabled={isPosted} placeholder="Qty" />
+                            {/* Unit */}
+                            <input className="readonly" value={item.unit || ''} readOnly tabIndex={-1} />
+                            {/* Unit Price */}
+                            <input type="number" step="0.01" value={item.unit_price || ''} onChange={e => updateLineItem(idx, li, 'unit_price', e.target.value)} disabled={isPosted} placeholder="Price" />
+                            {/* Line Total */}
+                            <input className="readonly" value={computeLineTotal(item)} readOnly tabIndex={-1} />
+                            {/* Remove sub-line */}
+                            {!isPosted ? (
+                              <button type="button" className="sales-li-remove" onClick={() => removeLineItem(idx, li)} title="Remove line item">×</button>
+                            ) : <span />}
+                          </div>
+                        );
+                      })}
+                      {!isPosted && (
+                        <button type="button" className="sales-li-add" onClick={() => addLineItem(idx)}>+ Line Item</button>
+                      )}
+                    </td>
+                  </tr>
                   {isRejectedRow(row) && (
-                    <tr>
-                      <td colSpan={13} style={{ padding: '8px 12px', background: '#fff5f5', borderTop: 'none' }}>
+                    <tr className="sales-row-reject">
+                      <td colSpan={7}>
                         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
                           <div style={{ flex: '1 1 360px', minWidth: 0 }}>
                             <RejectionBanner row={row} moduleKey="SALES" variant="row" />
@@ -1376,18 +1434,27 @@ export default function SalesEntry() {
                     </tr>
                   )}
                   </Fragment>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
             <button className="add-row-btn" onClick={addRow}>+ Add Row</button>
           </div>}
 
-          {/* Mobile Cards */}
+          {/* Mobile Cards — mirrors the new desktop header+lines layout: card
+              header shows Hospital/Date/CSI#/Total/Status, then a Line Items
+              block with a ×-remove per sub-line and a "+ Line Item" button. */}
           {saleType !== 'SERVICE_INVOICE' && <div className="sales-cards">
-            {rows.map((row, idx) => (
+            {rows.map((row, idx) => {
+              const isPosted = row.status === 'POSTED';
+              const rowTotal = (row.line_items || []).reduce((sum, li) => sum + (parseFloat(computeLineTotal(li)) || 0), 0);
+              return (
               <div className="sale-card" key={row._id || row._tempId}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10, gap: 6, flexWrap: 'wrap' }}>
                   <span style={{ fontWeight: 700, fontSize: 14 }}>Row {idx + 1}</span>
+                  <span style={{ fontWeight: 700, fontSize: 14 }}>
+                    ₱{rowTotal.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
                   <span className="status-badge" style={{ background: STATUS_COLORS[row.status]?.bg, color: STATUS_COLORS[row.status]?.text }}>
                     {STATUS_COLORS[row.status]?.label}
                   </span>
@@ -1454,20 +1521,27 @@ export default function SalesEntry() {
                     </div>
                   </>
                 )}
+                <label style={{ marginTop: 4 }}>Line Items · {row.line_items?.length || 0}</label>
                 {row.line_items?.map((item, li) => {
                   const prod = item.product_id ? productOptions.find(p => (p.product_id?.toString() || p.product_id) === (item.product_id?.toString() || item.product_id)) : null;
                   const batches = prod?.batches || [];
                   return (
-                    <div key={li}>
+                    <div key={li} style={{ border: '1px solid var(--erp-border)', borderRadius: 8, padding: 10, marginBottom: 8, background: 'var(--erp-bg)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <strong style={{ fontSize: 12, color: 'var(--erp-muted)' }}>Item {li + 1}</strong>
+                        {!isPosted && (
+                          <button type="button" className="sales-li-remove" onClick={() => removeLineItem(idx, li)} aria-label="Remove line item">×</button>
+                        )}
+                      </div>
                       <label>Product</label>
-                      <SelectField value={item.product_id || ''} onChange={e => updateLineItem(idx, li, 'product_id', e.target.value)}>
+                      <SelectField value={item.product_id || ''} onChange={e => updateLineItem(idx, li, 'product_id', e.target.value)} disabled={isPosted}>
                         <option value="">Select...</option>
                         {productOptions.map(p => <option key={p.product_id} value={p.product_id}>{p.label}</option>)}
                       </SelectField>
                       {item.product_id && batches.length > 1 && (
                         <>
                           <label>Batch / Expiry</label>
-                          <SelectField value={item.batch_lot_no || ''} onChange={e => updateLineItem(idx, li, 'batch_lot_no', e.target.value)} className="batch-select">
+                          <SelectField value={item.batch_lot_no || ''} onChange={e => updateLineItem(idx, li, 'batch_lot_no', e.target.value)} disabled={isPosted} className="batch-select">
                             <option value="">Auto (FIFO)</option>
                             {batches.map((b, bi) => (
                               <option key={bi} value={b.batch_lot_no}>
@@ -1476,7 +1550,7 @@ export default function SalesEntry() {
                             ))}
                           </SelectField>
                           {item.fifo_override && (
-                            <input className="override-reason" placeholder="Reason for skipping FIFO..." value={item.override_reason || ''} onChange={e => updateLineItem(idx, li, 'override_reason', e.target.value)} />
+                            <input className="override-reason" placeholder="Reason for skipping FIFO..." value={item.override_reason || ''} onChange={e => updateLineItem(idx, li, 'override_reason', e.target.value)} disabled={isPosted} />
                           )}
                         </>
                       )}
@@ -1484,20 +1558,24 @@ export default function SalesEntry() {
                         <div style={{ fontSize: 12, color: 'var(--erp-muted)', padding: '4px 0' }}>Batch: {batches[0].batch_lot_no} — Exp: {new Date(batches[0].expiry_date).toLocaleDateString()}</div>
                       )}
                       <div style={{ display: 'flex', gap: 8 }}>
-                        <div style={{ flex: 1 }}><label>Qty</label><input type="number" value={item.qty || ''} onChange={e => updateLineItem(idx, li, 'qty', e.target.value)} /></div>
-                        <div style={{ flex: 1 }}><label>Price</label><input type="number" value={item.unit_price || ''} onChange={e => updateLineItem(idx, li, 'unit_price', e.target.value)} /></div>
+                        <div style={{ flex: 1 }}><label>Qty</label><input type="number" value={item.qty || ''} onChange={e => updateLineItem(idx, li, 'qty', e.target.value)} disabled={isPosted} /></div>
+                        <div style={{ flex: 1 }}><label>Price</label><input type="number" value={item.unit_price || ''} onChange={e => updateLineItem(idx, li, 'unit_price', e.target.value)} disabled={isPosted} /></div>
                         <div style={{ flex: 1 }}><label>Total</label><input value={computeLineTotal(item)} readOnly /></div>
                       </div>
                     </div>
                   );
                 })}
+                {!isPosted && (
+                  <button type="button" className="sales-li-add" style={{ width: '100%', padding: 10 }} onClick={() => addLineItem(idx)}>+ Line Item</button>
+                )}
                 {row.status === 'DRAFT' && (
                   <div className="card-footer">
-                    <button className="btn btn-danger btn-sm" onClick={() => removeRow(idx)}>Delete</button>
+                    <button className="btn btn-danger btn-sm" onClick={() => removeRow(idx)}>Delete Row</button>
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>}
 
           {/* Validation Error / Warning Panel — only show for CSI/CASH_RECEIPT modes */}

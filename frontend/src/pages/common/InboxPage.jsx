@@ -27,6 +27,7 @@ import toast from 'react-hot-toast';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import PageGuide from '../../components/common/PageGuide';
+import WorkflowGuide from '../../erp/components/WorkflowGuide';
 import InboxFolderNav from '../../components/common/inbox/InboxFolderNav';
 import InboxMessageList from '../../components/common/inbox/InboxMessageList';
 import InboxThreadView from '../../components/common/inbox/InboxThreadView';
@@ -362,7 +363,10 @@ export default function InboxPage() {
       <div className="dashboard-content">
         <Sidebar />
         <main className="main-content" style={{ padding: '14px' }}>
-          <PageGuide pageKey="inbox" />
+          {/* PHASETASK-ERP Phase G9 R8: PageGuide.inbox (CRM) + WorkflowGuide.inbox (ERP). */}
+          {['president', 'ceo', 'admin', 'finance'].includes(user?.role)
+            ? <WorkflowGuide pageKey="inbox" />
+            : <PageGuide pageKey="inbox" />}
           <style>{styles}</style>
 
           <div className="ip-shell" role="region" aria-label="Inbox">

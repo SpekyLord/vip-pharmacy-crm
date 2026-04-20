@@ -5,6 +5,7 @@
  * of each governance layer so president/admin/finance know what needs attention.
  */
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import useWorkingEntity from '../../hooks/useWorkingEntity';
 import api from '../../services/api';
 
@@ -15,6 +16,9 @@ const pageStyles = `
   .fh-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
   .fh-card { background: var(--erp-panel, #fff); border: 1px solid var(--erp-border, #dbe4f0); border-radius: 14px; padding: 20px; position: relative; overflow: hidden; transition: box-shadow .15s; }
   .fh-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+  .fh-card-link { cursor: pointer; text-align: left; font: inherit; color: inherit; width: 100%; display: block; appearance: none; }
+  .fh-card-link:hover { border-color: var(--erp-accent, #1e5eff); }
+  .fh-card-link:focus-visible { outline: 2px solid var(--erp-accent, #1e5eff); outline-offset: 2px; }
   .fh-card-accent { position: absolute; top: 0; left: 0; right: 0; height: 3px; }
   .fh-card h3 { font-size: 14px; font-weight: 700; margin: 0 0 8px; color: var(--erp-text); }
   .fh-card-value { font-size: 28px; font-weight: 800; color: var(--erp-accent, #1e5eff); margin: 0 0 4px; }
@@ -31,9 +35,19 @@ const pageStyles = `
 
 export function FoundationHealthContent() {
   const { workingEntityId, loaded: entityLoaded } = useWorkingEntity();
+  const [, setSearchParams] = useSearchParams();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Deep-link a card to a Control Center section. Works because FoundationHealth
+  // always renders inside Control Center (/erp/control-center?section=foundation-health)
+  // and ControlCenter.jsx reads the section from searchParams. The Settings group
+  // (which contains 'lookups') is expanded by default, so the destination is visible
+  // in the nav without any extra click.
+  const goToSection = (sectionKey) => {
+    setSearchParams({ section: sectionKey }, { replace: true });
+  };
 
   useEffect(() => {
     if (!entityLoaded) return;
@@ -72,6 +86,7 @@ export function FoundationHealthContent() {
   const cards = [
     {
       title: 'Entities',
+      section: 'entities',
       value: entities.count,
       color: '#6366f1',
       detail: entities.items.map(e => `${e.short_name || e.entity_name} (${e.entity_type})`).join(', ') || 'No entities configured',
@@ -80,6 +95,7 @@ export function FoundationHealthContent() {
     },
     {
       title: 'People Master',
+      section: 'people',
       value: people.active,
       color: '#0ea5e9',
       detail: `${people.total} total, ${people.active} active`,
@@ -88,6 +104,7 @@ export function FoundationHealthContent() {
     },
     {
       title: 'Access Templates',
+      section: 'access-templates',
       value: access_templates,
       color: '#8b5cf6',
       detail: `${access_templates} template${access_templates !== 1 ? 's' : ''} configured for role-based module access`,
@@ -96,6 +113,7 @@ export function FoundationHealthContent() {
     },
     {
       title: 'Chart of Accounts',
+      section: 'coa',
       value: coa.total,
       color: '#10b981',
       detail: Object.entries(coa.breakdown || {}).map(([type, count]) => `${count} ${type}`).join(', ') || 'No accounts',
@@ -104,6 +122,7 @@ export function FoundationHealthContent() {
     },
     {
       title: 'Bank Accounts',
+      section: 'bank-accounts',
       value: bank_accounts,
       color: '#f59e0b',
       detail: `${bank_accounts} active bank account${bank_accounts !== 1 ? 's' : ''}`,
@@ -112,6 +131,7 @@ export function FoundationHealthContent() {
     },
     {
       title: 'Credit Cards',
+      section: 'credit-cards',
       value: credit_cards,
       color: '#ef4444',
       detail: `${credit_cards} active card${credit_cards !== 1 ? 's' : ''}`,
@@ -120,6 +140,7 @@ export function FoundationHealthContent() {
     },
     {
       title: 'Government Rates',
+      section: 'government-rates',
       value: Object.values(government_rates).reduce((s, c) => s + c, 0),
       color: '#14b8a6',
       detail: Object.entries(government_rates).map(([type, count]) => `${type}: ${count}`).join(', ') || 'No rates configured',
@@ -128,6 +149,7 @@ export function FoundationHealthContent() {
     },
     {
       title: 'Warehouses',
+      section: 'warehouses',
       value: warehouses,
       color: '#f97316',
       detail: `${warehouses} active warehouse${warehouses !== 1 ? 's' : ''}`,
@@ -136,6 +158,7 @@ export function FoundationHealthContent() {
     },
     {
       title: 'Period Locks',
+      section: 'period-locks',
       value: `${period_locks.current_month_open}/${period_locks.total_modules}`,
       color: '#ec4899',
       detail: `Current month: ${period_locks.current_month_open} open, ${period_locks.current_month_locked} locked`,
@@ -144,6 +167,7 @@ export function FoundationHealthContent() {
     },
     {
       title: 'Lookup Tables',
+      section: 'lookups',
       value: `${lookups.categories_configured}/${lookups.total_available}`,
       color: '#a855f7',
       detail: `${lookups.categories_configured} of ${lookups.total_available} categories populated`,
@@ -152,6 +176,7 @@ export function FoundationHealthContent() {
     },
     {
       title: 'System Settings',
+      section: 'erp-settings',
       value: settings.last_updated ? 'Active' : 'Default',
       color: '#64748b',
       detail: settings.last_updated ? `Last updated: ${new Date(settings.last_updated).toLocaleDateString()}` : 'Using system defaults — review recommended',
@@ -167,18 +192,34 @@ export function FoundationHealthContent() {
         <h1 className="fh-title">Foundation Health</h1>
         <p className="fh-subtitle">System structure and governance readiness at a glance. Green = configured, amber = needs attention.</p>
         <div className="fh-grid">
-          {cards.map(card => (
-            <div className="fh-card" key={card.title}>
-              <div className="fh-card-accent" style={{ background: card.color }} />
-              <h3>{card.title}</h3>
-              <div className="fh-card-value" style={{ color: card.color }}>{card.value}</div>
-              <div className="fh-card-detail">
-                <span className={`fh-badge fh-badge-${card.badge}`}>{card.badgeText}</span>
-                <br />
-                {card.detail}
-              </div>
-            </div>
-          ))}
+          {cards.map(card => {
+            const body = (
+              <>
+                <div className="fh-card-accent" style={{ background: card.color }} />
+                <h3>{card.title}</h3>
+                <div className="fh-card-value" style={{ color: card.color }}>{card.value}</div>
+                <div className="fh-card-detail">
+                  <span className={`fh-badge fh-badge-${card.badge}`}>{card.badgeText}</span>
+                  <br />
+                  {card.detail}
+                </div>
+              </>
+            );
+            if (card.section) {
+              return (
+                <button
+                  type="button"
+                  className="fh-card fh-card-link"
+                  key={card.title}
+                  onClick={() => goToSection(card.section)}
+                  title={`Go to ${card.title}`}
+                >
+                  {body}
+                </button>
+              );
+            }
+            return <div className="fh-card" key={card.title}>{body}</div>;
+          })}
         </div>
       </div>
     </>

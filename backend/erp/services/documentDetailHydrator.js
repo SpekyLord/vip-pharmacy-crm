@@ -55,6 +55,8 @@ const IcSettlement = require('../models/IcSettlement');
 // Phase 31R-OS
 const OfficeSupply = require('../models/OfficeSupply');
 const OfficeSupplyTransaction = require('../models/OfficeSupplyTransaction');
+// Phase G6.7 — Reversal Console SALES_GOAL_PLAN detail
+const SalesGoalPlan = require('../models/SalesGoalPlan');
 
 const { buildDocumentDetails, REVERSAL_DOC_TYPE_TO_MODULE } = require('./documentDetailBuilder');
 
@@ -111,6 +113,23 @@ const POPULATED_LOADERS = {
       .populate('vendor_id', 'vendor_name')
       .populate('bdm_id', 'name email')
       .populate('reviewed_by', 'name')
+      .lean();
+  },
+
+  // Phase 32 — Undertaking hydrator. Populates the linked GRN (with nested vendor)
+  // so buildUndertakingDetails can surface waybill + source context to the
+  // Reversal Console + Approval Hub uniformly.
+  UNDERTAKING: async (id, filter) => {
+    const Undertaking = require('../models/Undertaking');
+    return Undertaking.findOne({ _id: id, ...filter })
+      .populate('warehouse_id', 'warehouse_name warehouse_code')
+      .populate('bdm_id', 'name email')
+      .populate('acknowledged_by', 'name')
+      .populate({
+        path: 'linked_grn_id',
+        select: 'grn_number grn_date source_type po_id po_number vendor_id waybill_photo_url undertaking_photo_url reassignment_id status',
+        populate: { path: 'vendor_id', select: 'vendor_name' }
+      })
       .lean();
   },
 
@@ -249,6 +268,15 @@ const POPULATED_LOADERS = {
       .populate('supply_id', 'item_name item_code category unit qty_on_hand')
       .populate('cost_center_id', 'cost_center_name cost_center_code')
       .populate('created_by', 'name')
+      .lean();
+  },
+
+  // Phase G6.7 — mirrors the Approval Hub populate for SalesGoalPlan so the
+  // Reversal Console shows the same plan summary when previewing a reversal.
+  SALES_GOAL_PLAN: async (id, filter) => {
+    return SalesGoalPlan.findOne({ _id: id, ...filter })
+      .populate('created_by', 'name')
+      .populate('approved_by', 'name')
       .lean();
   },
 };
@@ -395,6 +423,14 @@ async function signPhotoUrls(details, moduleKey) {
       ]);
       break;
     case 'INVENTORY':
+      [details.waybill_photo_url, details.undertaking_photo_url] = await Promise.all([
+        signUrl(details.waybill_photo_url),
+        signUrl(details.undertaking_photo_url),
+      ]);
+      break;
+    case 'UNDERTAKING':
+      // Phase 32 — same two photo slots as INVENTORY (read through linked GRN
+      // by the builder, so we sign them here identically).
       [details.waybill_photo_url, details.undertaking_photo_url] = await Promise.all([
         signUrl(details.waybill_photo_url),
         signUrl(details.undertaking_photo_url),

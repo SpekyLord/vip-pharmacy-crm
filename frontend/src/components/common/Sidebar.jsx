@@ -734,6 +734,8 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
   if (hasModule('inventory')) {
     const invItems = [
       { path: '/erp/grn', label: 'GRN Entry', icon: FileInput },
+      // Phase 32 — Undertaking (receipt confirmation, auto-created per GRN)
+      { path: '/erp/undertaking', label: 'Undertaking (Receipt)', icon: ClipboardCheck },
       { path: '/erp/my-stock', label: 'Inventory', icon: Package },
     ];
     // Sub-permission gated (access-template driven, not shown to contractors by default)

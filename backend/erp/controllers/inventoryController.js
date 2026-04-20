@@ -441,6 +441,86 @@ const createGrn = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'At least one line item is required' });
   }
 
+  // Phase 32R: waybill is evidence of physical delivery. Required at capture
+  // time — subscribers CAN relax this via GRN_SETTINGS.WAYBILL_REQUIRED if their
+  // workflow permits (e.g. internal transfer with no waybill), see below.
+  const { getGrnSetting } = require('../services/undertakingService');
+  const waybillRequired = await getGrnSetting(req.entityId, 'WAYBILL_REQUIRED', 1);
+  if (waybillRequired && !waybill_photo_url) {
+    return res.status(400).json({
+      success: false,
+      message: 'Waybill photo is required. Upload the courier delivery waybill to proceed.'
+    });
+  }
+
+  // Phase 32R: validate batch/expiry/qty on every line BEFORE any DB write.
+  // GRN is the capture surface — data must be complete before the Undertaking
+  // approval wrapper is auto-created.
+  //
+  // Phase 32R-S1 (subscription scalability): batch + expiry are only required
+  // when the corresponding GRN_SETTINGS flag is truthy (default 1 = pharmacy
+  // behavior). When a subscriber sets REQUIRE_BATCH / REQUIRE_EXPIRY = 0 for
+  // their entity, blanks are normalized IN PLACE on `li` to safe sentinels
+  // ('N/A' for batch, 9999-12-31 for expiry) so the pre-save hook, FIFO
+  // aggregation ({$gt: new Date()} + sort-asc), and Undertaking auto-mirror
+  // all keep working without special-casing null.
+  const minExpiryDays = await getGrnSetting(req.entityId, 'MIN_EXPIRY_DAYS', 30);
+  const requireBatch = await getGrnSetting(req.entityId, 'REQUIRE_BATCH', 1);
+  const requireExpiry = await getGrnSetting(req.entityId, 'REQUIRE_EXPIRY', 1);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const expiryFloor = new Date(today.getTime() + minExpiryDays * 24 * 60 * 60 * 1000);
+  const EXPIRY_SENTINEL = new Date('9999-12-31T00:00:00.000Z');
+
+  const captureErrors = [];
+  for (let i = 0; i < line_items.length; i++) {
+    const li = line_items[i] || {};
+    const n = i + 1;
+    if (!li.product_id) captureErrors.push(`Line ${n}: product is required`);
+    if (!(Number(li.qty) > 0)) captureErrors.push(`Line ${n}: qty must be > 0`);
+
+    const batchProvided = !!(li.batch_lot_no && String(li.batch_lot_no).trim());
+    if (requireBatch) {
+      if (!batchProvided) {
+        captureErrors.push(`Line ${n}: batch/lot # is required (scan or type from packaging)`);
+      }
+    } else if (!batchProvided) {
+      // Sentinel: FIFO groups by batch_lot_no — blank would lump with real batches.
+      // 'N/A' is uppercase already (cleanBatchNo pre-save is idempotent on it).
+      li.batch_lot_no = 'N/A';
+    }
+
+    if (requireExpiry) {
+      if (!li.expiry_date) {
+        captureErrors.push(`Line ${n}: expiry date is required`);
+      } else {
+        const exp = new Date(li.expiry_date);
+        if (isNaN(exp.getTime())) captureErrors.push(`Line ${n}: expiry date is invalid`);
+        else if (exp < expiryFloor) {
+          captureErrors.push(`Line ${n}: expiry must be at least ${minExpiryDays} days in the future`);
+        }
+      }
+    } else if (!li.expiry_date) {
+      // Sentinel: 9999-12-31 passes FIFO's {$gt: new Date()} match and sorts
+      // last, so real-expiry batches are picked first. Non-perishable mode.
+      li.expiry_date = EXPIRY_SENTINEL;
+    } else {
+      // User opted in per-line — keep the MIN_EXPIRY_DAYS floor validation.
+      const exp = new Date(li.expiry_date);
+      if (isNaN(exp.getTime())) captureErrors.push(`Line ${n}: expiry date is invalid`);
+      else if (exp < expiryFloor) {
+        captureErrors.push(`Line ${n}: expiry must be at least ${minExpiryDays} days in the future`);
+      }
+    }
+  }
+  if (captureErrors.length) {
+    return res.status(400).json({
+      success: false,
+      message: 'GRN has capture errors',
+      errors: captureErrors
+    });
+  }
+
   // Validate products exist
   const productIds = line_items.map(li => li.product_id);
   const products = await ProductMaster.find({ _id: { $in: productIds } }).select('_id item_key').lean();
@@ -510,23 +590,56 @@ const createGrn = catchAsync(async (req, res) => {
     }
   }
 
-  const grn = await GrnEntry.create({
-    entity_id: req.entityId,
-    bdm_id: req.bdmId,
-    warehouse_id: warehouse_id || undefined,
-    source_type,
-    po_id: po_id || undefined,
-    po_number: po_number || undefined,
-    vendor_id: vendor_id || undefined,
-    reassignment_id: reassignment_id || undefined,
-    grn_date,
-    line_items,
-    waybill_photo_url,
-    undertaking_photo_url,
-    ocr_data,
-    notes,
-    created_by: req.user._id
+  // Phase 32R-GRN#: human-readable doc number — `GRN-{TERR|ENTITY}{MMDDYY}-{NNN}`.
+  // BDM-first: resolves the receiving contractor's territory code (same as CALF/PO);
+  // falls back to Entity.short_name when the user has no territory binding (admin-
+  // created GRNs). Generated BEFORE the session so DocSequence.getNext stays atomic
+  // on its own and never participates in the withTransaction rollback (gaps on
+  // aborted sessions are acceptable — same semantics as every other doc number).
+  const { generateDocNumber } = require('../services/docNumbering');
+  const grn_number = await generateDocNumber({
+    prefix: 'GRN',
+    bdmId: req.bdmId,
+    entityId: req.entityId,
+    date: grn_date
   });
+
+  // Phase 32 — wrap GRN create + auto-Undertaking in a session so both roll back
+  // together (global rule #20). The Undertaking becomes the scan/input source of
+  // truth for batch + expiry; GRN line_items get synced on Undertaking submit.
+  const { autoUndertakingForGrn } = require('../services/undertakingService');
+  const session = await mongoose.startSession();
+  let grn, undertaking;
+  try {
+    await session.withTransaction(async () => {
+      const [created] = await GrnEntry.create([{
+        entity_id: req.entityId,
+        bdm_id: req.bdmId,
+        warehouse_id: warehouse_id || undefined,
+        source_type,
+        grn_number,
+        po_id: po_id || undefined,
+        po_number: po_number || undefined,
+        vendor_id: vendor_id || undefined,
+        reassignment_id: reassignment_id || undefined,
+        grn_date,
+        line_items,
+        waybill_photo_url,
+        undertaking_photo_url,
+        ocr_data,
+        notes,
+        created_by: req.user._id
+      }], { session });
+      grn = created;
+
+      undertaking = await autoUndertakingForGrn(grn, { session });
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  // Re-read GRN so the API response reflects the undertaking_id back-link
+  grn = await GrnEntry.findById(grn._id).lean();
 
   await ErpAuditLog.logChange({
     entity_id: req.entityId,
@@ -538,17 +651,124 @@ const createGrn = catchAsync(async (req, res) => {
     new_value: 'PENDING',
     changed_by: req.user._id,
     note: source_type === 'INTERNAL_TRANSFER'
-      ? `Internal transfer GRN created with ${line_items.length} item(s)`
-      : `GRN created with ${line_items.length} item(s)`
+      ? `Internal transfer GRN ${grn_number} created with ${line_items.length} item(s); auto-Undertaking ${undertaking.undertaking_number} in DRAFT (BDM review)`
+      : `GRN ${grn_number} created with ${line_items.length} item(s); auto-Undertaking ${undertaking.undertaking_number} in DRAFT (BDM review)`
   });
 
-  res.status(201).json({ success: true, data: grn });
+  res.status(201).json({
+    success: true,
+    data: grn,
+    undertaking: {
+      _id: undertaking._id,
+      undertaking_number: undertaking.undertaking_number,
+      status: undertaking.status
+    },
+    message: `GRN captured. Review and submit Undertaking ${undertaking.undertaking_number} to route for approval.`
+  });
 });
 
 /**
  * POST /grn/:id/approve — Finance/Admin approves or rejects a GRN
  * On APPROVED: creates TransactionEvent + InventoryLedger entries atomically.
  */
+/**
+ * Pure core logic for GRN approval. Callable from:
+ *   - approveGrn HTTP handler (wraps with its own session)
+ *   - undertakingController.postSingleUndertaking (auto-approves GRN after
+ *     Undertaking ACKNOWLEDGED in the same session)
+ *
+ * Does NOT call gateApproval or res.json — those belong to the HTTP layer.
+ * Does NOT check Undertaking status — caller is responsible for that gate.
+ *
+ * @param {Object} opts
+ * @param {ObjectId|string} opts.grnId
+ * @param {ObjectId} opts.userId - approver/acknowledger
+ * @param {mongoose.ClientSession} opts.session
+ * @returns {Promise<Object>} the updated GRN document
+ */
+async function approveGrnCore({ grnId, userId, session }) {
+  if (!grnId) throw new Error('approveGrnCore: grnId is required');
+  if (!session) throw new Error('approveGrnCore: session is required');
+
+  const grn = await GrnEntry.findById(grnId).session(session);
+  if (!grn) throw Object.assign(new Error('GRN not found'), { statusCode: 404 });
+  if (grn.status !== 'PENDING') {
+    throw Object.assign(new Error(`GRN is ${grn.status}, expected PENDING`), { statusCode: 400 });
+  }
+
+  const isInternalTransfer = grn.source_type === 'INTERNAL_TRANSFER' && grn.reassignment_id;
+  const ledgerTxnType = isInternalTransfer ? 'TRANSFER_IN' : 'GRN';
+  const eventType = isInternalTransfer ? 'STOCK_REASSIGNMENT_GRN' : 'GRN';
+
+  const [event] = await TransactionEvent.create([{
+    entity_id: grn.entity_id,
+    bdm_id: grn.bdm_id,
+    event_type: eventType,
+    event_date: grn.grn_date,
+    document_ref: grn._id.toString(),
+    payload: { line_items: grn.line_items, reassignment_id: grn.reassignment_id || undefined },
+    created_by: userId
+  }], { session });
+
+  for (const item of grn.line_items) {
+    const qtyInSellingUnits = item.qty_selling_units || (item.qty * (item.conversion_factor || 1));
+    await InventoryLedger.create([{
+      entity_id: grn.entity_id,
+      bdm_id: grn.bdm_id,
+      warehouse_id: grn.warehouse_id || undefined,
+      product_id: item.product_id,
+      batch_lot_no: item.batch_lot_no,
+      expiry_date: item.expiry_date,
+      transaction_type: ledgerTxnType,
+      qty_in: qtyInSellingUnits,
+      qty_out: 0,
+      event_id: event._id,
+      recorded_by: userId
+    }], { session });
+  }
+
+  if (grn.po_id) {
+    const po = await PurchaseOrder.findById(grn.po_id).session(session);
+    if (po) {
+      for (const item of grn.line_items) {
+        if (item.po_line_index != null && po.line_items[item.po_line_index]) {
+          po.line_items[item.po_line_index].qty_received =
+            (po.line_items[item.po_line_index].qty_received || 0) + item.qty;
+        } else {
+          const poLine = po.line_items.find(l =>
+            l.product_id && item.product_id &&
+            l.product_id.toString() === item.product_id.toString()
+          );
+          if (poLine) poLine.qty_received = (poLine.qty_received || 0) + item.qty;
+        }
+      }
+      const allReceived = po.line_items.every(l => (l.qty_received || 0) >= l.qty_ordered);
+      const anyReceived = po.line_items.some(l => (l.qty_received || 0) > 0);
+      if (allReceived) po.status = 'RECEIVED';
+      else if (anyReceived) po.status = 'PARTIALLY_RECEIVED';
+      await po.save({ session });
+    }
+  }
+
+  if (isInternalTransfer) {
+    const StockReassignment = require('../models/StockReassignment');
+    const reassignment = await StockReassignment.findById(grn.reassignment_id).session(session);
+    if (reassignment && reassignment.status === 'AWAITING_GRN') {
+      reassignment.status = 'COMPLETED';
+      reassignment.grn_id = grn._id;
+      await reassignment.save({ session });
+    }
+  }
+
+  grn.status = 'APPROVED';
+  grn.reviewed_by = userId;
+  grn.reviewed_at = new Date();
+  grn.event_id = event._id;
+  await grn.save({ session });
+
+  return grn;
+}
+
 const approveGrn = catchAsync(async (req, res) => {
   const { action, rejection_reason } = req.body;
 
@@ -585,6 +805,24 @@ const approveGrn = catchAsync(async (req, res) => {
     return res.json({ success: true, message: 'GRN rejected', data: grn });
   }
 
+  // Phase 32R — require Undertaking ACKNOWLEDGED before direct GRN approval.
+  // President can bypass (emergency override). Normal path: GRN captures on
+  // submit → UT DRAFT auto-created → BDM reviews & submits UT → approver
+  // acknowledges UT from the Approval Hub (cascade-approves the GRN).
+  if (!req.isPresident) {
+    const Undertaking = require('../models/Undertaking');
+    const ut = await Undertaking.findOne({ linked_grn_id: grn._id })
+      .select('status undertaking_number')
+      .lean();
+    if (ut && ut.status !== 'ACKNOWLEDGED') {
+      return res.status(400).json({
+        success: false,
+        message: `Undertaking ${ut.undertaking_number} is ${ut.status} — GRN posts only after its Undertaking is ACKNOWLEDGED. BDM must submit UT → approver acknowledges.`,
+        data: { undertaking_id: ut._id, undertaking_number: ut.undertaking_number, undertaking_status: ut.status }
+      });
+    }
+  }
+
   // Authority matrix gate
   const { gateApproval } = require('../services/approvalService');
   const grnTotal = (grn.line_items || []).reduce((sum, li) => sum + ((li.qty || 0) * (li.unit_cost || 0)), 0);
@@ -606,89 +844,13 @@ const approveGrn = catchAsync(async (req, res) => {
   const grnPeriod = dateToPeriod(grn.grn_date || new Date());
   await checkPeriodOpen(grn.entity_id, grnPeriod);
 
-  // Determine if this GRN is for an internal transfer
   const isInternalTransfer = grn.source_type === 'INTERNAL_TRANSFER' && grn.reassignment_id;
-  const ledgerTxnType = isInternalTransfer ? 'TRANSFER_IN' : 'GRN';
-  const eventType = isInternalTransfer ? 'STOCK_REASSIGNMENT_GRN' : 'GRN';
 
-  // APPROVED — atomic transaction
   const session = await mongoose.startSession();
+  let updatedGrn;
   try {
     await session.withTransaction(async () => {
-      // Create TransactionEvent
-      const event = await TransactionEvent.create([{
-        entity_id: grn.entity_id,
-        bdm_id: grn.bdm_id,
-        event_type: eventType,
-        event_date: grn.grn_date,
-        document_ref: grn._id.toString(),
-        payload: { line_items: grn.line_items, reassignment_id: grn.reassignment_id || undefined },
-        created_by: req.user._id
-      }], { session });
-
-      // Create InventoryLedger entries for each line item
-      // Internal transfers use TRANSFER_IN; supplier GRNs use GRN
-      for (const item of grn.line_items) {
-        const qtyInSellingUnits = item.qty_selling_units || (item.qty * (item.conversion_factor || 1));
-        await InventoryLedger.create([{
-          entity_id: grn.entity_id,
-          bdm_id: grn.bdm_id,
-          warehouse_id: grn.warehouse_id || undefined,
-          product_id: item.product_id,
-          batch_lot_no: item.batch_lot_no,
-          expiry_date: item.expiry_date,
-          transaction_type: ledgerTxnType,
-          qty_in: qtyInSellingUnits,
-          qty_out: 0,
-          event_id: event[0]._id,
-          recorded_by: req.user._id
-        }], { session });
-      }
-
-      // Update PO qty_received and status atomically (if GRN is linked to a PO)
-      if (grn.po_id) {
-        const po = await PurchaseOrder.findById(grn.po_id).session(session);
-        if (po) {
-          for (const item of grn.line_items) {
-            if (item.po_line_index != null && po.line_items[item.po_line_index]) {
-              po.line_items[item.po_line_index].qty_received =
-                (po.line_items[item.po_line_index].qty_received || 0) + item.qty;
-            } else {
-              // Fallback: match by product_id
-              const poLine = po.line_items.find(l =>
-                l.product_id && item.product_id &&
-                l.product_id.toString() === item.product_id.toString()
-              );
-              if (poLine) {
-                poLine.qty_received = (poLine.qty_received || 0) + item.qty;
-              }
-            }
-          }
-          const allReceived = po.line_items.every(l => (l.qty_received || 0) >= l.qty_ordered);
-          const anyReceived = po.line_items.some(l => (l.qty_received || 0) > 0);
-          if (allReceived) po.status = 'RECEIVED';
-          else if (anyReceived) po.status = 'PARTIALLY_RECEIVED';
-          await po.save({ session });
-        }
-      }
-
-      // Complete linked reassignment (if internal transfer GRN)
-      if (isInternalTransfer) {
-        const StockReassignment = require('../models/StockReassignment');
-        const reassignment = await StockReassignment.findById(grn.reassignment_id).session(session);
-        if (reassignment && reassignment.status === 'AWAITING_GRN') {
-          reassignment.status = 'COMPLETED';
-          reassignment.grn_id = grn._id;
-          await reassignment.save({ session });
-        }
-      }
-
-      // Update GRN status
-      grn.status = 'APPROVED';
-      grn.reviewed_by = req.user._id;
-      grn.reviewed_at = new Date();
-      grn.event_id = event[0]._id;
-      await grn.save({ session });
+      updatedGrn = await approveGrnCore({ grnId: grn._id, userId: req.user._id, session });
     });
 
     await ErpAuditLog.logChange({
@@ -711,7 +873,7 @@ const approveGrn = catchAsync(async (req, res) => {
       message: isInternalTransfer
         ? 'GRN approved — internal transfer completed'
         : 'GRN approved — stock updated',
-      data: grn
+      data: updatedGrn
     });
   } finally {
     await session.endSession();
@@ -1282,6 +1444,7 @@ module.exports = {
   correctBatchMetadata,
   createGrn,
   approveGrn,
+  approveGrnCore, // Phase 32 — reusable core for auto-approve chain from Undertaking
   getGrnList,
   getGrnForPO,
   getAlerts,

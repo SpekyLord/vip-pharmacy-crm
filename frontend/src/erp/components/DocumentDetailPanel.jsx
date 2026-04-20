@@ -274,6 +274,111 @@ export default function DocumentDetailPanel(props) {
         </div>
       )}
 
+      {/* Undertaking Details — Phase 32 (receipt confirmation, sibling of GRN) */}
+      {module === 'UNDERTAKING' && (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
+            <strong>{d.undertaking_number}</strong>
+            <StatusChip status={d.status} />
+            {d.scan_total_count != null && (
+              <span style={{ padding: '2px 8px', borderRadius: 999, background: (d.scan_confirmed_count === d.scan_total_count && d.scan_total_count > 0) ? '#dcfce7' : '#fef3c7', color: (d.scan_confirmed_count === d.scan_total_count && d.scan_total_count > 0) ? '#166534' : '#92400e', fontSize: 11, fontWeight: 700 }}>
+                {d.scan_confirmed_count}/{d.scan_total_count} scanned
+                {d.scan_manual_count > 0 && ` · ${d.scan_manual_count} manual`}
+              </span>
+            )}
+            {d.variance_count > 0 && (
+              <span style={{ padding: '2px 8px', borderRadius: 999, background: '#fef3c7', color: '#92400e', fontSize: 11, fontWeight: 700 }}>
+                {d.variance_count} variance{d.variance_count === 1 ? '' : 's'}
+              </span>
+            )}
+          </div>
+          <div style={{ marginBottom: 6, fontSize: 12, color: 'var(--erp-muted)' }}>
+            <strong>Receipt:</strong> {d.receipt_date ? new Date(d.receipt_date).toLocaleDateString() : '—'}
+            {d.warehouse_name && <> · <strong>Warehouse:</strong> {d.warehouse_name}</>}
+          </div>
+
+          {/* Linked GRN card */}
+          {d.linked_grn && (
+            <div style={{ padding: 8, borderRadius: 6, background: 'var(--erp-accent-soft, #e8efff)', marginBottom: 8, fontSize: 12 }}>
+              <strong>Linked GRN:</strong>{' '}
+              {/* Phase 32R-GRN#: prefer grn_number, then PO#, then id-tail for legacy rows */}
+              {d.linked_grn.grn_number || d.linked_grn.po_number || (d.linked_grn._id ? String(d.linked_grn._id).slice(-6) : '—')}
+              {d.linked_grn.source_type && (
+                <> · {d.linked_grn.source_type === 'PO' ? 'Purchase Order' : d.linked_grn.source_type === 'INTERNAL_TRANSFER' ? 'Internal Transfer' : 'Standalone'}</>
+              )}
+              {d.linked_grn.vendor_name && <> · {d.linked_grn.vendor_name}</>}
+              {d.linked_grn.grn_date && <> · {new Date(d.linked_grn.grn_date).toLocaleDateString()}</>}
+              {d.linked_grn.status && <StatusChip status={d.linked_grn.status} />}
+            </div>
+          )}
+
+          {/* Waybill evidence (signed by backend universalApprovalService case 'UNDERTAKING') */}
+          {d.waybill_photo_url ? (
+            <div style={{ marginBottom: 8 }}>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--erp-muted)', marginBottom: 4 }}>Waybill</div>
+              <img
+                src={d.waybill_photo_url}
+                alt="Waybill"
+                style={{ maxWidth: 180, maxHeight: 140, borderRadius: 6, cursor: 'pointer', border: '1px solid var(--erp-border)' }}
+                onClick={() => onPreviewImage?.(d.waybill_photo_url)}
+              />
+            </div>
+          ) : (
+            <div style={{ padding: 8, marginBottom: 8, borderRadius: 6, background: '#fef3c7', color: '#92400e', fontSize: 12 }}>
+              No waybill attached — approver discretion advised.
+            </div>
+          )}
+
+          {/* Line items with per-line variance + days_to_expiry color */}
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: 6 }}>
+            <thead>
+              <tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}>
+                <th style={{ padding: '4px 8px', textAlign: 'left' }}>Item</th>
+                <th style={{ padding: '4px 8px' }}>Batch</th>
+                <th style={{ padding: '4px 8px' }}>Expiry</th>
+                <th style={{ padding: '4px 8px', textAlign: 'right' }}>Expected</th>
+                <th style={{ padding: '4px 8px', textAlign: 'right' }}>Received</th>
+                <th style={{ padding: '4px 8px' }}>Scan</th>
+                <th style={{ padding: '4px 8px' }}>Flag</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(d.line_items || []).map((li, i) => {
+                const daysColor = li.days_to_expiry == null ? '#94a3b8' : li.days_to_expiry < 30 ? '#dc2626' : li.days_to_expiry < 90 ? '#ca8a04' : '#16a34a';
+                return (
+                  <tr key={i}>
+                    <td style={{ padding: '3px 8px' }}>{li.product_name || li.item_key || '—'}</td>
+                    <td style={{ padding: '3px 8px', fontFamily: 'monospace' }}>{li.batch_lot_no || '—'}</td>
+                    <td style={{ padding: '3px 8px', color: daysColor }}>
+                      {li.expiry_date ? new Date(li.expiry_date).toLocaleDateString() : '—'}
+                      {li.days_to_expiry != null && <span style={{ fontSize: 10, marginLeft: 4 }}>({li.days_to_expiry}d)</span>}
+                    </td>
+                    <td style={{ padding: '3px 8px', textAlign: 'right' }}>{li.expected_qty ?? '—'}</td>
+                    <td style={{ padding: '3px 8px', textAlign: 'right', fontWeight: 600 }}>{li.received_qty ?? '—'}</td>
+                    <td style={{ padding: '3px 8px', textAlign: 'center' }}>{li.scan_confirmed ? '✓' : '—'}</td>
+                    <td style={{ padding: '3px 8px' }}>
+                      {li.variance_flag
+                        ? <span style={{ padding: '1px 6px', borderRadius: 4, background: '#fef3c7', color: '#92400e', fontSize: 10, fontWeight: 700 }}>{li.variance_flag}</span>
+                        : '—'}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {d.notes && <div style={{ marginTop: 8, color: 'var(--erp-muted)' }}>{d.notes}</div>}
+
+          {readOnly && (
+            <div style={{ marginTop: 8, padding: 8, borderRadius: 6, background: '#fef2f2', color: '#991b1b', fontSize: 12 }}>
+              Reversing this Undertaking will cascade-reverse the linked GRN (if APPROVED) and write negating InventoryLedger entries.
+            </div>
+          )}
+
+          <AuditFooter d={d} />
+        </div>
+      )}
+
       {/* Payslip Details */}
       {module === 'PAYROLL' && (
         <div>
@@ -1099,7 +1204,62 @@ export default function DocumentDetailPanel(props) {
       )}
 
       {/* Journal Entry Details */}
-      {module === 'JOURNAL' && (
+      {/* JOURNAL batch (Depreciation / Interest) — separate branch from manual JE */}
+      {module === 'JOURNAL' && d.is_batch && (
+        <div>
+          <div style={{ marginBottom: 6 }}>
+            <span style={{ padding: '2px 6px', borderRadius: 4, background: '#ede9fe', color: '#5b21b6', fontSize: 11, fontWeight: 700 }}>
+              {d.batch_kind} BATCH
+            </span>
+            <span style={{ marginLeft: 8 }}><strong>Ref:</strong> {d.doc_ref || '—'}</span>
+            {d.period && <> · <strong>Period:</strong> {d.period}</>}
+            <StatusChip status={d.status} />
+          </div>
+          {d.memo && <div style={{ color: 'var(--erp-muted)', marginBottom: 8 }}><em>{d.memo}</em></div>}
+          <div style={{ marginBottom: 6, fontSize: 12 }}>
+            <strong>Line count:</strong> {d.line_count} · <strong>Total amount:</strong> {fmt(d.total_amount)}
+          </div>
+          {(d.batch_lines || []).length > 0 && (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}>
+                  <th style={{ padding: '4px 8px', textAlign: 'left' }}>{d.batch_kind === 'DEPRECIATION' ? 'Asset' : 'Loan'}</th>
+                  <th style={{ padding: '4px 8px', textAlign: 'right' }}>{d.batch_kind === 'DEPRECIATION' ? 'Depreciation' : 'Interest'}</th>
+                  {d.batch_kind === 'INTEREST' && <th style={{ padding: '4px 8px', textAlign: 'right' }}>Principal</th>}
+                  {d.batch_kind === 'INTEREST' && <th style={{ padding: '4px 8px', textAlign: 'right' }}>Balance</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {(d.batch_lines || []).map((l, i) => (
+                  <tr key={i}>
+                    <td style={{ padding: '3px 8px' }}>
+                      {l.ref_code}
+                      {l.ref_name && <span style={{ color: 'var(--erp-muted)', fontSize: 11 }}> · {l.ref_name}</span>}
+                    </td>
+                    <td style={{ padding: '3px 8px', textAlign: 'right' }}>
+                      {fmt(l.line_kind === 'DEPRECIATION' ? l.amount : l.interest_amount)}
+                    </td>
+                    {d.batch_kind === 'INTEREST' && <td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(l.principal_amount)}</td>}
+                    {d.batch_kind === 'INTEREST' && <td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(l.outstanding_balance)}</td>}
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr style={{ fontWeight: 700, borderTop: '2px solid var(--erp-border)' }}>
+                  <td style={{ padding: '4px 8px' }}>Totals</td>
+                  <td style={{ padding: '4px 8px', textAlign: 'right' }}>{fmt(d.total_amount)}</td>
+                  {d.batch_kind === 'INTEREST' && <td /> }
+                  {d.batch_kind === 'INTEREST' && <td /> }
+                </tr>
+              </tfoot>
+            </table>
+          )}
+          <AuditFooter d={d} />
+        </div>
+      )}
+
+      {/* JOURNAL single entry */}
+      {module === 'JOURNAL' && !d.is_batch && (
         <div>
           <div style={{ marginBottom: 6 }}>
             <strong>Ref:</strong> {d.je_number || '—'} · <strong>Date:</strong> {d.je_date ? new Date(d.je_date).toLocaleDateString() : '—'}
@@ -1167,28 +1327,60 @@ export default function DocumentDetailPanel(props) {
             <span style={{ color: '#dc2626' }}><strong>Unmatched:</strong> {d.unmatched_count || 0}</span>
             {d.reconciling_items_count > 0 && <span style={{ color: '#b45309' }}><strong>Reconciling:</strong> {d.reconciling_items_count}</span>}
           </div>
-          {(d.entries_preview || []).length > 0 && (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px' }}>Date</th><th style={{ padding: '4px 8px', textAlign: 'left' }}>Description</th><th style={{ padding: '4px 8px' }}>Ref</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Debit</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Credit</th><th style={{ padding: '4px 8px' }}>Status</th></tr></thead>
-              <tbody>
-                {(d.entries_preview || []).map((e, i) => (
-                  <tr key={i}>
-                    <td style={{ padding: '3px 8px' }}>{e.txn_date ? new Date(e.txn_date).toLocaleDateString() : '—'}</td>
-                    <td style={{ padding: '3px 8px' }}>{e.description || '—'}</td>
-                    <td style={{ padding: '3px 8px' }}>{e.reference || '—'}</td>
-                    <td style={{ padding: '3px 8px', textAlign: 'right' }}>{e.debit > 0 ? fmt(e.debit) : ''}</td>
-                    <td style={{ padding: '3px 8px', textAlign: 'right' }}>{e.credit > 0 ? fmt(e.credit) : ''}</td>
-                    <td style={{ padding: '3px 8px', fontSize: 11, color: e.match_status === 'MATCHED' ? '#059669' : e.match_status === 'RECONCILING_ITEM' ? '#b45309' : '#dc2626' }}>{e.match_status || '—'}</td>
+          {(() => {
+            const renderTable = (rows, tone) => (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}>
+                    <th style={{ padding: '4px 8px' }}>Date</th>
+                    <th style={{ padding: '4px 8px', textAlign: 'left' }}>Description</th>
+                    <th style={{ padding: '4px 8px' }}>Ref</th>
+                    <th style={{ padding: '4px 8px', textAlign: 'right' }}>Debit</th>
+                    <th style={{ padding: '4px 8px', textAlign: 'right' }}>Credit</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-          {d.entries_count > (d.entries_preview || []).length && (
-            <div style={{ marginTop: 6, fontSize: 11, color: 'var(--erp-muted)' }}>
-              Showing first {(d.entries_preview || []).length} of {d.entries_count} entries
-            </div>
-          )}
+                </thead>
+                <tbody>
+                  {rows.map((e, i) => (
+                    <tr key={i}>
+                      <td style={{ padding: '3px 8px' }}>{e.txn_date ? new Date(e.txn_date).toLocaleDateString() : '—'}</td>
+                      <td style={{ padding: '3px 8px' }}>{e.description || '—'}</td>
+                      <td style={{ padding: '3px 8px' }}>{e.reference || '—'}</td>
+                      <td style={{ padding: '3px 8px', textAlign: 'right', color: tone }}>{e.debit > 0 ? fmt(e.debit) : ''}</td>
+                      <td style={{ padding: '3px 8px', textAlign: 'right', color: tone }}>{e.credit > 0 ? fmt(e.credit) : ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            );
+            return (
+              <>
+                {(d.unmatched_entries || []).length > 0 && (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#991b1b', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>
+                      Unmatched ({d.unmatched_entries.length})
+                    </div>
+                    {renderTable(d.unmatched_entries, '#991b1b')}
+                  </div>
+                )}
+                {(d.reconciling_entries || []).length > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#b45309', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>
+                      Reconciling Items ({d.reconciling_entries.length})
+                    </div>
+                    {renderTable(d.reconciling_entries, '#b45309')}
+                  </div>
+                )}
+                {(d.matched_preview || []).length > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#166534', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>
+                      Matched (showing {d.matched_preview.length}{d.matched_truncated ? ` of ${d.matched_count}` : ''})
+                    </div>
+                    {renderTable(d.matched_preview, undefined)}
+                  </div>
+                )}
+              </>
+            );
+          })()}
           {d.uploaded_by && (
             <div style={{ marginTop: 6, fontSize: 11, color: 'var(--erp-muted)' }}>
               Uploaded by {d.uploaded_by}{d.uploaded_at ? ` on ${new Date(d.uploaded_at).toLocaleString()}` : ''}
@@ -1257,6 +1449,12 @@ export default function DocumentDetailPanel(props) {
             {d.fund_current_balance != null && <> · <strong>Fund Balance:</strong> {fmt(d.fund_current_balance)}</>}
             {d.running_balance != null && <> · <strong>After Txn:</strong> {fmt(d.running_balance)}</>}
           </div>
+          {d.requested_by && (
+            <div style={{ marginBottom: 6 }}>
+              <strong>Requested by:</strong> {d.requested_by}
+              {d.requested_by_email && <span style={{ color: 'var(--erp-muted)', fontSize: 11 }}> · {d.requested_by_email}</span>}
+            </div>
+          )}
           <div style={{ marginBottom: 6 }}>
             {d.payee && <><strong>Payee:</strong> {d.payee} · </>}
             {d.or_number && <><strong>OR#:</strong> {d.or_number} · </>}

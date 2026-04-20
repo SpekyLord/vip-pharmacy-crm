@@ -16,6 +16,7 @@ const ApprovalRequest = require('../models/ApprovalRequest');
 const DeductionSchedule = require('../models/DeductionSchedule');
 const IncomeReport = require('../models/IncomeReport');
 const GrnEntry = require('../models/GrnEntry');
+const Undertaking = require('../models/Undertaking'); // Phase 32 — Approval Hub surfaces SUBMITTED Undertakings
 const ApprovalRule = require('../models/ApprovalRule');
 const Lookup = require('../models/Lookup');
 const InventoryLedger = require('../models/InventoryLedger');
@@ -165,6 +166,53 @@ const MODULE_QUERIES = [
         approve_data: { type: 'grn', id: item._id },
         details: buildDocumentDetails('INVENTORY', item),
       }));
+    },
+    // Roles: lookup-driven via MODULE_DEFAULT_ROLES.INVENTORY
+  },
+  // Phase 32 — Undertaking (GRN receipt confirmation). Surfaces SUBMITTED docs
+  // so approvers can acknowledge (which auto-approves the linked GRN and writes
+  // InventoryLedger). Pre-hub the BDM confirmed batch + expiry via scan or manual
+  // input on the Undertaking page; the Hub view shows those confirmed values
+  // alongside the linked GRN's waybill photo (via buildDocumentDetails).
+  {
+    module: 'UNDERTAKING',
+    label: 'Undertaking (Receipt Confirmation)',
+    sub_key: 'approve_inventory', // reuses inventory approver sub-perm; subscribers
+                                   // can split by adding `approve_undertaking` to
+                                   // ERP_SUB_PERMISSION lookup and flipping this key.
+    query: async (entityId) => {
+      const items = await Undertaking.find({ entity_id: entityId, status: 'SUBMITTED' })
+        .populate('bdm_id', 'name email')
+        .populate('warehouse_id', 'warehouse_name warehouse_code')
+        .populate({
+          path: 'linked_grn_id',
+          select: 'grn_number grn_date source_type po_id po_number vendor_id waybill_photo_url undertaking_photo_url reassignment_id status',
+          populate: { path: 'vendor_id', select: 'vendor_name' }
+        })
+        .sort({ createdAt: -1, created_at: -1 })
+        .lean();
+      return items.map(item => {
+        const scanned = (item.line_items || []).filter(l => l.scan_confirmed).length;
+        const totalLines = (item.line_items || []).length;
+        const variances = (item.line_items || []).filter(l => l.variance_flag).length;
+        const grn = item.linked_grn_id || {};
+        return {
+          id: `UNDERTAKING:${item._id}`,
+          module: 'UNDERTAKING',
+          doc_type: 'UNDERTAKING',
+          doc_id: item._id,
+          doc_ref: item.undertaking_number || `UT-${String(item._id).slice(-6)}`,
+          description: `${item.bdm_id?.name || 'BDM'} — ${grn.grn_number || grn.source_type || 'STANDALONE'} — ${totalLines} line(s), ${scanned} scanned${variances ? `, ${variances} variance flag(s)` : ''}`,
+          amount: 0,
+          submitted_by: item.bdm_id?.name || 'Unknown',
+          submitted_at: item.createdAt || item.created_at,
+          status: 'PENDING_APPROVAL',
+          current_action: 'Acknowledge',
+          action_key: 'APPROVE',
+          approve_data: { type: 'undertaking', id: item._id },
+          details: buildDocumentDetails('UNDERTAKING', item),
+        };
+      });
     },
     // Roles: lookup-driven via MODULE_DEFAULT_ROLES
   },
@@ -528,11 +576,12 @@ const MODULE_QUERIES = [
       if (pendingOverrides.length === 0) return [];
 
       // Batch-fetch linked SMER entries and populate hospital names for coverage summary
+      // (Hospital model uses `hospital_name`, not `name` — see Hospital.js)
       const smerIds = [...new Set(pendingOverrides.map(r => r.doc_id?.toString()).filter(Boolean))];
       const smers = smerIds.length
         ? await SmerEntry.find({ _id: { $in: smerIds } })
-            .populate('daily_entries.hospital_ids', 'name')
-            .populate('daily_entries.hospital_id', 'name')
+            .populate('daily_entries.hospital_ids', 'hospital_name')
+            .populate('daily_entries.hospital_id', 'hospital_name')
             .lean()
         : [];
       const smerMap = new Map(smers.map(s => [s._id.toString(), s]));
@@ -556,10 +605,10 @@ const MODULE_QUERIES = [
           const requestedAmount = requestedTier
             ? computePerdiemAmount(requestedMd, smer.perdiem_rate, settings).amount
             : req.amount;
-          const hospitals = (entry.hospital_ids || []).map(h => h?.name).filter(Boolean);
+          const hospitals = (entry.hospital_ids || []).map(h => h?.hospital_name).filter(Boolean);
           const hospitalCovered = hospitals.length
             ? hospitals.join(', ')
-            : (entry.hospital_covered || entry.hospital_id?.name || null);
+            : (entry.hospital_covered || entry.hospital_id?.hospital_name || null);
 
           coverage = {
             entry_date: entry.entry_date,
@@ -658,8 +707,10 @@ const MODULE_QUERIES = [
     query: async (entityId) => {
       // JOURNAL covers manual JEs (doc_id = JournalEntry._id) and also
       // DEPRECIATION/INTEREST batches (doc_id = entity_id — batch-level, no single doc).
-      // For batch docTypes we fall back to the ApprovalRequest itself (no hydrate).
-      return buildGapModulePendingItems({
+      // For batch docTypes we can't hydrate a single JournalEntry, so we call
+      // the batch staging service directly to dereference the asset / loan lines
+      // the approver needs to review before posting.
+      const items = await buildGapModulePendingItems({
         entityId,
         module: 'JOURNAL',
         docTypeToModel: { JOURNAL_ENTRY: 'JournalEntry' },
@@ -671,10 +722,45 @@ const MODULE_QUERIES = [
           ],
         },
         actionType: 'journal',
-        // For DEPRECIATION/INTEREST (batch), there's no single doc to hydrate.
-        // builder will receive the ApprovalRequest itself.
+        // Batch docTypes pass the ApprovalRequest itself to the builder; we then
+        // enrich with staging data below.
         fallbackToRequest: true,
       });
+
+      // Post-process DEPRECIATION / INTEREST batch items — hydrate staging lines
+      // so the approver sees which assets/loans are about to post.
+      const { getDepreciationStaging } = require('./depreciationService');
+      const { getInterestStaging } = require('./loanService');
+      for (const it of items) {
+        if (it.doc_type !== 'DEPRECIATION' && it.doc_type !== 'INTEREST') continue;
+        // doc_ref format: "DEPR-{period}" or "INT-{period}"
+        const period = it.doc_ref?.replace(/^(DEPR|INT)-/, '') || null;
+        if (!period) continue;
+        try {
+          const staging = it.doc_type === 'DEPRECIATION'
+            ? await getDepreciationStaging(entityId, period)
+            : await getInterestStaging(entityId, period);
+          const total = (staging || []).reduce(
+            (s, r) => s + (r.amount ?? r.interest_amount ?? 0),
+            0
+          );
+          it.details = buildDocumentDetails('JOURNAL', {
+            _batch_kind: it.doc_type,
+            period,
+            staging,
+            total_amount: total,
+            doc_ref: it.doc_ref,
+            description: it.description,
+            amount: it.amount,
+            memo: it.description,
+            status: it.status,
+          });
+        } catch (err) {
+          console.error(`JOURNAL batch staging hydrate failed [${it.doc_type}/${period}]:`, err.message);
+        }
+      }
+
+      return items;
     },
   },
   {
@@ -727,14 +813,18 @@ const MODULE_QUERIES = [
         // not a fixed string — map both to the same model.
         docTypeToModel: { DISBURSEMENT: 'PettyCashTransaction', DEPOSIT: 'PettyCashTransaction' },
         populateByDocType: {
+          // `created_by` is the requester on PettyCashTransaction (the model has no
+          // `bdm_id` — it uses `created_by` as the BDM scope, see model line 79).
           DISBURSEMENT: [
             { path: 'fund_id', select: 'fund_name fund_code current_balance' },
+            { path: 'created_by', select: 'name email' },
             { path: 'approved_by', select: 'name' },
             { path: 'posted_by', select: 'name' },
             { path: 'voided_by', select: 'name' },
           ],
           DEPOSIT: [
             { path: 'fund_id', select: 'fund_name fund_code current_balance' },
+            { path: 'created_by', select: 'name email' },
             { path: 'approved_by', select: 'name' },
             { path: 'posted_by', select: 'name' },
             { path: 'voided_by', select: 'name' },
@@ -762,6 +852,10 @@ const MODULE_QUERIES = [
           ],
         },
         actionType: 'sales_goal_plan',
+        // Plan-adjacent doc_types (BULK_TARGETS_IMPORT, PLAN_NEW_VERSION,
+        // TARGET_REVISION) have no direct model. Pass the ApprovalRequest so
+        // the panel can at least render doc_ref / amount / description.
+        fallbackToRequest: true,
       });
     },
   },
@@ -782,6 +876,10 @@ const MODULE_QUERIES = [
           ],
         },
         actionType: 'incentive_payout',
+        // Payout-adjacent doc_types (STATEMENT_DISPATCH, bulk actions) have
+        // no model-backed doc — fall back to the ApprovalRequest so the panel
+        // can still render doc_ref / amount / description.
+        fallbackToRequest: true,
       });
     },
   },
@@ -898,6 +996,11 @@ const MODULE_TO_SUB_KEY = {
   PERDIEM_OVERRIDE: 'approve_perdiem',
   SALES_GOAL_PLAN:  'approve_sales_goal',
   INCENTIVE_PAYOUT: 'approve_incentive_payout',
+  // Phase 32 — reuses inventory approver sub-perm so existing approvers don't need
+  // a new Access Template tick. Subscribers who want to split the gate (e.g. let a
+  // warehouse clerk acknowledge Undertakings without seeing GRN approvals) can add
+  // `approve_undertaking` to ERP_SUB_PERMISSION lookup and flip this mapping.
+  UNDERTAKING:      'approve_inventory',
 };
 
 /**
@@ -1226,6 +1329,15 @@ async function getUniversalPending(entityId, user, entityIds) {
         ]);
         break;
       case 'INVENTORY':
+        [d.waybill_photo_url, d.undertaking_photo_url] = await Promise.all([
+          signUrl(d.waybill_photo_url), signUrl(d.undertaking_photo_url)
+        ]);
+        break;
+      case 'UNDERTAKING':
+        // Phase 32 — waybill + legacy undertaking photo are stored on the linked
+        // GRN and mirrored onto the Undertaking details payload by
+        // buildUndertakingDetails. Sign both so the Hub can render the waybill
+        // thumbnail + click-to-enlarge modal.
         [d.waybill_photo_url, d.undertaking_photo_url] = await Promise.all([
           signUrl(d.waybill_photo_url), signUrl(d.undertaking_photo_url)
         ]);

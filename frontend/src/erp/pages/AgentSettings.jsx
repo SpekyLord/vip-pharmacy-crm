@@ -19,8 +19,10 @@ import { getCopilotUsage } from '../services/copilotService';
 
 // Phase G8 — Display-only schedule copy per agent. List of agents rendered
 // on this panel comes from the backend registry (/erp/agents/registry), NOT
-// this map. Keys without an entry here fall back to DEFAULT_SCHEDULE so a
-// new backend agent auto-surfaces without a frontend code change (Rule #3).
+// this map. Phase G9.R9 — the backend now also supplies `schedule` in the
+// registry payload, which takes precedence over this map. This local map is
+// kept as a second-tier fallback (and DEFAULT_SCHEDULE as the final fallback)
+// so a new backend agent auto-surfaces without a frontend code change.
 const AGENT_SCHEDULE = {
   smart_collection:      'Weekdays 7 AM',
   performance_coach:     'Mon 6 AM',
@@ -49,6 +51,10 @@ const AGENT_SCHEDULE = {
   data_quality:          'Daily 9:00 AM',
   fefo_audit:            'Daily 7:30 AM',
   expansion_readiness:   '1st of month 10 AM',
+  // Phase G9.R1 — Task Overdue Notifier (#TO)
+  task_overdue:          'Weekdays 6:15 AM',
+  // Phase G9.R8 — Inbox Retention (#MR)
+  message_retention:     'Daily 2:00 AM',
 };
 const DEFAULT_SCHEDULE = 'Scheduled';
 
@@ -152,7 +158,10 @@ export function AgentSettingsContent() {
               const reg = registry.find((r) => r.key === key);
               const type = reg?.type === 'AI' ? 'AI' : 'Free';
               const label = reg?.label || prettifyAgentKey(key);
-              const schedule = AGENT_SCHEDULE[key] || DEFAULT_SCHEDULE;
+              // Phase G9.R9 — prefer backend-provided schedule so newly-registered
+              // agents surface with correct copy without a frontend edit. Falls
+              // back to the local AGENT_SCHEDULE map, then DEFAULT_SCHEDULE.
+              const schedule = reg?.schedule || AGENT_SCHEDULE[key] || DEFAULT_SCHEDULE;
               const config = configs.find(c => c.agent_key === key) || { enabled: true, notify_roles: [ROLES.PRESIDENT] };
               return (
                 <tr key={key}>

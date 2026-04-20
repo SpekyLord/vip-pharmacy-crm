@@ -11,7 +11,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { ROLES } from '../../constants/roles';
 import api from '../../services/api';
 import messageService from '../../services/messageInboxService';
-import { Bot, CheckCircle, AlertTriangle, XCircle, Clock, TrendingUp, Calendar, ShieldAlert, DollarSign, FileSearch, Package, CreditCard, FileWarning, Camera, MapPin, Zap, Wallet, LineChart, ShoppingBag, CalendarClock, Users, Database, PackageCheck, Rocket, Target, TrendingDown, BarChart3 } from 'lucide-react';
+import { Bot, CheckCircle, AlertTriangle, XCircle, Clock, TrendingUp, Calendar, ShieldAlert, DollarSign, FileSearch, Package, CreditCard, FileWarning, Camera, MapPin, Zap, Wallet, LineChart, ShoppingBag, CalendarClock, Users, Database, PackageCheck, Rocket, Target, TrendingDown, BarChart3, Mail } from 'lucide-react';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError, showSuccess } from '../utils/errorToast';
 
@@ -113,6 +113,8 @@ const AGENT_META = {
   expansion_readiness:   { icon: Rocket,        color: '#7c3aed', schedule: '1st of month 10 AM' },
   // Phase G9.R1
   task_overdue:          { icon: Clock,         color: '#ea580c', schedule: 'Weekdays 6:15 AM' },
+  // Phase G9.R8 — Inbox Retention (#MR)
+  message_retention:     { icon: Mail,          color: '#475569', schedule: 'Daily 2:00 AM' },
 };
 const DEFAULT_META = { icon: Bot, color: '#64748b', schedule: 'Scheduled' };
 
@@ -212,7 +214,10 @@ export default function AgentDashboard() {
                   const meta = AGENT_META[r.key] || DEFAULT_META;
                   const Icon = meta.icon;
                   const color = meta.color;
-                  const schedule = meta.schedule;
+                  // Phase G9.R9 — prefer backend-provided schedule (agentRegistry)
+                  // so newly-registered agents surface with correct copy without
+                  // a frontend edit. Falls back to AGENT_META, then DEFAULT_META.
+                  const schedule = r.schedule || meta.schedule;
                   const label = r.label || prettifyKey(r.key);
                   const agent = stats?.agents?.find((a) => a._id === r.key);
                   return (
@@ -263,7 +268,8 @@ export default function AgentDashboard() {
                   const meta = AGENT_META[r.key] || DEFAULT_META;
                   const Icon = meta.icon;
                   const color = meta.color;
-                  const schedule = meta.schedule;
+                  // Phase G9.R9 — see AI-loop comment above.
+                  const schedule = r.schedule || meta.schedule;
                   const label = r.label || prettifyKey(r.key);
                   const agent = stats?.agents?.find((a) => a._id === r.key);
                   return (

@@ -74,6 +74,10 @@ const OpeningArList = lazyRetry(() => import('./erp/pages/OpeningArList'));
 const SalesList = lazyRetry(() => import('./erp/pages/SalesList'));
 const MyStock = lazyRetry(() => import('./erp/pages/MyStock'));
 const GrnEntry = lazyRetry(() => import('./erp/pages/GrnEntry'));
+// Phase 32 — Auto-Undertaking (receipt confirmation, sibling of GRN)
+const UndertakingList = lazyRetry(() => import('./erp/pages/UndertakingList'));
+const UndertakingDetail = lazyRetry(() => import('./erp/pages/UndertakingDetail'));
+const GrnAuditView = lazyRetry(() => import('./erp/pages/GrnAuditView'));
 const DrEntry = lazyRetry(() => import('./erp/pages/DrEntry'));
 const ConsignmentDashboard = lazyRetry(() => import('./erp/pages/ConsignmentDashboard'));
 const Collections = lazyRetry(() => import('./erp/pages/Collections'));
@@ -529,6 +533,31 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.ERP_FINANCE} requiredErpModule={["inventory", "purchasing"]}>
                 <GrnEntry />
+              </ProtectedRoute>
+            }
+          />
+          {/* Phase 32 — Undertaking (receipt confirmation, sibling of GRN) */}
+          <Route
+            path="/erp/undertaking"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.ERP_FINANCE} requiredErpModule="inventory">
+                <UndertakingList />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/undertaking/:id"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.ERP_FINANCE} requiredErpModule="inventory">
+                <UndertakingDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/grn/:id/audit"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.ERP_FINANCE} requiredErpModule="inventory">
+                <GrnAuditView />
               </ProtectedRoute>
             }
           />

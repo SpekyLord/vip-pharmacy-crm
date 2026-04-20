@@ -354,7 +354,7 @@ const SEED_DEFAULTS = {
   // Financial vs Operational segregation — president approves financial, can delegate operational later
   APPROVAL_CATEGORY: [
     { code: 'FINANCIAL', label: 'Financial', metadata: { description: 'Involves money movement — requires president/finance approval', modules: ['EXPENSES', 'PURCHASING', 'PAYROLL', 'JOURNAL', 'BANKING', 'PETTY_CASH', 'IC_TRANSFER', 'INCOME', 'PRF_CALF', 'PERDIEM_OVERRIDE', 'DEDUCTION_SCHEDULE', 'INCENTIVE_PAYOUT'] } },
-    { code: 'OPERATIONAL', label: 'Operational', metadata: { description: 'Document processing & verification — can be delegated to admin/finance', modules: ['SALES', 'INVENTORY', 'KPI', 'SMER', 'CAR_LOGBOOK', 'COLLECTION', 'SALES_GOAL_PLAN'] } },
+    { code: 'OPERATIONAL', label: 'Operational', metadata: { description: 'Document processing & verification — can be delegated to admin/finance', modules: ['SALES', 'INVENTORY', 'KPI', 'SMER', 'CAR_LOGBOOK', 'COLLECTION', 'SALES_GOAL_PLAN', 'UNDERTAKING'] } },
   ],
   APPROVAL_MODULE: [
     // Authority Matrix modules (Phase 29) — with financial/operational category.
@@ -366,6 +366,9 @@ const SEED_DEFAULTS = {
     { code: 'PURCHASING', label: 'Purchasing', metadata: { category: 'FINANCIAL' } },
     { code: 'PAYROLL', label: 'Payroll', metadata: { category: 'FINANCIAL' } },
     { code: 'INVENTORY', label: 'Inventory', metadata: { category: 'OPERATIONAL' } },
+    // Phase 32 — Undertaking (GRN receipt confirmation). Auto-created on GRN create.
+    // Acknowledge auto-approves the linked GRN (rule #20).
+    { code: 'UNDERTAKING', label: 'Undertaking (Receipt Confirmation)', metadata: { category: 'OPERATIONAL' } },
     { code: 'JOURNAL', label: 'Journal Entries', metadata: { category: 'FINANCIAL' } },
     { code: 'BANKING', label: 'Banking', metadata: { category: 'FINANCIAL' } },
     { code: 'PETTY_CASH', label: 'Petty Cash', metadata: { category: 'FINANCIAL' } },
@@ -672,6 +675,13 @@ const SEED_DEFAULTS = {
       label: 'Set or bulk-set inter-company transfer prices (cross-entity P&L impact)',
       metadata: { module: 'inventory', key: 'transfer_price_set' },
     },
+    // Phase 32 — President-reverse an Undertaking (cascades to storno-reverse the
+    // linked GRN if APPROVED; negating InventoryLedger entries; depletion blocker).
+    {
+      code: 'INVENTORY__REVERSE_UNDERTAKING',
+      label: 'President Reverse — Undertaking (cascades to GRN + InventoryLedger)',
+      metadata: { module: 'inventory', key: 'reverse_undertaking' },
+    },
     {
       code: 'MASTER__PRODUCT_DELETE',
       label: 'Hard-delete ProductMaster row (irreversible; breaks historical references)',
@@ -890,6 +900,11 @@ const SEED_DEFAULTS = {
     // Phase 31R follow-up — CreditNote posting authority. Subscribers can set
     // metadata.roles = null for open-post (any BDM can post returns without approval).
     { code: 'CREDIT_NOTE', label: 'Credit Notes / Returns', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post product returns / sales-returns credit notes' } },
+    // Phase 32 — Undertaking acknowledgement. Authorized roles can acknowledge directly
+    // (which auto-approves the linked GRN). Non-authorized submitters route to the
+    // Approval Hub. BDM is included by default because receipt confirmation is a
+    // BDM-first workflow; subscribers can tighten by removing 'bdm' from roles.
+    { code: 'UNDERTAKING', label: 'Undertaking (Receipt Confirmation)', metadata: { roles: ['admin', 'finance', 'bdm', 'president'], description: 'Acknowledge goods receipt. Acknowledge auto-approves the linked GRN and writes InventoryLedger.' } },
     { code: 'EXPENSES', label: 'Expenses (ORE/ACCESS)', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated expense entries' } },
     { code: 'PRF_CALF', label: 'PRF / CALF', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated PRF/CALF documents' } },
     { code: 'PERDIEM_OVERRIDE', label: 'Per Diem Override', metadata: { roles: ['admin', 'finance', 'president'], description: 'Approve BDM per diem override requests' } },
@@ -925,6 +940,33 @@ const SEED_DEFAULTS = {
     // (anyone can DM anyone). Combine with MESSAGE_ACCESS_ROLES lookup for
     // per-role can_dm_roles / can_broadcast / can_cross_entity rules.
     { code: 'MESSAGING', label: 'Messaging / Inbox', metadata: { roles: ['president', 'ceo', 'admin', 'finance', 'contractor', 'employee'], description: 'Allow this role to use the unified Inbox. Per-role DM matrix lives in MESSAGE_ACCESS_ROLES; sub-perm grants in ERP_SUB_PERMISSION (messaging.*).' } },
+  ],
+  // Phase 32R (Apr 2026) — GRN capture thresholds. Per-entity configurable via
+  // Control Center → Lookup Tables → GRN_SETTINGS. The service reads
+  // metadata.value (numeric) and falls back to defaults baked into
+  // undertakingService.js on miss. Legacy UNDERTAKING_SETTINGS rows are still
+  // consulted by getGrnSetting for back-compat with Phase 32 (Apr 20, 2026)
+  // deploys that have not been renamed yet.
+  //
+  // Subscribers tune these without code changes:
+  //   - MIN_EXPIRY_DAYS: reject GRN create if any line's expiry is within N days.
+  //     Tightens the near-expiry guard for pharmacies with strict shelf policies.
+  //   - VARIANCE_TOLERANCE_PCT: flag a line as QTY_UNDER/QTY_OVER when received
+  //     qty differs from expected by more than this percentage (advisory — surfaces
+  //     in the Approval Hub for approver review).
+  //   - WAYBILL_REQUIRED: gate GRN creation on the waybill photo being attached
+  //     (default on). Set to 0 to allow waybill-free receipts (e.g. intra-entity
+  //     internal transfers that don't use couriers).
+  GRN_SETTINGS: [
+    { code: 'MIN_EXPIRY_DAYS', label: 'Minimum Expiry Floor (days)', metadata: { value: 30, description: 'Expiry must be at least this many days in the future. GRN capture is blocked otherwise.' } },
+    { code: 'VARIANCE_TOLERANCE_PCT', label: 'Qty Variance Tolerance (%)', metadata: { value: 10, description: 'Variance above this percent (received vs expected qty) flags the line yellow in the Approval Hub.' } },
+    { code: 'WAYBILL_REQUIRED', label: 'Require Waybill Upload', metadata: { value: 1, description: 'Set to 1 to require a waybill photo on every GRN; set to 0 to make it optional.' } },
+    // Phase 32R-S1 — subscription scalability. Default 1 preserves pharmacy behavior;
+    // non-pharmacy subscribers (services, electronics, industrial supplies) flip to 0.
+    // Backend normalizes blanks to safe sentinels (batch='N/A', expiry=9999-12-31) so
+    // FIFO grouping + $gt-new-Date() match + Undertaking mirror all stay intact.
+    { code: 'REQUIRE_BATCH', label: 'Require Batch/Lot # on GRN Lines', metadata: { value: 1, description: 'Set to 1 (default) for pharmacy/FDA tracking. Set to 0 for verticals where batch tracking is not needed. When 0, blank batches are stored as "N/A" to preserve FIFO grouping.' } },
+    { code: 'REQUIRE_EXPIRY', label: 'Require Expiry Date on GRN Lines', metadata: { value: 1, description: 'Set to 1 (default) for pharmacy. Set to 0 for non-perishable inventory. When 0, blank expiries are stored as 9999-12-31 so FIFO still sorts real-expiry stock first. MIN_EXPIRY_DAYS floor still applies when the user voluntarily enters an expiry.' } },
   ],
   // Phase SG-Q2 — Period lock modules. UI (Period Locks page) reads this to render
   // toggle rows per module. Each code becomes a lockable unit. Subscribers can add
@@ -1995,6 +2037,73 @@ const SEED_DEFAULTS = {
   // Source-of-truth: backend/erp/scripts/seedCOA.js → COA_TEMPLATE_LOOKUP_SHAPE
   // (kept in code so new accounts auto-propagate to existing entities on next read).
   COA_TEMPLATE: require('../scripts/seedCOA').COA_TEMPLATE_LOOKUP_SHAPE,
+
+  // ── Phase 24-C fix (Apr 2026) — reconcile SEED_DEFAULTS with runtime lazy-seed ──
+  // These 7 categories were previously only lazy-seeded on first agent run, which
+  // made Foundation Health show >100% (numerator exceeded denominator). Listing
+  // them here keeps the seed list authoritative: `seedAll` pre-populates them for
+  // new subscriber entities, and lazy-seed writes in services/agents remain as a
+  // safety net for initial metadata defaults.
+  //
+  // Metadata routing (see buildSeedOps):
+  //   - `insert_only_metadata: true` → $setOnInsert. Use for admin-tunable values
+  //     (enabled flags, threshold knobs). Seed once, admin edits preserved forever.
+  //   - default (no flag) → $set on every seed. Use for code-authoritative values
+  //     (statutory BIR dates, OCR keyword maps) where engineers own the truth.
+
+  // erp/services/erpNotificationService.js → getChannelConfig()
+  // EMAIL/IN_APP default ON, SMS opt-in (requires SEMAPHORE_API_KEY + user.phone).
+  NOTIFICATION_CHANNELS: [
+    { code: 'EMAIL', label: 'Email notifications (master kill-switch, sits above per-user prefs)', insert_only_metadata: true, metadata: { enabled: true } },
+    { code: 'IN_APP', label: 'In-app notifications (master kill-switch, sits above per-user prefs)', insert_only_metadata: true, metadata: { enabled: true } },
+    { code: 'SMS', label: 'SMS notifications (opt-in, requires SEMAPHORE_API_KEY + user.phone)', insert_only_metadata: true, metadata: { enabled: false } },
+  ],
+
+  // erp/services/erpNotificationService.js → getEscalationConfig()
+  // Default 3 hops up the reports_to chain; admin raises for deeper orgs.
+  NOTIFICATION_ESCALATION: [
+    { code: 'REPORTS_TO_MAX_HOPS', label: 'Max hops up the reports_to chain when escalating notifications (1..10)', insert_only_metadata: true, metadata: { value: 3 } },
+  ],
+
+  // erp/services/pdfRenderer.js → resolvePdfPreference()
+  // Stays HTML-preview until admin flips enabled=true AND runs
+  // `npm install puppeteer` in backend/. Heavyweight dep is opt-in per entity.
+  PDF_RENDERER: [
+    { code: 'BINARY_ENABLED', label: 'Enable binary PDF rendering for printable statements (requires puppeteer install)', insert_only_metadata: true, metadata: { enabled: false, engine: 'puppeteer', note: 'Flip enabled=true AND run "npm install puppeteer" in backend/ to emit real PDFs. Otherwise /statement/print emits HTML that the browser prints via Save-as-PDF.' } },
+  ],
+
+  // agents/taskOverdueAgent.js → loadCooldownDays()
+  // GLOBAL applies to all tasks. 0 = no dedup (test only). Negative clamps to default.
+  TASK_OVERDUE_COOLDOWN_DAYS: [
+    { code: 'GLOBAL', label: 'Cooldown days between overdue notifications for the same task (0 = no dedup)', insert_only_metadata: true, metadata: { days: 1, value: 1 } },
+  ],
+
+  // agents/complianceDeadlineAgent.js → loadDeadlines()
+  // STRUCTURAL metadata (statutory filing dates don't drift per entity) — re-sync
+  // on seedAll is desirable so engineering can correct baseline data centrally.
+  // Subscribers add entity-specific rows (DOH LTO, local permits) as NEW codes;
+  // those are preserved because buildSeedOps only touches codes listed here.
+  COMPLIANCE_DEADLINES: [
+    { code: 'BIR_1601E', label: 'BIR 1601-E (monthly withholding)', metadata: { day_of_month: 10, months: 'every', description: 'Expanded withholding tax return, filed monthly' } },
+    { code: 'BIR_2550M', label: 'BIR 2550-M (monthly VAT)', metadata: { day_of_month: 20, months: 'every', description: 'Monthly VAT declaration' } },
+    { code: 'BIR_1701Q', label: 'BIR 1701-Q (quarterly income tax)', metadata: { day_of_month: 15, months: [5, 8, 11], description: 'Quarterly income tax return' } },
+    { code: 'SSS_REMIT', label: 'SSS contribution remittance', metadata: { day_of_month: 10, months: 'every', description: 'SSS employer remittance' } },
+    { code: 'PHIC_REMIT', label: 'PhilHealth remittance', metadata: { day_of_month: 15, months: 'every', description: 'PhilHealth employer remittance' } },
+    { code: 'HDMF_REMIT', label: 'HDMF (Pag-IBIG) remittance', metadata: { day_of_month: 15, months: 'every', description: 'Pag-IBIG employer remittance' } },
+  ],
+
+  // agents/expansionReadinessAgent.js → loadConfig()
+  // Defaults: PHP 500k monthly sales × 3 consecutive months to flag BDM for
+  // graduation to subsidiary ownership. Admin raises the bar to slow promotion.
+  EXPANSION_READINESS_CONFIG: [
+    { code: 'DEFAULT', label: 'BDM graduation thresholds (monthly sales floor + consecutive months required)', insert_only_metadata: true, metadata: { bdm_graduation_monthly_sales_min: 500000, bdm_graduation_months_required: 3 } },
+  ],
+
+  // agents/kpiVarianceAgent.js → loadThresholds()
+  // GLOBAL fallback. Per-KPI overrides are additional rows with code = KPI_CODE.
+  KPI_VARIANCE_THRESHOLDS: [
+    { code: 'GLOBAL', label: 'Fallback variance thresholds (applied when no per-KPI row exists)', insert_only_metadata: true, metadata: { warning_pct: 20, critical_pct: 40 } },
+  ],
 };
 
 // List all distinct categories for current entity
@@ -2008,8 +2117,14 @@ exports.getCategories = catchAsync(async (req, res) => {
 });
 
 // Helper: build bulkWrite ops from seed defaults (supports string or {code,label} items)
-// Metadata is always merged ($set) so updated defaults propagate to existing entries.
-// Label/sort_order are only set on insert ($setOnInsert) to preserve user customizations.
+// Label/sort_order are $setOnInsert so admin customizations survive.
+// Metadata routing:
+//   - default → $set on seedAll/seedCategory so code-authoritative metadata (e.g.
+//     coa_code, OCR keywords) propagates to existing entries when engineers update
+//     the seed values in code.
+//   - item.insert_only_metadata: true → $setOnInsert so admin-tunable values
+//     (e.g. PDF_RENDERER.enabled, NOTIFICATION_CHANNELS.enabled) are set once on
+//     first insert and never clobbered by subsequent seedAll runs.
 function buildSeedOps(defaults, category, entityId, userId) {
   // Phase G6.10/G7 — billable AI features default OFF so the president must
   // explicitly enable them after reviewing prompts/budgets. All other lookup
@@ -2021,6 +2136,7 @@ function buildSeedOps(defaults, category, entityId, userId) {
     const label = isObj ? item.label : item;
     const code = isObj ? item.code.toUpperCase() : label.toUpperCase().replace(/[^A-Z0-9]/g, '_');
     const metadata = isObj ? (item.metadata || {}) : {};
+    const insertOnlyMetadata = isObj && item.insert_only_metadata === true;
     const op = {
       updateOne: {
         filter: { entity_id: entityId, category, code },
@@ -2030,12 +2146,18 @@ function buildSeedOps(defaults, category, entityId, userId) {
         upsert: true
       }
     };
-    // Merge metadata fields into existing entries (e.g. coa_code, keywords)
-    // Uses dot notation so only seed keys are set — user-added metadata keys are preserved
     if (Object.keys(metadata).length > 0) {
-      op.updateOne.update.$set = {};
-      for (const [k, v] of Object.entries(metadata)) {
-        op.updateOne.update.$set[`metadata.${k}`] = v;
+      if (insertOnlyMetadata) {
+        // Seed defaults on first insert, preserve admin edits on re-seed.
+        // MongoDB allows embedding `metadata` under $setOnInsert alongside the
+        // existing scalars — no path conflict because metadata is a distinct key.
+        op.updateOne.update.$setOnInsert.metadata = metadata;
+      } else {
+        // Dot-notation $set — code-owned keys propagate, admin-added keys preserved.
+        op.updateOne.update.$set = {};
+        for (const [k, v] of Object.entries(metadata)) {
+          op.updateOne.update.$set[`metadata.${k}`] = v;
+        }
       }
     }
     return op;

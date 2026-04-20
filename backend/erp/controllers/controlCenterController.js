@@ -103,10 +103,19 @@ exports.getHealth = catchAsync(async (req, res) => {
         current_month_open: totalModules - lockedModules,
         total_modules: totalModules
       },
-      lookups: {
-        categories_configured: lookupCategories.length,
-        total_available: Object.keys(require('./lookupGenericController').SEED_DEFAULTS || {}).length || lookupCategories.length
-      },
+      lookups: (() => {
+        // Denominator is the union of SEED_DEFAULTS keys + live DB categories so
+        // runtime lazy-seeded categories (e.g. NOTIFICATION_CHANNELS, PDF_RENDERER)
+        // never push the card above 100%. Numerator stays as live DB categories
+        // for the entity. Matches the same union already used by lookupGenericController
+        // when building the category picker list (line ~2035).
+        const seedKeys = Object.keys(require('./lookupGenericController').SEED_DEFAULTS || {});
+        const unionSize = new Set([...seedKeys, ...lookupCategories]).size;
+        return {
+          categories_configured: lookupCategories.length,
+          total_available: unionSize || lookupCategories.length || seedKeys.length
+        };
+      })(),
       settings: {
         last_updated: settings.updatedAt || null
       }
