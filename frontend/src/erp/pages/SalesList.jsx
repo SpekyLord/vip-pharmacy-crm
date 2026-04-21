@@ -14,7 +14,7 @@ import RejectionBanner from '../components/RejectionBanner';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError, showSuccess, showWarning } from '../utils/errorToast';
+import { showError, showSuccess, showWarning, showApprovalPending } from '../utils/errorToast';
 import { useLookupOptions } from '../hooks/useLookups';
 
 function toTitleCase(str) {
@@ -266,10 +266,23 @@ export default function SalesList() {
       : 'Submit all validated sales? Stock will be deducted via FIFO (Opening AR entries skip stock).';
     if (!window.confirm(msg)) return;
     try {
-      await sales.submitSales(saleId ? [saleId] : undefined);
+      // Submit returns 202 with { approval_pending: true, message } when the
+      // caller's role is not in MODULE_DEFAULT_ROLES.SALES (lookup-driven, per
+      // CLAUDE-ERP Phase G4). axios resolves 2xx, so the pending case lands in
+      // the success branch. Mirror SalesEntry/OpeningArEntry belt-and-braces
+      // handling — some backends still throw on 202 (legacy interceptors).
+      const res = await sales.submitSales(saleId ? [saleId] : undefined);
+      if (res?.approval_pending) {
+        showApprovalPending(res.message);
+      }
       loadSales(pagination.page);
     } catch (err) {
-      showError(err, 'Could not submit sales');
+      if (err?.response?.data?.approval_pending) {
+        showApprovalPending(err.response.data.message);
+        loadSales(pagination.page);
+      } else {
+        showError(err, 'Could not submit sales');
+      }
     }
   };
 

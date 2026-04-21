@@ -24,6 +24,34 @@ const PettyCashFund = require('../models/PettyCashFund');
 const PettyCashTransaction = require('../models/PettyCashTransaction');
 const Collection = require('../models/Collection');
 const { validateCsiNumber, markUsed: markCsiUsed, unmarkUsed: unmarkCsiUsed } = require('../services/csiBookletService');
+const Lookup = require('../models/Lookup');
+
+/**
+ * Read a numeric flag from the per-entity SALES_SETTINGS lookup with a hard
+ * fallback when the entry is missing. Mirrors `getGrnSetting` in
+ * undertakingService.js — subscription-ready: subscribers tune flags in
+ * Control Center → Lookup Tables without a code change. Defaults preserve
+ * the pharmacy-ops behavior (photo required) so an entity that never opens
+ * Control Center still gets the strict check.
+ */
+const getSalesSetting = async (entityId, code, fallback) => {
+  if (!entityId) return fallback;
+  try {
+    const entry = await Lookup.findOne({
+      entity_id: entityId,
+      category: 'SALES_SETTINGS',
+      code,
+      is_active: true,
+    }).lean();
+    const value = entry?.metadata?.value;
+    if (value === undefined || value === null) return fallback;
+    const num = Number(value);
+    return Number.isFinite(num) ? num : fallback;
+  } catch (err) {
+    console.error(`[salesController] getSalesSetting failed for ${code}:`, err.message);
+    return fallback;
+  }
+};
 
 // ═══════════════════════════════════════════════════════════
 // SHARED: Post a single SalesLine row (used by submitSales + approval handler)
@@ -476,6 +504,13 @@ const validateSales = catchAsync(async (req, res) => {
     return res.json({ success: true, valid_count: 0, error_count: 0, errors: [] });
   }
 
+  // Per-entity lookup-driven flags — fetched once, applied per-row below.
+  // REQUIRE_CSI_PHOTO (default 1): block posting of CSI rows that have no
+  // photo attached. Covers live sales AND Opening AR — both share sale_type=
+  // CSI and the same csi_photo_url field. Subscribers who don't need photo
+  // proof (e.g. service-only entities) flip to 0 via Control Center.
+  const requireCsiPhoto = (await getSalesSetting(req.entityId, 'REQUIRE_CSI_PHOTO', 1)) ? true : false;
+
   // Build fresh stock snapshot from InventoryLedger
   // Phase 17: If rows have warehouse_id, scope snapshot to that warehouse.
   // For now, all rows for a BDM share one warehouse, so first row's warehouse is used.
@@ -508,6 +543,15 @@ const validateSales = catchAsync(async (req, res) => {
     if (saleType === 'CSI') {
       if (!row.doc_ref) rowErrors.push('Document reference (CSI#) is required');
       if (!row.line_items || row.line_items.length === 0) rowErrors.push('At least one line item is required');
+
+      // CSI photo proof — required by default for audit/compliance. Covers live
+      // sales AND Opening AR (both are sale_type=CSI). Lookup-driven via
+      // SALES_SETTINGS.REQUIRE_CSI_PHOTO so subscribers can relax the rule
+      // without a code change. Error message matches the field the user sees
+      // in both SalesEntry and OpeningArEntry (Scan CSI / re-upload button).
+      if (requireCsiPhoto && !row.csi_photo_url) {
+        rowErrors.push('CSI photo is required — use "Scan CSI" to capture the invoice image before posting.');
+      }
 
       // Phase 15.2 (softened) — CSI booklet traceability check.
       // Monitoring only: never blocks posting. A warning is pushed if the

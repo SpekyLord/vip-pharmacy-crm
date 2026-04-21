@@ -70,6 +70,73 @@ function StatusChip({ status }) {
   );
 }
 
+// Shared contractor identifier — surfaces who owns the document so the approver/
+// reviewer doesn't need to cross-reference the parent list. Builders surface
+// `bdm` (name) and optional `bdm_email`. Renders nothing if neither is present.
+function ContractorLine({ d, label = 'Contractor' }) {
+  if (!d?.bdm && !d?.bdm_email) return null;
+  return (
+    <div style={{ marginBottom: 6 }}>
+      <strong>{label}:</strong> {d.bdm || '—'}
+      {d.bdm_email && <span style={{ marginLeft: 6, color: 'var(--erp-muted)', fontSize: 11 }}>({d.bdm_email})</span>}
+    </div>
+  );
+}
+
+// SAP Storno tombstone badge — when `deletion_event_id` is set, the document has
+// already been reversed. Original stays POSTED for audit; reversing again would
+// double-post. Loud red banner so the approver/reverser cannot miss it.
+function ReversedBadge({ d }) {
+  if (!d?.deletion_event_id) return null;
+  return (
+    <div style={{ marginBottom: 8, padding: '6px 10px', borderRadius: 6, background: '#fee2e2', color: '#991b1b', fontSize: 12, fontWeight: 700, border: '1px solid #fca5a5' }}>
+      ⚠ ALREADY REVERSED — this document has a Storno tombstone (deletion_event_id set). Do not reverse again.
+    </div>
+  );
+}
+
+// Stale-doc + edit-history signals for the approver. `reopen_count` indicates
+// churn (a doc reopened many times is materially riskier to reverse); `created_at`
+// surfaces draft staleness when the AuditFooter only shows posted_at.
+function StalenessLine({ d }) {
+  const bits = [];
+  if (d?.created_at) bits.push(['Created', new Date(d.created_at).toLocaleString()]);
+  if (d?.reopen_count > 0) bits.push(['Reopened', `${d.reopen_count}×`]);
+  if (!bits.length) return null;
+  return (
+    <div style={{ marginBottom: 6, fontSize: 11, color: 'var(--erp-muted)' }}>
+      {bits.map(([k, v]) => (
+        <span key={k} style={{ marginRight: 10 }}><strong>{k}:</strong> {v}{d.reopen_count > 2 && k === 'Reopened' ? ' ⚠' : ''}</span>
+      ))}
+    </div>
+  );
+}
+
+// Linked-document references — orphan-risk callout. When you reverse a doc that
+// has `linked_*_id` fields, the linked side is silently desynced (e.g. reversing
+// a CALF unbalances the linked Expense's liquidation_amount). Keys are `[label, id]`
+// pairs the caller passes in; we render an info chip per non-null id so the approver
+// sees the cascade scope before pulling the trigger.
+function LinkedRefsLine({ refs }) {
+  const present = (refs || []).filter(r => r && r[1]);
+  if (!present.length) return null;
+  return (
+    <div style={{ marginBottom: 8, padding: '6px 8px', borderRadius: 6, background: '#fef9c3', color: '#854d0e', fontSize: 11, border: '1px solid #fde68a' }}>
+      <strong>Linked docs (reversal cascade):</strong>{' '}
+      {present.map(([label, id, hint], i) => {
+        const isNumeric = typeof id === 'number';
+        const display = isNumeric ? String(id) : String(id).slice(-8);
+        return (
+          <span key={i} style={{ display: 'inline-block', marginRight: 8, padding: '1px 6px', background: '#fff', borderRadius: 4 }}>
+            {label}: {isNumeric ? <strong>{display}</strong> : <code style={{ fontSize: 10 }}>{display}</code>}
+            {hint && <span style={{ marginLeft: 4, color: '#7c2d12' }}>· {hint}</span>}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 // Shared audit footer — surfaces lifecycle context the approver needs:
 // status, rejection/return reason, validation errors, and any "by/at" pairs the
 // builder populated. Renders nothing if there's nothing to show.
@@ -139,6 +206,15 @@ export default function DocumentDetailPanel(props) {
       {/* Income Report Details */}
       {module === 'INCOME' && (
         <div>
+          <ReversedBadge d={d} />
+          <ContractorLine d={d} />
+          <StalenessLine d={d} />
+          <LinkedRefsLine refs={[
+            ['SMER', d.source_refs?.smer_id],
+            ['Collections', d.source_refs?.collection_count > 0 ? d.source_refs.collection_count : null, 'count'],
+            ['Expenses', d.source_refs?.expense_count > 0 ? d.source_refs.expense_count : null, 'count'],
+            ['PnL', d.source_refs?.pnl_report_id],
+          ]} />
           <div style={{ marginBottom: 6 }}>
             <strong>Status:</strong><StatusChip status={d.status} />
             {d.notes && <span style={{ marginLeft: 8, fontStyle: 'italic', color: 'var(--erp-muted)' }}>{d.notes}</span>}
@@ -209,6 +285,13 @@ export default function DocumentDetailPanel(props) {
       {/* GRN Details */}
       {module === 'INVENTORY' && (
         <div>
+          <ReversedBadge d={d} />
+          <ContractorLine d={d} label="Received by" />
+          <StalenessLine d={d} />
+          <LinkedRefsLine refs={[
+            ['Undertaking', d.undertaking_id],
+            ['StockReassignment', d.reassignment_id, 'internal-transfer'],
+          ]} />
           <div style={{ marginBottom: 6 }}>
             <strong>Status:</strong><StatusChip status={d.status} />
           </div>
@@ -277,6 +360,8 @@ export default function DocumentDetailPanel(props) {
       {/* Undertaking Details — Phase 32 (receipt confirmation, sibling of GRN) */}
       {module === 'UNDERTAKING' && (
         <div>
+          <ReversedBadge d={d} />
+          <ContractorLine d={d} label="Received by" />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 }}>
             <strong>{d.undertaking_number}</strong>
             <StatusChip status={d.status} />
@@ -467,6 +552,12 @@ export default function DocumentDetailPanel(props) {
       {/* Sales / CSI Details */}
       {module === 'SALES' && (
         <div>
+          <ReversedBadge d={d} />
+          <ContractorLine d={d} />
+          <StalenessLine d={d} />
+          <LinkedRefsLine refs={[
+            ['PettyCashFund', d.petty_cash_fund_id, 'cash CSI — fund deposit will cascade'],
+          ]} />
           <div style={{ marginBottom: 6 }}>
             <strong>Type:</strong> {d.sale_type || 'CSI'} · <strong>Date:</strong> {d.csi_date ? new Date(d.csi_date).toLocaleDateString() : '—'}
             {d.doc_ref && <> · <strong>Doc Ref:</strong> {d.doc_ref}</>}
@@ -539,6 +630,13 @@ export default function DocumentDetailPanel(props) {
       {/* Collection / CR Details */}
       {module === 'COLLECTION' && (
         <div>
+          <ReversedBadge d={d} />
+          <ContractorLine d={d} />
+          <StalenessLine d={d} />
+          <LinkedRefsLine refs={[
+            ['BankAccount', d.bank_account_id, 'bank deposit'],
+            ['PettyCashFund', d.petty_cash_fund_id, 'cash → fund deposit will cascade'],
+          ]} />
           <div style={{ marginBottom: 6 }}>
             {d.cr_no && <><strong>CR#:</strong> {d.cr_no} · </>}
             <strong>CR Date:</strong> {d.cr_date ? new Date(d.cr_date).toLocaleDateString() : '—'}
@@ -601,6 +699,9 @@ export default function DocumentDetailPanel(props) {
       {/* SMER Details */}
       {module === 'SMER' && (
         <div>
+          <ReversedBadge d={d} />
+          <ContractorLine d={d} />
+          <StalenessLine d={d} />
           <div style={{ marginBottom: 6 }}>
             <strong>Period:</strong> {d.period} {d.cycle || ''} · <strong>Working Days:</strong> {d.working_days || '—'} · <strong>Daily Entries:</strong> {d.daily_entries_count || 0}
             <StatusChip status={d.status} />
@@ -669,6 +770,9 @@ export default function DocumentDetailPanel(props) {
       {/* Car Logbook Details */}
       {module === 'CAR_LOGBOOK' && (
         <div>
+          <ReversedBadge d={d} />
+          <ContractorLine d={d} />
+          <StalenessLine d={d} />
           <div style={{ marginBottom: 8 }}>
             <strong>Period:</strong> {d.period} {d.cycle || ''}
             {d.entry_date ? ` · Date: ${new Date(d.entry_date).toLocaleDateString()}` : ''}
@@ -771,6 +875,14 @@ export default function DocumentDetailPanel(props) {
       {/* Expenses (ORE/ACCESS) Details */}
       {module === 'EXPENSES' && (
         <div>
+          <ReversedBadge d={d} />
+          <ContractorLine d={d} />
+          <StalenessLine d={d} />
+          {d.lines_with_calf_count > 0 && (
+            <LinkedRefsLine refs={[
+              ['CALF lines', d.lines_with_calf_count, `${d.lines_with_calf_count} of ${d.line_count} lines linked to a CALF — reversal cascades`],
+            ]} />
+          )}
           <div style={{ marginBottom: 6 }}>
             <strong>Period:</strong> {d.period} {d.cycle || ''} · <strong>Lines:</strong> {d.line_count || 0}
             <StatusChip status={d.status} />
@@ -805,6 +917,13 @@ export default function DocumentDetailPanel(props) {
                     <td style={{ padding: '3px 8px' }}>{l.or_photo_url && <img src={l.or_photo_url} alt="OR" style={{ maxWidth: 40, maxHeight: 30, borderRadius: 4, cursor: 'pointer' }} onClick={() => onPreviewImage?.(l.or_photo_url)} />}</td>
                   </tr>
                 ))}
+                {d.lines_truncated > 0 && (
+                  <tr>
+                    <td colSpan={10} style={{ padding: '4px 8px', textAlign: 'center', color: '#92400e', background: '#fef3c7', fontSize: 11, fontWeight: 700 }}>
+                      ⚠ {d.lines_truncated} additional line{d.lines_truncated === 1 ? '' : 's'} not shown — open the source Expense to review the full ledger before approving/reversing.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           )}
@@ -815,6 +934,13 @@ export default function DocumentDetailPanel(props) {
       {/* PRF/CALF Details */}
       {module === 'PRF_CALF' && (
         <div>
+          <ReversedBadge d={d} />
+          <ContractorLine d={d} />
+          <StalenessLine d={d} />
+          <LinkedRefsLine refs={[
+            ['Source Collection', d.linked_collection_id, 'PRF rebate ← CR'],
+            ['Linked Expense', d.linked_expense_id, d.linked_expense_line_count ? `${d.linked_expense_line_count} line(s)` : null],
+          ]} />
           <div style={{ marginBottom: 6 }}>
             <strong>Type:</strong> {d.doc_type} {d.prf_type ? `(${d.prf_type})` : ''}
             {(d.prf_number || d.calf_number) && <> · <strong>{d.doc_type}#:</strong> {d.prf_number || d.calf_number}</>}
@@ -916,6 +1042,12 @@ export default function DocumentDetailPanel(props) {
       {/* Credit Note Details — Phase 31R (builder existed; panel was missing) */}
       {module === 'CREDIT_NOTE' && (
         <div>
+          <ReversedBadge d={d} />
+          <ContractorLine d={d} />
+          <StalenessLine d={d} />
+          <LinkedRefsLine refs={[
+            ['Original Sale', d.original_sale_id, d.original_doc_ref || null],
+          ]} />
           <div style={{ marginBottom: 6 }}>
             {d.cn_number && <><strong>CN#:</strong> {d.cn_number} · </>}
             <strong>Date:</strong> {d.cn_date ? new Date(d.cn_date).toLocaleDateString() : '—'}
@@ -1115,6 +1247,8 @@ export default function DocumentDetailPanel(props) {
       {/* IC Transfer / IC Settlement Details */}
       {module === 'IC_TRANSFER' && d.kind === 'IC_SETTLEMENT' && (
         <div>
+          <ReversedBadge d={d} />
+          <StalenessLine d={d} />
           <div style={{ marginBottom: 6 }}>
             <strong>CR#:</strong> {d.cr_no || '—'} · <strong>Date:</strong> {d.cr_date ? new Date(d.cr_date).toLocaleDateString() : '—'}
             <StatusChip status={d.status} />
@@ -1170,6 +1304,12 @@ export default function DocumentDetailPanel(props) {
 
       {module === 'IC_TRANSFER' && d.kind !== 'IC_SETTLEMENT' && (
         <div>
+          <ReversedBadge d={d} />
+          <StalenessLine d={d} />
+          <LinkedRefsLine refs={[
+            ['Source JE Event', d.source_event_id, 'reversal must unwind both sides'],
+            ['Target JE Event', d.target_event_id],
+          ]} />
           <div style={{ marginBottom: 6 }}>
             <strong>Ref:</strong> {d.transfer_ref || '—'} · <strong>Date:</strong> {d.transfer_date ? new Date(d.transfer_date).toLocaleDateString() : '—'}
             {d.csi_ref && <> · <strong>CSI:</strong> {d.csi_ref}</>}
@@ -1261,6 +1401,12 @@ export default function DocumentDetailPanel(props) {
       {/* JOURNAL single entry */}
       {module === 'JOURNAL' && !d.is_batch && (
         <div>
+          <ReversedBadge d={d} />
+          <StalenessLine d={d} />
+          <LinkedRefsLine refs={[
+            ['Source Event', d.source_event_id, 'TransactionEvent that materialized this JE'],
+            ['Corrects JE', d.corrects_je_id, d.corrects_je_number || null],
+          ]} />
           <div style={{ marginBottom: 6 }}>
             <strong>Ref:</strong> {d.je_number || '—'} · <strong>Date:</strong> {d.je_date ? new Date(d.je_date).toLocaleDateString() : '—'}
             {d.period && <> · <strong>Period:</strong> {d.period}</>}
@@ -1440,6 +1586,12 @@ export default function DocumentDetailPanel(props) {
       {/* Petty Cash Details */}
       {module === 'PETTY_CASH' && (
         <div>
+          <StalenessLine d={d} />
+          <LinkedRefsLine refs={[
+            ['Source Collection', d.linked_collection_id, 'reversing deposit unsettles CR'],
+            ['Source Sale', d.linked_sales_line_id, 'reversing deposit unsettles cash CSI'],
+            ['Remittance', d.remittance_id, 'cascade to PettyCashRemittance'],
+          ]} />
           <div style={{ marginBottom: 6 }}>
             <strong>Txn#:</strong> {d.txn_number || d.txn_no || '—'} · <strong>Type:</strong> <span style={{ padding: '2px 6px', borderRadius: 4, background: d.txn_type === 'DEPOSIT' ? '#dcfce7' : '#fef3c7', color: d.txn_type === 'DEPOSIT' ? '#166534' : '#854d0e', fontSize: 11, fontWeight: 700 }}>{d.txn_type || '—'}</span> · <strong>Date:</strong> {d.txn_date ? new Date(d.txn_date).toLocaleDateString() : '—'}
             <StatusChip status={d.status} />
