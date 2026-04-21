@@ -897,6 +897,11 @@ const SEED_DEFAULTS = {
     { code: 'PAYROLL', label: 'Payslips', metadata: { roles: ['admin', 'finance', 'president'], description: 'Review and approve employee payslips' } },
     { code: 'KPI', label: 'KPI Ratings', metadata: { roles: ['admin', 'president'], description: 'Review and approve KPI self-ratings' } },
     { code: 'SALES', label: 'Sales / CSI', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated sales invoices' } },
+    // Opening AR is pre-cutover historical receivables — higher fraud risk than
+    // regular sales (fabricated balances, self-assigned commissions). Kept as a
+    // separate module key so subscribers can open-post regular SALES while
+    // keeping Opening AR gated. Setting metadata.roles = null opens it up.
+    { code: 'OPENING_AR', label: 'Opening AR (Pre-Cutover)', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post pre-cutover historical CSI entries (Opening AR). Kept separate from regular SALES gate so subscribers can tighten or loosen each independently.' } },
     { code: 'COLLECTION', label: 'Collections / CR', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated collection receipts' } },
     { code: 'SMER', label: 'SMER', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated travel/expense reimbursements' } },
     { code: 'CAR_LOGBOOK', label: 'Car Logbook', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated car logbook cycle (period+cycle wrapper over per-day docs)' } },
@@ -1190,6 +1195,7 @@ const SEED_DEFAULTS = {
   MODULE_REJECTION_CONFIG: [
     // ── Group A — modules with dedicated reject handlers in universalApprovalController ──
     { code: 'SALES',             label: 'Sales / CSI — Rejection Config',   metadata: { rejected_status: 'ERROR',    reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'ERROR'],            banner_tone: 'danger', description: 'Sales line items rejected from Approval Hub' } },
+    { code: 'OPENING_AR',        label: 'Opening AR — Rejection Config',    metadata: { rejected_status: 'ERROR',    reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'ERROR'],            banner_tone: 'danger', description: 'Opening AR entries rejected from Approval Hub (same SalesLine status flow as SALES)' } },
     { code: 'COLLECTION',        label: 'Collections / CR — Rejection Config', metadata: { rejected_status: 'ERROR', reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'ERROR'],            banner_tone: 'danger', description: 'Collection receipts rejected from Approval Hub' } },
     { code: 'CREDIT_NOTE',       label: 'Credit Notes / Returns — Rejection Config', metadata: { rejected_status: 'ERROR', reason_field: 'rejection_reason', resubmit_allowed: true, editable_statuses: ['DRAFT', 'ERROR'],       banner_tone: 'danger', description: 'Credit notes rejected from Approval Hub (returns to DRAFT/ERROR for correction)' } },
     { code: 'SMER',              label: 'SMER — Rejection Config',            metadata: { rejected_status: 'ERROR',  reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'ERROR'],            banner_tone: 'danger', description: 'SMER documents rejected from Approval Hub' } },

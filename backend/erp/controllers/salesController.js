@@ -767,21 +767,31 @@ const submitSales = catchAsync(async (req, res) => {
     });
   }
 
-  // Authority matrix gate — single gate for batch
+  // Authority matrix gate — split batch by source so Opening AR (pre-cutover
+  // historical AR, higher fraud risk) gates on its own MODULE_DEFAULT_ROLES
+  // entry instead of inheriting the regular SALES roles.
   const { gateApproval } = require('../services/approvalService');
-  const salesTotalAmount = validRows.reduce((sum, r) => sum + (r.invoice_total || 0), 0);
-  const gated = await gateApproval({
-    entityId: req.entityId,
-    module: 'SALES',
-    docType: validRows[0]?.sale_type || 'CSI',
-    docId: validRows[0]._id,
-    docRef: validRows.map(r => r.doc_ref || r.invoice_number).filter(Boolean).join(', '),
-    amount: salesTotalAmount,
-    description: `Submit ${validRows.length} sales entr${validRows.length === 1 ? 'y' : 'ies'} (total ₱${salesTotalAmount.toLocaleString()})`,
-    requesterId: req.user._id,
-    requesterName: req.user.name || req.user.email,
-  }, res);
-  if (gated) return;
+  const groups = [];
+  const salesRows = validRows.filter(r => r.source !== 'OPENING_AR');
+  const openingArRows = validRows.filter(r => r.source === 'OPENING_AR');
+  if (salesRows.length) groups.push({ module: 'SALES', label: 'sales', rows: salesRows });
+  if (openingArRows.length) groups.push({ module: 'OPENING_AR', label: 'Opening AR', rows: openingArRows });
+
+  for (const group of groups) {
+    const groupTotal = group.rows.reduce((sum, r) => sum + (r.invoice_total || 0), 0);
+    const gated = await gateApproval({
+      entityId: req.entityId,
+      module: group.module,
+      docType: group.rows[0]?.sale_type || 'CSI',
+      docId: group.rows[0]._id,
+      docRef: group.rows.map(r => r.doc_ref || r.invoice_number).filter(Boolean).join(', '),
+      amount: groupTotal,
+      description: `Submit ${group.rows.length} ${group.label} entr${group.rows.length === 1 ? 'y' : 'ies'} (total ₱${groupTotal.toLocaleString()})`,
+      requesterId: req.user._id,
+      requesterName: req.user.name || req.user.email,
+    }, res);
+    if (gated) return;
+  }
 
   // Period lock check — prevent posting to closed/locked months
   // OPENING_AR rows bypass the lock (pre-cutover dates fall in closed periods by design)
