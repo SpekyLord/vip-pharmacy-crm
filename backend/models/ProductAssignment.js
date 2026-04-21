@@ -133,7 +133,7 @@ productAssignmentSchema.statics.getByUser = function (userId) {
     assignedBy: userId,
     status: 'active',
   })
-    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province')
     .sort({ createdAt: -1 });
 };
 
@@ -143,7 +143,7 @@ productAssignmentSchema.statics.getDoctorsForProduct = function (productId) {
     product: productId,
     status: 'active',
   })
-    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province')
     .sort({ priority: 1 });
 };
 

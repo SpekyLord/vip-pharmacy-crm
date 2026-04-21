@@ -14,31 +14,13 @@
  */
 const mongoose = require('mongoose');
 
-// ── Deduction Line Sub-Schema (lookup-driven) ──
-const deductionLineSchema = new mongoose.Schema({
-  deduction_type: { type: String, required: true },   // Lookup: INCOME_DEDUCTION_TYPE
-  deduction_label: { type: String, required: true },   // Snapshot of label at entry time
-  amount: { type: Number, required: true, min: 0 },
-  description: { type: String, default: '' },          // BDM explains: "Personal grocery at SM, April 5"
-  entered_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  entered_at: { type: Date, default: Date.now },
-  // Finance verification
-  status: {
-    type: String,
-    default: 'PENDING',
-    enum: ['PENDING', 'VERIFIED', 'CORRECTED', 'REJECTED']
-  },
-  verified_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  verified_at: { type: Date },
-  original_amount: { type: Number },                   // Preserved when Finance corrects
-  finance_note: { type: String, default: '' },         // Finance explains correction/rejection
-  auto_source: { type: String, default: null },         // 'CALF' or 'SCHEDULE'
-  // Link to DeductionSchedule (for auto_source='SCHEDULE')
-  schedule_ref: {
-    schedule_id: { type: mongoose.Schema.Types.ObjectId, ref: 'DeductionSchedule' },
-    installment_id: { type: mongoose.Schema.Types.ObjectId }
-  }
-}, { _id: true });
+// Phase G1.4 — converged onto the shared deduction-line sub-schema
+// (backend/erp/models/schemas/deductionLine.js). The shared schema is a
+// byte-identical superset of the Phase G1.2 inline shape, giving contractor
+// IncomeReport and employee Payslip a single transparency contract. Extending
+// auto_source semantics (e.g. a subscriber adding a new auto-injector) now
+// only requires a service-layer change; no schema migration.
+const deductionLineSchema = require('./schemas/deductionLine');
 
 const incomeReportSchema = new mongoose.Schema({
   entity_id: {

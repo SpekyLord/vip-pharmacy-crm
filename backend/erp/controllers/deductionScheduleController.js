@@ -21,8 +21,11 @@ const {
 // ═══ BDM Endpoints ═══
 
 const createSchedule = catchAsync(async (req, res) => {
+  // BDM self-service path — explicit owner disambiguation (object form) so the
+  // XOR invariant is machine-checked in the service even if the route is ever
+  // opened to non-contractor roles. req.bdmId is set by tenantFilter.
   const schedule = await createScheduleSvc(
-    req.entityId, req.bdmId, req.body, req.user._id, false
+    req.entityId, { bdm_id: req.bdmId }, req.body, req.user._id, false
   );
 
   // Phase G4.2 — unify with the Approval Hub. Route a PENDING_APPROVAL schedule
@@ -80,6 +83,7 @@ const getScheduleById = catchAsync(async (req, res) => {
 
   const schedule = await DeductionSchedule.findOne(filter)
     .populate('bdm_id', 'name email')
+    .populate('person_id', 'full_name person_type department')
     .populate('approved_by', 'name')
     .populate('installments.verified_by', 'name')
     .populate('created_by', 'name');
@@ -96,10 +100,20 @@ const getScheduleList = catchAsync(async (req, res) => {
   const filter = { entity_id: req.entityId };
   if (req.query.status) filter.status = req.query.status;
   if (req.query.bdm_id) filter.bdm_id = req.query.bdm_id;
+  // Phase G1.4 — Finance can filter to employee-owner schedules too. Either
+  // filter narrows independently; supplying both returns schedules owned by
+  // that specific bdm AND person (unlikely but safe — no collision thanks to
+  // the XOR invariant).
+  if (req.query.person_id) filter.person_id = req.query.person_id;
+  // owner_type=BDM | EMPLOYEE — convenience flag for list views that want one
+  // tab per owner class without knowing individual ids.
+  if (req.query.owner_type === 'BDM') filter.bdm_id = { $exists: true };
+  else if (req.query.owner_type === 'EMPLOYEE') filter.person_id = { $exists: true };
   if (req.query.deduction_type) filter.deduction_type = req.query.deduction_type;
 
   const schedules = await DeductionSchedule.find(filter)
     .populate('bdm_id', 'name email')
+    .populate('person_id', 'full_name person_type department')
     .populate('approved_by', 'name')
     .sort({ created_at: -1 })
     .lean();
@@ -142,12 +156,22 @@ const adjustInstallment = catchAsync(async (req, res) => {
 });
 
 const financeCreateSchedule = catchAsync(async (req, res) => {
-  const { bdm_id } = req.body;
-  if (!bdm_id) {
-    return res.status(400).json({ success: false, message: 'bdm_id is required' });
+  const { bdm_id, person_id } = req.body;
+  // Phase G1.4 — Finance can create either a BDM schedule (installments inject
+  // into IncomeReport) or an Employee schedule (installments inject into
+  // Payslip). XOR enforced both in the service and at the model level.
+  if (!bdm_id && !person_id) {
+    return res.status(400).json({ success: false, message: 'bdm_id (contractor) or person_id (employee) is required' });
+  }
+  if (bdm_id && person_id) {
+    return res.status(400).json({ success: false, message: 'Provide exactly one of bdm_id or person_id, not both' });
   }
   const schedule = await createScheduleSvc(
-    req.entityId, bdm_id, req.body, req.user._id, true
+    req.entityId,
+    bdm_id ? { bdm_id } : { person_id },
+    req.body,
+    req.user._id,
+    true
   );
   res.status(201).json({ success: true, data: schedule });
 });

@@ -22,55 +22,99 @@
 const Visit = require('../../models/Visit');
 const Doctor = require('../../models/Doctor');
 
+// Manila (UTC+8) — all day boundaries are anchored to Manila calendar days so a
+// 1am-Manila visit (which lands at 5pm UTC the previous day) does not drop out
+// of the query window when the server runs in UTC. Matches the inline +08:00
+// convention used across Visit.js and the aggregation $dateToString below.
+const MANILA_TZ = '+08:00';
+
+function toManilaDateKey(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  return new Date(d.getTime() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+function manilaDayStart(dateKey) {
+  return new Date(`${dateKey}T00:00:00${MANILA_TZ}`);
+}
+
+function manilaDayEnd(dateKey) {
+  return new Date(`${dateKey}T23:59:59.999${MANILA_TZ}`);
+}
+
 /**
  * Get MD visit count for a BDM on a specific date
  * @param {String} bdmUserId - CRM User._id of the BDM
- * @param {Date|String} date - The date to count visits for
- * @returns {Promise<Number>} Count of completed visits on that date
+ * @param {Date|String} date - The date to count visits for (Manila calendar day)
+ * @returns {Promise<Number>} Count of DISTINCT MDs visited that day (per-person)
  */
 async function getDailyMdCount(bdmUserId, date) {
-  const d = new Date(date);
-  const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-  const dayEnd = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+  const dateKey = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date)
+    ? date.slice(0, 10)
+    : toManilaDateKey(date);
 
-  return Visit.countDocuments({
+  const distinct = await Visit.distinct('doctor', {
     user: bdmUserId,
-    visitDate: { $gte: dayStart, $lte: dayEnd },
+    visitDate: { $gte: manilaDayStart(dateKey), $lte: manilaDayEnd(dateKey) },
     status: 'completed'
   });
+  return distinct.length;
 }
 
 /**
  * Get MD visit counts for a BDM across a date range (for SMER generation)
  * Returns a map of date string → visit count
+ *
+ * Phase G1.5 (Apr 2026):
+ * - Optional `skipFlagged` flag — when true, visits with non-empty photoFlags
+ *   (duplicate_photo, date_mismatch, etc.) are excluded from the count. Flagged
+ *   visits stay in CRM (audit trail preserved); only per-diem credit drops.
+ * - `locations` now uses structured `locality, province` from Doctor (per Rule #3 +
+ *   user preference for "Iloilo City, Iloilo" style notes). Falls back to raw
+ *   clinicOfficeAddress when a legacy doctor has no locality/province yet (post
+ *   backfill, all doctors should have these fields).
+ *
  * @param {String} bdmUserId
  * @param {Date|String} startDate
  * @param {Date|String} endDate
- * @returns {Promise<Object>} { "2026-04-01": 8, "2026-04-02": 5, ... }
+ * @param {Object} [opts]
+ * @param {Boolean} [opts.skipFlagged=false] - Skip visits with photoFlags (per-diem integrity)
+ * @returns {Promise<Object>} { "2026-04-01": { md_count, unique_doctors, locations }, ... }
  */
-async function getDailyMdCounts(bdmUserId, startDate, endDate) {
-  const start = new Date(startDate);
-  start.setHours(0, 0, 0, 0);
-  const end = new Date(endDate);
-  end.setHours(23, 59, 59, 999);
+async function getDailyMdCounts(bdmUserId, startDate, endDate, opts = {}) {
+  const { skipFlagged = false } = opts;
+  // Accept Date objects or YYYY-MM-DD strings; normalize to Manila calendar keys.
+  const startKey = typeof startDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(startDate)
+    ? startDate.slice(0, 10)
+    : toManilaDateKey(startDate);
+  const endKey = typeof endDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(endDate)
+    ? endDate.slice(0, 10)
+    : toManilaDateKey(endDate);
+
+  const baseMatch = {
+    user: typeof bdmUserId === 'string'
+      ? require('mongoose').Types.ObjectId.createFromHexString(bdmUserId)
+      : bdmUserId,
+    visitDate: { $gte: manilaDayStart(startKey), $lte: manilaDayEnd(endKey) },
+    status: 'completed'
+  };
+
+  // Phase G1.5 — flagged-photo filter. Non-flagged visits either have photoFlags
+  // missing (sparse index) or empty array. Match both shapes.
+  if (skipFlagged) {
+    baseMatch.$or = [
+      { photoFlags: { $exists: false } },
+      { photoFlags: { $size: 0 } }
+    ];
+  }
 
   const pipeline = [
+    { $match: baseMatch },
     {
-      $match: {
-        user: typeof bdmUserId === 'string'
-          ? require('mongoose').Types.ObjectId.createFromHexString(bdmUserId)
-          : bdmUserId,
-        visitDate: { $gte: start, $lte: end },
-        status: 'completed'
-      }
-    },
-    {
-      // Group by date (YYYY-MM-DD)
+      // Group by Manila calendar day (YYYY-MM-DD), de-dup doctors per day.
       $group: {
         _id: {
-          $dateToString: { format: '%Y-%m-%d', date: '$visitDate', timezone: '+08:00' }
+          $dateToString: { format: '%Y-%m-%d', date: '$visitDate', timezone: MANILA_TZ }
         },
-        md_count: { $sum: 1 },
         doctors_visited: { $addToSet: '$doctor' }
       }
     },
@@ -89,22 +133,35 @@ async function getDailyMdCounts(bdmUserId, startDate, endDate) {
   const doctorMap = new Map();
   if (allDoctorIds.size > 0) {
     const doctors = await Doctor.find({ _id: { $in: [...allDoctorIds] } })
-      .select('firstName lastName clinicOfficeAddress').lean();
+      .select('firstName lastName clinicOfficeAddress locality province').lean();
     for (const d of doctors) doctorMap.set(d._id.toString(), d);
   }
 
   const counts = {};
   for (const r of results) {
-    // Build location summary from visited doctors' addresses
-    const addresses = r.doctors_visited
-      .map(id => doctorMap.get(id.toString())?.clinicOfficeAddress)
+    // Phase G1.5 — build location summary from structured locality+province.
+    // Format: "Iloilo City, Iloilo" or "Digos City, Davao del Sur".
+    // Fallback to clinicOfficeAddress for pre-backfill legacy doctors.
+    const locationLabels = r.doctors_visited
+      .map(id => {
+        const d = doctorMap.get(id.toString());
+        if (!d) return null;
+        if (d.locality && d.province) return `${d.locality}, ${d.province}`;
+        if (d.locality) return d.locality;
+        if (d.clinicOfficeAddress) return d.clinicOfficeAddress;
+        return null;
+      })
       .filter(Boolean);
-    const uniqueAddresses = [...new Set(addresses)];
+    const uniqueLocations = [...new Set(locationLabels)];
 
+    // md_count is "per-person" — count DISTINCT MDs visited that day, not raw
+    // visit rows. The weekly-unique index makes these equal today, but naming
+    // them identically removes ambiguity if that constraint ever loosens.
+    const uniqueMdCount = r.doctors_visited.length;
     counts[r._id] = {
-      md_count: r.md_count,
-      unique_doctors: r.doctors_visited.length,
-      locations: uniqueAddresses.join(', ')
+      md_count: uniqueMdCount,
+      unique_doctors: uniqueMdCount,
+      locations: uniqueLocations.join('; ')
     };
   }
   return counts;
@@ -118,16 +175,16 @@ async function getDailyMdCounts(bdmUserId, startDate, endDate) {
  * @returns {Promise<Array>} [{ doctor_id, doctor_name, visitDate, ... }]
  */
 async function getDailyVisitDetails(bdmUserId, date) {
-  const d = new Date(date);
-  const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-  const dayEnd = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+  const dateKey = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date)
+    ? date.slice(0, 10)
+    : toManilaDateKey(date);
 
   return Visit.find({
     user: bdmUserId,
-    visitDate: { $gte: dayStart, $lte: dayEnd },
+    visitDate: { $gte: manilaDayStart(dateKey), $lte: manilaDayEnd(dateKey) },
     status: 'completed'
   })
-    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province')
     .select('doctor visitDate visitType engagementTypes weekLabel')
     .sort({ visitDate: 1 })
     .lean();

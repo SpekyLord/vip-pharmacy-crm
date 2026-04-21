@@ -2163,6 +2163,187 @@ const SEED_DEFAULTS = {
   KPI_VARIANCE_THRESHOLDS: [
     { code: 'GLOBAL', label: 'Fallback variance thresholds (applied when no per-KPI row exists)', insert_only_metadata: true, metadata: { warning_pct: 20, critical_pct: 40 } },
   ],
+
+  // Phase G1.5 (Apr 2026) — Per-Diem Rates per-role, subscription-ready (replaces Settings.PERDIEM_RATE_DEFAULT).
+  // Rule #3 + Rule #19: no hardcoded rates; non-pharma subscribers seed their own rows.
+  // Missing row for a role → resolvePerdiemConfig throws → payroll blocks loudly (Rule #21 "no silent fallbacks").
+  // eligibility_source: visit = CRM Visit model (pharma BDMs) | logbook = Car Logbook (drivers, Phase G1.6 stub) | manual = user logs field days | none = disabled
+  // skip_flagged: true = visits flagged by admin (duplicate photo, bad GPS) do NOT earn per-diem
+  // allow_weekend: false = weekend visits do NOT earn per-diem (pharma default); true = count Sat/Sun
+  // full_tier_threshold / half_tier_threshold: null = use existing CompProfile → Settings chain (backward compat); number = override here
+  PERDIEM_RATES: [
+    { code: 'BDM', label: 'BDM (pharma field rep) — visit-driven per-diem', insert_only_metadata: true, metadata: { rate_php: 800, eligibility_source: 'visit', skip_flagged: true, allow_weekend: false, full_tier_threshold: null, half_tier_threshold: null } },
+    { code: 'ECOMMERCE_BDM', label: 'E-commerce BDM — visit-driven per-diem', insert_only_metadata: true, metadata: { rate_php: 800, eligibility_source: 'visit', skip_flagged: true, allow_weekend: false, full_tier_threshold: null, half_tier_threshold: null } },
+  ],
+
+  // Phase G1.5 — Philippine provinces (82 rows) for structured Doctor address.
+  // code = ISO 3166-2:PH-like province code; label = human name; metadata.region = Luzon/Visayas/Mindanao macro bucket.
+  PH_PROVINCES: [
+    { code: 'ABR', label: 'Abra', metadata: { region: 'LUZON' } },
+    { code: 'AGN', label: 'Agusan del Norte', metadata: { region: 'MINDANAO' } },
+    { code: 'AGS', label: 'Agusan del Sur', metadata: { region: 'MINDANAO' } },
+    { code: 'AKL', label: 'Aklan', metadata: { region: 'VISAYAS' } },
+    { code: 'ALB', label: 'Albay', metadata: { region: 'LUZON' } },
+    { code: 'ANT', label: 'Antique', metadata: { region: 'VISAYAS' } },
+    { code: 'APA', label: 'Apayao', metadata: { region: 'LUZON' } },
+    { code: 'AUR', label: 'Aurora', metadata: { region: 'LUZON' } },
+    { code: 'BAS', label: 'Basilan', metadata: { region: 'MINDANAO' } },
+    { code: 'BAN', label: 'Bataan', metadata: { region: 'LUZON' } },
+    { code: 'BTN', label: 'Batanes', metadata: { region: 'LUZON' } },
+    { code: 'BTG', label: 'Batangas', metadata: { region: 'LUZON' } },
+    { code: 'BEN', label: 'Benguet', metadata: { region: 'LUZON' } },
+    { code: 'BIL', label: 'Biliran', metadata: { region: 'VISAYAS' } },
+    { code: 'BOH', label: 'Bohol', metadata: { region: 'VISAYAS' } },
+    { code: 'BUK', label: 'Bukidnon', metadata: { region: 'MINDANAO' } },
+    { code: 'BUL', label: 'Bulacan', metadata: { region: 'LUZON' } },
+    { code: 'CAG', label: 'Cagayan', metadata: { region: 'LUZON' } },
+    { code: 'CAN', label: 'Camarines Norte', metadata: { region: 'LUZON' } },
+    { code: 'CAS', label: 'Camarines Sur', metadata: { region: 'LUZON' } },
+    { code: 'CAM', label: 'Camiguin', metadata: { region: 'MINDANAO' } },
+    { code: 'CAP', label: 'Capiz', metadata: { region: 'VISAYAS' } },
+    { code: 'CAT', label: 'Catanduanes', metadata: { region: 'LUZON' } },
+    { code: 'CAV', label: 'Cavite', metadata: { region: 'LUZON' } },
+    { code: 'CEB', label: 'Cebu', metadata: { region: 'VISAYAS' } },
+    { code: 'COM', label: 'Davao de Oro', metadata: { region: 'MINDANAO' } },
+    { code: 'DAV', label: 'Davao del Norte', metadata: { region: 'MINDANAO' } },
+    { code: 'DAS', label: 'Davao del Sur', metadata: { region: 'MINDANAO' } },
+    { code: 'DVO', label: 'Davao Occidental', metadata: { region: 'MINDANAO' } },
+    { code: 'DAO', label: 'Davao Oriental', metadata: { region: 'MINDANAO' } },
+    { code: 'DIN', label: 'Dinagat Islands', metadata: { region: 'MINDANAO' } },
+    { code: 'EAS', label: 'Eastern Samar', metadata: { region: 'VISAYAS' } },
+    { code: 'GUI', label: 'Guimaras', metadata: { region: 'VISAYAS' } },
+    { code: 'IFU', label: 'Ifugao', metadata: { region: 'LUZON' } },
+    { code: 'ILN', label: 'Ilocos Norte', metadata: { region: 'LUZON' } },
+    { code: 'ILS', label: 'Ilocos Sur', metadata: { region: 'LUZON' } },
+    { code: 'ILI', label: 'Iloilo', metadata: { region: 'VISAYAS' } },
+    { code: 'ISA', label: 'Isabela', metadata: { region: 'LUZON' } },
+    { code: 'KAL', label: 'Kalinga', metadata: { region: 'LUZON' } },
+    { code: 'LUN', label: 'La Union', metadata: { region: 'LUZON' } },
+    { code: 'LAG', label: 'Laguna', metadata: { region: 'LUZON' } },
+    { code: 'LAN', label: 'Lanao del Norte', metadata: { region: 'MINDANAO' } },
+    { code: 'LAS', label: 'Lanao del Sur', metadata: { region: 'MINDANAO' } },
+    { code: 'LEY', label: 'Leyte', metadata: { region: 'VISAYAS' } },
+    { code: 'MAG', label: 'Maguindanao del Norte', metadata: { region: 'MINDANAO' } },
+    { code: 'MGS', label: 'Maguindanao del Sur', metadata: { region: 'MINDANAO' } },
+    { code: 'MAD', label: 'Marinduque', metadata: { region: 'LUZON' } },
+    { code: 'MAS', label: 'Masbate', metadata: { region: 'LUZON' } },
+    { code: 'MDC', label: 'Mindoro Occidental', metadata: { region: 'LUZON' } },
+    { code: 'MDR', label: 'Mindoro Oriental', metadata: { region: 'LUZON' } },
+    { code: 'MSC', label: 'Misamis Occidental', metadata: { region: 'MINDANAO' } },
+    { code: 'MSR', label: 'Misamis Oriental', metadata: { region: 'MINDANAO' } },
+    { code: 'MOU', label: 'Mountain Province', metadata: { region: 'LUZON' } },
+    { code: 'NEC', label: 'Negros Occidental', metadata: { region: 'VISAYAS' } },
+    { code: 'NER', label: 'Negros Oriental', metadata: { region: 'VISAYAS' } },
+    { code: 'NSA', label: 'Northern Samar', metadata: { region: 'VISAYAS' } },
+    { code: 'NUE', label: 'Nueva Ecija', metadata: { region: 'LUZON' } },
+    { code: 'NUV', label: 'Nueva Vizcaya', metadata: { region: 'LUZON' } },
+    { code: 'PLW', label: 'Palawan', metadata: { region: 'LUZON' } },
+    { code: 'PAM', label: 'Pampanga', metadata: { region: 'LUZON' } },
+    { code: 'PAN', label: 'Pangasinan', metadata: { region: 'LUZON' } },
+    { code: 'QUE', label: 'Quezon', metadata: { region: 'LUZON' } },
+    { code: 'QUI', label: 'Quirino', metadata: { region: 'LUZON' } },
+    { code: 'RIZ', label: 'Rizal', metadata: { region: 'LUZON' } },
+    { code: 'ROM', label: 'Romblon', metadata: { region: 'LUZON' } },
+    { code: 'WSA', label: 'Samar', metadata: { region: 'VISAYAS' } },
+    { code: 'SAR', label: 'Sarangani', metadata: { region: 'MINDANAO' } },
+    { code: 'SIQ', label: 'Siquijor', metadata: { region: 'VISAYAS' } },
+    { code: 'SOR', label: 'Sorsogon', metadata: { region: 'LUZON' } },
+    { code: 'SCO', label: 'South Cotabato', metadata: { region: 'MINDANAO' } },
+    { code: 'SLE', label: 'Southern Leyte', metadata: { region: 'VISAYAS' } },
+    { code: 'SUK', label: 'Sultan Kudarat', metadata: { region: 'MINDANAO' } },
+    { code: 'SLU', label: 'Sulu', metadata: { region: 'MINDANAO' } },
+    { code: 'SUN', label: 'Surigao del Norte', metadata: { region: 'MINDANAO' } },
+    { code: 'SUR', label: 'Surigao del Sur', metadata: { region: 'MINDANAO' } },
+    { code: 'TAR', label: 'Tarlac', metadata: { region: 'LUZON' } },
+    { code: 'TAW', label: 'Tawi-Tawi', metadata: { region: 'MINDANAO' } },
+    { code: 'ZMB', label: 'Zambales', metadata: { region: 'LUZON' } },
+    { code: 'ZAN', label: 'Zamboanga del Norte', metadata: { region: 'MINDANAO' } },
+    { code: 'ZAS', label: 'Zamboanga del Sur', metadata: { region: 'MINDANAO' } },
+    { code: 'ZSI', label: 'Zamboanga Sibugay', metadata: { region: 'MINDANAO' } },
+    { code: 'MNL', label: 'Metro Manila', metadata: { region: 'LUZON' } },
+    { code: 'NCR', label: 'NCR (National Capital Region)', metadata: { region: 'LUZON' } },
+  ],
+
+  // Phase G1.5 — Starter Philippine localities (cities + municipalities). Admin adds more via Control Center.
+  // code = SLUG derived from label+province; metadata.type = 'city'|'municipality'; metadata.province_code matches PH_PROVINCES.code.
+  // Seeded with major cities in VIP's market (Western Visayas, Mindanao) + Metro Manila. ~50 rows starter set.
+  PH_LOCALITIES: [
+    // Iloilo
+    { code: 'ILOILO_CITY_ILI', label: 'Iloilo City', metadata: { type: 'city', province_code: 'ILI' } },
+    { code: 'PASSI_ILI', label: 'Passi City', metadata: { type: 'city', province_code: 'ILI' } },
+    { code: 'OTON_ILI', label: 'Oton', metadata: { type: 'municipality', province_code: 'ILI' } },
+    { code: 'POTOTAN_ILI', label: 'Pototan', metadata: { type: 'municipality', province_code: 'ILI' } },
+    { code: 'SANTA_BARBARA_ILI', label: 'Santa Barbara', metadata: { type: 'municipality', province_code: 'ILI' } },
+    // Guimaras
+    { code: 'JORDAN_GUI', label: 'Jordan', metadata: { type: 'municipality', province_code: 'GUI' } },
+    // Capiz
+    { code: 'ROXAS_CITY_CAP', label: 'Roxas City', metadata: { type: 'city', province_code: 'CAP' } },
+    // Aklan
+    { code: 'KALIBO_AKL', label: 'Kalibo', metadata: { type: 'municipality', province_code: 'AKL' } },
+    // Antique
+    { code: 'SAN_JOSE_ANT', label: 'San Jose de Buenavista', metadata: { type: 'municipality', province_code: 'ANT' } },
+    // Negros Occidental
+    { code: 'BACOLOD_CITY_NEC', label: 'Bacolod City', metadata: { type: 'city', province_code: 'NEC' } },
+    { code: 'SILAY_NEC', label: 'Silay City', metadata: { type: 'city', province_code: 'NEC' } },
+    { code: 'BAGO_NEC', label: 'Bago City', metadata: { type: 'city', province_code: 'NEC' } },
+    { code: 'KABANKALAN_NEC', label: 'Kabankalan City', metadata: { type: 'city', province_code: 'NEC' } },
+    // Negros Oriental
+    { code: 'DUMAGUETE_NER', label: 'Dumaguete City', metadata: { type: 'city', province_code: 'NER' } },
+    // Cebu
+    { code: 'CEBU_CITY_CEB', label: 'Cebu City', metadata: { type: 'city', province_code: 'CEB' } },
+    { code: 'MANDAUE_CEB', label: 'Mandaue City', metadata: { type: 'city', province_code: 'CEB' } },
+    { code: 'LAPU_LAPU_CEB', label: 'Lapu-Lapu City', metadata: { type: 'city', province_code: 'CEB' } },
+    { code: 'TOLEDO_CEB', label: 'Toledo City', metadata: { type: 'city', province_code: 'CEB' } },
+    // Bohol
+    { code: 'TAGBILARAN_BOH', label: 'Tagbilaran City', metadata: { type: 'city', province_code: 'BOH' } },
+    // Leyte
+    { code: 'TACLOBAN_LEY', label: 'Tacloban City', metadata: { type: 'city', province_code: 'LEY' } },
+    { code: 'ORMOC_LEY', label: 'Ormoc City', metadata: { type: 'city', province_code: 'LEY' } },
+    // Davao del Sur
+    { code: 'DIGOS_DAS', label: 'Digos City', metadata: { type: 'city', province_code: 'DAS' } },
+    // Davao del Norte
+    { code: 'TAGUM_DAV', label: 'Tagum City', metadata: { type: 'city', province_code: 'DAV' } },
+    { code: 'PANABO_DAV', label: 'Panabo City', metadata: { type: 'city', province_code: 'DAV' } },
+    // Davao City is its own "province" equivalent but commonly grouped with Davao del Sur
+    { code: 'DAVAO_CITY_DAS', label: 'Davao City', metadata: { type: 'city', province_code: 'DAS' } },
+    // Misamis Oriental
+    { code: 'CAGAYAN_DE_ORO_MSR', label: 'Cagayan de Oro City', metadata: { type: 'city', province_code: 'MSR' } },
+    // Misamis Occidental
+    { code: 'OZAMIZ_MSC', label: 'Ozamiz City', metadata: { type: 'city', province_code: 'MSC' } },
+    // Zamboanga del Sur
+    { code: 'ZAMBOANGA_CITY_ZAS', label: 'Zamboanga City', metadata: { type: 'city', province_code: 'ZAS' } },
+    { code: 'PAGADIAN_ZAS', label: 'Pagadian City', metadata: { type: 'city', province_code: 'ZAS' } },
+    // South Cotabato
+    { code: 'GENSAN_SCO', label: 'General Santos City', metadata: { type: 'city', province_code: 'SCO' } },
+    { code: 'KORONADAL_SCO', label: 'Koronadal City', metadata: { type: 'city', province_code: 'SCO' } },
+    // Bukidnon
+    { code: 'MALAYBALAY_BUK', label: 'Malaybalay City', metadata: { type: 'city', province_code: 'BUK' } },
+    { code: 'VALENCIA_BUK', label: 'Valencia City', metadata: { type: 'city', province_code: 'BUK' } },
+    // Agusan del Norte
+    { code: 'BUTUAN_AGN', label: 'Butuan City', metadata: { type: 'city', province_code: 'AGN' } },
+    // Surigao del Norte
+    { code: 'SURIGAO_CITY_SUN', label: 'Surigao City', metadata: { type: 'city', province_code: 'SUN' } },
+    // Metro Manila (selected — admin adds rest as needed)
+    { code: 'MANILA_MNL', label: 'Manila', metadata: { type: 'city', province_code: 'MNL' } },
+    { code: 'QUEZON_CITY_MNL', label: 'Quezon City', metadata: { type: 'city', province_code: 'MNL' } },
+    { code: 'MAKATI_MNL', label: 'Makati', metadata: { type: 'city', province_code: 'MNL' } },
+    { code: 'PASIG_MNL', label: 'Pasig', metadata: { type: 'city', province_code: 'MNL' } },
+    { code: 'TAGUIG_MNL', label: 'Taguig', metadata: { type: 'city', province_code: 'MNL' } },
+    { code: 'MANDALUYONG_MNL', label: 'Mandaluyong', metadata: { type: 'city', province_code: 'MNL' } },
+    { code: 'PASAY_MNL', label: 'Pasay', metadata: { type: 'city', province_code: 'MNL' } },
+    { code: 'PARANAQUE_MNL', label: 'Parañaque', metadata: { type: 'city', province_code: 'MNL' } },
+    { code: 'LAS_PINAS_MNL', label: 'Las Piñas', metadata: { type: 'city', province_code: 'MNL' } },
+    { code: 'MUNTINLUPA_MNL', label: 'Muntinlupa', metadata: { type: 'city', province_code: 'MNL' } },
+    { code: 'CALOOCAN_MNL', label: 'Caloocan', metadata: { type: 'city', province_code: 'MNL' } },
+    { code: 'MARIKINA_MNL', label: 'Marikina', metadata: { type: 'city', province_code: 'MNL' } },
+    // Cavite/Laguna/Batangas starter cities
+    { code: 'IMUS_CAV', label: 'Imus City', metadata: { type: 'city', province_code: 'CAV' } },
+    { code: 'BACOOR_CAV', label: 'Bacoor City', metadata: { type: 'city', province_code: 'CAV' } },
+    { code: 'STA_ROSA_LAG', label: 'Santa Rosa City', metadata: { type: 'city', province_code: 'LAG' } },
+    { code: 'CALAMBA_LAG', label: 'Calamba City', metadata: { type: 'city', province_code: 'LAG' } },
+    { code: 'BATANGAS_CITY_BTG', label: 'Batangas City', metadata: { type: 'city', province_code: 'BTG' } },
+    { code: 'LIPA_BTG', label: 'Lipa City', metadata: { type: 'city', province_code: 'BTG' } },
+  ],
 };
 
 // List all distinct categories for current entity

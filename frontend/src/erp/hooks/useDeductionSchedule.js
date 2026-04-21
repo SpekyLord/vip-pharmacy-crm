@@ -17,6 +17,9 @@ export default function useDeductionSchedule() {
   const cancelSchedule = (id, reason) => api.post(`/deduction-schedules/${id}/cancel`, { reason });
   const earlyPayoff = (id, data) => api.post(`/deduction-schedules/${id}/early-payoff`, data);
   const adjustInstallment = (id, instId, data) => api.put(`/deduction-schedules/${id}/installments/${instId}`, data);
+  // Phase G1.4 — `data` may carry EITHER bdm_id (contractor schedule) OR
+  // person_id (employee schedule, injects into Payslip instead of IncomeReport).
+  // XOR enforced by the backend.
   const financeCreateSchedule = (data) => api.post('/deduction-schedules/finance-create', data);
 
   // ═══ BDM Self-Service ═══

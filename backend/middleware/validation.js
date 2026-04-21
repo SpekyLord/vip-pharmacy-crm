@@ -206,6 +206,18 @@ const createDoctorValidation = [
     .optional()
     .isLength({ max: 500 })
     .withMessage('Clinic/Office address cannot exceed 500 characters'),
+  // Phase G1.5 — structured locality/province (source of truth for SMER per-diem notes).
+  // Required on CREATE so new Doctor records carry the structured address from day one.
+  body('locality')
+    .notEmpty()
+    .withMessage('Locality (city/municipality) is required — pick from PH_LOCALITIES')
+    .isLength({ max: 100 })
+    .withMessage('Locality cannot exceed 100 characters'),
+  body('province')
+    .notEmpty()
+    .withMessage('Province is required — pick from PH_PROVINCES')
+    .isLength({ max: 100 })
+    .withMessage('Province cannot exceed 100 characters'),
   body('visitFrequency')
     .optional()
     .isIn([2, 4])
@@ -277,6 +289,16 @@ const updateDoctorValidation = [
     .optional()
     .isLength({ max: 500 })
     .withMessage('Clinic/Office address cannot exceed 500 characters'),
+  // Phase G1.5 — locality/province optional on UPDATE so admin can edit other
+  // fields on legacy records before backfill completes. When provided, length-validated.
+  body('locality')
+    .optional()
+    .isLength({ max: 100 })
+    .withMessage('Locality cannot exceed 100 characters'),
+  body('province')
+    .optional()
+    .isLength({ max: 100 })
+    .withMessage('Province cannot exceed 100 characters'),
   body('visitFrequency')
     .optional()
     .isIn([2, 4])
@@ -501,6 +523,17 @@ const createClientValidation = [
     .optional()
     .isLength({ max: 500 })
     .withMessage('Clinic/Office address cannot exceed 500 characters'),
+  // Phase G1.5 — Client mirror of Doctor locality/province. Required on CREATE.
+  body('locality')
+    .notEmpty()
+    .withMessage('Locality (city/municipality) is required — pick from PH_LOCALITIES')
+    .isLength({ max: 100 })
+    .withMessage('Locality cannot exceed 100 characters'),
+  body('province')
+    .notEmpty()
+    .withMessage('Province is required — pick from PH_PROVINCES')
+    .isLength({ max: 100 })
+    .withMessage('Province cannot exceed 100 characters'),
   body('phone')
     .optional()
     .custom(isValidPhone),
@@ -565,6 +598,15 @@ const updateClientValidation = [
     .optional()
     .isLength({ max: 500 })
     .withMessage('Clinic/Office address cannot exceed 500 characters'),
+  // Phase G1.5 — locality/province optional on UPDATE for legacy Client cleanup flow.
+  body('locality')
+    .optional()
+    .isLength({ max: 100 })
+    .withMessage('Locality cannot exceed 100 characters'),
+  body('province')
+    .optional()
+    .isLength({ max: 100 })
+    .withMessage('Province cannot exceed 100 characters'),
   body('phone')
     .optional()
     .custom(isValidPhone),

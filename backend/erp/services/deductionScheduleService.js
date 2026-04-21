@@ -2,7 +2,11 @@
  * Deduction Schedule Service — CRUD + business logic for recurring/non-recurring deductions
  *
  * Contractors create schedules (PENDING_APPROVAL). Finance approves → ACTIVE.
- * Active schedule installments auto-inject into payslips via incomeCalc.js.
+ * Active schedule installments auto-inject into payslips via incomeCalc.js
+ * (BDM owner) or payslipCalc.js (employee owner, Phase G1.4).
+ *
+ * Owner is XOR: createSchedule takes either `bdm_id` (contractor) or `person_id`
+ * (employee). Validator in DeductionSchedule pre-save enforces the invariant.
  */
 const mongoose = require('mongoose');
 const DeductionSchedule = require('../models/DeductionSchedule');
@@ -48,8 +52,20 @@ async function closeApprovalRequest(docId, decisionStatus, userId, reason) {
 
 /**
  * Create a new deduction schedule with pre-generated installments.
+ *
+ * Owner is XOR: pass `{ bdm_id }` for contractors (schedule installments feed
+ * IncomeReport.deduction_lines) or `{ person_id }` for employees (feed
+ * Payslip.deduction_lines). Legacy callers that pass a plain `bdmId` string
+ * as the second argument continue to work (back-compat for the BDM path).
+ *
+ * @param {String} entityId
+ * @param {String|Object} ownerOrBdmId — legacy BDM id string, or
+ *   `{ bdm_id }` / `{ person_id }` for explicit owner selection.
+ * @param {Object} data — deduction fields
+ * @param {String} userId — acting user
+ * @param {Boolean} isFinance — when true, schedule activates immediately (bypasses the gate)
  */
-async function createSchedule(entityId, bdmId, data, userId, isFinance = false) {
+async function createSchedule(entityId, ownerOrBdmId, data, userId, isFinance = false) {
   const { deduction_type, deduction_label, description, total_amount, term_months, start_period, target_cycle } = data;
 
   if (!deduction_type || !deduction_label || !total_amount || !term_months || !start_period) {
@@ -58,15 +74,33 @@ async function createSchedule(entityId, bdmId, data, userId, isFinance = false) 
   if (total_amount <= 0) throw new Error('total_amount must be positive');
   if (term_months < 1) throw new Error('term_months must be at least 1');
 
+  // Resolve owner — string is legacy BDM id, object selects explicitly.
+  let bdmId = null;
+  let personId = null;
+  if (ownerOrBdmId && typeof ownerOrBdmId === 'object') {
+    bdmId = ownerOrBdmId.bdm_id || null;
+    personId = ownerOrBdmId.person_id || null;
+  } else {
+    bdmId = ownerOrBdmId || null;
+  }
+  if (!!bdmId === !!personId) {
+    throw new Error('createSchedule requires exactly one owner: bdm_id (contractor) OR person_id (employee)');
+  }
+
+  // Doc numbering: BDM schedules use territory code (existing behaviour).
+  // Employee schedules have no BDM/territory, so fall back to entity short_name
+  // (Rule #19 — subscription-ready, no territory required).
   const schedule_code = await generateDocNumber({
     prefix: 'DS',
-    bdmId,
+    bdmId: bdmId || undefined,
+    entityId: bdmId ? undefined : entityId,
     date: new Date()
   });
 
   const schedule = await DeductionSchedule.create({
     entity_id: entityId,
-    bdm_id: bdmId,
+    bdm_id: bdmId || undefined,
+    person_id: personId || undefined,
     schedule_code,
     deduction_type,
     deduction_label,
@@ -209,6 +243,8 @@ async function adjustInstallment(scheduleId, installmentId, newAmount, userId, n
 /**
  * Sync installment status from payslip verification back to schedule.
  * Called by incomeController when Finance verifies/rejects a SCHEDULE deduction line.
+ *
+ * Contractor path — updates `income_report_id` on the installment.
  */
 async function syncInstallmentStatus(scheduleId, installmentId, newStatus, incomeReportId, deductionLineId) {
   const schedule = await DeductionSchedule.findById(scheduleId);
@@ -225,12 +261,37 @@ async function syncInstallmentStatus(scheduleId, installmentId, newStatus, incom
 }
 
 /**
+ * Phase G1.4 — employee counterpart of syncInstallmentStatus. Called by
+ * payrollController (Finance verify/reject of a SCHEDULE line on a Payslip)
+ * and by payslipCalc (post-save to mark freshly injected installments as
+ * INJECTED). Updates `payslip_id` on the installment instead of
+ * `income_report_id` so the schedule carries a clean audit trail of which
+ * payslip each installment landed in.
+ */
+async function syncInstallmentStatusForPayslip(scheduleId, installmentId, newStatus, payslipId, deductionLineId) {
+  const schedule = await DeductionSchedule.findById(scheduleId);
+  if (!schedule) return;
+
+  const inst = schedule.installments.id(installmentId);
+  if (!inst) return;
+
+  inst.status = newStatus;
+  if (payslipId) inst.payslip_id = payslipId;
+  if (deductionLineId) inst.deduction_line_id = deductionLineId;
+
+  await schedule.save();
+}
+
+/**
  * BDM withdraws a PENDING_APPROVAL schedule (self-service cancel before Finance acts)
  */
 async function withdrawSchedule(scheduleId, bdmId, entityId) {
   const schedule = await DeductionSchedule.findOne({ _id: scheduleId, entity_id: entityId });
   if (!schedule) throw new Error('Schedule not found');
-  if (schedule.bdm_id.toString() !== bdmId.toString()) {
+  // Phase G1.4 — route is contractor-only, so an employee-owner schedule (no
+  // bdm_id) should never match. Guard defensively in case the route gate is
+  // ever loosened: ownership check becomes "no bdm_id or wrong bdm_id → reject".
+  if (!schedule.bdm_id || schedule.bdm_id.toString() !== bdmId.toString()) {
     throw new Error('You can only withdraw your own schedules');
   }
   if (schedule.status !== 'PENDING_APPROVAL') {
@@ -266,7 +327,11 @@ async function withdrawSchedule(scheduleId, bdmId, entityId) {
 async function editPendingSchedule(scheduleId, bdmId, entityId, updates) {
   const schedule = await DeductionSchedule.findOne({ _id: scheduleId, entity_id: entityId });
   if (!schedule) throw new Error('Schedule not found');
-  if (schedule.bdm_id.toString() !== bdmId.toString()) {
+  // Phase G1.4 — same defensive null-check as withdrawSchedule. Employee
+  // schedules (no bdm_id) cannot reach this path via the current contractor-
+  // gated route, but the guard makes the service layer safe if the gate is
+  // ever opened (e.g. for an employee self-service edit future story).
+  if (!schedule.bdm_id || schedule.bdm_id.toString() !== bdmId.toString()) {
     throw new Error('You can only edit your own schedules');
   }
   if (schedule.status !== 'PENDING_APPROVAL') {
@@ -348,6 +413,8 @@ module.exports = {
   earlyPayoff,
   adjustInstallment,
   syncInstallmentStatus,
+  // Phase G1.4 — employee-owner counterpart (Payslip-linked installments)
+  syncInstallmentStatusForPayslip,
   withdrawSchedule,
   editPendingSchedule
 };

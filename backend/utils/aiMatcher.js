@@ -173,7 +173,7 @@ async function matchSenderToDoctor(senderName, messageText, channel) {
   const ch = (channel || '').toUpperCase();
   const filterField = ch === 'MESSENGER' ? 'messengerId' : ch === 'VIBER' ? 'viberId' : 'whatsappNumber';
   const unlinked = await Doctor.find({ [filterField]: { $in: [null, ''] } })
-    .select('firstName lastName specialization clinicOfficeAddress')
+    .select('firstName lastName specialization clinicOfficeAddress locality province')
     .lean();
 
   if (unlinked.length === 0) return null;

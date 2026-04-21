@@ -3,17 +3,28 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePayroll from '../hooks/usePayroll';
+import { useLookupOptions } from '../hooks/useLookups';
+import { useAuth } from '../../hooks/useAuth';
+import { ROLE_SETS } from '../../constants/roles';
 import WorkflowGuide from '../components/WorkflowGuide';
 import RejectionBanner from '../components/RejectionBanner';
 
 /**
- * PayslipView — Phase G1.3 transparent layout.
+ * PayslipView — Phase G1.3 transparent layout + Phase G1.4 installments & Finance UI.
  *
  * Every deduction row carries: label + amount + kind badge (ONE-STOP /
  * INSTALLMENT N/M) + status pill + optional expandable source detail. Mirrors
  * the contractor Income.jsx / MyIncome.jsx layout so the two render identical
  * transparency contracts — a BDM who graduates to employee sees the same
  * payslip format they used as a contractor.
+ *
+ * Phase G1.4:
+ *   - INSTALLMENT N/M badge is derived from breakdown.schedules keyed by
+ *     schedule_ref.schedule_id (same pattern as Income.jsx).
+ *   - Finance (admin/finance/president) gets per-line verify (✓) / correct (✎) /
+ *     reject (✕) actions plus a "+ Add Deduction" button, but only while the
+ *     payslip is COMPUTED or REVIEWED. After APPROVED/POSTED the page reverts
+ *     to read-only — President-Reverse is the only backwards path.
  *
  * Historical pre-G1.3 POSTED payslips have no deduction_lines[] persisted.
  * The backend lazy-backfills an in-memory array from the flat fields on read
@@ -61,6 +72,21 @@ const pageStyles = `
   .bd-empty { text-align: center; color: var(--erp-muted, #64748b); padding: 12px; font-size: 12px; font-style: italic; }
   .bd-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .bd-load-hint { font-size: 11px; color: var(--erp-muted, #64748b); margin-top: 4px; font-style: italic; }
+  .line-actions { display: inline-flex; gap: 4px; margin-left: 8px; vertical-align: middle; }
+  .line-actions button { border: 1px solid var(--erp-border, #e2e8f0); background: #fff; border-radius: 4px; width: 24px; height: 24px; cursor: pointer; font-size: 12px; line-height: 1; padding: 0; }
+  .line-actions button:hover { background: var(--erp-accent-soft, #e8efff); }
+  .line-actions button.danger:hover { background: #fee2e2; border-color: #fca5a5; }
+  .psv-add-btn { display: inline-block; padding: 6px 12px; border-radius: 6px; border: 1px dashed var(--erp-accent, #1e5eff); background: #fff; color: var(--erp-accent, #1e5eff); cursor: pointer; font-size: 12px; font-weight: 600; margin-top: 10px; }
+  .psv-add-btn:hover { background: var(--erp-accent-soft, #e8efff); }
+  .psv-modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+  .psv-modal { background: #fff; border-radius: 12px; padding: 20px; width: min(420px, 92vw); box-shadow: 0 12px 32px rgba(0,0,0,0.2); }
+  .psv-modal h4 { margin: 0 0 12px; font-size: 15px; font-weight: 700; }
+  .psv-modal label { display: block; font-size: 12px; color: var(--erp-muted); margin-top: 10px; margin-bottom: 4px; }
+  .psv-modal input, .psv-modal select, .psv-modal textarea { width: 100%; border: 1px solid var(--erp-border); border-radius: 6px; padding: 6px 8px; font-size: 13px; font-family: inherit; box-sizing: border-box; }
+  .psv-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+  .psv-modal-actions button { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--erp-border); background: #fff; cursor: pointer; font-size: 13px; }
+  .psv-modal-actions button.primary { background: var(--erp-accent, #1e5eff); color: #fff; border-color: var(--erp-accent, #1e5eff); }
+  .psv-modal-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
   @media(max-width: 768px) { .psv-main { padding: 12px; } }
 `;
 
@@ -77,6 +103,11 @@ export default function PayslipView() {
   const { id } = useParams();
   const navigate = useNavigate();
   const api = usePayroll();
+  const { user } = useAuth();
+  // Lookup-driven deduction type options for the Finance Add Deduction modal.
+  // EMPLOYEE_DEDUCTION_TYPE is pre-seeded per-entity (Rule #3) and editable
+  // via Control Center so subscribers can extend without a code change.
+  const { options: deductionTypes } = useLookupOptions('EMPLOYEE_DEDUCTION_TYPE');
   const [ps, setPs] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -84,6 +115,17 @@ export default function PayslipView() {
   const [breakdown, setBreakdown] = useState(null);
   const [breakdownLoading, setBreakdownLoading] = useState(false);
   const [expandedSections, setExpandedSections] = useState({});
+
+  // Phase G1.4 — Finance per-line state
+  const [actionBusy, setActionBusy] = useState(null); // lineId currently being mutated
+  const [showAdd, setShowAdd] = useState(false);
+  const [addForm, setAddForm] = useState({ deduction_type: '', deduction_label: '', amount: '', description: '', finance_note: '' });
+  const [showCorrect, setShowCorrect] = useState(null); // { lineId, currentAmount }
+  const [correctAmount, setCorrectAmount] = useState('');
+  const [correctNote, setCorrectNote] = useState('');
+
+  const isFinance = ROLE_SETS.MANAGEMENT.includes(user?.role);
+  const canEdit = isFinance && ps && ['COMPUTED', 'REVIEWED'].includes(ps.status);
 
   const load = useCallback(async () => {
     try {
@@ -99,8 +141,11 @@ export default function PayslipView() {
 
   useEffect(() => { load(); }, [load]);
 
-  const loadBreakdown = async () => {
-    if (breakdown?.payslip_id === id || breakdownLoading) return;
+  // `force=true` skips the cache guard so Finance handlers can re-fetch the
+  // installment timeline immediately after a SCHEDULE cascade without waiting
+  // for the `setBreakdown(null)` state update to flush (stale-closure trap).
+  const loadBreakdown = async (force = false) => {
+    if (!force && (breakdown?.payslip_id === id || breakdownLoading)) return;
     setBreakdownLoading(true);
     try {
       const res = await api.getPayslipBreakdown(id);
@@ -113,12 +158,138 @@ export default function PayslipView() {
     }
   };
 
+  // Phase G1.4 — schedule timeline breakdown auto-loads after the payslip does
+  // so INSTALLMENT N/M badges and the installment expander render eagerly. The
+  // Personal Gas breakdown stays lazy (only loads on first expand) because it
+  // involves a CarLogbook scan; schedules are a single lean query per line.
+  useEffect(() => {
+    if (!ps) return;
+    const hasSchedule = (ps.deduction_lines || []).some(l => l.auto_source === 'SCHEDULE');
+    if (hasSchedule && !breakdown && !breakdownLoading) {
+      loadBreakdown();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ps]);
+
   const toggleSection = (key) => {
     setExpandedSections(prev => ({ ...prev, [key]: !prev[key] }));
     // Lazy-load breakdown on first expand of any expandable row
     if (!breakdown && !expandedSections[key]) {
       loadBreakdown();
     }
+  };
+
+  // ── Phase G1.4 Finance handlers ──
+  // Each handler reloads the payslip + (where relevant) the breakdown so the
+  // UI reflects installment state changes immediately. On error we surface the
+  // backend message verbatim — closed periods, wrong status, auto-source locks.
+  const handleVerifyLine = async (lineId) => {
+    if (actionBusy) return;
+    setActionBusy(lineId);
+    try {
+      const res = await api.verifyPayslipDeductionLine(id, lineId, { action: 'verify' });
+      setPs(res?.data || null);
+      // Schedule sync (cascade) changes installment statuses — refresh timeline.
+      if ((res?.data?.deduction_lines || []).some(l => l.auto_source === 'SCHEDULE' && l._id === lineId)) {
+        await loadBreakdown(true);
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || err.message || 'Verify failed');
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  const handleRejectLine = async (lineId) => {
+    if (actionBusy) return;
+    const reason = window.prompt('Reason for rejection (shown on payslip)?', '');
+    if (reason === null) return; // user cancelled
+    setActionBusy(lineId);
+    try {
+      const res = await api.verifyPayslipDeductionLine(id, lineId, { action: 'reject', finance_note: reason });
+      setPs(res?.data || null);
+      await loadBreakdown(true);
+    } catch (err) {
+      alert(err.response?.data?.message || err.message || 'Reject failed');
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  const handleRemoveLine = async (lineId) => {
+    if (actionBusy) return;
+    if (!window.confirm('Remove this deduction line? Auto-generated lines cannot be removed — use Reject instead.')) return;
+    setActionBusy(lineId);
+    try {
+      const res = await api.removePayslipDeductionLine(id, lineId);
+      setPs(res?.data || null);
+    } catch (err) {
+      alert(err.response?.data?.message || err.message || 'Remove failed');
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  const submitCorrect = async () => {
+    if (!showCorrect) return;
+    const amount = Number(correctAmount);
+    if (!Number.isFinite(amount) || amount < 0) {
+      alert('Enter a valid non-negative amount');
+      return;
+    }
+    setActionBusy(showCorrect.lineId);
+    try {
+      const res = await api.verifyPayslipDeductionLine(id, showCorrect.lineId, {
+        action: 'correct',
+        amount,
+        finance_note: correctNote,
+      });
+      setPs(res?.data || null);
+      setShowCorrect(null);
+      setCorrectAmount('');
+      setCorrectNote('');
+    } catch (err) {
+      alert(err.response?.data?.message || err.message || 'Correct failed');
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  const submitAdd = async () => {
+    const { deduction_type, deduction_label, amount } = addForm;
+    const amt = Number(amount);
+    if (!deduction_type || !deduction_label || !Number.isFinite(amt) || amt < 0) {
+      alert('Fill in type, label, and a non-negative amount');
+      return;
+    }
+    setActionBusy('add');
+    try {
+      const res = await api.addPayslipDeductionLine(id, {
+        deduction_type,
+        deduction_label,
+        amount: amt,
+        description: addForm.description,
+        finance_note: addForm.finance_note,
+      });
+      setPs(res?.data || null);
+      setShowAdd(false);
+      setAddForm({ deduction_type: '', deduction_label: '', amount: '', description: '', finance_note: '' });
+    } catch (err) {
+      alert(err.response?.data?.message || err.message || 'Add failed');
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  // Auto-fill the label when Finance picks a deduction type in the add modal.
+  // Uses the lookup label snapshot (Rule #3 — label comes from the DB, not code).
+  const onPickAddType = (code) => {
+    const match = deductionTypes.find(d => d.code === code);
+    setAddForm(prev => ({
+      ...prev,
+      deduction_type: code,
+      deduction_label: prev.deduction_label || match?.label || code,
+    }));
   };
 
   if (loading) {
@@ -210,15 +381,31 @@ export default function PayslipView() {
             <table className="psv-table">
               <tbody>
                 {lines.length === 0 && (
-                  <tr><td colSpan={2} style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>No deductions</td></tr>
+                  <tr><td colSpan={canEdit ? 3 : 2} style={{ textAlign: 'center', color: 'var(--erp-muted)' }}>No deductions</td></tr>
                 )}
                 {lines.map(line => {
                   const isPersonalGas = line.auto_source === 'PERSONAL_GAS';
-                  const isExpandable = isPersonalGas;
-                  const sectionKey = isPersonalGas ? 'personalGas' : null;
-                  const kindBadge = 'ONE-STOP'; // Employee payslip has no installments today
-                  const kindBadgeClass = 'badge-onestop';
+                  const isSchedule = line.auto_source === 'SCHEDULE';
+                  const isExpandable = isPersonalGas || isSchedule;
+                  const scheduleKey = line.schedule_ref?.schedule_id?.toString();
+                  const schedule = isSchedule && scheduleKey ? breakdown?.schedules?.[scheduleKey] : null;
+                  const currentInstallment = schedule?.installments?.find(
+                    i => i._id?.toString() === line.schedule_ref?.installment_id?.toString()
+                  );
+                  // Phase G1.4 — kind badge: INSTALLMENT N/M when the line is a
+                  // DeductionSchedule installment (breakdown hydrated), ONE-STOP
+                  // otherwise. Same pattern used on contractor Income.jsx so the
+                  // two surfaces carry identical labels.
+                  const kindBadge = isSchedule && currentInstallment
+                    ? `INSTALLMENT ${currentInstallment.installment_no}/${schedule.term_months}`
+                    : 'ONE-STOP';
+                  const kindBadgeClass = isSchedule && currentInstallment ? 'badge-installment' : 'badge-onestop';
+                  const sectionKey = isPersonalGas ? 'personalGas'
+                    : isSchedule ? `sched_${line._id}`
+                    : null;
                   const isZeroInfo = isPersonalGas && (line.amount || 0) === 0;
+                  const canMutate = canEdit && line.status !== 'REJECTED';
+                  const busy = actionBusy === line._id;
                   return (
                     <Fragment key={line._id}>
                       <tr
@@ -246,10 +433,36 @@ export default function PayslipView() {
                           )}
                           {fmt(line.amount)}
                         </td>
+                        {canEdit && (
+                          <td style={{ width: 140 }}>
+                            {canMutate && line.status === 'PENDING' && (
+                              <span className="line-actions" onClick={(e) => e.stopPropagation()}>
+                                <button onClick={() => handleVerifyLine(line._id)} disabled={busy} title="Verify">&#10003;</button>
+                                <button onClick={() => { setShowCorrect({ lineId: line._id, currentAmount: line.amount }); setCorrectAmount(String(line.amount)); setCorrectNote(''); }} disabled={busy} title="Correct amount">&#9998;</button>
+                                <button className="danger" onClick={() => handleRejectLine(line._id)} disabled={busy} title="Reject">&#10005;</button>
+                              </span>
+                            )}
+                            {canMutate && line.status === 'VERIFIED' && (
+                              <span className="line-actions" onClick={(e) => e.stopPropagation()}>
+                                <button onClick={() => { setShowCorrect({ lineId: line._id, currentAmount: line.amount }); setCorrectAmount(String(line.amount)); setCorrectNote(''); }} disabled={busy} title="Correct amount">&#9998;</button>
+                                <button className="danger" onClick={() => handleRejectLine(line._id)} disabled={busy} title="Reject">&#10005;</button>
+                                {!line.auto_source && (
+                                  <button className="danger" onClick={() => handleRemoveLine(line._id)} disabled={busy} title="Remove line">&#128465;</button>
+                                )}
+                              </span>
+                            )}
+                            {canMutate && line.status === 'CORRECTED' && (
+                              <span className="line-actions" onClick={(e) => e.stopPropagation()}>
+                                <button onClick={() => handleVerifyLine(line._id)} disabled={busy} title="Re-verify">&#10003;</button>
+                                <button className="danger" onClick={() => handleRejectLine(line._id)} disabled={busy} title="Reject">&#10005;</button>
+                              </span>
+                            )}
+                          </td>
+                        )}
                       </tr>
 
                       {isPersonalGas && expandedSections.personalGas && (
-                        <tr><td colSpan={2} style={{ padding: 0 }}>
+                        <tr><td colSpan={canEdit ? 3 : 2} style={{ padding: 0 }}>
                           <div className="bd-panel">
                             {breakdownLoading && <div className="bd-empty">Loading logbook...</div>}
                             {!breakdownLoading && !breakdown?.personal_gas && (
@@ -300,12 +513,62 @@ export default function PayslipView() {
                           </div>
                         </td></tr>
                       )}
+
+                      {/* Phase G1.4 — Schedule installment timeline. Shows every
+                          installment with its status (paid, injected, pending,
+                          cancelled) so Finance and the employee can audit the
+                          full plan and know what's still outstanding. */}
+                      {isSchedule && expandedSections[sectionKey] && (
+                        <tr><td colSpan={canEdit ? 3 : 2} style={{ padding: 0 }}>
+                          <div className="bd-panel">
+                            {breakdownLoading && !schedule && <div className="bd-empty">Loading schedule...</div>}
+                            {!breakdownLoading && !schedule && <div className="bd-empty">Schedule detail unavailable</div>}
+                            {schedule && (
+                              <>
+                                <div className="bd-section-title">{schedule.schedule_code || schedule.deduction_label}</div>
+                                <table className="bd-table" style={{ marginBottom: 8 }}>
+                                  <tbody>
+                                    <tr><td>Total Amount</td><td>{fmt(schedule.total_amount)}</td></tr>
+                                    <tr><td>Per Installment</td><td>{fmt(schedule.installment_amount)} &times; {schedule.term_months} month{schedule.term_months > 1 ? 's' : ''}</td></tr>
+                                    <tr><td>Start Period / Cycle</td><td>{schedule.start_period} / {schedule.target_cycle || 'C2'}</td></tr>
+                                    <tr className="bd-subtotal"><td>Remaining Balance</td><td>{fmt(schedule.remaining_balance)}</td></tr>
+                                  </tbody>
+                                </table>
+                                <div className="bd-section-title">Installment Timeline</div>
+                                <div className="bd-scroll">
+                                  <table className="bd-table">
+                                    <thead><tr><th>#</th><th>Period</th><th>Amount</th><th>Status</th></tr></thead>
+                                    <tbody>
+                                      {schedule.installments.map(i => {
+                                        const isCurrent = i._id?.toString() === line.schedule_ref?.installment_id?.toString();
+                                        return (
+                                          <tr key={i._id} style={isCurrent ? { background: '#fef3c7', fontWeight: 600 } : undefined}>
+                                            <td>{i.installment_no}</td>
+                                            <td>{i.period}</td>
+                                            <td>{fmt(i.amount)}</td>
+                                            <td>{i.status}{isCurrent ? ' \u2190 this payslip' : ''}</td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </td></tr>
+                      )}
                     </Fragment>
                   );
                 })}
-                <tr className="psv-total"><td>Total Deductions</td><td>{fmt(ps.total_deductions)}</td></tr>
+                <tr className="psv-total"><td colSpan={canEdit ? 2 : 1}>Total Deductions</td><td>{fmt(ps.total_deductions)}</td></tr>
               </tbody>
             </table>
+            {canEdit && (
+              <button className="psv-add-btn" onClick={() => setShowAdd(true)}>
+                + Add Deduction Line
+              </button>
+            )}
           </div>
 
           <div className="psv-card">
@@ -332,6 +595,87 @@ export default function PayslipView() {
           </div>
         </main>
       </div>
+
+      {/* Phase G1.4 — Add Deduction modal. Deduction type dropdown is lookup-driven
+          (EMPLOYEE_DEDUCTION_TYPE) per Rule #3. Label defaults to the lookup label
+          but Finance can override so one-off descriptions still read naturally. */}
+      {showAdd && (
+        <div className="psv-modal-backdrop" onClick={(e) => e.target === e.currentTarget && setShowAdd(false)}>
+          <div className="psv-modal" role="dialog" aria-label="Add Deduction Line">
+            <h4>Add Deduction Line</h4>
+            <label>Deduction Type</label>
+            <select value={addForm.deduction_type} onChange={(e) => onPickAddType(e.target.value)}>
+              <option value="">Select type...</option>
+              {deductionTypes.map(opt => (
+                <option key={opt.code} value={opt.code}>{opt.label}</option>
+              ))}
+            </select>
+            <label>Label</label>
+            <input
+              type="text"
+              value={addForm.deduction_label}
+              onChange={(e) => setAddForm({ ...addForm, deduction_label: e.target.value })}
+              placeholder="Shown on the payslip row"
+            />
+            <label>Amount (\u20B1)</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={addForm.amount}
+              onChange={(e) => setAddForm({ ...addForm, amount: e.target.value })}
+            />
+            <label>Description</label>
+            <textarea
+              rows={2}
+              value={addForm.description}
+              onChange={(e) => setAddForm({ ...addForm, description: e.target.value })}
+              placeholder="Explain the deduction for the employee"
+            />
+            <label>Finance Note (internal)</label>
+            <textarea
+              rows={2}
+              value={addForm.finance_note}
+              onChange={(e) => setAddForm({ ...addForm, finance_note: e.target.value })}
+              placeholder="Why Finance added this line"
+            />
+            <div className="psv-modal-actions">
+              <button onClick={() => setShowAdd(false)} disabled={actionBusy === 'add'}>Cancel</button>
+              <button className="primary" onClick={submitAdd} disabled={actionBusy === 'add'}>Add</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Phase G1.4 — Correct Amount modal. original_amount is preserved server-side
+          and rendered strikethrough on the line so the audit trail is visible. */}
+      {showCorrect && (
+        <div className="psv-modal-backdrop" onClick={(e) => e.target === e.currentTarget && setShowCorrect(null)}>
+          <div className="psv-modal" role="dialog" aria-label="Correct Deduction Amount">
+            <h4>Correct Deduction Amount</h4>
+            <label>New Amount (\u20B1)</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={correctAmount}
+              onChange={(e) => setCorrectAmount(e.target.value)}
+              autoFocus
+            />
+            <label>Finance Note (shown to employee)</label>
+            <textarea
+              rows={3}
+              value={correctNote}
+              onChange={(e) => setCorrectNote(e.target.value)}
+              placeholder="e.g. adjusted per HR memo 2026-04-18"
+            />
+            <div className="psv-modal-actions">
+              <button onClick={() => setShowCorrect(null)} disabled={!!actionBusy}>Cancel</button>
+              <button className="primary" onClick={submitCorrect} disabled={!!actionBusy}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

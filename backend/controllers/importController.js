@@ -169,6 +169,12 @@ const buildDoctorFields = (parsed, bdmId, productMap, activePrograms, activeSupp
     lastName: nameRules ? cleanName(parsed.lastName, nameRules) : parsed.lastName,
     specialization: parsed.specialization || undefined,
     clinicOfficeAddress: parsed.clinicAddress || undefined,
+    // Phase G1.5 — structured locality/province from CPT Excel. Optional during
+    // import because legacy CPT workbooks may not carry these columns yet;
+    // backfillDoctorLocality.js reconciles post-import. When CPT is updated,
+    // parser in xlsxParser.js can extract `locality` + `province` columns.
+    locality: parsed.locality || undefined,
+    province: parsed.province || undefined,
     outletIndicator: parsed.outletIndicator || undefined,
     visitFrequency: parsed.visitFrequency === 2 ? 2 : 4,
     assignedTo: bdmId,

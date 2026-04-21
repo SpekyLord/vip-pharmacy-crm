@@ -24,7 +24,8 @@ const seedSettings = async () => {
   console.log(`✓ Settings created with defaults (version ${settings.version})`);
   console.log('  Key values:');
   console.log(`  - VAT_RATE: ${settings.VAT_RATE}`);
-  console.log(`  - PERDIEM_RATE_DEFAULT: ${settings.PERDIEM_RATE_DEFAULT}`);
+  console.log(`  - PERDIEM_MD_FULL / HALF: ${settings.PERDIEM_MD_FULL} / ${settings.PERDIEM_MD_HALF}`);
+  console.log(`  - (per-diem rate now lives in PERDIEM_RATES lookup — run seedAllLookups.js)`);
   console.log(`  - DEFAULT_PAYMENT_TERMS: ${settings.DEFAULT_PAYMENT_TERMS}`);
   console.log(`  - NEAR_EXPIRY_DAYS: ${settings.NEAR_EXPIRY_DAYS}`);
 };
