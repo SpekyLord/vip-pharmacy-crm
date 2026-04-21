@@ -119,15 +119,13 @@ smerEntrySchema.pre('save', function (next) {
 });
 
 // Indexes
-// (entity_id, bdm_id, period, cycle) is unique only when the SMER is NOT reversed.
-// Reversed SMERs keep the row (stamped with deletion_event_id) for audit, but the
-// BDM must be able to create a fresh SMER for the same period+cycle to redo the
-// work. Same partial-index pattern used for Undertaking.linked_grn_id and
-// OfficeSupply.item_code.
-smerEntrySchema.index(
-  { entity_id: 1, bdm_id: 1, period: 1, cycle: 1 },
-  { unique: true, partialFilterExpression: { deletion_event_id: { $exists: false } } }
-);
+// Plain unique on (entity_id, bdm_id, period, cycle). Reversed SMERs must NOT
+// occupy this key — the create controller archive-renames a reversed collision's
+// period to `${period}::REV::${_id}` before creating the new row, preserving
+// audit (deletion_event_id + daily entries + TransactionEvent reversal) while
+// freeing the key. Partial-filter-on-$exists-false was tried first and abandoned
+// (MongoDB rejects it: "Expression not supported in partial index: $not…").
+smerEntrySchema.index({ entity_id: 1, bdm_id: 1, period: 1, cycle: 1 }, { unique: true });
 smerEntrySchema.index({ entity_id: 1, bdm_id: 1, status: 1 });
 smerEntrySchema.index({ status: 1 });
 
