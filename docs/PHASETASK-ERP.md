@@ -6161,3 +6161,45 @@ CLAUDE-ERP.md                                         [+Enum↔Lookup Symmetry s
 docs/PHASETASK-ERP.md                                 [+this Phase 34 block]
 ```
 
+## Phase 34-P — Per Diem Override Write-Back Fix (Apr 21 2026, shipped)
+
+**Reported symptom.** Contractor requested per diem override on a SMER daily entry. President approved in the Approval Hub. Contractor's UI kept showing PENDING even after a hard refresh.
+
+**Root cause — silent skip in `perdiem_override` handler.**
+[backend/erp/controllers/universalApprovalController.js](../backend/erp/controllers/universalApprovalController.js) loaded the SMER with `findOne({ _id, status: { $in: getEditableStatuses('SMER') } })`. Editable for SMER is `['DRAFT','ERROR']` per `MODULE_REJECTION_CONFIG.SMER`. If the contractor had moved the SMER to VALID (or POSTED, via auto-submit) before the approver decided, `findOne` returned null and the entire write-back block silently no-op'd. `processDecision` had already flipped the ApprovalRequest to APPROVED, so the request could not be retried — the daily entry was permanently stranded with `override_status: 'PENDING'`. No error anywhere.
+
+Contributing gap: `validateSmer` + `submitSmer` did not block SMER progression while overrides were pending, so the race was possible on every contractor's first pass.
+
+**What shipped.**
+
+1. **Reordered approval handler** — `perdiem_override` now loads ApprovalRequest + SMER + entry up front, throws on any missing reference, applies the override to the SMER and writes the audit log FIRST, then calls `processDecision`. On failure the ApprovalRequest stays PENDING and the thrown message bubbles to the Approval Hub as HTTP 500. No more silent skip.
+2. **Removed the editable-status gate on the SMER load.** Approval applies to a subdocument state (not the parent lifecycle); the gate was the silent-skip vector. Replaced with a **ledger-drift guard**: if the SMER is already POSTED at approval time, throw with a clear "reopen the SMER via Reversal Console first" message.
+3. **Block validate + submit while any override is PENDING.** `validateSmer` adds a per-day error → SMER flips to ERROR → cannot reach VALID → cannot submit. Defensive re-check in `submitSmer` (race-safe). Invariant: parent SMER stays DRAFT/ERROR until every override is decided.
+4. **Inline CompProfile load** in the handler so the accepted amount uses the per-person rate — matches `overridePerdiemDay` at request time. No drift between requested and accepted amount.
+5. **Repair script** — [backend/erp/scripts/repairStuckPerdiemOverrides.js](../backend/erp/scripts/repairStuckPerdiemOverrides.js). Scans all decided `PERDIEM_OVERRIDE` ApprovalRequests, reapplies the override to any daily entry still in PENDING. Idempotent; dry-run default; flags POSTED SMERs for manual Reversal Console handling.
+6. **WorkflowGuide** — `smer.tip` updated to state the new invariant.
+
+### Files touched
+```
+backend/erp/controllers/universalApprovalController.js    [rewrote perdiem_override handler, lines ~125-195]
+backend/erp/controllers/expenseController.js              [+PENDING block in validateSmer, +defensive re-check in submitSmer]
+backend/erp/scripts/repairStuckPerdiemOverrides.js        [new — repair script for stuck records]
+frontend/src/erp/components/WorkflowGuide.jsx             [smer.tip updated]
+CLAUDE-ERP.md                                             [+Phase 34-P section]
+docs/PHASETASK-ERP.md                                     [+this block]
+```
+
+### Verification
+
+- `node -c` clean on universalApprovalController.js, expenseController.js, repairStuckPerdiemOverrides.js.
+- `npx vite build` — clean in 46.42s.
+- Downstream read-only consumers of `override_status`: `Smer.jsx`, `Income.jsx`, `MyIncome.jsx`, `DocumentDetailPanel.jsx` — all unaffected (render-side only).
+- No lookup category added; no schema change; no enum change. Existing `MODULE_REJECTION_CONFIG.SMER.metadata.editable_statuses` untouched — still governs rejection/resubmit, no longer the (wrong) gate for approval write-back.
+- Rule #20 "any person can CREATE, but authority POSTS" preserved; Rule #3 lookup-driven — subscribers inherit the fix without configuration.
+
+### Deployment
+
+1. Deploy backend + frontend.
+2. Run repair script per entity: `node erp/scripts/repairStuckPerdiemOverrides.js` (dry-run) → `--apply`.
+3. Any stuck record on a POSTED SMER will be flagged — admin reopens via Reversal Console, then the BDM resubmits; on resubmit the override re-routes through the now-fixed handler.
+
