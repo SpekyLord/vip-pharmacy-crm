@@ -119,6 +119,58 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | H6 | Sales OCR — BDM field scanning of CSI / CR / DR (sampling+consignment) / Bank Slip / Check + AI_SPEND_CAPS enforcement on OCR Claude calls | 🚧 |
 | G8 | Agents + Copilot Expansion — 8 rule-based scheduled agents + Task collection + 10 new Copilot tools (Secretary + HR) + 3 AI toggle lookups | ✅ |
 | 34* | Approval Hub Enhancement: Sub-Permissions + Attachments + Line-Item Edit | ✅ |
+| G1.2 | Payslip Transparency & SMER-ORE Retirement Hardening — pre-save guard + always-show Personal Gas + ONE-STOP / INSTALLMENT N/M kind badge + installment expandable | ✅ |
+
+---
+
+## Phase G1.2 — Payslip Transparency & SMER-ORE Retirement Hardening (April 21, 2026)
+
+### Payslip identity (contractor IncomeReport)
+
+```
+SMER (Per Diem + Transport + ORE-cash) + Commission + Other Income − Deductions (with breakdown)
+```
+
+- **ORE = Expenses module only.** `ExpenseEntry.expense_type='ORE'` with `payment_mode='CASH'` is the single source of truth for reimbursable cash expenses. Receipt (OR number, photo, optionally OCR data) required.
+- **ACCESS ≠ reimbursement.** `ExpenseEntry.expense_type='ACCESS'` (credit card / GCash / bank transfer) is company-paid. Never hits the payslip earnings — BDM didn't spend out of pocket.
+- **SMER-ORE is retired.** `SmerEntry.daily_entries[].ore_amount` + `total_ore` exist in the schema for historical audit only. Pre-save guard rejects any new doc with `ore_amount > 0`. Legacy non-zero values on pre-retirement POSTED SMERs are preserved (reversal-safe) and surfaced as muted "audit only" rows in the UI.
+
+### Personal Gas deduction
+
+- Gate: `CompProfile.logbook_eligible === true` (no `has_car_logbook` or new lookup — reuses the existing flag).
+- Row **always emitted** for eligible BDMs — even at ₱0 — with description "No personal km logged this cycle — logbook reviewed". BDM can always see the logbook was reviewed.
+- Non-eligible (office staff): line suppressed (no meaningless ₱0 row).
+- `_resolveCompProfile(entityId, bdmId)` inlined helper in `incomeCalc.js` (mirrors `loadBdmCompProfile` in `expenseController.js`) — keeps service dependency graph flat, no controller imports from service layer.
+
+### Deduction row — kind badge + expandable timeline
+
+Every row in the Deductions column carries a **kind badge** next to the status badge:
+
+| `auto_source` | Badge | Expandable breakdown |
+|---|---|---|
+| `CALF` (CALF excess) | `ONE-STOP` gray | CALF documents table (advance / liquidated / balance) |
+| `PERSONAL_GAS` | `ONE-STOP` gray | Daily Car Logbook + fuel cost summary |
+| `SCHEDULE` (DeductionSchedule installment) | `INSTALLMENT N/M` amber | Schedule header (total / term / start period / remaining balance) + full installment timeline with current cycle highlighted |
+| (manual) | `ONE-STOP` gray | Inline entered_by + entered_at + description |
+
+`getIncomeBreakdown` now returns a `schedules` block keyed by `schedule_id` string — frontend drills into it via `line.schedule_ref.schedule_id`.
+
+### Key files
+- [backend/erp/models/SmerEntry.js](backend/erp/models/SmerEntry.js) — `@deprecated` JSDoc + pre-save `isNew` guard
+- [backend/erp/services/incomeCalc.js](backend/erp/services/incomeCalc.js) — always-ExpenseEntry-ORE + `_resolveCompProfile` helper + always-emit PERSONAL_GAS + `breakdown.schedules` block
+- [frontend/src/erp/pages/Income.jsx](frontend/src/erp/pages/Income.jsx), [MyIncome.jsx](frontend/src/erp/pages/MyIncome.jsx) — kind badges + installment expandable + PG ₱0 muted styling + legacy-only audit rows
+- [frontend/src/erp/components/DocumentDetailPanel.jsx](frontend/src/erp/components/DocumentDetailPanel.jsx) — conditional ORE chip/column (hides when all zero)
+- [frontend/src/erp/pages/Smer.jsx](frontend/src/erp/pages/Smer.jsx) — dropped `ore` from UI totals accumulator
+- [frontend/src/erp/components/WorkflowGuide.jsx](frontend/src/erp/components/WorkflowGuide.jsx) — smer / expenses / income / myIncome banner copy aligned
+
+### Downstream safety
+- `REVERSAL_HANDLERS` count unchanged at 21 — schema still carries `total_ore` for historical POSTED docs.
+- `expenseController.js` SMER auto-journal lines (COA 6170) gate on `if (smer.total_ore > 0)` — naturally skip on new (zero) docs, still fire for historical reposts.
+- `expenseAnomalyService.js:165` and `universalApprovalService.js:585` both read `ExpenseEntry.total_ore` (not SMER) — unaffected.
+- Pre-save `isNew` guard does NOT trip on status-update or reversal resaves of pre-retirement POSTED SMERs — audit preserved.
+
+### Full detail
+See [docs/PHASETASK-ERP.md](docs/PHASETASK-ERP.md#phase-g12--payslip-transparency--smer-ore-retirement-hardening--april-21-2026).
 
 ---
 

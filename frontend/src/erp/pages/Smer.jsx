@@ -587,14 +587,13 @@ export default function Smer() {
   };
    
 
-  // Compute totals
+  // Compute totals — ORE retired 2026-04; flows via Expenses module only.
   const totals = dailyEntries.reduce((acc, e) => ({
     perdiem: acc.perdiem + (e.perdiem_amount || 0),
     transpo: acc.transpo + (e.transpo_p2p || 0),
-    special: acc.special + (e.transpo_special || 0),
-    ore: acc.ore + (e.ore_amount || 0)
-  }), { perdiem: 0, transpo: 0, special: 0, ore: 0 });
-  const totalReimbursable = totals.perdiem + totals.transpo + totals.special + totals.ore;
+    special: acc.special + (e.transpo_special || 0)
+  }), { perdiem: 0, transpo: 0, special: 0 });
+  const totalReimbursable = totals.perdiem + totals.transpo + totals.special;
   const balanceOnHand = travelAdvance - totalReimbursable;
 
   // Split SMERs into Working (actionable) vs Posted (archive)

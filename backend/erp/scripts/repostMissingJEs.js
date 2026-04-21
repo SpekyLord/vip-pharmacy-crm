@@ -57,6 +57,17 @@ async function main() {
   await mongoose.connect(process.env.MONGO_URI);
   console.log(`Connected. Mode: ${APPLY ? 'APPLY' : 'DRY-RUN'}  since=${SINCE.toISOString().slice(0, 10)}  type=${TYPE_FILTER || 'ALL'}  force=${FORCE_CLOSED}`);
 
+  // Register every model the validator / helpers may reach via mongoose.model(...)
+  // Standalone scripts bypass server.js's implicit registration, so missing a
+  // model here surfaces as "Schema hasn't been registered" during save.
+  // JE pre-save hook looks up ChartOfAccounts; autoJournal helpers resolve
+  // Settings + BankAccount + CreditCard + PaymentMode via resolveFundingCoa.
+  require('../models/ChartOfAccounts');
+  require('../models/Settings');
+  require('../models/BankAccount');
+  require('../models/CreditCard');
+  require('../models/PaymentMode');
+  require('../models/MonthlyArchive');
   const SmerEntry = require('../models/SmerEntry');
   const CarLogbookCycle = require('../models/CarLogbookCycle');
   const CarLogbookEntry = require('../models/CarLogbookEntry');

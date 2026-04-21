@@ -6562,3 +6562,76 @@ docs/PHASETASK-ERP.md                            [+this block]
 - `journal_failures: [...]` array in submit/post endpoint responses so the frontend can surface a warning toast (currently silent — posting reports success even when JE fails).
 - Extract SMER + CarLogbookCycle + Expense inline JE logic from `expenseController.js` into shared `autoJournal.js` helpers so the repost script and controllers converge on one code path.
 
+---
+
+## Phase G1.2 — Payslip Transparency & SMER-ORE Retirement Hardening ✅ (April 21, 2026)
+
+### Goal
+Answer three contractor-income transparency questions surfaced while reviewing Romela Shen Herrera's 2026-03 C2 payslip:
+1. SMER-ORE field is a zombie — schema exists, writes are hidden, legacy-fallback branch in income calc still reads it. Clean up without breaking audit on historical POSTED SMERs.
+2. Personal Gas deduction disappears entirely when ₱0 — BDM cannot tell whether the logbook was reviewed. Surface a ₱0 row for logbook-eligible BDMs.
+3. Deduction rows lack a one-stop-vs-installment indicator; installment lines show `(N/M)` in free text only, no expandable view of the full schedule timeline.
+
+### Deliverables
+
+#### 1. SMER-ORE retirement hardening
+- `SmerEntry.daily_entries[].ore_amount` and `SmerEntry.total_ore` marked `@deprecated` with inline JSDoc. Schema retained for historical POSTED SMER display.
+- Pre-save hook: any `isNew` document with `ore_amount > 0` on any daily entry is **rejected** with an explicit error pointing to the Expenses module. Existing docs with legacy non-zero values still save (status updates, reversals) — no corruption of audit trail.
+- `incomeCalc.generateIncomeReport`: dropped the `if (smerOre === 0)` fallback branch. ORE is **always** aggregated from `ExpenseEntry.lines.expense_type='ORE'`. Legacy SMER-ORE is subtracted from `total_reimbursable` to avoid double-count on pre-retirement docs. Rename: `expenseOreAmount` → `oreAmount`.
+- `incomeCalc.projectIncome`: same refactor. Adds `ore_legacy_smer` to projection output for audit-only display.
+- `incomeCalc.getIncomeBreakdown`: `smerBreakdown.subtotals.ore` now sources from ExpenseEntry-ORE; legacy is exposed as `ore_legacy_smer` (UI shows muted "audit only" row when > 0). `oreBreakdown.total` is ExpenseEntry-only; `smer_ore` and `daily_ore` retained for legacy audit.
+- No downstream JE breakage: the pre-save guard is gated on `isNew`, so reversal handlers that re-save existing docs don't trip. `expenseController.js:358` and `:3053` JE-line generators for SMER-ORE gate on `if (smer.total_ore > 0)` — naturally skip when 0 (new docs) and still fire for historical docs, preserving audit-symmetric JE postings. `REVERSAL_HANDLERS` count unchanged at 21.
+
+#### 2. Personal Gas always-show
+- `_resolveCompProfile(entityId, bdmId)` helper inlined in `incomeCalc.js` (mirrors the existing `loadBdmCompProfile` in `expenseController.js` to keep the service dependency graph flat — no controller imports from a service).
+- Deduction-line builder: `CompProfile.logbook_eligible === true` now gates PERSONAL_GAS line emission. `if (personalGasDeduction > 0)` guard removed. ₱0 lines carry description `'No personal km logged this cycle — logbook reviewed'`; non-zero lines keep the auto-computed description.
+- Office staff without a CompProfile or `logbook_eligible=false` still get no Personal Gas row — preserves the "only logbook users see it" UX.
+- Frontend: Income.jsx / MyIncome.jsx already had the expandable breakdown — now always renders, with ₱0 amounts shown in muted color (informational, not alarming).
+
+#### 3. Deduction row — kind badge + installment expandable
+- Backend `getIncomeBreakdown` now returns a new `schedules` block keyed by `schedule_id` string. For every unique `schedule_ref.schedule_id` on the report's `deduction_lines`, the payload includes: schedule_code, deduction_type, deduction_label, total_amount, installment_amount, term_months, start_period, target_cycle, remaining_balance, status, and the full `installments[]` array with per-installment status/period/amount/income_report_id/verified_at.
+- Frontend Income.jsx + MyIncome.jsx deduction rows:
+  - Every row now carries a **kind badge**: `ONE-STOP` (gray pill) for CASH_ADVANCE / PERSONAL_GAS / manual; `INSTALLMENT N/M` (amber pill) for SCHEDULE lines. N/M derived from `currentInstallment.installment_no / schedule.term_months`.
+  - SCHEDULE rows are now expandable (previously only PERSONAL_GAS and CALF were). Expansion shows: total amount, per-installment × term_months, start period/cycle, remaining balance, and the full installment timeline. The installment matching the current cycle is highlighted in amber with "← this cycle" suffix, so BDMs can see where they are on the schedule at a glance.
+  - CSS: two new pill classes — `.badge-onestop` (neutral gray #e2e8f0 / #475569), `.badge-installment` (amber #fef3c7 / #92400e, bold).
+
+#### 4. SMER earnings UI clarity
+- "ORE (Cash)" subtotal row in SMER breakdown renamed to "ORE (from Expenses, receipt-backed)" — reinforces that only receipt-backed Expenses-ORE is reimbursable.
+- Legacy SMER-ORE is surfaced as a secondary muted row "Legacy SMER-ORE (audit only)" **only when > 0** (pre-retirement docs). New docs never show it.
+- Daily entries table hides the ORE column entirely when no day has `ore_amount > 0`. Historical SMERs with legacy values still display the column for audit.
+- `DocumentDetailPanel.jsx` SMER view: ORE summary chip hides when `total_ore === 0`; daily entries ORE column hides when all entries are zero.
+- `Smer.jsx` UI totals accumulator: dropped `ore` accumulator entirely — was always 0 since Phase G1 anyway.
+
+#### 5. Banner copy updates
+- `/erp/smer` step 6: rewritten to state the April 2026 ORE retirement explicitly and that SMER no longer accepts per-day ORE amounts.
+- `/erp/expenses` step 1: ORE vs ACCESS distinction sharpened — ORE = CASH, BDM paid out-of-pocket, reimbursed; ACCESS = company-paid, NOT reimbursed.
+- `/erp/income` (Finance view) tip + `/erp/my-income` (BDM view) tip: describe the identity `SMER + ORE + Commission + Other Income − Deductions`, the ONE-STOP / INSTALLMENT kind badges, installment expandable, and why Personal Gas always renders for logbook-eligible BDMs.
+
+### Files touched
+
+```
+backend/erp/models/SmerEntry.js                  [@deprecated JSDoc + pre-save isNew guard]
+backend/erp/services/incomeCalc.js               [smerOre branch removed; ALWAYS-read Expenses-ORE; _resolveCompProfile helper; always-emit PERSONAL_GAS; breakdown.schedules[] block]
+frontend/src/erp/pages/Income.jsx                [ORE-from-Expenses subtotal label; legacy-only audit row; conditional ORE column in daily entries; kind badge CSS + badge-installment expandable; PG ₱0 muted styling]
+frontend/src/erp/pages/MyIncome.jsx              [parity with Income.jsx: same subtotal label, legacy-only row, conditional column, kind badge, installment expandable, PG ₱0 styling, CSS]
+frontend/src/erp/components/DocumentDetailPanel.jsx [conditional ORE chip + conditional daily-entries ORE column]
+frontend/src/erp/pages/Smer.jsx                  [drop ore from UI totals accumulator]
+frontend/src/erp/components/WorkflowGuide.jsx    [smer/expenses/income/myIncome banner refresh]
+docs/PHASETASK-ERP.md                            [+this block]
+CLAUDE-ERP.md                                    [+Phase G1.2 section]
+```
+
+### Verification
+- `node -c` clean on SmerEntry.js and incomeCalc.js.
+- `npx vite build` — clean (frontend has no backend imports; syntax-only check).
+- Regenerate a POSTED IncomeReport for a BDM with `CompProfile.logbook_eligible=true` and no Car Logbook entries → PERSONAL_GAS row appears with ₱0 and "No personal km logged this cycle" description; expandable shows "No car logbook entries".
+- Regenerate an IncomeReport for a BDM with ExpenseEntry-ORE lines → SMER earnings total includes ORE; "ORE (from Expenses)" subtotal displays the correct amount; no double-count with legacy SMER-ORE.
+- Attempt to save a new SmerEntry with `daily_entries[0].ore_amount = 500` → pre-save rejects with `"SmerEntry.daily_entries.ore_amount is retired (day 1, amount 500). Enter ORE via the Expenses module (expense_type='ORE')."`.
+- Historical POSTED SMER with legacy `total_ore = 1200` → resave (status update) succeeds; total_ore preserved; display shows "Legacy SMER-ORE (audit only) ₱1,200.00" muted row.
+- Deduction row render: SCHEDULE line shows `INSTALLMENT 2/6` amber pill; expand → full timeline with current cycle highlighted. CASH_ADVANCE + PERSONAL_GAS + manual rows show `ONE-STOP` gray pill.
+
+### Rule adherence
+- **Rule #3 (no hardcoded business values)** — `CompProfile.logbook_eligible` is per-person and configurable; ONE-STOP vs INSTALLMENT derives from `auto_source` and `DeductionSchedule` records (lookup-free).
+- **Rule #19 (subscription-ready)** — entity-scoped CompProfile resolution via `_resolveCompProfile`; ORE pipeline reads only from per-entity ExpenseEntry.
+- **Rule #20 (workflow banners + period locks)** — banner copy updated for all affected pages; no document-lifecycle mutation, so period-lock middleware unchanged.
+- **Rule #21 (no silent self-fallback)** — unaffected (CompProfile lookup is by explicit bdm_id param, no scope fallback).

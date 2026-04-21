@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const deductionLineSchema = require('./schemas/deductionLine');
 
 const payslipSchema = new mongoose.Schema(
   {
@@ -44,7 +45,16 @@ const payslipSchema = new mongoose.Schema(
     },
     total_earnings: { type: Number, default: 0 },
 
-    // ═══ Deductions ═══
+    // ═══ Deduction Lines (Phase G1.3 — transparency parity with IncomeReport) ═══
+    // Each line has label + amount + kind badge + optional source ref. Compute
+    // service populates these from statutory calcs; flat fields below are
+    // derived from the lines to preserve the JE consumer (autoJournal.journalFromPayroll).
+    deduction_lines: { type: [deductionLineSchema], default: [] },
+
+    // ═══ Legacy flat deductions (preserved for autoJournal.journalFromPayroll) ═══
+    // These remain the canonical source for JE posting — the compute service
+    // derives them FROM deduction_lines so the two stay in sync. Kept flat so
+    // historical pre-G1.3 payslips and the JE payer code don't need migration.
     deductions: {
       sss_employee: { type: Number, default: 0 },
       philhealth_employee: { type: Number, default: 0 },
@@ -100,6 +110,13 @@ const payslipSchema = new mongoose.Schema(
 );
 
 // Pre-save: compute totals
+//
+// Phase G1.3 — prefer deduction_lines when present (sum non-REJECTED lines) so
+// a Finance correction on a line is reflected in total_deductions immediately.
+// Fall back to flat fields when deduction_lines is empty, covering historical
+// pre-G1.3 payslips that were posted before the array existed. Either way,
+// flat fields remain populated (derived by payslipCalc) so the JE consumer
+// in autoJournal.journalFromPayroll keeps working without changes.
 payslipSchema.pre('save', function (next) {
   const e = this.earnings || {};
   this.total_earnings = Math.round(
@@ -109,12 +126,19 @@ payslipSchema.pre('save', function (next) {
     (e.bonus || 0) + (e.thirteenth_month || 0) + (e.reimbursements || 0) + (e.other_earnings || 0)) * 100
   ) / 100;
 
-  const d = this.deductions || {};
-  this.total_deductions = Math.round(
-    ((d.sss_employee || 0) + (d.philhealth_employee || 0) + (d.pagibig_employee || 0) +
-    (d.withholding_tax || 0) + (d.cash_advance || 0) + (d.loan_payments || 0) +
-    (d.other_deductions || 0)) * 100
-  ) / 100;
+  if (this.deduction_lines && this.deduction_lines.length > 0) {
+    const active = this.deduction_lines.filter(l => l.status !== 'REJECTED');
+    this.total_deductions = Math.round(
+      active.reduce((sum, l) => sum + (l.amount || 0), 0) * 100
+    ) / 100;
+  } else {
+    const d = this.deductions || {};
+    this.total_deductions = Math.round(
+      ((d.sss_employee || 0) + (d.philhealth_employee || 0) + (d.pagibig_employee || 0) +
+      (d.withholding_tax || 0) + (d.cash_advance || 0) + (d.loan_payments || 0) +
+      (d.other_deductions || 0)) * 100
+    ) / 100;
+  }
 
   this.net_pay = Math.round((this.total_earnings - this.total_deductions) * 100) / 100;
   next();

@@ -69,6 +69,8 @@ const smerEntrySchema = new mongoose.Schema({
   total_perdiem: { type: Number, default: 0 },
   total_transpo: { type: Number, default: 0 },
   total_special_cases: { type: Number, default: 0 },
+  // @deprecated 2026-04 — see daily_entries.ore_amount. Historical POSTED SMERs
+  // may carry a non-zero value; new SMERs always persist 0 via the pre-save hook.
   total_ore: { type: Number, default: 0 },
   total_reimbursable: { type: Number, default: 0 },
   balance_on_hand: { type: Number, default: 0 },
@@ -97,12 +99,23 @@ const smerEntrySchema = new mongoose.Schema({
   collection: 'erp_smer_entries'
 });
 
-// Pre-save: auto-compute totals
+// Pre-save: auto-compute totals.
+// ORE retired 2026-04: on NEW docs, any daily_entries.ore_amount > 0 is rejected
+// (ORE flows via ExpenseEntry.expense_type='ORE' only). Existing docs with
+// legacy non-zero values pass through unchanged — historical POSTED SMERs must
+// still save (e.g., status updates, reversal) without corrupting audit.
 smerEntrySchema.pre('save', function (next) {
   let totalPerdiem = 0, totalTranspo = 0, totalSpecial = 0, totalOre = 0;
   let workingDays = 0;
+  const isNewDoc = this.isNew;
 
   for (const entry of this.daily_entries) {
+    if (isNewDoc && entry.ore_amount && entry.ore_amount > 0) {
+      return next(new Error(
+        `SmerEntry.daily_entries.ore_amount is retired (day ${entry.day}, amount ${entry.ore_amount}). ` +
+        `Enter ORE via the Expenses module (expense_type='ORE').`
+      ));
+    }
     totalPerdiem += entry.perdiem_amount || 0;
     totalTranspo += entry.transpo_p2p || 0;
     totalSpecial += entry.transpo_special || 0;
@@ -113,7 +126,7 @@ smerEntrySchema.pre('save', function (next) {
   this.total_perdiem = Math.round(totalPerdiem * 100) / 100;
   this.total_transpo = Math.round(totalTranspo * 100) / 100;
   this.total_special_cases = Math.round(totalSpecial * 100) / 100;
-  this.total_ore = Math.round(totalOre * 100) / 100;
+  this.total_ore = Math.round(totalOre * 100) / 100; // 0 on new docs, preserved on legacy
   this.working_days = workingDays;
   this.total_reimbursable = Math.round((totalPerdiem + totalTranspo + totalSpecial + totalOre) * 100) / 100;
   this.balance_on_hand = Math.round(((this.travel_advance || 0) - this.total_reimbursable) * 100) / 100;

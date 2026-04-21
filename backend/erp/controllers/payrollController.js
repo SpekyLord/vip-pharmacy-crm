@@ -6,6 +6,8 @@ const {
   generateSalesRepPayslip,
   computeThirteenthMonth: compute13th,
   transitionPayslipStatus,
+  getPayslipBreakdown: fetchPayslipBreakdown,
+  backfillDeductionLines,
 } = require('../services/payslipCalc');
 const { journalFromPayroll, resolveFundingCoa } = require('../services/autoJournal');
 const { createAndPostJournal } = require('../services/journalEngine');

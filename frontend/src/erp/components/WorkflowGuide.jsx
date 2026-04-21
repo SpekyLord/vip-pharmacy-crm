@@ -268,7 +268,7 @@ const WORKFLOW_GUIDES = {
   'expenses': {
     title: 'Recording Expenses (ORE / ACCESS)',
     steps: [
-      'Choose expense type: ORE (reimbursable from revolving fund) or ACCESS (company-funded)',
+      'Choose expense type: **ORE** (CASH, BDM paid out-of-pocket — reimbursed to BDM on the payslip, receipt required) or **ACCESS** (company-mode: credit card / GCash / bank — company paid, NOT reimbursed to BDM)',
       'For transport: use "Transport — P2P" (jeepney/bus/tricycle) or "Transport — Grab/Taxi" categories. Receipt is optional for transport.',
       'Use the OCR scanner to auto-extract receipt data, or enter manually',
       'Select category — COA code auto-resolves from vendor/keyword classification',
@@ -292,7 +292,7 @@ const WORKFLOW_GUIDES = {
       'Fill in each day\'s activity type (Office/Field/Other/NO_WORK)',
       'Per Diem too low? Click the [+] button to request an override — you can do this anytime while the SMER is still DRAFT, no need to wait for submit',
       'Select "NO_WORK" for days you did not work — per diem is automatically zero, no overrides allowed',
-      'Transport, ORE, and other cash expenses → enter in Expenses (ORE) for mobile-friendly input. These flow into your income automatically.',
+      'Cash expenses (ORE) with a receipt → enter in the Expenses module (expense_type=ORE). SMER-ORE was retired in April 2026; the SMER form no longer accepts per-day ORE amounts. Receipts are required — without an OR, the expense is not reimbursable.',
       'When all days are filled → Save → Validate → Submit to post per diem journal entries',
     ],
     next: [
@@ -399,7 +399,7 @@ const WORKFLOW_GUIDES = {
       { label: 'SMER', path: '/erp/smer' },
       { label: 'Collections', path: '/erp/collections' },
     ],
-    tip: 'Click any earnings or deduction row to expand and see where the number comes from. Each regeneration recalculates SMER, commission, CALF settlement, and personal gas — your manual deduction lines are preserved.',
+    tip: 'Payslip identity: SMER (Per Diem + Transport + ORE-cash from Expenses) + Commission + Other Income − Deductions. ACCESS expenses (credit card / GCash / bank) are company-paid and never added to earnings. Every deduction row carries a kind badge: **ONE-STOP** (CALF settlement, Personal Gas, manual) settles in this cycle; **INSTALLMENT N/M** is one installment of a Deduction Schedule — expand the row to see the full installment timeline. Personal Gas always appears for logbook-eligible BDMs, even at ₱0, so you can confirm the logbook was reviewed.',
   },
   'income': {
     title: 'Income Reports — Finance View',
@@ -415,7 +415,7 @@ const WORKFLOW_GUIDES = {
       { label: 'View P&L', path: '/erp/pnl' },
       { label: 'Profit Sharing', path: '/erp/profit-sharing' },
     ],
-    tip: 'Click any earnings or deduction row to expand source details. Use "Expand All" to see full breakdown for verification before approving.',
+    tip: 'Click any earnings or deduction row to expand source details. Use "Expand All" to see full breakdown for verification before approving. Every deduction has a kind badge — **ONE-STOP** (settles this cycle) or **INSTALLMENT N/M** (one of many on a Deduction Schedule). Installment rows expand to show the full schedule timeline and remaining balance. Personal Gas is always rendered for logbook-eligible BDMs (even at ₱0) for transparency. ORE comes exclusively from the Expenses module (receipt-backed CASH); ACCESS expenses are company-paid and never reimbursed.',
   },
   'pnl': {
     title: 'Profit & Loss Statement',
