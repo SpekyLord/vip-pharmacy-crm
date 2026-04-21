@@ -33,6 +33,14 @@ const FINANCIAL_RULES = [
   { module: 'IC_TRANSFER', doc_type: 'IC_TRANSFER',      description: 'Inter-company stock transfers' },
   { module: 'IC_TRANSFER', doc_type: 'IC_SETTLEMENT',    description: 'Inter-company settlement' },
   { module: 'INCOME',      doc_type: 'PNL_REPORT',       description: 'Income / P&L report submission' },
+  // Opening AR — pre-cutover historical sales. Higher fraud risk than
+  // regular SALES so it seeds under financial (president + finance).
+  { module: 'OPENING_AR',       doc_type: 'CSI',              description: 'Pre-cutover historical AR (Opening AR CSI)' },
+  // Sales Goal incentive lifecycle (Phase SG-Q2 W2). Accrual is automatic;
+  // approve/pay/reverse route through gateApproval.
+  { module: 'INCENTIVE_PAYOUT', doc_type: 'PAYOUT_APPROVE',   description: 'Incentive payout approval' },
+  { module: 'INCENTIVE_PAYOUT', doc_type: 'PAYOUT_PAY',       description: 'Incentive payout settlement (cash/bank)' },
+  { module: 'INCENTIVE_PAYOUT', doc_type: 'PAYOUT_REVERSE',   description: 'Incentive payout reversal' },
 ];
 
 // ── Operational modules: admin + finance ────────────────────────────────────
@@ -41,6 +49,29 @@ const OPERATIONAL_RULES = [
   { module: 'SALES',       doc_type: 'CREDIT_NOTE',  description: 'Credit note submission' },
   { module: 'COLLECTION',  doc_type: 'CR',           description: 'Collection receipts' },
   { module: 'INVENTORY',   doc_type: 'GRN',          description: 'Goods Received Note posting' },
+  // Phase 32 — Undertaking (receipt confirmation). Acknowledge auto-approves
+  // the linked GRN. BDM acknowledges directly; admin/finance if lookup roles
+  // restrict BDM (per-entity MODULE_DEFAULT_ROLES.UNDERTAKING).
+  { module: 'UNDERTAKING', doc_type: 'UNDERTAKING',  description: 'Goods receipt acknowledgement (auto-approves linked GRN)' },
+  // Phase 31R — standalone CreditNote (sales return) approval when submitted
+  // outside a SALES batch.
+  { module: 'CREDIT_NOTE', doc_type: 'CREDIT_NOTE',  description: 'Standalone credit note / product returns' },
+  // Phase 33 — per-fuel-entry approval (held under module=EXPENSES at
+  // gateApproval time today; admin can ALSO target rules at module=FUEL_ENTRY
+  // for future symmetric routing).
+  { module: 'FUEL_ENTRY',  doc_type: 'FUEL_ENTRY',   description: 'Individual fuel receipt approval (per-entry)' },
+  // Phase SG-Q2 — Sales Goal plan lifecycle (activate/close/reopen/bulk/compute).
+  { module: 'SALES_GOAL_PLAN', doc_type: 'PLAN_ACTIVATE',       description: 'Sales goal plan activation' },
+  { module: 'SALES_GOAL_PLAN', doc_type: 'PLAN_CLOSE',          description: 'Sales goal plan close' },
+  { module: 'SALES_GOAL_PLAN', doc_type: 'PLAN_REOPEN',         description: 'Sales goal plan reopen' },
+  { module: 'SALES_GOAL_PLAN', doc_type: 'PLAN_NEW_VERSION',    description: 'Plan versioning / new version' },
+  { module: 'SALES_GOAL_PLAN', doc_type: 'BULK_TARGETS_IMPORT', description: 'Bulk target import (Excel)' },
+  { module: 'SALES_GOAL_PLAN', doc_type: 'TARGET_REVISION',     description: 'Mid-period target revision' },
+  // Phase SG-4 — Incentive dispute lifecycle (file is open; take/resolve/close
+  // go through gateApproval).
+  { module: 'INCENTIVE_DISPUTE', doc_type: 'DISPUTE_TAKE_REVIEW', description: 'Take review on filed dispute' },
+  { module: 'INCENTIVE_DISPUTE', doc_type: 'DISPUTE_RESOLVE',     description: 'Resolve dispute (approved or denied)' },
+  { module: 'INCENTIVE_DISPUTE', doc_type: 'DISPUTE_CLOSE',       description: 'Close dispute' },
 ];
 
 async function seedApprovalRules() {

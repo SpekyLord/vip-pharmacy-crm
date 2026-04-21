@@ -6093,3 +6093,71 @@ A grid-shaped UI combined with a privileged-wildcard `tenantFilter` is a write-m
 - Require an explicit owner-scope query param on all endpoints (this fix), or
 - Use a separate controller set for "admin-audit" vs "my" grids.
 
+---
+
+## Phase 34 — Approval Rule Module Enum Alignment (Apr 21, 2026)
+
+### Status: ✅ Shipped
+
+### Problem
+
+Admin (President) opened Control Center → Approval Rules → `+ Add Rule`, picked `UNDERTAKING` in the Module dropdown, clicked Create, and got:
+
+```
+Validation failed. Please check your input.: `UNDERTAKING` is not a valid enum value for path `module`.
+```
+
+Root cause: the `ApprovalRule.module` enum was authored in Phase 29 and last touched in Phase F.1 (April 2026). Every phase since (Phase 32 Undertaking, Phase 33 Car Logbook / Fuel Entry, Phase 31R Credit Note follow-up, Phase SG-Q2 Sales Goal Plan + Incentive Payout, Phase SG-4 Incentive Dispute, Phase Opening AR split) expanded `gateApproval()` + `APPROVAL_MODULE` lookup + `MODULE_DEFAULT_ROLES` lookup — but forgot to backfill the `ApprovalRule.module` enum. The frontend dropdown (driven by `APPROVAL_MODULE` lookup, 24 entries) offered module codes the backend enum (20 entries) refused to accept. Silent for subscribers until the first admin tried to create a rule for a post-Phase-29 module.
+
+### Audit scope
+
+Reviewed every file that calls `gateApproval({ module })` and the dropdown-driver lookup. Gaps found:
+
+| Module key | Used by | In enum before? | In APPROVAL_MODULE lookup? |
+|---|---|---|---|
+| `UNDERTAKING` | undertakingController:177 | ✗ | ✓ |
+| `FUEL_ENTRY` | (docType under EXPENSES today; dropdown-offered) | ✗ | ✓ |
+| `CREDIT_NOTE` | creditNoteController:271 | ✗ | ✓ |
+| `SALES_GOAL_PLAN` | salesGoalController (9 sites) | ✗ | ✓ |
+| `INCENTIVE_PAYOUT` | incentivePayoutController (4 sites) | ✗ | ✓ |
+| `INCENTIVE_DISPUTE` | incentiveDisputeController (3 sites) | ✗ | ✓ |
+| `OPENING_AR` | salesController:778 (split batch) | ✗ | ✗ (now added) |
+
+`OPENING_AR` was a triple-blind spot: gateApproval emits the key, `MODULE_DEFAULT_ROLES` had the entry, but neither `APPROVAL_MODULE` nor `ApprovalRule.module` enum knew about it → no way to create a matrix rule for Opening AR.
+
+### Changes
+
+| File | Change |
+|---|---|
+| [backend/erp/models/ApprovalRule.js](backend/erp/models/ApprovalRule.js) | Extended `module` enum from 20 → 26 values. Added UNDERTAKING, FUEL_ENTRY, CREDIT_NOTE, SALES_GOAL_PLAN, INCENTIVE_PAYOUT, INCENTIVE_DISPUTE, OPENING_AR. Documented semantics inline. |
+| [backend/erp/controllers/lookupGenericController.js](backend/erp/controllers/lookupGenericController.js) | `APPROVAL_MODULE` seed += `OPENING_AR` (FINANCIAL). `APPROVAL_CATEGORY.FINANCIAL.metadata.modules` += `OPENING_AR`. `APPROVAL_CATEGORY.OPERATIONAL.metadata.modules` += `CREDIT_NOTE`, `INCENTIVE_DISPUTE` (they had APPROVAL_MODULE rows but were absent from the category modules list). |
+| [backend/erp/scripts/seedApprovalRules.js](backend/erp/scripts/seedApprovalRules.js) | Added default matrix rules for UNDERTAKING, CREDIT_NOTE (standalone), FUEL_ENTRY, SALES_GOAL_PLAN (6 doc_types), INCENTIVE_PAYOUT (3 doc_types), INCENTIVE_DISPUTE (3 doc_types), OPENING_AR. Subscribers that run the seed script now start with default matrix rules for every module that supports gateApproval. |
+| [CLAUDE-ERP.md](CLAUDE-ERP.md) | New "Enum ↔ Lookup Symmetry" section under Approval Workflow documenting the 5-step checklist for adding a new module (enum + APPROVAL_MODULE + MODULE_DEFAULT_ROLES + APPROVAL_CATEGORY + seed script). |
+
+### Verification
+
+- `node -c` clean on ApprovalRule.js, lookupGenericController.js, seedApprovalRules.js.
+- Admin can now save an Approval Rule for any module the frontend dropdown offers — no validation error.
+- **No migration required** — enum extensions are additive; existing rule documents remain valid.
+- **No downstream breakage** — `findMatchingRules` in approvalService.js queries by exact-match module; new keys simply surface new routing paths. `universalApprovalService.MODULE_QUERIES` already has entries for every code. `DOC_TYPE_HYDRATION` registry (Phase G4.1) already covers all new doc_types.
+- **Subscription-ready** — re-running `node backend/erp/scripts/seedApprovalRules.js` is idempotent and auto-fills matrix rules for all 15 default module+doc_type combinations across every active entity.
+
+### Role choice: admin+president vs user-specific
+
+Guidance written for President during this session: default to role-based (`admin, finance, president`) not user-specific. Reasons: (1) Rule #3 + Rule #19 scalability — subscribers inherit rules without user-ID swaps, (2) continuity — if one person is out, another same-role user unblocks the queue, (3) role-based rules survive BDM stage graduation / role changes, (4) audit trail still captures actual approver's `user_id` via `ApprovalRequest.action_by`. Reserve `approver_type: USER` for one-off legally-required specific signatories.
+
+### Non-changes (explicitly considered, rejected)
+
+- **Did not change** `gateApproval({ module: 'EXPENSES', docType: 'FUEL_ENTRY' })` in `expenseController.js:897` to `module: 'FUEL_ENTRY'`. Phase 33 deliberately holds FUEL_ENTRY ApprovalRequests under module EXPENSES; dispatcher prefers docType for auto-post routing. Changing this is a behavior migration, not a gap fix.
+- **Did not add** a gate on `interCompanyController.postTransfer`. The approval decision is made at `approveTransfer` (which does gate). `postTransfer` is a RECEIVED→POSTED terminal state flip protected by `roleCheck('president','admin')` — same pattern as petty cash deposit / sales auto-journal post-approval settlement. Adding a second gate would double-prompt without adding authorization value.
+- **Did not remove** the legacy `COLLECTIONS` (plural) enum value. No controller emits it; it's a Phase 29 orphan. Leaving it avoids a migration if any stale DB document somehow exists.
+
+### Files touched
+```
+backend/erp/models/ApprovalRule.js                    [+6 enum values]
+backend/erp/controllers/lookupGenericController.js    [+OPENING_AR to APPROVAL_MODULE + 3 category modules arrays]
+backend/erp/scripts/seedApprovalRules.js              [+15 default rule combinations]
+CLAUDE-ERP.md                                         [+Enum↔Lookup Symmetry section]
+docs/PHASETASK-ERP.md                                 [+this Phase 34 block]
+```
+
