@@ -301,7 +301,7 @@ const WORKFLOW_GUIDES = {
       { label: 'View Reports', path: '/erp/reports' },
       { label: 'People (CompProfile)', path: '/erp/people' },
     ],
-    tip: 'SMER is submitted per cycle (every ~15 days), not daily. You can save your SMER as DRAFT and update it daily — submit when the cycle ends. Per diem override: click [+] beside any day to request FULL or HALF tier with a reason. Overrides go to the Approval Hub immediately (even while SMER is DRAFT). Once approved, the override applies automatically. Per diem thresholds are per-person (CompProfile). "NO_WORK" days do NOT count as working days and cannot have overrides.',
+    tip: 'SMER is submitted per cycle (every ~15 days), not daily. You can save your SMER as DRAFT and update it daily — submit when the cycle ends. Per diem override: click [+] beside any day to request FULL or HALF tier with a reason. Overrides go to the Approval Hub immediately (even while SMER is DRAFT). Once approved, the override applies automatically and the day turns purple; once rejected, it turns red. Per diem thresholds are per-person (CompProfile). "NO_WORK" days do NOT count as working days and cannot have overrides. **SMER cannot be validated or submitted while any day has a PENDING override** — resolve it in the Approval Hub first (or have the approver decide) so the override amount lands in the journal correctly.',
   },
   'car-logbook': {
     title: 'Car Logbook',

@@ -3879,3 +3879,32 @@ Jump to `docs/PHASETASK-ERP.md` → `PHASE (FUTURE, SUBSCRIPTION-TRIGGERED) — 
 - Backend `tenantFilter` untouched; no new role logic; `req.isPresident || req.isAdmin || req.isFinance` check matches existing Rule #21 privileged pattern (same as compensation-statement endpoint, line 1363).
 - No breaking change for BDMs: their `req.tenantFilter` still scopes to self, so the `?bdm_id=` query param is ignored for them even if forged (Rule #21: no privileged elevation from query params for non-privileged).
 - `createCarLogbook`/`updateCarLogbook` signatures unchanged — cross-BDM writes remain impossible via this endpoint (President can't create on behalf of a BDM; that's a separate Phase if ever needed).
+
+---
+
+## Phase 34-P — Per Diem Override Write-Back Fix (Apr 21 2026)
+
+**Problem.** Contractor requested a per diem override on a SMER daily entry. President approved in the Approval Hub. Contractor's UI stayed PENDING forever — even after refresh. The bug: `universalApprovalController.perdiem_override` loaded the SMER with `findOne({ _id, status: { $in: getEditableStatuses('SMER') } })` where editable = `['DRAFT','ERROR']`. If the SMER had moved to VALID or POSTED before the approval landed (contractor submitted ahead of approver), `findOne` returned null and the entire write-back block silently no-op'd — ApprovalRequest flipped to APPROVED while the SMER's `override_status` stayed PENDING. The daily entry was orphaned from the approval decision, with no error surface anywhere.
+
+**Root cause.** Two independent gaps collided:
+1. **Order of operations** — `processDecision` ran first (marking the ApprovalRequest APPROVED), then the SMER write was attempted. If the write silently skipped, the request was already committed with no way to retry without bypassing `processDecision`'s "already APPROVED" guard.
+2. **Missing invariant** — `validateSmer` and `submitSmer` did not block progression while any daily entry had `override_status === 'PENDING'`. Contractors could push a SMER to VALID → POSTED with unresolved overrides still attached, and by the time the approver decided, the parent doc was no longer editable.
+
+**Fix.**
+
+1. **Reorder approval handler — apply SMER write first, then `processDecision`.** [backend/erp/controllers/universalApprovalController.js:125](backend/erp/controllers/universalApprovalController.js#L125) now loads the ApprovalRequest + SMER + daily entry up front and `throw new Error(...)`s on any missing reference (request not found, doc_id missing, SMER missing, entry missing, tier missing). The SMER write and audit log run BEFORE `processDecision`. If anything fails, the ApprovalRequest stays PENDING and the error bubbles to the Approval Hub as a clean HTTP 500 with a meaningful message.
+2. **Remove the `editable_statuses` gate on the SMER load.** Approval applies to a subdocument state (`daily_entries[i].override_status`), not to the parent SMER's lifecycle status. Keeping the gate was the silent-skip vector. Replaced with a **ledger-drift guard**: if the SMER is already POSTED, the handler throws `"SMER ... is already POSTED. Reopen the SMER (Reversal Console) before approving this per diem override so the journal re-posts with the new amount."` — protects the journal while surfacing the blocker.
+3. **Block validate + submit while any override is PENDING.** [backend/erp/controllers/expenseController.js — validateSmer](backend/erp/controllers/expenseController.js) now appends `"Day X: per diem override pending approval — cannot validate until approved or rejected (see Approval Hub)"` for every entry with `override_status === 'PENDING'`. SMER flips to ERROR, cannot reach VALID, cannot submit. Defensive re-check in `submitSmer` too (race-safe).
+4. **Inline CompProfile load.** The handler now loads the BDM's active CompProfile (via PeopleMaster + CompProfile lookup) so the approved amount uses the per-person per diem rate — matches `overridePerdiemDay` at request time, so the accepted amount equals what the requester saw at submission.
+5. **Repair script.** [backend/erp/scripts/repairStuckPerdiemOverrides.js](backend/erp/scripts/repairStuckPerdiemOverrides.js) — scans all decided `PERDIEM_OVERRIDE` ApprovalRequests, reapplies the override to any daily entry still in PENDING. Idempotent; dry-run by default; flags POSTED SMERs for manual Reversal Console handling. Run once per entity after deploy: `node erp/scripts/repairStuckPerdiemOverrides.js --apply`.
+6. **WorkflowGuide banner.** [frontend/src/erp/components/WorkflowGuide.jsx](frontend/src/erp/components/WorkflowGuide.jsx) SMER tip updated to state the new invariant: SMER cannot validate/submit while any day has a PENDING override.
+
+**Why it matters for subscribers.** The fix is purely behavioral — no new lookup categories, no role hardcoding, no schema change. Existing `MODULE_REJECTION_CONFIG.SMER.metadata.editable_statuses` lookup continues to govern rejection/resubmit flow; it's just no longer the (wrong) gate for an approval write-back. Any subscriber's SMER → override → approve cycle now has a single invariant: **parent SMER stays in DRAFT/ERROR until every override is decided, then validates, then posts with the correct amount**. Rule #20 "governing principle: any person can CREATE, but authority POSTS" is preserved; the handler now surfaces failure instead of silently committing the decision.
+
+**Integrity check.**
+- `node -c backend/erp/controllers/universalApprovalController.js` — OK.
+- `node -c backend/erp/controllers/expenseController.js` — OK.
+- `node -c backend/erp/scripts/repairStuckPerdiemOverrides.js` — OK.
+- `npx vite build` — clean in 46.42s.
+- Downstream consumers: `frontend/src/erp/pages/Smer.jsx` + `Income.jsx` + `MyIncome.jsx` + `DocumentDetailPanel.jsx` read `override_status`; all are render-only and unaffected. No other controller mutates `daily_entries[i].override_status`.
+- `universalApprove` wrapper [line 699](backend/erp/controllers/universalApprovalController.js#L699) runs inside `catchAsync` → errors from the handler surface as HTTP 500 with the thrown message; the Phase G4 close-loop at line 705 already excludes `perdiem_override` so no double-write.

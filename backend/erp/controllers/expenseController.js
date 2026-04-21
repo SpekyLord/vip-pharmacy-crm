@@ -219,6 +219,13 @@ const validateSmer = catchAsync(async (req, res) => {
       if (entry.perdiem_override && !entry.override_reason) {
         errors.push(`Day ${entry.day}: override reason required`);
       }
+      // Block validation while a per diem override is still awaiting approval.
+      // Without this, the SMER could flip to VALID → POSTED, and the subsequent
+      // override approval would silently no-op (SMER no longer editable),
+      // stranding the daily entry in PENDING state.
+      if (entry.override_status === 'PENDING') {
+        errors.push(`Day ${entry.day}: per diem override pending approval — cannot validate until approved or rejected (see Approval Hub)`);
+      }
     }
 
     smer.validation_errors = errors;
@@ -232,6 +239,19 @@ const validateSmer = catchAsync(async (req, res) => {
 const submitSmer = catchAsync(async (req, res) => {
   const smers = await SmerEntry.find({ ...req.tenantFilter, status: 'VALID' });
   if (!smers.length) return res.status(400).json({ success: false, message: 'No VALID SMERs to submit' });
+
+  // Defensive re-check: validation already rejects SMERs with pending per diem
+  // overrides, but guard submit too in case the state changed between validate
+  // and submit (race) or a future caller skips validate.
+  for (const smer of smers) {
+    const pending = smer.daily_entries.find(e => e.override_status === 'PENDING');
+    if (pending) {
+      return res.status(400).json({
+        success: false,
+        message: `SMER ${smer.period}-${smer.cycle} has a pending per diem override on day ${pending.day}. Resolve in Approval Hub before submitting.`,
+      });
+    }
+  }
 
   // Authority matrix gate
   const { gateApproval } = require('../services/approvalService');

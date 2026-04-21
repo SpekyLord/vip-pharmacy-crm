@@ -123,64 +123,81 @@ const approvalHandlers = {
   },
 
   perdiem_override: async (id, action, userId, reason) => {
-    const { processDecision } = require('../services/approvalService');
-    const result = await processDecision(id, action === 'approve' ? 'APPROVED' : 'REJECTED', userId, reason);
-
-    // Auto-apply or revert the override on the SMER daily entry
+    // Apply the override to the SMER daily entry FIRST. Only if that succeeds do we
+    // record the decision on the ApprovalRequest — this prevents the silent-skip
+    // class of bug where the request flips to APPROVED but the SMER stays PENDING.
     const ApprovalRequest = require('../models/ApprovalRequest');
     const request = await ApprovalRequest.findById(id).lean();
-    if (request?.doc_id) {
-      const SmerEntry = require('../models/SmerEntry');
-      const { getEditableStatuses } = require('../services/approvalService');
-      const editable = await getEditableStatuses(request.entity_id, 'SMER');
-      const smer = await SmerEntry.findOne({ _id: request.doc_id, status: { $in: editable } });
-      if (smer) {
-        const entryId = request.metadata?.entry_id
-          || request.description?.match(/Entry ID: (.+)$/)?.[1];  // fallback for pre-metadata requests
-        const entry = entryId ? smer.daily_entries.id(entryId) : null;
+    if (!request) throw new Error('Per diem override: approval request not found');
+    if (!request.doc_id) throw new Error('Per diem override: approval request missing doc_id (SMER reference)');
 
-        if (entry) {
-          if (action === 'approve') {
-            const tier = request.metadata?.override_tier
-              || request.description?.match(/→ (FULL|HALF)/)?.[1];
-            const rsn = request.metadata?.override_reason || 'Approved override';
-            if (tier) {
-              const Settings = require('../models/Settings');
-              const { computePerdiemAmount } = require('../services/perdiemCalc');
-              const settings = await Settings.getSettings();
-              const { amount } = computePerdiemAmount(tier === 'FULL' ? 999 : 3, smer.perdiem_rate, settings);
+    const SmerEntry = require('../models/SmerEntry');
+    const smer = await SmerEntry.findById(request.doc_id);
+    if (!smer) throw new Error(`Per diem override: SMER ${request.doc_id} not found`);
 
-              const oldTier = entry.perdiem_tier;
-              entry.perdiem_override = true;
-              entry.override_tier = tier;
-              entry.override_reason = `${rsn} (Approval #${id})`;
-              entry.override_status = 'APPROVED';
-              entry.overridden_by = userId;
-              entry.overridden_at = new Date();
-              entry.perdiem_tier = tier;
-              entry.perdiem_amount = amount;
+    const entryId = request.metadata?.entry_id
+      || request.description?.match(/Entry ID: (.+)$/)?.[1];  // fallback for pre-metadata requests
+    const entry = entryId ? smer.daily_entries.id(entryId) : null;
+    if (!entry) throw new Error(`Per diem override: daily entry ${entryId || '(id missing)'} not found on SMER ${smer._id}`);
 
-              const ErpAuditLog = require('../models/ErpAuditLog');
-              await ErpAuditLog.logChange({
-                entity_id: smer.entity_id, bdm_id: smer.bdm_id,
-                log_type: 'ITEM_CHANGE', target_ref: smer._id.toString(), target_model: 'SmerEntry',
-                field_changed: `daily_entries.${entry.day}.perdiem_tier`,
-                old_value: `${oldTier} (md_count: ${entry.md_count})`,
-                new_value: `${tier} (approved override)`,
-                changed_by: userId,
-                note: `Per diem override day ${entry.day}: ${oldTier} → ${tier} — auto-applied via approval #${id}`
-              });
-            }
-          } else {
-            // Rejected — clear pending state, keep computed amount
-            entry.override_status = 'REJECTED';
-            entry.requested_override_tier = undefined;
-          }
-          await smer.save();
-        }
+    if (action === 'approve') {
+      const tier = request.metadata?.override_tier
+        || request.description?.match(/→ (FULL|HALF)/)?.[1];
+      if (!tier) throw new Error('Per diem override: missing override_tier on request metadata/description');
+
+      // Ledger-drift guard: if the parent SMER is already POSTED, applying the
+      // override would silently change expense totals that have already journaled.
+      // Refuse — the approver must reopen the SMER, let it go back to DRAFT,
+      // re-approve, then resubmit so the journal entry posts with the new amount.
+      if (smer.status === 'POSTED') {
+        throw new Error(`SMER ${smer.period}-${smer.cycle} is already POSTED. Reopen the SMER (Reversal Console) before approving this per diem override so the journal re-posts with the new amount.`);
       }
+
+      const Settings = require('../models/Settings');
+      const { computePerdiemAmount } = require('../services/perdiemCalc');
+      const PeopleMaster = require('../models/PeopleMaster');
+      const CompProfile = require('../models/CompProfile');
+      const settings = await Settings.getSettings();
+      // Resolve the BDM's per-person CompProfile so the accepted amount matches
+      // what the requester saw at submission time. Matches loadBdmCompProfile()
+      // in expenseController.js — inlined here to avoid a cross-controller require.
+      const person = await PeopleMaster.findOne({ user_id: smer.bdm_id, entity_id: smer.entity_id }).select('_id').lean();
+      const compProfile = person
+        ? await CompProfile.findOne({ person_id: person._id, entity_id: smer.entity_id, status: 'ACTIVE' }).sort({ effective_date: -1 }).lean()
+        : null;
+      const { amount } = computePerdiemAmount(tier === 'FULL' ? 999 : 3, smer.perdiem_rate, settings, compProfile);
+
+      const oldTier = entry.perdiem_tier;
+      const rsn = request.metadata?.override_reason || 'Approved override';
+      entry.perdiem_override = true;
+      entry.override_tier = tier;
+      entry.override_reason = `${rsn} (Approval #${id})`;
+      entry.override_status = 'APPROVED';
+      entry.overridden_by = userId;
+      entry.overridden_at = new Date();
+      entry.perdiem_tier = tier;
+      entry.perdiem_amount = amount;
+
+      const ErpAuditLog = require('../models/ErpAuditLog');
+      await ErpAuditLog.logChange({
+        entity_id: smer.entity_id, bdm_id: smer.bdm_id,
+        log_type: 'ITEM_CHANGE', target_ref: smer._id.toString(), target_model: 'SmerEntry',
+        field_changed: `daily_entries.${entry.day}.perdiem_tier`,
+        old_value: `${oldTier} (md_count: ${entry.md_count})`,
+        new_value: `${tier} (approved override)`,
+        changed_by: userId,
+        note: `Per diem override day ${entry.day}: ${oldTier} → ${tier} — auto-applied via approval #${id}`
+      });
+    } else {
+      // Rejected — clear pending state, keep CRM-computed amount
+      entry.override_status = 'REJECTED';
+      entry.requested_override_tier = undefined;
     }
-    return result;
+    await smer.save();
+
+    // SMER write succeeded — record the decision on the ApprovalRequest.
+    const { processDecision } = require('../services/approvalService');
+    return await processDecision(id, action === 'approve' ? 'APPROVED' : 'REJECTED', userId, reason);
   },
 
   deduction_schedule: async (id, action, userId, reason) => {
