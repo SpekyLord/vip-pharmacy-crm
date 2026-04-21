@@ -270,6 +270,25 @@ const PAGE_GUIDES = {
       { label: 'Msg Templates', path: '/admin/message-templates' },
     ],
   },
+  'admin-invites': {
+    title: 'Invite Triage (Phase M1)',
+    steps: [
+      'Review invite links BDMs have generated for VIP Clients — see who has replied (converted) and who is still pending (sent/opened)',
+      'For unconverted invites, nudge the BDM to follow up via SMS or personal contact',
+      'Status: Sent = link generated but not opened · Opened = MD tapped but did not message · Converted = MD replied, channel ID auto-linked',
+      'Filter by status or channel to focus on Messenger-only pending invites, for example',
+    ],
+    tips: [
+      'Invites expire after 180 days automatically',
+      'Once an MD replies, their Messenger / Viber ID auto-links to their profile via the `ref=doc_<id>` param — no manual entry needed',
+      'M2 (campaigns) is blocked until NPC registration is filed — this triage page only covers 1:1 invite-and-reply',
+    ],
+    next: [
+      { label: 'VIP Clients', path: '/admin/doctors' },
+      { label: 'Comm Logs', path: '/admin/comm-logs' },
+      { label: 'Msg Templates', path: '/admin/message-templates' },
+    ],
+  },
   'message-templates': {
     title: 'Message Templates',
     steps: [

@@ -219,6 +219,9 @@ const modalStyles = `
 const ClientAddModal = ({ client, onClose, onSaved }) => {
   const { programs: PROGRAMS, supportTypes: SUPPORT_TYPES } = useLookupData();
   const { options: ENGAGEMENT_LEVELS } = useLookupOptions('ENGAGEMENT_LEVEL');
+  // Phase G1.5 — structured address for SMER per-diem notes ("City, Province")
+  const { options: PROVINCE_OPTIONS } = useLookupOptions('PH_PROVINCES');
+  const { options: LOCALITY_OPTIONS } = useLookupOptions('PH_LOCALITIES');
   const isEdit = !!client;
 
   const [saving, setSaving] = useState(false);
@@ -229,6 +232,8 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
     lastName: client?.lastName || '',
     specialization: client?.specialization || '',
     clinicOfficeAddress: client?.clinicOfficeAddress || '',
+    locality: client?.locality || '',
+    province: client?.province || '',
     phone: client?.phone || '',
     email: client?.email || '',
     notes: client?.notes || '',
@@ -286,6 +291,8 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
 
     if (formData.email) submitData.email = formData.email;
     if (formData.outletIndicator) submitData.outletIndicator = formData.outletIndicator;
+    if (formData.locality?.trim()) submitData.locality = formData.locality.trim();
+    if (formData.province?.trim()) submitData.province = formData.province.trim();
     if (formData.programsToImplement.length > 0) submitData.programsToImplement = formData.programsToImplement;
     if (formData.supportDuringCoverage.length > 0) submitData.supportDuringCoverage = formData.supportDuringCoverage;
     if (formData.levelOfEngagement) submitData.levelOfEngagement = parseInt(formData.levelOfEngagement);
@@ -426,6 +433,55 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
                 placeholder="Full address"
                 maxLength={500}
               />
+            </div>
+
+            {/* Phase G1.5 — cascading Province → Locality picker.
+                Optional in UI; backend validator is .optional() during rollout.
+                Populates SMER per-diem notes as "{locality}, {province}". */}
+            <div className="client-form-row">
+              <div className="client-form-group">
+                <label>
+                  Province
+                  {!formData.province && (
+                    <span style={{ color: '#f59e0b', fontSize: 11, marginLeft: 6, fontWeight: 500 }}>
+                      (recommended — used for SMER per-diem notes)
+                    </span>
+                  )}
+                </label>
+                <SelectField
+                  value={formData.province}
+                  onChange={(e) => {
+                    setFormData((prev) => ({ ...prev, province: e.target.value, locality: '' }));
+                    setError('');
+                  }}
+                >
+                  <option value="">— Select Province —</option>
+                  {PROVINCE_OPTIONS.map((p) => (
+                    <option key={p.code} value={p.label}>{p.label}</option>
+                  ))}
+                </SelectField>
+              </div>
+              <div className="client-form-group">
+                <label>City / Municipality</label>
+                <SelectField
+                  value={formData.locality}
+                  onChange={(e) => handleChange('locality', e.target.value)}
+                  disabled={!formData.province}
+                >
+                  <option value="">
+                    {formData.province ? '— Select Locality —' : '— Pick province first —'}
+                  </option>
+                  {LOCALITY_OPTIONS
+                    .filter((l) => {
+                      if (!formData.province) return false;
+                      const prov = PROVINCE_OPTIONS.find((p) => p.label === formData.province);
+                      return prov && l.metadata?.province_code === prov.code;
+                    })
+                    .map((l) => (
+                      <option key={l.code} value={l.label}>{l.label}</option>
+                    ))}
+                </SelectField>
+              </div>
             </div>
 
             <div className="client-form-group">

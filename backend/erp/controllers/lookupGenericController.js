@@ -2164,16 +2164,30 @@ const SEED_DEFAULTS = {
     { code: 'GLOBAL', label: 'Fallback variance thresholds (applied when no per-KPI row exists)', insert_only_metadata: true, metadata: { warning_pct: 20, critical_pct: 40 } },
   ],
 
-  // Phase G1.5 (Apr 2026) — Per-Diem Rates per-role, subscription-ready (replaces Settings.PERDIEM_RATE_DEFAULT).
-  // Rule #3 + Rule #19: no hardcoded rates; non-pharma subscribers seed their own rows.
+  // Phase G1.5 (Apr 2026) + Phase G1.6 — Per-Diem Rates per-role, subscription-ready.
+  // Replaces Settings.PERDIEM_RATE_DEFAULT. Rule #3 + Rule #19: no hardcoded rates;
+  // non-pharma subscribers seed their own rows without touching code.
   // Missing row for a role → resolvePerdiemConfig throws → payroll blocks loudly (Rule #21 "no silent fallbacks").
-  // eligibility_source: visit = CRM Visit model (pharma BDMs) | logbook = Car Logbook (drivers, Phase G1.6 stub) | manual = user logs field days | none = disabled
-  // skip_flagged: true = visits flagged by admin (duplicate photo, bad GPS) do NOT earn per-diem
-  // allow_weekend: false = weekend visits do NOT earn per-diem (pharma default); true = count Sat/Sun
-  // full_tier_threshold / half_tier_threshold: null = use existing CompProfile → Settings chain (backward compat); number = override here
+  //
+  // eligibility_source (Phase G1.6 — all wired):
+  //   visit   = CRM Visit model (pharma BDMs, default)
+  //   logbook = CarLogbookEntry (POSTED + official_km>0 → 1 worked-day credit per day)
+  //   manual  = user logs md_count by hand on the SMER (no auto-pull)
+  //   none    = per-diem disabled for this role
+  // skip_flagged:    true = visits flagged by admin (duplicate photo, bad GPS) do NOT earn per-diem
+  // allow_weekend:   false = weekend visits do NOT earn per-diem (pharma default); true = count Sat/Sun
+  // full_tier_threshold / half_tier_threshold:
+  //   null   = defer to CompProfile → Settings chain (backward compat)
+  //   number = per-role override. Precedence: CompProfile > PERDIEM_RATES > Settings.
+  //            Example: delivery driver with full_tier_threshold=1 → any worked day
+  //            (any POSTED CarLogbookEntry with official_km>0) triggers FULL per-diem.
   PERDIEM_RATES: [
     { code: 'BDM', label: 'BDM (pharma field rep) — visit-driven per-diem', insert_only_metadata: true, metadata: { rate_php: 800, eligibility_source: 'visit', skip_flagged: true, allow_weekend: false, full_tier_threshold: null, half_tier_threshold: null } },
     { code: 'ECOMMERCE_BDM', label: 'E-commerce BDM — visit-driven per-diem', insert_only_metadata: true, metadata: { rate_php: 800, eligibility_source: 'visit', skip_flagged: true, allow_weekend: false, full_tier_threshold: null, half_tier_threshold: null } },
+    // Phase G1.6 — non-pharma example template. Delivery driver: any POSTED logbook
+    // day with official_km > 0 triggers full per-diem (threshold=1). Weekends allowed.
+    // Admin copies this row and adjusts rate/thresholds per subsidiary.
+    { code: 'DELIVERY_DRIVER', label: 'Delivery driver — logbook-driven per-diem (example template)', insert_only_metadata: true, metadata: { rate_php: 500, eligibility_source: 'logbook', skip_flagged: false, allow_weekend: true, full_tier_threshold: 1, half_tier_threshold: 1 } },
   ],
 
   // Phase G1.5 — Philippine provinces (82 rows) for structured Doctor address.

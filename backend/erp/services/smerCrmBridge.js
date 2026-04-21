@@ -21,6 +21,7 @@
 
 const Visit = require('../../models/Visit');
 const Doctor = require('../../models/Doctor');
+const CarLogbookEntry = require('../models/CarLogbookEntry');
 
 // Manila (UTC+8) — all day boundaries are anchored to Manila calendar days so a
 // 1am-Manila visit (which lands at 5pm UTC the previous day) does not drop out
@@ -81,7 +82,14 @@ async function getDailyMdCount(bdmUserId, date) {
  * @returns {Promise<Object>} { "2026-04-01": { md_count, unique_doctors, locations }, ... }
  */
 async function getDailyMdCounts(bdmUserId, startDate, endDate, opts = {}) {
-  const { skipFlagged = false } = opts;
+  const { skipFlagged = false, source = 'visit' } = opts;
+
+  // Phase G1.6 — dispatch by eligibility source. 'visit' = pharma CRM Visit model
+  // (default); 'logbook' = CarLogbook (non-pharma worked-day credit); 'manual'/'none'
+  // return empty so expenseController falls back to md_count=0 for every day.
+  if (source === 'logbook') return getDailyLogbookCounts(bdmUserId, startDate, endDate);
+  if (source === 'manual' || source === 'none') return {};
+
   // Accept Date objects or YYYY-MM-DD strings; normalize to Manila calendar keys.
   const startKey = typeof startDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(startDate)
     ? startDate.slice(0, 10)
@@ -168,16 +176,104 @@ async function getDailyMdCounts(bdmUserId, startDate, endDate, opts = {}) {
 }
 
 /**
- * Get detailed visit info for a BDM on a specific date (for SMER drill-down)
- * Returns the actual doctors visited with their names
+ * Phase G1.6 — Logbook-sourced daily credits for non-pharma subscribers.
+ *
+ * Semantics: 1 POSTED CarLogbookEntry per day with official_km > 0 = 1 worked-day credit.
+ * md_count returns the binary 0/1 "did the BDM work?" signal. Admin configures
+ * PERDIEM_RATES.{role}.metadata.full_tier_threshold=1 (or similar) so any worked
+ * day triggers full per-diem. Locations come from the CarLogbookEntry.destination
+ * field (falls back to notes when destination is blank).
+ *
+ * Why POSTED-only: DRAFT/VALID/ERROR entries are in-progress and not audited.
+ * Paying per-diem on an un-posted entry risks double-payment on reopen/edit.
+ *
+ * @param {String} bdmUserId
+ * @param {Date|String} startDate
+ * @param {Date|String} endDate
+ * @returns {Promise<Object>} Same shape as getDailyMdCounts:
+ *   { "2026-04-01": { md_count, unique_doctors, locations }, ... }
+ */
+async function getDailyLogbookCounts(bdmUserId, startDate, endDate) {
+  const startKey = typeof startDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(startDate)
+    ? startDate.slice(0, 10)
+    : toManilaDateKey(startDate);
+  const endKey = typeof endDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(endDate)
+    ? endDate.slice(0, 10)
+    : toManilaDateKey(endDate);
+
+  const mongooseLib = require('mongoose');
+  const entries = await CarLogbookEntry.find({
+    bdm_id: typeof bdmUserId === 'string'
+      ? mongooseLib.Types.ObjectId.createFromHexString(bdmUserId)
+      : bdmUserId,
+    entry_date: { $gte: manilaDayStart(startKey), $lte: manilaDayEnd(endKey) },
+    status: 'POSTED',
+    official_km: { $gt: 0 }
+  })
+    .select('entry_date official_km destination notes')
+    .sort({ entry_date: 1 })
+    .lean();
+
+  const counts = {};
+  for (const e of entries) {
+    const dateKey = toManilaDateKey(e.entry_date);
+    // If a BDM has multiple POSTED entries on one day (shouldn't happen — cycle
+    // wrapper prevents duplicates — but defensive), treat as single worked day.
+    if (counts[dateKey]) continue;
+
+    const label = (e.destination && e.destination.trim()) || (e.notes && e.notes.trim()) || '';
+    counts[dateKey] = {
+      md_count: 1,           // Binary: worked = 1. Threshold config determines tier.
+      unique_doctors: 1,     // Kept for response-shape parity with visit source.
+      locations: label
+    };
+  }
+  return counts;
+}
+
+/**
+ * Get detailed drill-down for a BDM on a specific date (for SMER drill-down).
+ * Phase G1.6 — dispatches by source. Visit source returns actual doctor rows;
+ * logbook source returns a synthetic 1-row summary from the CarLogbookEntry.
  * @param {String} bdmUserId
  * @param {Date|String} date
- * @returns {Promise<Array>} [{ doctor_id, doctor_name, visitDate, ... }]
+ * @param {Object} [opts]
+ * @param {String} [opts.source='visit'] - 'visit' | 'logbook' | 'manual' | 'none'
+ * @returns {Promise<Array>} Visits (or logbook-adapted rows) for the day.
  */
-async function getDailyVisitDetails(bdmUserId, date) {
+async function getDailyVisitDetails(bdmUserId, date, opts = {}) {
+  const { source = 'visit' } = opts;
   const dateKey = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date)
     ? date.slice(0, 10)
     : toManilaDateKey(date);
+
+  if (source === 'logbook') {
+    const entries = await CarLogbookEntry.find({
+      bdm_id: bdmUserId,
+      entry_date: { $gte: manilaDayStart(dateKey), $lte: manilaDayEnd(dateKey) },
+      status: 'POSTED',
+      official_km: { $gt: 0 }
+    })
+      .select('entry_date official_km destination notes period cycle')
+      .lean();
+
+    // Adapt to the same shape the frontend consumes, so the drill-down UI renders
+    // destination+km instead of doctor name without a separate template.
+    return entries.map(e => ({
+      doctor: {
+        firstName: 'Logbook',
+        lastName: 'Entry',
+        specialization: `${e.official_km} km — ${e.cycle || ''}`,
+        clinicOfficeAddress: e.destination || e.notes || '',
+      },
+      visitDate: e.entry_date,
+      visitType: 'LOGBOOK',
+      engagementTypes: [],
+      weekLabel: e.cycle
+    }));
+  }
+
+  if (source === 'manual' || source === 'none') return [];
 
   return Visit.find({
     user: bdmUserId,
@@ -193,5 +289,6 @@ async function getDailyVisitDetails(bdmUserId, date) {
 module.exports = {
   getDailyMdCount,
   getDailyMdCounts,
+  getDailyLogbookCounts,
   getDailyVisitDetails
 };

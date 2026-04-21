@@ -505,6 +505,7 @@ const DoctorsPage = () => {
     clientType: '',
     vipClientType: '',
     assignedTo: '',
+    needsCleanup: '',
   });
   const [searchInput, setSearchInput] = useState('');
 
@@ -623,6 +624,7 @@ const DoctorsPage = () => {
       if (filters.programsToImplement) params.programsToImplement = filters.programsToImplement;
       if (filters.assignedTo) params.assignedTo = filters.assignedTo;
       if (filters.vipClientType) params.clientType = filters.vipClientType;
+      if (filters.needsCleanup) params.needsCleanup = filters.needsCleanup;
 
       const response = await doctorService.getAll(params, signal);
       const taggedDoctors = (response.data || []).map(doc => ({ ...doc, _clientType: 'vip' }));
@@ -662,6 +664,7 @@ const DoctorsPage = () => {
         limit: regularPagination.limit,
       };
       if (filters.search) params.search = filters.search;
+      if (filters.needsCleanup) params.needsCleanup = filters.needsCleanup;
 
       const response = await clientService.getAll(params, signal);
       const clientsWithType = (response.data || []).map(client => ({
@@ -680,7 +683,7 @@ const DoctorsPage = () => {
     } finally {
       setRegularLoading(false);
     }
-  }, [regularPagination.page, regularPagination.limit, filters.search]);
+  }, [regularPagination.page, regularPagination.limit, filters.search, filters.needsCleanup]);
 
   useEffect(() => {
     if (filters.clientType === 'all' || filters.clientType === 'regular') {

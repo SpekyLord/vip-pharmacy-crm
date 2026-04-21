@@ -20,6 +20,9 @@ import SelectField from '../common/Select';
 const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
   const { programs: PROGRAMS, supportTypes: SUPPORT_TYPES } = useLookupData();
   const { options: ENGAGEMENT_LEVELS } = useLookupOptions('ENGAGEMENT_LEVEL');
+  // Phase G1.5 — structured address for SMER per-diem notes ("City, Province")
+  const { options: PROVINCE_OPTIONS } = useLookupOptions('PH_PROVINCES');
+  const { options: LOCALITY_OPTIONS } = useLookupOptions('PH_LOCALITIES');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [specializations, setSpecializations] = useState([]);
@@ -36,6 +39,8 @@ const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
     specialization: doctor?.specialization || '',
     outletIndicator: doctor?.outletIndicator || '',
     clinicOfficeAddress: doctor?.clinicOfficeAddress || '',
+    locality: doctor?.locality || '',
+    province: doctor?.province || '',
     phone: doctor?.phone || '',
     email: doctor?.email || '',
     messengerId: doctor?.messengerId || '',
@@ -76,6 +81,8 @@ const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
     if (formData.specialization?.trim()) payload.specialization = formData.specialization.trim();
     if (formData.outletIndicator?.trim()) payload.outletIndicator = formData.outletIndicator.trim();
     if (formData.clinicOfficeAddress?.trim()) payload.clinicOfficeAddress = formData.clinicOfficeAddress.trim();
+    if (formData.locality?.trim()) payload.locality = formData.locality.trim();
+    if (formData.province?.trim()) payload.province = formData.province.trim();
     if (formData.phone?.trim()) payload.phone = formData.phone.trim();
     if (formData.email?.trim()) payload.email = formData.email.trim();
     payload.messengerId = formData.messengerId.trim();
@@ -176,6 +183,57 @@ const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
               onChange={handleFormChange}
               placeholder="Hospital, clinic, or office address"
             />
+          </div>
+
+          {/* Phase G1.5 — cascading Province → Locality picker.
+              Optional in UI; backend validator is .optional() during rollout.
+              Populates SMER per-diem notes as "{locality}, {province}". */}
+          <div className="def-row">
+            <div className="def-field">
+              <label>
+                Province
+                {!formData.province && (
+                  <span style={{ color: '#f59e0b', fontSize: 11, marginLeft: 6, fontWeight: 500 }}>
+                    (recommended — used for SMER per-diem notes)
+                  </span>
+                )}
+              </label>
+              <SelectField
+                name="province"
+                value={formData.province}
+                onChange={(e) => {
+                  // Clear locality when province changes so cascading works
+                  setFormData((prev) => ({ ...prev, province: e.target.value, locality: '' }));
+                }}
+              >
+                <option value="">— Select Province —</option>
+                {PROVINCE_OPTIONS.map((p) => (
+                  <option key={p.code} value={p.label}>{p.label}</option>
+                ))}
+              </SelectField>
+            </div>
+            <div className="def-field">
+              <label>City / Municipality</label>
+              <SelectField
+                name="locality"
+                value={formData.locality}
+                onChange={handleFormChange}
+                disabled={!formData.province}
+              >
+                <option value="">
+                  {formData.province ? '— Select Locality —' : '— Pick province first —'}
+                </option>
+                {LOCALITY_OPTIONS
+                  .filter((l) => {
+                    if (!formData.province) return false;
+                    const prov = PROVINCE_OPTIONS.find((p) => p.label === formData.province);
+                    return prov && l.metadata?.province_code === prov.code;
+                  })
+                  .map((l) => (
+                    <option key={l.code} value={l.label}>{l.label}</option>
+                  ))}
+              </SelectField>
+            </div>
           </div>
 
           {/* Phone + Email */}

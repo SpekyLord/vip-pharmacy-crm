@@ -1729,6 +1729,17 @@ const DoctorManagement = ({
               />
           </>
         )}
+          {/* Phase G1.6 — Needs Cleanup filter: clients missing structured locality/province.
+              Sits OUTSIDE the VIP-only conditional so admins can toggle it while viewing
+              Regular Clients too (both endpoints honor ?needsCleanup=true). */}
+          <FilterDropdown
+            value={filters.needsCleanup || ''}
+            onChange={(val) => handleFilterChange('needsCleanup', val)}
+            options={[
+              { value: '', label: 'All Locations' },
+              { value: 'true', label: 'Needs Cleanup (missing locality/province)' },
+            ]}
+          />
         </div>
       </div>
       {/* Table (Desktop) + Card List (Mobile) */}
@@ -1745,6 +1756,7 @@ const DoctorManagement = ({
                     <th>Client Type</th>
                     <th>Specialization</th>
                     <th>Hospital / Address</th>
+                    <th>Location</th>
                     <th>Assigned BDM</th>
                     <th>Visit Freq</th>
                     <th>Engagement</th>
@@ -1776,6 +1788,25 @@ const DoctorManagement = ({
                       </td>
                       <td>{doctor.specialization || '—'}</td>
                       <td>{doctor.clinicOfficeAddress || doctor.hospital || '—'}</td>
+                      <td>
+                        {doctor.locality && doctor.province ? (
+                          <span style={{ fontSize: 12 }}>{doctor.locality}, {doctor.province}</span>
+                        ) : (
+                          <span
+                            style={{
+                              fontSize: 11,
+                              padding: '2px 8px',
+                              borderRadius: 10,
+                              background: '#fef3c7',
+                              color: '#92400e',
+                              fontWeight: 500,
+                            }}
+                            title="Missing structured locality/province — blocks SMER per-diem note formatting"
+                          >
+                            Needs Cleanup
+                          </span>
+                        )}
+                      </td>
                       <td>{doctor.assignedTo?.name || doctor._ownerName || '—'}</td>
                       <td>
                         <span className={`visit-freq-badge freq-${doctor.visitFrequency || 2}`}>
@@ -2092,10 +2123,18 @@ const DoctorManagement = ({
               {/* Phase G1.5 — Cascading Province → Locality dropdowns for structured address.
                   Province picked first; Locality filters to matching province_code.
                   Label shown on SMER per-diem notes is `${locality}, ${province}`. */}
+              {/* Phase G1.5 — Optional during rollout so legacy records can still be
+                  edited. Admin is nudged via the orange "recommended" hint, not blocked.
+                  Backfill script + admin curation fill the gaps over time. */}
               <div className="form-row">
                 <div className="form-group">
                   <label htmlFor="province">
-                    Province <span style={{ color: '#dc2626' }}>*</span>
+                    Province
+                    {!formData.province && (
+                      <span style={{ color: '#f59e0b', fontSize: 12, marginLeft: 6 }}>
+                        (recommended — used for SMER per-diem notes)
+                      </span>
+                    )}
                   </label>
                   <SelectField
                     id="province"
@@ -2105,7 +2144,6 @@ const DoctorManagement = ({
                       // Clear locality when province changes so cascading works
                       setFormData(prev => ({ ...prev, province: e.target.value, locality: '' }));
                     }}
-                    required
                   >
                     <option value="">— Select Province —</option>
                     {PROVINCE_OPTIONS.map((p) => (
@@ -2114,16 +2152,13 @@ const DoctorManagement = ({
                   </SelectField>
                 </div>
                 <div className="form-group">
-                  <label htmlFor="locality">
-                    City / Municipality <span style={{ color: '#dc2626' }}>*</span>
-                  </label>
+                  <label htmlFor="locality">City / Municipality</label>
                   <SelectField
                     id="locality"
                     name="locality"
                     value={formData.locality}
                     onChange={handleFormChange}
                     disabled={!formData.province}
-                    required
                   >
                     <option value="">
                       {formData.province ? '— Select Locality —' : '— Pick province first —'}

@@ -6809,3 +6809,57 @@ See `CLAUDE-ERP.md` § Phase G1.4 for the authoritative write-up. Summary:
 ### Status
 - [x] Phase G1.5 SHIPPED (April 21, 2026). Integrity verified: 21 backend files `node -c` clean, `npx vite build` clean in 12.18s, zero `|| 800` and zero `PERDIEM_RATE_DEFAULT` in code (only documentation references remain).
 
+
+## Phase G1.6 — Logbook-Driven Per-Diem + Per-Role Thresholds + Cleanup Queue UX (April 22, 2026)
+
+Closes the nine-item follow-up backlog queued at the end of G1.5. Six items shipped; three deliberately deferred (see G1.6.5).
+
+### G1.6.1 — Logbook-sourced per-diem (item #6 in backlog)
+- [x] `smerCrmBridge.js`: new `getDailyLogbookCounts(bdmUserId, startDate, endDate)` — reads `CarLogbookEntry` filtered by `status: 'POSTED'` + `official_km > 0`. 1 qualifying entry per day = `md_count: 1`, `locations` = `destination || notes`.
+- [x] `getDailyMdCounts()` becomes a dispatcher: `opts.source='visit'` (default, existing Visit aggregation) | `'logbook'` (→ `getDailyLogbookCounts`) | `'manual'|'none'` (→ empty object).
+- [x] `getDailyVisitDetails()` mirror-dispatched: logbook source returns CarLogbookEntry rows adapted to the visit-detail shape (synthetic doctor row with `firstName='Logbook'`, `lastName='Entry'`, `clinicOfficeAddress=destination`). Frontend drill-down renders without a separate template.
+- [x] `expenseController.getSmerCrmMdCounts`: passes `source: perdiemConfig.eligibility_source` into the bridge.
+- [x] `expenseController.getSmerCrmVisitDetail`: resolves source before drill-down; same pattern.
+- [ ] **Follow-up**: `universalApprovalService.js:502` still hard-codes `visit` source for best-effort approval-enrichment. Non-blocking for pharma; non-pharma approvals show empty `cities_visited`. Upgrade when approval-review needs logbook drill-down.
+
+### G1.6.2 — Per-role tier thresholds (item #7 in backlog)
+- [x] `perdiemCalc.resolvePerdiemThresholds(settings, compProfile, perdiemConfig?)` — new 3-arg signature. Precedence: `CompProfile > PERDIEM_RATES.metadata > Settings`. `null/undefined` at any layer = defer. `0` is a valid override.
+- [x] `computePerdiemTier` + `computePerdiemAmount` accept trailing optional `perdiemConfig`. All 10+ existing call sites (4-arg) continue to work unchanged — they pass `undefined` for the 5th arg → falls through to Settings.
+- [x] `expenseController.getSmerCrmMdCounts` at line ~2549 passes the 5th arg.
+- [x] `expenseController.getPerdiemConfig` display endpoint: try/catches `resolvePerdiemConfig` so unseeded entities degrade to Settings-only display (strict path still throws).
+- [x] `PERDIEM_RATES` seed updated: documentation block expanded, `DELIVERY_DRIVER` example template added (`rate_php: 500`, `eligibility_source: 'logbook'`, `full_tier_threshold: 1`, `half_tier_threshold: 1`, `allow_weekend: true`).
+- [ ] **Follow-up**: `computePerdiemAmount(tier === 'FULL' ? 999 : 3, ...)` pattern (4+ call sites) would fail if admin sets `full_tier_threshold > 999` or `half_tier_threshold > 3` — add a dedicated `computePerdiemAmountForTier(tier, rate)` helper.
+
+### G1.6.3 — Admin "Needs Cleanup" filter (item #3 in backlog)
+- [x] `doctorController.getAllDoctors`: query param `needsCleanup=true` → filters doctors with missing `locality` or `province`. Refactored search to use `$and` composition so both filters coexist.
+- [x] `clientController.getAllClients`: same filter wiring for regular clients.
+- [x] `DoctorManagement.jsx`: new FilterDropdown ("All Locations" / "Needs Cleanup (missing locality/province)").
+- [x] `DoctorsPage.jsx`: `filters.needsCleanup` threaded into both `fetchDoctors` + `fetchRegularClients` params; `fetchRegularClients` useCallback deps updated.
+
+### G1.6.4 — Table columns + CPT Excel parser (items #2 and #4 in backlog)
+- [x] `DoctorManagement.jsx`: new "Location" column showing `{locality}, {province}` or a visible `Needs Cleanup` pill (yellow tooltip explaining it blocks SMER per-diem note formatting).
+- [x] `EmployeeVisitReport.jsx`: address cell stacks `clinicOfficeAddress` over `{locality}, {province}` on a second line when present. Both VIP and Regular-Client tables updated. CPT Excel export (separate utility) untouched.
+- [x] `excelParser.js`: `CPT_COLS.LOCALITY=39 (AN)` + `CPT_COLS.PROVINCE=40 (AO)` added as optional columns. Legacy workbooks return empty strings → importController's `|| undefined` preserves old behavior. `parsed.locality` + `parsed.province` already wired into `importController` from G1.5.
+
+### G1.6.5 — Deliberately deferred (items #1, #5, #8, #9 from backlog)
+
+| Item | Why deferred |
+|---|---|
+| #1 BDM ClientAddModal cascading picker | **Already shipped in G1.5.** Backlog entry was stale — survey confirmed `ClientAddModal.jsx:438-484` already has the picker. |
+| #5 Flip Doctor/Client validators to `.notEmpty()` on CREATE | Runtime data dependency — blocked until admin confirms the Needs Cleanup queue is empty. Re-evaluate after staging-data backfill. |
+| #8 Remove `settings.REVOLVING_FUND_AMOUNT \|\| 8000` fallback in expenseController | Explicitly flagged by user as "separate follow-up phase". Touches travel-advance resolution across 2 call sites with different semantics — deserves its own PR. |
+| #9 Extend `PH_LOCALITIES` seed to full ~1,600 PSGC rows | Needs external PSA dataset. Starter seed (~50 rows) + admin ad-hoc additions via Control Center suffice today. Wait for PSA feed or CSV bulk-seed script. |
+
+### G1.6.6 — Bulletproof bar
+- [ ] **Happy path 1 (pharma, unchanged)**: `PERDIEM_RATES.BDM.metadata.eligibility_source='visit'` → `getDailyMdCounts` returns Visit aggregation → per-diem amounts match G1.5 baseline.
+- [ ] **Happy path 2 (non-pharma)**: `PERDIEM_RATES.DELIVERY_DRIVER.metadata.eligibility_source='logbook', full_tier_threshold=1` → BDM with one POSTED CarLogbookEntry (official_km=15, status=POSTED) earns FULL per-diem. Drill-down renders "Logbook Entry — 15 km — C1".
+- [ ] **Failure 1**: DRAFT CarLogbookEntry (not POSTED) → `getDailyLogbookCounts` excludes → 0 credit. Prevents per-diem double-pay on reopen.
+- [ ] **Failure 2**: POSTED entry with `official_km=0` → excluded. Prevents credit on a zero-drive day.
+- [ ] **Failure 3**: `PERDIEM_RATES.metadata.full_tier_threshold=5` for a role → BDM with 4 MDs → HALF (not FULL); with 5 MDs → FULL. Confirm CompProfile override (3 full / 2 half on that BDM) wins even when PERDIEM_RATES is set.
+- [ ] **Needs Cleanup UX**: admin toggles the filter on /admin/doctors → sees only rows missing locality OR province; each row's Location column shows the `Needs Cleanup` pill. After editing to add locality+province, row falls out of the filtered list on next refresh.
+- [ ] **CPT Excel import**: legacy workbook (cols A-AM only) imports cleanly → `parsed.locality` and `parsed.province` are empty strings → importController's `|| undefined` → schema optional → doctor created with no structured address (falls to Needs Cleanup queue). Enhanced workbook (cols A-AO) populates the fields on import.
+- [ ] **Integrity**: `node -c` clean on all modified backend files; `npx vite build` clean; grep for `PERDIEM_MD_FULL|PERDIEM_MD_HALF` confirms Settings still has them as fallback layer (not removed).
+
+### Status
+- [x] Phase G1.6 SHIPPED (April 22, 2026) — 6 of 9 backlog items closed, 3 deliberately deferred with rationale. Build verification pending in the next todo.
+

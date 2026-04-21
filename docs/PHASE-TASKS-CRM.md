@@ -981,3 +981,266 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 | C.3 + D.3 | Separate phases | Combined in Phase 5 | Same feature (Excel Import) split across phases |
 | D.1, D.2 | Phase D no deps noted | Phase 6 with C.2 dependency | Need DCR data from C.2 |
 | B.5 (BDM Performance) | Single task | Split: B.5a (Phase 3) + B.5b (Phase 5) | DCR part needs C.2 |
+
+---
+
+# PHASE M — MARKETING, ENGAGEMENT & PLATFORM PRODUCTIZATION
+
+> **Status**: Plan drafted Apr 21, 2026. M1 ready to build. M2 gated on NPC filing. M3 gated on NPC + vippharmacy.online greenfield spec. M4 gated on M3 proof-of-life. M5 parked.
+>
+> **Strategic context** (locked after mentor-mode discovery):
+> - **Money order**: pharma distribution funds e-commerce, e-commerce proof funds SaaS productization
+> - **Year-1 (2026)**: VIP Integrated Projects Inc. runs the SaaS directly — revenue to VIP books
+> - **Year-2 (2027)**: Spin out to new "Vios Software Solutions Inc." subsidiary — architecture must support entity-reassignment of subscriptions without breaking subscriber accounts
+> - **MD Partner model**: Disclosed referral fees under signed MD Partner Agreement. MDs refer patients to vippharmacy.online via referral code; pharmacy pays disclosed rebate (% of order value, brand-agnostic). MDs do NOT handle stock, money, or dispensing — only referrals. BIR 2307 issued monthly with expanded withholding tax.
+> - **Non-goal**: The MD Partner program is explicitly NOT a dispensing workaround for in-clinic physician-dispensing. Naming, UX, and contracts must reflect the referral-partner model only. LTO protection is the top constraint.
+>
+> **Compliance gates** (hard-blocking, not soft):
+> - FDA LTO for vippharmacy.online — ✅ HAVE
+> - NPC (RA 10173) registration as Personal Information Controller — ❌ NOT FILED. M2 + M3 outbound comms BLOCKED until filed. M1 inbound-only is safe.
+> - BIR CAS PTU for VIP's own accounting system use — ❌ NOT FILED. See CLAUDE-ERP.md "BIR CAS Readiness" section. Parallel track, not a blocker for M1-M3 but blocker for M4 SaaS-on-VIP-books scale.
+
+---
+
+## PHASE M1 — Graceful Invite + Consent + MD Partner Scaffold
+
+**Goal**: Contractors (BDMs) can send branded deep-link invites to existing MDs/non-MDs across Messenger/Viber/WhatsApp/Email. Inbound replies auto-bind external IDs to Doctor records (no more manual `messengerId` entry). Consent is captured per-channel with source + timestamp. MD Partner Program enrollment scaffold built (referral code, TIN, agreement PDF).
+
+**Why M1 first**: Unlocks contractor-initiated outreach on the existing 56+ VIP Clients immediately. Safe to ship pre-NPC because everything is inbound-capture or 1:1 response — no broadcast sends. Delivers value in ~3 working days.
+
+### M1 Backend
+
+- [ ] **M1.1** — Extend `backend/models/Doctor.js`:
+  - `marketingConsent: { MESSENGER: { consented: Boolean, at: Date, source: String, withdrawn_at: Date }, VIBER: {...}, WHATSAPP: {...}, EMAIL: {...}, SMS: {...} }`
+  - `partnerProgram: { enrolled: Boolean, referralCode: String (unique, sparse), tin: String, enrolledAt: Date, agreementUrl: String, payoutMethod: String, withholdingCategory: String }`
+  - Index: `{ 'partnerProgram.referralCode': 1 }` unique sparse
+- [ ] **M1.2** — New `backend/models/InviteLink.js`: `doctor`, `channel` (MESSENGER/VIBER/WHATSAPP/EMAIL/SMS), `linkUrl`, `ref` (e.g., `doc_<doctorId>`), `sentAt`, `sentBy` (User ref), `openedAt`, `repliedAt`, `status` (sent/opened/converted/expired), `templateKey`. TTL index on `sentAt` (180 days).
+- [ ] **M1.3** — Extend `backend/routes/webhookRoutes.js` Messenger handler:
+  - Read `event.postback.referral?.ref` and `event.message.referral?.ref`
+  - If `ref` matches `doc_<id>`, `Doctor.findByIdAndUpdate(id, { messengerId: senderId })` and write `marketingConsent.MESSENGER = { consented: true, at: now, source: 'invite_reply' }`
+  - Stamp matching `InviteLink` as `status: converted, repliedAt: now`
+  - Same pattern for Viber (`body.sender.context`) and WhatsApp (template click-through)
+- [ ] **M1.4** — New endpoints on `backend/controllers/doctorController.js`:
+  - `POST /api/doctors/:id/invite` body: `{ channel, templateKey }` → generates deep link (`m.me/<page>?ref=doc_<id>`, `viber://pa?...&context=doc_<id>`, `wa.me/<phone>?text=<rendered>`, or email via SES) → logs `InviteLink` → returns shareable link (for Messenger/Viber/WA manual send) or async status (for Email/SMS direct-send)
+  - `POST /api/doctors/:id/partner/enroll` body: `{ tin, payoutMethod, withholdingCategory, agreedToTerms }` → generates unique `referralCode` (e.g., `DR-<LASTNAME>-<4digit>`) → creates signed agreement PDF via `services/pdfRenderer.js` → uploads to S3 → returns URL
+  - `POST /api/doctors/:id/consent/:channel` body: `{ consented, source }` → manual fallback for offline consent (paper form)
+  - `POST /api/unsubscribe` public route body: `{ token }` → decode JWT → write `marketingConsent.<channel>.withdrawn_at`
+- [ ] **M1.5** — Seed lookups:
+  - `INVITE_TEMPLATES` — per-channel default message templates with merge tokens (`{{bdmFirstName}}`, `{{doctorFirstName}}`, `{{pageHandle}}`)
+  - `MD_PARTNER_SETTINGS` — `rebate_pct` (default 5%), `payout_threshold_php` (default 1000), `ewt_rate_pct` (default 5%), `agreement_template_version` (default v1)
+- [ ] **M1.6** — Email sending via AWS SES (reuse AWS stack; same credentials as S3). New `backend/services/emailService.js` with `sendEmail({ to, subject, html, text, unsubscribeToken })`. Rate-limit per recipient (no more than 1 email/day from the same sender to the same address during M1).
+
+### M1 Frontend
+
+- [ ] **M1.7** — Doctor profile: new **Engage** tab (`frontend/src/components/admin/DoctorEngageTab.jsx`):
+  - 4 channel buttons (Messenger, Viber, WhatsApp, Email) — disabled if no contact info for that channel
+  - Template picker (defaults + custom)
+  - Preview pane showing rendered message with merge tokens filled
+  - "Generate Link" → copies m.me/viber://wa.me link to clipboard (for Messenger/Viber/WhatsApp since those can't be sent server-side)
+  - "Send Email" → fires SES send
+  - Consent ledger table: per-channel row with status + timestamp + source
+  - Unsubscribe button per channel (writes `withdrawn_at`)
+- [ ] **M1.8** — `frontend/src/components/admin/MDPartnerEnrollmentWizard.jsx` — 4-step flow:
+  1. Explain the program (rebate model, what MD does, what MD gets, disclosure obligation)
+  2. Capture TIN + payout method + withholding category
+  3. Preview agreement PDF
+  4. Digital consent checkbox + submit
+- [ ] **M1.9** — Invite helper banner on Doctor profile (`PageGuide` entry per Rule #1): step-by-step on when to use which channel and how consent capture works
+- [ ] **M1.10** — New admin page `/admin/invites` showing all `InviteLink` records with filters (status, channel, BDM, date range) — triage list for unconverted invites
+
+### M1 Acceptance
+
+- [ ] BDM can tap "Invite via Messenger" on Doctor profile → copies `m.me/<page>?ref=doc_<id>` → sends manually to MD
+- [ ] When MD taps that link and types first message, webhook auto-binds PSID → Doctor, writes consent, stamps InviteLink as converted
+- [ ] CommunicationLog inbound entry links cleanly to the Doctor without AI-match fallback
+- [ ] MD Partner enrollment produces unique referral code, PDF agreement, S3 URL
+- [ ] Unsubscribe flow writes `withdrawn_at` and flips consent to false
+- [ ] `/admin/invites` triage page shows pending invites
+
+### M1 Gating & Risk
+
+- **Safe to build pre-NPC** (inbound-only + 1:1 email; no broadcast)
+- **Legal review**: MD Partner Agreement template must be reviewed by counsel before any MD signs. Ship the wizard but hide the "Enroll" button behind a `MD_PARTNER_LIVE=false` flag until counsel clears it.
+
+---
+
+## PHASE M2 — Campaign Engine (Segmented Outbound) 🚧 GATED on NPC filing receipt
+
+**Goal**: Admin and entity presidents can launch segmented marketing campaigns across Email/Messenger/Viber/WhatsApp/SMS. System enforces per-recipient per-channel consent check, suppression list, and throttled delivery.
+
+### Hard gate before M2 code ships
+
+A Settings flag `CAN_SEND_CAMPAIGNS=false` (lookup-driven) blocks the dispatcher from firing a single send until:
+1. NPC registration filing receipt uploaded to Settings (PDF)
+2. DPO name + email captured per entity
+3. Privacy Notice URL captured per entity
+4. Flag flipped to `true` by admin
+
+Dispatcher reads this flag on every send. No backdoor.
+
+### M2 Backend
+
+- [ ] **M2.1** — `backend/models/Campaign.js`: `name`, `entityId`, `channels[]`, `segmentFilter` (Doctor query DSL JSON), `templateId`, `scheduleAt`, `status` (draft/scheduled/sending/done/paused/cancelled), `createdBy`, `approvedBy`, `approvedAt`, `stats` (sent, delivered, read, replied, bounced, unsubscribed)
+- [ ] **M2.2** — `backend/models/CampaignSend.js`: `campaignId`, `doctorId`, `channel`, `status`, `sentAt`, `externalMessageId`, `consentVerifiedAt`, `skippedReason`, `bouncedReason`, `openedAt`, `repliedAt`
+- [ ] **M2.3** — `backend/models/SuppressionList.js`: `entityId`, `contact` (email/phone/psid), `channel`, `reason` (unsubscribe/hard_bounce/complaint), `addedAt`. Hard-block dispatcher lookup.
+- [ ] **M2.4** — `backend/services/segmentBuilder.js` — compiles segment DSL JSON to Doctor.find() query. Supported filters: `clientType`, `specialization[]`, `visitFrequency`, `programsToImplement[]`, `supportDuringCoverage[]`, `levelOfEngagement`, `locality[]`, `province[]`, `assignedTo[]`, `partnerProgram.enrolled`, `isVipAssociated`
+- [ ] **M2.5** — `backend/services/campaignDispatcher.js`:
+  - Throttle per channel (e.g., 60 emails/min, 30 Messenger/min per Meta rate limits)
+  - Pre-send check: gate flag, recipient consent for this channel, suppression list, opt-out token in link
+  - Write `CampaignSend` per recipient (even skipped ones, with `skippedReason`)
+  - On failure, retry with exponential backoff (3 attempts), then mark `failed`
+- [ ] **M2.6** — New routes on `backend/routes/campaignRoutes.js`:
+  - `POST /api/campaigns` create (draft)
+  - `POST /api/campaigns/:id/preview` — returns count + sample 10 recipients with consent check results
+  - `POST /api/campaigns/:id/launch` — calls `gateApproval()` (Finance approver threshold from lookup when recipient count > X), on approval kicks off dispatcher
+  - `POST /api/campaigns/:id/pause`, `POST /api/campaigns/:id/resume`, `POST /api/campaigns/:id/cancel`
+  - `GET /api/campaigns/:id/report` — per-recipient status table
+- [ ] **M2.7** — Gate into ERP Approval Hub: campaign launch above `CAMPAIGN_APPROVAL_THRESHOLD` recipients (lookup, default 100) requires president/finance approval. Integrates with existing `gateApproval()` per Rule #20.
+- [ ] **M2.8** — Bounce + complaint webhooks: AWS SES SNS topic → `POST /api/webhooks/ses` adds to `SuppressionList` on hard bounce or complaint
+
+### M2 Frontend
+
+- [ ] **M2.9** — `/admin/campaigns` page with tabs: All / Draft / Scheduled / Sending / Done
+- [ ] **M2.10** — `CampaignWizard.jsx` 5-step flow: Channels → Segment (visual filter builder) → Template → Preview (sample + count) → Schedule/Launch
+- [ ] **M2.11** — `SegmentBuilder.jsx` — visual UI over the DSL; lookup-driven option lists (no hardcoded specializations etc.) per Rule #3
+- [ ] **M2.12** — `CampaignReportView.jsx` — funnel view (sent → delivered → read → replied → unsubscribed) + drill-down to per-recipient
+- [ ] **M2.13** — Settings UI for entity admins to upload NPC receipt, enter DPO, flip `CAN_SEND_CAMPAIGNS` flag (gated on admin role)
+
+### M2 Acceptance
+
+- [ ] Admin uploads NPC receipt → flag flips true → dispatcher allows sends
+- [ ] Preview shows accurate count with consent-check skip reasons
+- [ ] Launch triggers gateApproval above threshold
+- [ ] Post-launch report shows per-recipient status
+- [ ] Unsubscribe link in email writes to Suppression List AND `marketingConsent.EMAIL.withdrawn_at`
+- [ ] Hard bounce from SES adds email to Suppression List
+
+---
+
+## PHASE M3 — vippharmacy.online Integration 🚧 GATED on NPC + greenfield storefront spec
+
+**Goal**: Consumer pharmacy storefront reads from ERP `ProductMaster`, runs its own siloed customer CRM (`PharmacyCustomer` — NOT the CRM's `Doctor`), and attributes orders to MD Partners via referral codes. Monthly rebate payout to MDs flows through the ERP Approval Hub and posts double-entry JE.
+
+### M3 Pre-work (before any code)
+
+- [ ] **M3.0a** — Storefront tech stack decision: (a) extend this repo with `frontend/src/pharmacy/` tree, (b) separate React SPA deployed at `vippharmacy.online`, (c) Medusa.js / Shopify Hydrogen / custom. **User to decide before M3 estimation.**
+- [ ] **M3.0b** — Rx pharmacist verification workflow spec (FDA requirement): who verifies, SLA, rejection reasons, customer notification
+- [ ] **M3.0c** — Delivery partner integration spec: Lalamove / Grab / own-fleet / click-and-collect
+
+### M3 Backend (CRM + ERP shared)
+
+- [ ] **M3.1** — `backend/models/PharmacyCustomer.js` — separate collection, NOT polluting Doctor. Fields: `firstName`, `lastName`, `email`, `phone`, `dateOfBirth`, `scPwdId`, `addresses[]` (barangay-validated), `rxHistory[]` (uploaded prescription URLs + verified by), `orderHistory`, `marketingConsent` (same shape as Doctor), `tenantEntity` (which entity owns the customer, for future multi-subsidiary pharmacies)
+- [ ] **M3.2** — `backend/models/PharmacyOrder.js`: lines, totals, delivery (method, address, fee, ETA), payment (method, status, reference), `rxUploadUrl`, `rxVerifiedBy`, `rxVerifiedAt`, `status` (pending_rx_review → confirmed → packed → shipped → delivered → completed | rejected | cancelled), `referralCode`, `referralDoctor` (ref Doctor, set on checkout if referral code matches enrolled MD Partner)
+- [ ] **M3.3** — `backend/models/RebateAccrual.js`: `doctor`, `pharmacyOrder`, `amount`, `ratePct`, `status` (accrued/approved/paid/reversed), `accruedAt`, `approvedAt`, `paidAt`, `payoutJeRef`, `ewtAmount`, `form2307Url`
+- [ ] **M3.4** — Extend `ERP ProductMaster` (additive): `storefrontVisible`, `retailPrice`, `storefrontPhotoUrls[]`, `rxRequired`, `storefrontCategory`, `shortDescription`, `longDescription`, `storefrontSlug`
+- [ ] **M3.5** — Public pharmacy routes (no auth): `GET /api/pharmacy/products` (filtered by storefrontVisible + in-stock FEFO from ERP), `GET /api/pharmacy/products/:slug`
+- [ ] **M3.6** — Customer-scoped routes: `POST /api/pharmacy/register`, `POST /api/pharmacy/login`, `POST /api/pharmacy/cart`, `POST /api/pharmacy/checkout` (validates Rx upload for rx-required lines, reserves FIFO inventory, creates Order, attributes referral)
+- [ ] **M3.7** — Pharmacist Rx verification queue: `GET /api/pharmacy/rx-queue`, `POST /api/pharmacy/rx/:orderId/verify`, `POST /api/pharmacy/rx/:orderId/reject` — emails customer on status change
+- [ ] **M3.8** — Rebate engine `backend/services/rebateCalc.js`: on Order status transition to COMPLETED, if `referralCode` is set and matches enrolled MD Partner, create `RebateAccrual` with amount = `orderSubtotal * MD_PARTNER_SETTINGS.rebate_pct`. Brand-agnostic (no per-SKU accrual tables to avoid RA 6675 exposure).
+- [ ] **M3.9** — Monthly payout agent `backend/erp/agents/mdPartnerPayoutAgent.js`: scheduled 1st of month, groups `RebateAccrual.status=accrued` per MD, creates single `ApprovalRequest` per MD (`module: MD_PARTNER_PAYOUT`), on approval posts JE (DR: Marketing & Promotions Expense, CR: Cash-in-Bank), marks accruals as paid, generates BIR 2307 PDF
+- [ ] **M3.10** — Payment gateway integration: GCash + Maya + Xendit card processing + COD flag. `backend/services/paymentService.js` with provider abstraction.
+
+### M3 Frontend (consumer + admin)
+
+- [ ] **M3.11** — Consumer storefront (pending M3.0a decision): catalog, product detail, cart, checkout with Rx upload, order tracking, account, reorder, wishlist — per global CLAUDE.md Rules 11-18 (Filipino-mobile-first, 360px, SC/PWD, prescription handling)
+- [ ] **M3.12** — Admin dashboards:
+  - `/admin/pharmacy/orders` — order pipeline board
+  - `/admin/pharmacy/rx-queue` — pharmacist Rx review
+  - `/admin/pharmacy/partners` — MD Partner roster with lifetime referred GMV, accrued/paid rebates
+  - `/admin/pharmacy/payouts` — monthly payout batches + approval hub link
+- [ ] **M3.13** — CRM Doctor profile: new "Referral Performance" tab showing referred orders, accrued rebates, paid rebates, YTD 2307s (link to PDFs)
+
+### M3 Acceptance
+
+- [ ] Consumer completes OTC purchase end-to-end with GCash
+- [ ] Consumer uploads Rx → pharmacist verifies → order progresses
+- [ ] Order with referral code attributes to MD Partner on COMPLETED
+- [ ] Monthly payout agent groups accruals per MD, creates ApprovalRequest
+- [ ] President/Finance approves payout → JE posts → 2307 PDF generated
+- [ ] MD sees lifetime performance on their (future) partner portal
+
+### M3 Gating
+
+- NPC registration in force
+- Pharmacist on payroll (or contracted) — regulatory requirement
+- Payment gateway merchant accounts active (GCash, Maya, Xendit)
+- Delivery partner contract signed
+- Legal-reviewed MD Partner Agreement rolled out to enrolled MDs before any rebate accrual
+
+---
+
+## PHASE M4 — SaaS Productization (Multi-Tenant) 🚧 GATED on M3 proof-of-life
+
+**Goal**: VIP CRM/ERP becomes a rentable SaaS. Self-serve signup, tiered per-seat billing (Free / Starter ₱299 / Pro ₱799/user / Enterprise custom), Stripe + Xendit billing integration, and a freemium simple version on Play Store / App Store.
+
+**Year-2 constraint (architectural requirement)**: Current year, all SaaS revenue books to VIP Integrated Projects Inc. Next year, it spins to "Vios Software Solutions Inc." Architecture must support **entity-reassignment of existing subscriptions without subscriber-facing breakage**.
+
+### M4 Backend
+
+- [ ] **M4.1** — Tenant isolation audit across ALL endpoints. Tag every controller function with one of `{scope: 'platform', 'tenant', 'public'}`. Any endpoint missing `req.entityId` enforcement is flagged as a leak. Automated test: spawn 2 tenants, verify tenant-A admin cannot GET any tenant-B record.
+- [ ] **M4.2** — `backend/models/Subscription.js`: `tenant` (ref Entity), `billingEntity` (ref Entity — the entity that owns the revenue; NOT necessarily the tenant; this is the year-2 reassignment hinge), `plan`, `seats`, `mrrPhp`, `status`, `billingProvider` (stripe/xendit), `externalCustomerId`, `externalSubscriptionId`, `trialEndsAt`, `billingAnchorDay`, `currentPeriodStart`, `currentPeriodEnd`
+- [ ] **M4.3** — `backend/models/SubscriptionInvoice.js` + `SubscriptionPayment.js` — billing ledger that feeds ERP JEs
+- [ ] **M4.4** — Self-serve signup: `POST /api/signup` → creates Entity (new tenant) + admin User + seeds default Lookup rows (COA, modules, roles) + starts 14-day trial Subscription
+- [ ] **M4.5** — Stripe webhook handler: `invoice.paid` → post receipt + JE (DR: Cash, CR: Subscription Revenue), `customer.subscription.updated`, `invoice.payment_failed` → status=past_due, downgrade to FREE after grace period
+- [ ] **M4.6** — Xendit webhook handler (for GCash/Maya billing in PH): same event model as Stripe
+- [ ] **M4.7** — Entity-reassignment migration: `POST /api/platform/subscriptions/:id/reassign` body: `{ newBillingEntity }` → moves future billing to new entity, creates crossing JE (closing old entity's AR-Subscriptions, opening new entity's), preserves `tenant` unchanged (subscriber sees no break). **Test in year-1 with a dummy subscription before year-2 real migration.**
+- [ ] **M4.8** — Platform admin console (separate from tenant admin): `/platform/tenants`, `/platform/revenue`, `/platform/churn` — Vios Software Solutions president-only view
+- [ ] **M4.9** — Feature flags per plan: `PLAN_FEATURES` lookup. FREE caps at 10 VIP Clients + 3 users + no campaigns. STARTER unlocks campaigns + 50 VIP Clients. PRO unlocks multi-entity + unlimited. ENTERPRISE unlocks API access + SSO.
+
+### M4 Frontend (marketing site + in-app billing)
+
+- [ ] **M4.10** — Public marketing site (separate repo OR `frontend/src/marketing/`) at the product's domain — pricing page, features, signup CTA
+- [ ] **M4.11** — Tenant admin billing dashboard: current plan, seats, invoices, payment methods, upgrade/downgrade
+- [ ] **M4.12** — Simple consumer app for Play/App Store — PWA or React Native shell. Feature-reduced: VIP Client list, schedule view, log visit, inbox. Upgrade prompt links to full web app. Free tier; monetize via in-app purchase of bulk SMS + Excel import.
+
+### M4 Acceptance
+
+- [ ] Prospective subscriber visits marketing site → signs up → lands in their trial tenant within 2 minutes
+- [ ] Tenant A and Tenant B data fully isolated (audit script passes)
+- [ ] Stripe invoice paid → JE posts to ERP in year-1 VIP books
+- [ ] Dummy subscription reassigned from VIP to test entity without subscriber-visible break — year-2 migration is mechanical
+- [ ] Simple app published to Play Store + App Store with store listing linking to vipcrm.com (or vioscrm.com)
+- [ ] Plan-based feature gates enforced (FREE tenant cannot launch campaign)
+
+### M4 Gating
+
+- BIR CAS PTU filed for VIP Inc (to legitimize subscription revenue accounting pre-spin-out)
+- Vios Software Solutions Inc. SEC registration in process (by Q3 year-1)
+- Stripe + Xendit merchant accounts active
+- Terms of Service + SaaS Subscriber Agreement drafted by counsel
+- Data Processing Agreement template for tenants (DPA compliance on their data)
+
+---
+
+## PHASE M5 — Shared Services (HR / Bookkeeping / Accounting) ⏸ PARKED
+
+Out of scope for 2026. Skeleton entry only. Will be replanned after M4 proof-of-life.
+
+Likely shape when it revives:
+- Services business (headcount-intensive) where VIP sells Judy Mae's team's bookkeeping to subscribers
+- ERP becomes the delivery tool: subscribers give VIP access to their tenant, VIP bookkeepers do monthly closing remotely
+- Commercial model: retainer ₱X/month per subscriber + per-transaction fee
+- Staffing: minimum 2 CPAs + 3 bookkeepers + 1 HR generalist before launch
+- Compliance: DOLE Private Employment Agency license (HR), BIR bookkeeping accreditation (CPAs on payroll), PRC-registered supervising CPA
+
+Do NOT let M5 considerations influence M1-M4 architecture. It reuses existing multi-tenant bones.
+
+---
+
+## Phase M Sequencing Summary
+
+| Phase | Status | Blocker | Rough estimate |
+|---|---|---|---|
+| M1 — Invite + Consent + Partner Scaffold | 🟢 Ready | None | 3-5 working days |
+| M2 — Campaign Engine | 🟡 Gated | NPC filing receipt | 7-10 days once unblocked |
+| M3 — vippharmacy.online | 🟡 Gated | NPC + storefront stack decision + pharmacist + payment merchants | 4-6 weeks once unblocked |
+| M4 — SaaS Productization | 🟡 Gated | M3 live + Vios Software Solutions Inc. incorporation + BIR CAS | 6-8 weeks once unblocked |
+| M5 — Shared Services | ⏸ Parked | Revive after M4 | TBD |
+
+**Recommended order of parallel work starting today**:
+1. Engineering: build M1 (3-5 days)
+2. Judy Mae + consultant: start NPC registration (4-6 weeks processing)
+3. You: finalize M3.0a storefront stack decision, sign pharmacist, open Stripe + Xendit merchant accounts
+4. Legal: draft MD Partner Agreement + SaaS Terms + DPA templates
+5. Judy Mae + BIR consultant: start BIR CAS PTU prep (3-6 months processing)
+

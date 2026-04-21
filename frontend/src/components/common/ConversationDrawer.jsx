@@ -7,6 +7,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import communicationLogService from '../../services/communicationLogService';
+import inviteService from '../../services/inviteService';
 
 const CHANNELS = [
   { value: 'MESSENGER', label: 'Messenger', idField: 'messengerId' },
@@ -45,6 +46,10 @@ export default function ConversationDrawer({ doctor, onClose }) {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  // Phase M1 — invite-link state when this channel has no external ID on file
+  const [inviteLink, setInviteLink] = useState(null);
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
   const bodyRef = useRef(null);
   const pollRef = useRef(null);
 
@@ -72,6 +77,42 @@ export default function ConversationDrawer({ doctor, onClose }) {
     pollRef.current = setInterval(fetchMessages, 10000);
     return () => clearInterval(pollRef.current);
   }, [fetchMessages, channel]);
+
+  // Reset invite state when channel changes
+  useEffect(() => {
+    setInviteLink(null);
+    setCopied(false);
+  }, [channel]);
+
+  // Phase M1 — Generate a deep-link invite for Messenger/Viber/WhatsApp
+  const handleGenerateInvite = async () => {
+    if (inviteBusy || !doctor?._id) return;
+    setInviteBusy(true);
+    setError('');
+    try {
+      const res = await inviteService.generate({ doctorId: doctor._id, channel });
+      if (res?.data?.linkUrl) {
+        setInviteLink(res.data.linkUrl);
+      } else {
+        setError('Invite generated but no link returned. Check channel config.');
+      }
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Failed to generate invite.');
+    } finally {
+      setInviteBusy(false);
+    }
+  };
+
+  const handleCopyInvite = async () => {
+    if (!inviteLink) return;
+    try {
+      await navigator.clipboard.writeText(inviteLink);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      setError('Copy failed. Select the link text manually.');
+    }
+  };
 
   // Scroll to bottom on new messages
   useEffect(() => {
@@ -160,20 +201,20 @@ export default function ConversationDrawer({ doctor, onClose }) {
               <div style={styles.channelRow}>
                 {CHANNELS.map((ch) => {
                   const active = ch.value === channel;
-                  const disabled = !doctor?.[ch.idField];
+                  const noId = !doctor?.[ch.idField];
                   return (
                     <button
                       key={ch.value}
                       style={{
                         ...styles.channelBtn,
                         ...(active ? styles.channelBtnActive : {}),
-                        ...(disabled ? styles.channelBtnDisabled : {}),
+                        ...(noId ? styles.channelBtnDisabled : {}),
                       }}
-                      onClick={() => !disabled && setChannel(ch.value)}
-                      disabled={disabled}
-                      title={disabled ? `No ${ch.label} ID set` : ch.label}
+                      onClick={() => setChannel(ch.value)}
+                      title={noId ? `No ${ch.label} ID set — click to send an invite` : ch.label}
                     >
                       {ch.label}
+                      {noId && <span style={styles.channelBtnDot} />}
                     </button>
                   );
                 })}
@@ -220,10 +261,49 @@ export default function ConversationDrawer({ doctor, onClose }) {
 
         {/* Footer */}
         <div style={styles.footer}>
-          {!hasChannelId && (
+          {!hasChannelId && channel === 'EMAIL' && (
             <div style={styles.noChannelNote}>
-              No {CHANNELS.find((c) => c.value === channel)?.label} ID set for this VIP Client.
-              Update their profile to enable messaging.
+              No email address on file for this VIP Client. Update their profile to enable email.
+            </div>
+          )}
+          {!hasChannelId && channel !== 'EMAIL' && !inviteLink && (
+            <div style={styles.inviteBox}>
+              <div style={styles.inviteBoxTitle}>
+                No {CHANNELS.find((c) => c.value === channel)?.label} link for {doctor?.firstName || 'this VIP Client'} yet.
+              </div>
+              <div style={styles.inviteBoxBody}>
+                Generate a one-time invite link — send it to them via text or personal chat.
+                When they tap it and reply, their {CHANNELS.find((c) => c.value === channel)?.label} ID
+                will auto-link to this profile.
+              </div>
+              <button
+                style={styles.inviteBtn}
+                onClick={handleGenerateInvite}
+                disabled={inviteBusy}
+              >
+                {inviteBusy ? 'Generating…' : `Generate ${CHANNELS.find((c) => c.value === channel)?.label} Invite`}
+              </button>
+            </div>
+          )}
+          {!hasChannelId && channel !== 'EMAIL' && inviteLink && (
+            <div style={styles.inviteBox}>
+              <div style={styles.inviteBoxTitle}>Invite link ready</div>
+              <div style={styles.inviteLinkRow}>
+                <input
+                  type="text"
+                  value={inviteLink}
+                  readOnly
+                  onFocus={(e) => e.target.select()}
+                  style={styles.inviteLinkInput}
+                />
+                <button style={styles.inviteCopyBtn} onClick={handleCopyInvite}>
+                  {copied ? '✓ Copied' : 'Copy'}
+                </button>
+              </div>
+              <div style={styles.inviteBoxBody}>
+                Send this link to {doctor?.firstName || 'them'} through any channel you already have
+                (SMS, personal FB, in-person QR). First reply auto-links and opens this chat for real-time conversation.
+              </div>
             </div>
           )}
           {error && <div style={styles.errorNote}>{error}</div>}
@@ -283,7 +363,12 @@ const styles = {
     background: '#fff', color: '#1e40af', border: '1px solid #fff', fontWeight: 600,
   },
   channelBtnDisabled: {
-    opacity: 0.35, cursor: 'not-allowed',
+    opacity: 0.6,
+    fontStyle: 'italic',
+  },
+  channelBtnDot: {
+    display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
+    background: '#fbbf24', marginLeft: 5, verticalAlign: 'middle',
   },
   body: {
     flex: 1, overflowY: 'auto', padding: '16px 12px',
@@ -309,6 +394,27 @@ const styles = {
     borderTop: '1px solid #e5e7eb',
     padding: '10px 12px',
     background: '#fff',
+  },
+  // Phase M1 invite UI
+  inviteBox: {
+    background: '#eff6ff', border: '1px solid #bfdbfe',
+    borderRadius: 8, padding: '10px 12px', marginBottom: 8,
+  },
+  inviteBoxTitle: { fontSize: 13, fontWeight: 600, color: '#1e40af', marginBottom: 6 },
+  inviteBoxBody: { fontSize: 12, color: '#475569', lineHeight: 1.45, marginTop: 6 },
+  inviteBtn: {
+    marginTop: 8, width: '100%', padding: '10px 12px',
+    background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8,
+    fontSize: 13, fontWeight: 600, cursor: 'pointer',
+  },
+  inviteLinkRow: { display: 'flex', gap: 6, alignItems: 'center' },
+  inviteLinkInput: {
+    flex: 1, border: '1px solid #bfdbfe', borderRadius: 6, padding: '6px 8px',
+    fontSize: 11, background: '#fff', color: '#1e293b',
+  },
+  inviteCopyBtn: {
+    padding: '6px 12px', background: '#1e40af', color: '#fff',
+    border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
   },
   noChannelNote: {
     background: '#fef3c7', border: '1px solid #fde68a',

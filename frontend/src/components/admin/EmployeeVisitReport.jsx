@@ -476,7 +476,14 @@ const EmployeeVisitReport = ({ reportData, monthYear }) => {
                     ))}
                     <td>{doctor.visitFrequency}</td>
                     <td>{doctor.visitCount}</td>
-                    <td className="text-left">{doctor.clinicOfficeAddress || '-'}</td>
+                    <td className="text-left">
+                      <div>{doctor.clinicOfficeAddress || '-'}</div>
+                      {(doctor.locality || doctor.province) && (
+                        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>
+                          {[doctor.locality, doctor.province].filter(Boolean).join(', ')}
+                        </div>
+                      )}
+                    </td>
                     <td className="text-left product-cell" title={doctor.assignedProducts[0]?.name}>
                       {doctor.assignedProducts[0]?.name || '-'}
                     </td>
@@ -574,7 +581,14 @@ const EmployeeVisitReport = ({ reportData, monthYear }) => {
                       </td>
                     ))}
                     <td>{client.visitCount}</td>
-                    <td className="text-left">{client.clinicOfficeAddress || '-'}</td>
+                    <td className="text-left">
+                      <div>{client.clinicOfficeAddress || '-'}</div>
+                      {(client.locality || client.province) && (
+                        <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>
+                          {[client.locality, client.province].filter(Boolean).join(', ')}
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 ))}
                 <tr className="end-row">
