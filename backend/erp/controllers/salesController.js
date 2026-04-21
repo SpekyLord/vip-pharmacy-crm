@@ -598,7 +598,13 @@ const validateSales = catchAsync(async (req, res) => {
         sale_type: saleType,
         source: row.source,
         doc_ref: row.doc_ref,
-        status: { $nin: ['DELETION_REQUESTED'] }
+        status: { $nin: ['DELETION_REQUESTED'] },
+        // Reversed sales keep status=POSTED for audit but carry
+        // deletion_event_id. Exclude them — the CSI#/doc_ref is free for
+        // re-use and the row is hidden from the Reversal Console's reversible
+        // tab, so re-uploading the same CSI after a reversal must not be
+        // blocked by a ghost row the user cannot reach.
+        deletion_event_id: { $exists: false }
       };
       if (row.hospital_id) dupFilter.hospital_id = row.hospital_id;
       if (row.customer_id) dupFilter.customer_id = row.customer_id;

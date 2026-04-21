@@ -50,9 +50,14 @@ export function extractExifDateTime(file) {
  * @param {File}   photo    – Image file from input or camera capture.
  * @param {string} docType  – One of: CSI, CR, CWT_2307, GAS_RECEIPT, ODOMETER, OR, UNDERTAKING, DR
  * @param {string} [exifDateTime] – EXIF timestamp extracted from photo (optional)
+ * @param {object} [opts]
+ * @param {boolean} [opts.skipOcr] – When true, backend uploads to S3 and
+ *   returns `{s3_url, attachment_id}` without running the Vision + AI pipeline.
+ *   Used for photo-only attach paths (re-upload after rejection, proof-only
+ *   upload) where the 10-30s OCR cost is pure waste.
  * @returns {Promise<object>} { s3_url, doc_type, extracted, layout_family, review_required, review_reasons, validation_flags, raw_ocr_text }
  */
-export async function processDocument(photo, docType, exifDateTime) {
+export async function processDocument(photo, docType, exifDateTime, opts = {}) {
   // Compress before upload — phone cameras produce 5-12MB files that exceed
   // the backend limit and are slow over mobile data. OCR-safe: 1600px / 70%.
   const compressed = await compressImageFile(photo);
@@ -62,6 +67,9 @@ export async function processDocument(photo, docType, exifDateTime) {
   formData.append('docType', docType);
   if (exifDateTime) {
     formData.append('exifDateTime', exifDateTime);
+  }
+  if (opts.skipOcr) {
+    formData.append('skip_ocr', 'true');
   }
 
   const response = await api.post('/erp/ocr/process', formData, {

@@ -37,25 +37,20 @@ const processDocument = catchAsync(async (req, res) => {
   const userId = req.user?._id || null;
   const startedAt = Date.now();
 
-  // ── Step 1: compress + upload (always — photo upload is the fallback) ──
-  const { buffer: compressedBuffer, mimetype: compressedMime } = await compressImage(
-    req.file.buffer, req.file.mimetype, { maxDim: 1920, quality: 80 }
-  );
-  const uploadResult = await uploadErpDocument(
-    compressedBuffer,
-    req.file.originalname,
-    req.user?.name,
-    period,
-    cycle,
-    docType,
-    compressedMime
-  );
-
-  // ── Step 2: gate via OcrSettings (per-entity, subscription-ready) ──
+  // ── Step 1: resolve OcrSettings + skipReason FIRST so we can fork S3 upload
+  //           and OCR work in parallel (they both read req.file.buffer and have
+  //           no ordering dependency). Serially: ~upload + ~ocr. In parallel:
+  //           max(upload, ocr). Saves 1.5–3s on every Scan CSI call.
   const settings = await OcrSettings.getForEntity(entityId);
   let skipReason = 'NONE';
 
-  if (!settings.enabled) {
+  // Caller-opt-out: photo-only uploads (re-upload after rejection, proof-only
+  // attachments) pass skip_ocr=true to avoid the Vision + AI pipeline entirely.
+  const skipByRequest = String(req.body.skip_ocr || '').toLowerCase() === 'true';
+
+  if (skipByRequest) {
+    skipReason = 'SKIPPED_BY_REQUEST';
+  } else if (!settings.enabled) {
     skipReason = 'OCR_DISABLED';
   } else if (Array.isArray(settings.allowed_doc_types) && settings.allowed_doc_types.length > 0
              && !settings.allowed_doc_types.includes(docType.toUpperCase())) {
@@ -66,6 +61,63 @@ const processDocument = catchAsync(async (req, res) => {
       skipReason = 'MONTHLY_QUOTA_EXCEEDED';
     }
   }
+
+  // ── Step 2: fork S3 upload + OCR work in parallel. ──
+  const uploadPromise = (async () => {
+    const { buffer, mimetype } = await compressImage(
+      req.file.buffer, req.file.mimetype, { maxDim: 1920, quality: 80 }
+    );
+    return uploadErpDocument(
+      buffer, req.file.originalname, req.user?.name, period, cycle, docType, mimetype
+    );
+  })();
+
+  // OCR state that needs to survive a partial failure so OcrUsageLog reflects
+  // how far the pipeline got (e.g. preprocessing ran but Vision timed out).
+  const ocrState = {
+    preprocessing_applied: false,
+    ai_fallback_called: false,
+    ai_trigger_reason: 'NONE',
+    vendor_auto_learn_action: 'NONE',
+    ai_skipped_reason: 'NONE',
+    cost_usd: 0,
+  };
+
+  const shouldRunOcr = skipReason === 'NONE';
+  const ocrPromise = shouldRunOcr ? (async () => {
+    // Phase H4: enhance the image for Vision (auto-rotate, grayscale, contrast, sharpen).
+    // Original buffer is preserved on S3 so the BDM still sees their actual photo;
+    // the enhanced version is in-memory only and used purely as Vision input.
+    let visionBuffer = req.file.buffer;
+    if (settings.preprocessing_enabled) {
+      const pre = await enhanceForOcr(req.file.buffer);
+      visionBuffer = pre.buffer;
+      ocrState.preprocessing_applied = pre.applied;
+    }
+    const ocrResult = await detectText(visionBuffer, { feature });
+    const exifDateTime = String(req.body.exifDateTime || '').trim() || null;
+    const processed = await processOcr(docType, ocrResult, {
+      exifDateTime,
+      imageBuffer: req.file.buffer,
+      entityId,
+      userId,
+      aiFallbackEnabled: settings.ai_fallback_enabled,
+      aiFieldCompletionEnabled: settings.ai_field_completion_enabled,
+      vendorAutoLearnEnabled: settings.vendor_auto_learn_enabled,
+    });
+    ocrState.ai_fallback_called = !!processed.ai_fallback_used;
+    ocrState.ai_trigger_reason = processed.ai_trigger_reason || 'NONE';
+    ocrState.vendor_auto_learn_action = processed.vendor_auto_learn?.action || 'NONE';
+    ocrState.ai_skipped_reason = processed.ai_skipped_reason || 'NONE';
+    ocrState.cost_usd = typeof processed.ai_cost_usd === 'number' ? processed.ai_cost_usd : 0;
+    return processed;
+  })() : Promise.resolve(null);
+
+  const [uploadSettled, ocrSettled] = await Promise.allSettled([uploadPromise, ocrPromise]);
+
+  // S3 upload failing is a hard error — there is no photo and no fallback.
+  if (uploadSettled.status === 'rejected') throw uploadSettled.reason;
+  const uploadResult = uploadSettled.value;
 
   // ── Step 3: persist DocumentAttachment + log usage (non-blocking on failure) ──
   const writeAttachment = async (ocrApplied) => {
@@ -143,89 +195,22 @@ const processDocument = catchAsync(async (req, res) => {
     });
   }
 
-  // ── Step 5: Full OCR pipeline ──
-  let processed = null;
-  let ai_fallback_called = false;
-  let preprocessing_applied = false;
-  let ai_trigger_reason = 'NONE';
-  let vendor_auto_learn_action = 'NONE';
-  let ai_skipped_reason = 'NONE';
-  let cost_usd = 0;
-  try {
-    // Phase H4: enhance the image for Vision (auto-rotate, grayscale, contrast, sharpen).
-    // Original buffer is preserved on S3 so the BDM still sees their actual photo;
-    // the enhanced version is in-memory only and used purely as Vision input.
-    let visionBuffer = req.file.buffer;
-    if (settings.preprocessing_enabled) {
-      const pre = await enhanceForOcr(req.file.buffer);
-      visionBuffer = pre.buffer;
-      preprocessing_applied = pre.applied;
-    }
-
-    const ocrResult = await detectText(visionBuffer, { feature });
-    const exifDateTime = String(req.body.exifDateTime || '').trim() || null;
-    processed = await processOcr(docType, ocrResult, {
-      exifDateTime,
-      imageBuffer: req.file.buffer,
-      entityId,
-      userId,
-      aiFallbackEnabled: settings.ai_fallback_enabled,
-      aiFieldCompletionEnabled: settings.ai_field_completion_enabled,
-      vendorAutoLearnEnabled: settings.vendor_auto_learn_enabled,
-    });
-    ai_fallback_called = !!processed.ai_fallback_used;
-    ai_trigger_reason = processed.ai_trigger_reason || 'NONE';
-    vendor_auto_learn_action = processed.vendor_auto_learn?.action || 'NONE';
-    ai_skipped_reason = processed.ai_skipped_reason || 'NONE';
-    cost_usd = typeof processed.ai_cost_usd === 'number' ? processed.ai_cost_usd : 0;
-
-    const attachmentId = await writeAttachment(true);
-    await writeUsage({
-      vision_called: true,
-      ai_fallback_called,
-      preprocessing_applied,
-      ai_trigger_reason,
-      vendor_auto_learn_action,
-      success: true,
-      classification: processed.classification,
-      ai_skipped_reason,
-      cost_usd,
-    });
-
-    return res.status(200).json({
-      success: true,
-      message: 'OCR processed successfully.',
-      data: {
-        s3_url: uploadResult.url,
-        s3_key: uploadResult.key,
-        attachment_id: attachmentId,
-        doc_type: processed.doc_type,
-        extracted: processed.extracted,
-        layout_family: processed.layout_family,
-        review_required: processed.review_required,
-        review_reasons: processed.review_reasons,
-        preprocessing: processed.preprocessing,
-        classification: processed.classification,
-        resolved: processed.resolved || {},
-        vendor_auto_learn: processed.vendor_auto_learn || null,
-        validation_flags: processed.validation_flags,
-        raw_ocr_text: processed.raw_ocr_text,
-      },
-    });
-  } catch (err) {
-    // OCR failed — still surface the uploaded photo so the user has the manual fallback
+  // ── Step 5: Full OCR pipeline — consume the already-resolved OCR work. ──
+  if (ocrSettled.status === 'rejected') {
+    // OCR failed — still surface the uploaded photo so the user has the manual fallback.
+    const err = ocrSettled.reason;
     const attachmentId = await writeAttachment(false);
     await writeUsage({
       vision_called: true,
-      ai_fallback_called,
-      preprocessing_applied,
-      ai_trigger_reason,
-      vendor_auto_learn_action,
+      ai_fallback_called: ocrState.ai_fallback_called,
+      preprocessing_applied: ocrState.preprocessing_applied,
+      ai_trigger_reason: ocrState.ai_trigger_reason,
+      vendor_auto_learn_action: ocrState.vendor_auto_learn_action,
       success: false,
       classification: null,
       error_message: err.message,
-      ai_skipped_reason,
-      cost_usd,
+      ai_skipped_reason: ocrState.ai_skipped_reason,
+      cost_usd: ocrState.cost_usd,
     });
     return res.status(200).json({
       success: true,
@@ -248,6 +233,41 @@ const processDocument = catchAsync(async (req, res) => {
       },
     });
   }
+
+  const processed = ocrSettled.value;
+  const attachmentId = await writeAttachment(true);
+  await writeUsage({
+    vision_called: true,
+    ai_fallback_called: ocrState.ai_fallback_called,
+    preprocessing_applied: ocrState.preprocessing_applied,
+    ai_trigger_reason: ocrState.ai_trigger_reason,
+    vendor_auto_learn_action: ocrState.vendor_auto_learn_action,
+    success: true,
+    classification: processed.classification,
+    ai_skipped_reason: ocrState.ai_skipped_reason,
+    cost_usd: ocrState.cost_usd,
+  });
+
+  return res.status(200).json({
+    success: true,
+    message: 'OCR processed successfully.',
+    data: {
+      s3_url: uploadResult.url,
+      s3_key: uploadResult.key,
+      attachment_id: attachmentId,
+      doc_type: processed.doc_type,
+      extracted: processed.extracted,
+      layout_family: processed.layout_family,
+      review_required: processed.review_required,
+      review_reasons: processed.review_reasons,
+      preprocessing: processed.preprocessing,
+      classification: processed.classification,
+      resolved: processed.resolved || {},
+      vendor_auto_learn: processed.vendor_auto_learn || null,
+      validation_flags: processed.validation_flags,
+      raw_ocr_text: processed.raw_ocr_text,
+    },
+  });
 });
 
 const getSupportedTypes = catchAsync(async (req, res) => {
