@@ -105,25 +105,35 @@ const MODULE_QUERIES = [
     query: async (entityId) => {
       const items = await DeductionSchedule.find({ entity_id: entityId, status: 'PENDING_APPROVAL' })
         .populate('bdm_id', 'name email')
+        // Phase G1.4 — employee-owner schedules have no bdm_id; populate the
+        // PeopleMaster ref so the Approval Hub row still shows who owes the
+        // deduction. One of the two populates resolves per row, per the XOR.
+        .populate('person_id', 'full_name person_type department')
         .populate('approved_by', 'name')
         .sort({ created_at: -1 })
         .lean();
-      return items.map(item => ({
-        id: `DEDUCTION_SCHEDULE:${item._id}`,
-        module: 'DEDUCTION_SCHEDULE',
-        doc_type: item.term_months === 1 ? 'ONE_TIME' : 'INSTALLMENT',
-        doc_id: item._id,
-        doc_ref: item.schedule_code,
-        description: `${item.bdm_id?.name || 'BDM'} — ${item.deduction_label} ${item.term_months > 1 ? `₱${item.installment_amount}/mo × ${item.term_months}` : ''} · ${item.target_cycle || 'C2'}`,
-        amount: item.total_amount,
-        submitted_by: item.bdm_id?.name || 'Unknown',
-        submitted_at: item.created_at,
-        status: 'PENDING_APPROVAL',
-        current_action: 'Approve',
-        action_key: 'APPROVE',
-        approve_data: { type: 'deduction_schedule', id: item._id },
-        details: buildDocumentDetails('DEDUCTION_SCHEDULE', item),
-      }));
+      return items.map(item => {
+        const ownerName = item.bdm_id?.name
+          || item.person_id?.full_name
+          || 'Unknown';
+        const ownerClass = item.bdm_id ? 'BDM' : (item.person_id?.person_type || 'EMPLOYEE');
+        return {
+          id: `DEDUCTION_SCHEDULE:${item._id}`,
+          module: 'DEDUCTION_SCHEDULE',
+          doc_type: item.term_months === 1 ? 'ONE_TIME' : 'INSTALLMENT',
+          doc_id: item._id,
+          doc_ref: item.schedule_code,
+          description: `${ownerName} (${ownerClass}) — ${item.deduction_label} ${item.term_months > 1 ? `₱${item.installment_amount}/mo × ${item.term_months}` : ''} · ${item.target_cycle || 'C2'}`,
+          amount: item.total_amount,
+          submitted_by: ownerName,
+          submitted_at: item.created_at,
+          status: 'PENDING_APPROVAL',
+          current_action: 'Approve',
+          action_key: 'APPROVE',
+          approve_data: { type: 'deduction_schedule', id: item._id },
+          details: buildDocumentDetails('DEDUCTION_SCHEDULE', item),
+        };
+      });
     },
     // Roles: lookup-driven via MODULE_DEFAULT_ROLES
   },
@@ -1036,7 +1046,7 @@ const DOC_TYPE_HYDRATION = {
   INCOME_REPORT:       { modelName: 'IncomeReport',      populate: [{ path: 'bdm_id', select: 'name email' }] },
   PAYSLIP:             { modelName: 'Payslip',           populate: [{ path: 'user_id', select: 'name email' }] },
   KPI_RATING:          { modelName: 'KpiSelfRating',     populate: [{ path: 'bdm_id', select: 'name email' }] },
-  DEDUCTION_SCHEDULE:  { modelName: 'DeductionSchedule', populate: [{ path: 'bdm_id', select: 'name email' }] },
+  DEDUCTION_SCHEDULE:  { modelName: 'DeductionSchedule', populate: [{ path: 'bdm_id', select: 'name email' }, { path: 'person_id', select: 'full_name person_type department' }] },
   // ── Group B — docs whose primary surface IS the ApprovalRequest ──
   SUPPLIER_INVOICE:    { modelName: 'SupplierInvoice',      populate: [{ path: 'vendor_id', select: 'vendor_name tin' }, { path: 'po_id', select: 'po_number' }] },
   JOURNAL_ENTRY:       { modelName: 'JournalEntry',         populate: [{ path: 'posted_by', select: 'name' }, { path: 'created_by', select: 'name' }] },

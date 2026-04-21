@@ -8,9 +8,12 @@ const {
   transitionPayslipStatus,
   getPayslipBreakdown: fetchPayslipBreakdown,
   backfillDeductionLines,
+  deriveFlatFromLines,
 } = require('../services/payslipCalc');
 const { journalFromPayroll, resolveFundingCoa } = require('../services/autoJournal');
 const { createAndPostJournal } = require('../services/journalEngine');
+const { syncInstallmentStatusForPayslip } = require('../services/deductionScheduleService');
+const { checkPeriodOpen } = require('../utils/periodLock');
 const ErpAuditLog = require('../models/ErpAuditLog');
 const { notifyPayrollPosted } = require('../services/erpNotificationService');
 
@@ -297,6 +300,229 @@ const computeThirteenthMonth = catchAsync(async (req, res) => {
   });
 });
 
+// ═══════════════════════════════════════════
+// PHASE G1.4 — FINANCE PER-LINE DEDUCTION CRUD
+// ═══════════════════════════════════════════
+//
+// Mirrors the contractor IncomeReport endpoints (incomeController.addDeductionLine /
+// verifyDeductionLine / financeAddDeductionLine / removeDeductionLine) so that
+// Finance has identical per-line tools on employee payslips:
+//
+//   POST /payroll/:id/deduction-line              → financeAddDeductionLine
+//   POST /payroll/:id/deduction-line/:lineId/verify → verifyDeductionLine (verify/correct/reject)
+//   DELETE /payroll/:id/deduction-line/:lineId    → removeDeductionLine (non-auto only)
+//
+// Guardrails (all three endpoints):
+//   • Status must be COMPUTED or REVIEWED (cannot mutate APPROVED/POSTED — those go
+//     through presidentReversePayslip instead).
+//   • `checkPeriodOpen()` blocks mutations to closed periods (Rule #20 period lock).
+//   • `deriveFlatFromLines()` runs on every mutation so the flat `deductions.*` fields
+//     (consumed by autoJournal.journalFromPayroll) stay in sync. Protects the JE.
+//   • SCHEDULE-sourced line corrections cascade to DeductionSchedule.installments
+//     via syncInstallmentStatusForPayslip — same contract as the contractor path.
+//
+// Role: admin | finance | president (applied at the route layer).
+
+// Finance adds a manual line that the auto-compute missed (e.g., HMO co-pay,
+// uniform cost, one-off correction). Line is created status=VERIFIED — Finance
+// is the authoritative entry path for employee payslip deductions; there's no
+// BDM self-service equivalent for employees.
+const financeAddDeductionLine = catchAsync(async (req, res) => {
+  const { deduction_type, deduction_label, amount, description, finance_note } = req.body;
+
+  if (!deduction_type || !deduction_label || amount === undefined) {
+    return res.status(400).json({
+      success: false,
+      message: 'deduction_type, deduction_label, and amount are required'
+    });
+  }
+  if (typeof amount !== 'number' || amount < 0) {
+    return res.status(400).json({ success: false, message: 'amount must be a non-negative number' });
+  }
+
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const payslip = await Payslip.findOne({
+    _id: req.params.id,
+    ...entityScope,
+    status: { $in: ['COMPUTED', 'REVIEWED'] }
+  });
+
+  if (!payslip) {
+    return res.status(404).json({
+      success: false,
+      message: 'Payslip not found or not in editable status (must be COMPUTED or REVIEWED)'
+    });
+  }
+
+  await checkPeriodOpen(payslip.entity_id, payslip.period);
+
+  payslip.deduction_lines.push({
+    deduction_type,
+    deduction_label,
+    amount: Math.round(amount * 100) / 100,
+    description: description || '',
+    entered_by: req.user._id,
+    entered_at: new Date(),
+    status: 'VERIFIED',
+    verified_by: req.user._id,
+    verified_at: new Date(),
+    finance_note: finance_note || 'Added by Finance',
+    auto_source: null,
+  });
+
+  // Keep flat fields in sync with the lines so the JE consumer stays correct.
+  payslip.deductions = deriveFlatFromLines(payslip.deduction_lines);
+  payslip.markModified('deduction_lines');
+  payslip.markModified('deductions');
+  await payslip.save();
+
+  const updated = await Payslip.findById(payslip._id)
+    .populate('person_id', 'full_name person_type department')
+    .populate('deduction_lines.entered_by', 'name')
+    .populate('deduction_lines.verified_by', 'name')
+    .lean();
+
+  res.status(201).json({ success: true, data: updated });
+});
+
+// Finance verifies, corrects, or rejects an existing deduction line.
+// SCHEDULE-sourced lines additionally sync the upstream installment status
+// so the DeductionSchedule's audit trail reflects Finance's decision.
+const verifyDeductionLine = catchAsync(async (req, res) => {
+  const { lineId } = req.params;
+  const { action, amount, finance_note } = req.body;
+
+  if (!['verify', 'correct', 'reject'].includes(action)) {
+    return res.status(400).json({ success: false, message: 'action must be verify, correct, or reject' });
+  }
+
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const payslip = await Payslip.findOne({
+    _id: req.params.id,
+    ...entityScope,
+    status: { $in: ['COMPUTED', 'REVIEWED'] }
+  });
+
+  if (!payslip) {
+    return res.status(404).json({
+      success: false,
+      message: 'Payslip not found or not in editable status (must be COMPUTED or REVIEWED)'
+    });
+  }
+
+  await checkPeriodOpen(payslip.entity_id, payslip.period);
+
+  const line = payslip.deduction_lines.id(lineId);
+  if (!line) {
+    return res.status(404).json({ success: false, message: 'Deduction line not found' });
+  }
+
+  switch (action) {
+    case 'verify':
+      line.status = 'VERIFIED';
+      line.verified_by = req.user._id;
+      line.verified_at = new Date();
+      if (finance_note) line.finance_note = finance_note;
+      break;
+    case 'correct':
+      if (amount === undefined || typeof amount !== 'number' || amount < 0) {
+        return res.status(400).json({ success: false, message: 'Corrected amount is required and must be non-negative' });
+      }
+      line.original_amount = line.amount;
+      line.amount = Math.round(amount * 100) / 100;
+      line.status = 'CORRECTED';
+      line.verified_by = req.user._id;
+      line.verified_at = new Date();
+      line.finance_note = finance_note || '';
+      break;
+    case 'reject':
+      line.status = 'REJECTED';
+      line.verified_by = req.user._id;
+      line.verified_at = new Date();
+      line.finance_note = finance_note || 'Rejected by Finance';
+      break;
+  }
+
+  payslip.deductions = deriveFlatFromLines(payslip.deduction_lines);
+  payslip.markModified('deduction_lines');
+  payslip.markModified('deductions');
+  await payslip.save();
+
+  // Cascade SCHEDULE-sourced decisions to the DeductionSchedule installment
+  // so the audit trail stays coherent (incomeController does the same on
+  // the contractor side). Non-blocking — ledger integrity is already safe.
+  if (line.auto_source === 'SCHEDULE' && line.schedule_ref?.schedule_id) {
+    try {
+      const newInstStatus = action === 'reject' ? 'CANCELLED' : 'VERIFIED';
+      await syncInstallmentStatusForPayslip(
+        line.schedule_ref.schedule_id,
+        line.schedule_ref.installment_id,
+        newInstStatus,
+        payslip._id,
+        line._id
+      );
+    } catch (syncErr) {
+      console.error('Payslip schedule sync error (non-blocking):', syncErr.message);
+    }
+  }
+
+  const updated = await Payslip.findById(payslip._id)
+    .populate('person_id', 'full_name person_type department')
+    .populate('deduction_lines.entered_by', 'name')
+    .populate('deduction_lines.verified_by', 'name')
+    .lean();
+
+  res.json({ success: true, data: updated });
+});
+
+// Finance removes a manual line (auto_source=null). Auto-generated lines
+// (statutory, Personal Gas, SCHEDULE) cannot be removed — they rebuild on the
+// next compute, so removing them is a reject action, not a delete.
+const removeDeductionLine = catchAsync(async (req, res) => {
+  const { lineId } = req.params;
+
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const payslip = await Payslip.findOne({
+    _id: req.params.id,
+    ...entityScope,
+    status: { $in: ['COMPUTED', 'REVIEWED'] }
+  });
+
+  if (!payslip) {
+    return res.status(404).json({
+      success: false,
+      message: 'Payslip not found or not in editable status (must be COMPUTED or REVIEWED)'
+    });
+  }
+
+  await checkPeriodOpen(payslip.entity_id, payslip.period);
+
+  const line = payslip.deduction_lines.id(lineId);
+  if (!line) {
+    return res.status(404).json({ success: false, message: 'Deduction line not found' });
+  }
+  if (line.auto_source) {
+    return res.status(400).json({
+      success: false,
+      message: `Cannot remove auto-generated lines (${line.auto_source}). Use the Reject action to exclude this line from the payslip.`
+    });
+  }
+
+  payslip.deduction_lines.pull(lineId);
+  payslip.deductions = deriveFlatFromLines(payslip.deduction_lines);
+  payslip.markModified('deduction_lines');
+  payslip.markModified('deductions');
+  await payslip.save();
+
+  const updated = await Payslip.findById(payslip._id)
+    .populate('person_id', 'full_name person_type department')
+    .populate('deduction_lines.entered_by', 'name')
+    .populate('deduction_lines.verified_by', 'name')
+    .lean();
+
+  res.json({ success: true, data: updated });
+});
+
 // President-only: SAP Storno reversal for a POSTED Payslip. Reverses the linked
 // payroll JE (basic/allowances/SSS/PH/Pag-IBIG/WHT). Older payslips without
 // event_id fall back to JE lookup by source_module='PAYROLL' + period match.
@@ -314,4 +540,8 @@ module.exports = {
   presidentReversePayslip,
   getPayslipHistory,
   computeThirteenthMonth,
+  // Phase G1.4 — Finance per-line deduction CRUD
+  financeAddDeductionLine,
+  verifyDeductionLine,
+  removeDeductionLine,
 };

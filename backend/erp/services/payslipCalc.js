@@ -8,6 +8,14 @@
  *   without changes. Personal Gas auto-emits for employees whose CompProfile
  *   has logbook_eligible=true.
  *
+ * Phase G1.4 — DeductionSchedule parity with contractor IncomeReport:
+ *   Finance-created schedules with `person_id` populated auto-inject one
+ *   installment per matching period+cycle as an auto_source='SCHEDULE' line
+ *   (status=PENDING). Installments are marked INJECTED post-save and carry
+ *   `schedule_ref` so PayslipView can badge the row INSTALLMENT N/M and
+ *   expand the timeline. Finance can verify/correct/reject the line just
+ *   like a BDM schedule on IncomeReport.
+ *
  * Statutory (auto_source = SSS / PHILHEALTH / PAGIBIG / WITHHOLDING_TAX):
  *   Rebuilt every compute from the lookup-driven rate tables. Not user-
  *   editable. Single VERIFIED line per source.
@@ -18,15 +26,18 @@
  *
  * Manual (auto_source = null):
  *   Cash Advance, Loan Payments, Other Deductions are preserved from the
- *   existing payslip's flat fields on re-compute. Today they still enter via
- *   flat-field paths; deduction_lines surface them transparently. Phase G1.4
- *   will add per-line Finance add/verify UI (parity with IncomeReport).
+ *   existing payslip's flat fields on re-compute. Finance can also add per-line
+ *   deductions via POST /payroll/:id/deduction-line (Phase G1.4 Finance UI) —
+ *   manual lines with auto_source=null and deduction_type from
+ *   EMPLOYEE_DEDUCTION_TYPE.
  */
 const mongoose = require('mongoose');
 const PeopleMaster = require('../models/PeopleMaster');
 const CompProfile = require('../models/CompProfile');
 const Payslip = require('../models/Payslip');
 const CarLogbookEntry = require('../models/CarLogbookEntry');
+const DeductionSchedule = require('../models/DeductionSchedule');
+const { syncInstallmentStatusForPayslip } = require('./deductionScheduleService');
 const { computeSSS } = require('./sssCalc');
 const { computePhilHealth } = require('./philhealthCalc');
 const { computePagIBIG } = require('./pagibigCalc');
@@ -151,6 +162,17 @@ function deriveFlatFromLines(lines) {
       case 'PAGIBIG': flat.pagibig_employee += l.amount || 0; break;
       case 'WITHHOLDING_TAX': flat.withholding_tax += l.amount || 0; break;
       case 'PERSONAL_GAS': flat.other_deductions += l.amount || 0; break;
+      // Phase G1.4 — schedule installments fall into the bucket their
+      // deduction_type identifies (LOAN → loan_payments, CASH_ADVANCE →
+      // cash_advance, everything else → other_deductions). Matches the
+      // JE treatment on autoJournal.journalFromPayroll where loan payments
+      // credit a different COA than generic other-deductions.
+      case 'SCHEDULE': {
+        if (l.deduction_type === 'CASH_ADVANCE') flat.cash_advance += l.amount || 0;
+        else if (l.deduction_type === 'LOAN') flat.loan_payments += l.amount || 0;
+        else flat.other_deductions += l.amount || 0;
+        break;
+      }
       // Manual lines go to their canonical bucket by deduction_type, not by
       // auto_source (auto_source is null for manual).
       default: {
@@ -162,6 +184,77 @@ function deriveFlatFromLines(lines) {
   }
   for (const k of Object.keys(flat)) flat[k] = Math.round(flat[k] * 100) / 100;
   return flat;
+}
+
+/**
+ * Phase G1.4 — Load active employee DeductionSchedules and build auto-inject
+ * lines for the current period + cycle. Mirrors the BDM path in
+ * incomeCalc.generateIncomeReport (lines ~162-193) so the two stay in lockstep.
+ *
+ * Only PENDING installments of ACTIVE schedules owned by this person are
+ * injected. target_cycle filtering matches the caller's cycle; legacy
+ * schedules without target_cycle are treated as "all cycles" (same permissive
+ * default used on the BDM side for migration safety).
+ */
+async function buildScheduleLinesForPerson({ entityId, personId, period, cycle, userId }) {
+  if (!personId) return [];
+  const activeSchedules = await DeductionSchedule.find({
+    entity_id: new mongoose.Types.ObjectId(entityId),
+    person_id: new mongoose.Types.ObjectId(personId),
+    status: 'ACTIVE',
+    $or: [
+      { target_cycle: cycle },
+      { target_cycle: { $exists: false } }
+    ],
+    installments: { $elemMatch: { period, status: 'PENDING' } }
+  }).lean();
+
+  const lines = [];
+  for (const sched of activeSchedules) {
+    const inst = sched.installments.find(i => i.period === period && i.status === 'PENDING');
+    if (inst) {
+      lines.push({
+        deduction_type: sched.deduction_type,
+        deduction_label: sched.deduction_label,
+        amount: inst.amount,
+        description: `${sched.description || sched.deduction_label} (${inst.installment_no}/${sched.term_months})`,
+        entered_by: userId,
+        entered_at: new Date(),
+        status: 'PENDING',
+        auto_source: 'SCHEDULE',
+        schedule_ref: {
+          schedule_id: sched._id,
+          installment_id: inst._id
+        }
+      });
+    }
+  }
+  return lines;
+}
+
+/**
+ * Phase G1.4 — after saving a payslip, mark any newly injected SCHEDULE-sourced
+ * lines' installments as INJECTED on the DeductionSchedule. Non-blocking — we
+ * log and move on so a transient schedule-save failure doesn't revert the
+ * payslip (the payslip is the source of truth for the employee's paycheck).
+ */
+async function _syncInjectedInstallmentsForPayslip(payslip) {
+  const schedLines = (payslip.deduction_lines || []).filter(
+    l => l.auto_source === 'SCHEDULE' && l.schedule_ref?.schedule_id && l.status === 'PENDING'
+  );
+  for (const line of schedLines) {
+    try {
+      await syncInstallmentStatusForPayslip(
+        line.schedule_ref.schedule_id,
+        line.schedule_ref.installment_id,
+        'INJECTED',
+        payslip._id,
+        line._id
+      );
+    } catch (err) {
+      console.error('Payslip schedule injection sync (non-blocking):', err.message);
+    }
+  }
 }
 
 /**
@@ -290,8 +383,9 @@ async function generateEmployeePayslip(entityId, personId, period, cycle, userId
 
   // Build deduction_lines — auto lines rebuilt fresh, manual lines reconstructed
   // from the preserved flat fields. Preserving any already-present user-entered
-  // lines (future G1.4 UI) is a superset operation: keep non-auto lines whose
-  // deduction_type isn't CASH_ADVANCE/LOAN/OTHER (those are the flat-field path).
+  // lines (Phase G1.4 per-line Finance UI) is a superset operation: keep
+  // non-auto lines whose deduction_type isn't CASH_ADVANCE/LOAN/OTHER (those
+  // are the flat-field path).
   const autoLines = buildAutoDeductionLines({
     stat, personalGas, emitPersonalGas, userId,
   });
@@ -307,7 +401,31 @@ async function generateEmployeePayslip(entityId, personId, period, cycle, userId
     !l.auto_source &&
     !['CASH_ADVANCE', 'LOAN', 'OTHER'].includes(l.deduction_type)
   );
-  const deduction_lines = [...autoLines, ...manualLines, ...preservedFreeformLines];
+
+  // Phase G1.4 — DeductionSchedule injection. Pull active schedules for this
+  // person + cycle and emit one PENDING line per matching installment. On
+  // re-compute, already-verified/posted schedule lines are preserved (never
+  // re-injected); only PENDING-status installments that aren't yet on the
+  // payslip generate new lines. Mirrors incomeCalc.generateIncomeReport's
+  // preservation logic so the two flows behave identically.
+  const scheduleLines = await buildScheduleLinesForPerson({
+    entityId, personId, period, cycle, userId,
+  });
+  const preservedScheduleLines = (existing?.deduction_lines || []).filter(
+    l => l.auto_source === 'SCHEDULE' && l.status !== 'PENDING'
+  );
+  const newScheduleLines = scheduleLines.filter(sl =>
+    !preservedScheduleLines.some(el =>
+      el.schedule_ref?.installment_id?.toString() === sl.schedule_ref.installment_id.toString()
+    )
+  );
+  const deduction_lines = [
+    ...autoLines,
+    ...preservedScheduleLines,
+    ...newScheduleLines,
+    ...manualLines,
+    ...preservedFreeformLines,
+  ];
 
   // Derive flat fields from the final lines (keeps JE consumer in sync)
   const deductions = deriveFlatFromLines(deduction_lines);
@@ -329,6 +447,8 @@ async function generateEmployeePayslip(entityId, personId, period, cycle, userId
     existing.markModified('comp_profile_snapshot');
     existing.markModified('gov_rates_snapshot');
     await existing.save();
+    // Phase G1.4 — mark freshly injected schedule installments as INJECTED
+    await _syncInjectedInstallmentsForPayslip(existing);
     return existing;
   }
 
@@ -348,6 +468,9 @@ async function generateEmployeePayslip(entityId, personId, period, cycle, userId
     computed_at: new Date(),
     created_by: userId,
   });
+
+  // Phase G1.4 — mark freshly injected schedule installments as INJECTED
+  await _syncInjectedInstallmentsForPayslip(payslip);
 
   return payslip;
 }
@@ -541,16 +664,54 @@ async function getPayslipBreakdown(payslip) {
     };
   }
 
+  // Phase G1.4 — hydrate DeductionSchedule details for every SCHEDULE-sourced
+  // line so PayslipView.jsx can render the installment timeline (what's paid,
+  // what's pending, remaining balance). Mirrors getIncomeBreakdown's schedules
+  // block so both view surfaces use the same shape.
+  const scheduleIds = [...new Set(
+    lines
+      .filter(l => l.auto_source === 'SCHEDULE' && l.schedule_ref?.schedule_id)
+      .map(l => l.schedule_ref.schedule_id.toString())
+  )];
+  const schedulesByKey = {};
+  if (scheduleIds.length > 0) {
+    const scheds = await DeductionSchedule.find({
+      _id: { $in: scheduleIds.map(id => new mongoose.Types.ObjectId(id)) }
+    }).lean();
+    for (const s of scheds) {
+      schedulesByKey[s._id.toString()] = {
+        _id: s._id,
+        schedule_code: s.schedule_code,
+        deduction_type: s.deduction_type,
+        deduction_label: s.deduction_label,
+        description: s.description,
+        total_amount: s.total_amount || 0,
+        installment_amount: s.installment_amount || 0,
+        term_months: s.term_months || 1,
+        start_period: s.start_period,
+        target_cycle: s.target_cycle,
+        status: s.status,
+        remaining_balance: s.remaining_balance || 0,
+        installments: (s.installments || []).map(i => ({
+          _id: i._id,
+          period: i.period,
+          installment_no: i.installment_no,
+          amount: i.amount,
+          status: i.status,
+          payslip_id: i.payslip_id || null,
+          income_report_id: i.income_report_id || null,
+        })),
+      };
+    }
+  }
+
   return {
     payslip_id: payslip._id,
     period,
     cycle,
     person_name: person?.full_name || 'N/A',
     personal_gas: personalGasBreakdown,
-    // Forward-compat: schedules remains empty until employee DeductionSchedule
-    // is wired (Phase G1.4). PayslipView.jsx uses `breakdown?.schedules?.[id]`
-    // with optional chaining, so an empty map is safe.
-    schedules: {},
+    schedules: schedulesByKey,
   };
 }
 
@@ -589,4 +750,8 @@ module.exports = {
   // Phase G1.3 — transparent payslip breakdown + lazy backfill helper
   getPayslipBreakdown,
   backfillDeductionLines,
+  // Phase G1.4 — exported so Finance per-line endpoints keep the flat
+  // `deductions.*` fields in sync with `deduction_lines[]` after a mutation
+  // (protects the JE consumer autoJournal.journalFromPayroll).
+  deriveFlatFromLines,
 };

@@ -27,8 +27,21 @@
 // ─── 12 existing builders (Phase 1 extraction — byte-identical behavior) ───
 
 function buildDeductionScheduleDetails(item) {
+  // Phase G1.4 — owner can be bdm_id (contractor) XOR person_id (employee).
+  // Surface both so the Approval Hub detail panel shows the right label
+  // regardless of owner class without branching on the consumer side.
+  const ownerName = item.bdm_id?.name
+    || item.person_id?.full_name
+    || null;
+  const ownerClass = item.bdm_id
+    ? 'BDM'
+    : (item.person_id?.person_type || (item.person_id ? 'EMPLOYEE' : null));
   return {
     schedule_code: item.schedule_code || null,
+    owner_name: ownerName,
+    owner_class: ownerClass,
+    owner_email: item.bdm_id?.email || null,
+    department: item.person_id?.department || null,
     deduction_type: item.deduction_type,
     deduction_label: item.deduction_label,
     total_amount: item.total_amount,

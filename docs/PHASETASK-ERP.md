@@ -3283,6 +3283,14 @@ Replaced `roleCheck('admin', 'finance', 'president')` with `erpSubAccessCheck` o
 - [x] Added backend role check to CRM bridge `/smer/crm-md-counts` — BDM only, admin must pass bdm_id
 - [x] Fixed updatePrfCalf — now clears old back-links and re-runs back-linking when linked source changes (was silently orphaning calf_id refs)
 
+### 6.CRM-FIX — Pull from CRM Accuracy Hardening ✅ (April 21, 2026)
+- [x] **Timezone-stable window** — `smerCrmBridge.js` `getDailyMdCount`/`getDailyMdCounts`/`getDailyVisitDetails` now anchor day boundaries to Manila (+08:00) instead of server-local midnight. Previously, a visit logged at 1am Manila (= 5pm UTC prior day) could fall outside the query window on UTC-clock servers and silently disappear from the MD count. Helper functions `toManilaDateKey`, `manilaDayStart`, `manilaDayEnd` added; aggregation `$dateToString` timezone unchanged.
+- [x] **Per-person MD count (distinct doctors)** — `md_count` now reflects the number of DISTINCT MDs visited per day (matches the "per-person ≥ 8 = FULL" UI promise). The `{doctor, user, yearWeekKey}` unique index makes this equal to raw visit count today; decoupling the code from that assumption prevents silent double-counting if the constraint ever loosens. Response shape preserved (`md_count`, `unique_doctors`, `locations`).
+- [x] **Rule #21 bdm_id fix** — `getSmerCrmMdCounts` and `getSmerCrmVisitDetail` no longer silently fall back to `req.bdmId` (= admin's own `_id`) when privileged callers omit `?bdm_id=`. Privileged (`isPresident || isAdmin || isFinance`) must pass `?bdm_id=`; omission returns HTTP 400. BDM (`role=CONTRACTOR`) still scoped to `req.bdmId || req.user._id`. Matches `getSmerList` (line 207-208).
+- [x] **Calendar-stable day-of-week** — controller replaced `new Date(year, month-1, day).getDay()` (server-local) with `new Date(Date.UTC(...)).getUTCDay()` + deterministic `${year}-${MM}-${DD}` dateKey. Apr 1 2026 = Wednesday in every timezone; no more off-by-one at Manila-server midnight.
+- [x] Verified: `node -c` clean on both files; `npx vite build` clean in 9.82s; frontend response shape unchanged (`daily_entries[]` fields identical); `universalApprovalService.js:502` caller of `getDailyVisitDetails` unaffected (accepts Date or ISO string via normalized path).
+- [ ] Future: Cross-ERP `Settings.TIMEZONE` lookup to replace the hardcoded +08:00 convention (currently consistent across `Visit.js`, `smerCrmBridge.js`, Car Logbook, PRF/CALF). Scope: separate phase; introduces no bug today.
+
 ### 20.6 — Auto-Route Landing Page ✅ (April 5, 2026)
 - [x] Auto-route after login based on role + erp_access.enabled (no CRM/ERP chooser)
 - [x] BDM (employee) → CRM BDM Dashboard (mobile-first daily work)
@@ -6712,7 +6720,92 @@ CLAUDE-ERP.md                                    [+Phase G1.3 section]
 - **Rule #20 (workflow banners + period locks)** — existing `payslip-view` banner in `WorkflowGuide.jsx` unchanged (still accurate); period-lock middleware unchanged (no new document-lifecycle routes). Posting gate via `gateApproval` in `postPayroll` unaffected.
 - **Rule #21 (no silent self-fallback)** — `getPayslip` + `getPayslipBreakdown` scope via `req.entityId` (President bypass explicit). No `req.bdmId` fallback anywhere on employee payslip path.
 
-### Deferred follow-ups (non-blocking)
-- **G1.4 — Employee DeductionSchedule wiring**: port the contractor `DeductionSchedule` installment flow to employee payslips so INSTALLMENT N/M badges apply. Requires a new `person_id` ref on `DeductionSchedule` (currently `bdm_id`-only) OR a parallel `employee_schedules` collection. Design decision deferred.
-- **Per-line Finance add/verify UI**: parity with `IncomeReport.addDeductionLine` / `financeAddDeductionLine` / `verifyDeductionLine`. Today Cash Advance / Loan / Other flow through flat fields only.
-- **IncomeReport.deductionLineSchema → shared**: replace the inline copy with `require('./schemas/deductionLine')`. Low-risk refactor, not in this phase to avoid touching Phase G1.2 shipped code.
+### Deferred follow-ups — ALL SHIPPED in Phase G1.4 (April 21, 2026)
+- **G1.4 — Employee DeductionSchedule wiring**: ✅ Done. `DeductionSchedule.person_id` (nullable, XOR with `bdm_id`) + pre-save validator + sparse partial indexes. Single collection, no parallel table, clean BDM→employee graduation path. Injection wired in `payslipCalc.buildScheduleLinesForPerson` + `_syncInjectedInstallmentsForPayslip`. Breakdown endpoint now hydrates `schedules` dict; PayslipView renders INSTALLMENT N/M + installment timeline.
+- **Per-line Finance add/verify UI**: ✅ Done. Three new endpoints on payrollController (`financeAddDeductionLine`, `verifyDeductionLine`, `removeDeductionLine`) with role/status/period-lock gates and JE-safe derive. SCHEDULE-line verify/reject cascades to `DeductionSchedule.installments.status` via `syncInstallmentStatusForPayslip` (same contract as IncomeReport).
+- **IncomeReport.deductionLineSchema → shared**: ✅ Done. Inline schema replaced with `require('./schemas/deductionLine')`. Byte-identical, zero migration.
+
+See `CLAUDE-ERP.md` § Phase G1.4 for the full contract, routing table, integrity invariants, and test plan.
+
+## Phase G1.4 — Employee DeductionSchedule + Finance Per-Line UI (April 21, 2026 — shipped)
+
+See `CLAUDE-ERP.md` § Phase G1.4 for the authoritative write-up. Summary:
+
+1. **Schema** — `DeductionSchedule.person_id` (PeopleMaster ref) + `installments.payslip_id`; XOR with `bdm_id` enforced at model (pre-save), service (`createSchedule`), and controller (`financeCreateSchedule`) layers. `IncomeReport` converged onto `schemas/deductionLine.js`.
+2. **Payslip injection** — `payslipCalc.buildScheduleLinesForPerson` mirrors incomeCalc's BDM path; preserves non-PENDING schedule lines across re-computes; `_syncInjectedInstallmentsForPayslip` marks installments INJECTED post-save.
+3. **Finance per-line endpoints** — `POST /payroll/:id/deduction-line` (add, status=VERIFIED), `POST /payroll/:id/deduction-line/:lineId/verify` (verify/correct/reject), `DELETE /payroll/:id/deduction-line/:lineId` (remove non-auto). All gated admin/finance/president, COMPUTED/REVIEWED status, period-lock enforced.
+4. **Breakdown** — `getPayslipBreakdown` now hydrates `schedules` dict (schedule_code, total, per-installment, timeline with per-installment status).
+5. **Frontend** — PayslipView renders INSTALLMENT N/M badge when `breakdown.schedules[schedule_id]` resolves; installment timeline expander; Finance action buttons with Correct + Add modals; lookup-driven `EMPLOYEE_DEDUCTION_TYPE` dropdown.
+6. **Approval Hub** — DEDUCTION_SCHEDULE query populates `person_id` alongside `bdm_id`; description carries owner class; detail builder surfaces both owner and department.
+7. **Docs + WorkflowGuide** — `payslip-view` entry rewritten; CLAUDE-ERP § G1.4 documents invariants, cascade semantics, and migration notes.
+
+### Integrity checklist verified
+- `node -c` clean on all 10 modified backend files.
+- `npx vite build` clean (build output at task completion).
+- JE consumer (`autoJournal.journalFromPayroll`) unchanged — flat `deductions.*` still authoritative, derived on every line mutation.
+- XOR invariant machine-checked at three layers.
+- Period lock enforced on every line-mutation endpoint.
+- SCHEDULE-line verify/reject cascades to DeductionSchedule installment (non-blocking — payslip is source of truth).
+- No downstream breakage: legacy BDM `createSchedule` callers (string `bdmId` arg) still work via shim; `IncomeReport` schema delta is zero.
+
+---
+
+## Phase G1.5 — Per-Diem Integrity + Structured Doctor Address + Non-Pharma Ready (April 21, 2026)
+
+**Goal:** Kill the last hardcoded business values in the per-diem pipeline (`|| 800`, weekend-drop, flagged-visit ignorance, free-text addresses) and make per-diem subscription-scalable so a non-pharma subsidiary can seed rates without code changes. Covers items #4/#5/#6/#7 from the April 21 per-diem audit.
+
+**Guiding principles:** Global Rule #3 (no hardcoded business values) + Rule #19 (lookup-driven for subscription readiness) + Rule #21 (no silent fallbacks). Existing Phase 34-P per-diem override remains the adjustment path — no retroactive recompute on unflag.
+
+### G1.5.1 — `PERDIEM_RATES` lookup replaces Settings.PERDIEM_RATE_DEFAULT
+- [ ] Seed `PERDIEM_RATES` Lookup category (per-entity × role). Each row metadata: `{ rate_php, eligibility_source: 'visit'|'logbook'|'manual'|'none', skip_flagged: bool, allow_weekend: bool, full_tier_threshold: number, half_tier_threshold: number }`.
+- [ ] Default-seed: pharma BDM → `{ rate_php: 800, eligibility_source: 'visit', skip_flagged: true, allow_weekend: false, full: 5, half: 3 }`. Non-pharma seeds stubbed (admin fills per subsidiary).
+- [ ] Add `resolvePerdiemConfig(entityId, role)` to `backend/erp/services/perdiemCalc.js` — reads lookup, throws `PerdiemConfigMissingError` if no row. No `|| 800` fallback anywhere.
+- [ ] Delete `PERDIEM_RATE_DEFAULT` field from `backend/erp/models/Settings.js`.
+- [ ] Delete `|| 800` literals at `expenseController.js:109` and `:2518`.
+- [ ] Delete `|| 800` literal from `backend/erp/scripts/testPhase7.js:248`.
+- [ ] Remove `PERDIEM_RATE_DEFAULT` seed from `backend/erp/scripts/seedSettings.js`.
+
+### G1.5.2 — Flagged-photo filter (item #4)
+- [ ] Extend `getDailyMdCounts(bdmUserId, start, end, { skipFlagged })` in `backend/erp/services/smerCrmBridge.js`. When `skipFlagged=true`, aggregation adds `$match: { photoFlags: { $exists: false } }` OR `$match: { $or: [{ photoFlags: { $size: 0 } }, { photoFlags: { $exists: false } }] }`.
+- [ ] Caller (expenseController.getSmerCrmMdCounts) passes `config.skip_flagged` from `resolvePerdiemConfig`.
+- [ ] Audit trail: flagged visits stay in CRM; only per-diem credit drops.
+
+### G1.5.3 — Weekend enforcement via config (item #6)
+- [ ] Replace hardcoded `if (dow === 0 || dow === 6) continue` at `expenseController.js:2530` with `if (!config.allow_weekend && (dow === 0 || dow === 6)) continue`.
+- [ ] Default stays OFF for pharma BDMs; toggle lives in `PERDIEM_RATES` metadata.
+
+### G1.5.4 — Structured locality + province on Doctor/Client (item #5)
+- [ ] Add `locality: { type: String, required: true }` and `province: { type: String, required: true }` to `backend/models/Doctor.js`. Keep existing `clinicOfficeAddress` as optional detail.
+- [ ] Mirror same fields on `backend/models/Client.js` (regular non-VIP clients used by Phase A Change 16).
+- [ ] Seed `PH_PROVINCES` Lookup (82 rows, code=province code, label=name).
+- [ ] Seed `PH_LOCALITIES` Lookup (cities + municipalities, metadata: `{ type: 'city'|'municipality', province_code }`).
+- [ ] Cascading dropdown on Doctor form: pick province → locality list filters to that province_code.
+- [ ] Add locality + province validators to `backend/middleware/validation.js` (4 rule blocks at lines ~205, 276, 500, 564).
+- [ ] Update ~20 `.populate('doctor', '...')` calls across `visitController.js`, `productAssignmentController.js`, `reportGenerator.js`, `importController.js`, `Visit.js`, `expenseController.js`, `Client.js` to include `locality province`.
+- [ ] Update SMER note builder to emit unique `${locality}, ${province}` set per day (replaces raw `clinicOfficeAddress`).
+- [ ] Update `DoctorManagement.jsx` form + `DoctorsPage.jsx` table columns.
+- [ ] Update CPT Excel import logic in `importController.js` to read + validate locality/province columns.
+
+### G1.5.5 — Backfill + rollback
+- [ ] Create `backend/erp/scripts/backfillDoctorLocality.js` — parse last 2 comma-separated segments from `clinicOfficeAddress`, fuzzy-match against `PH_LOCALITIES` + `PH_PROVINCES`, auto-apply on match, flag mismatches for admin review.
+- [ ] New admin panel "Address Cleanup Queue" surfacing doctors with null `locality` or `province` (can reuse existing admin list with filter).
+- [ ] Rollback path documented in CLAUDE-ERP.md § Phase G1.5: delete `PERDIEM_RATES` rows, revert Settings schema, drop locality/province (schema is additive so data loss is scoped to the new fields only).
+
+### G1.5.6 — Banners + WorkflowGuide
+- [ ] Update SMER WorkflowGuide entry in `frontend/src/erp/components/WorkflowGuide.jsx`: mention that missing `PERDIEM_RATES` blocks submission, flagged visits are skipped, weekends follow the lookup toggle.
+- [ ] Update `payslip-view` WorkflowGuide entry: per-diem line source is now `PERDIEM_RATES`, override path unchanged.
+- [ ] Update Control Center DEPENDENCY_GUIDE if/where per-diem rate config is surfaced.
+- [ ] Update `CLAUDE-ERP.md` with Phase G1.5 section documenting the lookup shape, resolver contract, downstream consumers, and the non-pharma onboarding recipe.
+
+### G1.5.7 — Bulletproof bar
+- [ ] **Happy path**: pharma BDM, 5 valid visits Mon–Fri, no flagged photos, each doctor has locality+province → payslip per-diem correct + notes print "Iloilo City, Iloilo; Digos City, Davao del Sur".
+- [ ] **Failure 1**: Missing `PERDIEM_RATES` row for role → SMER validate/submit surfaces `PerdiemConfigMissingError` as HTTP 400 "Seed PERDIEM_RATES for role X before running payroll". No silent ₱800.
+- [ ] **Failure 2**: Visit flagged after POSTED payslip → payslip unchanged; Phase 34-P per-diem override remains the adjustment path.
+- [ ] **Failure 3**: Legacy doctor with null locality/province (pre-backfill) → per-diem notes print `(address incomplete — see Doctor #N)`, does not crash.
+- [ ] **Failure 4**: Non-pharma subsidiary seeds `eligibility_source='logbook'` → resolver returns config; bridge stub logs "logbook source not yet wired — G1.6" (no crash, explicit TODO).
+- [ ] **Downstream wiring**: SMER create/validate/submit/reopen, SMER per-diem override approve, `repairStuckPerdiemOverrides.js`, `testPhase7.js`, `universalApprovalService.approvePerdiemOverride`, CPT Excel import/export, Call Plan Template export — all verified post-refactor.
+- [ ] **Integrity**: `node -c` clean on all modified backend files; `npx vite build` clean; grep for `\\|\\| 800` in per-diem code paths returns zero matches; grep for `PERDIEM_RATE_DEFAULT` returns zero matches.
+
+### Status
+- [ ] Phase G1.5 SHIPPED (to be flipped on successful verification).
+

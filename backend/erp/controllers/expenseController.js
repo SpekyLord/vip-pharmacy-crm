@@ -2484,10 +2484,22 @@ const getExpenseSummary = catchAsync(async (req, res) => {
  * Used to auto-populate SMER daily entries instead of manual MD count entry.
  */
 const getSmerCrmMdCounts = catchAsync(async (req, res) => {
-  // Only BDMs (employees) should pull their own CRM visit data
-  if (req.user.role !== ROLES.CONTRACTOR && !req.query.bdm_id) {
-    return res.status(403).json({ success: false, message: 'CRM bridge is for BDM users. Pass bdm_id query param if admin.' });
+  // Rule #21: privileged users may scope by ?bdm_id=; absence = no implicit
+  // self-fallback (admins are not BDMs on Visit records, so req.bdmId would
+  // silently resolve to an empty result). BDMs always scope to themselves.
+  const privileged = req.isPresident || req.isAdmin || req.isFinance;
+  let bdmUserId;
+  if (privileged) {
+    if (!req.query.bdm_id) {
+      return res.status(400).json({ success: false, message: 'bdm_id is required for admin/finance/president pulls' });
+    }
+    bdmUserId = req.query.bdm_id;
+  } else if (req.user.role === ROLES.CONTRACTOR) {
+    bdmUserId = req.bdmId || req.user._id;
+  } else {
+    return res.status(403).json({ success: false, message: 'CRM bridge is for BDM users. Admins must pass ?bdm_id=.' });
   }
+
   const { period, cycle } = req.query;
   if (!period || !cycle) return res.status(400).json({ success: false, message: 'period and cycle are required' });
 
@@ -2495,12 +2507,12 @@ const getSmerCrmMdCounts = catchAsync(async (req, res) => {
   const startDay = cycle === 'C1' ? 1 : 16;
   const endDay = cycle === 'C1' ? 15 : new Date(year, month, 0).getDate();
 
-  const startDate = new Date(year, month - 1, startDay);
-  const endDate = new Date(year, month - 1, endDay);
+  // Pass Manila calendar keys to the bridge so the window is timezone-stable
+  // regardless of server TZ (production runs UTC).
+  const pad = (n) => String(n).padStart(2, '0');
+  const dateKeyFor = (day) => `${year}-${pad(month)}-${pad(day)}`;
 
-  // Pull from CRM Visit model — counts completed visits per day
-  const bdmUserId = req.bdmId || req.user._id;
-  const dailyCounts = await getDailyMdCounts(bdmUserId, startDate, endDate);
+  const dailyCounts = await getDailyMdCounts(bdmUserId, dateKeyFor(startDay), dateKeyFor(endDay));
 
   const settings = await Settings.getSettings();
   const perdiemRate = settings.PERDIEM_RATE_DEFAULT || 800;
@@ -2511,11 +2523,13 @@ const getSmerCrmMdCounts = catchAsync(async (req, res) => {
   const entries = [];
 
   for (let day = startDay; day <= endDay; day++) {
-    const date = new Date(year, month - 1, day);
-    const dow = date.getDay();
+    // Use UTC constructor so day-of-week is a pure calendar lookup, independent
+    // of server TZ. Apr 1 2026 is a Wednesday in every timezone.
+    const date = new Date(Date.UTC(year, month - 1, day));
+    const dow = date.getUTCDay();
     if (dow === 0 || dow === 6) continue; // Skip weekends
 
-    const dateKey = date.toISOString().split('T')[0];
+    const dateKey = dateKeyFor(day);
     const crmData = dailyCounts[dateKey] || { md_count: 0, unique_doctors: 0 };
     const { tier, amount } = computePerdiemAmount(crmData.md_count, perdiemRate, settings, compProfile);
 
@@ -2557,7 +2571,21 @@ const getSmerCrmVisitDetail = catchAsync(async (req, res) => {
   const { date } = req.params;
   if (!date) return res.status(400).json({ success: false, message: 'date is required' });
 
-  const bdmUserId = req.bdmId || req.user._id;
+  // Rule #21: same privilege pattern as getSmerCrmMdCounts — admins must pass
+  // ?bdm_id=; no implicit self-fallback (admin is not a BDM on Visit records).
+  const privileged = req.isPresident || req.isAdmin || req.isFinance;
+  let bdmUserId;
+  if (privileged) {
+    if (!req.query.bdm_id) {
+      return res.status(400).json({ success: false, message: 'bdm_id is required for admin/finance/president pulls' });
+    }
+    bdmUserId = req.query.bdm_id;
+  } else if (req.user.role === ROLES.CONTRACTOR) {
+    bdmUserId = req.bdmId || req.user._id;
+  } else {
+    return res.status(403).json({ success: false, message: 'CRM bridge is for BDM users. Admins must pass ?bdm_id=.' });
+  }
+
   const visits = await getDailyVisitDetails(bdmUserId, date);
 
   res.json({

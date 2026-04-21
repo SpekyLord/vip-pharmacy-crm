@@ -14,6 +14,16 @@ export default function usePayroll() {
   const getPayslipHistory = (personId, params) => api.get(`/payroll/history/${personId}`, { params });
   const computeThirteenthMonth = (data) => api.post('/payroll/thirteenth-month', data);
 
+  // Phase G1.4 — Finance per-line deduction CRUD (parity with contractor Income).
+  // data shape: { deduction_type, deduction_label, amount, description?, finance_note? }
+  const addPayslipDeductionLine = (id, data) => api.post(`/payroll/${id}/deduction-line`, data);
+  // action: 'verify' | 'correct' | 'reject'
+  // data shape: { action, amount?, finance_note? }
+  const verifyPayslipDeductionLine = (id, lineId, data) =>
+    api.post(`/payroll/${id}/deduction-line/${lineId}/verify`, data);
+  const removePayslipDeductionLine = (id, lineId) =>
+    api.delete(`/payroll/${id}/deduction-line/${lineId}`);
+
   return {
     ...api,
     computePayroll,
@@ -25,5 +35,9 @@ export default function usePayroll() {
     getPayslipBreakdown,
     getPayslipHistory,
     computeThirteenthMonth,
+    // Phase G1.4
+    addPayslipDeductionLine,
+    verifyPayslipDeductionLine,
+    removePayslipDeductionLine,
   };
 }

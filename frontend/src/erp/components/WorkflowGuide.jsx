@@ -970,15 +970,18 @@ const WORKFLOW_GUIDES = {
   'payslip-view': {
     title: 'Payslip Viewer',
     steps: [
-      'View the full pay breakdown: earnings, deductions, and employer contributions',
-      'Review net pay and government contribution details',
-      'Download or print the payslip for records',
+      'Every deduction row carries a kind badge: **ONE-STOP** (statutory, Personal Gas, or a one-off line) settles in this cycle; **INSTALLMENT N/M** is one installment of a Deduction Schedule — click any installment row to expand the full schedule timeline and remaining balance.',
+      'Finance (admin/finance/president) can verify (\u2713), correct (\u270E), or reject (\u2715) any line while the payslip is COMPUTED or REVIEWED. Corrected lines show the original amount strikethrough next to the new amount; rejected lines are excluded from total_deductions and the JE.',
+      'Use **+ Add Deduction Line** for HMO co-pays, uniforms, one-off adjustments, and anything the auto-compute missed. Type is lookup-driven (EMPLOYEE_DEDUCTION_TYPE) so subscribers can extend via Control Center. Lines added by Finance are VERIFIED immediately.',
+      'Employee Deduction Schedules — Finance creates from the Schedules tab (/erp/deduction-schedules) with person_id; after Approval Hub approval they auto-inject one installment per matching period+cycle. Rejecting a schedule-sourced line here cascades CANCELLED back to the DeductionSchedule installment.',
+      'Download or print the payslip for records after POST.',
     ],
     next: [
       { label: 'Payroll Run', path: '/erp/payroll' },
+      { label: 'Deduction Schedules', path: '/erp/deduction-schedules' },
       { label: 'People List', path: '/erp/people' },
     ],
-    tip: 'Payslips are generated during Payroll Run. Status flows: COMPUTED → REVIEWED → APPROVED → POSTED.',
+    tip: 'Status flow: COMPUTED \u2192 REVIEWED \u2192 APPROVED \u2192 POSTED. Line-level mutations are only allowed before APPROVED \u2014 after POSTED, use President-Reverse to unwind the JE first. Flat `deductions.*` fields are derived from `deduction_lines[]` on every save so the payroll JE (autoJournal.journalFromPayroll) stays in sync automatically.',
   },
   'performance-ranking': {
     title: 'Performance Ranking',
