@@ -1727,18 +1727,19 @@ const DoctorManagement = ({
                   ...employees.map(e => ({ value: e._id, label: e.name })),
                 ]}
               />
-              {/* Phase G1.6 — Needs Cleanup filter: clients missing structured locality/province.
-                  Drives the admin backfill workflow for SMER per-diem notes. */}
-              <FilterDropdown
-                value={filters.needsCleanup || ''}
-                onChange={(val) => handleFilterChange('needsCleanup', val)}
-                options={[
-                  { value: '', label: 'All Locations' },
-                  { value: 'true', label: 'Needs Cleanup (missing locality/province)' },
-                ]}
-              />
           </>
         )}
+          {/* Phase G1.6 — Needs Cleanup filter: clients missing structured locality/province.
+              Sits OUTSIDE the VIP-only conditional so admins can toggle it while viewing
+              Regular Clients too (both endpoints honor ?needsCleanup=true). */}
+          <FilterDropdown
+            value={filters.needsCleanup || ''}
+            onChange={(val) => handleFilterChange('needsCleanup', val)}
+            options={[
+              { value: '', label: 'All Locations' },
+              { value: 'true', label: 'Needs Cleanup (missing locality/province)' },
+            ]}
+          />
         </div>
       </div>
       {/* Table (Desktop) + Card List (Mobile) */}

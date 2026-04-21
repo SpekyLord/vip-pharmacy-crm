@@ -157,7 +157,7 @@ const approvalHandlers = {
       }
 
       const Settings = require('../models/Settings');
-      const { computePerdiemAmount } = require('../services/perdiemCalc');
+      const { computePerdiemAmount, resolvePerdiemConfig } = require('../services/perdiemCalc');
       const PeopleMaster = require('../models/PeopleMaster');
       const CompProfile = require('../models/CompProfile');
       const settings = await Settings.getSettings();
@@ -168,7 +168,15 @@ const approvalHandlers = {
       const compProfile = person
         ? await CompProfile.findOne({ person_id: person._id, entity_id: smer.entity_id, status: 'ACTIVE' }).sort({ effective_date: -1 }).lean()
         : null;
-      const { amount } = computePerdiemAmount(tier === 'FULL' ? 999 : 3, smer.perdiem_rate, settings, compProfile);
+      // Phase G1.6 — pull per-role config (full_tier_threshold / half_tier_threshold)
+      // so the approved amount uses the same threshold chain as the request-time preview.
+      let perdiemConfig;
+      try {
+        perdiemConfig = await resolvePerdiemConfig({ entityId: smer.entity_id, role: 'BDM' });
+      } catch (_) {
+        perdiemConfig = undefined;
+      }
+      const { amount } = computePerdiemAmount(tier === 'FULL' ? 999 : 3, smer.perdiem_rate, settings, compProfile, perdiemConfig);
 
       const oldTier = entry.perdiem_tier;
       const rsn = request.metadata?.override_reason || 'Approved override';

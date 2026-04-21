@@ -43,7 +43,7 @@ async function main() {
   const PeopleMaster = require('../models/PeopleMaster');
   const CompProfile = require('../models/CompProfile');
   const ErpAuditLog = require('../models/ErpAuditLog');
-  const { computePerdiemAmount } = require('../services/perdiemCalc');
+  const { computePerdiemAmount, resolvePerdiemConfig } = require('../services/perdiemCalc');
 
   const decided = await ApprovalRequest.find({
     module: 'PERDIEM_OVERRIDE',
@@ -87,7 +87,15 @@ async function main() {
       const compProfile = person
         ? await CompProfile.findOne({ person_id: person._id, entity_id: smer.entity_id, status: 'ACTIVE' }).sort({ effective_date: -1 }).lean()
         : null;
-      const { amount } = computePerdiemAmount(tier === 'FULL' ? 999 : 3, smer.perdiem_rate, settings, compProfile);
+      // Phase G1.6 — resolve per-role config so repair amounts match what the
+      // live approval flow produces. Degrade to undefined if lookup missing.
+      let perdiemConfig;
+      try {
+        perdiemConfig = await resolvePerdiemConfig({ entityId: smer.entity_id, role: 'BDM' });
+      } catch (_) {
+        perdiemConfig = undefined;
+      }
+      const { amount } = computePerdiemAmount(tier === 'FULL' ? 999 : 3, smer.perdiem_rate, settings, compProfile, perdiemConfig);
 
       const oldTier = entry.perdiem_tier;
       const rsn = req.metadata?.override_reason || 'Approved override';

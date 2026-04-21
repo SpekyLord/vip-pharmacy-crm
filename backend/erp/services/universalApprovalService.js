@@ -648,7 +648,7 @@ const MODULE_QUERIES = [
       const ApprovalRequest = require('../models/ApprovalRequest');
       const SmerEntry = require('../models/SmerEntry');
       const Settings = require('../models/Settings');
-      const { computePerdiemAmount } = require('../services/perdiemCalc');
+      const { computePerdiemAmount, resolvePerdiemConfig } = require('../services/perdiemCalc');
 
       const pendingOverrides = await ApprovalRequest.find({
         entity_id: entityId,
@@ -672,6 +672,15 @@ const MODULE_QUERIES = [
         : [];
       const smerMap = new Map(smers.map(s => [s._id.toString(), s]));
       const settings = await Settings.getSettings();
+      // Phase G1.6 — resolve perdiemConfig once for the entity so approvers see the
+      // exact same amount they will apply on approve. All SMERs in this batch share
+      // entity_id. Degrade to undefined if lookup missing (non-blocking display).
+      let perdiemConfig;
+      try {
+        perdiemConfig = await resolvePerdiemConfig({ entityId, role: 'BDM' });
+      } catch (_) {
+        perdiemConfig = undefined;
+      }
 
       return pendingOverrides.map(req => {
         const smer = req.doc_id ? smerMap.get(req.doc_id.toString()) : null;
@@ -689,7 +698,7 @@ const MODULE_QUERIES = [
             || null;
           const requestedMd = requestedTier === 'FULL' ? 999 : (requestedTier === 'HALF' ? 3 : entry.md_count);
           const requestedAmount = requestedTier
-            ? computePerdiemAmount(requestedMd, smer.perdiem_rate, settings).amount
+            ? computePerdiemAmount(requestedMd, smer.perdiem_rate, settings, undefined, perdiemConfig).amount
             : req.amount;
           const hospitals = (entry.hospital_ids || []).map(h => h?.hospital_name).filter(Boolean);
           const hospitalCovered = hospitals.length
