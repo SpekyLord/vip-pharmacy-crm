@@ -204,10 +204,14 @@ export default function OpeningArEntry() {
   const editableStatuses = rejectionConfig?.editable_statuses || ['DRAFT', 'ERROR'];
 
   // ── Fetch ProductMaster (entity-scoped, active only — no inventory filter) ──
+  // `catalog=true` is REQUIRED: the /erp/products endpoint silently narrows the
+  // list to "products stocked in this BDM's warehouse" for CONTRACTOR role
+  // unless catalog mode is set. Opening AR must show the full ProductMaster
+  // because historical CSIs may reference discontinued / out-of-stock SKUs.
   useEffect(() => {
     let cancelled = false;
     setProductLoading(true);
-    erpApi.get('/products', { params: { is_active: 'true', limit: 0 } })
+    erpApi.get('/products', { params: { is_active: 'true', limit: 0, catalog: 'true' } })
       .then(res => {
         if (cancelled) return;
         setProductMaster(res?.data || []);
