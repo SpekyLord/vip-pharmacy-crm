@@ -13,7 +13,7 @@ import Sidebar from '../../components/common/Sidebar';
 import useIncome from '../hooks/useIncome';
 import useDeductionSchedule from '../hooks/useDeductionSchedule';
 import { useLookupOptions } from '../hooks/useLookups';
-import { showError } from '../utils/errorToast';
+import { showError, showSuccess, showApprovalPending, isApprovalPending } from '../utils/errorToast';
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
 import RejectionBanner from '../components/RejectionBanner';
@@ -345,10 +345,19 @@ export default function MyIncome() {
         target_cycle: schedForm.target_cycle,
         description: schedForm.desc
       };
+      let result;
       if (editingScheduleId) {
-        await sched.editSchedule(editingScheduleId, payload);
+        result = await sched.editSchedule(editingScheduleId, payload);
       } else {
-        await sched.createSchedule(payload);
+        result = await sched.createSchedule(payload);
+      }
+      // Phase G4.2 — createSchedule may return HTTP 202 approval_pending when the
+      // BDM's role isn't in MODULE_DEFAULT_ROLES.DEDUCTION_SCHEDULE. Surface the
+      // info toast so the BDM sees "Approval required" instead of silent success.
+      if (isApprovalPending(result)) {
+        showApprovalPending(result?.message || 'Deduction schedule sent to Approval Hub.');
+      } else if (!editingScheduleId) {
+        showSuccess('Deduction schedule submitted.');
       }
       setShowCreate(null);
       setEditingScheduleId(null);

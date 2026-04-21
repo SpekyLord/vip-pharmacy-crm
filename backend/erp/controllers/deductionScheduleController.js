@@ -6,6 +6,7 @@
  */
 const DeductionSchedule = require('../models/DeductionSchedule');
 const { catchAsync } = require('../../middleware/errorHandler');
+const { gateApproval } = require('../services/approvalService');
 const {
   createSchedule: createScheduleSvc,
   approveSchedule: approveScheduleSvc,
@@ -23,6 +24,37 @@ const createSchedule = catchAsync(async (req, res) => {
   const schedule = await createScheduleSvc(
     req.entityId, req.bdmId, req.body, req.user._id, false
   );
+
+  // Phase G4.2 — unify with the Approval Hub. Route a PENDING_APPROVAL schedule
+  // through the lookup-driven Default-Roles Gate so the decision is recorded on
+  // ApprovalRequest (status PENDING → APPROVED/REJECTED) and surfaces in the
+  // Approval History tab. The raw DeductionSchedule query in MODULE_QUERIES
+  // (universalApprovalService.js:102-128) still surfaces the pending schedule in
+  // the All Pending tab; the by-doc_id dedup (lines 1342-1371) drops the mirror
+  // ApprovalRequest row so there is no double-listing.
+  //
+  // gateApproval sends HTTP 202 with approval_pending:true when a PENDING
+  // ApprovalRequest is created. The schedule itself already exists in
+  // PENDING_APPROVAL status — the frontend surfaces it via showApprovalPending
+  // and the BDM can withdraw/edit from My Schedules.
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'DEDUCTION_SCHEDULE',
+    docType: schedule.term_months === 1 ? 'ONE_TIME' : 'INSTALLMENT',
+    docId: schedule._id,
+    docRef: schedule.schedule_code,
+    amount: schedule.total_amount,
+    description: `${schedule.deduction_label}${schedule.term_months > 1 ? ` · ₱${schedule.installment_amount}/mo × ${schedule.term_months}` : ''} · ${schedule.target_cycle}`,
+    requesterId: req.user._id,
+    requesterName: req.user.name,
+  }, res);
+  if (gated) return;
+
+  // Fallback — requester's role was in MODULE_DEFAULT_ROLES.DEDUCTION_SCHEDULE
+  // (admin/finance/president) so no ApprovalRequest was needed. roleCheck on the
+  // BDM route only admits `contractor`, so this branch is effectively unreachable
+  // today; keeping the 201 reply preserves the response contract if the route
+  // is ever opened up. Finance/Admin auto-activate flow remains on POST /finance-create.
   res.status(201).json({ success: true, data: schedule });
 });
 

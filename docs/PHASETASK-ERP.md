@@ -5737,6 +5737,104 @@ Single-file revert: restore the `APPROVAL_REQUEST` MODULE_QUERIES entry's origin
 
 ---
 
+## Phase G4.2 — Deduction Schedule Unified Approval Flow ✅ (April 21, 2026)
+
+### Problem
+
+User approved a one-time deduction and went to Approval Workflow → Approval History to confirm. It wasn't there, even though PERDIEM_OVERRIDE / SALES / EXPENSES were. Root cause: `deductionScheduleService.approveSchedule()` flipped `DeductionSchedule.status` from `PENDING_APPROVAL` → `ACTIVE` directly and **never created or updated an `ApprovalRequest`**. The Approval History endpoint ([approvalController.js:69-83](../backend/erp/controllers/approvalController.js#L69-L83)) queries only `ApprovalRequest`, so deduction approvals never appeared in the audit surface.
+
+This violated the Rule #20 "Any person can CREATE, but authority POSTS" governing principle: deduction schedules had a parallel mini-approval track that bypassed `gateApproval()`. Authority Matrix escalation, default-roles gate enforcement, and audit-history parity all silently failed for DEDUCTION_SCHEDULE even though the enum values, lookup seeds, and hydration registry were already in place.
+
+### Prior-Phase Scaffolding (Already Shipped)
+
+All plumbing for DEDUCTION_SCHEDULE had landed across earlier phases — the only missing wire was the call to `gateApproval()` on `createSchedule`.
+
+| Asset | Phase | File | Ready? |
+|---|---|---|---|
+| `ApprovalRule.module` enum includes `DEDUCTION_SCHEDULE` | 34 | [ApprovalRule.js](../backend/erp/models/ApprovalRule.js) | ✅ |
+| `MODULE_DEFAULT_ROLES.DEDUCTION_SCHEDULE` seed (`['admin','finance','president']`) | F.1 | [lookupGenericController.js](../backend/erp/controllers/lookupGenericController.js) | ✅ |
+| `APPROVAL_CATEGORY.FINANCIAL` lists DEDUCTION_SCHEDULE | 29 | lookupGenericController.js | ✅ |
+| `APPROVALS__APPROVE_DEDUCTIONS` sub-permission | 34 | lookupGenericController.js | ✅ |
+| `MODULE_REJECTION_CONFIG.DEDUCTION_SCHEDULE` (rejection feedback lookup) | G6 | lookupGenericController.js | ✅ |
+| `APPROVAL_EDITABLE_FIELDS.DEDUCTION_SCHEDULE` (quick-edit fields) | G3 | lookupGenericController.js | ✅ |
+| `DOC_TYPE_HYDRATION.DEDUCTION_SCHEDULE` (Hub card hydration) | G4.1 | [universalApprovalService.js:996](../backend/erp/services/universalApprovalService.js#L996) | ✅ |
+| `MODULE_SUB_PERM_MAP.DEDUCTION_SCHEDULE = 'approve_deductions'` | 34 | universalApprovalService.js | ✅ |
+| `approvalHandlers.deduction_schedule` (Hub dispatcher) | F | [universalApprovalController.js:203](../backend/erp/controllers/universalApprovalController.js#L203) | ✅ |
+| `TYPE_TO_MODULE.deduction_schedule = 'DEDUCTION_SCHEDULE'` | F.1 | universalApprovalController.js | ✅ |
+| `MODULE_QUERIES.DEDUCTION_SCHEDULE` (raw pending query for Hub) | F | universalApprovalService.js | ✅ |
+| Hub catch-all closes open ApprovalRequest by doc_id | G4 | universalApprovalController.js:705-734 | ✅ |
+| By-doc_id dedup (prefers raw over APPROVAL_REQUEST mirror) | G4.1 | universalApprovalService.js:1342-1371 | ✅ |
+| **`createSchedule` calls `gateApproval()`** | — | deductionScheduleController.js | ❌ ← fixed here |
+
+### What Shipped
+
+**1. Controller — `createSchedule` routes through the Default-Roles Gate.**
+
+[backend/erp/controllers/deductionScheduleController.js](../backend/erp/controllers/deductionScheduleController.js) imports `gateApproval` and calls it immediately after `createScheduleSvc`. `gateApproval({ module: 'DEDUCTION_SCHEDULE', docType: 'ONE_TIME'|'INSTALLMENT', docId, docRef, amount, description, requesterId, requesterName }, res)` creates a level-0 PENDING `ApprovalRequest` when the caller's role isn't in `MODULE_DEFAULT_ROLES.DEDUCTION_SCHEDULE.metadata.roles` and sends HTTP 202 `approval_pending:true`. Contractor role is not in the allowed list, so every BDM submission lands in the Hub.
+
+The `DeductionSchedule` document itself still writes to `PENDING_APPROVAL` with `isFinance=false` (unchanged from Phase E.2). The raw-schedule query in `MODULE_QUERIES` still surfaces it in All Pending; the Phase G4.1 by-doc_id dedup drops the `APPROVAL_REQUEST:*` mirror so there's no double-listing.
+
+**2. Service — close-loop on approve / reject / withdraw / edit.**
+
+[backend/erp/services/deductionScheduleService.js](../backend/erp/services/deductionScheduleService.js) gained a private `closeApprovalRequest(docId, status, userId, reason)` helper scoped to `module: 'DEDUCTION_SCHEDULE'`. Called after `schedule.save()` in:
+
+- `approveSchedule` → status APPROVED
+- `rejectSchedule` → status REJECTED with caller's reason
+- `withdrawSchedule` → status CANCELLED with "Withdrawn by BDM"
+
+`editPendingSchedule` additionally refreshes the PENDING request's `amount` / `doc_type` / `description` so Hub + History reflect the BDM's edit, not the original submission.
+
+Idempotent by design: `$set` only fires when `status: 'PENDING'`. The Hub-path catch-all in `universalApproveEndpoint` (lines 705-734) still runs for `'deduction_schedule'` type (not on the skip list), but after the svc close-loop the status is no longer PENDING — catch-all matches zero rows. No double-history entries, no double-push.
+
+**3. Script — backfill for pre-Phase-G4.2 schedules.**
+
+[backend/erp/scripts/backfillDeductionScheduleApprovals.js](../backend/erp/scripts/backfillDeductionScheduleApprovals.js). Dry-run by default, `--apply` to persist. For every `DeductionSchedule` without an existing `ApprovalRequest`: creates one with the appropriate terminal status (`PENDING_APPROVAL → PENDING`, `ACTIVE/COMPLETED → APPROVED`, `REJECTED → REJECTED`, `CANCELLED → APPROVED` if `approved_by` set else CANCELLED). Idempotent — skips rows with existing AR. Restores retroactive Hub + History visibility.
+
+**4. Frontend — 202 handling + WorkflowGuide.**
+
+- [frontend/src/erp/pages/MyIncome.jsx](../frontend/src/erp/pages/MyIncome.jsx) — imports `isApprovalPending` / `showApprovalPending` / `showSuccess` from `errorToast.js`. `handleSaveSchedule` reads `res.data` returned from `useErpApi.request()` (which already returns `res.data`), checks `isApprovalPending(result)`, and fires the 🔒 blue info toast on HTTP 202.
+- [frontend/src/erp/components/WorkflowGuide.jsx](../frontend/src/erp/components/WorkflowGuide.jsx) — `myIncome` step 4 and `income` steps 3-4 rewritten to describe the Approval Hub flow, the `/finance-create` bypass, and the Approval History audit surface.
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `backend/erp/controllers/deductionScheduleController.js` | Import `gateApproval`. `createSchedule` calls the gate after svc and returns on 202. |
+| `backend/erp/services/deductionScheduleService.js` | Import `ApprovalRequest`. New `closeApprovalRequest` helper. Called in `approveSchedule`, `rejectSchedule`, `withdrawSchedule`. `editPendingSchedule` refreshes the open PENDING request. |
+| `backend/erp/scripts/backfillDeductionScheduleApprovals.js` | New — backfills ApprovalRequest rows for pre-Phase-G4.2 schedules. |
+| `frontend/src/erp/pages/MyIncome.jsx` | 202 approval_pending detection + info toast. |
+| `frontend/src/erp/components/WorkflowGuide.jsx` | `myIncome` + `income` banners rewritten. |
+| `CLAUDE-ERP.md` | Index table row + full Phase G4.2 section. |
+| `docs/PHASETASK-ERP.md` | This section. |
+
+### Integrity Checklist
+
+- [x] **Period lock preserved.** `deductionScheduleRoutes.js` still wraps `POST /` and `PUT /:id` with `periodLockCheck('DEDUCTION')`. gateApproval runs AFTER the lock middleware. Locked periods reject before any ApprovalRequest is written.
+- [x] **Dedup verified.** Raw `DEDUCTION_SCHEDULE:<scheduleId>` item and `APPROVAL_REQUEST:<requestId>` item share the same `doc_id` (= `schedule._id`). Phase G4.1 dedup drops the APPROVAL_REQUEST mirror.
+- [x] **Hub catch-all safe.** universalApproveEndpoint catch-all `updateMany({doc_id, status: 'PENDING'})` after svc close-loop → matches 0 rows → no-op.
+- [x] **Direct route parity.** `POST /deduction-schedules/:id/approve` (Finance clicks Approve in the Schedules tab on Income page) now also writes Approval History via the svc close-loop. Behaviour matches the Hub path without any UI change on the Income page.
+- [x] **Reversal semantics unchanged.** DeductionSchedule isn't in `REVERSAL_HANDLERS` — reverting a payslip unwinds the schedule injection, not the schedule itself. Phase G4.2 doesn't touch reversal. Count stays at 21.
+- [x] **No Approval Rules required.** Default-Roles Gate (Phase G4) fires from `MODULE_DEFAULT_ROLES.DEDUCTION_SCHEDULE.metadata.roles` — which is already seeded. Authority Matrix (optional, `Settings.ENFORCE_AUTHORITY_MATRIX = true` + `ApprovalRule` rows) is orthogonal; subscribers add rules for amount-threshold escalation without any code change.
+- [x] **Downstream consumers unaffected.** `incomeCalc.js` reads `DeductionSchedule.status`, `.installments[]` and `.approved_by` — unchanged. Payslip generation still picks up ACTIVE schedules exactly as before.
+- [x] **Withdraw path.** `POST /:id/withdraw` (BDM) still flips the schedule to CANCELLED and cancels PENDING installments; Phase G4.2 adds the AR CANCELLED close-loop so the BDM's withdraw also clears the Approval Hub.
+- [x] **Edit path.** `PUT /:id` (BDM) regenerates installments in the service (existing behaviour) and now refreshes the PENDING ApprovalRequest's `amount` / `description` so approvers always see the current submission.
+- [x] **Finance-create bypass preserved.** `financeCreateSchedule` on `POST /finance-create` calls `createScheduleSvc(..., isFinance=true)` → schedule activates immediately. No `gateApproval` call — by design, admin/finance/president has authority.
+- [x] **Frontend wiring.** `useDeductionSchedule` returns `api.post(...)` → `useErpApi.request()` returns `res.data` (which includes `approval_pending: true` for HTTP 202). `isApprovalPending(result)` handles both top-level `result.approval_pending` and the `err.response.status === 202` case.
+- [x] **Lookup-driven defaults preserved.** `MODULE_DEFAULT_ROLES.DEDUCTION_SCHEDULE` is already in SEED_DEFAULTS. New entities auto-seed on first Hub load per `getUniversalPending` (universalApprovalService.js:1288-1309). Subscriber tightening/opening via Control Center is unchanged.
+
+### Rollout
+
+1. Deploy backend + frontend together (single release — the backfill script can run anytime after deploy).
+2. `node backend/erp/scripts/backfillDeductionScheduleApprovals.js` (dry-run) to preview.
+3. `node backend/erp/scripts/backfillDeductionScheduleApprovals.js --apply` to write backfilled `ApprovalRequest` rows. Idempotent — safe to re-run.
+4. Verify: president logs in, goes to Approval Workflow → Approval History. DEDUCTION_SCHEDULE rows now appear alongside PERDIEM_OVERRIDE / SALES / EXPENSES.
+
+### Rollback
+
+Single-commit revert: restore the 4 source files (controller / service / MyIncome.jsx / WorkflowGuide.jsx). No schema changes, no lookup changes, no migration to undo. Backfilled `ApprovalRequest` rows can stay (they're consistent with the data model) or be dropped by `ApprovalRequest.deleteMany({ module: 'DEDUCTION_SCHEDULE', 'metadata.backfilled': true })`.
+
+---
+
 ## Phase 33 — Car Logbook Cycle-Wrapper Redesign ✅ (April 21, 2026)
 
 > **Name collision.** There is an earlier "Phase 33 — Bulk Role Migration + Login Fix" in this file (April 10, 2026). Both keep the Phase 33 tag they were filed under. This section covers the car-logbook cycle-wrapper work.

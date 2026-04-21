@@ -6,7 +6,45 @@
  */
 const mongoose = require('mongoose');
 const DeductionSchedule = require('../models/DeductionSchedule');
+const ApprovalRequest = require('../models/ApprovalRequest');
 const { generateDocNumber } = require('./docNumbering');
+
+// Phase G4.2 — close any open PENDING ApprovalRequest for a schedule when the
+// decision is reached via the direct route (POST /:id/approve|reject|withdraw).
+// The Approval Hub path closes the request in universalApprovalController via
+// the catch-all at lines 705-734; keeping the close logic here too means both
+// paths behave identically so `Approval History` never diverges from the
+// `DeductionSchedule` source of truth.
+//
+// Idempotent: $set only fires when status is still PENDING, so a second call
+// (e.g. Hub approve → catch-all → direct route) is a no-op.
+async function closeApprovalRequest(docId, decisionStatus, userId, reason) {
+  if (!docId) return;
+  try {
+    await ApprovalRequest.updateMany(
+      { doc_id: docId, module: 'DEDUCTION_SCHEDULE', status: 'PENDING' },
+      {
+        $set: {
+          status: decisionStatus,
+          decided_by: userId,
+          decided_at: new Date(),
+          decision_reason: reason || `${decisionStatus.toLowerCase()} via deduction schedule route`,
+        },
+        $push: {
+          history: {
+            status: decisionStatus,
+            by: userId,
+            reason: reason || `${decisionStatus.toLowerCase()} via deduction schedule route`,
+          },
+        },
+      }
+    );
+  } catch (err) {
+    // Non-fatal: schedule state is already persisted. Log and continue — a stuck
+    // ApprovalRequest can be repaired with the migration script below.
+    console.error(`DeductionSchedule closeApprovalRequest failed (doc_id=${docId}):`, err.message);
+  }
+}
 
 /**
  * Create a new deduction schedule with pre-generated installments.
@@ -60,6 +98,10 @@ async function approveSchedule(scheduleId, userId) {
   schedule.approved_by = userId;
   schedule.approved_at = new Date();
   await schedule.save();
+
+  // Phase G4.2 — close the audit loop so Approval History mirrors the decision.
+  await closeApprovalRequest(schedule._id, 'APPROVED', userId);
+
   return schedule;
 }
 
@@ -76,6 +118,11 @@ async function rejectSchedule(scheduleId, userId, reason) {
   schedule.status = 'REJECTED';
   schedule.reject_reason = reason || '';
   await schedule.save();
+
+  // Phase G4.2 — close the audit loop with the provided rejection reason so the
+  // Approval History row carries the same `decision_reason` surfaced on the schedule.
+  await closeApprovalRequest(schedule._id, 'REJECTED', userId, reason);
+
   return schedule;
 }
 
@@ -204,6 +251,12 @@ async function withdrawSchedule(scheduleId, bdmId, entityId) {
     at: new Date()
   });
   await schedule.save();
+
+  // Phase G4.2 — BDM voluntarily pulled the request; close the ApprovalRequest as
+  // CANCELLED so approvers no longer see it and the history row reflects the BDM's
+  // action rather than an approver decision.
+  await closeApprovalRequest(schedule._id, 'CANCELLED', bdmId, 'Withdrawn by BDM');
+
   return schedule;
 }
 
@@ -265,6 +318,25 @@ async function editPendingSchedule(scheduleId, bdmId, entityId, updates) {
   schedule.remaining_balance = schedule.total_amount;
 
   await schedule.save();
+
+  // Phase G4.2 — BDM edited total_amount / label / term, so the PENDING
+  // ApprovalRequest's `amount` and `description` must be refreshed. Otherwise
+  // the Approval Hub and the eventual Approval History row show stale values.
+  try {
+    await ApprovalRequest.updateMany(
+      { doc_id: schedule._id, module: 'DEDUCTION_SCHEDULE', status: 'PENDING' },
+      {
+        $set: {
+          amount: schedule.total_amount,
+          doc_type: schedule.term_months === 1 ? 'ONE_TIME' : 'INSTALLMENT',
+          description: `${schedule.deduction_label}${schedule.term_months > 1 ? ` · ₱${schedule.installment_amount}/mo × ${schedule.term_months}` : ''} · ${schedule.target_cycle}`,
+        },
+      }
+    );
+  } catch (err) {
+    console.error(`DeductionSchedule editPending approvalRequest sync failed (doc_id=${schedule._id}):`, err.message);
+  }
+
   return schedule;
 }
 
