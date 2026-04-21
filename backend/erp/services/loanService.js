@@ -114,8 +114,8 @@ async function postInterest(entityId, period, userId) {
   for (const loan of loans) {
     for (const entry of loan.amortization_schedule) {
       if (entry.period === period && entry.status === 'APPROVED') {
-        // JE for interest expense
-        const jeData = journalFromInterest({
+        // JE for interest expense — journalFromInterest is async, needs await.
+        const jeData = await journalFromInterest({
           interest_amount: entry.interest_amount,
           date: new Date(),
           period,

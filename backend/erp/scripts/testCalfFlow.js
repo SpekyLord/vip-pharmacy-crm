@@ -201,7 +201,7 @@ async function run() {
     const calfRef = calf.calf_number || `CALF-${period}`;
     const jeLines = [
       { account_code: '1110', account_name: 'AR — BDM Advances', debit: calf.amount, credit: 0, description: `CALF advance: ${calfRef}` },
-      { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: calf.amount, description: `CALF: ${calfRef}` }
+      { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: calf.amount, description: `CALF: ${calfRef}`, is_contra: /^[156]/.test(String(funding.coa_code || '')) }
     ];
     await createAndPostJournal(eId, {
       je_date: calf.posted_at, period, description: `CALF: ${calfRef}`,
@@ -272,10 +272,10 @@ async function run() {
         if (line.expense_type === 'ORE') totalOre += line.amount || 0;
         else totalAccess += line.amount || 0;
       }
-      if (totalOre > 0) jeLines.push({ account_code: '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre, description: desc });
+      if (totalOre > 0) jeLines.push({ account_code: '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre, description: desc, is_contra: true });
       if (totalAccess > 0) {
         const funding = await resolveFundingCoa(expense.lines.find(l => l.expense_type === 'ACCESS') || expense);
-        jeLines.push({ account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: totalAccess, description: desc });
+        jeLines.push({ account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: totalAccess, description: desc, is_contra: /^[156]/.test(String(funding.coa_code || '')) });
       }
       if (jeLines.length >= 2) {
         await createAndPostJournal(eId, {
@@ -414,7 +414,7 @@ async function run() {
       source_module: 'EXPENSE', source_event_id: event2._id, source_doc_ref: `${calfRef}-R2`,
       lines: [
         { account_code: '1110', account_name: 'AR — BDM Advances', debit: calf.amount, credit: 0, description: `CALF advance: ${calfRef}` },
-        { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: calf.amount, description: `CALF: ${calfRef}` }
+        { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: calf.amount, description: `CALF: ${calfRef}`, is_contra: /^[156]/.test(String(funding.coa_code || '')) }
       ],
       bir_flag: 'INTERNAL', vat_flag: 'N/A', bdm_id: bId, created_by: bId
     });
@@ -450,10 +450,10 @@ async function run() {
         if (line.expense_type === 'ORE') totalOre2 += line.amount || 0;
         else totalAccess2 += line.amount || 0;
       }
-      if (totalOre2 > 0) jeLines2.push({ account_code: '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre2, description: desc2 });
+      if (totalOre2 > 0) jeLines2.push({ account_code: '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre2, description: desc2, is_contra: true });
       if (totalAccess2 > 0) {
         const f = await resolveFundingCoa(expense.lines.find(l => l.expense_type === 'ACCESS') || expense);
-        jeLines2.push({ account_code: f.coa_code, account_name: f.coa_name, debit: 0, credit: totalAccess2, description: desc2 });
+        jeLines2.push({ account_code: f.coa_code, account_name: f.coa_name, debit: 0, credit: totalAccess2, description: desc2, is_contra: /^[156]/.test(String(f.coa_code || '')) });
       }
       if (jeLines2.length >= 2) {
         await createAndPostJournal(eId, {

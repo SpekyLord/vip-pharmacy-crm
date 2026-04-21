@@ -15,10 +15,20 @@ const erpAuditLogSchema = new mongoose.Schema({
     // Phase G7: COPILOT_TOOL_CALL, AI_BUDGET_CHANGE, AI_COWORK_CONFIG_CHANGE added so
     // the President's Copilot, spend-cap edits, and AI Cowork prompt edits all
     // persist in the audit ledger instead of failing silently.
+    // Phase 35: closed the silent-swallow gap on ErpAuditLog.logChange. These
+    // values were being passed from controllers but rejected by strict-enum validation,
+    // with the resulting failure caught by `.catch(() => {})` so nothing landed in
+    // the audit ledger. Closed the gap so ledger / VAT / CWT / auto-journal failures,
+    // CSI traces, batch uploads, masterdata CREATE/UPDATE/DELETE and backfill runs
+    // all surface properly. AUTO_JOURNAL_FAILURE reserved for the upcoming Phase 36
+    // focused auto-journal alert channel.
     enum: [
       'SALES_EDIT', 'PRICE_CHANGE', 'ITEM_CHANGE', 'DELETION', 'REOPEN',
       'STATUS_CHANGE', 'PRESIDENT_REVERSAL',
       'COPILOT_TOOL_CALL', 'AI_BUDGET_CHANGE', 'AI_COWORK_CONFIG_CHANGE',
+      'LEDGER_ERROR', 'AUTO_JOURNAL_FAILURE',
+      'CSI_TRACE', 'BATCH_UPLOAD_ON_BEHALF',
+      'CREATE', 'UPDATE', 'DELETE', 'BACKFILL',
     ],
     required: true
   },

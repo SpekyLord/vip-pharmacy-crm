@@ -27,6 +27,13 @@ const Collection = require('../models/Collection');
 const PurchaseOrder = require('../models/PurchaseOrder');
 // Phase 31R — AP payment blocker for Supplier Invoice reversal
 const ApPayment = require('../models/ApPayment');
+// Phase G4.3 — Sales Goal plan reversal guards
+const IncentivePayout = require('../models/IncentivePayout');
+const PettyCashTransaction = require('../models/PettyCashTransaction');
+const SmerEntry = require('../models/SmerEntry');
+const CarLogbookEntry = require('../models/CarLogbookEntry');
+const CarLogbookCycle = require('../models/CarLogbookCycle');
+const OfficeSupplyTransaction = require('../models/OfficeSupplyTransaction');
 
 /**
  * GRN dependent check — block reversal if any batch from this GRN has been
@@ -391,6 +398,189 @@ async function checkIcSettlementDependents({ /* doc, tenantFilter */ }) {
   return { has_deps: false, dependents: [] };
 }
 
+/**
+ * Sales Goal Plan dependent check (Phase G4.3) — HARD block when any
+ * IncentivePayout under the plan is PAID. Paid payouts moved cash out through
+ * the settlement JE (and potentially paid_via Payslip — there's no direct
+ * Payslip→Payout link, so we treat PAID as the cash-event-out signal).
+ * Reversing the plan rips the accrual+settlement JEs via reverseSalesGoalPlan;
+ * that corrupts the ledger if the settlement already landed as real cash. The
+ * approver must reverse the PAID payout explicitly (IncentivePayout REVERSED
+ * lifecycle) before reversing the plan.
+ *
+ * Informational WARN: any Payslip in the same fiscal year + bdm_id with
+ * `earnings.incentive > 0` is surfaced so the approver can confirm nothing
+ * double-booked through payroll. Not a hard block — Payslip.earnings.incentive
+ * is a plain number with no programmatic link to IncentivePayout today.
+ */
+async function checkSalesGoalPlanDependents({ doc }) {
+  const dependents = [];
+  const paid = await IncentivePayout.find({
+    entity_id: doc.entity_id,
+    plan_id: doc._id,
+    status: 'PAID',
+  }).select('_id period bdm_id tier_label tier_budget paid_via paid_at settlement_journal_id').lean();
+  for (const p of paid) {
+    dependents.push({
+      type: 'INCENTIVE_PAYOUT',
+      ref: `${p.tier_label || p.tier_code || 'Tier'} · ${p.period || ''}`.trim(),
+      doc_id: p._id,
+      message: `IncentivePayout ${p._id} is PAID (${p.paid_via || 'unknown channel'}${p.paid_at ? ` on ${p.paid_at.toISOString().slice(0, 10)}` : ''}) — reverse the payout first so the settlement JE unwinds cleanly before reversing the plan.`,
+    });
+  }
+
+  // WARN — Payslip cross-reference (same fiscal_year + bdm_id with non-zero
+  // incentive earnings). Weak link (no schema FK), so advisory only.
+  const bdmIds = [...new Set(paid.map(p => String(p.bdm_id)).filter(Boolean))];
+  if (bdmIds.length && doc.fiscal_year) {
+    const yrPrefix = `${doc.fiscal_year}-`;
+    const payslips = await Payslip.find({
+      entity_id: doc.entity_id,
+      period: { $regex: `^${yrPrefix}` },
+      'earnings.incentive': { $gt: 0 },
+      status: { $in: ['APPROVED', 'POSTED'] },
+    }).select('_id period person_id earnings.incentive status').lean();
+    for (const ps of payslips) {
+      dependents.push({
+        type: 'PAYSLIP',
+        ref: `${ps.period}`,
+        doc_id: ps._id,
+        severity: 'WARN',
+        message: `Payslip ${ps.period} (${ps.status}) carries ₱${ps.earnings?.incentive} in incentive earnings — confirm it isn't a duplicate of a PAID payout from this plan before reversing.`,
+      });
+    }
+  }
+
+  return { has_deps: dependents.length > 0, dependents };
+}
+
+/**
+ * Petty Cash transaction dependent check (Phase G4.3) — block if any LATER
+ * POSTED transaction on the same fund exists. Petty cash maintains a running
+ * balance; reversing a middle-of-sequence txn without recomputing downstream
+ * balances silently corrupts every subsequent `running_balance`. Force the
+ * approver to reverse the LIFO tail first (VOID the most-recent POSTED txn,
+ * then work backwards) so the balance chain stays intact.
+ */
+async function checkPettyCashTxnDependents({ doc }) {
+  const dependents = [];
+  if (!doc.fund_id || !doc.txn_date) return { has_deps: false, dependents };
+  const later = await PettyCashTransaction.find({
+    fund_id: doc.fund_id,
+    _id: { $ne: doc._id },
+    status: 'POSTED',
+    txn_date: { $gte: doc.txn_date },
+  }).select('_id txn_number txn_type amount txn_date').sort({ txn_date: -1 }).limit(10).lean();
+  for (const l of later) {
+    dependents.push({
+      type: 'PETTY_CASH_TXN',
+      ref: l.txn_number || String(l._id),
+      doc_id: l._id,
+      message: `Later POSTED ${l.txn_type} ${l.txn_number || l._id} (₱${l.amount}, ${l.txn_date?.toISOString?.().slice(0, 10)}) on the same fund — reverse the most-recent POSTED txn first to preserve the running-balance chain.`,
+    });
+  }
+  return { has_deps: dependents.length > 0, dependents };
+}
+
+/**
+ * SMER Entry dependent check (Phase G4.3) — block if an IncomeReport has
+ * already consumed this SMER's total_reimbursable (via source_refs.smer_id).
+ * Reversing the SMER without reversing the IncomeReport leaves the BDM's
+ * net_pay crediting a figure that no longer has an underlying ledger entry.
+ */
+async function checkSmerEntryDependents({ doc }) {
+  const dependents = [];
+  const incomeRefs = await IncomeReport.find({
+    entity_id: doc.entity_id,
+    'source_refs.smer_id': doc._id,
+    status: { $in: ['GENERATED', 'REVIEWED', 'BDM_CONFIRMED', 'CREDITED'] },
+    deletion_event_id: { $exists: false },
+  }).select('_id period status').lean();
+  for (const ir of incomeRefs) {
+    dependents.push({
+      type: 'INCOME_REPORT',
+      ref: `${ir.period}/${ir.status}`,
+      doc_id: ir._id,
+      message: `IncomeReport ${ir.period} (${ir.status}) credits the SMER reimbursable — reverse the income report first to release the SMER.`,
+    });
+  }
+  return { has_deps: dependents.length > 0, dependents };
+}
+
+/**
+ * Car Logbook dependent check (Phase G4.3) — block if any of the cycle's
+ * fuel entries reference a POSTED CALF (cycle-funded fuel ties back to a
+ * cash advance that has already been expensed). The period-lock gate is the
+ * primary safety net; this adds a second-layer check on explicit CALF linkage.
+ */
+async function checkCarLogbookDependents({ doc }) {
+  const dependents = [];
+  // Collect per-day docs: either `doc` IS a CarLogbookEntry, or it's a
+  // CarLogbookCycle wrapper — in which case we fan out to days.
+  const isCycle = doc.constructor && doc.constructor.modelName === 'CarLogbookCycle';
+  const dayDocs = isCycle
+    ? await CarLogbookEntry.find({ cycle_id: doc._id }).select('fuel_entries').lean()
+    : [doc];
+
+  const calfIds = [];
+  for (const day of dayDocs) {
+    for (const f of (day.fuel_entries || [])) {
+      if (f.calf_id) calfIds.push(f.calf_id);
+    }
+  }
+  if (!calfIds.length) return { has_deps: false, dependents };
+
+  const calfs = await PrfCalf.find({
+    _id: { $in: calfIds },
+    doc_type: 'CALF',
+    status: 'POSTED',
+    deletion_event_id: { $exists: false },
+  }).select('_id calf_number amount').lean();
+  for (const c of calfs) {
+    dependents.push({
+      type: 'CALF',
+      ref: c.calf_number || String(c._id),
+      doc_id: c._id,
+      severity: 'WARN',
+      message: `Fuel entry linked to POSTED CALF ${c.calf_number || c._id} (₱${c.amount}) — reversing the logbook leaves the CALF liquidation stale. Confirm intended.`,
+    });
+  }
+  return { has_deps: dependents.length > 0, dependents };
+}
+
+/**
+ * Office Supply Item dependent check (Phase G4.3) — block if the item still
+ * has active (non-reversed) transactions. Reversing an item that downstream
+ * txns reference would orphan qty math and break inventory reports.
+ */
+async function checkOfficeSupplyItemDependents({ doc }) {
+  const dependents = [];
+  const activeTxns = await OfficeSupplyTransaction.find({
+    entity_id: doc.entity_id,
+    supply_id: doc._id,
+    deletion_event_id: { $exists: false },
+  }).select('_id txn_type txn_date qty').limit(5).lean();
+  for (const t of activeTxns) {
+    dependents.push({
+      type: 'OFFICE_SUPPLY_TXN',
+      ref: `${t.txn_type} ${t.qty}`,
+      doc_id: t._id,
+      message: `Active ${t.txn_type} txn (qty ${t.qty}, ${t.txn_date?.toISOString?.().slice(0, 10)}) references this item — reverse the transactions first.`,
+    });
+  }
+  return { has_deps: dependents.length > 0, dependents };
+}
+
+/**
+ * Office Supply Transaction dependent check (Phase G4.3) — no downstream
+ * consumers today (txns are terminal). Placeholder keeps the CHECKERS
+ * registry symmetric so future linkage (e.g., cost-allocation reports) can
+ * attach without touching callers.
+ */
+async function checkOfficeSupplyTxnDependents({ /* doc */ }) {
+  return { has_deps: false, dependents: [] };
+}
+
 // Registry — one entry per module that supports president-reverse.
 // Caller passes `doc_type`; checker returns `{ has_deps, dependents }`.
 const CHECKERS = {
@@ -409,6 +599,13 @@ const CHECKERS = {
   SUPPLIER_INVOICE: checkSupplierInvoiceDependents,
   CREDIT_NOTE: checkCreditNoteDependents,
   IC_SETTLEMENT: checkIcSettlementDependents,
+  // Phase G4.3 — Reversal Console gap closure
+  SALES_GOAL_PLAN:    checkSalesGoalPlanDependents,
+  PETTY_CASH_TXN:     checkPettyCashTxnDependents,
+  SMER_ENTRY:         checkSmerEntryDependents,
+  CAR_LOGBOOK:        checkCarLogbookDependents,
+  OFFICE_SUPPLY_ITEM: checkOfficeSupplyItemDependents,
+  OFFICE_SUPPLY_TXN:  checkOfficeSupplyTxnDependents,
 };
 
 /**

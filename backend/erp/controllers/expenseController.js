@@ -357,7 +357,8 @@ const submitSmer = catchAsync(async (req, res) => {
       if (smer.total_special_cases > 0) lines.push({ account_code: coaMap.SPECIAL_TRANSPORT || '6160', account_name: 'Special Transport Expense', debit: smer.total_special_cases, credit: 0, description: desc });
       if (smer.total_ore > 0) lines.push({ account_code: coaMap.OTHER_REIMBURSABLE || '6170', account_name: 'Other Reimbursable Expense', debit: smer.total_ore, credit: 0, description: desc });
       if (lines.length > 0) {
-        lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: smer.total_reimbursable, description: desc });
+        // CR AR_BDM draws down the BDM's standing advance — reduction of a DEBIT-normal asset.
+        lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: smer.total_reimbursable, description: desc, is_contra: true });
         await createAndPostJournal(smer.entity_id, {
           je_date: smer.posted_at || new Date(),
           period: smer.period,
@@ -373,7 +374,11 @@ const submitSmer = catchAsync(async (req, res) => {
         });
       }
     } catch (jeErr) {
-      console.error('Auto-journal failed for SMER:', smer._id, jeErr.message);
+      // Phase 35 — keep the catch (we don't want a JE error to roll back the SMER
+      // POSTED state, which would leave the SMER in limbo mid-batch) but log a
+      // searchable prefix so ops can grep pm2 logs. Follow-up Phase 36 will wire
+      // an AutoJournalFailure collection + President alert.
+      console.error('[AUTO_JOURNAL_FAILURE] SMER', String(smer._id), jeErr.message);
     }
   }
 
@@ -1161,8 +1166,14 @@ const submitCarLogbook = catchAsync(async (req, res) => {
       const lines = [];
       const totalFuel = cashTotal + fundedTotal;
       if (totalFuel > 0) lines.push({ account_code: coaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas Expense', debit: totalFuel, credit: 0, description: jeDesc });
-      if (cashTotal > 0) lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: cashTotal, description: jeDesc });
-      if (fundedTotal > 0 && fundedCoa) lines.push({ account_code: fundedCoa.coa_code, account_name: fundedCoa.coa_name, debit: 0, credit: fundedTotal, description: jeDesc });
+      // Cash portion reduces the BDM's advance (AR_BDM asset) — contra.
+      if (cashTotal > 0) lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: cashTotal, description: jeDesc, is_contra: true });
+      // Funded portion credits the funding source (bank/CC/petty cash — DEBIT-normal asset).
+      if (fundedTotal > 0 && fundedCoa) {
+        const d = String(fundedCoa.coa_code || '').charAt(0);
+        const fundedIsContra = d === '1' || d === '5' || d === '6';
+        lines.push({ account_code: fundedCoa.coa_code, account_name: fundedCoa.coa_name, debit: 0, credit: fundedTotal, description: jeDesc, is_contra: fundedIsContra });
+      }
       if (lines.length >= 2) {
         await createAndPostJournal(cycleDoc.entity_id, {
           je_date: new Date(),
@@ -1180,7 +1191,7 @@ const submitCarLogbook = catchAsync(async (req, res) => {
       }
     }
   } catch (jeErr) {
-    console.error('Auto-journal failed for logbook cycle:', cycleDoc._id, jeErr.message);
+    console.error('[AUTO_JOURNAL_FAILURE] CarLogbookCycle', String(cycleDoc._id), jeErr.message);
   }
 
   res.json({
@@ -1675,12 +1686,16 @@ const submitExpenses = catchAsync(async (req, res) => {
         }
       }
 
-      // ORE credit → AR BDM Advances (personal reimbursement)
-      if (creditOre > 0) lines.push({ account_code: expCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: creditOre, description: desc });
-      // ACCESS credit → funding source (company-funded)
+      // ORE credit → AR BDM Advances (personal reimbursement) — contra on asset.
+      if (creditOre > 0) lines.push({ account_code: expCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: creditOre, description: desc, is_contra: true });
+      // ACCESS credit → funding source (company-funded). If funding is DEBIT-normal (bank/CC/petty
+      // cash/AR_BDM), the CR is a reduction → is_contra. If funding falls back to AP_TRADE
+      // (CREDIT-normal liability), CR is an increase → not contra.
       if (creditAccess > 0) {
         const coa = accessCoa || { coa_code: expCoaMap.AP_TRADE || '2000', coa_name: 'Accounts Payable — Trade' };
-        lines.push({ account_code: coa.coa_code, account_name: coa.coa_name, debit: 0, credit: creditAccess, description: desc });
+        const d = String(coa.coa_code || '').charAt(0);
+        const isContra = d === '1' || d === '5' || d === '6';
+        lines.push({ account_code: coa.coa_code, account_name: coa.coa_name, debit: 0, credit: creditAccess, description: desc, is_contra: isContra });
       }
 
       if (lines.length >= 2) {
@@ -1699,7 +1714,7 @@ const submitExpenses = catchAsync(async (req, res) => {
         });
       }
     } catch (jeErr) {
-      console.error('Auto-journal failed for expense:', entry._id, jeErr.message);
+      console.error('[AUTO_JOURNAL_FAILURE] ExpenseEntry', String(entry._id), jeErr.message);
     }
   }
 
@@ -2223,7 +2238,7 @@ const submitPrfCalf = catchAsync(async (req, res) => {
         await createAndPostJournal(doc.entity_id, jeData);
       }
     } catch (jeErr) {
-      console.error('Auto-journal failed for PRF/CALF:', doc._id, jeErr.message);
+      console.error('[AUTO_JOURNAL_FAILURE] PrfCalf', String(doc._id), jeErr.message);
     }
   }
 
@@ -2303,10 +2318,12 @@ const submitPrfCalf = catchAsync(async (req, res) => {
               if (line.expense_type === 'ORE') totalOre += line.amount || 0;
               else totalAccess += line.amount || 0;
             }
-            if (totalOre > 0) lines.push({ account_code: autoCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre, description: desc });
+            if (totalOre > 0) lines.push({ account_code: autoCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre, description: desc, is_contra: true });
             if (totalAccess > 0) {
               const funding = await resolveFundingCoa(source.lines.find(l => l.expense_type === 'ACCESS') || source, autoCoaMap.AP_TRADE);
-              lines.push({ account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: totalAccess, description: desc });
+              const d = String(funding.coa_code || '').charAt(0);
+              const isContra = d === '1' || d === '5' || d === '6';
+              lines.push({ account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: totalAccess, description: desc, is_contra: isContra });
             }
             if (lines.length >= 2) {
               await createAndPostJournal(source.entity_id, {
@@ -2327,8 +2344,8 @@ const submitPrfCalf = catchAsync(async (req, res) => {
                 description: `Car Logbook: ${source.period}`, source_module: 'EXPENSE',
                 source_event_id: source.event_id, source_doc_ref: `LOGBOOK-${source.period}`,
                 lines: [
-                  { account_code: calfCoaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas', debit: fuelTotal, credit: 0, description: `Car Logbook: ${source.period}` },
-                  { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: fuelTotal, description: `Car Logbook: ${source.period}` }
+                  { account_code: autoCoaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas', debit: fuelTotal, credit: 0, description: `Car Logbook: ${source.period}` },
+                  { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: fuelTotal, description: `Car Logbook: ${source.period}`, is_contra: /^[156]/.test(String(funding.coa_code || '')) }
                 ],
                 bir_flag: 'BOTH', vat_flag: 'N/A',
                 bdm_id: source.bdm_id, created_by: req.user._id
@@ -3035,14 +3052,14 @@ const postSingleSmer = async (doc, userId) => {
     if (doc.total_special_cases > 0) lines.push({ account_code: coaMap.SPECIAL_TRANSPORT || '6160', account_name: 'Special Transport Expense', debit: doc.total_special_cases, credit: 0, description: desc });
     if (doc.total_ore > 0) lines.push({ account_code: coaMap.OTHER_REIMBURSABLE || '6170', account_name: 'Other Reimbursable Expense', debit: doc.total_ore, credit: 0, description: desc });
     if (lines.length > 0) {
-      lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: doc.total_reimbursable, description: desc });
+      lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: doc.total_reimbursable, description: desc, is_contra: true });
       await createAndPostJournal(doc.entity_id, {
         je_date: doc.posted_at, period: doc.period, description: `SMER: ${desc}`,
         source_module: 'EXPENSE', source_event_id: doc.event_id, source_doc_ref: `SMER-${doc.period}-${doc.cycle}`,
         lines, bir_flag: 'BOTH', vat_flag: 'N/A', bdm_id: doc.bdm_id, created_by: userId
       });
     }
-  } catch (jeErr) { console.error('Auto-journal failed for SMER (approval hub):', doc._id, jeErr.message); }
+  } catch (jeErr) { console.error('[AUTO_JOURNAL_FAILURE] SMER (approval hub)', String(doc._id), jeErr.message); }
 };
 
 const postSingleCarLogbook = async (doc, userId) => {
@@ -3112,8 +3129,11 @@ const postSingleCarLogbook = async (doc, userId) => {
         const lines = [];
         const totalFuel = cashTotal + fundedTotal;
         if (totalFuel > 0) lines.push({ account_code: coaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas Expense', debit: totalFuel, credit: 0, description: jeDesc });
-        if (cashTotal > 0) lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: cashTotal, description: jeDesc });
-        if (fundedTotal > 0 && fundedCoa) lines.push({ account_code: fundedCoa.coa_code, account_name: fundedCoa.coa_name, debit: 0, credit: fundedTotal, description: jeDesc });
+        if (cashTotal > 0) lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: cashTotal, description: jeDesc, is_contra: true });
+        if (fundedTotal > 0 && fundedCoa) {
+          const fundedIsContra = /^[156]/.test(String(fundedCoa.coa_code || ''));
+          lines.push({ account_code: fundedCoa.coa_code, account_name: fundedCoa.coa_name, debit: 0, credit: fundedTotal, description: jeDesc, is_contra: fundedIsContra });
+        }
         if (lines.length >= 2) {
           await createAndPostJournal(doc.entity_id, {
             je_date: new Date(), period: doc.period, description: jeDesc,
@@ -3122,7 +3142,7 @@ const postSingleCarLogbook = async (doc, userId) => {
           });
         }
       }
-    } catch (jeErr) { console.error('Auto-journal failed for logbook cycle (approval hub):', doc._id, jeErr.message); }
+    } catch (jeErr) { console.error('[AUTO_JOURNAL_FAILURE] CarLogbookCycle (approval hub)', String(doc._id), jeErr.message); }
     return;
   }
 
@@ -3161,8 +3181,11 @@ const postSingleCarLogbook = async (doc, userId) => {
       const lines = [];
       const totalFuel = cashTotal + fundedTotal;
       if (totalFuel > 0) lines.push({ account_code: coaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas Expense', debit: totalFuel, credit: 0, description: desc });
-      if (cashTotal > 0) lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: cashTotal, description: desc });
-      if (fundedTotal > 0 && fundedCoa) lines.push({ account_code: fundedCoa.coa_code, account_name: fundedCoa.coa_name, debit: 0, credit: fundedTotal, description: desc });
+      if (cashTotal > 0) lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: cashTotal, description: desc, is_contra: true });
+      if (fundedTotal > 0 && fundedCoa) {
+        const fundedIsContra = /^[156]/.test(String(fundedCoa.coa_code || ''));
+        lines.push({ account_code: fundedCoa.coa_code, account_name: fundedCoa.coa_name, debit: 0, credit: fundedTotal, description: desc, is_contra: fundedIsContra });
+      }
       if (lines.length >= 2) {
         await createAndPostJournal(doc.entity_id, {
           je_date: doc.entry_date || new Date(), period: doc.period, description: `Car Logbook: ${desc}`,
@@ -3171,7 +3194,7 @@ const postSingleCarLogbook = async (doc, userId) => {
         });
       }
     }
-  } catch (jeErr) { console.error('Auto-journal failed for logbook (approval hub):', doc._id, jeErr.message); }
+  } catch (jeErr) { console.error('[AUTO_JOURNAL_FAILURE] CarLogbookEntry legacy (approval hub)', String(doc._id), jeErr.message); }
 };
 
 const postSingleExpense = async (doc, userId) => {
@@ -3223,10 +3246,11 @@ const postSingleExpense = async (doc, userId) => {
       if (line.expense_type === 'ACCESS') { creditAccess += amt; if (!accessCoa) accessCoa = await resolveFundingCoa(line, coaMap.AP_TRADE || '2000'); }
       else { creditOre += amt; }
     }
-    if (creditOre > 0) lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: creditOre, description: desc });
+    if (creditOre > 0) lines.push({ account_code: coaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: creditOre, description: desc, is_contra: true });
     if (creditAccess > 0) {
       const coa = accessCoa || { coa_code: coaMap.AP_TRADE || '2000', coa_name: 'Accounts Payable — Trade' };
-      lines.push({ account_code: coa.coa_code, account_name: coa.coa_name, debit: 0, credit: creditAccess, description: desc });
+      const isContra = /^[156]/.test(String(coa.coa_code || ''));
+      lines.push({ account_code: coa.coa_code, account_name: coa.coa_name, debit: 0, credit: creditAccess, description: desc, is_contra: isContra });
     }
     if (lines.length >= 2) {
       await createAndPostJournal(doc.entity_id, {
@@ -3235,7 +3259,7 @@ const postSingleExpense = async (doc, userId) => {
         lines, bir_flag: doc.bir_flag || 'BOTH', vat_flag: 'N/A', bdm_id: doc.bdm_id, created_by: userId
       });
     }
-  } catch (jeErr) { console.error('Auto-journal failed for expense (approval hub):', doc._id, jeErr.message); }
+  } catch (jeErr) { console.error('[AUTO_JOURNAL_FAILURE] ExpenseEntry (approval hub)', String(doc._id), jeErr.message); }
 };
 
 const postSinglePrfCalf = async (doc, userId) => {
@@ -3272,7 +3296,7 @@ const postSinglePrfCalf = async (doc, userId) => {
       jeData.source_event_id = doc.event_id;
       await createAndPostJournal(doc.entity_id, jeData);
     }
-  } catch (jeErr) { console.error('Auto-journal failed for PRF/CALF (approval hub):', doc._id, jeErr.message); }
+  } catch (jeErr) { console.error('[AUTO_JOURNAL_FAILURE] PrfCalf (approval hub)', String(doc._id), jeErr.message); }
 
   // Auto-validate+submit linked expense/logbook when CALF is posted (mirrors submitPrfCalf logic)
   if (doc.doc_type === 'CALF' && doc.linked_expense_id) {
@@ -3337,10 +3361,11 @@ const postSinglePrfCalf = async (doc, userId) => {
                   if (line.expense_type === 'ORE') totalOre += line.amount || 0;
                   else totalAccess += line.amount || 0;
                 }
-                if (totalOre > 0) jLines.push({ account_code: autoCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre, description: desc });
+                if (totalOre > 0) jLines.push({ account_code: autoCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre, description: desc, is_contra: true });
                 if (totalAccess > 0) {
                   const funding = await resolveFundingCoa(source.lines.find(l => l.expense_type === 'ACCESS') || source, autoCoaMap.AP_TRADE);
-                  jLines.push({ account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: totalAccess, description: desc });
+                  const isContra = /^[156]/.test(String(funding.coa_code || ''));
+                  jLines.push({ account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: totalAccess, description: desc, is_contra: isContra });
                 }
                 if (jLines.length >= 2) {
                   await createAndPostJournal(source.entity_id, {
@@ -3359,7 +3384,7 @@ const postSinglePrfCalf = async (doc, userId) => {
                     source_doc_ref: `LOGBOOK-${source.period}`,
                     lines: [
                       { account_code: autoCoaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas', debit: fuelTotal, credit: 0, description: `Car Logbook: ${source.period}` },
-                      { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: fuelTotal, description: `Car Logbook: ${source.period}` }
+                      { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: fuelTotal, description: `Car Logbook: ${source.period}`, is_contra: /^[156]/.test(String(funding.coa_code || '')) }
                     ],
                     bir_flag: 'BOTH', vat_flag: 'N/A', bdm_id: source.bdm_id, created_by: userId
                   }, { session: autoSession });

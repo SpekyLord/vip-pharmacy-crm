@@ -1,7 +1,7 @@
 # VIP ERP - Project Context
 
-> **Last Updated**: April 18, 2026
-> **Version**: 6.9
+> **Last Updated**: April 21, 2026
+> **Version**: 7.0
 > **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G5 + H1-H5 + Phase 34 + Phase 3a + Phase 3c Complete. Phase 3c (Apr 18, 2026): **Comprehensive hardcoded-role migration** — 30 destructive endpoints across ~15 modules now use `erpSubAccessCheck(module, key)` instead of `roleCheck('admin','finance','president')`. Baseline danger set grew 1 → 10 keys; 19 new sub-perms appear in the Access Template editor (period force-unlock, year-end, settings write, transfer pricing, people terminate/login mgmt, master data deactivate/delete, lookup deletes, etc.). Phase 3a (Apr 18, 2026): **Lookup-driven Danger Sub-Permission Gate + President-Reverse rollout**. Hardcoded `roleCheck('president')` on destructive endpoints replaced with `erpSubAccessCheck('accounting','reverse_posted')` so subsidiaries can delegate to CFO/Finance via Access Template editor without a code change. Rollout adds per-module `/president-reverse` routes to Expenses (ORE/ACCESS), PRF/CALF, and Petty Cash — on top of the existing Sales + Collection endpoints. Baseline danger set stays hardcoded (platform safety floor); subscribers extend via ERP_DANGER_SUB_PERMISSIONS lookup (5-min cache, busted on lookup write). Phase G5 (Apr 18, 2026): Fixed privileged-user BDM filter fallback bug in 9 ERP endpoints.
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
@@ -104,6 +104,7 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | F.1 | Lookup-Driven Module Default Roles — Rule #3 Compliance for Approval Hub | ✅ |
 | G4.1 | ApprovalRequest Hydration in All-Pending — Rich DocumentDetailPanel + doc_id Dedup | ✅ |
 | G4.2 | Deduction Schedule Unified Approval Flow — gateApproval on submit + AR close-loop | ✅ |
+| G4.3 | Approval Hub + Reversal Console Gap Closure — INCENTIVE_DISPUTE dispatcher, 6 new dependent checkers, FUEL_ENTRY rejection config, SupplierInvoice reject wiring | ✅ |
 | Gap 9 | Rx Correlation — Visit vs Sales + Rebates + Programs | ✅ |
 | G1 | BDM Income Projection + Revolving Fund + CALF Bidirectional + Personal Gas | ✅ |
 | G2 | Photo Upload Compression + Approval Hub Populate Fixes | ✅ |
@@ -118,6 +119,88 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | H6 | Sales OCR — BDM field scanning of CSI / CR / DR (sampling+consignment) / Bank Slip / Check + AI_SPEND_CAPS enforcement on OCR Claude calls | 🚧 |
 | G8 | Agents + Copilot Expansion — 8 rule-based scheduled agents + Task collection + 10 new Copilot tools (Secretary + HR) + 3 AI toggle lookups | ✅ |
 | 34* | Approval Hub Enhancement: Sub-Permissions + Attachments + Line-Item Edit | ✅ |
+
+---
+
+## Phase 35 — JE Normal-Balance Validator + Auto-Journal Sweep (April 21, 2026)
+
+### Problem (incident root cause)
+The JournalEntry pre-save validator's "#15 Hardening" guard rejected any line that credited a DEBIT-normal account or debited a CREDIT-normal account — even when the JE was balanced and the intent was a legitimate reduction (CR AR-BDM to draw down an advance, DR AP-Trade to pay a supplier, CR PETTY_CASH for a disbursement). In correct double-entry bookkeeping, the account's `normal_balance` describes where the *accumulated* positive position lives, not a per-line constraint. The guard was conceptually incorrect.
+
+Every affected auto-journal path was wrapped in a `try { createAndPostJournal } catch (jeErr) { console.error(...) }` pattern, so the rejection was silently swallowed. Parent documents (SMER, Car Logbook, PRF/CALF, Collections, Petty Cash, Inter-Company, etc.) flipped to POSTED but the companion JournalEntry never landed, drifting the ledger by the undocumented amount daily from 2026-04-13 onward. Contractor Romela's two POSTED SMERs totalling ₱14,700 were the trigger report.
+
+### Fix strategy (Option A — explicit contra sweep)
+1. **Schema** — added `is_contra: Boolean` to `jeLineSchema` on [JournalEntry.js](backend/erp/models/JournalEntry.js). The #15 direction check now skips any line where `is_contra === true` (or when the whole JE is `is_reversal`).
+2. **Enum gaps closed** — `JournalEntry.source_module` was also silently rejecting `CREDIT_NOTE`, `SUPPLIER_INVOICE`, and `SALES_GOAL` (used by their controllers but missing from the enum). `ErpAuditLog.log_type` was rejecting `LEDGER_ERROR` (9+ call sites), `CSI_TRACE`, `BATCH_UPLOAD_ON_BEHALF`, `CREATE`, `UPDATE`, `DELETE`, `BACKFILL`. Added all; these were latent silent-swallow gaps piggybacking on `.catch(() => {})` wrappers.
+3. **Auto-journal helper sweep** — every `lines: [...]` in [autoJournal.js](backend/erp/services/autoJournal.js) + [journalFromIncentive.js](backend/erp/services/journalFromIncentive.js) reviewed. Added `is_contra: true` on reduction lines:
+   - `journalFromCollection` — CR AR_TRADE
+   - `journalFromCWT` — CR AR_TRADE
+   - `journalFromExpense` — CR AR_BDM/funding (heuristic-driven)
+   - `journalFromCommission` — CR AR_BDM
+   - `journalFromPayroll` — CR bank (net pay disbursement)
+   - `journalFromOwnerEquity` DRAWING — CR bank
+   - `journalFromPettyCash` — CR PETTY_CASH in all three modes; CR OWNER_DRAWINGS in REPLENISHMENT
+   - `journalFromCOGS` — CR INVENTORY
+   - `journalFromInterCompany` SENDER — CR INVENTORY
+   - `journalFromInventoryAdjustment` LOSS — CR INVENTORY
+   - `journalFromPrfCalf` — CR funding (heuristic-driven)
+   - `journalFromIncentive.postSettlementJournal` — DR INCENTIVE_ACCRUAL + CR funding
+4. **Controller inline JEs** — sites that build JE lines without going through a helper were swept in the same pass:
+   - [expenseController.js](backend/erp/controllers/expenseController.js): `submitSmer`, `submitCarLogbookCycle`, `submitExpenses`, `postSingleSmer`, `postSingleCarLogbook`, `postSingleExpense`, nested auto-submit-linked flows (CALF → EXPENSE + CALF → CAR_LOGBOOK)
+   - [creditNoteController.js](backend/erp/controllers/creditNoteController.js): DR SALES_REVENUE + CR AR_TRADE (both contra)
+   - [apPaymentService.js](backend/erp/services/apPaymentService.js): DR AP_TRADE + CR bank (both contra)
+   - [bankReconService.js](backend/erp/services/bankReconService.js): CR bank for charges
+   - [creditCardService.js](backend/erp/services/creditCardService.js): DR CC payable + CR bank (both contra)
+   - [pnlCalc.js](backend/erp/services/pnlCalc.js): year-end closing revenue + expense + loss lines
+5. **Latent bug fixes swept up in the integrity pass**:
+   - `expenseController.js` line 2347 referenced undefined `calfCoaMap` → corrected to `autoCoaMap`.
+   - `loanService.postInterest` missing `await` on `journalFromInterest` → Promise passed as JE data, every interest post silently failed.
+   - `ownerEquityService.recordInfusion` / `recordDrawing` missing `await` on `journalFromOwnerEquity` → owner infusions/drawings silently failed.
+   - `depreciationService.postDepreciation` missing `await` on `journalFromDepreciation` → monthly depreciation silently failed.
+   - `payrollController.js` catch block referenced `fullPs` declared inside inner try → ReferenceError swallowed by `.catch(() => {})`, audit log never persisted.
+6. **Searchable failure logs** — every auto-journal try/catch now logs with a `[AUTO_JOURNAL_FAILURE]` prefix so ops can grep pm2 logs. Phase 36 will promote this to a structured `AutoJournalFailure` collection + President alert.
+7. **Backlog repost script** — [repostMissingJEs.js](backend/erp/scripts/repostMissingJEs.js), dry-run by default. Covers SmerEntry + CarLogbookCycle + ExpenseEntry + PrfCalf POSTED since `--since` (default 2026-04-13) with `deletion_event_id` absent and no JournalEntry at `source_event_id`. Idempotent. `--force-closed-period` flag for period-locked reposts.
+
+### First-digit heuristic (used in call sites with dynamic funding COA)
+Philippine / VIP COA ranges:
+- `1xxx` Asset (normal DEBIT) — CR line is a reduction → `is_contra: true`
+- `2xxx` Liability (normal CREDIT) — DR line is a reduction → `is_contra: true`
+- `3xxx` Equity (normal CREDIT) — DR line reverses equity → `is_contra: true`
+- `4xxx` Revenue (normal CREDIT) — DR line reverses revenue → `is_contra: true`
+- `5xxx` COGS (normal DEBIT) — CR line reverses COGS → `is_contra: true`
+- `6xxx` Expense (normal DEBIT) — CR line reverses expense → `is_contra: true`
+
+Caveat — contra-asset (ACCUM_DEPRECIATION 1350, CREDIT-normal despite 1xxx prefix) and contra-equity (OWNER_DRAWINGS 3100, DEBIT-normal despite 3xxx prefix) need explicit hand-marking because the heuristic would mis-classify them. Both are handled case-by-case.
+
+### Subscription-safe by design (Rule #3 + Rule #19)
+- COA codes still read from `Settings.COA_MAP` via `getCoaMap()` — no hardcoded codes.
+- Funding source via `resolveFundingCoa()` — still payment-mode / bank-account / credit-card driven.
+- The heuristic only kicks in when an is_contra decision is needed dynamically; the validator's authoritative lookup is still `ChartOfAccounts.normal_balance` per entity.
+- Subscribers that customize COA ranges outside the standard prefix mapping get correct behavior because is_contra only defers to the validator — the check still fires for truly mis-directional entries.
+
+### Files touched
+- `backend/erp/models/JournalEntry.js` — `is_contra` schema field + validator skip + source_module enum
+- `backend/erp/models/ErpAuditLog.js` — log_type enum backfill
+- `backend/erp/services/autoJournal.js` — contra helper + 16 `journalFrom*` helpers
+- `backend/erp/services/journalFromIncentive.js` — settlement JE contra lines
+- `backend/erp/services/apPaymentService.js` / `bankReconService.js` / `creditCardService.js` / `pnlCalc.js` / `loanService.js` / `ownerEquityService.js` / `depreciationService.js` — contra lines + missing awaits
+- `backend/erp/services/interCompanyService.js` — failure log prefix
+- `backend/erp/controllers/expenseController.js` — 9 inline sites + calfCoaMap typo + catch prefixes
+- `backend/erp/controllers/creditNoteController.js` / `payrollController.js` / `inventoryController.js` — contra lines + scope fix + prefixes
+- `backend/erp/scripts/repostMissingJEs.js` — new backlog repost script
+
+### Deploy + verify
+```bash
+git pull && pm2 restart vip-crm-api vip-crm-worker
+cd backend && node erp/scripts/repostMissingJEs.js                         # dry-run
+node erp/scripts/repostMissingJEs.js --apply                               # writes
+# Sanity query — orphan SMERs since Apr 13 should drop to 0 after --apply
+node -e "require('dotenv').config(); const m=require('mongoose'); m.connect(process.env.MONGO_URI).then(async()=>{ const smers=await m.connection.db.collection('erp_smer_entries').find({status:'POSTED',posted_at:{\$gte:new Date('2026-04-13T00:00:00Z')},deletion_event_id:{\$exists:false}}).project({_id:1,event_id:1}).toArray(); let orphans=0; for(const s of smers){ const je=await m.connection.db.collection('erp_journal_entries').findOne({source_event_id:s.event_id}); if(!je) orphans++;} console.log('SMER orphans since Apr 13:',orphans); process.exit(0);});"
+```
+
+### Follow-up Phase 36 (not shipped in this pass)
+- `AutoJournalFailure` collection + President alert channel (lookup-driven `ALERT_CHANNELS`) replacing console.error grep.
+- `journal_failures: [...]` array in submit endpoint responses so the frontend can surface a warning toast.
 
 ---
 
@@ -1222,6 +1305,117 @@ BDM edits a pending schedule (PUT /:id):
 - **Reversal handlers.** Deduction schedules are listed in PHASETASK-ERP Reversal Matrix as `P3 — covered by Payslip handler` (reverting Payslip reverts the injection, not the schedule). Phase G4.2 doesn't touch reversal semantics. `REVERSAL_HANDLERS` count unchanged.
 - **Existing approvers.** No UI change to Income → Schedules tab — Finance still clicks Approve / Reject there. The close-loop at the service layer means those clicks now ALSO write the Approval History row without any UI change.
 - **Existing BDM pages.** `MyIncome.jsx` uses the hook that returns `res.data` (including `approval_pending: true`). Existing checks `isApprovalPending(result)` handles the 202 case.
+
+---
+
+## Phase G4.3 — Approval Hub + Reversal Console Gap Closure (April 21, 2026)
+
+**Why.** After G4.2 shipped Deduction Schedule through the unified pipeline, a targeted audit surfaced five wiring gaps that would crash or silently drift the ledger in specific scenarios. Bundled the fixes under G4.3 so the Approval Hub + Reversal Console both reach parity with the governance model before more modules lean on them.
+
+Five gaps closed (in priority):
+
+1. **CRIT — `INCENTIVE_DISPUTE` dispatcher crash.** Controller called `gateApproval('INCENTIVE_DISPUTE', …)` on every lifecycle transition, the request landed in ApprovalRequest, but `universalApprovalController` had **zero references** to `incentive_dispute`. Approver clicking Approve in the Hub would crash with `Unknown approval type: incentive_dispute`. Now fully wired end-to-end.
+2. **CRIT — `SALES_GOAL_PLAN` reversal missing PAID-payout blocker.** `reverseSalesGoalPlan` blindly cascades through `ACCRUED|APPROVED|PAID` payouts, reversing their settlement JEs. If cash already went out via `paid_via`, the reversal orphans real cash with no audit linkage. Now a HARD blocker halts reversal until the approver explicitly reverses each PAID payout (own REVERSED lifecycle).
+3. **HIGH — 5 missing dependent-doc checkers.** `PETTY_CASH_TXN` (running-balance chain), `SMER_ENTRY` (IncomeReport consumption), `CAR_LOGBOOK` (POSTED-CALF linkage WARN), `OFFICE_SUPPLY_ITEM` (active-txn block), `OFFICE_SUPPLY_TXN` (stub for future). Before G4.3, each of these reverse handlers skipped the dependent-doc gate that every other POSTED module enforces. Now registered + wired.
+4. **MED — `FUEL_ENTRY` missing from `MODULE_REJECTION_CONFIG`.** Per-fuel rejection reasons lacked a banner-tone / editable-status row, so the contractor RejectionBanner on Car Logbook fell back to generic. Added the row — banner now renders lookup-driven tone + resubmit gate.
+5. **LOW — Stale G6.7 "pending wiring" comments** on 7 Group B rejection-config rows. Removed. Verified all 8 Group B models (JournalEntry / BankStatement / PettyCashTransaction / InterCompanyTransfer / IcSettlement / SupplierInvoice / SalesGoalPlan / IncentivePayout) carry `rejection_reason` + REJECTED in status enum. SupplierInvoice was missing both — added them (otherwise the existing Group B `purchasing` reject handler would have crashed on Mongoose enum validation).
+
+**Architecture — INCENTIVE_DISPUTE end-to-end.**
+
+```
+BDM files dispute (POST /erp/disputes):
+  └─ fileDispute → IncentiveDispute(current_state: OPEN)    (no gate — filing)
+
+BDM/Finance takes review (POST /:id/take-review):
+  └─ gateApproval(module: INCENTIVE_DISPUTE, docType: DISPUTE_TAKE_REVIEW)
+        ├─ role in MODULE_DEFAULT_ROLES roles → transition runs inline → UNDER_REVIEW
+        └─ otherwise → ApprovalRequest(PENDING) + HTTP 202
+
+Approver decides via /erp/approvals (universal-approve, type='incentive_dispute'):
+  └─ approvalHandlers.incentive_dispute
+        ├─ Load ApprovalRequest → dispute via doc_id
+        ├─ Dispatch by request.doc_type:
+        │     DISPUTE_TAKE_REVIEW → set reviewer_id = request.requested_by,
+        │                            state OPEN → UNDER_REVIEW
+        │     DISPUTE_RESOLVE     → parse outcome from metadata.outcome
+        │                            (fallback: description regex). For APPROVED,
+        │                            cascade reverseAccrualJournal(payout) OR append
+        │                            SalesCredit reversal row. Then state
+        │                            UNDER_REVIEW → RESOLVED_APPROVED | RESOLVED_DENIED
+        │     DISPUTE_CLOSE       → state RESOLVED_* → CLOSED
+        ├─ processDecision(APPROVED | REJECTED) on the ApprovalRequest
+        └─ Integration event INTEGRATION_EVENTS.DISPUTE_RESOLVED fires on RESOLVE
+
+Reject path: ApprovalRequest → REJECTED. Dispute STAYS in its prior state
+(no terminal REJECTED on the dispute — reason lives in Approval History).
+```
+
+Identity attribution rule: dispute-level `reviewer_id`, `resolved_by`, and `history[].by` use **`request.requested_by`** (the BDM who asked for the transition), not the Hub approver. The approver's identity is captured on the ApprovalRequest's `decided_by`. This preserves the "you asked, someone else authorized" audit shape that `gateApproval` already expresses.
+
+**Architecture — SALES_GOAL_PLAN dependent checker.**
+
+```
+President clicks Reverse on Reversal Console → preview → confirm:
+  └─ presidentReverse → reverseSalesGoalPlan
+        ├─ DRAFT plan → hard-delete (no side-effects, skipped)
+        ├─ Otherwise:
+        │   ├─ assertReversalPeriodOpen({ doc_type: SALES_GOAL_PLAN })
+        │   ├─ checkHardBlockers({ doc_type: SALES_GOAL_PLAN })
+        │   │     └─ For each PAID IncentivePayout under the plan → HARD block
+        │   │     └─ For each Payslip(same FY, earnings.incentive > 0) → WARN
+        │   ├─ If has_deps → HTTP 409 with dependents list → approver must
+        │   │                 reverse the PAID payout first via IncentivePayout
+        │   │                 REVERSED lifecycle, then retry the plan reversal
+        │   └─ Otherwise → cascade reverse accrual+settlement JEs → flip status
+```
+
+**Subscription readiness.**
+- **Lookup-driven sub-permission.** `APPROVALS__APPROVE_INCENTIVE_DISPUTE` seeded in `ERP_SUB_PERMISSION`; `MODULE_TO_SUB_KEY.INCENTIVE_DISPUTE = 'approve_incentive_dispute'`. Subsidiary admins can delegate without code changes via Access Templates.
+- **Lookup-driven rejection feedback.** Added `MODULE_REJECTION_CONFIG.INCENTIVE_DISPUTE` and `.FUEL_ENTRY` rows. Subscribers tune banner tone + editable statuses per entity.
+- **Lookup-driven default roles unchanged.** `MODULE_DEFAULT_ROLES.INCENTIVE_DISPUTE = ['president', 'finance', 'admin']` already seeded — no migration. Tighten or open per entity via Control Center.
+- **Dependent checkers register via `CHECKERS` map.** Adding a subscriber-specific blocker (e.g., a compliance flag on PETTY_CASH) is a one-liner in `dependentDocChecker.js`; `previewDependents` and all hard-blocker call sites pick it up automatically.
+- **Hub visibility.** New `MODULE_QUERIES` entry for `INCENTIVE_DISPUTE` uses `buildGapModulePendingItems` (same pattern as IC_TRANSFER / BANKING / PETTY_CASH / SALES_GOAL_PLAN / INCENTIVE_PAYOUT). Zero schema changes; the request itself is the Hub item.
+- **DOC_TYPE_HYDRATION registry** gained 3 rows (`DISPUTE_TAKE_REVIEW` / `DISPUTE_RESOLVE` / `DISPUTE_CLOSE`) so the Approval Hub card renders the underlying `IncentiveDispute` instead of a bare `ApprovalRequest`.
+
+**Files changed.**
+| File | Change |
+|------|--------|
+| `backend/erp/controllers/universalApprovalController.js` | `TYPE_TO_MODULE.incentive_dispute` + `approvalHandlers.incentive_dispute` (3-doc_type dispatcher with cascade reversal on APPROVED). |
+| `backend/erp/services/universalApprovalService.js` | `MODULE_TO_SUB_KEY.INCENTIVE_DISPUTE`, 3 `DOC_TYPE_HYDRATION` rows, 1 `MODULE_QUERIES` entry. |
+| `backend/erp/services/dependentDocChecker.js` | 6 new checker functions + `CHECKERS` registrations (`SALES_GOAL_PLAN`, `PETTY_CASH_TXN`, `SMER_ENTRY`, `CAR_LOGBOOK`, `OFFICE_SUPPLY_ITEM`, `OFFICE_SUPPLY_TXN`). |
+| `backend/erp/services/documentReversalService.js` | `checkHardBlockers` calls wired into `reverseSalesGoalPlan`, `reversePettyCashTxn`, `reverseSmer`, `reverseCarLogbook`, `reverseOfficeSupply`, `reverseOfficeSupplyTxn`. |
+| `backend/erp/controllers/lookupGenericController.js` | `APPROVALS__APPROVE_INCENTIVE_DISPUTE` sub-perm seed; `MODULE_REJECTION_CONFIG.INCENTIVE_DISPUTE` + `.FUEL_ENTRY` rows; Group B comments updated (G6.7 stale refs removed). |
+| `backend/erp/controllers/incentiveDisputeController.js` | `resolveDispute` passes `metadata: { outcome, resolution_summary }` to `gateApproval` so the Hub handler can reconstruct the transition. |
+| `backend/erp/models/SupplierInvoice.js` | `status` enum gains `REJECTED`; adds `rejection_reason`, `rejected_by`, `rejected_at`. |
+| `frontend/src/erp/components/WorkflowGuide.jsx` | Dispute Center banner clarifies G4.3 Hub end-to-end support; Reversal Console banner lists the 5 new dependent checks. |
+| `CLAUDE-ERP.md` | This section + index table row. |
+| `docs/PHASETASK-ERP.md` | Phase G4.3 task entry. |
+
+**Integrity checks (no regressions).**
+- **`node -c` + require-time check** pass on every modified backend file.
+- **`npx vite build`** passes clean (27.2s → 13.1s on second run after banner edit).
+- **Registry integrity verified**: `CHECKERS.{SALES_GOAL_PLAN,PETTY_CASH_TXN,SMER_ENTRY,CAR_LOGBOOK,OFFICE_SUPPLY_ITEM,OFFICE_SUPPLY_TXN}`, `approvalHandlers.incentive_dispute`, `TYPE_TO_MODULE.incentive_dispute`, `MODULE_TO_SUB_KEY.INCENTIVE_DISPUTE` all present.
+- **Period-lock posture preserved**. `assertReversalPeriodOpen` still fires BEFORE `checkHardBlockers` on every reverse handler — a locked period rejects first regardless of dependents.
+- **Dedup preserved** (Phase G4.1). INCENTIVE_DISPUTE items only surface through the new `MODULE_QUERIES` entry using `buildGapModulePendingItems`; the Hub by-doc_id dedup still prefers raw module items over APPROVAL_REQUEST mirrors — nothing changes for INCENTIVE_DISPUTE because there's no raw-doc sibling.
+- **REVERSAL_HANDLERS count unchanged** (still 21). G4.3 adds blockers, not new reversal handlers.
+- **WorkflowGuide banners updated** for `dispute-center` and `president-reversals` so BDMs and president both see the new hard-blocker reasons + Hub end-to-end support in the UI.
+- **No backfill required.** Fixes are forward-looking — new disputes flow through the new pipeline; existing PENDING disputes (if any) now have a dispatcher instead of a crash. No data migration.
+
+**Rollout.**
+
+```bash
+cd /var/www/vip-pharmacy-crm
+git checkout main && git pull origin main
+pm2 restart vip-crm-api vip-crm-worker
+# No backfill script needed.
+```
+
+Verify on prod:
+1. President opens `/erp/approvals`; if any INCENTIVE_DISPUTE items exist, click Approve — dispatcher runs instead of crashing.
+2. Try to president-reverse a SALES_GOAL_PLAN that has a PAID payout → HTTP 409 with dependents list.
+3. Reject a fuel entry from the Hub → Car Logbook page renders the RejectionBanner using `FUEL_ENTRY` tone + editable statuses.
+
+**Rollback.** Revert the 8 source files (controller / 3 services / model / 2 docs / 1 frontend). No schema changes to rollback beyond the SupplierInvoice enum — and that's purely additive (adding REJECTED doesn't break existing DRAFT/VALIDATED/POSTED rows).
 
 ---
 

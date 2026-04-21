@@ -80,6 +80,32 @@ function clearCoaCache() { _coaCache = null; _coaCacheTime = 0; }
 function c(coa, key) { return coa[key] || '9999'; }
 function n(key) { return COA_NAMES[key] || key; }
 
+// Phase 35 — first-digit heuristic used by auto-journal helpers to mark contra
+// lines. Standard VIP COA ranges:
+//   1xxx Asset         (normal DEBIT)  — a CR line reduces it
+//   2xxx Liability     (normal CREDIT) — a DR line reduces it
+//   3xxx Equity        (normal CREDIT) — a DR line reduces it
+//     (contra-equity like OWNER_DRAWINGS coded 3xxx is DEBIT-normal; a CR line
+//      reduces it, which is what Petty Cash replenishment does.)
+//   4xxx Revenue       (normal CREDIT) — a DR line reverses it
+//   5xxx COGS          (normal DEBIT)  — a CR line reverses it
+//   6xxx Expense       (normal DEBIT)  — a CR line reverses it
+//
+// Caveat: contra-asset accounts (e.g., ACCUM_DEPRECIATION 1350 with CREDIT
+// normal_balance) sit in 1xxx but credits to them are increases, not reductions.
+// The validator's COA lookup is authoritative — the flag only means "skip the
+// direction check for this line" — so over-marking is_contra on such lines is a
+// no-op for the balance guard. Callers that know the COA is DEBIT-normal set the
+// flag explicitly; callers with a dynamic funding_coa use these helpers.
+function isDebitNormalByCode(code) {
+  const d = String(code || '').charAt(0);
+  return d === '1' || d === '5' || d === '6';
+}
+function isCreditNormalByCode(code) {
+  const d = String(code || '').charAt(0);
+  return d === '2' || d === '3' || d === '4';
+}
+
 /**
  * Helper: format period from Date
  */
@@ -192,7 +218,7 @@ async function journalFromCollection(collection, bankCoaCode, bankName, userId) 
     source_doc_ref: collection.cr_no || String(collection._id),
     lines: [
       { account_code: coaCode, account_name: coaName, debit: amount, credit: 0, description: `Collection ${collection.cr_no || ''}` },
-      { account_code: c(coa, 'AR_TRADE'), account_name: n('AR_TRADE'), debit: 0, credit: amount, description: `Collection ${collection.cr_no || ''}` }
+      { account_code: c(coa, 'AR_TRADE'), account_name: n('AR_TRADE'), debit: 0, credit: amount, description: `Collection ${collection.cr_no || ''}`, is_contra: true }
     ],
     bir_flag: 'BOTH',
     vat_flag: 'N/A',
@@ -221,7 +247,7 @@ async function journalFromCWT(cwtEntry, userId) {
     source_doc_ref: cwtEntry.cr_no || String(cwtEntry._id),
     lines: [
       { account_code: c(coa, 'CWT_RECEIVABLE'), account_name: n('CWT_RECEIVABLE'), debit: amount, credit: 0, description: `CWT CR#${cwtEntry.cr_no || ''}` },
-      { account_code: c(coa, 'AR_TRADE'), account_name: n('AR_TRADE'), debit: 0, credit: amount, description: `CWT CR#${cwtEntry.cr_no || ''}` }
+      { account_code: c(coa, 'AR_TRADE'), account_name: n('AR_TRADE'), debit: 0, credit: amount, description: `CWT CR#${cwtEntry.cr_no || ''}`, is_contra: true }
     ],
     bir_flag: 'BOTH',
     vat_flag: 'N/A',
@@ -237,6 +263,11 @@ async function journalFromCWT(cwtEntry, userId) {
 async function journalFromExpense(expense, expenseCoaCode, expenseCoaName, creditCoaCode, creditCoaName, userId) {
   const coa = await getCoaMap();
   const amount = expense.total_amount || expense.amount || 0;
+  const creditCode = creditCoaCode || c(coa, 'AR_BDM');
+  // CR side reduces the funding source: AR_BDM (asset) draw-down, CASH, PETTY_CASH,
+  // or bank funds — all DEBIT-normal. If the credit target is a liability (AP),
+  // the line is an increase, not a reduction, so is_contra stays false.
+  const creditIsContra = isDebitNormalByCode(creditCode);
 
   return {
     je_date: expense.expense_date || expense.date || expense.created_at || new Date(),
@@ -247,7 +278,7 @@ async function journalFromExpense(expense, expenseCoaCode, expenseCoaName, credi
     source_doc_ref: expense.doc_number || String(expense._id),
     lines: [
       { account_code: expenseCoaCode || c(coa, 'MISC_EXPENSE'), account_name: expenseCoaName || n('MISC_EXPENSE'), debit: amount, credit: 0, description: expense.description || '' },
-      { account_code: creditCoaCode || c(coa, 'AR_BDM'), account_name: creditCoaName || n('AR_BDM'), debit: 0, credit: amount, description: expense.description || '' }
+      { account_code: creditCode, account_name: creditCoaName || n('AR_BDM'), debit: 0, credit: amount, description: expense.description || '', is_contra: creditIsContra }
     ],
     bir_flag: 'BOTH',
     vat_flag: 'N/A',
@@ -273,7 +304,7 @@ async function journalFromCommission(commission, userId) {
     source_doc_ref: String(commission._id),
     lines: [
       { account_code: c(coa, 'BDM_COMMISSION'), account_name: n('BDM_COMMISSION'), debit: amount, credit: 0, description: `Commission ${commission.bdm_name || ''}` },
-      { account_code: c(coa, 'AR_BDM'), account_name: n('AR_BDM'), debit: 0, credit: amount, description: `Commission ${commission.bdm_name || ''}` }
+      { account_code: c(coa, 'AR_BDM'), account_name: n('AR_BDM'), debit: 0, credit: amount, description: `Commission ${commission.bdm_name || ''}`, is_contra: true }
     ],
     bir_flag: 'BOTH',
     vat_flag: 'N/A',
@@ -319,12 +350,14 @@ async function journalFromPayroll(payslip, bankCoaCode, bankName, userId) {
 
   const netPay = payslip.net_pay || 0;
   if (netPay > 0) {
+    const netPayCode = bankCoaCode || c(coa, 'CASH_ON_HAND');
     lines.push({
-      account_code: bankCoaCode || c(coa, 'CASH_ON_HAND'),
+      account_code: netPayCode,
       account_name: bankName || n('CASH_ON_HAND'),
       debit: 0,
       credit: netPay,
-      description: 'Net pay disbursement'
+      description: 'Net pay disbursement',
+      is_contra: isDebitNormalByCode(netPayCode)
     });
   }
 
@@ -460,7 +493,7 @@ async function journalFromOwnerEquity(equityEntry, bankCoaCode, bankName, userId
     source_doc_ref: String(equityEntry._id),
     lines: [
       { account_code: c(coa, 'OWNER_DRAWINGS'), account_name: n('OWNER_DRAWINGS'), debit: amount, credit: 0, description: 'Owner drawing' },
-      { account_code: coaCode, account_name: coaName, debit: 0, credit: amount, description: 'Owner drawing' }
+      { account_code: coaCode, account_name: coaName, debit: 0, credit: amount, description: 'Owner drawing', is_contra: isDebitNormalByCode(coaCode) }
     ],
     bir_flag: equityEntry.bir_flag || 'BOTH',
     vat_flag: 'N/A',
@@ -531,7 +564,7 @@ async function journalFromPettyCash(txn, expenseCoaCode, expenseCoaName, userId)
       source_doc_ref: docRef,
       lines: [
         { account_code: expenseCoaCode || c(coa, 'MISC_EXPENSE'), account_name: expenseCoaName || n('MISC_EXPENSE'), debit: amount, credit: 0, description: txn.particulars || '' },
-        { account_code: pc, account_name: pcName, debit: 0, credit: amount, description: txn.particulars || '' }
+        { account_code: pc, account_name: pcName, debit: 0, credit: amount, description: txn.particulars || '', is_contra: true }
       ],
       bir_flag: 'BOTH',
       vat_flag: 'N/A',
@@ -553,7 +586,7 @@ async function journalFromPettyCash(txn, expenseCoaCode, expenseCoaName, userId)
       source_doc_ref: docRef,
       lines: [
         { account_code: remitCoa, account_name: remitName, debit: amount, credit: 0, description: 'Petty cash remittance' },
-        { account_code: pc, account_name: pcName, debit: 0, credit: amount, description: 'Petty cash remittance' }
+        { account_code: pc, account_name: pcName, debit: 0, credit: amount, description: 'Petty cash remittance', is_contra: true }
       ],
       bir_flag: 'INTERNAL',
       vat_flag: 'N/A',
@@ -561,7 +594,8 @@ async function journalFromPettyCash(txn, expenseCoaCode, expenseCoaName, userId)
     };
   }
 
-  // REPLENISHMENT
+  // REPLENISHMENT — CR OWNER_DRAWINGS is a reduction of a DEBIT-normal contra-equity
+  // account (code 3100). The first-digit heuristic would not catch this, so mark explicitly.
   return {
     je_date: txn.txn_date || new Date(),
     period: dateToPeriod(txn.txn_date || new Date()),
@@ -570,7 +604,7 @@ async function journalFromPettyCash(txn, expenseCoaCode, expenseCoaName, userId)
     source_doc_ref: docRef,
     lines: [
       { account_code: pc, account_name: pcName, debit: amount, credit: 0, description: 'Owner replenishment' },
-      { account_code: c(coa, 'OWNER_DRAWINGS'), account_name: n('OWNER_DRAWINGS'), debit: 0, credit: amount, description: 'Owner replenishment' }
+      { account_code: c(coa, 'OWNER_DRAWINGS'), account_name: n('OWNER_DRAWINGS'), debit: 0, credit: amount, description: 'Owner replenishment', is_contra: true }
     ],
     bir_flag: 'INTERNAL',
     vat_flag: 'N/A',
@@ -597,7 +631,7 @@ async function journalFromCOGS(salesLine, totalCogs, userId) {
     source_doc_ref: docRef,
     lines: [
       { account_code: c(coa, 'COGS'), account_name: n('COGS'), debit: totalCogs, credit: 0, description: `COGS: ${docRef}` },
-      { account_code: c(coa, 'INVENTORY'), account_name: n('INVENTORY'), debit: 0, credit: totalCogs, description: `COGS: ${docRef}` }
+      { account_code: c(coa, 'INVENTORY'), account_name: n('INVENTORY'), debit: 0, credit: totalCogs, description: `COGS: ${docRef}`, is_contra: true }
     ],
     bir_flag: 'BOTH',
     vat_flag: 'N/A',
@@ -621,7 +655,7 @@ async function journalFromInterCompany(transfer, perspective, amount, userId) {
   const lines = perspective === 'SENDER'
     ? [
         { account_code: c(coa, 'IC_RECEIVABLE'), account_name: n('IC_RECEIVABLE'), debit: amount, credit: 0, description: desc },
-        { account_code: c(coa, 'INVENTORY'), account_name: n('INVENTORY'), debit: 0, credit: amount, description: desc }
+        { account_code: c(coa, 'INVENTORY'), account_name: n('INVENTORY'), debit: 0, credit: amount, description: desc, is_contra: true }
       ]
     : [
         { account_code: c(coa, 'INVENTORY'), account_name: n('INVENTORY'), debit: amount, credit: 0, description: desc },
@@ -658,7 +692,7 @@ async function journalFromInventoryAdjustment(data, amount, userId) {
   const lines = isLoss
     ? [
         { account_code: c(coa, 'INVENTORY_WRITEOFF'), account_name: n('INVENTORY_WRITEOFF'), debit: amount, credit: 0, description: desc },
-        { account_code: c(coa, 'INVENTORY'), account_name: n('INVENTORY'), debit: 0, credit: amount, description: desc }
+        { account_code: c(coa, 'INVENTORY'), account_name: n('INVENTORY'), debit: 0, credit: amount, description: desc, is_contra: true }
       ]
     : [
         { account_code: c(coa, 'INVENTORY'), account_name: n('INVENTORY'), debit: amount, credit: 0, description: desc },
@@ -690,16 +724,21 @@ async function journalFromPrfCalf(doc, userId) {
   if (amount <= 0) return null;
   const funding = await resolveFundingCoa(doc);
   const docRef = doc.prf_number || doc.calf_number || `${doc.doc_type}-${doc.period}`;
+  // Funding source is typically Cash/Bank/CC/Petty Cash (all DEBIT-normal assets);
+  // crediting it is a reduction. If a subscriber maps a funding source to an
+  // AP-type liability (CREDIT-normal), the first-digit heuristic returns false
+  // and the CR is an increase, not contra.
+  const fundingIsContra = isDebitNormalByCode(funding.coa_code);
   let lines;
   if (doc.doc_type === 'PRF') {
     lines = [
       { account_code: coa.PARTNER_REBATE || '5200', account_name: 'Partner Rebate Expense', debit: amount, credit: 0, description: `PRF: ${doc.payee_name || ''}` },
-      { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `PRF: ${docRef}` }
+      { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `PRF: ${docRef}`, is_contra: fundingIsContra }
     ];
   } else {
     lines = [
       { account_code: coa.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: amount, credit: 0, description: `CALF advance: ${docRef}` },
-      { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `CALF: ${docRef}` }
+      { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `CALF: ${docRef}`, is_contra: fundingIsContra }
     ];
   }
   return {

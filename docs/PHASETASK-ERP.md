@@ -5835,6 +5835,136 @@ Single-commit revert: restore the 4 source files (controller / service / MyIncom
 
 ---
 
+## Phase G4.3 — Approval Hub + Reversal Console Gap Closure ✅ (April 21, 2026)
+
+### Problem
+
+Post-G4.2 audit found five silent gaps in the unified approval + reversal pipeline:
+
+1. **CRIT** — `INCENTIVE_DISPUTE` had complete scaffolding (ApprovalRule enum, MODULE_DEFAULT_ROLES, APPROVAL_CATEGORY, MODULE_REJECTION_CONFIG rows) except the dispatcher. Every `gateApproval('INCENTIVE_DISPUTE', …)` call landed in ApprovalRequest; an approver's click on Approve in `/erp/approvals` would throw `Unknown approval type: incentive_dispute` from [universalApprovalController.js](../backend/erp/controllers/universalApprovalController.js).
+2. **CRIT** — [reverseSalesGoalPlan](../backend/erp/services/documentReversalService.js) cascaded through `ACCRUED|APPROVED|PAID` IncentivePayouts indiscriminately, reversing the settlement JE of PAID payouts. Cash had already left via the settlement; reversal orphaned it with no audit path. No dependent-doc gate fired.
+3. **HIGH** — 5 reverse handlers had no checker registration (`PETTY_CASH_TXN`, `SMER_ENTRY`, `CAR_LOGBOOK`, `OFFICE_SUPPLY_ITEM`, `OFFICE_SUPPLY_TXN`). Users could reverse a mid-sequence petty-cash txn and silently corrupt the running-balance chain, reverse a SMER whose reimbursable already hit an IncomeReport, reverse an Office Supply item that still had active transactions.
+4. **MED** — `FUEL_ENTRY` absent from `MODULE_REJECTION_CONFIG` — contractor-side banner on Car Logbook fell back to a generic tone for per-fuel rejections.
+5. **LOW** — 7 Group B rejection-config rows still carried "pending G6.7 handler wiring" notes even though G6.7 had shipped. Worse, [SupplierInvoice](../backend/erp/models/SupplierInvoice.js) had no `rejection_reason` field AND no `REJECTED` in its status enum — the existing G6.7 Group B `purchasing` reject handler would have crashed Mongoose enum validation on first use.
+
+### Prior-Phase Scaffolding (Already Shipped)
+
+| Asset | Phase | Status |
+|---|---|---|
+| `MODULE_DEFAULT_ROLES.INCENTIVE_DISPUTE` seed | SG-4 | ✅ |
+| `APPROVAL_CATEGORY.OPERATIONAL.modules` includes INCENTIVE_DISPUTE | SG-4 | ✅ |
+| `APPROVAL_MODULE_LABEL.INCENTIVE_DISPUTE` | SG-4 | ✅ |
+| `INCENTIVE_DISPUTE_TYPE` lookup (dispute typology) | SG-4 | ✅ |
+| `ApprovalRule.module` enum includes INCENTIVE_DISPUTE | SG-4 | ✅ |
+| `MODULE_QUERIES.INCENTIVE_DISPUTE` entry (Hub visibility) | — | ❌ added here |
+| `MODULE_TO_SUB_KEY.INCENTIVE_DISPUTE` + sub-perm seed | — | ❌ added here |
+| `DOC_TYPE_HYDRATION` for DISPUTE_* doc_types | — | ❌ added here |
+| `approvalHandlers.incentive_dispute` + `TYPE_TO_MODULE.incentive_dispute` | — | ❌ added here |
+| `MODULE_REJECTION_CONFIG.INCENTIVE_DISPUTE` + `.FUEL_ENTRY` | G6 partial | ❌ added here |
+| `checkHardBlockers` calls on 6 reverse handlers | Phase 31R partial | ❌ added here |
+
+### What Shipped
+
+**1. `incentive_dispute` handler (Hub dispatcher).**
+
+[backend/erp/controllers/universalApprovalController.js](../backend/erp/controllers/universalApprovalController.js) — mirrors the `perdiem_override` side-effect-first pattern because the dispute lifecycle has three distinct doc_types (DISPUTE_TAKE_REVIEW / DISPUTE_RESOLVE / DISPUTE_CLOSE) each with its own state transition. Handler loads the `ApprovalRequest`, derefs to the dispute via `doc_id`, then:
+
+- `DISPUTE_TAKE_REVIEW` → sets `reviewer_id = request.requested_by`, flips state OPEN → UNDER_REVIEW.
+- `DISPUTE_RESOLVE` → reads outcome from `request.metadata.outcome` (fallback: description regex). For APPROVED, cascades either `reverseAccrualJournal(payout)` or a negative-sign SalesCredit reversal row (mirrors [resolveDispute](../backend/erp/controllers/incentiveDisputeController.js)). State UNDER_REVIEW → RESOLVED_APPROVED | RESOLVED_DENIED. Emits `INTEGRATION_EVENTS.DISPUTE_RESOLVED`.
+- `DISPUTE_CLOSE` → state RESOLVED_* → CLOSED.
+- After the dispute write succeeds, `processDecision(APPROVED)` records the decision on the ApprovalRequest — perdiem_override pattern.
+- On reject → `processDecision(REJECTED)` only; dispute stays in its prior state (no terminal REJECTED on the dispute itself — the reason lives in Approval History).
+
+Identity rule: dispute-level `reviewer_id` / `resolved_by` / `history[].by` use `request.requested_by` (the BDM who asked), not the Hub approver. Audit shape matches `gateApproval`'s "you asked, someone else authorized" pattern.
+
+**2. Controller metadata pass-through.**
+
+[backend/erp/controllers/incentiveDisputeController.js](../backend/erp/controllers/incentiveDisputeController.js) — `resolveDispute` now passes `metadata: { outcome, resolution_summary }` to `gateApproval` so the Hub handler has everything it needs to reconstruct the transition without relying on `req.body`.
+
+**3. `MODULE_QUERIES` + `DOC_TYPE_HYDRATION` + `MODULE_TO_SUB_KEY`.**
+
+[backend/erp/services/universalApprovalService.js](../backend/erp/services/universalApprovalService.js) — new `INCENTIVE_DISPUTE` module query using `buildGapModulePendingItems` (same Group B pattern as IC_TRANSFER / PETTY_CASH / SALES_GOAL_PLAN). Three `DOC_TYPE_HYDRATION` rows so the Hub card renders the full `IncentiveDispute` document with filer / affected BDM / reviewer / payout / credit populated. `MODULE_TO_SUB_KEY.INCENTIVE_DISPUTE = 'approve_incentive_dispute'`.
+
+**4. Sub-permission seed.**
+
+[backend/erp/controllers/lookupGenericController.js](../backend/erp/controllers/lookupGenericController.js) — `APPROVALS__APPROVE_INCENTIVE_DISPUTE` row added to `ERP_SUB_PERMISSION` (sort order 16, after `approve_perdiem`). Subscribers delegate via Access Templates.
+
+**5. Rejection config rows.**
+
+Same file — added `MODULE_REJECTION_CONFIG.INCENTIVE_DISPUTE` (non-resubmittable; reason lives in Approval History — mirrors PERDIEM_OVERRIDE) and `.FUEL_ENTRY` (embedded subdoc; resubmittable from Car Logbook page with warning tone).
+
+**6. Six new dependent checkers + wire-up into reverse handlers.**
+
+[backend/erp/services/dependentDocChecker.js](../backend/erp/services/dependentDocChecker.js):
+
+| Checker | Block Condition | Severity |
+|---|---|---|
+| `checkSalesGoalPlanDependents` | Any IncentivePayout under plan with `status: 'PAID'` | HARD |
+| `checkSalesGoalPlanDependents` (same) | Payslip(same FY, earnings.incentive > 0) | WARN (advisory) |
+| `checkPettyCashTxnDependents` | Any later POSTED txn on same fund (running-balance chain) | HARD |
+| `checkSmerEntryDependents` | IncomeReport with `source_refs.smer_id === doc._id` in non-RETURNED state | HARD |
+| `checkCarLogbookDependents` | Fuel entry linked to POSTED CALF | WARN |
+| `checkOfficeSupplyItemDependents` | Active (non-reversed) OfficeSupplyTransaction rows | HARD |
+| `checkOfficeSupplyTxnDependents` | Stub (no downstream consumers today) | — |
+
+[backend/erp/services/documentReversalService.js](../backend/erp/services/documentReversalService.js) — added explicit `checkHardBlockers` calls in `reverseSalesGoalPlan`, `reversePettyCashTxn`, `reverseSmer`, `reverseCarLogbook`, `reverseOfficeSupply`, `reverseOfficeSupplyTxn`. Each throws HTTP 409 with a `dependents` payload when HARD blockers fire, matching the error shape of existing handlers (SALES_LINE / COLLECTION / GRN / etc.).
+
+**7. SupplierInvoice schema completion.**
+
+[backend/erp/models/SupplierInvoice.js](../backend/erp/models/SupplierInvoice.js) — `status` enum gains `REJECTED`; adds `rejection_reason`, `rejected_by`, `rejected_at` fields. Unblocks the existing G6.7 Group B `purchasing` reject handler (`buildGroupBReject` sets all four fields).
+
+**8. Stale comments cleanup.**
+
+Same lookupGenericController.js — the "(pending G6.7 handler wiring)" suffix on 7 rows removed. Comment block above the rows updated to confirm handlers are live and `rejection_reason` fields verified on all 8 Group B models (Phase G4.3 integrity check).
+
+**9. Banners.**
+
+[frontend/src/erp/components/WorkflowGuide.jsx](../frontend/src/erp/components/WorkflowGuide.jsx) — `dispute-center` steps explicitly mention the new G4.3 Hub dispatcher path; `president-reversals` step 3 enumerates the five new dependent-check reasons so president sees them before clicking Reverse.
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `backend/erp/controllers/universalApprovalController.js` | TYPE_TO_MODULE + approvalHandlers.incentive_dispute (3-doc_type dispatcher). |
+| `backend/erp/services/universalApprovalService.js` | MODULE_TO_SUB_KEY + 3 DOC_TYPE_HYDRATION + MODULE_QUERIES entry. |
+| `backend/erp/services/dependentDocChecker.js` | 6 checker functions + CHECKERS registrations. |
+| `backend/erp/services/documentReversalService.js` | checkHardBlockers calls on 6 reverse handlers. |
+| `backend/erp/controllers/lookupGenericController.js` | Sub-perm seed + 2 rejection-config rows + comment cleanup. |
+| `backend/erp/controllers/incentiveDisputeController.js` | metadata pass-through on gateApproval in resolveDispute. |
+| `backend/erp/models/SupplierInvoice.js` | status enum adds REJECTED; +rejection_reason +rejected_by +rejected_at. |
+| `frontend/src/erp/components/WorkflowGuide.jsx` | Dispute Center + Reversal Console banner updates. |
+| `CLAUDE-ERP.md` | Index table row + full Phase G4.3 section. |
+| `docs/PHASETASK-ERP.md` | This section. |
+
+### Integrity Checklist
+
+- [x] `node -c` + require-time check pass on every modified backend file
+- [x] `npx vite build` passes clean (27s initial, 13s after banner edit)
+- [x] Runtime registry integrity verified: CHECKERS / approvalHandlers / TYPE_TO_MODULE / MODULE_TO_SUB_KEY all carry the new rows
+- [x] Period-lock posture unchanged — `assertReversalPeriodOpen` fires BEFORE `checkHardBlockers` on every reverse handler
+- [x] Dedup (Phase G4.1) unaffected — INCENTIVE_DISPUTE has no raw-doc sibling, so the ApprovalRequest mirror is the only Hub surface
+- [x] REVERSAL_HANDLERS count unchanged (still 21) — G4.3 adds blockers, not new reversal handlers
+- [x] Lookup-driven per Rule #3 — sub-perm + rejection config rows auto-seed via SEED_DEFAULTS; subscribers tune per-entity via Control Center
+- [x] Subscription-ready per Rule #19 — all wiring is lookup-driven or registry-based; new subscribers onboard without code changes
+- [x] Banners updated per Rule #1 — dispute-center + president-reversals steps reflect new behavior
+- [x] SupplierInvoice schema change is additive — existing DRAFT/VALIDATED/POSTED rows unaffected; the new REJECTED enum value + 3 optional fields default empty
+- [x] No backfill required — fixes are forward-looking
+
+### Rollout
+
+1. Merge PR → `git pull origin main` on prod.
+2. `pm2 restart vip-crm-api vip-crm-worker` — lookup seeds auto-run on first request per entity.
+3. Smoke test:
+   - Open `/erp/approvals`, confirm INCENTIVE_DISPUTE items (if any) render without crashing on Approve.
+   - Try to president-reverse a SALES_GOAL_PLAN with a PAID payout → HTTP 409 with dependents.
+   - Reject a per-fuel entry from the Hub → Car Logbook banner renders lookup-driven tone.
+
+### Rollback
+
+Single-commit revert of the 10 source files. SupplierInvoice enum widening is purely additive — rollback leaves the REJECTED rows (if any were created) orphaned but not corrupting (Mongoose cast error on next save; fix by re-adding REJECTED to the enum). No lookup rows need deletion — they stay dormant when the handler isn't present.
+
+---
+
 ## Phase 33 — Car Logbook Cycle-Wrapper Redesign ✅ (April 21, 2026)
 
 > **Name collision.** There is an earlier "Phase 33 — Bulk Role Migration + Login Fix" in this file (April 10, 2026). Both keep the Phase 33 tag they were filed under. This section covers the car-logbook cycle-wrapper work.
@@ -6300,4 +6430,135 @@ docs/PHASETASK-ERP.md                                     [+this block]
 1. Deploy backend + frontend.
 2. Run repair script per entity: `node erp/scripts/repairStuckPerdiemOverrides.js` (dry-run) → `--apply`.
 3. Any stuck record on a POSTED SMER will be flagged — admin reopens via Reversal Console, then the BDM resubmits; on resubmit the override re-routes through the now-fixed handler.
+
+---
+
+## Phase 35 — JE Normal-Balance Validator + Auto-Journal Sweep (April 21, 2026)
+
+### Incident
+- Contractor Romela's two POSTED SMERs (`69e532fb5ae50328cda6b156`, `69e5d447d4d816c121ea0736`) totalling ₱14,700 were missing their JournalEntry companion rows since 2026-04-13.
+- Car Logbook auto-journal for 2026-04-20 (AR-BDM credited ₱3,489.28) also missing.
+- Blast radius: every auto-journal flow that reduces an asset/liability — SMER, Car Logbook, Expenses (ORE), PRF/CALF, Collections, CWT, Commission, Petty Cash, Inter-Company, Credit Notes, AP Payment, CC Payment, Bank Recon charges, Owner Drawings, Year-End Close.
+
+### Root cause
+`JournalEntry.js` pre-save "#15 Hardening" (line 168-183 pre-fix) rejected any line crediting a DEBIT-normal account or debiting a CREDIT-normal account. In correct double-entry bookkeeping, `normal_balance` is not a per-line constraint — it's a description of where the accumulated positive position lives. CR AR-BDM, DR AP-Trade, CR PETTY_CASH are all legitimate reductions.
+
+Every affected call path sat inside `try { createAndPostJournal } catch (jeErr) { console.error(...) }`. The validator rejection was swallowed. Parent documents (SMER, Car Logbook, etc.) still flipped to POSTED because the JE posting is a non-blocking side-effect outside the parent's transaction. The ledger drifted silently for 8 days.
+
+### Solution (Option A — explicit contra sweep)
+Preferred by user over Option B (remove check) and Option C (same-side-only guard) to maintain explicit audit-trail documentation that every auto-journal site has been human-reviewed.
+
+#### 1. Schema + validator (foundation)
+- Added `is_contra: { type: Boolean, default: false }` to `jeLineSchema` in [backend/erp/models/JournalEntry.js](../backend/erp/models/JournalEntry.js).
+- Pre-save validator #15 direction check now `continue`s when `line.is_contra === true`. Manual JEs from `journalController` (which don't opt-in) still get the direction check applied.
+- Backward-compatible: existing POSTED JEs without the field render the same (default false → direction check never fires retroactively because we're only loading, not re-saving).
+
+#### 2. Enum gap closures (piggybacked on the integrity pass)
+- `JournalEntry.source_module` enum missing: `CREDIT_NOTE`, `SUPPLIER_INVOICE`, `SALES_GOAL`. All three were used by controllers and silently rejected during schema validation.
+- `ErpAuditLog.log_type` enum missing: `LEDGER_ERROR` (9+ call sites), `CSI_TRACE`, `BATCH_UPLOAD_ON_BEHALF`, `CREATE`, `UPDATE`, `DELETE`, `BACKFILL`. Most call sites had `.catch(() => {})` wrappers, so audit entries were disappearing.
+
+#### 3. First-digit heuristic for dynamic funding
+Added `isDebitNormalByCode(code)` and `isCreditNormalByCode(code)` helpers at the top of [autoJournal.js](../backend/erp/services/autoJournal.js) and [journalFromIncentive.js](../backend/erp/services/journalFromIncentive.js). Used in sites where the funding COA is resolved at runtime (`resolveFundingCoa`). Hand-marked is_contra on static sites.
+
+#### 4. Sweep — 50+ call sites reviewed
+**Helpers in `autoJournal.js`** (16 functions):
+
+| Helper | Contra line(s) marked |
+|---|---|
+| journalFromSale | none (DR AR_TRADE / CR SALES_REVENUE / CR OUTPUT_VAT all natural direction) |
+| journalFromCollection | CR AR_TRADE |
+| journalFromCWT | CR AR_TRADE |
+| journalFromExpense | CR AR_BDM/funding (heuristic) |
+| journalFromCommission | CR AR_BDM |
+| journalFromPayroll | CR bank for net pay (heuristic) |
+| journalFromAP | none (natural direction) |
+| journalFromDepreciation | none (ACCUM_DEPRECIATION is CREDIT-normal contra-asset) |
+| journalFromInterest | none |
+| journalFromOwnerEquity | CR bank in DRAWING (heuristic) |
+| journalFromServiceRevenue | none |
+| journalFromPettyCash | CR PETTY_CASH in DISBURSEMENT + REMITTANCE; CR OWNER_DRAWINGS in REPLENISHMENT (explicit — contra-equity) |
+| journalFromCOGS | CR INVENTORY |
+| journalFromInterCompany | CR INVENTORY in SENDER |
+| journalFromInventoryAdjustment | CR INVENTORY in LOSS |
+| journalFromPrfCalf | CR funding (heuristic) |
+
+**`journalFromIncentive.js`**: settlement JE — DR INCENTIVE_ACCRUAL (contra) + CR funding (heuristic).
+
+**Controllers with inline JE lines**:
+- `expenseController.js` — 9 sites across `submitSmer`, `submitCarLogbookCycle`, `submitExpenses`, `postSingleSmer`, `postSingleCarLogbook` (cycle + legacy per-day), `postSingleExpense`, nested auto-submit-linked CALF → EXPENSE + CALF → CAR_LOGBOOK flows.
+- `creditNoteController.js` — DR SALES_REVENUE + CR AR_TRADE both contra.
+- `apPaymentService.js` — DR AP_TRADE + CR bank both contra.
+- `bankReconService.js` — CR bank for bank charges.
+- `creditCardService.js` — DR CC payable + CR bank both contra.
+- `pnlCalc.js` — year-end closing: DR revenue + CR expense + DR retained-earnings-on-loss all contra.
+
+#### 5. Latent bug fixes surfaced during the sweep
+- `expenseController.js:2347` — used undefined variable `calfCoaMap` instead of `autoCoaMap`. CALF → Car Logbook auto-submit JE threw ReferenceError, was swallowed. Fixed.
+- `loanService.postInterest` — missing `await` on `journalFromInterest` (async function). Passed a Promise as JE data; every interest post silently failed schema validation. Fixed.
+- `ownerEquityService.recordInfusion` + `recordDrawing` — same missing `await` on `journalFromOwnerEquity`. Fixed.
+- `depreciationService.postDepreciation` — same missing `await` on `journalFromDepreciation`. Fixed.
+- `payrollController.js` — catch block referenced `fullPs` declared inside inner try scope. ReferenceError swallowed by `.catch(() => {})`, audit log never persisted on payroll JE failure. Hoisted `fullPs` to outer scope with null default + guards.
+
+#### 6. Searchable failure logs
+Every `console.error` in auto-journal try/catch now uses `[AUTO_JOURNAL_FAILURE]` prefix so pm2/log-grep can find them. Phase 36 will promote to a structured `AutoJournalFailure` collection with President alert routing.
+
+#### 7. Backlog repost script
+[backend/erp/scripts/repostMissingJEs.js](../backend/erp/scripts/repostMissingJEs.js):
+- Scope: SmerEntry + CarLogbookCycle + ExpenseEntry + PrfCalf POSTED since `--since` (default 2026-04-13), with `deletion_event_id` absent and no existing JournalEntry at `source_event_id`.
+- Dry-run default. `--apply` to write.
+- `--type SMER|CARLOGBOOK|EXPENSE|PRFCALF` for targeted runs.
+- `--force-closed-period` to repost into locked periods (normally skipped with a warning).
+- Idempotent — re-running is a no-op once backlog is cleared.
+- Uses the same helpers/inline logic as the controllers (no drift) — replicates SMER/CarLogbook inline JE logic with is_contra applied; uses shared `journalFromPrfCalf` helper for PRF/CALF.
+
+### Design rules honored
+- **Rule #3 lookup-driven** — COA_MAP still read from Settings; funding source via `resolveFundingCoa`; no hardcoded COA codes.
+- **Rule #19 subscription-safe** — validator still uses ChartOfAccounts.normal_balance per-entity as the authoritative source. Heuristic is a fallback for dynamic funding cases only.
+- **Rule #20 period locks** — repost script runs `checkPeriodOpen` per doc; skips with warning if closed (opt-in override via flag).
+- **Rule #21 privileged-user filter** — N/A (script is script-user-agnostic).
+- **Workflow banners** — no new pages added, existing WorkflowGuide entries still accurate because document flow is unchanged (the change is fully internal to the JE layer).
+
+### Files touched
+```
+backend/erp/models/JournalEntry.js               [is_contra field, validator skip, source_module enum]
+backend/erp/models/ErpAuditLog.js                [log_type enum backfill]
+backend/erp/services/autoJournal.js              [isDebitNormalByCode helper, 16 journalFrom* updates]
+backend/erp/services/journalFromIncentive.js     [settlement JE contra lines]
+backend/erp/services/apPaymentService.js         [contra lines]
+backend/erp/services/bankReconService.js         [contra line, failure prefix]
+backend/erp/services/creditCardService.js        [contra lines]
+backend/erp/services/interCompanyService.js      [failure prefix]
+backend/erp/services/loanService.js              [missing await fix]
+backend/erp/services/depreciationService.js      [missing await fix]
+backend/erp/services/ownerEquityService.js       [missing await fix, 2 sites]
+backend/erp/services/pnlCalc.js                  [year-end closing contra lines, failure prefix]
+backend/erp/controllers/expenseController.js     [9 inline JE sites + calfCoaMap typo + prefixes]
+backend/erp/controllers/creditNoteController.js  [contra lines + prefix]
+backend/erp/controllers/payrollController.js     [fullPs scope fix + prefix]
+backend/erp/controllers/inventoryController.js   [prefix]
+backend/erp/scripts/repostMissingJEs.js          [NEW — backlog repost]
+CLAUDE-ERP.md                                    [+Phase 35 section, version bump to 7.0]
+docs/PHASETASK-ERP.md                            [+this block]
+```
+
+### Verification
+
+- `node -c` clean on all 16 touched backend files + new script.
+- `npx vite build` — clean in 11.84s (no frontend code touched, sanity check only).
+- Downstream read-only consumers of JournalEntry (GL, trial balance, FS reports) — unaffected; `is_contra` is write-side audit metadata only.
+- Search for `journalFrom\w+\(` without `await` returned zero hits after sweep — all async helpers properly awaited.
+
+### Deployment
+
+1. `git pull && pm2 restart vip-crm-api vip-crm-worker` on prod.
+2. `cd backend && node erp/scripts/repostMissingJEs.js` — dry-run to see the backlog.
+3. Review output for expected orphan count vs surprise failures.
+4. `node erp/scripts/repostMissingJEs.js --apply` — persist.
+5. Sanity query — orphan SMERs since Apr 13 should drop to 0 after --apply.
+6. Tell Romela: her C1 is now fully journaled; she can create 2026-04 C2 for the current cycle.
+
+### Follow-up Phase 36 (deferred)
+- `AutoJournalFailure` model + collection with `ALERT_CHANNELS` lookup for President notification routing.
+- `journal_failures: [...]` array in submit/post endpoint responses so the frontend can surface a warning toast (currently silent — posting reports success even when JE fails).
+- Extract SMER + CarLogbookCycle + Expense inline JE logic from `expenseController.js` into shared `autoJournal.js` helpers so the repost script and controllers converge on one code path.
 

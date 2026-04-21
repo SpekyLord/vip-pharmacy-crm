@@ -418,7 +418,7 @@ const recordPhysicalCount = catchAsync(async (req, res) => {
       }, amount, req.user._id);
       if (jeData) await createAndPostJournal(req.entityId, jeData);
     } catch (jeErr) {
-      console.error('Inv adjustment JE failed:', adj.product_id, jeErr.message);
+      console.error('[AUTO_JOURNAL_FAILURE] InventoryAdjustment', String(adj.product_id), jeErr.message);
     }
   }
 

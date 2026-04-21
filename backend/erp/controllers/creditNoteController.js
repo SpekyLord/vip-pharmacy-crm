@@ -239,14 +239,16 @@ const postSingleCreditNote = async (doc, userId) => {
       source_event_id: doc.event_id,
       source_doc_ref: doc.cn_number || doc._id.toString(),
       lines: [
-        { account_code: coa.SALES_REVENUE || '4000', account_name: 'Sales Returns', debit: doc.credit_total, credit: 0, description: `CN ${doc.cn_number}` },
-        { account_code: coa.AR_TRADE || '1100', account_name: 'AR Trade', debit: 0, credit: doc.credit_total, description: `CN ${doc.cn_number}` },
+        // DR SALES_REVENUE (CREDIT-normal) reverses prior revenue — contra.
+        // CR AR_TRADE (DEBIT-normal) reduces outstanding receivable — contra.
+        { account_code: coa.SALES_REVENUE || '4000', account_name: 'Sales Returns', debit: doc.credit_total, credit: 0, description: `CN ${doc.cn_number}`, is_contra: true },
+        { account_code: coa.AR_TRADE || '1100', account_name: 'AR Trade', debit: 0, credit: doc.credit_total, description: `CN ${doc.cn_number}`, is_contra: true },
       ],
       bir_flag: 'BOTH',
       vat_flag: 'N/A',
       created_by: userId,
     });
-  } catch (jeErr) { console.error(`[CreditNote] Journal failed for ${doc.cn_number}:`, jeErr.message); }
+  } catch (jeErr) { console.error(`[AUTO_JOURNAL_FAILURE] CreditNote ${doc.cn_number}:`, jeErr.message); }
 };
 
 const submitCreditNotes = catchAsync(async (req, res) => {
