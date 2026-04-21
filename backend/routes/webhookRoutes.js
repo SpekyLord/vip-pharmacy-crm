@@ -16,9 +16,99 @@ const crypto = require('crypto');
 const router = express.Router();
 const CommunicationLog = require('../models/CommunicationLog');
 const DataDeletionRequest = require('../models/DataDeletionRequest');
+const InviteLink = require('../models/InviteLink');
 const { handleFacebookDataDeletion } = require('../services/dataDeletionService');
 const { tryAutoReply } = require('../utils/autoReply');
 const { fetchSenderInfo, matchSenderToDoctor } = require('../utils/aiMatcher');
+
+/**
+ * Phase M1 — Bind an external messaging ID to a Doctor/Client via invite referral.
+ *
+ * When a BDM sends an invite link like `m.me/<page>?ref=doc_<doctorId>` and the
+ * recipient taps + replies, the provider echoes the `ref` back on the first event.
+ * We use that to:
+ *   1. Set the provider ID on the Doctor/Client (messengerId / viberId / whatsappNumber)
+ *   2. Stamp per-channel consent with source='invite_reply'
+ *   3. Mark the matching InviteLink record as converted
+ *   4. Log the inbound message with source='invite_reply' so it shows up in the
+ *      communication log with clear provenance (not an AI-match best-guess)
+ *
+ * Returns { doctor, client, userId } on success, or null if the ref is invalid /
+ * the referenced record is gone. Callers still fall back to AI-match on null.
+ */
+async function bindFromInviteRef({ ref, channel, senderId, senderName, senderProfilePic, messageId, messageText }) {
+  if (!ref || typeof ref !== 'string') return null;
+  const match = ref.match(/^(doc|cli)_([a-f0-9]{24})$/i);
+  if (!match) return null;
+  const [, kind, id] = match;
+
+  const channelField = channel === 'MESSENGER' ? 'messengerId'
+    : channel === 'VIBER' ? 'viberId'
+    : channel === 'WHATSAPP' ? 'whatsappNumber' : null;
+  if (!channelField) return null;
+
+  const now = new Date();
+  const consentPath = `marketingConsent.${channel}`;
+
+  let bound = null;
+  if (kind === 'doc') {
+    const Doctor = require('../models/Doctor');
+    bound = await Doctor.findByIdAndUpdate(
+      id,
+      {
+        [channelField]: senderId,
+        [`${consentPath}.consented`]: true,
+        [`${consentPath}.at`]: now,
+        [`${consentPath}.source`]: 'invite_reply',
+        [`${consentPath}.withdrawn_at`]: null,
+      },
+      { new: true }
+    ).lean();
+  } else {
+    const Client = require('../models/Client');
+    bound = await Client.findByIdAndUpdate(
+      id,
+      {
+        [channelField]: senderId,
+        [`${consentPath}.consented`]: true,
+        [`${consentPath}.at`]: now,
+        [`${consentPath}.source`]: 'invite_reply',
+        [`${consentPath}.withdrawn_at`]: null,
+      },
+      { new: true }
+    ).lean();
+  }
+  if (!bound) return null;
+
+  // Mark the InviteLink as converted (best-effort; missing record is fine for old links)
+  await InviteLink.findOneAndUpdate(
+    { ref, status: { $in: ['sent', 'opened'] } },
+    { status: 'converted', repliedAt: now },
+    { sort: { sentAt: -1 } }
+  );
+
+  // Log the inbound with invite_reply provenance so the "Pending Assignment" triage
+  // page does not pick it up as an unknown sender.
+  const userId = kind === 'doc' ? bound.assignedTo : bound.createdBy;
+  await CommunicationLog.create({
+    doctor: kind === 'doc' ? bound._id : null,
+    client: kind === 'cli' ? bound._id : null,
+    user: userId || null,
+    channel,
+    direction: 'inbound',
+    source: 'invite_reply',
+    messageContent: messageText || '',
+    externalMessageId: messageId,
+    deliveryStatus: 'delivered',
+    contactedAt: now,
+    senderExternalId: senderId,
+    senderName: senderName || null,
+    senderProfilePic: senderProfilePic || null,
+    aiMatchStatus: 'auto_assigned',
+  });
+
+  return { doctor: kind === 'doc' ? bound : null, client: kind === 'cli' ? bound : null, userId };
+}
 
 // Capture raw request bytes so HMAC signatures can be verified against the exact payload
 // Meta and Viber sign the raw body, so re-serializing JSON breaks the signature.
@@ -256,11 +346,49 @@ router.post('/messenger', rawJson, verifyMetaSignature, async (req, res) => {
           }
         }
 
+        // Phase M1 — Referral from m.me/<page>?ref=doc_<id> click-through.
+        // Fires as a standalone postback the first time the user opens the chat via the link.
+        // We record the opened state; the actual binding happens when they send the first message.
+        if (event.referral?.ref || event.postback?.referral?.ref) {
+          const ref = event.referral?.ref || event.postback?.referral?.ref;
+          await InviteLink.findOneAndUpdate(
+            { ref, channel: 'MESSENGER', status: 'sent' },
+            { status: 'opened', openedAt: new Date() },
+            { sort: { sentAt: -1 } }
+          );
+        }
+
         // Inbound messages
         if (event.message && event.sender) {
           const senderId = event.sender.id;
           const text = event.message.text || '';
           if (senderId && text) {
+            // Phase M1 — If this message carries a referral `ref`, bind the PSID to
+            // the Doctor/Client named in the ref and stamp consent. This takes
+            // precedence over `messengerId` lookup and AI-match.
+            const inviteRef = event.message.referral?.ref || event.referral?.ref;
+            if (inviteRef) {
+              const bound = await bindFromInviteRef({
+                ref: inviteRef,
+                channel: 'MESSENGER',
+                senderId,
+                senderName: null,
+                senderProfilePic: null,
+                messageId: event.message.mid,
+                messageText: text,
+              });
+              if (bound) {
+                await tryAutoReply({
+                  channel: 'MESSENGER',
+                  contactId: senderId,
+                  doctorId: bound.doctor?._id,
+                  userId: bound.userId,
+                });
+                continue;
+              }
+              // ref was malformed or target gone — fall through to the normal path
+            }
+
             const Doctor = require('../models/Doctor');
             const doctor = await Doctor.findOne({ messengerId: senderId }).lean();
             if (doctor && doctor.assignedTo) {
@@ -423,6 +551,31 @@ router.post('/viber', rawJson, verifyViberSignature, async (req, res) => {
       const senderId = body.sender.id;
       const text = body.message.text || '';
       if (senderId && text) {
+        // Phase M1 — Viber passes the deep-link context on `message.tracking_data`
+        // (for `viber://pa?chatURI=<bot>&context=<ref>` links). Bind and consent here
+        // before falling through to viberId lookup.
+        const inviteRef = body.message.tracking_data || body.context;
+        if (inviteRef) {
+          const bound = await bindFromInviteRef({
+            ref: inviteRef,
+            channel: 'VIBER',
+            senderId,
+            senderName: body.sender.name || null,
+            senderProfilePic: body.sender.avatar || null,
+            messageId: String(body.message_token || ''),
+            messageText: text,
+          });
+          if (bound) {
+            await tryAutoReply({
+              channel: 'VIBER',
+              contactId: senderId,
+              doctorId: bound.doctor?._id,
+              userId: bound.userId,
+            });
+            return res.sendStatus(200);
+          }
+        }
+
         const Doctor = require('../models/Doctor');
         const doctor = await Doctor.findOne({ viberId: senderId }).lean();
         if (doctor && doctor.assignedTo) {
@@ -494,5 +647,38 @@ router.post('/viber', rawJson, verifyViberSignature, async (req, res) => {
   }
   res.sendStatus(200);
 });
+
+// ═══════════════════════════════════════════
+// Phase M1 — Public Unsubscribe Endpoint (one-click per RFC 8058)
+// ═══════════════════════════════════════════
+// Idempotent — re-visits show the confirmed state without error.
+
+const { parseUnsubscribeToken } = require('../utils/unsubscribeToken');
+
+router.get('/unsubscribe/:token', async (req, res) => {
+  const parsed = parseUnsubscribeToken(req.params.token);
+  if (!parsed) {
+    return res.status(400).send(renderUnsubHtml({ ok: false, message: 'Invalid or expired unsubscribe link.' }));
+  }
+  try {
+    const Model = parsed.kind === 'doc' ? require('../models/Doctor') : require('../models/Client');
+    await Model.findByIdAndUpdate(parsed.id, {
+      [`marketingConsent.${parsed.channel}.withdrawn_at`]: new Date(),
+      [`marketingConsent.${parsed.channel}.consented`]: false,
+    });
+    return res.send(renderUnsubHtml({ ok: true, channel: parsed.channel }));
+  } catch (err) {
+    console.error('[Webhook] unsubscribe error:', err.message);
+    return res.status(500).send(renderUnsubHtml({ ok: false, message: 'Something went wrong. Try again later.' }));
+  }
+});
+
+function renderUnsubHtml({ ok, channel, message }) {
+  const title = ok ? 'Unsubscribed' : 'Unsubscribe Failed';
+  const body = ok
+    ? `<p>You have been unsubscribed from <strong>${channel}</strong> messages. We won't contact you on this channel again.</p><p style="color:#64748b;font-size:13px">If this was a mistake, contact your VIP representative to re-opt in.</p>`
+    : `<p>${message}</p>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:system-ui,sans-serif;max-width:520px;margin:40px auto;padding:24px;color:#0f172a"><h1 style="font-size:22px;margin:0 0 12px">${title}</h1>${body}</body></html>`;
+}
 
 module.exports = router;

@@ -65,6 +65,7 @@ const PhotoAuditPage = lazyRetry(() => import('./pages/admin/PhotoAuditPage'));
 const SettingsPage = lazyRetry(() => import('./pages/admin/SettingsPage'));
 const CommLogsPage = lazyRetry(() => import('./pages/admin/CommLogsPage'));
 const MessageTemplatesPage = lazyRetry(() => import('./pages/admin/MessageTemplatesPage'));
+const InvitesPage = lazyRetry(() => import('./pages/admin/InvitesPage'));
 
 // ERP pages
 const ErpDashboard = lazyRetry(() => import('./erp/pages/ErpDashboard'));
@@ -474,6 +475,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_ONLY}>
                 <MessageTemplatesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/invites"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BDM_ADMIN}>
+                <InvitesPage />
               </ProtectedRoute>
             }
           />

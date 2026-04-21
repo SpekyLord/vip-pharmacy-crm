@@ -199,6 +199,60 @@ const doctorSchema = new mongoose.Schema(
       hospital_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital' },
       is_primary: { type: Boolean, default: false },
     }],
+
+    // Phase M1 (Apr 2026) — Per-channel marketing consent ledger (RA 10173 DPA).
+    // Written on inbound reply to an invite link (source='invite_reply') or via
+    // manual admin capture (source='paper_form'|'verbal'). `withdrawn_at` is the
+    // unsubscribe timestamp — once set, the campaign dispatcher (M2) skips this
+    // channel for this recipient regardless of `consented`. Shape mirrored on Client.
+    marketingConsent: {
+      MESSENGER: {
+        consented: { type: Boolean, default: false },
+        at: { type: Date, default: null },
+        source: { type: String, default: null },
+        withdrawn_at: { type: Date, default: null },
+      },
+      VIBER: {
+        consented: { type: Boolean, default: false },
+        at: { type: Date, default: null },
+        source: { type: String, default: null },
+        withdrawn_at: { type: Date, default: null },
+      },
+      WHATSAPP: {
+        consented: { type: Boolean, default: false },
+        at: { type: Date, default: null },
+        source: { type: String, default: null },
+        withdrawn_at: { type: Date, default: null },
+      },
+      EMAIL: {
+        consented: { type: Boolean, default: false },
+        at: { type: Date, default: null },
+        source: { type: String, default: null },
+        withdrawn_at: { type: Date, default: null },
+      },
+      SMS: {
+        consented: { type: Boolean, default: false },
+        at: { type: Date, default: null },
+        source: { type: String, default: null },
+        withdrawn_at: { type: Date, default: null },
+      },
+    },
+
+    // Phase M1 (Apr 2026) — MD Partner Program enrollment scaffold.
+    // Gated behind `MD_PARTNER_LIVE` lookup flag until counsel clears the agreement
+    // template. Referral code is printed on Rx pads / given to patient; patient
+    // enters it at vippharmacy.online checkout; rebate accrues on COMPLETED order
+    // (Phase M3). Rebate is % of order value, brand-agnostic (RA 6675 compliance).
+    partnerProgram: {
+      enrolled: { type: Boolean, default: false },
+      referralCode: { type: String, default: null, trim: true, uppercase: true },
+      tin: { type: String, default: null, trim: true },
+      enrolledAt: { type: Date, default: null },
+      agreementUrl: { type: String, default: null },
+      agreementVersion: { type: String, default: null },
+      payoutMethod: { type: String, default: null, trim: true },
+      withholdingCategory: { type: String, default: null, trim: true },
+    },
   },
   {
     collection: 'doctors',
@@ -221,6 +275,8 @@ doctorSchema.index({ supportDuringCoverage: 1 });
 doctorSchema.index({ programsToImplement: 1 });
 doctorSchema.index({ clientType: 1 });
 doctorSchema.index({ 'hospitals.hospital_id': 1 });
+// Phase M1 — partner referral code is unique when present (sparse to allow nulls)
+doctorSchema.index({ 'partnerProgram.referralCode': 1 }, { unique: true, sparse: true });
 
 // Virtual: Full name (combines firstName and lastName)
 doctorSchema.virtual('fullName').get(function () {

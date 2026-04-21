@@ -1022,6 +1022,7 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
               { path: '/admin/reports', label: 'Reports', icon: FileText },
               { path: '/admin/photo-audit', label: 'Photo Audit', icon: Camera },
               { path: '/admin/comm-logs', label: 'Comm Logs', icon: MessageSquare },
+              { path: '/admin/invites', label: 'Invite Triage', icon: MessageSquare },
               { path: '/admin/message-templates', label: 'Msg Templates', icon: MessageSquare },
               { path: '/admin/settings', label: 'Programs', icon: Settings },
             ],

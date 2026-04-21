@@ -53,6 +53,60 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 
 ---
 
+## BIR CAS Readiness (Compliance Risk — not yet a phase)
+
+> **Status (Apr 21, 2026)**: NOT STARTED. High-priority risk. Owner: OM Judy Mae Patrocinio + external BIR-accredited consultant. Target: start filing within 3 months of vippharmacy.online launch.
+
+### The rule
+
+Per **RR 9-2009** (Computerized Accounting System) and **RMC 5-2021** (streamlined registration), any taxpayer using a computerized system to generate books of accounts, ORs/SIs, or financial reports must hold a **BIR Permit to Use (PTU) CAS** for that system. VIP Inc uses this ERP as its computerized accounting system. **It needs a PTU regardless of whether the software is built in-house or purchased.**
+
+### Common misconception (correction)
+
+Listing the product on Play Store / App Store gives the SOFTWARE commercial legitimacy, but it does NOT exempt VIP Inc (as a taxpayer using it) from the CAS accreditation requirement. CAS PTU is filed by the **taxpayer** at their RDO — per-taxpayer, per-system, per-entity. Each subsidiary (MG AND CO., future Vios Software Solutions Inc., etc.) needs its own PTU.
+
+### What BIR will inspect
+
+1. **System description & workflow documentation** (we have this via CLAUDE-ERP.md + PHASETASK-ERP.md — ✅ strong)
+2. **Sample printouts** — SI, OR, SOA, trial balance, GL, sales/purchase books, cash receipts/disbursements book
+3. **BIR-mandated fields on invoices/ORs** — TIN, address, VAT-registered flag, zero-rated flag, serial control, RMC 5-2021 security features
+4. **Audit trail** — every transactional edit must be traceable (we have `AuditLog` — ✅ base), but need to confirm coverage on JE, SI, OR, SOA specifically
+5. **Backup & retention** — 10-year retention per NIRC. Need documented backup policy, offsite copy, restore test runbook.
+6. **Data integrity** — no unposting without journal reversal (we enforce this — ✅), period-close with archive (we have — ✅)
+7. **Serial number control** — SI and OR serials must be pre-registered with BIR and monotonic with no gaps
+
+### Gap list vs current ERP
+
+| Requirement | Status | Work needed |
+|---|---|---|
+| Audit trail on JE/SI/OR/SOA | Partial | Confirm `AuditLog` coverage; add if any gap |
+| BIR-format SI printout (serial, TIN block, VAT breakdown) | Partial | `Sales` model has fields; need print template matching BIR sample |
+| OR printout for collections | Partial | `Collection` has OR number; need BIR-compliant print |
+| Pre-registered serial ranges (SI, OR per entity) | Not implemented | Add `SerialRange` model (per-entity, per-document-type, start/end/current/registered_with_bir_at) + enforce monotonic allocation |
+| Sales Book / Purchase Book export in BIR format | Partial | Have SLSP from Phase 11; need exact BIR column order + DAT file format |
+| SAWT (Summary Alphalist of Withholding Taxes) | Not confirmed | Verify `WithholdingTax` model exports SAWT DAT file |
+| 10-year retention policy document | Not written | Judy Mae + consultant to draft; backup procedure to `docs/BIR_CAS_RUNBOOK.md` |
+| Sample printouts pack for RDO submission | Not produced | Generated on demand once print templates are BIR-compliant |
+| System flowchart for RDO submission | Not produced | Can auto-generate from PHASETASK-ERP.md |
+
+### Cost & timeline (rough)
+
+- Consultant fee: ₱80k–₱200k for a BIR-accredited CAS consultant to prepare the submission pack
+- BIR processing: 3–6 months from submission to PTU issuance (RDO-dependent)
+- Parallel work during processing: taxpayer can still operate; just flag risk that pre-PTU ORs/SIs may need to be re-issued once PTU is granted if format changes
+
+### Why this is in the ERP context (not a phase yet)
+
+This is a **compliance track**, not a software feature phase. The gap list above becomes individual engineering tickets only after the consultant writes the submission pack and identifies concrete format deltas. For now, this section exists so any engineer (or future Claude) reading CLAUDE-ERP.md understands:
+
+- New invoice/OR work must not break BIR-mandated fields
+- New serial-generating endpoints should use (or prepare to use) a `SerialRange` registry, not free ObjectId allocation
+- Any data-deletion feature must respect 10-year retention (soft-delete only; never hard-delete posted docs)
+
+When the consultant delivers the gap list, the concrete work gets its own Phase X in PHASETASK-ERP.md.
+
+---
+
 ## ERP Phases
 
 | Phase | Module | Status |
@@ -137,7 +191,7 @@ Closes the four governance gaps surfaced in the April 21 per-diem audit (items #
 | Flagged-photo visit | Still earned per-diem | `PERDIEM_RATES.metadata.skip_flagged=true` drops it from the CRM aggregation. Visit stays in CRM for audit. |
 | Weekend per-diem | Hardcoded `if (dow===0 \|\| dow===6) continue` | `PERDIEM_RATES.metadata.allow_weekend` (default false for pharma; non-pharma flips via Control Center). |
 | SMER per-diem "locations" note | Raw `clinicOfficeAddress` concatenation (e.g. "Rm 302 Medical Arts Bldg, Jaro") | Structured `${locality}, ${province}` from Doctor/Client (e.g. "Iloilo City, Iloilo; Digos City, Davao del Sur"). Fallback to raw address only for pre-backfill legacy docs. |
-| Doctor/Client schema | `clinicOfficeAddress` free-text only | Added optional `locality` + `province` (required on CREATE via validator; optional on UPDATE for legacy cleanup). Text indexes kept; new indexes on `locality` + `province`. |
+| Doctor/Client schema | `clinicOfficeAddress` free-text only | Added optional `locality` + `province`. Validator keeps them **optional on CREATE and UPDATE during rollout** so legacy flows (BDM ClientAddModal, CPT `Doctor.insertMany`) don't regress. Admin DoctorManagement form shows cascading dropdown as "recommended" (not required). Flip to required in a follow-up phase after backfill + BDM form gets the picker. New indexes on `locality` + `province`. |
 | Subscription readiness | Single hardcoded rate, pharma-only | One `PERDIEM_RATES` row per role (BDM/ECOMMERCE_BDM/…/DELIVERY_DRIVER); non-pharma seeds their own rate + `eligibility_source` without touching code. |
 
 ### Lookup shape
@@ -191,7 +245,7 @@ Callers: `expenseController.createSmer` (rate stamped on SMER at create), `expen
 | `backend/erp/scripts/seedSettings.js` + `testPhase7.js` | References to `PERDIEM_RATE_DEFAULT` removed. Test fixture uses constant 800 with explicit comment. |
 | `backend/erp/controllers/lookupGenericController.js` | Added `PERDIEM_RATES`, `PH_PROVINCES` (82 rows), `PH_LOCALITIES` (~50-row starter) to `SEED_DEFAULTS`. `PERDIEM_RATES` rows use `insert_only_metadata` so admin's per-entity rate edits survive re-seed. |
 | `backend/models/Doctor.js` + `backend/models/Client.js` | Added optional `locality` + `province` fields with length caps + indexes. |
-| `backend/middleware/validation.js` | Create validators require `locality`/`province`. Update validators keep them optional so admin can edit other fields on legacy records pre-backfill. |
+| `backend/middleware/validation.js` | `locality`/`province` **optional on both CREATE and UPDATE** during rollout (downgraded post-audit from `required on CREATE` — would have regressed the BDM `ClientAddModal` flow which does not yet carry these fields). Backfill + admin curation fills the gap. |
 | `backend/controllers/visitController.js`, `productAssignmentController.js`, `clientController.js`, `communicationLogController.js`, `services/reportGenerator.js`, `utils/aiMatcher.js`, `models/Visit.js`, `models/Schedule.js`, `models/ProductAssignment.js`, `smerCrmBridge.js` | `.populate('doctor'/'client', '...locality province')` + response-shape additions across ~20 sites so frontend consumers receive the structured fields. |
 | `backend/controllers/importController.js` | `buildDoctorFields` carries optional `locality`/`province` from CPT parser (future CPT workbooks can add columns; legacy workbooks skip these and rely on backfill). |
 | `backend/erp/scripts/backfillDoctorLocality.js` | **NEW.** Dry-run / `--apply` migration: parses last 2 comma-separated tokens from legacy `clinicOfficeAddress`, fuzzy-matches against PH_LOCALITIES + PH_PROVINCES, auto-applies on confident match, emits a "needs review" report for partial/no-match rows. Idempotent. |
