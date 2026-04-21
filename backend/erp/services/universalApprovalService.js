@@ -1134,6 +1134,10 @@ async function buildGapModulePendingItems(opts) {
 const MODULE_TO_SUB_KEY = {
   APPROVAL_REQUEST: null,       // special: derive from item.module field on the ApprovalRequest
   SALES:            'approve_sales',
+  // Opening AR shares the sales approve sub-permission — same commercial-ops
+  // decision (post a receivable). Subscribers who want a tighter gate can add
+  // `approve_opening_ar` to ERP_SUB_PERMISSION and remap here.
+  OPENING_AR:       'approve_sales',
   COLLECTION:       'approve_collections',
   INVENTORY:        'approve_inventory',
   SMER:             'approve_expenses',
