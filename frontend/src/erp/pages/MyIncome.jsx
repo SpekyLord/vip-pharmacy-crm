@@ -47,6 +47,8 @@ const pageStyles = `
   .badge-active { background: #d1fae5; color: #065f46; } .badge-completed { background: #a7f3d0; color: #047857; }
   .badge-cancelled { background: #fee2e2; color: #991b1b; } .badge-pending_approval { background: #fef3c7; color: #92400e; }
   .badge-injected { background: #e0e7ff; color: #3730a3; } .badge-posted { background: #a7f3d0; color: #047857; }
+  .badge-onestop { background: #e2e8f0; color: #475569; }
+  .badge-installment { background: #fef3c7; color: #92400e; font-weight: 600; }
   .btn { padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
   .btn-primary { background: #2563eb; color: white; } .btn-primary:hover { background: #1d4ed8; }
   .btn-success { background: #16a34a; color: white; } .btn-danger { background: #dc2626; color: white; }
@@ -596,7 +598,7 @@ export default function MyIncome() {
 
                     {/* ── Breakdown toggle ── */}
                     <button className="bd-load-btn" disabled={breakdownLoading}
-                      onClick={() => { if (!breakdown) loadBreakdown(selected._id); setExpandedSections(prev => { const allOpen = Object.values(prev).some(v => v); return allOpen ? {} : { smer: true, commission: true, profitSharing: true, calf: true, personalGas: true }; }); }}>
+                      onClick={() => { if (!breakdown) loadBreakdown(selected._id); setExpandedSections(prev => { const allOpen = Object.values(prev).some(v => v); if (allOpen) return {}; const next = { smer: true, commission: true, profitSharing: true, calf: true, personalGas: true, calfDed: true }; (selected?.deduction_lines || []).forEach(l => { if (l.auto_source === 'SCHEDULE' && l._id) next[`sched_${l._id}`] = true; }); return next; }); }}>
                       {breakdownLoading ? 'Loading...' : breakdown ? (Object.values(expandedSections).some(v => v) ? 'Collapse All' : 'Expand All') : 'View Breakdown'}
                     </button>
 
@@ -620,32 +622,40 @@ export default function MyIncome() {
                                       <tr><td>Per Diem ({breakdown.smer.working_days} working days)</td><td>{fmt(breakdown.smer.subtotals.perdiem)}</td></tr>
                                       <tr><td>Transport (P2P)</td><td>{fmt(breakdown.smer.subtotals.transport_p2p)}</td></tr>
                                       <tr><td>Transport (Special)</td><td>{fmt(breakdown.smer.subtotals.transport_special)}</td></tr>
-                                      <tr><td>ORE (Cash Expenses)</td><td>{fmt(breakdown.smer.subtotals.ore)}</td></tr>
+                                      <tr><td>ORE (from Expenses, receipt-backed)</td><td>{fmt(breakdown.smer.subtotals.ore)}</td></tr>
+                                      {(breakdown.smer.subtotals.ore_legacy_smer || 0) > 0 && (
+                                        <tr style={{ color: 'var(--erp-muted)', fontSize: 11 }}><td>Legacy SMER-ORE (audit only)</td><td>{fmt(breakdown.smer.subtotals.ore_legacy_smer)}</td></tr>
+                                      )}
                                       <tr className="bd-subtotal"><td>Total Reimbursable</td><td>{fmt(breakdown.smer.subtotals.total_reimbursable)}</td></tr>
                                     </tbody>
                                   </table>
 
                                   <div className="bd-section-title" style={{ marginTop: 10 }}>Daily Entries</div>
                                   <div className="bd-scroll">
-                                    <table className="bd-table">
-                                      <thead><tr><th>Day</th><th>Hospital</th><th>MDs</th><th>Tier</th><th>Per Diem</th><th>Transport</th><th>ORE</th></tr></thead>
-                                      <tbody>
-                                        {breakdown.smer.daily_entries.map((d, i) => (
-                                          <tr key={i}>
-                                            <td>{d.day}{d.entry_date ? ` (${new Date(d.entry_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })})` : ''}</td>
-                                            <td style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.hospital_covered || '-'}</td>
-                                            <td>{d.md_count}</td>
-                                            <td>
-                                              <span className={`bd-chip bd-chip-${(d.perdiem_tier || 'zero').toLowerCase()}`}>{d.perdiem_tier}</span>
-                                              {d.perdiem_override && <span className="bd-chip" style={{ background: '#fef3c7', color: '#92400e', marginLeft: 2 }}>OVR</span>}
-                                            </td>
-                                            <td>{fmt(d.perdiem_amount)}</td>
-                                            <td>{fmt((d.transpo_p2p || 0) + (d.transpo_special || 0))}</td>
-                                            <td>{fmt(d.ore_amount)}</td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
+                                    {(() => {
+                                      const hasLegacyOre = (breakdown.smer.daily_entries || []).some(d => (d.ore_amount || 0) > 0);
+                                      return (
+                                        <table className="bd-table">
+                                          <thead><tr><th>Day</th><th>Hospital</th><th>MDs</th><th>Tier</th><th>Per Diem</th><th>Transport</th>{hasLegacyOre && <th>ORE (legacy)</th>}</tr></thead>
+                                          <tbody>
+                                            {breakdown.smer.daily_entries.map((d, i) => (
+                                              <tr key={i}>
+                                                <td>{d.day}{d.entry_date ? ` (${new Date(d.entry_date).toLocaleDateString('en-PH', { month: 'short', day: 'numeric' })})` : ''}</td>
+                                                <td style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.hospital_covered || '-'}</td>
+                                                <td>{d.md_count}</td>
+                                                <td>
+                                                  <span className={`bd-chip bd-chip-${(d.perdiem_tier || 'zero').toLowerCase()}`}>{d.perdiem_tier}</span>
+                                                  {d.perdiem_override && <span className="bd-chip" style={{ background: '#fef3c7', color: '#92400e', marginLeft: 2 }}>OVR</span>}
+                                                </td>
+                                                <td>{fmt(d.perdiem_amount)}</td>
+                                                <td>{fmt((d.transpo_p2p || 0) + (d.transpo_special || 0))}</td>
+                                                {hasLegacyOre && <td style={{ color: 'var(--erp-muted)' }}>{fmt(d.ore_amount)}</td>}
+                                              </tr>
+                                            ))}
+                                          </tbody>
+                                        </table>
+                                      );
+                                    })()}
                                   </div>
 
                                   {/* ORE expense breakdown — grouped by category */}
@@ -861,22 +871,37 @@ export default function MyIncome() {
                             {lines.map(line => {
                               const isPersonalGas = line.auto_source === 'PERSONAL_GAS';
                               const isCalfDed = line.auto_source === 'CALF';
-                              const isExpandable = isPersonalGas || isCalfDed;
-                              const sectionKey = isPersonalGas ? 'personalGas' : isCalfDed ? 'calfDed' : null;
+                              const isSchedule = line.auto_source === 'SCHEDULE';
+                              const isExpandable = isPersonalGas || isCalfDed || isSchedule;
+                              const scheduleKey = line.schedule_ref?.schedule_id?.toString();
+                              const schedule = isSchedule && scheduleKey ? breakdown?.schedules?.[scheduleKey] : null;
+                              const currentInstallment = schedule?.installments?.find(
+                                i => i._id?.toString() === line.schedule_ref?.installment_id?.toString()
+                              );
+                              const kindBadge = isSchedule && currentInstallment
+                                ? `INSTALLMENT ${currentInstallment.installment_no}/${schedule.term_months}`
+                                : 'ONE-STOP';
+                              const kindBadgeClass = isSchedule ? 'badge-installment' : 'badge-onestop';
+                              const sectionKey = isPersonalGas ? 'personalGas'
+                                : isCalfDed ? 'calfDed'
+                                : isSchedule ? `sched_${line._id}`
+                                : null;
+                              const isZeroInfo = isPersonalGas && (line.amount || 0) === 0;
                               return (
                                 <Fragment key={line._id}>
-                                  <tr className={isExpandable ? 'bd-toggle' : ''} style={line.status === 'REJECTED' ? { opacity: 0.5 } : {}}
+                                  <tr className={isExpandable ? 'bd-toggle' : ''} style={{ ...(line.status === 'REJECTED' ? { opacity: 0.5 } : {}), ...(isExpandable ? { cursor: 'pointer' } : {}) }}
                                     onClick={isExpandable ? () => toggleSection(sectionKey) : undefined}>
                                     <td>
                                       {isExpandable && <span className={`bd-arrow ${expandedSections[sectionKey] ? 'open' : ''}`}>▸</span>}
                                       {line.deduction_label}
                                       <span className={`badge ${LINE_BADGES[line.status] || ''}`} style={{ marginLeft: 6 }}>{line.status}</span>
-                                      {line.auto_source === 'SCHEDULE' && <span style={{ fontSize: 10, color: '#6366f1', marginLeft: 4 }}>(scheduled)</span>}
+                                      <span className={`badge ${kindBadgeClass}`} style={{ marginLeft: 4 }}>{kindBadge}</span>
+                                      {isSchedule && <span style={{ fontSize: 10, color: '#6366f1', marginLeft: 4 }}>(scheduled)</span>}
                                       {isCalfDed && <span style={{ fontSize: 10, color: 'var(--erp-muted)', marginLeft: 4 }}>(auto)</span>}
                                       {line.description && <span className="deduction-desc">{line.description}</span>}
                                       {line.finance_note && <span className="correction-note">Finance: {line.finance_note}</span>}
                                     </td>
-                                    <td style={{ textAlign: 'right' }}>
+                                    <td style={{ textAlign: 'right', color: isZeroInfo ? 'var(--erp-muted)' : undefined }}>
                                       {line.original_amount != null && <span className="original-amount">{fmt(line.original_amount)}</span>}
                                       {fmt(line.amount)}
                                     </td>
@@ -960,6 +985,40 @@ export default function MyIncome() {
                                               <td>{fmt(breakdown.calf.balance)}</td>
                                               <td>{breakdown.calf.is_deduction ? 'Return excess to company' : ''}</td>
                                             </tr>
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </td></tr>
+                                  )}
+
+                                  {/* Installment schedule breakdown */}
+                                  {isSchedule && expandedSections[sectionKey] && schedule && (
+                                    <tr><td colSpan={3} style={{ padding: 0 }}>
+                                      <div className="bd-panel">
+                                        <div className="bd-section-title">{schedule.schedule_code || schedule.deduction_label}</div>
+                                        <table className="bd-table" style={{ marginBottom: 8 }}>
+                                          <tbody>
+                                            <tr><td>Total Amount</td><td>{fmt(schedule.total_amount)}</td></tr>
+                                            <tr><td>Per Installment</td><td>{fmt(schedule.installment_amount)} &times; {schedule.term_months} month{schedule.term_months > 1 ? 's' : ''}</td></tr>
+                                            <tr><td>Start Period / Cycle</td><td>{schedule.start_period} / {schedule.target_cycle || 'C2'}</td></tr>
+                                            <tr className="bd-subtotal"><td>Remaining Balance</td><td>{fmt(schedule.remaining_balance)}</td></tr>
+                                          </tbody>
+                                        </table>
+                                        <div className="bd-section-title">Installments</div>
+                                        <table className="bd-table">
+                                          <thead><tr><th>#</th><th>Period</th><th>Amount</th><th>Status</th></tr></thead>
+                                          <tbody>
+                                            {(schedule.installments || []).map(i => {
+                                              const isCurrent = i._id?.toString() === line.schedule_ref?.installment_id?.toString();
+                                              return (
+                                                <tr key={i._id} style={isCurrent ? { background: '#fef3c7', fontWeight: 600 } : undefined}>
+                                                  <td>{i.installment_no}</td>
+                                                  <td>{i.period}</td>
+                                                  <td>{fmt(i.amount)}</td>
+                                                  <td>{i.status}{isCurrent ? ' ← this cycle' : ''}</td>
+                                                </tr>
+                                              );
+                                            })}
                                           </tbody>
                                         </table>
                                       </div>

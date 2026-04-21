@@ -6562,3 +6562,157 @@ docs/PHASETASK-ERP.md                            [+this block]
 - `journal_failures: [...]` array in submit/post endpoint responses so the frontend can surface a warning toast (currently silent — posting reports success even when JE fails).
 - Extract SMER + CarLogbookCycle + Expense inline JE logic from `expenseController.js` into shared `autoJournal.js` helpers so the repost script and controllers converge on one code path.
 
+---
+
+## Phase G1.2 — Payslip Transparency & SMER-ORE Retirement Hardening ✅ (April 21, 2026)
+
+### Goal
+Answer three contractor-income transparency questions surfaced while reviewing Romela Shen Herrera's 2026-03 C2 payslip:
+1. SMER-ORE field is a zombie — schema exists, writes are hidden, legacy-fallback branch in income calc still reads it. Clean up without breaking audit on historical POSTED SMERs.
+2. Personal Gas deduction disappears entirely when ₱0 — BDM cannot tell whether the logbook was reviewed. Surface a ₱0 row for logbook-eligible BDMs.
+3. Deduction rows lack a one-stop-vs-installment indicator; installment lines show `(N/M)` in free text only, no expandable view of the full schedule timeline.
+
+### Deliverables
+
+#### 1. SMER-ORE retirement hardening
+- `SmerEntry.daily_entries[].ore_amount` and `SmerEntry.total_ore` marked `@deprecated` with inline JSDoc. Schema retained for historical POSTED SMER display.
+- Pre-save hook: any `isNew` document with `ore_amount > 0` on any daily entry is **rejected** with an explicit error pointing to the Expenses module. Existing docs with legacy non-zero values still save (status updates, reversals) — no corruption of audit trail.
+- `incomeCalc.generateIncomeReport`: dropped the `if (smerOre === 0)` fallback branch. ORE is **always** aggregated from `ExpenseEntry.lines.expense_type='ORE'`. Legacy SMER-ORE is subtracted from `total_reimbursable` to avoid double-count on pre-retirement docs. Rename: `expenseOreAmount` → `oreAmount`.
+- `incomeCalc.projectIncome`: same refactor. Adds `ore_legacy_smer` to projection output for audit-only display.
+- `incomeCalc.getIncomeBreakdown`: `smerBreakdown.subtotals.ore` now sources from ExpenseEntry-ORE; legacy is exposed as `ore_legacy_smer` (UI shows muted "audit only" row when > 0). `oreBreakdown.total` is ExpenseEntry-only; `smer_ore` and `daily_ore` retained for legacy audit.
+- No downstream JE breakage: the pre-save guard is gated on `isNew`, so reversal handlers that re-save existing docs don't trip. `expenseController.js:358` and `:3053` JE-line generators for SMER-ORE gate on `if (smer.total_ore > 0)` — naturally skip when 0 (new docs) and still fire for historical docs, preserving audit-symmetric JE postings. `REVERSAL_HANDLERS` count unchanged at 21.
+
+#### 2. Personal Gas always-show
+- `_resolveCompProfile(entityId, bdmId)` helper inlined in `incomeCalc.js` (mirrors the existing `loadBdmCompProfile` in `expenseController.js` to keep the service dependency graph flat — no controller imports from a service).
+- Deduction-line builder: `CompProfile.logbook_eligible === true` now gates PERSONAL_GAS line emission. `if (personalGasDeduction > 0)` guard removed. ₱0 lines carry description `'No personal km logged this cycle — logbook reviewed'`; non-zero lines keep the auto-computed description.
+- Office staff without a CompProfile or `logbook_eligible=false` still get no Personal Gas row — preserves the "only logbook users see it" UX.
+- Frontend: Income.jsx / MyIncome.jsx already had the expandable breakdown — now always renders, with ₱0 amounts shown in muted color (informational, not alarming).
+
+#### 3. Deduction row — kind badge + installment expandable
+- Backend `getIncomeBreakdown` now returns a new `schedules` block keyed by `schedule_id` string. For every unique `schedule_ref.schedule_id` on the report's `deduction_lines`, the payload includes: schedule_code, deduction_type, deduction_label, total_amount, installment_amount, term_months, start_period, target_cycle, remaining_balance, status, and the full `installments[]` array with per-installment status/period/amount/income_report_id/verified_at.
+- Frontend Income.jsx + MyIncome.jsx deduction rows:
+  - Every row now carries a **kind badge**: `ONE-STOP` (gray pill) for CASH_ADVANCE / PERSONAL_GAS / manual; `INSTALLMENT N/M` (amber pill) for SCHEDULE lines. N/M derived from `currentInstallment.installment_no / schedule.term_months`.
+  - SCHEDULE rows are now expandable (previously only PERSONAL_GAS and CALF were). Expansion shows: total amount, per-installment × term_months, start period/cycle, remaining balance, and the full installment timeline. The installment matching the current cycle is highlighted in amber with "← this cycle" suffix, so BDMs can see where they are on the schedule at a glance.
+  - CSS: two new pill classes — `.badge-onestop` (neutral gray #e2e8f0 / #475569), `.badge-installment` (amber #fef3c7 / #92400e, bold).
+
+#### 4. SMER earnings UI clarity
+- "ORE (Cash)" subtotal row in SMER breakdown renamed to "ORE (from Expenses, receipt-backed)" — reinforces that only receipt-backed Expenses-ORE is reimbursable.
+- Legacy SMER-ORE is surfaced as a secondary muted row "Legacy SMER-ORE (audit only)" **only when > 0** (pre-retirement docs). New docs never show it.
+- Daily entries table hides the ORE column entirely when no day has `ore_amount > 0`. Historical SMERs with legacy values still display the column for audit.
+- `DocumentDetailPanel.jsx` SMER view: ORE summary chip hides when `total_ore === 0`; daily entries ORE column hides when all entries are zero.
+- `Smer.jsx` UI totals accumulator: dropped `ore` accumulator entirely — was always 0 since Phase G1 anyway.
+
+#### 5. Banner copy updates
+- `/erp/smer` step 6: rewritten to state the April 2026 ORE retirement explicitly and that SMER no longer accepts per-day ORE amounts.
+- `/erp/expenses` step 1: ORE vs ACCESS distinction sharpened — ORE = CASH, BDM paid out-of-pocket, reimbursed; ACCESS = company-paid, NOT reimbursed.
+- `/erp/income` (Finance view) tip + `/erp/my-income` (BDM view) tip: describe the identity `SMER + ORE + Commission + Other Income − Deductions`, the ONE-STOP / INSTALLMENT kind badges, installment expandable, and why Personal Gas always renders for logbook-eligible BDMs.
+
+### Files touched
+
+```
+backend/erp/models/SmerEntry.js                  [@deprecated JSDoc + pre-save isNew guard]
+backend/erp/services/incomeCalc.js               [smerOre branch removed; ALWAYS-read Expenses-ORE; _resolveCompProfile helper; always-emit PERSONAL_GAS; breakdown.schedules[] block]
+frontend/src/erp/pages/Income.jsx                [ORE-from-Expenses subtotal label; legacy-only audit row; conditional ORE column in daily entries; kind badge CSS + badge-installment expandable; PG ₱0 muted styling]
+frontend/src/erp/pages/MyIncome.jsx              [parity with Income.jsx: same subtotal label, legacy-only row, conditional column, kind badge, installment expandable, PG ₱0 styling, CSS]
+frontend/src/erp/components/DocumentDetailPanel.jsx [conditional ORE chip + conditional daily-entries ORE column]
+frontend/src/erp/pages/Smer.jsx                  [drop ore from UI totals accumulator]
+frontend/src/erp/components/WorkflowGuide.jsx    [smer/expenses/income/myIncome banner refresh]
+docs/PHASETASK-ERP.md                            [+this block]
+CLAUDE-ERP.md                                    [+Phase G1.2 section]
+```
+
+### Verification
+- `node -c` clean on SmerEntry.js and incomeCalc.js.
+- `npx vite build` — clean (frontend has no backend imports; syntax-only check).
+- Regenerate a POSTED IncomeReport for a BDM with `CompProfile.logbook_eligible=true` and no Car Logbook entries → PERSONAL_GAS row appears with ₱0 and "No personal km logged this cycle" description; expandable shows "No car logbook entries".
+- Regenerate an IncomeReport for a BDM with ExpenseEntry-ORE lines → SMER earnings total includes ORE; "ORE (from Expenses)" subtotal displays the correct amount; no double-count with legacy SMER-ORE.
+- Attempt to save a new SmerEntry with `daily_entries[0].ore_amount = 500` → pre-save rejects with `"SmerEntry.daily_entries.ore_amount is retired (day 1, amount 500). Enter ORE via the Expenses module (expense_type='ORE')."`.
+- Historical POSTED SMER with legacy `total_ore = 1200` → resave (status update) succeeds; total_ore preserved; display shows "Legacy SMER-ORE (audit only) ₱1,200.00" muted row.
+- Deduction row render: SCHEDULE line shows `INSTALLMENT 2/6` amber pill; expand → full timeline with current cycle highlighted. CASH_ADVANCE + PERSONAL_GAS + manual rows show `ONE-STOP` gray pill.
+
+### Rule adherence
+- **Rule #3 (no hardcoded business values)** — `CompProfile.logbook_eligible` is per-person and configurable; ONE-STOP vs INSTALLMENT derives from `auto_source` and `DeductionSchedule` records (lookup-free).
+- **Rule #19 (subscription-ready)** — entity-scoped CompProfile resolution via `_resolveCompProfile`; ORE pipeline reads only from per-entity ExpenseEntry.
+- **Rule #20 (workflow banners + period locks)** — banner copy updated for all affected pages; no document-lifecycle mutation, so period-lock middleware unchanged.
+- **Rule #21 (no silent self-fallback)** — unaffected (CompProfile lookup is by explicit bdm_id param, no scope fallback).
+
+---
+
+## Phase G1.3 — Employee Payslip Transparency Parity ✅ (April 21, 2026)
+
+### Goal
+Bring employee `Payslip` to the same transparency contract as contractor `IncomeReport` (shipped in G1.2). A BDM who graduates to employee now sees the same `deduction_lines[]` layout — label + amount + status pill + kind badge + expandable source detail — instead of a flat hardcoded list of statutory fields.
+
+### Deliverables
+
+#### 1. Shared deduction-line sub-schema
+- New file `backend/erp/models/schemas/deductionLine.js` — identical shape to the inline `IncomeReport.deductionLineSchema`. Reused by `Payslip` only in this phase; `IncomeReport` keeps its inline copy (Phase G1.2 shipped code is load-bearing on profit-sharing + CALF flows, so we avoid touching it). A follow-up can converge IncomeReport once the contract soaks in production.
+- `auto_source` stays a free-form String (no enum) so subscribers can introduce new sources without a migration. Contractor uses `CALF | SCHEDULE | PERSONAL_GAS`; employee uses `SSS | PHILHEALTH | PAGIBIG | WITHHOLDING_TAX | PERSONAL_GAS | SCHEDULE`.
+
+#### 2. Payslip model
+- Added `deduction_lines: [deductionLineSchema]` (default `[]`).
+- Kept all flat `deductions.*` fields — **these are still the canonical source for the JE consumer** (`autoJournal.journalFromPayroll` reads them). Compute service now derives them FROM `deduction_lines` via `deriveFlatFromLines` so drift is impossible.
+- Pre-save hook: prefers `deduction_lines` sum (non-REJECTED) when the array is non-empty; falls back to flat-field sum for historical pre-G1.3 payslips. Either way, `total_deductions` and `net_pay` stay correct.
+
+#### 3. Compute service (`payslipCalc.js`)
+- New helpers: `buildAutoDeductionLines` (statutory + Personal Gas), `buildManualLinesFromFlat` (reconstructs Cash Advance / Loan / Other from preserved flat fields), `deriveFlatFromLines` (inverse — keeps flat fields in sync with the array).
+- Personal Gas for employees: gated on `CompProfile.logbook_eligible === true` (Rule #3 — existing flag, no new lookup). Row always emitted for eligible employees, even at ₱0, so Finance sees the logbook was reviewed. `aggregatePersonalGas` pulls from `CarLogbookEntry` using the person's `user_id`; MONTHLY cycle sums both C1+C2 entries within the period.
+- Upsert preserves manual earnings (bonus, reimbursements, overtime, holiday, night diff, other earnings) and manual flat-deduction fields on re-compute — parity with pre-G1.3 behavior.
+
+#### 4. Transparent breakdown endpoint
+- New: `getPayslipBreakdown(payslip)` in `payslipCalc.js`. Returns `{ payslip_id, period, cycle, person_name, personal_gas, schedules: {} }`. Same shape as `getIncomeBreakdown` so PayslipView.jsx can reuse the Income.jsx expandable pattern.
+- Wired: `GET /payroll/:id/breakdown` in `payrollRoutes.js` (ordered before `/:id`). Controller handler `getPayslipBreakdown` in `payrollController.js`.
+
+#### 5. Lazy backfill for historical POSTED payslips
+- `backfillDeductionLines(payslip)` — pure function that synthesises `deduction_lines[]` from flat fields. Adds synthetic `_id` (for React key) + `description: '(historical — reconstructed for display)'`. Never mutates the input.
+- `GET /payroll/:id` calls the backfill before returning when `deduction_lines` is empty. No DB write — audit-safe.
+
+#### 6. Frontend (`PayslipView.jsx`)
+- Replaced the flat deductions table with `deduction_lines.map()`. Each row renders:
+  - Label + status pill (PENDING / VERIFIED / CORRECTED / REJECTED) + kind badge (`ONE-STOP` neutral gray; G1.4 will add `INSTALLMENT` once employee DeductionSchedule is wired).
+  - `(auto)` micro-tag when `auto_source` is set (statutory + Personal Gas).
+  - Optional description + finance note.
+  - Original amount (strikethrough) shown when Finance has corrected a line.
+- Personal Gas row is expandable; first expand triggers `getPayslipBreakdown` (lazy load).
+- Expanded panel renders: daily logbook (date + KM + fuel) + summary (total KM, personal KM, official KM, total fuel, avg price/L, total deduction).
+- CSS: `.badge-onestop`, `.badge-installment`, `.badge-pending/verified/corrected/rejected`, `.bd-toggle`, `.bd-panel`, `.bd-table` — same contract as Income.jsx / MyIncome.jsx.
+
+#### 7. Lookup seed
+- New seed: `EMPLOYEE_DEDUCTION_TYPE` in `lookupGenericController.SEED_DEFAULTS` with codes SSS / PHILHEALTH / PAGIBIG / WITHHOLDING_TAX / CASH_ADVANCE / LOAN / PERSONAL_GAS / OTHER. Metadata carries `auto_source` where applicable. Kept separate from `INCOME_DEDUCTION_TYPE` because contractor vs employee deduction taxonomies diverge (no SSS for contractors, no CALF for employees).
+
+### Files touched
+
+```
+backend/erp/models/schemas/deductionLine.js      [NEW — shared sub-schema]
+backend/erp/models/Payslip.js                    [+deduction_lines[]; pre-save prefers lines over flat]
+backend/erp/services/payslipCalc.js              [build auto + manual lines; derive flat from lines; getPayslipBreakdown; backfillDeductionLines; aggregatePersonalGas]
+backend/erp/services/incomeCalc.js               [exported resolveCompProfile for payslipCalc reuse]
+backend/erp/controllers/payrollController.js     [getPayslip lazy-backfills; +getPayslipBreakdown handler]
+backend/erp/routes/payrollRoutes.js              [+GET /:id/breakdown, before /:id]
+backend/erp/controllers/lookupGenericController.js [+EMPLOYEE_DEDUCTION_TYPE seed]
+frontend/src/erp/hooks/usePayroll.js             [+getPayslipBreakdown(id)]
+frontend/src/erp/pages/PayslipView.jsx           [rewrote deductions table with deduction_lines render + expandable + lazy breakdown load]
+docs/PHASETASK-ERP.md                            [+this block]
+CLAUDE-ERP.md                                    [+Phase G1.3 section]
+```
+
+### Verification
+- `node -c` clean on all modified backend files.
+- `npx vite build` — clean in 13.45s.
+- Generate a payslip for an employee with a CompProfile → `deduction_lines` has SSS/PhilHealth/PagIBIG/Withholding Tax rows. Flat `deductions.sss_employee` etc. still populated (derived from lines). JE posting still balances.
+- Open a pre-G1.3 POSTED payslip → lazy backfill renders rows with `(historical — reconstructed for display)` description. No DB write.
+- Set `CompProfile.logbook_eligible=true` on an employee with no logbook entries → PERSONAL_GAS row at ₱0, description "No personal km logged this cycle — logbook reviewed", expandable shows "No car logbook entries for this period".
+- Set `logbook_eligible=false` → No PERSONAL_GAS row.
+- Finance corrects a flat field (e.g. `cash_advance` via existing path) → next re-compute reconstructs the CASH_ADVANCE line from the flat field.
+
+### Rule adherence
+- **Rule #2 (end-to-end wiring)** — Payslip model → payslipCalc service → payrollController → payrollRoutes → usePayroll hook → PayslipView page → Sidebar link (existing — payslip view reached via Payroll Run row click, no new sidebar entry needed).
+- **Rule #3 (no hardcoded business values)** — `EMPLOYEE_DEDUCTION_TYPE` is a new seeded lookup; `CompProfile.logbook_eligible` is per-person and admin-configurable.
+- **Rule #19 (subscription-ready)** — entity-scoped compute via `req.entityId` in both endpoints; statutory rate tables live in `GovernmentRates` per entity; lookup seeds only fire when empty so existing subscriber customizations are preserved.
+- **Rule #20 (workflow banners + period locks)** — existing `payslip-view` banner in `WorkflowGuide.jsx` unchanged (still accurate); period-lock middleware unchanged (no new document-lifecycle routes). Posting gate via `gateApproval` in `postPayroll` unaffected.
+- **Rule #21 (no silent self-fallback)** — `getPayslip` + `getPayslipBreakdown` scope via `req.entityId` (President bypass explicit). No `req.bdmId` fallback anywhere on employee payslip path.
+
+### Deferred follow-ups (non-blocking)
+- **G1.4 — Employee DeductionSchedule wiring**: port the contractor `DeductionSchedule` installment flow to employee payslips so INSTALLMENT N/M badges apply. Requires a new `person_id` ref on `DeductionSchedule` (currently `bdm_id`-only) OR a parallel `employee_schedules` collection. Design decision deferred.
+- **Per-line Finance add/verify UI**: parity with `IncomeReport.addDeductionLine` / `financeAddDeductionLine` / `verifyDeductionLine`. Today Cash Advance / Loan / Other flow through flat fields only.
+- **IncomeReport.deductionLineSchema → shared**: replace the inline copy with `require('./schemas/deductionLine')`. Low-risk refactor, not in this phase to avoid touching Phase G1.2 shipped code.

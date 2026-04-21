@@ -6,6 +6,8 @@ const {
   generateSalesRepPayslip,
   computeThirteenthMonth: compute13th,
   transitionPayslipStatus,
+  getPayslipBreakdown: fetchPayslipBreakdown,
+  backfillDeductionLines,
 } = require('../services/payslipCalc');
 const { journalFromPayroll, resolveFundingCoa } = require('../services/autoJournal');
 const { createAndPostJournal } = require('../services/journalEngine');
@@ -218,7 +220,31 @@ const getPayslip = catchAsync(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Payslip not found' });
   }
 
+  // Phase G1.3 — lazy backfill for historical POSTED payslips that predate the
+  // deduction_lines[] array. Synthesises lines from the flat fields in memory
+  // (no DB write) so PayslipView.jsx can render the transparent layout for
+  // every payslip regardless of vintage. Safe for all statuses.
+  if (!payslip.deduction_lines || payslip.deduction_lines.length === 0) {
+    payslip.deduction_lines = backfillDeductionLines(payslip);
+  }
+
   res.json({ success: true, data: payslip });
+});
+
+// Phase G1.3 — transparent payslip breakdown. Mirrors GET /income/:id/breakdown
+// so PayslipView.jsx can reuse the Income.jsx expandable pattern.
+const getPayslipBreakdown = catchAsync(async (req, res) => {
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const payslip = await Payslip.findOne({ _id: req.params.id, ...entityScope })
+    .populate('person_id', 'full_name person_type department')
+    .lean();
+
+  if (!payslip) {
+    return res.status(404).json({ success: false, message: 'Payslip not found' });
+  }
+
+  const breakdown = await fetchPayslipBreakdown(payslip);
+  res.json({ success: true, data: breakdown });
 });
 
 const getPayslipHistory = catchAsync(async (req, res) => {
@@ -284,6 +310,7 @@ module.exports = {
   approvePayslip,
   postPayroll,
   getPayslip,
+  getPayslipBreakdown,
   presidentReversePayslip,
   getPayslipHistory,
   computeThirteenthMonth,

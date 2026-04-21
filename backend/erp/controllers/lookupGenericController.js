@@ -885,6 +885,21 @@ const SEED_DEFAULTS = {
     { code: 'PERSONAL_GAS', label: 'Personal Gas Usage', metadata: { auto_source: 'PERSONAL_GAS', sort: 8 } },
     { code: 'OTHER', label: 'Other Deduction', metadata: { sort: 9 } },
   ],
+  // Phase G1.3 — Employee Payslip deduction types. Kept separate from
+  // INCOME_DEDUCTION_TYPE because employees carry statutory deductions (SSS,
+  // PhilHealth, PagIBIG, Withholding Tax) that contractors do not, and
+  // contractors carry CALF / credit-card / purchased-goods that employees do
+  // not. Subscribers can extend each list independently via Control Center.
+  EMPLOYEE_DEDUCTION_TYPE: [
+    { code: 'SSS', label: 'SSS (Employee Share)', metadata: { auto_source: 'SSS', sort: 1 } },
+    { code: 'PHILHEALTH', label: 'PhilHealth (Employee Share)', metadata: { auto_source: 'PHILHEALTH', sort: 2 } },
+    { code: 'PAGIBIG', label: 'Pag-IBIG (Employee Share)', metadata: { auto_source: 'PAGIBIG', sort: 3 } },
+    { code: 'WITHHOLDING_TAX', label: 'Withholding Tax', metadata: { auto_source: 'WITHHOLDING_TAX', sort: 4 } },
+    { code: 'CASH_ADVANCE', label: 'Cash Advance', metadata: { sort: 5 } },
+    { code: 'LOAN', label: 'Loan Payment', metadata: { sort: 6 } },
+    { code: 'PERSONAL_GAS', label: 'Personal Gas Usage', metadata: { auto_source: 'PERSONAL_GAS', sort: 7 } },
+    { code: 'OTHER', label: 'Other Deduction', metadata: { sort: 8 } },
+  ],
   DEDUCTION_LINE_STATUS: ['PENDING', 'VERIFIED', 'CORRECTED', 'REJECTED'],
   DEDUCTION_SCHEDULE_STATUS: ['PENDING_APPROVAL', 'ACTIVE', 'COMPLETED', 'CANCELLED', 'REJECTED'],
   // Phase F — Universal Approval Hub action labels (lookup-driven)

@@ -19,7 +19,27 @@ const ExpenseEntry = require('../models/ExpenseEntry');
 const PrfCalf = require('../models/PrfCalf');
 const CarLogbookEntry = require('../models/CarLogbookEntry');
 const DeductionSchedule = require('../models/DeductionSchedule');
+const CompProfile = require('../models/CompProfile');
+const PeopleMaster = require('../models/PeopleMaster');
 const { syncInstallmentStatus } = require('./deductionScheduleService');
+
+/**
+ * Resolve the ACTIVE CompProfile for a BDM user in a given entity.
+ * Mirrors loadBdmCompProfile in expenseController; inlined here to keep
+ * the service module dependency graph flat (no controller imports).
+ */
+async function _resolveCompProfile(entityId, bdmUserId) {
+  const person = await PeopleMaster.findOne({
+    user_id: new mongoose.Types.ObjectId(bdmUserId),
+    entity_id: new mongoose.Types.ObjectId(entityId)
+  }).select('_id').lean();
+  if (!person) return null;
+  return CompProfile.findOne({
+    person_id: person._id,
+    entity_id: new mongoose.Types.ObjectId(entityId),
+    status: 'ACTIVE'
+  }).sort({ effective_date: -1 }).lean();
+}
 
 /**
  * Parse period to start/end dates
@@ -50,27 +70,27 @@ async function generateIncomeReport(entityId, bdmId, period, cycle, userId) {
     bdm_id: new mongoose.Types.ObjectId(bdmId)
   };
 
-  // 1. SMER earnings (per diem + any legacy transpo/ORE in total_reimbursable)
+  // 1. SMER earnings — per diem + transport only.
+  //    ORE retired 2026-04 (Phase G1 hardening): SMER-ORE is phantom and flows
+  //    exclusively through ExpenseEntry.expense_type='ORE'. On pre-retirement
+  //    docs with legacy total_ore > 0, we subtract it so we don't double-count
+  //    when we add ExpenseEntry-ORE below. New SMERs always have total_ore=0.
   const smer = await SmerEntry.findOne({
     ...filter, period, cycle,
     status: { $in: ['POSTED', 'VALID', 'DRAFT'] }
   }).lean();
-  const smerAmount = smer?.total_reimbursable || 0;
+  const smerLegacyOre = smer?.total_ore || 0;
+  const smerAmount = Math.round(((smer?.total_reimbursable || 0) - smerLegacyOre) * 100) / 100;
 
-  // 1b. ORE from ExpenseEntry (for new flow where SMER ore_amount=0, ORE entered via Expenses)
-  //     Only add ORE that isn't already counted in SMER total_reimbursable (avoid double-counting)
-  const smerOre = smer?.total_ore || 0;
-  let expenseOreAmount = 0;
-  if (smerOre === 0) {
-    // SMER has no ORE — pull from ExpenseEntry ORE lines
-    const oreAgg = await ExpenseEntry.aggregate([
-      { $match: { ...filter, period, cycle, status: { $in: ['POSTED', 'VALID', 'DRAFT'] } } },
-      { $unwind: '$lines' },
-      { $match: { 'lines.expense_type': 'ORE' } },
-      { $group: { _id: null, total: { $sum: '$lines.amount' } } }
-    ]);
-    expenseOreAmount = Math.round((oreAgg[0]?.total || 0) * 100) / 100;
-  }
+  // 1b. ORE always from ExpenseEntry (receipt-backed, CASH). ACCESS lines are
+  //     NOT reimbursable — company already paid via credit card / GCash / bank.
+  const oreAgg = await ExpenseEntry.aggregate([
+    { $match: { ...filter, period, cycle, status: { $in: ['POSTED', 'VALID', 'DRAFT'] } } },
+    { $unwind: '$lines' },
+    { $match: { 'lines.expense_type': 'ORE' } },
+    { $group: { _id: null, total: { $sum: '$lines.amount' } } }
+  ]);
+  const oreAmount = Math.round((oreAgg[0]?.total || 0) * 100) / 100;
 
   // 2. CORE commission from POSTED Collections
   const collAgg = await Collection.aggregate([
@@ -197,12 +217,18 @@ async function generateIncomeReport(entityId, bdmId, period, cycle, userId) {
       auto_source: 'CALF'
     });
   }
-  if (personalGasDeduction > 0) {
+  // Personal Gas — always render a row for logbook-eligible BDMs (even at \u20B10)
+  // so the BDM can always confirm the logbook was reviewed. Non-eligible (office
+  // staff with no car logbook) are suppressed to avoid a meaningless \u20B10 row.
+  const compProfile = await _resolveCompProfile(entityId, bdmId);
+  if (compProfile?.logbook_eligible) {
     autoLines.push({
       deduction_type: 'PERSONAL_GAS',
       deduction_label: 'Personal Gas Usage',
       amount: personalGasDeduction,
-      description: 'Auto-computed from Car Logbook personal km \u00D7 fuel cost',
+      description: personalGasDeduction > 0
+        ? 'Auto-computed from Car Logbook personal km \u00D7 fuel cost'
+        : 'No personal km logged this cycle \u2014 logbook reviewed',
       entered_by: userId,
       entered_at: new Date(),
       status: 'VERIFIED',
@@ -217,7 +243,7 @@ async function generateIncomeReport(entityId, bdmId, period, cycle, userId) {
     period,
     cycle,
     earnings: {
-      smer: Math.round((smerAmount + expenseOreAmount) * 100) / 100,
+      smer: Math.round((smerAmount + oreAmount) * 100) / 100,
       core_commission: Math.round(coreCommission * 100) / 100,
       profit_sharing: Math.round(profitSharing * 100) / 100,
       calf_reimbursement: Math.round(calfReimbursement * 100) / 100
@@ -353,18 +379,15 @@ async function projectIncome(entityId, bdmId, period, cycle) {
     status: { $in: ['DRAFT', 'VALID', 'ERROR', 'POSTED'] }
   }).sort({ updatedAt: -1 }).lean();
 
-  // 1b. ORE from ExpenseEntry (new flow: SMER ore_amount=0, ORE via Expenses)
-  const smerOreP = smer?.total_ore || 0;
-  let expenseOreP = 0;
-  if (smerOreP === 0) {
-    const oreAggP = await ExpenseEntry.aggregate([
-      { $match: { ...filter, period, cycle, status: { $in: ['POSTED', 'VALID', 'DRAFT'] } } },
-      { $unwind: '$lines' },
-      { $match: { 'lines.expense_type': 'ORE' } },
-      { $group: { _id: null, total: { $sum: '$lines.amount' } } }
-    ]);
-    expenseOreP = Math.round((oreAggP[0]?.total || 0) * 100) / 100;
-  }
+  // 1b. ORE always from ExpenseEntry (Phase G1 hardening — SMER-ORE retired)
+  const oreAggP = await ExpenseEntry.aggregate([
+    { $match: { ...filter, period, cycle, status: { $in: ['POSTED', 'VALID', 'DRAFT'] } } },
+    { $unwind: '$lines' },
+    { $match: { 'lines.expense_type': 'ORE' } },
+    { $group: { _id: null, total: { $sum: '$lines.amount' } } }
+  ]);
+  const expenseOreP = Math.round((oreAggP[0]?.total || 0) * 100) / 100;
+  const smerLegacyOreP = smer?.total_ore || 0;
 
   // 2. Commission from Collections — split by status
   const collAgg = await Collection.aggregate([
@@ -432,8 +455,8 @@ async function projectIncome(entityId, bdmId, period, cycle) {
     return 'NONE';
   };
 
-  // Earnings
-  const smerAmount = (smer?.total_reimbursable || 0) + expenseOreP;
+  // Earnings — strip legacy SMER-ORE (retired) to avoid double-count with ExpenseEntry-ORE
+  const smerAmount = ((smer?.total_reimbursable || 0) - smerLegacyOreP) + expenseOreP;
   const totalCommission = postedComm.total_commission + draftComm.total_commission + validComm.total_commission;
   const calfReimb = calfBalance < 0 ? Math.abs(calfBalance) : 0;
   const projectedEarnings = Math.round((smerAmount + totalCommission + calfReimb +
@@ -452,8 +475,9 @@ async function projectIncome(entityId, bdmId, period, cycle) {
     projection: {
       smer: {
         amount: Math.round(smerAmount * 100) / 100,
-        ore_included: Math.round(((smer?.total_ore || 0) + expenseOreP) * 100) / 100,
+        ore_included: expenseOreP,
         ore_from_expenses: expenseOreP,
+        ore_legacy_smer: smerLegacyOreP, // pre-retirement audit only; 0 on new docs
         status: smer?.status || 'NONE',
         confidence: smer ? statusConfidence(smer.status) : 'NONE'
       },
@@ -665,6 +689,12 @@ async function getIncomeBreakdown(report) {
   ]);
 
   // ── Build SMER breakdown ──
+  // ORE subtotal row sources from ExpenseEntry (expense_type='ORE'). Legacy
+  // SMER-ORE on pre-retirement docs is exposed via ore_legacy_smer for audit
+  // only — the UI should not add it to the total (would double-count).
+  const expenseOreForBreakdown = expenseEntries.flatMap(e =>
+    (e.lines || []).filter(l => l.expense_type === 'ORE')
+  ).reduce((sum, l) => sum + (l.amount || 0), 0);
   let smerBreakdown = null;
   if (smer) {
     smerBreakdown = {
@@ -674,8 +704,9 @@ async function getIncomeBreakdown(report) {
         perdiem: smer.total_perdiem || 0,
         transport_p2p: smer.total_transpo || 0,
         transport_special: smer.total_special_cases || 0,
-        ore: smer.total_ore || 0,
-        total_reimbursable: smer.total_reimbursable || 0
+        ore: Math.round(expenseOreForBreakdown * 100) / 100,
+        ore_legacy_smer: smer.total_ore || 0, // audit only — not summed
+        total_reimbursable: Math.round(((smer.total_reimbursable || 0) - (smer.total_ore || 0) + expenseOreForBreakdown) * 100) / 100
       },
       daily_entries: (smer.daily_entries || []).map(d => ({
         day: d.day,
@@ -865,14 +896,61 @@ async function getIncomeBreakdown(report) {
     subtotal: Math.round(c.subtotal * 100) / 100
   }));
 
+  // ORE breakdown — canonical source is ExpenseEntry (expense_type='ORE').
+  // Legacy SMER-ORE (smer_ore) is surfaced for historical audit only: pre-retirement
+  // POSTED SMERs may carry a non-zero total_ore / daily_ore, but those values are
+  // already reflected in the historical total_reimbursable for that doc. UI must
+  // NOT sum smer_ore into the current reimbursable total (would double-count).
+  const expenseOreTotal = Math.round(oreExpenseLines.reduce((s, l) => s + l.amount, 0) * 100) / 100;
   const oreBreakdown = {
-    total: Math.round(((smer?.total_ore || 0) + oreExpenseLines.reduce((s, l) => s + l.amount, 0)) * 100) / 100,
-    smer_ore: smer?.total_ore || 0,
-    expense_ore: Math.round(oreExpenseLines.reduce((s, l) => s + l.amount, 0) * 100) / 100,
-    daily_ore: oreDays,
+    total: expenseOreTotal,
+    expense_ore: expenseOreTotal,
+    smer_ore: smer?.total_ore || 0, // deprecated — audit only
+    daily_ore: oreDays,              // deprecated — audit only (pre-retirement legacy)
     expense_lines: oreExpenseLines,
     by_category: oreCategories
   };
+
+  // ── Build DeductionSchedule breakdown ──
+  // Frontend expands any INSTALLMENT row to show the full timeline of the
+  // schedule it came from: past / current / future installments, status
+  // per installment, remaining balance. Keyed by schedule _id (string).
+  const scheduleIds = [...new Set(
+    (report.deduction_lines || [])
+      .filter(l => l.auto_source === 'SCHEDULE' && l.schedule_ref?.schedule_id)
+      .map(l => l.schedule_ref.schedule_id.toString())
+  )];
+  const schedulesByKey = {};
+  if (scheduleIds.length > 0) {
+    const scheds = await DeductionSchedule.find({
+      _id: { $in: scheduleIds.map(id => new mongoose.Types.ObjectId(id)) }
+    }).lean();
+    for (const s of scheds) {
+      schedulesByKey[s._id.toString()] = {
+        _id: s._id,
+        schedule_code: s.schedule_code,
+        deduction_type: s.deduction_type,
+        deduction_label: s.deduction_label,
+        description: s.description,
+        total_amount: s.total_amount || 0,
+        installment_amount: s.installment_amount || 0,
+        term_months: s.term_months || 1,
+        start_period: s.start_period,
+        target_cycle: s.target_cycle,
+        remaining_balance: s.remaining_balance || 0,
+        status: s.status,
+        installments: (s.installments || []).map(i => ({
+          _id: i._id,
+          period: i.period,
+          installment_no: i.installment_no,
+          amount: i.amount || 0,
+          status: i.status,
+          income_report_id: i.income_report_id,
+          verified_at: i.verified_at
+        }))
+      };
+    }
+  }
 
   return {
     report_id: report._id,
@@ -884,7 +962,8 @@ async function getIncomeBreakdown(report) {
     profit_sharing: profitSharingBreakdown,
     calf: calfBreakdown,
     personal_gas: personalGasBreakdown,
-    ore: oreBreakdown
+    ore: oreBreakdown,
+    schedules: schedulesByKey
   };
 }
 
@@ -894,5 +973,8 @@ module.exports = {
   getIncomeReport,
   getIncomeBreakdown,
   transitionIncomeStatus,
-  VALID_TRANSITIONS
+  VALID_TRANSITIONS,
+  // Phase G1.3 — employee Payslip compute reuses this for logbook_eligible
+  // resolution without a new util file or dependency on the controller layer.
+  resolveCompProfile: _resolveCompProfile
 };

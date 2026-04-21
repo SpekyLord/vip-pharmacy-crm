@@ -714,55 +714,60 @@ export default function DocumentDetailPanel(props) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
             <div><span style={{ color: 'var(--erp-muted)' }}>Per Diem:</span> <strong>{fmt(d.total_perdiem)}</strong></div>
             <div><span style={{ color: 'var(--erp-muted)' }}>Transport:</span> <strong>{fmt(d.total_transpo)}</strong></div>
-            <div><span style={{ color: 'var(--erp-muted)' }}>ORE:</span> <strong>{fmt(d.total_ore)}</strong></div>
+            {(d.total_ore || 0) > 0 && (
+              <div><span style={{ color: 'var(--erp-muted)' }}>ORE (legacy):</span> <strong>{fmt(d.total_ore)}</strong></div>
+            )}
             <div><span style={{ color: 'var(--erp-muted)' }}>Reimbursable:</span> <strong style={{ color: '#059669' }}>{fmt(d.total_reimbursable)}</strong></div>
             {d.travel_advance > 0 && <div><span style={{ color: 'var(--erp-muted)' }}>Advance:</span> <strong>{fmt(d.travel_advance)}</strong></div>}
             {d.balance_on_hand != null && <div><span style={{ color: 'var(--erp-muted)' }}>Balance:</span> <strong style={{ color: (d.balance_on_hand || 0) >= 0 ? '#059669' : '#dc2626' }}>{fmt(d.balance_on_hand)}</strong></div>}
           </div>
-          {(d.daily_entries || []).length > 0 && (
-            <div style={{ marginTop: 10, overflowX: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-                <thead>
-                  <tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}>
-                    <th style={{ padding: '4px 6px', textAlign: 'left' }}>Day</th>
-                    <th style={{ padding: '4px 6px', textAlign: 'left' }}>Activity</th>
-                    <th style={{ padding: '4px 6px', textAlign: 'left' }}>Hospital(s) Covered</th>
-                    <th style={{ padding: '4px 6px', textAlign: 'right' }}>MD</th>
-                    <th style={{ padding: '4px 6px', textAlign: 'left' }}>Tier</th>
-                    <th style={{ padding: '4px 6px', textAlign: 'right' }}>Per Diem</th>
-                    <th style={{ padding: '4px 6px', textAlign: 'right' }}>Transpo</th>
-                    <th style={{ padding: '4px 6px', textAlign: 'right' }}>ORE</th>
-                    <th style={{ padding: '4px 6px', textAlign: 'left' }}>Override</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(d.daily_entries || []).map((e, i) => (
-                    <tr key={i} style={e.perdiem_override ? { background: '#fffbeb' } : undefined}>
-                      <td style={{ padding: '3px 6px' }}>
-                        {e.day}
-                        {e.day_of_week && <span style={{ marginLeft: 4, color: 'var(--erp-muted)' }}>{e.day_of_week}</span>}
-                      </td>
-                      <td style={{ padding: '3px 6px' }}>{e.activity_type || '—'}</td>
-                      <td style={{ padding: '3px 6px' }}>{e.hospital_covered || '—'}</td>
-                      <td style={{ padding: '3px 6px', textAlign: 'right' }}>{e.md_count || 0}</td>
-                      <td style={{ padding: '3px 6px' }}>{e.perdiem_tier || '—'}</td>
-                      <td style={{ padding: '3px 6px', textAlign: 'right' }}>{fmt(e.perdiem_amount)}</td>
-                      <td style={{ padding: '3px 6px', textAlign: 'right' }}>{fmt((e.transpo_p2p || 0) + (e.transpo_special || 0))}</td>
-                      <td style={{ padding: '3px 6px', textAlign: 'right' }}>{fmt(e.ore_amount)}</td>
-                      <td style={{ padding: '3px 6px' }}>
-                        {e.perdiem_override ? (
-                          <span title={e.override_reason || ''} style={{ color: '#854d0e', fontWeight: 700 }}>
-                            {e.override_tier || '✓'}
-                            {e.overridden_by && <div style={{ fontWeight: 400, color: 'var(--erp-muted)', fontSize: 10 }}>by {e.overridden_by}</div>}
-                          </span>
-                        ) : '—'}
-                      </td>
+          {(d.daily_entries || []).length > 0 && (() => {
+            const hasLegacyOre = (d.daily_entries || []).some(e => (e.ore_amount || 0) > 0);
+            return (
+              <div style={{ marginTop: 10, overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                  <thead>
+                    <tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}>
+                      <th style={{ padding: '4px 6px', textAlign: 'left' }}>Day</th>
+                      <th style={{ padding: '4px 6px', textAlign: 'left' }}>Activity</th>
+                      <th style={{ padding: '4px 6px', textAlign: 'left' }}>Hospital(s) Covered</th>
+                      <th style={{ padding: '4px 6px', textAlign: 'right' }}>MD</th>
+                      <th style={{ padding: '4px 6px', textAlign: 'left' }}>Tier</th>
+                      <th style={{ padding: '4px 6px', textAlign: 'right' }}>Per Diem</th>
+                      <th style={{ padding: '4px 6px', textAlign: 'right' }}>Transpo</th>
+                      {hasLegacyOre && <th style={{ padding: '4px 6px', textAlign: 'right' }}>ORE (legacy)</th>}
+                      <th style={{ padding: '4px 6px', textAlign: 'left' }}>Override</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+                  </thead>
+                  <tbody>
+                    {(d.daily_entries || []).map((e, i) => (
+                      <tr key={i} style={e.perdiem_override ? { background: '#fffbeb' } : undefined}>
+                        <td style={{ padding: '3px 6px' }}>
+                          {e.day}
+                          {e.day_of_week && <span style={{ marginLeft: 4, color: 'var(--erp-muted)' }}>{e.day_of_week}</span>}
+                        </td>
+                        <td style={{ padding: '3px 6px' }}>{e.activity_type || '—'}</td>
+                        <td style={{ padding: '3px 6px' }}>{e.hospital_covered || '—'}</td>
+                        <td style={{ padding: '3px 6px', textAlign: 'right' }}>{e.md_count || 0}</td>
+                        <td style={{ padding: '3px 6px' }}>{e.perdiem_tier || '—'}</td>
+                        <td style={{ padding: '3px 6px', textAlign: 'right' }}>{fmt(e.perdiem_amount)}</td>
+                        <td style={{ padding: '3px 6px', textAlign: 'right' }}>{fmt((e.transpo_p2p || 0) + (e.transpo_special || 0))}</td>
+                        {hasLegacyOre && <td style={{ padding: '3px 6px', textAlign: 'right', color: 'var(--erp-muted)' }}>{fmt(e.ore_amount)}</td>}
+                        <td style={{ padding: '3px 6px' }}>
+                          {e.perdiem_override ? (
+                            <span title={e.override_reason || ''} style={{ color: '#854d0e', fontWeight: 700 }}>
+                              {e.override_tier || '✓'}
+                              {e.overridden_by && <div style={{ fontWeight: 400, color: 'var(--erp-muted)', fontSize: 10 }}>by {e.overridden_by}</div>}
+                            </span>
+                          ) : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
           <AuditFooter d={d} />
         </div>
       )}
