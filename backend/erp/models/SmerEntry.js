@@ -119,7 +119,15 @@ smerEntrySchema.pre('save', function (next) {
 });
 
 // Indexes
-smerEntrySchema.index({ entity_id: 1, bdm_id: 1, period: 1, cycle: 1 }, { unique: true });
+// (entity_id, bdm_id, period, cycle) is unique only when the SMER is NOT reversed.
+// Reversed SMERs keep the row (stamped with deletion_event_id) for audit, but the
+// BDM must be able to create a fresh SMER for the same period+cycle to redo the
+// work. Same partial-index pattern used for Undertaking.linked_grn_id and
+// OfficeSupply.item_code.
+smerEntrySchema.index(
+  { entity_id: 1, bdm_id: 1, period: 1, cycle: 1 },
+  { unique: true, partialFilterExpression: { deletion_event_id: { $exists: false } } }
+);
 smerEntrySchema.index({ entity_id: 1, bdm_id: 1, status: 1 });
 smerEntrySchema.index({ status: 1 });
 

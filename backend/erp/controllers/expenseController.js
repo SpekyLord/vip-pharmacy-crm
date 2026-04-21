@@ -73,6 +73,27 @@ function enforceNoWorkRules(entry) {
 // ═══════════════════════════════════════════
 
 const createSmer = catchAsync(async (req, res) => {
+  // Pre-check for an existing non-reversed SMER on the same (entity, bdm, period, cycle).
+  // Surfaces a clear 409 instead of the raw E11000 duplicate-key error. Reversed
+  // rows (deletion_event_id stamped) are excluded — the partial unique index on
+  // SmerEntry allows re-creation after reversal.
+  if (req.body.period && req.body.cycle) {
+    const existing = await SmerEntry.findOne({
+      entity_id: req.entityId,
+      bdm_id: req.bdmId,
+      period: req.body.period,
+      cycle: req.body.cycle,
+      deletion_event_id: { $exists: false },
+    }).select('_id status').lean();
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: `You already have a ${existing.status} SMER for ${req.body.period} ${req.body.cycle}. Open it instead of creating a new one.`,
+        data: { smer_id: existing._id, status: existing.status },
+      });
+    }
+  }
+
   const settings = await Settings.getSettings();
   const perdiemRate = req.body.perdiem_rate || settings.PERDIEM_RATE_DEFAULT || 800;
 
@@ -162,6 +183,14 @@ const getSmerList = catchAsync(async (req, res) => {
   if (req.query.status) filter.status = req.query.status;
   if (req.query.period) filter.period = req.query.period;
   if (req.query.cycle) filter.cycle = req.query.cycle;
+
+  // Hide reversed rows by default; opt-in via ?include_reversed=true.
+  // Mirrors getExpenseList / getPrfCalfList — without this, a SAP-Storno'd SMER
+  // keeps appearing in the BDM's list (and triggers the "edit existing" flow on
+  // create), stranding her on a dead record.
+  if (req.query.include_reversed !== 'true') {
+    filter.deletion_event_id = { $exists: false };
+  }
 
   // Rule #21: privileged users may scope by bdm_id; absence = no BDM filter.
   const privileged = req.isPresident || req.isAdmin || req.isFinance;
@@ -669,6 +698,12 @@ const getCarLogbookList = catchAsync(async (req, res) => {
   if (req.query.status) filter.status = req.query.status;
   if (req.query.period) filter.period = req.query.period;
   if (req.query.cycle) filter.cycle = req.query.cycle;
+
+  // Hide reversed rows by default; opt-in via ?include_reversed=true.
+  // Matches getExpenseList / getPrfCalfList / getSmerList.
+  if (req.query.include_reversed !== 'true') {
+    filter.deletion_event_id = { $exists: false };
+  }
 
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 50;

@@ -3908,3 +3908,16 @@ Jump to `docs/PHASETASK-ERP.md` → `PHASE (FUTURE, SUBSCRIPTION-TRIGGERED) — 
 - `npx vite build` — clean in 46.42s.
 - Downstream consumers: `frontend/src/erp/pages/Smer.jsx` + `Income.jsx` + `MyIncome.jsx` + `DocumentDetailPanel.jsx` read `override_status`; all are render-only and unaffected. No other controller mutates `daily_entries[i].override_status`.
 - `universalApprove` wrapper [line 699](backend/erp/controllers/universalApprovalController.js#L699) runs inside `catchAsync` → errors from the handler surface as HTTP 500 with the thrown message; the Phase G4 close-loop at line 705 already excludes `perdiem_override` so no double-write.
+
+**Follow-up — SmerEntry unique index, partial filter on `deletion_event_id` (same day).**
+
+When the reported contractor case was diagnosed, we reversed her SMER via Reversal Console. If the SMER was POSTED, Reversal Console applies SAP Storno ([documentReversalService.js:1091-1096](backend/erp/services/documentReversalService.js#L1091-L1096)) — the row stays with `deletion_event_id` stamped for audit. That then blocked her from creating a fresh SMER for the same period+cycle because the unique index `{ entity_id, bdm_id, period, cycle }` still matched the reversed row. Every subscriber hits this the moment anyone reverses a POSTED SMER — it's a latent platform bug, not specific to her.
+
+Fix applied:
+1. **Schema partial unique index** — [backend/erp/models/SmerEntry.js:122-131](backend/erp/models/SmerEntry.js#L122-L131) now uses `partialFilterExpression: { deletion_event_id: { $exists: false } }`. Matches the pattern already on `Undertaking.linked_grn_id` (Phase 32) and `OfficeSupply.item_code` (Phase 31R-OS). Reversed rows keep their audit trail; new SMER for the same cycle can be created.
+2. **Migration** — [backend/erp/scripts/migrateSmerUniqueIndex.js](backend/erp/scripts/migrateSmerUniqueIndex.js) drops the old full-unique index and creates the partial. Idempotent + dry-run default + pre-checks for live duplicates among non-reversed rows before dropping.
+3. **Pre-check in `createSmer`** — returns a clean 409 `"You already have a <STATUS> SMER for <period> <cycle>. Open it instead of creating a new one."` when a non-reversed duplicate exists. Prevents raw E11000 surfacing to the UI; excludes reversed rows from the check (so re-creation after reversal works).
+
+Deploy steps for this follow-up:
+1. `node erp/scripts/migrateSmerUniqueIndex.js` (dry-run) → review report → `--apply`.
+2. Schema index definition change is picked up automatically on next app restart; the migration is for the already-created index on live DB.
