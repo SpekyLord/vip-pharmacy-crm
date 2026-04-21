@@ -34,6 +34,8 @@ const approvalRuleSchema = new mongoose.Schema({
       'DEDUCTION_SCHEDULE', 'KPI', 'COLLECTION', 'SMER',
       'CAR_LOGBOOK', 'PRF_CALF', 'APPROVAL_REQUEST',
       'PERDIEM_OVERRIDE',
+      // Phase 32 — GRN Undertaking approval wrapper
+      'UNDERTAKING',
     ],
     index: true,
   },
