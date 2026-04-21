@@ -48,9 +48,16 @@ const supplierInvoiceSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['DRAFT', 'VALIDATED', 'POSTED'],
+    // Phase G4.3 — REJECTED added so Group B reject handler (buildGroupBReject
+    // in universalApprovalController) can transition the doc without breaking
+    // Mongoose enum validation.
+    enum: ['DRAFT', 'VALIDATED', 'POSTED', 'REJECTED'],
     default: 'DRAFT'
   },
+  // Phase G4.3 — rejection metadata written by buildGroupBReject.
+  rejection_reason: { type: String, trim: true, default: '' },
+  rejected_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  rejected_at: { type: Date },
   amount_paid: { type: Number, default: 0 },
   event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
   deletion_event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },

@@ -104,6 +104,7 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | F.1 | Lookup-Driven Module Default Roles — Rule #3 Compliance for Approval Hub | ✅ |
 | G4.1 | ApprovalRequest Hydration in All-Pending — Rich DocumentDetailPanel + doc_id Dedup | ✅ |
 | G4.2 | Deduction Schedule Unified Approval Flow — gateApproval on submit + AR close-loop | ✅ |
+| G4.3 | Approval Hub + Reversal Console Gap Closure — INCENTIVE_DISPUTE dispatcher, 6 new dependent checkers, FUEL_ENTRY rejection config, SupplierInvoice reject wiring | ✅ |
 | Gap 9 | Rx Correlation — Visit vs Sales + Rebates + Programs | ✅ |
 | G1 | BDM Income Projection + Revolving Fund + CALF Bidirectional + Personal Gas | ✅ |
 | G2 | Photo Upload Compression + Approval Hub Populate Fixes | ✅ |
@@ -1222,6 +1223,117 @@ BDM edits a pending schedule (PUT /:id):
 - **Reversal handlers.** Deduction schedules are listed in PHASETASK-ERP Reversal Matrix as `P3 — covered by Payslip handler` (reverting Payslip reverts the injection, not the schedule). Phase G4.2 doesn't touch reversal semantics. `REVERSAL_HANDLERS` count unchanged.
 - **Existing approvers.** No UI change to Income → Schedules tab — Finance still clicks Approve / Reject there. The close-loop at the service layer means those clicks now ALSO write the Approval History row without any UI change.
 - **Existing BDM pages.** `MyIncome.jsx` uses the hook that returns `res.data` (including `approval_pending: true`). Existing checks `isApprovalPending(result)` handles the 202 case.
+
+---
+
+## Phase G4.3 — Approval Hub + Reversal Console Gap Closure (April 21, 2026)
+
+**Why.** After G4.2 shipped Deduction Schedule through the unified pipeline, a targeted audit surfaced five wiring gaps that would crash or silently drift the ledger in specific scenarios. Bundled the fixes under G4.3 so the Approval Hub + Reversal Console both reach parity with the governance model before more modules lean on them.
+
+Five gaps closed (in priority):
+
+1. **CRIT — `INCENTIVE_DISPUTE` dispatcher crash.** Controller called `gateApproval('INCENTIVE_DISPUTE', …)` on every lifecycle transition, the request landed in ApprovalRequest, but `universalApprovalController` had **zero references** to `incentive_dispute`. Approver clicking Approve in the Hub would crash with `Unknown approval type: incentive_dispute`. Now fully wired end-to-end.
+2. **CRIT — `SALES_GOAL_PLAN` reversal missing PAID-payout blocker.** `reverseSalesGoalPlan` blindly cascades through `ACCRUED|APPROVED|PAID` payouts, reversing their settlement JEs. If cash already went out via `paid_via`, the reversal orphans real cash with no audit linkage. Now a HARD blocker halts reversal until the approver explicitly reverses each PAID payout (own REVERSED lifecycle).
+3. **HIGH — 5 missing dependent-doc checkers.** `PETTY_CASH_TXN` (running-balance chain), `SMER_ENTRY` (IncomeReport consumption), `CAR_LOGBOOK` (POSTED-CALF linkage WARN), `OFFICE_SUPPLY_ITEM` (active-txn block), `OFFICE_SUPPLY_TXN` (stub for future). Before G4.3, each of these reverse handlers skipped the dependent-doc gate that every other POSTED module enforces. Now registered + wired.
+4. **MED — `FUEL_ENTRY` missing from `MODULE_REJECTION_CONFIG`.** Per-fuel rejection reasons lacked a banner-tone / editable-status row, so the contractor RejectionBanner on Car Logbook fell back to generic. Added the row — banner now renders lookup-driven tone + resubmit gate.
+5. **LOW — Stale G6.7 "pending wiring" comments** on 7 Group B rejection-config rows. Removed. Verified all 8 Group B models (JournalEntry / BankStatement / PettyCashTransaction / InterCompanyTransfer / IcSettlement / SupplierInvoice / SalesGoalPlan / IncentivePayout) carry `rejection_reason` + REJECTED in status enum. SupplierInvoice was missing both — added them (otherwise the existing Group B `purchasing` reject handler would have crashed on Mongoose enum validation).
+
+**Architecture — INCENTIVE_DISPUTE end-to-end.**
+
+```
+BDM files dispute (POST /erp/disputes):
+  └─ fileDispute → IncentiveDispute(current_state: OPEN)    (no gate — filing)
+
+BDM/Finance takes review (POST /:id/take-review):
+  └─ gateApproval(module: INCENTIVE_DISPUTE, docType: DISPUTE_TAKE_REVIEW)
+        ├─ role in MODULE_DEFAULT_ROLES roles → transition runs inline → UNDER_REVIEW
+        └─ otherwise → ApprovalRequest(PENDING) + HTTP 202
+
+Approver decides via /erp/approvals (universal-approve, type='incentive_dispute'):
+  └─ approvalHandlers.incentive_dispute
+        ├─ Load ApprovalRequest → dispute via doc_id
+        ├─ Dispatch by request.doc_type:
+        │     DISPUTE_TAKE_REVIEW → set reviewer_id = request.requested_by,
+        │                            state OPEN → UNDER_REVIEW
+        │     DISPUTE_RESOLVE     → parse outcome from metadata.outcome
+        │                            (fallback: description regex). For APPROVED,
+        │                            cascade reverseAccrualJournal(payout) OR append
+        │                            SalesCredit reversal row. Then state
+        │                            UNDER_REVIEW → RESOLVED_APPROVED | RESOLVED_DENIED
+        │     DISPUTE_CLOSE       → state RESOLVED_* → CLOSED
+        ├─ processDecision(APPROVED | REJECTED) on the ApprovalRequest
+        └─ Integration event INTEGRATION_EVENTS.DISPUTE_RESOLVED fires on RESOLVE
+
+Reject path: ApprovalRequest → REJECTED. Dispute STAYS in its prior state
+(no terminal REJECTED on the dispute — reason lives in Approval History).
+```
+
+Identity attribution rule: dispute-level `reviewer_id`, `resolved_by`, and `history[].by` use **`request.requested_by`** (the BDM who asked for the transition), not the Hub approver. The approver's identity is captured on the ApprovalRequest's `decided_by`. This preserves the "you asked, someone else authorized" audit shape that `gateApproval` already expresses.
+
+**Architecture — SALES_GOAL_PLAN dependent checker.**
+
+```
+President clicks Reverse on Reversal Console → preview → confirm:
+  └─ presidentReverse → reverseSalesGoalPlan
+        ├─ DRAFT plan → hard-delete (no side-effects, skipped)
+        ├─ Otherwise:
+        │   ├─ assertReversalPeriodOpen({ doc_type: SALES_GOAL_PLAN })
+        │   ├─ checkHardBlockers({ doc_type: SALES_GOAL_PLAN })
+        │   │     └─ For each PAID IncentivePayout under the plan → HARD block
+        │   │     └─ For each Payslip(same FY, earnings.incentive > 0) → WARN
+        │   ├─ If has_deps → HTTP 409 with dependents list → approver must
+        │   │                 reverse the PAID payout first via IncentivePayout
+        │   │                 REVERSED lifecycle, then retry the plan reversal
+        │   └─ Otherwise → cascade reverse accrual+settlement JEs → flip status
+```
+
+**Subscription readiness.**
+- **Lookup-driven sub-permission.** `APPROVALS__APPROVE_INCENTIVE_DISPUTE` seeded in `ERP_SUB_PERMISSION`; `MODULE_TO_SUB_KEY.INCENTIVE_DISPUTE = 'approve_incentive_dispute'`. Subsidiary admins can delegate without code changes via Access Templates.
+- **Lookup-driven rejection feedback.** Added `MODULE_REJECTION_CONFIG.INCENTIVE_DISPUTE` and `.FUEL_ENTRY` rows. Subscribers tune banner tone + editable statuses per entity.
+- **Lookup-driven default roles unchanged.** `MODULE_DEFAULT_ROLES.INCENTIVE_DISPUTE = ['president', 'finance', 'admin']` already seeded — no migration. Tighten or open per entity via Control Center.
+- **Dependent checkers register via `CHECKERS` map.** Adding a subscriber-specific blocker (e.g., a compliance flag on PETTY_CASH) is a one-liner in `dependentDocChecker.js`; `previewDependents` and all hard-blocker call sites pick it up automatically.
+- **Hub visibility.** New `MODULE_QUERIES` entry for `INCENTIVE_DISPUTE` uses `buildGapModulePendingItems` (same pattern as IC_TRANSFER / BANKING / PETTY_CASH / SALES_GOAL_PLAN / INCENTIVE_PAYOUT). Zero schema changes; the request itself is the Hub item.
+- **DOC_TYPE_HYDRATION registry** gained 3 rows (`DISPUTE_TAKE_REVIEW` / `DISPUTE_RESOLVE` / `DISPUTE_CLOSE`) so the Approval Hub card renders the underlying `IncentiveDispute` instead of a bare `ApprovalRequest`.
+
+**Files changed.**
+| File | Change |
+|------|--------|
+| `backend/erp/controllers/universalApprovalController.js` | `TYPE_TO_MODULE.incentive_dispute` + `approvalHandlers.incentive_dispute` (3-doc_type dispatcher with cascade reversal on APPROVED). |
+| `backend/erp/services/universalApprovalService.js` | `MODULE_TO_SUB_KEY.INCENTIVE_DISPUTE`, 3 `DOC_TYPE_HYDRATION` rows, 1 `MODULE_QUERIES` entry. |
+| `backend/erp/services/dependentDocChecker.js` | 6 new checker functions + `CHECKERS` registrations (`SALES_GOAL_PLAN`, `PETTY_CASH_TXN`, `SMER_ENTRY`, `CAR_LOGBOOK`, `OFFICE_SUPPLY_ITEM`, `OFFICE_SUPPLY_TXN`). |
+| `backend/erp/services/documentReversalService.js` | `checkHardBlockers` calls wired into `reverseSalesGoalPlan`, `reversePettyCashTxn`, `reverseSmer`, `reverseCarLogbook`, `reverseOfficeSupply`, `reverseOfficeSupplyTxn`. |
+| `backend/erp/controllers/lookupGenericController.js` | `APPROVALS__APPROVE_INCENTIVE_DISPUTE` sub-perm seed; `MODULE_REJECTION_CONFIG.INCENTIVE_DISPUTE` + `.FUEL_ENTRY` rows; Group B comments updated (G6.7 stale refs removed). |
+| `backend/erp/controllers/incentiveDisputeController.js` | `resolveDispute` passes `metadata: { outcome, resolution_summary }` to `gateApproval` so the Hub handler can reconstruct the transition. |
+| `backend/erp/models/SupplierInvoice.js` | `status` enum gains `REJECTED`; adds `rejection_reason`, `rejected_by`, `rejected_at`. |
+| `frontend/src/erp/components/WorkflowGuide.jsx` | Dispute Center banner clarifies G4.3 Hub end-to-end support; Reversal Console banner lists the 5 new dependent checks. |
+| `CLAUDE-ERP.md` | This section + index table row. |
+| `docs/PHASETASK-ERP.md` | Phase G4.3 task entry. |
+
+**Integrity checks (no regressions).**
+- **`node -c` + require-time check** pass on every modified backend file.
+- **`npx vite build`** passes clean (27.2s → 13.1s on second run after banner edit).
+- **Registry integrity verified**: `CHECKERS.{SALES_GOAL_PLAN,PETTY_CASH_TXN,SMER_ENTRY,CAR_LOGBOOK,OFFICE_SUPPLY_ITEM,OFFICE_SUPPLY_TXN}`, `approvalHandlers.incentive_dispute`, `TYPE_TO_MODULE.incentive_dispute`, `MODULE_TO_SUB_KEY.INCENTIVE_DISPUTE` all present.
+- **Period-lock posture preserved**. `assertReversalPeriodOpen` still fires BEFORE `checkHardBlockers` on every reverse handler — a locked period rejects first regardless of dependents.
+- **Dedup preserved** (Phase G4.1). INCENTIVE_DISPUTE items only surface through the new `MODULE_QUERIES` entry using `buildGapModulePendingItems`; the Hub by-doc_id dedup still prefers raw module items over APPROVAL_REQUEST mirrors — nothing changes for INCENTIVE_DISPUTE because there's no raw-doc sibling.
+- **REVERSAL_HANDLERS count unchanged** (still 21). G4.3 adds blockers, not new reversal handlers.
+- **WorkflowGuide banners updated** for `dispute-center` and `president-reversals` so BDMs and president both see the new hard-blocker reasons + Hub end-to-end support in the UI.
+- **No backfill required.** Fixes are forward-looking — new disputes flow through the new pipeline; existing PENDING disputes (if any) now have a dispatcher instead of a crash. No data migration.
+
+**Rollout.**
+
+```bash
+cd /var/www/vip-pharmacy-crm
+git checkout main && git pull origin main
+pm2 restart vip-crm-api vip-crm-worker
+# No backfill script needed.
+```
+
+Verify on prod:
+1. President opens `/erp/approvals`; if any INCENTIVE_DISPUTE items exist, click Approve — dispatcher runs instead of crashing.
+2. Try to president-reverse a SALES_GOAL_PLAN that has a PAID payout → HTTP 409 with dependents list.
+3. Reject a fuel entry from the Hub → Car Logbook page renders the RejectionBanner using `FUEL_ENTRY` tone + editable statuses.
+
+**Rollback.** Revert the 8 source files (controller / 3 services / model / 2 docs / 1 frontend). No schema changes to rollback beyond the SupplierInvoice enum — and that's purely additive (adding REJECTED doesn't break existing DRAFT/VALIDATED/POSTED rows).
 
 ---
 

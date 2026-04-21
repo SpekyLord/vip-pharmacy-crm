@@ -885,7 +885,7 @@ async function loadPettyCashTxn({ doc_id, tenantFilter }) {
   return t;
 }
 
-async function reversePettyCashTxn({ doc, userId, reason }) {
+async function reversePettyCashTxn({ doc, userId, reason, tenantFilter }) {
   const sideEffects = [];
   if (doc.status !== 'POSTED') {
     await PettyCashTransaction.deleteOne({ _id: doc._id });
@@ -893,6 +893,12 @@ async function reversePettyCashTxn({ doc, userId, reason }) {
   }
 
   await assertReversalPeriodOpen({ doc_type: 'PETTY_CASH_TXN', entityId: doc.entity_id });
+  // Phase G4.3 — block if a later POSTED txn exists on the same fund (running
+  // balance chain would corrupt).
+  {
+    const { has_deps, dependents } = await checkHardBlockers({ doc_type: 'PETTY_CASH_TXN', doc, tenantFilter });
+    if (has_deps) { const err = new Error(`Cannot reverse — later POSTED petty cash txns on the same fund: ${dependents.map(d => d.ref).join(', ')}`); err.statusCode = 409; err.dependents = dependents; throw err; }
+  }
   const { reversed, already } = await reverseLinkedJEs({ event_id: doc.event_id, reason, userId, entityId: doc.entity_id });
   if (reversed) sideEffects.push(`journals_reversed=${reversed}`);
   if (already) sideEffects.push(`journals_already_reversed=${already}`);
@@ -965,7 +971,7 @@ async function loadSalesGoalPlan({ doc_id, tenantFilter }) {
   return plan;
 }
 
-async function reverseSalesGoalPlan({ doc, userId, reason }) {
+async function reverseSalesGoalPlan({ doc, userId, reason, tenantFilter }) {
   const sideEffects = [];
 
   // DRAFT plans never posted a JE, never accrued; hard-delete with their targets.
@@ -994,6 +1000,12 @@ async function reverseSalesGoalPlan({ doc, userId, reason }) {
   // Posted-plan path — ensure the period where reversal JEs will land is open
   // (lookup via INCENTIVE_PAYOUT key, matches what IncentivePayout.reverse uses).
   await assertReversalPeriodOpen({ doc_type: 'SALES_GOAL_PLAN', entityId: doc.entity_id });
+
+  // Phase G4.3 — Block if any PAID payout exists under this plan. Cash went
+  // out; reversing here without explicitly reversing the PAID payout first
+  // leaves an orphaned settlement.
+  const { has_deps, dependents } = await checkHardBlockers({ doc_type: 'SALES_GOAL_PLAN', doc, tenantFilter });
+  if (has_deps) { const err = new Error(`Cannot reverse — plan has dependent documents: ${dependents.map(d => `${d.type} ${d.ref}`).join(', ')}`); err.statusCode = 409; err.dependents = dependents; throw err; }
 
   // ── Phase 1 — Reverse every IncentivePayout JE BEFORE opening the plan txn ──
   // reverseJournal runs its own session; doing it outside the plan txn keeps
@@ -1095,6 +1107,11 @@ async function reverseSmer({ doc, userId, reason, tenantFilter }) {
     return { doc_type: 'SMER_ENTRY', doc_id: doc._id, doc_ref: `SMER-${doc.period}-${doc.cycle}`, mode: 'HARD_DELETE', reversal_event_id: null, side_effects: ['hard_deleted'] };
   }
   await assertReversalPeriodOpen({ doc_type: 'SMER_ENTRY', entityId: doc.entity_id });
+  // Phase G4.3 — block if an IncomeReport has already consumed this SMER.
+  {
+    const { has_deps, dependents } = await checkHardBlockers({ doc_type: 'SMER_ENTRY', doc, tenantFilter });
+    if (has_deps) { const err = new Error(`Cannot reverse — dependent IncomeReports: ${dependents.map(d => d.ref).join(', ')}`); err.statusCode = 409; err.dependents = dependents; throw err; }
+  }
 
   const { reversed, already } = await reverseLinkedJEs({ event_id: doc.event_id, reason, userId, entityId: doc.entity_id });
   if (reversed) sideEffects.push(`journals_reversed=${reversed}`);
@@ -1148,6 +1165,12 @@ async function reverseCarLogbook({ doc, userId, reason, tenantFilter }) {
       return { doc_type: 'CAR_LOGBOOK', doc_id: doc._id, doc_ref: `LOGBOOK-${doc.period}-${doc.cycle}`, mode: 'HARD_DELETE', reversal_event_id: null, side_effects: ['hard_deleted_cycle_and_days'] };
     }
     await assertReversalPeriodOpen({ doc_type: 'CAR_LOGBOOK', entityId: doc.entity_id });
+    // Phase G4.3 — surface CALF linkage warnings (WARN severity; cycle path only).
+    // Hard blockers stay empty today; subscribers can extend checker via CHECKERS.
+    {
+      const { has_deps, dependents } = await checkHardBlockers({ doc_type: 'CAR_LOGBOOK', doc, tenantFilter });
+      if (has_deps) { const err = new Error(`Cannot reverse — dependent documents: ${dependents.map(d => `${d.type} ${d.ref}`).join(', ')}`); err.statusCode = 409; err.dependents = dependents; throw err; }
+    }
 
     const { reversed, already } = await reverseLinkedJEs({ event_id: doc.event_id, reason, userId, entityId: doc.entity_id });
     if (reversed) sideEffects.push(`journals_reversed=${reversed}`);
@@ -1393,8 +1416,13 @@ async function loadOfficeSupply({ doc_id, tenantFilter }) {
   return s;
 }
 
-async function reverseOfficeSupply({ doc, userId, reason /* , tenantFilter */ }) {
+async function reverseOfficeSupply({ doc, userId, reason, tenantFilter }) {
   const sideEffects = [];
+  // Phase G4.3 — block if active transactions still reference this item.
+  {
+    const { has_deps, dependents } = await checkHardBlockers({ doc_type: 'OFFICE_SUPPLY_ITEM', doc, tenantFilter });
+    if (has_deps) { const err = new Error(`Cannot reverse — active transactions reference this item: ${dependents.map(d => d.ref).join(', ')}`); err.statusCode = 409; err.dependents = dependents; throw err; }
+  }
   const session = await mongoose.startSession();
   let reversalEvent;
   let txnCount = 0;
@@ -1453,7 +1481,13 @@ async function loadOfficeSupplyTxn({ doc_id, tenantFilter }) {
   return t;
 }
 
-async function reverseOfficeSupplyTxn({ doc, userId, reason /* , tenantFilter */ }) {
+async function reverseOfficeSupplyTxn({ doc, userId, reason, tenantFilter }) {
+  // Phase G4.3 — stub checker (no downstream consumers today). Kept for parity
+  // so subscribers can extend CHECKERS without a caller rewrite.
+  {
+    const { has_deps, dependents } = await checkHardBlockers({ doc_type: 'OFFICE_SUPPLY_TXN', doc, tenantFilter });
+    if (has_deps) { const err = new Error(`Cannot reverse — dependent documents: ${dependents.map(d => `${d.type} ${d.ref}`).join(', ')}`); err.statusCode = 409; err.dependents = dependents; throw err; }
+  }
   const sideEffects = [];
   const adds = ['PURCHASE', 'RETURN']; // same split used by recordTransaction
   const originalDelta = adds.includes(doc.txn_type) ? doc.qty : -doc.qty;

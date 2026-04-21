@@ -300,6 +300,10 @@ exports.resolveDispute = catchAsync(async (req, res) => {
   const summary = (req.body?.resolution_summary || '').trim();
   if (!summary) return res.status(400).json({ success: false, message: 'resolution_summary is required' });
 
+  // Phase G4.3 — pass structured metadata so the Approval Hub handler can
+  // apply the transition without needing the original req.body on the
+  // approver's side (outcome + resolution_summary are required to reconstruct
+  // resolveDispute's write path).
   const gated = await gateApproval({
     entityId: dispute.entity_id,
     module: 'INCENTIVE_DISPUTE',
@@ -308,6 +312,7 @@ exports.resolveDispute = catchAsync(async (req, res) => {
     docRef: `DSP-${String(dispute._id).slice(-6)}`,
     amount: Number(dispute.claim_amount) || 0,
     description: `Resolve dispute ${dispute._id} → ${outcome}`,
+    metadata: { outcome, resolution_summary: summary },
     requesterId: req.user._id,
     requesterName: req.user.name || req.user.email,
   }, res);

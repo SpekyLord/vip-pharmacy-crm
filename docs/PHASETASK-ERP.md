@@ -5835,6 +5835,136 @@ Single-commit revert: restore the 4 source files (controller / service / MyIncom
 
 ---
 
+## Phase G4.3 — Approval Hub + Reversal Console Gap Closure ✅ (April 21, 2026)
+
+### Problem
+
+Post-G4.2 audit found five silent gaps in the unified approval + reversal pipeline:
+
+1. **CRIT** — `INCENTIVE_DISPUTE` had complete scaffolding (ApprovalRule enum, MODULE_DEFAULT_ROLES, APPROVAL_CATEGORY, MODULE_REJECTION_CONFIG rows) except the dispatcher. Every `gateApproval('INCENTIVE_DISPUTE', …)` call landed in ApprovalRequest; an approver's click on Approve in `/erp/approvals` would throw `Unknown approval type: incentive_dispute` from [universalApprovalController.js](../backend/erp/controllers/universalApprovalController.js).
+2. **CRIT** — [reverseSalesGoalPlan](../backend/erp/services/documentReversalService.js) cascaded through `ACCRUED|APPROVED|PAID` IncentivePayouts indiscriminately, reversing the settlement JE of PAID payouts. Cash had already left via the settlement; reversal orphaned it with no audit path. No dependent-doc gate fired.
+3. **HIGH** — 5 reverse handlers had no checker registration (`PETTY_CASH_TXN`, `SMER_ENTRY`, `CAR_LOGBOOK`, `OFFICE_SUPPLY_ITEM`, `OFFICE_SUPPLY_TXN`). Users could reverse a mid-sequence petty-cash txn and silently corrupt the running-balance chain, reverse a SMER whose reimbursable already hit an IncomeReport, reverse an Office Supply item that still had active transactions.
+4. **MED** — `FUEL_ENTRY` absent from `MODULE_REJECTION_CONFIG` — contractor-side banner on Car Logbook fell back to a generic tone for per-fuel rejections.
+5. **LOW** — 7 Group B rejection-config rows still carried "pending G6.7 handler wiring" notes even though G6.7 had shipped. Worse, [SupplierInvoice](../backend/erp/models/SupplierInvoice.js) had no `rejection_reason` field AND no `REJECTED` in its status enum — the existing G6.7 Group B `purchasing` reject handler would have crashed Mongoose enum validation on first use.
+
+### Prior-Phase Scaffolding (Already Shipped)
+
+| Asset | Phase | Status |
+|---|---|---|
+| `MODULE_DEFAULT_ROLES.INCENTIVE_DISPUTE` seed | SG-4 | ✅ |
+| `APPROVAL_CATEGORY.OPERATIONAL.modules` includes INCENTIVE_DISPUTE | SG-4 | ✅ |
+| `APPROVAL_MODULE_LABEL.INCENTIVE_DISPUTE` | SG-4 | ✅ |
+| `INCENTIVE_DISPUTE_TYPE` lookup (dispute typology) | SG-4 | ✅ |
+| `ApprovalRule.module` enum includes INCENTIVE_DISPUTE | SG-4 | ✅ |
+| `MODULE_QUERIES.INCENTIVE_DISPUTE` entry (Hub visibility) | — | ❌ added here |
+| `MODULE_TO_SUB_KEY.INCENTIVE_DISPUTE` + sub-perm seed | — | ❌ added here |
+| `DOC_TYPE_HYDRATION` for DISPUTE_* doc_types | — | ❌ added here |
+| `approvalHandlers.incentive_dispute` + `TYPE_TO_MODULE.incentive_dispute` | — | ❌ added here |
+| `MODULE_REJECTION_CONFIG.INCENTIVE_DISPUTE` + `.FUEL_ENTRY` | G6 partial | ❌ added here |
+| `checkHardBlockers` calls on 6 reverse handlers | Phase 31R partial | ❌ added here |
+
+### What Shipped
+
+**1. `incentive_dispute` handler (Hub dispatcher).**
+
+[backend/erp/controllers/universalApprovalController.js](../backend/erp/controllers/universalApprovalController.js) — mirrors the `perdiem_override` side-effect-first pattern because the dispute lifecycle has three distinct doc_types (DISPUTE_TAKE_REVIEW / DISPUTE_RESOLVE / DISPUTE_CLOSE) each with its own state transition. Handler loads the `ApprovalRequest`, derefs to the dispute via `doc_id`, then:
+
+- `DISPUTE_TAKE_REVIEW` → sets `reviewer_id = request.requested_by`, flips state OPEN → UNDER_REVIEW.
+- `DISPUTE_RESOLVE` → reads outcome from `request.metadata.outcome` (fallback: description regex). For APPROVED, cascades either `reverseAccrualJournal(payout)` or a negative-sign SalesCredit reversal row (mirrors [resolveDispute](../backend/erp/controllers/incentiveDisputeController.js)). State UNDER_REVIEW → RESOLVED_APPROVED | RESOLVED_DENIED. Emits `INTEGRATION_EVENTS.DISPUTE_RESOLVED`.
+- `DISPUTE_CLOSE` → state RESOLVED_* → CLOSED.
+- After the dispute write succeeds, `processDecision(APPROVED)` records the decision on the ApprovalRequest — perdiem_override pattern.
+- On reject → `processDecision(REJECTED)` only; dispute stays in its prior state (no terminal REJECTED on the dispute itself — the reason lives in Approval History).
+
+Identity rule: dispute-level `reviewer_id` / `resolved_by` / `history[].by` use `request.requested_by` (the BDM who asked), not the Hub approver. Audit shape matches `gateApproval`'s "you asked, someone else authorized" pattern.
+
+**2. Controller metadata pass-through.**
+
+[backend/erp/controllers/incentiveDisputeController.js](../backend/erp/controllers/incentiveDisputeController.js) — `resolveDispute` now passes `metadata: { outcome, resolution_summary }` to `gateApproval` so the Hub handler has everything it needs to reconstruct the transition without relying on `req.body`.
+
+**3. `MODULE_QUERIES` + `DOC_TYPE_HYDRATION` + `MODULE_TO_SUB_KEY`.**
+
+[backend/erp/services/universalApprovalService.js](../backend/erp/services/universalApprovalService.js) — new `INCENTIVE_DISPUTE` module query using `buildGapModulePendingItems` (same Group B pattern as IC_TRANSFER / PETTY_CASH / SALES_GOAL_PLAN). Three `DOC_TYPE_HYDRATION` rows so the Hub card renders the full `IncentiveDispute` document with filer / affected BDM / reviewer / payout / credit populated. `MODULE_TO_SUB_KEY.INCENTIVE_DISPUTE = 'approve_incentive_dispute'`.
+
+**4. Sub-permission seed.**
+
+[backend/erp/controllers/lookupGenericController.js](../backend/erp/controllers/lookupGenericController.js) — `APPROVALS__APPROVE_INCENTIVE_DISPUTE` row added to `ERP_SUB_PERMISSION` (sort order 16, after `approve_perdiem`). Subscribers delegate via Access Templates.
+
+**5. Rejection config rows.**
+
+Same file — added `MODULE_REJECTION_CONFIG.INCENTIVE_DISPUTE` (non-resubmittable; reason lives in Approval History — mirrors PERDIEM_OVERRIDE) and `.FUEL_ENTRY` (embedded subdoc; resubmittable from Car Logbook page with warning tone).
+
+**6. Six new dependent checkers + wire-up into reverse handlers.**
+
+[backend/erp/services/dependentDocChecker.js](../backend/erp/services/dependentDocChecker.js):
+
+| Checker | Block Condition | Severity |
+|---|---|---|
+| `checkSalesGoalPlanDependents` | Any IncentivePayout under plan with `status: 'PAID'` | HARD |
+| `checkSalesGoalPlanDependents` (same) | Payslip(same FY, earnings.incentive > 0) | WARN (advisory) |
+| `checkPettyCashTxnDependents` | Any later POSTED txn on same fund (running-balance chain) | HARD |
+| `checkSmerEntryDependents` | IncomeReport with `source_refs.smer_id === doc._id` in non-RETURNED state | HARD |
+| `checkCarLogbookDependents` | Fuel entry linked to POSTED CALF | WARN |
+| `checkOfficeSupplyItemDependents` | Active (non-reversed) OfficeSupplyTransaction rows | HARD |
+| `checkOfficeSupplyTxnDependents` | Stub (no downstream consumers today) | — |
+
+[backend/erp/services/documentReversalService.js](../backend/erp/services/documentReversalService.js) — added explicit `checkHardBlockers` calls in `reverseSalesGoalPlan`, `reversePettyCashTxn`, `reverseSmer`, `reverseCarLogbook`, `reverseOfficeSupply`, `reverseOfficeSupplyTxn`. Each throws HTTP 409 with a `dependents` payload when HARD blockers fire, matching the error shape of existing handlers (SALES_LINE / COLLECTION / GRN / etc.).
+
+**7. SupplierInvoice schema completion.**
+
+[backend/erp/models/SupplierInvoice.js](../backend/erp/models/SupplierInvoice.js) — `status` enum gains `REJECTED`; adds `rejection_reason`, `rejected_by`, `rejected_at` fields. Unblocks the existing G6.7 Group B `purchasing` reject handler (`buildGroupBReject` sets all four fields).
+
+**8. Stale comments cleanup.**
+
+Same lookupGenericController.js — the "(pending G6.7 handler wiring)" suffix on 7 rows removed. Comment block above the rows updated to confirm handlers are live and `rejection_reason` fields verified on all 8 Group B models (Phase G4.3 integrity check).
+
+**9. Banners.**
+
+[frontend/src/erp/components/WorkflowGuide.jsx](../frontend/src/erp/components/WorkflowGuide.jsx) — `dispute-center` steps explicitly mention the new G4.3 Hub dispatcher path; `president-reversals` step 3 enumerates the five new dependent-check reasons so president sees them before clicking Reverse.
+
+### Files Changed
+
+| File | Change |
+|------|--------|
+| `backend/erp/controllers/universalApprovalController.js` | TYPE_TO_MODULE + approvalHandlers.incentive_dispute (3-doc_type dispatcher). |
+| `backend/erp/services/universalApprovalService.js` | MODULE_TO_SUB_KEY + 3 DOC_TYPE_HYDRATION + MODULE_QUERIES entry. |
+| `backend/erp/services/dependentDocChecker.js` | 6 checker functions + CHECKERS registrations. |
+| `backend/erp/services/documentReversalService.js` | checkHardBlockers calls on 6 reverse handlers. |
+| `backend/erp/controllers/lookupGenericController.js` | Sub-perm seed + 2 rejection-config rows + comment cleanup. |
+| `backend/erp/controllers/incentiveDisputeController.js` | metadata pass-through on gateApproval in resolveDispute. |
+| `backend/erp/models/SupplierInvoice.js` | status enum adds REJECTED; +rejection_reason +rejected_by +rejected_at. |
+| `frontend/src/erp/components/WorkflowGuide.jsx` | Dispute Center + Reversal Console banner updates. |
+| `CLAUDE-ERP.md` | Index table row + full Phase G4.3 section. |
+| `docs/PHASETASK-ERP.md` | This section. |
+
+### Integrity Checklist
+
+- [x] `node -c` + require-time check pass on every modified backend file
+- [x] `npx vite build` passes clean (27s initial, 13s after banner edit)
+- [x] Runtime registry integrity verified: CHECKERS / approvalHandlers / TYPE_TO_MODULE / MODULE_TO_SUB_KEY all carry the new rows
+- [x] Period-lock posture unchanged — `assertReversalPeriodOpen` fires BEFORE `checkHardBlockers` on every reverse handler
+- [x] Dedup (Phase G4.1) unaffected — INCENTIVE_DISPUTE has no raw-doc sibling, so the ApprovalRequest mirror is the only Hub surface
+- [x] REVERSAL_HANDLERS count unchanged (still 21) — G4.3 adds blockers, not new reversal handlers
+- [x] Lookup-driven per Rule #3 — sub-perm + rejection config rows auto-seed via SEED_DEFAULTS; subscribers tune per-entity via Control Center
+- [x] Subscription-ready per Rule #19 — all wiring is lookup-driven or registry-based; new subscribers onboard without code changes
+- [x] Banners updated per Rule #1 — dispute-center + president-reversals steps reflect new behavior
+- [x] SupplierInvoice schema change is additive — existing DRAFT/VALIDATED/POSTED rows unaffected; the new REJECTED enum value + 3 optional fields default empty
+- [x] No backfill required — fixes are forward-looking
+
+### Rollout
+
+1. Merge PR → `git pull origin main` on prod.
+2. `pm2 restart vip-crm-api vip-crm-worker` — lookup seeds auto-run on first request per entity.
+3. Smoke test:
+   - Open `/erp/approvals`, confirm INCENTIVE_DISPUTE items (if any) render without crashing on Approve.
+   - Try to president-reverse a SALES_GOAL_PLAN with a PAID payout → HTTP 409 with dependents.
+   - Reject a per-fuel entry from the Hub → Car Logbook banner renders lookup-driven tone.
+
+### Rollback
+
+Single-commit revert of the 10 source files. SupplierInvoice enum widening is purely additive — rollback leaves the REJECTED rows (if any were created) orphaned but not corrupting (Mongoose cast error on next save; fix by re-adding REJECTED to the enum). No lookup rows need deletion — they stay dormant when the handler isn't present.
+
+---
+
 ## Phase 33 — Car Logbook Cycle-Wrapper Redesign ✅ (April 21, 2026)
 
 > **Name collision.** There is an earlier "Phase 33 — Bulk Role Migration + Login Fix" in this file (April 10, 2026). Both keep the Phase 33 tag they were filed under. This section covers the car-logbook cycle-wrapper work.

@@ -959,6 +959,49 @@ const MODULE_QUERIES = [
       });
     },
   },
+
+  // ── Phase G4.3 — Incentive Dispute (SG-4) gap module ──
+  // Lifecycle transitions (take review / resolve / close) route through
+  // gateApproval({ module: 'INCENTIVE_DISPUTE' }) from incentiveDisputeController.
+  // Non-authorized callers land in the Hub; this query surfaces them.
+  {
+    module: 'INCENTIVE_DISPUTE',
+    label: 'Incentive Disputes',
+    sub_key: 'approve_incentive_dispute',
+    query: async (entityId) => {
+      return buildGapModulePendingItems({
+        entityId,
+        module: 'INCENTIVE_DISPUTE',
+        docTypeToModel: {
+          DISPUTE_TAKE_REVIEW: 'IncentiveDispute',
+          DISPUTE_RESOLVE:     'IncentiveDispute',
+          DISPUTE_CLOSE:       'IncentiveDispute',
+        },
+        populateByDocType: {
+          DISPUTE_TAKE_REVIEW: [
+            { path: 'filed_by', select: 'name email' },
+            { path: 'affected_bdm_id', select: 'name email' },
+            { path: 'payout_id', select: 'tier_label tier_budget period status' },
+            { path: 'sales_credit_id', select: 'rule_name credited_amount' },
+          ],
+          DISPUTE_RESOLVE: [
+            { path: 'filed_by', select: 'name email' },
+            { path: 'affected_bdm_id', select: 'name email' },
+            { path: 'reviewer_id', select: 'name email' },
+            { path: 'payout_id', select: 'tier_label tier_budget period status' },
+            { path: 'sales_credit_id', select: 'rule_name credited_amount' },
+          ],
+          DISPUTE_CLOSE: [
+            { path: 'filed_by', select: 'name email' },
+            { path: 'affected_bdm_id', select: 'name email' },
+            { path: 'reviewer_id', select: 'name email' },
+            { path: 'resolved_by', select: 'name email' },
+          ],
+        },
+        actionType: 'incentive_dispute',
+      });
+    },
+  },
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1004,6 +1047,11 @@ const DOC_TYPE_HYDRATION = {
   DEPOSIT:             { modelName: 'PettyCashTransaction', populate: [{ path: 'fund_id', select: 'fund_name fund_code current_balance' }, { path: 'created_by', select: 'name email' }] },
   SALES_GOAL_PLAN:     { modelName: 'SalesGoalPlan',        populate: [{ path: 'created_by', select: 'name' }] },
   INCENTIVE_PAYOUT:    { modelName: 'IncentivePayout',      populate: [{ path: 'bdm_id', select: 'name email' }, { path: 'plan_id', select: 'plan_name fiscal_year reference' }] },
+  // Phase G4.3 — Incentive Dispute (SG-4) — three lifecycle doc_types all
+  // hydrate from the IncentiveDispute collection.
+  DISPUTE_TAKE_REVIEW: { modelName: 'IncentiveDispute',     populate: [{ path: 'filed_by', select: 'name email' }, { path: 'affected_bdm_id', select: 'name email' }, { path: 'payout_id', select: 'tier_label tier_budget period' }, { path: 'sales_credit_id', select: 'rule_name credited_amount' }] },
+  DISPUTE_RESOLVE:     { modelName: 'IncentiveDispute',     populate: [{ path: 'filed_by', select: 'name email' }, { path: 'affected_bdm_id', select: 'name email' }, { path: 'reviewer_id', select: 'name email' }, { path: 'payout_id', select: 'tier_label tier_budget period status' }, { path: 'sales_credit_id', select: 'rule_name credited_amount' }] },
+  DISPUTE_CLOSE:       { modelName: 'IncentiveDispute',     populate: [{ path: 'filed_by', select: 'name email' }, { path: 'affected_bdm_id', select: 'name email' }, { path: 'reviewer_id', select: 'name email' }, { path: 'resolved_by', select: 'name email' }] },
 };
 
 /**
@@ -1163,6 +1211,9 @@ const MODULE_TO_SUB_KEY = {
   PERDIEM_OVERRIDE: 'approve_perdiem',
   SALES_GOAL_PLAN:  'approve_sales_goal',
   INCENTIVE_PAYOUT: 'approve_incentive_payout',
+  // Phase G4.3 — Incentive Dispute (SG-4 lifecycle). Any authorized role can
+  // take review, resolve, or close; subscribers can tighten via Access Template.
+  INCENTIVE_DISPUTE: 'approve_incentive_dispute',
   // Phase 32 — reuses inventory approver sub-perm so existing approvers don't need
   // a new Access Template tick. Subscribers who want to split the gate (e.g. let a
   // warehouse clerk acknowledge Undertakings without seeing GRN approvals) can add

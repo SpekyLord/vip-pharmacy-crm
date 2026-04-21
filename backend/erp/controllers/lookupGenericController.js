@@ -601,6 +601,8 @@ const SEED_DEFAULTS = {
     { code: 'APPROVALS__APPROVE_DEDUCTIONS', label: 'Approve Deduction Schedules', metadata: { module: 'approvals', key: 'approve_deductions', sort_order: 13 } },
     { code: 'APPROVALS__APPROVE_KPI', label: 'Approve KPI Ratings', metadata: { module: 'approvals', key: 'approve_kpi', sort_order: 14 } },
     { code: 'APPROVALS__APPROVE_PERDIEM', label: 'Approve Per Diem Overrides', metadata: { module: 'approvals', key: 'approve_perdiem', sort_order: 15 } },
+    // Phase G4.3 — Incentive Dispute (SG-4 lifecycle: take review / resolve / close)
+    { code: 'APPROVALS__APPROVE_INCENTIVE_DISPUTE', label: 'Approve Incentive Disputes', metadata: { module: 'approvals', key: 'approve_incentive_dispute', sort_order: 16 } },
     // Phase 3c — People danger sub-permissions (separate from PeopleMaster CRUD which inherits FULL)
     { code: 'PEOPLE__TERMINATE', label: 'Terminate / Separate / Deactivate Person (DANGER)', metadata: { module: 'people', key: 'terminate', sort_order: 1 } },
     { code: 'PEOPLE__MANAGE_LOGIN', label: 'Manage Login — Disable/Unlink/Change-Role/Bulk-Change-Role (DANGER)', metadata: { module: 'people', key: 'manage_login', sort_order: 2 } },
@@ -1206,6 +1208,11 @@ const SEED_DEFAULTS = {
     { code: 'CREDIT_NOTE',       label: 'Credit Notes / Returns — Rejection Config', metadata: { rejected_status: 'ERROR', reason_field: 'rejection_reason', resubmit_allowed: true, editable_statuses: ['DRAFT', 'ERROR'],       banner_tone: 'danger', description: 'Credit notes rejected from Approval Hub (returns to DRAFT/ERROR for correction)' } },
     { code: 'SMER',              label: 'SMER — Rejection Config',            metadata: { rejected_status: 'ERROR',  reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'ERROR'],            banner_tone: 'danger', description: 'SMER documents rejected from Approval Hub' } },
     { code: 'CAR_LOGBOOK',       label: 'Car Logbook — Rejection Config',     metadata: { rejected_status: 'ERROR',  reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'ERROR'],            banner_tone: 'danger', description: 'Car logbook entries rejected from Approval Hub (batch reject affects entire period+cycle)' } },
+    // Phase G4.3 — Per-fuel rejection config. Fuel entries are embedded subdocs
+    // on CarLogbookEntry; rejection reasons surface on the Car Logbook page
+    // (the parent doc). The BDM edits the fuel entry and resubmits for approval
+    // via the per-fuel gate (Phase 33).
+    { code: 'FUEL_ENTRY',        label: 'Fuel Entry (per-receipt) — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true, editable_statuses: ['PENDING', 'REJECTED'], banner_tone: 'warning', description: 'Per-fuel rejections surface on the Car Logbook page. BDM edits the fuel entry and resubmits for approval.' } },
     { code: 'EXPENSES',          label: 'Expenses (ORE/ACCESS) — Rejection Config', metadata: { rejected_status: 'ERROR', reason_field: 'rejection_reason', resubmit_allowed: true, editable_statuses: ['DRAFT', 'ERROR'],      banner_tone: 'danger', description: 'Expense entries rejected from Approval Hub' } },
     { code: 'PRF_CALF',          label: 'PRF / CALF — Rejection Config',      metadata: { rejected_status: 'ERROR',  reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'ERROR'],            banner_tone: 'danger', description: 'PRF/CALF documents rejected from Approval Hub' } },
     { code: 'INVENTORY',         label: 'GRN (Goods Receipt) — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true, editable_statuses: ['DRAFT', 'PENDING', 'REJECTED'], banner_tone: 'danger', description: 'GRN entries rejected from Approval Hub' } },
@@ -1215,17 +1222,25 @@ const SEED_DEFAULTS = {
     { code: 'DEDUCTION_SCHEDULE', label: 'Deduction Schedules — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'reject_reason', resubmit_allowed: true, editable_statuses: ['PENDING_APPROVAL', 'REJECTED'], banner_tone: 'danger', description: 'Deduction schedules rejected from Approval Hub' } },
     { code: 'PERDIEM_OVERRIDE',  label: 'Per Diem Override — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'decision_reason', resubmit_allowed: false, editable_statuses: [],                          banner_tone: 'warning', description: 'Per diem overrides are embedded entries inside SMER — reason surfaces on the parent SMER, no standalone resubmit' } },
     { code: 'APPROVAL_REQUEST',  label: 'Authority Matrix Request — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'decision_reason', resubmit_allowed: false, editable_statuses: [],                      banner_tone: 'warning', description: 'ApprovalRequest itself — lives in Approval Hub history, not resubmitted directly' } },
+    // Phase G4.3 — Incentive Dispute lifecycle transitions. Rejection means the
+    // approver declined to make the transition; the dispute stays in its current
+    // state and the filer/reviewer can re-request or take a different path. No
+    // banner on the dispute itself — reason surfaces in Approval History.
+    { code: 'INCENTIVE_DISPUTE', label: 'Incentive Dispute — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'decision_reason', resubmit_allowed: false, editable_statuses: [],                          banner_tone: 'warning', description: 'Dispute transition rejection — dispute stays in its prior state, reason lives in Approval History. Filer/reviewer re-calls the lifecycle endpoint to retry or choose a different path.' } },
 
-    // ── Group B — placeholders pending G6.7 dedicated reject handlers ──
-    // G6.7 adds matching `rejection_reason` fields + handlers in universalApprovalController.
-    // These rows are seeded now so the lookup is complete; they activate when G6.7 lands.
-    { code: 'JOURNAL',           label: 'Journal Entries — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'REJECTED'],         banner_tone: 'danger', description: 'Journal entries rejected from Approval Hub (pending G6.7 handler wiring)' } },
-    { code: 'BANKING',           label: 'Banking — Rejection Config',         metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'REJECTED'],         banner_tone: 'danger', description: 'Bank transactions rejected from Approval Hub (pending G6.7 handler wiring)' } },
-    { code: 'PETTY_CASH',        label: 'Petty Cash — Rejection Config',      metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'REJECTED'],         banner_tone: 'danger', description: 'Petty cash transactions rejected from Approval Hub (pending G6.7 handler wiring)' } },
-    { code: 'IC_TRANSFER',       label: 'Inter-Company Transfer — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true, editable_statuses: ['DRAFT', 'REJECTED'], banner_tone: 'danger', description: 'Inter-company transfers and settlements rejected from Approval Hub (pending G6.7 handler wiring)' } },
-    { code: 'PURCHASING',        label: 'Purchasing — Rejection Config',      metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'REJECTED'],         banner_tone: 'danger', description: 'Purchase orders / supplier invoices rejected from Approval Hub (pending G6.7 handler wiring)' } },
-    { code: 'SALES_GOAL_PLAN',   label: 'Sales Goal Plan — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'REJECTED'],         banner_tone: 'danger', description: 'Annual sales goal plans rejected from Approval Hub (pending G6.7 handler wiring)' } },
-    { code: 'INCENTIVE_PAYOUT',  label: 'Incentive Payouts — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true, editable_statuses: ['ACCRUED', 'REJECTED'],      banner_tone: 'danger', description: 'Incentive payouts rejected from Approval Hub (pending G6.7 handler wiring)' } },
+    // ── Group B — dedicated reject handlers (Phase G6.7, live). Matching
+    // `rejection_reason` fields verified on Phase G4.3 (JournalEntry /
+    // BankStatement / PettyCashTransaction / InterCompanyTransfer /
+    // IcSettlement / SupplierInvoice / SalesGoalPlan / IncentivePayout all
+    // carry the field). Handlers live at
+    // [universalApprovalController.js](../../backend/erp/controllers/universalApprovalController.js).
+    { code: 'JOURNAL',           label: 'Journal Entries — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'REJECTED'],         banner_tone: 'danger', description: 'Journal entries rejected from Approval Hub' } },
+    { code: 'BANKING',           label: 'Banking — Rejection Config',         metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'REJECTED'],         banner_tone: 'danger', description: 'Bank transactions rejected from Approval Hub' } },
+    { code: 'PETTY_CASH',        label: 'Petty Cash — Rejection Config',      metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'REJECTED'],         banner_tone: 'danger', description: 'Petty cash transactions rejected from Approval Hub' } },
+    { code: 'IC_TRANSFER',       label: 'Inter-Company Transfer — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true, editable_statuses: ['DRAFT', 'REJECTED'], banner_tone: 'danger', description: 'Inter-company transfers and settlements rejected from Approval Hub' } },
+    { code: 'PURCHASING',        label: 'Purchasing — Rejection Config',      metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'REJECTED'],         banner_tone: 'danger', description: 'Purchase orders / supplier invoices rejected from Approval Hub' } },
+    { code: 'SALES_GOAL_PLAN',   label: 'Sales Goal Plan — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true,  editable_statuses: ['DRAFT', 'REJECTED'],         banner_tone: 'danger', description: 'Annual sales goal plans rejected from Approval Hub' } },
+    { code: 'INCENTIVE_PAYOUT',  label: 'Incentive Payouts — Rejection Config', metadata: { rejected_status: 'REJECTED', reason_field: 'rejection_reason', resubmit_allowed: true, editable_statuses: ['ACCRUED', 'REJECTED'],      banner_tone: 'danger', description: 'Incentive payouts rejected from Approval Hub' } },
   ],
 
   // ── Phase G6.10 — AI Cowork Features (president-managed, lookup-driven) ──

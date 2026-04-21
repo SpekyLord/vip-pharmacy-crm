@@ -1452,7 +1452,7 @@ const WORKFLOW_GUIDES = {
     steps: [
       'Pick the Reversible Transactions tab to see POSTED docs across Sales, Collections, Expenses, CALF/PRF, SMER, Car Logbook, GRN, Supplier Invoices, Credit Notes, IC Transfers + Settlements, DR, Income, Payroll, Petty Cash, Sales Goal Plans, and manual JEs.',
       'Filter by document type and date range. The type list is lookup-driven — new modules appear automatically once their handler is registered.',
-      'Click "Reverse…" on a row. The modal shows the dependent-doc preview: if any downstream POSTED doc consumed funds/stock (e.g., AP payment on a Supplier Invoice, Collection settling a CSI), you must reverse those first.',
+      'Click "Reverse…" on a row. The modal shows the dependent-doc preview: if any downstream POSTED doc consumed funds/stock (e.g., AP payment on a Supplier Invoice, Collection settling a CSI, PAID IncentivePayout under a Sales Goal plan, IncomeReport consuming a SMER, later POSTED petty-cash txn on the same fund, active transactions on an Office Supply item), you must reverse those first. Phase G4.3 added hard blockers for SALES_GOAL_PLAN / SMER_ENTRY / PETTY_CASH_TXN / OFFICE_SUPPLY_ITEM and a WARN for CAR_LOGBOOK CALF-linked fuel.',
       'Type the reason and DELETE to confirm. SAP Storno reversal posts to the current open period; the original document stays POSTED with a deletion_event_id link.',
       'Switch to the Reversal History tab to audit every prior reversal — actor, timestamp, side effects, reason.',
     ],
@@ -1515,8 +1515,8 @@ const WORKFLOW_GUIDES = {
     steps: [
       'BDMs file disputes against an IncentivePayout (wrong tier, cap dispute, period mismatch) or a SalesCredit (missing/wrong credit)',
       'OPEN → UNDER_REVIEW (reviewer takes ownership) → RESOLVED_APPROVED or RESOLVED_DENIED → CLOSED',
-      'Every transition routes through gateApproval(\'INCENTIVE_DISPUTE\') — non-authorized actions are held in the Approval Hub',
-      'RESOLVED_APPROVED on a payout dispute cascades a SAP Storno reversal of the accrual journal (period-lock-respecting). On a credit dispute, appends a negative SalesCredit row',
+      'Every transition routes through gateApproval(\'INCENTIVE_DISPUTE\') — non-authorized actions are held in the Approval Hub. Approvers can Approve / Reject from /erp/approvals (Phase G4.3 wires the Hub dispatcher end-to-end)',
+      'RESOLVED_APPROVED on a payout dispute cascades a SAP Storno reversal of the accrual journal (period-lock-respecting). On a credit dispute, appends a negative SalesCredit row. Cascade runs from both the direct route and the Approval Hub path',
       'SLA breaches are detected daily by the Dispute SLA Escalator agent (#DSP) — per-state SLA_DAYS configured via the DISPUTE_SLA_DAYS lookup. Breaches show a red SLA badge on the row',
       'Filer can CANCEL their own OPEN dispute (no gate). Once UNDER_REVIEW, only the resolver path applies',
     ],

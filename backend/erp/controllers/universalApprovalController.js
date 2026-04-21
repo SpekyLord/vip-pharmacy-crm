@@ -39,6 +39,9 @@ const TYPE_TO_MODULE = {
   // Phase 32 — Undertaking (GRN receipt confirmation). Acknowledge auto-approves
   // the linked GRN via postSingleUndertaking (rule #20).
   undertaking: 'UNDERTAKING',
+  // Phase G4.3 — Incentive Dispute (SG-4). docType drives which transition the
+  // handler applies (DISPUTE_TAKE_REVIEW | DISPUTE_RESOLVE | DISPUTE_CLOSE).
+  incentive_dispute: 'INCENTIVE_DISPUTE',
 };
 
 // Phase G4.1 follow-up (April 2026) — Auto-post on orphan approval path.
@@ -205,6 +208,195 @@ const approvalHandlers = {
     if (action === 'approve') return svc.approveSchedule(id, userId);
     if (action === 'reject') return svc.rejectSchedule(id, userId, reason || 'Rejected from Approval Hub');
     throw new Error(`Unknown action: ${action}`);
+  },
+
+  // Phase G4.3 — Incentive Dispute (SG-4 lifecycle dispatcher).
+  //
+  // The Approval Hub passes `id = ApprovalRequest._id`; the handler loads the
+  // request, derefs the dispute, then applies the transition that the ORIGINAL
+  // REQUESTER was trying to execute (DISPUTE_TAKE_REVIEW / DISPUTE_RESOLVE /
+  // DISPUTE_CLOSE). Mirrors the perdiem_override pattern: side-effect FIRST,
+  // then processDecision so the ApprovalRequest only flips to APPROVED if the
+  // dispute write succeeded.
+  //
+  // Identity rule: dispute-level attribution fields (reviewer_id, resolved_by,
+  // history[].by) use `request.requested_by` so the audit trail reflects the
+  // person who asked to make the transition, not the Hub approver. The Hub
+  // approver's identity is recorded on the ApprovalRequest via processDecision.
+  //
+  // On `reject`: the dispute stays in its current state (no terminal REJECTED
+  // status — rejection means "the approver declined to make this transition").
+  // The rejection reason surfaces in Approval History; no banner on the
+  // dispute itself (resubmit = filer re-calls the lifecycle endpoint).
+  incentive_dispute: async (id, action, userId, reason) => {
+    const ApprovalRequest = require('../models/ApprovalRequest');
+    const IncentiveDispute = require('../models/IncentiveDispute');
+    const { processDecision } = require('../services/approvalService');
+
+    const request = await ApprovalRequest.findById(id).lean();
+    if (!request) throw new Error('Incentive dispute: approval request not found');
+    if (!request.doc_id) throw new Error('Incentive dispute: approval request missing doc_id');
+
+    const dispute = await IncentiveDispute.findById(request.doc_id);
+    if (!dispute) throw new Error(`Incentive dispute ${request.doc_id} not found`);
+
+    if (action === 'reject') {
+      // Dispute remains in its current state; reason lives on the ApprovalRequest.
+      return await processDecision(id, 'REJECTED', userId, reason);
+    }
+
+    if (action !== 'approve') throw new Error(`Unsupported action for incentive_dispute: ${action}`);
+
+    const originalRequesterId = request.requested_by || userId;
+    const docType = request.doc_type;
+
+    if (docType === 'DISPUTE_TAKE_REVIEW') {
+      if (dispute.current_state !== 'OPEN') {
+        throw new Error(`Cannot take review on dispute in state ${dispute.current_state}`);
+      }
+      const User = require('../../models/User');
+      const reviewer = await User.findById(originalRequesterId).select('name role').lean();
+      dispute.reviewer_id = originalRequesterId;
+      dispute.reviewer_name = reviewer?.name || '';
+      dispute.history.push({
+        from_state: 'OPEN', to_state: 'UNDER_REVIEW',
+        by: originalRequesterId, by_role: reviewer?.role || '',
+        at: new Date(),
+        reason: reason || 'Review started (approved via Hub)',
+      });
+      dispute.current_state = 'UNDER_REVIEW';
+      dispute.state_changed_at = new Date();
+      await dispute.save();
+
+    } else if (docType === 'DISPUTE_RESOLVE') {
+      if (dispute.current_state !== 'UNDER_REVIEW') {
+        throw new Error(`Cannot resolve dispute in state ${dispute.current_state}`);
+      }
+      // Prefer structured metadata (Phase G4.3 controller pass-through). Fall
+      // back to parsing the description for pre-G4.3 requests in the wild.
+      const outcome = request.metadata?.outcome
+        || request.description?.match(/→ (APPROVED|DENIED)/)?.[1];
+      if (!['APPROVED', 'DENIED'].includes(outcome)) {
+        throw new Error('Dispute resolve: missing/invalid outcome on request metadata (expected APPROVED or DENIED)');
+      }
+      const summary = (request.metadata?.resolution_summary || reason || '').trim()
+        || 'Resolved via Approval Hub';
+      const newState = outcome === 'APPROVED' ? 'RESOLVED_APPROVED' : 'RESOLVED_DENIED';
+
+      // Cascade reversal for APPROVED outcome — mirrors resolveDispute in
+      // incentiveDisputeController.js. Best-effort (non-blocking) so a cascade
+      // failure doesn't leave the dispute stuck; approver can retry via the
+      // direct route (reverseAccrualJournal is idempotent on REVERSED status).
+      const extras = {};
+      if (outcome === 'APPROVED') {
+        if (dispute.artifact_type === 'payout' && dispute.payout_id) {
+          try {
+            const IncentivePayout = require('../models/IncentivePayout');
+            const { reverseAccrualJournal } = require('../services/journalFromIncentive');
+            const payout = await IncentivePayout.findById(dispute.payout_id);
+            if (payout && payout.journal_id && payout.status !== 'REVERSED') {
+              const reversalJe = await reverseAccrualJournal(
+                payout.journal_id,
+                `Dispute approved (via Hub): ${summary}`,
+                userId,
+                payout.entity_id
+              );
+              payout.status = 'REVERSED';
+              payout.reversed_by = userId;
+              payout.reversed_at = new Date();
+              payout.reversal_reason = `Dispute ${dispute._id} approved via Hub`;
+              payout.reversal_journal_id = reversalJe._id;
+              await payout.save();
+              extras.reversal_journal_id = reversalJe._id;
+              dispute.reversal_journal_id = reversalJe._id;
+            }
+          } catch (err) {
+            console.error('[hub incentive_dispute] payout reversal cascade failed (non-blocking):', err.message);
+          }
+        } else if (dispute.artifact_type === 'credit' && dispute.sales_credit_id) {
+          try {
+            const SalesCredit = require('../models/SalesCredit');
+            const original = await SalesCredit.findById(dispute.sales_credit_id).lean();
+            if (original) {
+              const reversal = await SalesCredit.create([{
+                entity_id: original.entity_id,
+                sale_line_id: original.sale_line_id,
+                credit_bdm_id: original.credit_bdm_id,
+                rule_id: original.rule_id || null,
+                rule_name: original.rule_name,
+                credit_pct: -Math.abs(original.credit_pct),
+                credited_amount: -Math.abs(original.credited_amount),
+                credit_reason: `Dispute ${dispute._id} approved (via Hub) — reversal of original credit. ${summary}`,
+                invoice_total: original.invoice_total,
+                csi_date: original.csi_date,
+                fiscal_year: original.fiscal_year,
+                period: original.period,
+                source: 'reversal',
+                created_at: new Date(),
+                created_by: userId,
+              }]);
+              dispute.reversal_credit_id = reversal[0]._id;
+              extras.reversal_credit_id = reversal[0]._id;
+            }
+          } catch (err) {
+            console.error('[hub incentive_dispute] credit reversal append failed (non-blocking):', err.message);
+          }
+        }
+      }
+
+      dispute.resolution_summary = summary;
+      dispute.resolved_by = originalRequesterId;
+      dispute.resolved_at = new Date();
+      const User = require('../../models/User');
+      const requesterRole = (await User.findById(originalRequesterId).select('role').lean())?.role || '';
+      dispute.history.push({
+        from_state: 'UNDER_REVIEW', to_state: newState,
+        by: originalRequesterId, by_role: requesterRole,
+        at: new Date(),
+        reason: summary,
+        reversal_journal_id: extras.reversal_journal_id || null,
+        reversal_credit_id: extras.reversal_credit_id || null,
+      });
+      dispute.current_state = newState;
+      dispute.state_changed_at = new Date();
+      await dispute.save();
+
+      // Phase SG-6 #32 — integration event (mirrors direct-route resolveDispute)
+      try {
+        const { emit, INTEGRATION_EVENTS } = require('../services/integrationHooks');
+        emit(INTEGRATION_EVENTS.DISPUTE_RESOLVED, {
+          entity_id: dispute.entity_id,
+          actor_id: userId,
+          ref: String(dispute._id),
+          data: { state: newState, outcome, summary, via: 'approval_hub' },
+        });
+      } catch (err) {
+        console.warn('[hub incentive_dispute] integrationHooks emit skipped:', err.message);
+      }
+
+    } else if (docType === 'DISPUTE_CLOSE') {
+      if (!['RESOLVED_APPROVED', 'RESOLVED_DENIED'].includes(dispute.current_state)) {
+        throw new Error(`Cannot close dispute in state ${dispute.current_state}`);
+      }
+      const User = require('../../models/User');
+      const requesterRole = (await User.findById(originalRequesterId).select('role').lean())?.role || '';
+      const fromState = dispute.current_state;
+      dispute.history.push({
+        from_state: fromState, to_state: 'CLOSED',
+        by: originalRequesterId, by_role: requesterRole,
+        at: new Date(),
+        reason: reason || 'Dispute closed (approved via Hub)',
+      });
+      dispute.current_state = 'CLOSED';
+      dispute.state_changed_at = new Date();
+      await dispute.save();
+
+    } else {
+      throw new Error(`Unknown dispute doc_type: ${docType}`);
+    }
+
+    // Dispute write succeeded — record the decision on the ApprovalRequest.
+    return await processDecision(id, 'APPROVED', userId, reason);
   },
 
   income_report: async (id, action, userId, reason) => {
