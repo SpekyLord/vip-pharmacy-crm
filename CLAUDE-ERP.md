@@ -1639,6 +1639,29 @@ Modules are categorized via `APPROVAL_CATEGORY` lookup for future delegation:
 
 Each `APPROVAL_MODULE` lookup entry has `metadata.category` set to FINANCIAL or OPERATIONAL. This is subscription-ready — new entities configure their own rules via Control Center.
 
+### Enum ↔ Lookup Symmetry (Approval Rule Coverage)
+
+The `ApprovalRule.module` enum MUST stay in sync with the `APPROVAL_MODULE` lookup + the set of `module:` arg values passed to `gateApproval()`. Rule creation in Control Center → Approval Rules renders its dropdown from `APPROVAL_MODULE`; the backend validates against the enum. A mismatch yields a confusing `Validation failed … is not a valid enum value` the moment admin tries to save a rule for a module the frontend offers.
+
+**Current full set** (26 keys):
+`SALES`, `COLLECTIONS` (legacy orphan — never emitted; keep to avoid migration), `EXPENSES`, `PURCHASING`, `PAYROLL`, `INVENTORY`, `JOURNAL`, `BANKING`, `PETTY_CASH`, `IC_TRANSFER`, `INCOME`, `DEDUCTION_SCHEDULE`, `KPI`, `COLLECTION`, `SMER`, `CAR_LOGBOOK`, `PRF_CALF`, `APPROVAL_REQUEST`, `PERDIEM_OVERRIDE`, `UNDERTAKING`, `FUEL_ENTRY`, `CREDIT_NOTE`, `SALES_GOAL_PLAN`, `INCENTIVE_PAYOUT`, `INCENTIVE_DISPUTE`, `OPENING_AR`.
+
+**gateApproval top-level `module:` keys (from controllers)**: `JOURNAL`, `BANKING`, `COLLECTION`, `CREDIT_NOTE`, `EXPENSES`, `IC_TRANSFER`, `INCENTIVE_DISPUTE`, `INCENTIVE_PAYOUT`, `INCOME`, `INVENTORY`, `OPENING_AR`, `PAYROLL`, `PETTY_CASH`, `PURCHASING`, `SALES`, `SALES_GOAL_PLAN`, `UNDERTAKING`.
+
+**Module vs docType distinction**:
+- `module` = top-level routing key queried by `findMatchingRules` (strict equality). Must be in the enum + lookup.
+- `doc_type` = fine-grained rule targeting (e.g., `PLAN_ACTIVATE`, `BULK_TARGETS_IMPORT` under module `SALES_GOAL_PLAN`). No enum — free-form string. `ApprovalRule` matches `doc_type: null` (module-wide) OR `doc_type: <docType>` (doc-specific).
+- FUEL_ENTRY is special: gateApproval sends `module: 'EXPENSES', docType: 'FUEL_ENTRY'` today (Phase 33 design). Admin can target it via (a) a rule on module=EXPENSES with doc_type=FUEL_ENTRY, OR (b) a rule directly on module=FUEL_ENTRY (works after symmetric routing is done — currently inert). Both paths remain supported.
+
+**When you add a new module that calls gateApproval**:
+1. Append to `ApprovalRule.module` enum in [backend/erp/models/ApprovalRule.js](backend/erp/models/ApprovalRule.js).
+2. Append to `APPROVAL_MODULE` seed in [backend/erp/controllers/lookupGenericController.js](backend/erp/controllers/lookupGenericController.js) with `metadata.category`.
+3. Append to `MODULE_DEFAULT_ROLES` seed (same file) with `metadata.roles`.
+4. Append to `APPROVAL_CATEGORY` metadata.modules array for the chosen category.
+5. Extend `backend/erp/scripts/seedApprovalRules.js` with one or more default rules (module + doc_type + description).
+
+Skip any of steps 1–4 and Control Center breaks silently; skip step 5 and new subscriber entities start with no default matrix rules (acceptable but means first-admin has to configure manually).
+
 ### Frontend 202 Handling
 All module pages handle `approval_pending` in API responses:
 - Success path: check `res?.approval_pending`, show info toast, refresh list

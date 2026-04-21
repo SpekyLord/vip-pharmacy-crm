@@ -34,6 +34,27 @@ const approvalRuleSchema = new mongoose.Schema({
       'DEDUCTION_SCHEDULE', 'KPI', 'COLLECTION', 'SMER',
       'CAR_LOGBOOK', 'PRF_CALF', 'APPROVAL_REQUEST',
       'PERDIEM_OVERRIDE',
+      // Phase 32 — GRN Undertaking approval wrapper
+      'UNDERTAKING',
+      // Phase 33 — per-fuel-entry approval (subset of EXPENSES docs;
+      // mirrored as its own Hub row + admin can target matrix rules at
+      // just the FUEL_ENTRY subset via module='FUEL_ENTRY')
+      'FUEL_ENTRY',
+      // Phase 31R — CreditNote (returns) approval + Phase SG-Q2/SG-4 —
+      // Sales Goal plan, Incentive payout, Incentive dispute lifecycles.
+      // Each sends its own module key via gateApproval(), so the enum
+      // must accept them or rule-creation 400s.
+      'CREDIT_NOTE',
+      'SALES_GOAL_PLAN',
+      'INCENTIVE_PAYOUT',
+      'INCENTIVE_DISPUTE',
+      // OPENING_AR — Pre-cutover historical AR. Kept separate from
+      // regular SALES (higher fraud risk — fabricated balances, self-
+      // assigned commissions). salesController splits CSI submissions
+      // into two groups and fires gateApproval({ module: 'OPENING_AR' })
+      // for the pre-cutover rows. Without this enum entry, admin cannot
+      // configure matrix rules that target only Opening AR submissions.
+      'OPENING_AR',
     ],
     index: true,
   },

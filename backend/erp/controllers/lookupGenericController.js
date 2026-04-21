@@ -353,8 +353,8 @@ const SEED_DEFAULTS = {
   ],
   // Financial vs Operational segregation — president approves financial, can delegate operational later
   APPROVAL_CATEGORY: [
-    { code: 'FINANCIAL', label: 'Financial', metadata: { description: 'Involves money movement — requires president/finance approval', modules: ['EXPENSES', 'PURCHASING', 'PAYROLL', 'JOURNAL', 'BANKING', 'PETTY_CASH', 'IC_TRANSFER', 'INCOME', 'PRF_CALF', 'PERDIEM_OVERRIDE', 'DEDUCTION_SCHEDULE', 'INCENTIVE_PAYOUT'] } },
-    { code: 'OPERATIONAL', label: 'Operational', metadata: { description: 'Document processing & verification — can be delegated to admin/finance', modules: ['SALES', 'INVENTORY', 'KPI', 'SMER', 'CAR_LOGBOOK', 'FUEL_ENTRY', 'COLLECTION', 'SALES_GOAL_PLAN', 'UNDERTAKING'] } },
+    { code: 'FINANCIAL', label: 'Financial', metadata: { description: 'Involves money movement — requires president/finance approval', modules: ['EXPENSES', 'PURCHASING', 'PAYROLL', 'JOURNAL', 'BANKING', 'PETTY_CASH', 'IC_TRANSFER', 'INCOME', 'PRF_CALF', 'PERDIEM_OVERRIDE', 'DEDUCTION_SCHEDULE', 'INCENTIVE_PAYOUT', 'OPENING_AR'] } },
+    { code: 'OPERATIONAL', label: 'Operational', metadata: { description: 'Document processing & verification — can be delegated to admin/finance', modules: ['SALES', 'INVENTORY', 'KPI', 'SMER', 'CAR_LOGBOOK', 'FUEL_ENTRY', 'COLLECTION', 'SALES_GOAL_PLAN', 'UNDERTAKING', 'CREDIT_NOTE', 'INCENTIVE_DISPUTE'] } },
   ],
   APPROVAL_MODULE: [
     // Authority Matrix modules (Phase 29) — with financial/operational category.
@@ -362,6 +362,12 @@ const SEED_DEFAULTS = {
     // (Phase F.1) as the singular canonical key 'COLLECTION' — that's what
     // gateApproval() sends, so rules must be filed under that code.
     { code: 'SALES', label: 'Sales', metadata: { category: 'OPERATIONAL' } },
+    // OPENING_AR — Pre-cutover historical AR. salesController.js splits batches
+    // so Opening AR gates on its OWN module key (higher fraud risk than regular
+    // SALES). Exposed here so Control Center → Approval Rules dropdown lists it
+    // and admin can configure separate matrix rules (e.g., president-only over
+    // ₱1M). Subscribers adjust category to OPERATIONAL in low-risk verticals.
+    { code: 'OPENING_AR', label: 'Opening AR (Pre-Cutover)', metadata: { category: 'FINANCIAL' } },
     { code: 'EXPENSES', label: 'Expenses', metadata: { category: 'FINANCIAL' } },
     { code: 'PURCHASING', label: 'Purchasing', metadata: { category: 'FINANCIAL' } },
     { code: 'PAYROLL', label: 'Payroll', metadata: { category: 'FINANCIAL' } },
