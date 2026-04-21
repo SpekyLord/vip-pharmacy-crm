@@ -21,7 +21,8 @@
       "Bash(npm audit:*)",
       "Bash(grep -c \"import\\\\|from\" \"c:/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm/frontend/src/services\"/*.js)",
       "Bash(grep -r \"findOne.*\\\\$\\\\|find.*\\\\$\\\\|query.*\\\\$\\\\|aggregate.*\\\\$\" \"/c/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm/backend/controllers/\")",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(gh pr create --base main --head dev --title 'Phase G4.2 — Deduction Schedule Unified Approval Flow' --body ' *)"
     ]
   }
 }
