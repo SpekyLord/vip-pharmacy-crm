@@ -9,6 +9,7 @@ const {
   approvePayslip,
   postPayroll,
   getPayslip,
+  getPayslipBreakdown,
   getPayslipHistory,
   computeThirteenthMonth,
   presidentReversePayslip,
@@ -24,6 +25,9 @@ router.post('/thirteenth-month', roleCheck('admin', 'finance', 'president'), com
 
 // ═══ Read ═══
 router.get('/history/:personId', getPayslipHistory);
+// Phase G1.3 — transparent payslip breakdown. Must precede /:id to avoid the
+// Express param match swallowing "breakdown" as an id.
+router.get('/:id/breakdown', getPayslipBreakdown);
 router.get('/:id', getPayslip);
 
 // Phase 31 — President SAP Storno reversal of a POSTED Payslip.

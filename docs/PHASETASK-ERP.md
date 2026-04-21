@@ -6635,3 +6635,84 @@ CLAUDE-ERP.md                                    [+Phase G1.2 section]
 - **Rule #19 (subscription-ready)** — entity-scoped CompProfile resolution via `_resolveCompProfile`; ORE pipeline reads only from per-entity ExpenseEntry.
 - **Rule #20 (workflow banners + period locks)** — banner copy updated for all affected pages; no document-lifecycle mutation, so period-lock middleware unchanged.
 - **Rule #21 (no silent self-fallback)** — unaffected (CompProfile lookup is by explicit bdm_id param, no scope fallback).
+
+---
+
+## Phase G1.3 — Employee Payslip Transparency Parity ✅ (April 21, 2026)
+
+### Goal
+Bring employee `Payslip` to the same transparency contract as contractor `IncomeReport` (shipped in G1.2). A BDM who graduates to employee now sees the same `deduction_lines[]` layout — label + amount + status pill + kind badge + expandable source detail — instead of a flat hardcoded list of statutory fields.
+
+### Deliverables
+
+#### 1. Shared deduction-line sub-schema
+- New file `backend/erp/models/schemas/deductionLine.js` — identical shape to the inline `IncomeReport.deductionLineSchema`. Reused by `Payslip` only in this phase; `IncomeReport` keeps its inline copy (Phase G1.2 shipped code is load-bearing on profit-sharing + CALF flows, so we avoid touching it). A follow-up can converge IncomeReport once the contract soaks in production.
+- `auto_source` stays a free-form String (no enum) so subscribers can introduce new sources without a migration. Contractor uses `CALF | SCHEDULE | PERSONAL_GAS`; employee uses `SSS | PHILHEALTH | PAGIBIG | WITHHOLDING_TAX | PERSONAL_GAS | SCHEDULE`.
+
+#### 2. Payslip model
+- Added `deduction_lines: [deductionLineSchema]` (default `[]`).
+- Kept all flat `deductions.*` fields — **these are still the canonical source for the JE consumer** (`autoJournal.journalFromPayroll` reads them). Compute service now derives them FROM `deduction_lines` via `deriveFlatFromLines` so drift is impossible.
+- Pre-save hook: prefers `deduction_lines` sum (non-REJECTED) when the array is non-empty; falls back to flat-field sum for historical pre-G1.3 payslips. Either way, `total_deductions` and `net_pay` stay correct.
+
+#### 3. Compute service (`payslipCalc.js`)
+- New helpers: `buildAutoDeductionLines` (statutory + Personal Gas), `buildManualLinesFromFlat` (reconstructs Cash Advance / Loan / Other from preserved flat fields), `deriveFlatFromLines` (inverse — keeps flat fields in sync with the array).
+- Personal Gas for employees: gated on `CompProfile.logbook_eligible === true` (Rule #3 — existing flag, no new lookup). Row always emitted for eligible employees, even at ₱0, so Finance sees the logbook was reviewed. `aggregatePersonalGas` pulls from `CarLogbookEntry` using the person's `user_id`; MONTHLY cycle sums both C1+C2 entries within the period.
+- Upsert preserves manual earnings (bonus, reimbursements, overtime, holiday, night diff, other earnings) and manual flat-deduction fields on re-compute — parity with pre-G1.3 behavior.
+
+#### 4. Transparent breakdown endpoint
+- New: `getPayslipBreakdown(payslip)` in `payslipCalc.js`. Returns `{ payslip_id, period, cycle, person_name, personal_gas, schedules: {} }`. Same shape as `getIncomeBreakdown` so PayslipView.jsx can reuse the Income.jsx expandable pattern.
+- Wired: `GET /payroll/:id/breakdown` in `payrollRoutes.js` (ordered before `/:id`). Controller handler `getPayslipBreakdown` in `payrollController.js`.
+
+#### 5. Lazy backfill for historical POSTED payslips
+- `backfillDeductionLines(payslip)` — pure function that synthesises `deduction_lines[]` from flat fields. Adds synthetic `_id` (for React key) + `description: '(historical — reconstructed for display)'`. Never mutates the input.
+- `GET /payroll/:id` calls the backfill before returning when `deduction_lines` is empty. No DB write — audit-safe.
+
+#### 6. Frontend (`PayslipView.jsx`)
+- Replaced the flat deductions table with `deduction_lines.map()`. Each row renders:
+  - Label + status pill (PENDING / VERIFIED / CORRECTED / REJECTED) + kind badge (`ONE-STOP` neutral gray; G1.4 will add `INSTALLMENT` once employee DeductionSchedule is wired).
+  - `(auto)` micro-tag when `auto_source` is set (statutory + Personal Gas).
+  - Optional description + finance note.
+  - Original amount (strikethrough) shown when Finance has corrected a line.
+- Personal Gas row is expandable; first expand triggers `getPayslipBreakdown` (lazy load).
+- Expanded panel renders: daily logbook (date + KM + fuel) + summary (total KM, personal KM, official KM, total fuel, avg price/L, total deduction).
+- CSS: `.badge-onestop`, `.badge-installment`, `.badge-pending/verified/corrected/rejected`, `.bd-toggle`, `.bd-panel`, `.bd-table` — same contract as Income.jsx / MyIncome.jsx.
+
+#### 7. Lookup seed
+- New seed: `EMPLOYEE_DEDUCTION_TYPE` in `lookupGenericController.SEED_DEFAULTS` with codes SSS / PHILHEALTH / PAGIBIG / WITHHOLDING_TAX / CASH_ADVANCE / LOAN / PERSONAL_GAS / OTHER. Metadata carries `auto_source` where applicable. Kept separate from `INCOME_DEDUCTION_TYPE` because contractor vs employee deduction taxonomies diverge (no SSS for contractors, no CALF for employees).
+
+### Files touched
+
+```
+backend/erp/models/schemas/deductionLine.js      [NEW — shared sub-schema]
+backend/erp/models/Payslip.js                    [+deduction_lines[]; pre-save prefers lines over flat]
+backend/erp/services/payslipCalc.js              [build auto + manual lines; derive flat from lines; getPayslipBreakdown; backfillDeductionLines; aggregatePersonalGas]
+backend/erp/services/incomeCalc.js               [exported resolveCompProfile for payslipCalc reuse]
+backend/erp/controllers/payrollController.js     [getPayslip lazy-backfills; +getPayslipBreakdown handler]
+backend/erp/routes/payrollRoutes.js              [+GET /:id/breakdown, before /:id]
+backend/erp/controllers/lookupGenericController.js [+EMPLOYEE_DEDUCTION_TYPE seed]
+frontend/src/erp/hooks/usePayroll.js             [+getPayslipBreakdown(id)]
+frontend/src/erp/pages/PayslipView.jsx           [rewrote deductions table with deduction_lines render + expandable + lazy breakdown load]
+docs/PHASETASK-ERP.md                            [+this block]
+CLAUDE-ERP.md                                    [+Phase G1.3 section]
+```
+
+### Verification
+- `node -c` clean on all modified backend files.
+- `npx vite build` — clean in 13.45s.
+- Generate a payslip for an employee with a CompProfile → `deduction_lines` has SSS/PhilHealth/PagIBIG/Withholding Tax rows. Flat `deductions.sss_employee` etc. still populated (derived from lines). JE posting still balances.
+- Open a pre-G1.3 POSTED payslip → lazy backfill renders rows with `(historical — reconstructed for display)` description. No DB write.
+- Set `CompProfile.logbook_eligible=true` on an employee with no logbook entries → PERSONAL_GAS row at ₱0, description "No personal km logged this cycle — logbook reviewed", expandable shows "No car logbook entries for this period".
+- Set `logbook_eligible=false` → No PERSONAL_GAS row.
+- Finance corrects a flat field (e.g. `cash_advance` via existing path) → next re-compute reconstructs the CASH_ADVANCE line from the flat field.
+
+### Rule adherence
+- **Rule #2 (end-to-end wiring)** — Payslip model → payslipCalc service → payrollController → payrollRoutes → usePayroll hook → PayslipView page → Sidebar link (existing — payslip view reached via Payroll Run row click, no new sidebar entry needed).
+- **Rule #3 (no hardcoded business values)** — `EMPLOYEE_DEDUCTION_TYPE` is a new seeded lookup; `CompProfile.logbook_eligible` is per-person and admin-configurable.
+- **Rule #19 (subscription-ready)** — entity-scoped compute via `req.entityId` in both endpoints; statutory rate tables live in `GovernmentRates` per entity; lookup seeds only fire when empty so existing subscriber customizations are preserved.
+- **Rule #20 (workflow banners + period locks)** — existing `payslip-view` banner in `WorkflowGuide.jsx` unchanged (still accurate); period-lock middleware unchanged (no new document-lifecycle routes). Posting gate via `gateApproval` in `postPayroll` unaffected.
+- **Rule #21 (no silent self-fallback)** — `getPayslip` + `getPayslipBreakdown` scope via `req.entityId` (President bypass explicit). No `req.bdmId` fallback anywhere on employee payslip path.
+
+### Deferred follow-ups (non-blocking)
+- **G1.4 — Employee DeductionSchedule wiring**: port the contractor `DeductionSchedule` installment flow to employee payslips so INSTALLMENT N/M badges apply. Requires a new `person_id` ref on `DeductionSchedule` (currently `bdm_id`-only) OR a parallel `employee_schedules` collection. Design decision deferred.
+- **Per-line Finance add/verify UI**: parity with `IncomeReport.addDeductionLine` / `financeAddDeductionLine` / `verifyDeductionLine`. Today Cash Advance / Loan / Other flow through flat fields only.
+- **IncomeReport.deductionLineSchema → shared**: replace the inline copy with `require('./schemas/deductionLine')`. Low-risk refactor, not in this phase to avoid touching Phase G1.2 shipped code.

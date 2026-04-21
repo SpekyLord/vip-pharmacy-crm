@@ -768,7 +768,6 @@ export default function DocumentDetailPanel(props) {
               </div>
             );
           })()}
-          )}
           <AuditFooter d={d} />
         </div>
       )}

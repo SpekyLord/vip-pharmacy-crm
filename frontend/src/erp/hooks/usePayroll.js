@@ -9,6 +9,8 @@ export default function usePayroll() {
   const approvePayslip = (id) => api.post(`/payroll/${id}/approve`);
   const postPayroll = (data) => api.post('/payroll/post', data);
   const getPayslip = (id) => api.get(`/payroll/${id}`);
+  // Phase G1.3 — transparent payslip breakdown (Car Logbook entries, etc.)
+  const getPayslipBreakdown = (id) => api.get(`/payroll/${id}/breakdown`);
   const getPayslipHistory = (personId, params) => api.get(`/payroll/history/${personId}`, { params });
   const computeThirteenthMonth = (data) => api.post('/payroll/thirteenth-month', data);
 
@@ -20,6 +22,7 @@ export default function usePayroll() {
     approvePayslip,
     postPayroll,
     getPayslip,
+    getPayslipBreakdown,
     getPayslipHistory,
     computeThirteenthMonth,
   };

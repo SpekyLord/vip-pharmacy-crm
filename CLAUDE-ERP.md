@@ -120,8 +120,65 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | G8 | Agents + Copilot Expansion — 8 rule-based scheduled agents + Task collection + 10 new Copilot tools (Secretary + HR) + 3 AI toggle lookups | ✅ |
 | 34* | Approval Hub Enhancement: Sub-Permissions + Attachments + Line-Item Edit | ✅ |
 | G1.2 | Payslip Transparency & SMER-ORE Retirement Hardening — pre-save guard + always-show Personal Gas + ONE-STOP / INSTALLMENT N/M kind badge + installment expandable | ✅ |
+| G1.3 | Employee Payslip `deduction_lines[]` Parity — shared sub-schema + Personal Gas for logbook-eligible employees + `/payroll/:id/breakdown` + lazy backfill for historical payslips | ✅ |
 
 ---
+
+## Phase G1.3 — Employee Payslip Transparency Parity (April 21, 2026)
+
+Brings employee `Payslip` to the same transparency contract as contractor `IncomeReport`: a `deduction_lines[]` array with label + amount + status pill + kind badge + optional expandable source detail. A BDM who graduates to employee now sees the same layout they used as a contractor.
+
+### Contract — what changed vs Phase G1.2
+
+| Surface | Before G1.3 | After G1.3 |
+|---|---|---|
+| `Payslip.deductions.*` flat fields | Canonical source, hand-written by compute service | Derived from `deduction_lines[]` by `deriveFlatFromLines`. Still populated (JE consumer reads these). |
+| `Payslip.deduction_lines[]` | Did not exist | New array — one line per statutory/manual deduction, shared schema with `IncomeReport.deduction_lines`. |
+| Personal Gas for employees | Suppressed (no path) | Emitted for `CompProfile.logbook_eligible === true`. Always renders, even at ₱0 (confirms logbook reviewed). |
+| Historical pre-G1.3 POSTED payslips | Rendered flat rows only | `getPayslip` lazy-backfills `deduction_lines` in memory from flat fields (no DB write). `description: "(historical — reconstructed for display)"`. |
+| `GET /payroll/:id/breakdown` | Did not exist | Returns `{ personal_gas: { entries, summary, total_deduction }, schedules: {} }` — same shape as `getIncomeBreakdown`. |
+
+### Key files
+
+| File | Change |
+|---|---|
+| `backend/erp/models/schemas/deductionLine.js` | NEW — shared `deductionLineSchema` used by `Payslip`. `IncomeReport` keeps its own inline copy (low-risk; migrate in a follow-up). |
+| `backend/erp/models/Payslip.js` | Added `deduction_lines: [deductionLineSchema]`. Pre-save prefers `deduction_lines` sum when non-empty, falls back to flat fields for historical docs. |
+| `backend/erp/services/payslipCalc.js` | Builds `deduction_lines` via `buildAutoDeductionLines` + `buildManualLinesFromFlat`, then `deriveFlatFromLines` keeps JE consumer in sync. Added `getPayslipBreakdown` + `backfillDeductionLines`. |
+| `backend/erp/services/incomeCalc.js` | Exported `resolveCompProfile` (was `_resolveCompProfile`) so payslipCalc can reuse logbook gate without duplicating. |
+| `backend/erp/controllers/payrollController.js` | `getPayslip` now lazy-backfills; added `getPayslipBreakdown` handler. |
+| `backend/erp/routes/payrollRoutes.js` | Added `GET /:id/breakdown` (ordered before `/:id`). |
+| `backend/erp/controllers/lookupGenericController.js` | Added `EMPLOYEE_DEDUCTION_TYPE` seed (kept separate from `INCOME_DEDUCTION_TYPE` — statutory codes differ). |
+| `frontend/src/erp/hooks/usePayroll.js` | Added `getPayslipBreakdown(id)`. |
+| `frontend/src/erp/pages/PayslipView.jsx` | Rewrote deductions table to render `deduction_lines.map()` with status pill + kind badge + expandable Personal Gas panel. Lazy-loads breakdown on first expand. |
+
+### Gate — who gets a Personal Gas row
+
+Rule #3 — single source of truth is per-person `CompProfile.logbook_eligible: Boolean`. No new lookup, no hardcoded role check.
+
+- `logbook_eligible === true` → Personal Gas row is emitted on every payslip for that person. Expanding the row loads the Car Logbook daily summary for `period + cycle` (monthly cycle sums C1+C2). Zero amount is a valid state ("No personal km logged this cycle — logbook reviewed").
+- `logbook_eligible === false` → No Personal Gas row. Row is not pushed at all (not a ₱0 row). Keeps office-staff payslips tidy.
+
+### Backward-compatibility contract
+
+- **JE consumer (`autoJournal.journalFromPayroll`)** still reads `payslip.deductions.sss_employee / philhealth_employee / pagibig_employee / withholding_tax / cash_advance / loan_payments / other_deductions`. `deriveFlatFromLines` writes these on every compute. The JE never sees drift — flat fields are always in sync with the lines that sum them.
+- **Historical POSTED payslips** (pre-G1.3) carry `deduction_lines: []`. The `GET /payroll/:id` controller calls `backfillDeductionLines` to synthesise lines from the flat fields **in memory** (synthetic `_id`s for React keys, no DB write). Reversal handler is unaffected — it uses `findById` (not lean) so the actual persisted doc is loaded and reversed.
+- **SAP Storno reversal** (`reversePayslip` in `documentReversalService`) continues to work unchanged. Loaded doc carries `deduction_lines` if present, but the reversal logic doesn't need to touch them — JE reversal is keyed on `event_id`, and `doc.save({ session })` re-runs pre-save which picks the right sum source.
+
+### Risks + watch-outs
+
+- **Manual flat-field flows**: `cash_advance`, `loan_payments`, `other_deductions` are still written to flat fields via the existing Finance entry paths. On next re-compute, `buildManualLinesFromFlat` reconstructs them as lines — no data loss. G1.4 will add a per-line Finance add/verify UI (parity with `IncomeReport.financeAddDeductionLine`).
+- **CompProfile.logbook_eligible + no Car Logbook**: if flag is true but the employee has no logbook entries this cycle, the row renders at ₱0 with "logbook reviewed" copy. This is intentional — Finance confirms by seeing the row, not by its absence.
+- **Subscription-readiness**: lookup-driven via `EMPLOYEE_DEDUCTION_TYPE` (admin can add/remove codes from Control Center without code changes). Statutory rate tables stay in their own `GovernmentRates` model — subscribers set rates per entity.
+
+### Verification checklist
+
+1. Generate a payslip for an employee with SSS + PhilHealth + PagIBIG + Withholding Tax → `deduction_lines` has 4 rows. Flat `deductions.sss_employee` etc. still populated.
+2. Open an existing POSTED payslip (pre-G1.3) → lazy backfill renders rows. `(historical — reconstructed for display)` description visible. No DB write.
+3. Set `CompProfile.logbook_eligible = true` for an employee, leave Car Logbook empty → PERSONAL_GAS row at ₱0, expanding shows "No car logbook entries for this period".
+4. Set `logbook_eligible = false` → No PERSONAL_GAS row.
+5. `autoJournal.journalFromPayroll` JE posting — flat deductions still summed into DR-Salaries / CR-SSS/PH/Pag/WHT lines.
+6. `npx vite build` → clean. `node -c` → clean on all modified backend files.
 
 ## Phase G1.2 — Payslip Transparency & SMER-ORE Retirement Hardening (April 21, 2026)
 
