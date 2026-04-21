@@ -26,7 +26,7 @@ async function recordInfusion(entityId, data, userId) {
   });
 
   // Auto-create and post JE
-  const jeData = journalFromOwnerEquity(entry, data.bank_coa_code || '1010', data.bank_name || 'RCBC Savings', userId);
+  const jeData = await journalFromOwnerEquity(entry, data.bank_coa_code || '1010', data.bank_name || 'RCBC Savings', userId);
   const je = await createAndPostJournal(entityId, jeData);
 
   entry.je_id = je._id;
@@ -51,7 +51,7 @@ async function recordDrawing(entityId, data, userId) {
     recorded_by: userId
   });
 
-  const jeData = journalFromOwnerEquity(entry, data.bank_coa_code || '1010', data.bank_name || 'RCBC Savings', userId);
+  const jeData = await journalFromOwnerEquity(entry, data.bank_coa_code || '1010', data.bank_name || 'RCBC Savings', userId);
   const je = await createAndPostJournal(entityId, jeData);
 
   entry.je_id = je._id;

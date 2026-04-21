@@ -49,18 +49,22 @@ async function recordApPayment(invoiceId, paymentData, entityId, userId) {
     source_doc_ref: invoice.invoice_ref || String(invoice._id),
     lines: [
       {
+        // DR AP_TRADE reduces a CREDIT-normal liability — contra.
         account_code: (await getCoaMap()).AP_TRADE || '2000',
         account_name: 'Accounts Payable — Trade',
         debit: paymentData.amount,
         credit: 0,
-        description: `Payment on SI: ${invoice.invoice_ref || ''}`
+        description: `Payment on SI: ${invoice.invoice_ref || ''}`,
+        is_contra: true
       },
       {
+        // CR Cash/Bank reduces a DEBIT-normal asset — contra when funding is 1/5/6.
         account_code: coa_code,
         account_name: coa_name,
         debit: 0,
         credit: paymentData.amount,
-        description: `Payment on SI: ${invoice.invoice_ref || ''}`
+        description: `Payment on SI: ${invoice.invoice_ref || ''}`,
+        is_contra: /^[156]/.test(String(coa_code || ''))
       }
     ],
     bir_flag: 'BOTH',

@@ -6431,3 +6431,134 @@ docs/PHASETASK-ERP.md                                     [+this block]
 2. Run repair script per entity: `node erp/scripts/repairStuckPerdiemOverrides.js` (dry-run) → `--apply`.
 3. Any stuck record on a POSTED SMER will be flagged — admin reopens via Reversal Console, then the BDM resubmits; on resubmit the override re-routes through the now-fixed handler.
 
+---
+
+## Phase 35 — JE Normal-Balance Validator + Auto-Journal Sweep (April 21, 2026)
+
+### Incident
+- Contractor Romela's two POSTED SMERs (`69e532fb5ae50328cda6b156`, `69e5d447d4d816c121ea0736`) totalling ₱14,700 were missing their JournalEntry companion rows since 2026-04-13.
+- Car Logbook auto-journal for 2026-04-20 (AR-BDM credited ₱3,489.28) also missing.
+- Blast radius: every auto-journal flow that reduces an asset/liability — SMER, Car Logbook, Expenses (ORE), PRF/CALF, Collections, CWT, Commission, Petty Cash, Inter-Company, Credit Notes, AP Payment, CC Payment, Bank Recon charges, Owner Drawings, Year-End Close.
+
+### Root cause
+`JournalEntry.js` pre-save "#15 Hardening" (line 168-183 pre-fix) rejected any line crediting a DEBIT-normal account or debiting a CREDIT-normal account. In correct double-entry bookkeeping, `normal_balance` is not a per-line constraint — it's a description of where the accumulated positive position lives. CR AR-BDM, DR AP-Trade, CR PETTY_CASH are all legitimate reductions.
+
+Every affected call path sat inside `try { createAndPostJournal } catch (jeErr) { console.error(...) }`. The validator rejection was swallowed. Parent documents (SMER, Car Logbook, etc.) still flipped to POSTED because the JE posting is a non-blocking side-effect outside the parent's transaction. The ledger drifted silently for 8 days.
+
+### Solution (Option A — explicit contra sweep)
+Preferred by user over Option B (remove check) and Option C (same-side-only guard) to maintain explicit audit-trail documentation that every auto-journal site has been human-reviewed.
+
+#### 1. Schema + validator (foundation)
+- Added `is_contra: { type: Boolean, default: false }` to `jeLineSchema` in [backend/erp/models/JournalEntry.js](../backend/erp/models/JournalEntry.js).
+- Pre-save validator #15 direction check now `continue`s when `line.is_contra === true`. Manual JEs from `journalController` (which don't opt-in) still get the direction check applied.
+- Backward-compatible: existing POSTED JEs without the field render the same (default false → direction check never fires retroactively because we're only loading, not re-saving).
+
+#### 2. Enum gap closures (piggybacked on the integrity pass)
+- `JournalEntry.source_module` enum missing: `CREDIT_NOTE`, `SUPPLIER_INVOICE`, `SALES_GOAL`. All three were used by controllers and silently rejected during schema validation.
+- `ErpAuditLog.log_type` enum missing: `LEDGER_ERROR` (9+ call sites), `CSI_TRACE`, `BATCH_UPLOAD_ON_BEHALF`, `CREATE`, `UPDATE`, `DELETE`, `BACKFILL`. Most call sites had `.catch(() => {})` wrappers, so audit entries were disappearing.
+
+#### 3. First-digit heuristic for dynamic funding
+Added `isDebitNormalByCode(code)` and `isCreditNormalByCode(code)` helpers at the top of [autoJournal.js](../backend/erp/services/autoJournal.js) and [journalFromIncentive.js](../backend/erp/services/journalFromIncentive.js). Used in sites where the funding COA is resolved at runtime (`resolveFundingCoa`). Hand-marked is_contra on static sites.
+
+#### 4. Sweep — 50+ call sites reviewed
+**Helpers in `autoJournal.js`** (16 functions):
+
+| Helper | Contra line(s) marked |
+|---|---|
+| journalFromSale | none (DR AR_TRADE / CR SALES_REVENUE / CR OUTPUT_VAT all natural direction) |
+| journalFromCollection | CR AR_TRADE |
+| journalFromCWT | CR AR_TRADE |
+| journalFromExpense | CR AR_BDM/funding (heuristic) |
+| journalFromCommission | CR AR_BDM |
+| journalFromPayroll | CR bank for net pay (heuristic) |
+| journalFromAP | none (natural direction) |
+| journalFromDepreciation | none (ACCUM_DEPRECIATION is CREDIT-normal contra-asset) |
+| journalFromInterest | none |
+| journalFromOwnerEquity | CR bank in DRAWING (heuristic) |
+| journalFromServiceRevenue | none |
+| journalFromPettyCash | CR PETTY_CASH in DISBURSEMENT + REMITTANCE; CR OWNER_DRAWINGS in REPLENISHMENT (explicit — contra-equity) |
+| journalFromCOGS | CR INVENTORY |
+| journalFromInterCompany | CR INVENTORY in SENDER |
+| journalFromInventoryAdjustment | CR INVENTORY in LOSS |
+| journalFromPrfCalf | CR funding (heuristic) |
+
+**`journalFromIncentive.js`**: settlement JE — DR INCENTIVE_ACCRUAL (contra) + CR funding (heuristic).
+
+**Controllers with inline JE lines**:
+- `expenseController.js` — 9 sites across `submitSmer`, `submitCarLogbookCycle`, `submitExpenses`, `postSingleSmer`, `postSingleCarLogbook` (cycle + legacy per-day), `postSingleExpense`, nested auto-submit-linked CALF → EXPENSE + CALF → CAR_LOGBOOK flows.
+- `creditNoteController.js` — DR SALES_REVENUE + CR AR_TRADE both contra.
+- `apPaymentService.js` — DR AP_TRADE + CR bank both contra.
+- `bankReconService.js` — CR bank for bank charges.
+- `creditCardService.js` — DR CC payable + CR bank both contra.
+- `pnlCalc.js` — year-end closing: DR revenue + CR expense + DR retained-earnings-on-loss all contra.
+
+#### 5. Latent bug fixes surfaced during the sweep
+- `expenseController.js:2347` — used undefined variable `calfCoaMap` instead of `autoCoaMap`. CALF → Car Logbook auto-submit JE threw ReferenceError, was swallowed. Fixed.
+- `loanService.postInterest` — missing `await` on `journalFromInterest` (async function). Passed a Promise as JE data; every interest post silently failed schema validation. Fixed.
+- `ownerEquityService.recordInfusion` + `recordDrawing` — same missing `await` on `journalFromOwnerEquity`. Fixed.
+- `depreciationService.postDepreciation` — same missing `await` on `journalFromDepreciation`. Fixed.
+- `payrollController.js` — catch block referenced `fullPs` declared inside inner try scope. ReferenceError swallowed by `.catch(() => {})`, audit log never persisted on payroll JE failure. Hoisted `fullPs` to outer scope with null default + guards.
+
+#### 6. Searchable failure logs
+Every `console.error` in auto-journal try/catch now uses `[AUTO_JOURNAL_FAILURE]` prefix so pm2/log-grep can find them. Phase 36 will promote to a structured `AutoJournalFailure` collection with President alert routing.
+
+#### 7. Backlog repost script
+[backend/erp/scripts/repostMissingJEs.js](../backend/erp/scripts/repostMissingJEs.js):
+- Scope: SmerEntry + CarLogbookCycle + ExpenseEntry + PrfCalf POSTED since `--since` (default 2026-04-13), with `deletion_event_id` absent and no existing JournalEntry at `source_event_id`.
+- Dry-run default. `--apply` to write.
+- `--type SMER|CARLOGBOOK|EXPENSE|PRFCALF` for targeted runs.
+- `--force-closed-period` to repost into locked periods (normally skipped with a warning).
+- Idempotent — re-running is a no-op once backlog is cleared.
+- Uses the same helpers/inline logic as the controllers (no drift) — replicates SMER/CarLogbook inline JE logic with is_contra applied; uses shared `journalFromPrfCalf` helper for PRF/CALF.
+
+### Design rules honored
+- **Rule #3 lookup-driven** — COA_MAP still read from Settings; funding source via `resolveFundingCoa`; no hardcoded COA codes.
+- **Rule #19 subscription-safe** — validator still uses ChartOfAccounts.normal_balance per-entity as the authoritative source. Heuristic is a fallback for dynamic funding cases only.
+- **Rule #20 period locks** — repost script runs `checkPeriodOpen` per doc; skips with warning if closed (opt-in override via flag).
+- **Rule #21 privileged-user filter** — N/A (script is script-user-agnostic).
+- **Workflow banners** — no new pages added, existing WorkflowGuide entries still accurate because document flow is unchanged (the change is fully internal to the JE layer).
+
+### Files touched
+```
+backend/erp/models/JournalEntry.js               [is_contra field, validator skip, source_module enum]
+backend/erp/models/ErpAuditLog.js                [log_type enum backfill]
+backend/erp/services/autoJournal.js              [isDebitNormalByCode helper, 16 journalFrom* updates]
+backend/erp/services/journalFromIncentive.js     [settlement JE contra lines]
+backend/erp/services/apPaymentService.js         [contra lines]
+backend/erp/services/bankReconService.js         [contra line, failure prefix]
+backend/erp/services/creditCardService.js        [contra lines]
+backend/erp/services/interCompanyService.js      [failure prefix]
+backend/erp/services/loanService.js              [missing await fix]
+backend/erp/services/depreciationService.js      [missing await fix]
+backend/erp/services/ownerEquityService.js       [missing await fix, 2 sites]
+backend/erp/services/pnlCalc.js                  [year-end closing contra lines, failure prefix]
+backend/erp/controllers/expenseController.js     [9 inline JE sites + calfCoaMap typo + prefixes]
+backend/erp/controllers/creditNoteController.js  [contra lines + prefix]
+backend/erp/controllers/payrollController.js     [fullPs scope fix + prefix]
+backend/erp/controllers/inventoryController.js   [prefix]
+backend/erp/scripts/repostMissingJEs.js          [NEW — backlog repost]
+CLAUDE-ERP.md                                    [+Phase 35 section, version bump to 7.0]
+docs/PHASETASK-ERP.md                            [+this block]
+```
+
+### Verification
+
+- `node -c` clean on all 16 touched backend files + new script.
+- `npx vite build` — clean in 11.84s (no frontend code touched, sanity check only).
+- Downstream read-only consumers of JournalEntry (GL, trial balance, FS reports) — unaffected; `is_contra` is write-side audit metadata only.
+- Search for `journalFrom\w+\(` without `await` returned zero hits after sweep — all async helpers properly awaited.
+
+### Deployment
+
+1. `git pull && pm2 restart vip-crm-api vip-crm-worker` on prod.
+2. `cd backend && node erp/scripts/repostMissingJEs.js` — dry-run to see the backlog.
+3. Review output for expected orphan count vs surprise failures.
+4. `node erp/scripts/repostMissingJEs.js --apply` — persist.
+5. Sanity query — orphan SMERs since Apr 13 should drop to 0 after --apply.
+6. Tell Romela: her C1 is now fully journaled; she can create 2026-04 C2 for the current cycle.
+
+### Follow-up Phase 36 (deferred)
+- `AutoJournalFailure` model + collection with `ALERT_CHANNELS` lookup for President notification routing.
+- `journal_failures: [...]` array in submit/post endpoint responses so the frontend can surface a warning toast (currently silent — posting reports success even when JE fails).
+- Extract SMER + CarLogbookCycle + Expense inline JE logic from `expenseController.js` into shared `autoJournal.js` helpers so the repost script and controllers converge on one code path.
+

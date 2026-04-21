@@ -153,8 +153,12 @@ const postPayroll = catchAsync(async (req, res) => {
       posted++;
 
       // Phase 11: Auto-journal for each posted payslip
+      // Phase 35 — hoisted `fullPs` out of the inner try so the catch can still
+      // reference it for audit logging (previously threw ReferenceError inside
+      // the catch, which was itself swallowed by `.catch(() => {})`).
+      let fullPs = null;
       try {
-        const fullPs = await Payslip.findById(postedPs._id)
+        fullPs = await Payslip.findById(postedPs._id)
           .populate('person_id', 'full_name')
           .lean();
         const bankCoa = await resolveFundingCoa({ payment_mode: 'BANK_TRANSFER' });
@@ -164,13 +168,13 @@ const postPayroll = catchAsync(async (req, res) => {
         );
         await createAndPostJournal(fullPs.entity_id, jeData);
       } catch (jeErr) {
-        console.error('Auto-journal failed for payslip:', ps._id, jeErr.message);
+        console.error('[AUTO_JOURNAL_FAILURE] Payslip', String(ps._id), jeErr.message);
         ErpAuditLog.logChange({
-          entity_id: fullPs.entity_id, log_type: 'LEDGER_ERROR',
+          entity_id: fullPs?.entity_id || ps.entity_id, log_type: 'LEDGER_ERROR',
           target_ref: ps._id?.toString(), target_model: 'JournalEntry',
           field_changed: 'auto_journal', new_value: jeErr.message,
           changed_by: req.user._id,
-          note: `Auto-journal failed for payslip ${fullPs.employee_name || ps._id}`
+          note: `Auto-journal failed for payslip ${fullPs?.employee_name || ps._id}`
         }).catch(() => {});
       }
     } catch (err) {

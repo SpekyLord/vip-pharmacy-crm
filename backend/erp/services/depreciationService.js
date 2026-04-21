@@ -118,7 +118,7 @@ async function postDepreciation(entityId, period, userId) {
   for (const asset of assets) {
     for (const entry of asset.depreciation_schedule) {
       if (entry.period === period && entry.status === 'APPROVED') {
-        const jeData = journalFromDepreciation({
+        const jeData = await journalFromDepreciation({
           amount: entry.amount,
           date: new Date(),
           period,

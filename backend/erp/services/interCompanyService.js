@@ -322,7 +322,7 @@ const postTransfer = async (transferId, postedBy) => {
       const receiverJe = await journalFromInterCompany(transfer, 'RECEIVER', amount, postedBy);
       if (receiverJe) await createAndPostJournal(transfer.target_entity_id, receiverJe);
     } catch (jeErr) {
-      console.error('IC Transfer JE failed:', transfer.transfer_ref, jeErr.message);
+      console.error('[AUTO_JOURNAL_FAILURE] ICTransfer', transfer.transfer_ref, jeErr.message);
     }
   }
 

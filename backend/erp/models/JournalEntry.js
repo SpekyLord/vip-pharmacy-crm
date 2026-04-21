@@ -17,7 +17,14 @@ const jeLineSchema = new mongoose.Schema({
   credit: { type: Number, default: 0, min: 0 },
   description: { type: String, trim: true },
   bdm_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  cost_center: { type: String, trim: true }
+  cost_center: { type: String, trim: true },
+  // Phase 35 — marks a legitimate contra / reduction line (e.g. CR AR-BDM to draw
+  // down an advance, CR PETTY_CASH for a disbursement, DR AP to pay a supplier).
+  // Pre-save validator's #15 normal_balance direction check skips lines with this
+  // flag. Callers (auto-journal helpers + controllers) set it explicitly on the
+  // reduction side so the audit trail records intent. Manual JEs from the journal
+  // controller should leave this false so the direction check still catches typos.
+  is_contra: { type: Boolean, default: false }
 }, { _id: false });
 
 const journalEntrySchema = new mongoose.Schema({
@@ -60,7 +67,13 @@ const journalEntrySchema = new mongoose.Schema({
       'PAYROLL', 'DEPRECIATION', 'INTEREST', 'PEOPLE_COMP',
       'VAT', 'OWNER', 'BANKING', 'MANUAL',
       'SERVICE_REVENUE', 'PETTY_CASH',
-      'INVENTORY', 'IC_TRANSFER'
+      'INVENTORY', 'IC_TRANSFER',
+      // Phase 35 — closes the silent enum gap: creditNoteController used
+      // 'CREDIT_NOTE', purchasingController used 'SUPPLIER_INVOICE',
+      // journalFromIncentive (SG-Q2 W2) used 'SALES_GOAL'. All three were
+      // being rejected by strict-enum validation before ever hitting the
+      // normal_balance guard.
+      'CREDIT_NOTE', 'SUPPLIER_INVOICE', 'SALES_GOAL'
     ],
     required: true
   },
@@ -168,10 +181,19 @@ journalEntrySchema.pre('save', async function (next) {
     // #15 Hardening: Enforce normal_balance direction — block lines that put the
     // full amount on the wrong side (e.g., debiting a CREDIT-only account).
     // A line with BOTH debit>0 and credit>0 is already invalid (each line should be one-sided).
+    //
+    // Phase 35 — `is_contra: true` on a line signals an intentional reduction
+    // (CR AR-BDM to draw down an advance, DR AP to pay a supplier, CR PETTY_CASH
+    // for a disbursement). These are textbook-correct double-entry moves; the
+    // original #15 guard was blocking them silently and killing SMER + Car Logbook
+    // auto-journals. Validator now trusts the flag from auto-journal callers and
+    // still enforces direction for manual JEs (journalController) and anywhere
+    // the flag is left false.
     const balanceErrors = [];
     for (const line of this.lines) {
       const coa = coaMap.get(line.account_code);
       if (!coa) continue;
+      if (line.is_contra) continue;
       if (coa.normal_balance === 'DEBIT' && line.credit > 0 && line.debit === 0) {
         balanceErrors.push(`${line.account_code} (${line.account_name}): credited ${line.credit.toFixed(2)} but normal balance is DEBIT`);
       } else if (coa.normal_balance === 'CREDIT' && line.debit > 0 && line.credit === 0) {

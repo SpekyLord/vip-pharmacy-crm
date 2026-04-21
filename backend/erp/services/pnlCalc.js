@@ -496,23 +496,25 @@ async function executeYearEndClose(entityId, fiscalYear, userId) {
       // Close revenue accounts (4xxx have credit balances → debit to close)
       // Close expense accounts (5xxx-7xxx have debit balances → credit to close)
       if (net < 0) {
-        // Credit balance (revenue) → debit to close
+        // Credit balance (revenue, CREDIT-normal) → debit to close. DR on CREDIT-normal = contra.
         closingLines.push({
           account_code: acct._id,
           account_name: acct.account_name || acct._id,
           debit: Math.abs(net),
           credit: 0,
-          description: `Year-end close FY${fiscalYear}`
+          description: `Year-end close FY${fiscalYear}`,
+          is_contra: true
         });
         totalDebit += Math.abs(net);
       } else {
-        // Debit balance (expense) → credit to close
+        // Debit balance (expense, DEBIT-normal) → credit to close. CR on DEBIT-normal = contra.
         closingLines.push({
           account_code: acct._id,
           account_name: acct.account_name || acct._id,
           debit: 0,
           credit: net,
-          description: `Year-end close FY${fiscalYear}`
+          description: `Year-end close FY${fiscalYear}`,
+          is_contra: true
         });
         totalCredit += net;
       }
@@ -531,13 +533,14 @@ async function executeYearEndClose(entityId, fiscalYear, userId) {
           description: `Net income transfer FY${fiscalYear}`
         });
       } else {
-        // Net loss → debit Retained Earnings
+        // Net loss → debit Retained Earnings (CREDIT-normal equity). DR = contra.
         closingLines.push({
           account_code: '3200',
           account_name: 'Retained Earnings',
           debit: Math.abs(retainedEarnings),
           credit: 0,
-          description: `Net loss transfer FY${fiscalYear}`
+          description: `Net loss transfer FY${fiscalYear}`,
+          is_contra: true
         });
       }
     }
@@ -560,7 +563,7 @@ async function executeYearEndClose(entityId, fiscalYear, userId) {
       await fyArchive.save();
     }
   } catch (closingErr) {
-    console.error('Year-end closing JE failed:', closingErr.message);
+    console.error('[AUTO_JOURNAL_FAILURE] YearEndClose', closingErr.message);
     // Don't fail the entire close — data capture is done, JE can be retried
   }
 

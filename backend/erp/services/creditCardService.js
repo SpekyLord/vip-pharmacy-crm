@@ -111,18 +111,22 @@ async function recordCardPayment(entityId, cardId, amount, bankAccountId, paymen
     source_doc_ref: `CC-PAY-${card.card_code}`,
     lines: [
       {
+        // DR CC Payable (CREDIT-normal liability) reduces the payable — contra.
         account_code: card.coa_code,
         account_name: acctMap.get(card.coa_code) || `CC Payable — ${card.card_name}`,
         debit: amount,
         credit: 0,
-        description: `CC payment — ${card.card_name}`
+        description: `CC payment — ${card.card_name}`,
+        is_contra: true
       },
       {
+        // CR bank (DEBIT-normal asset) — contra when funding is 1/5/6.
         account_code: bankAcct.coa_code,
         account_name: acctMap.get(bankAcct.coa_code) || bankAcct.bank_name,
         debit: 0,
         credit: amount,
-        description: `CC payment from ${bankAcct.bank_name}`
+        description: `CC payment from ${bankAcct.bank_name}`,
+        is_contra: /^[156]/.test(String(bankAcct.coa_code || ''))
       }
     ],
     bir_flag: 'INTERNAL',

@@ -15,6 +15,13 @@ const ChartOfAccounts = require('../models/ChartOfAccounts');
 const { getCoaMap, resolveFundingCoa } = require('./autoJournal');
 const { createAndPostJournal, reverseJournal } = require('./journalEngine');
 
+// Phase 35 — first-digit heuristic for contra marking. Funding COA from Settings
+// is typically a DEBIT-normal asset (1xxx cash/bank/CC). Crediting it is a reduction.
+function isDebitNormalByCode(code) {
+  const d = String(code || '').charAt(0);
+  return d === '1' || d === '5' || d === '6';
+}
+
 function periodFromDate(d) {
   const dt = new Date(d);
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
@@ -126,8 +133,10 @@ async function postSettlementJournal(payout, planRef, bdmLabel, userId, paidViaD
     source_doc_ref: docRef,
     bdm_id: payout.bdm_id || null,
     lines: [
-      { account_code: accrCode, account_name: accrCoa.name, debit: amount, credit: 0, description },
-      { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description },
+      // DR INCENTIVE_ACCRUAL reduces a CREDIT-normal liability — contra.
+      { account_code: accrCode, account_name: accrCoa.name, debit: amount, credit: 0, description, is_contra: true },
+      // CR funding reduces the asset we're paying out of (cash/bank/CC/petty cash).
+      { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description, is_contra: isDebitNormalByCode(funding.coa_code) },
     ],
     bir_flag: 'BOTH',
     vat_flag: 'N/A',

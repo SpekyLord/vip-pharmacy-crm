@@ -243,7 +243,8 @@ async function finalizeRecon(statementId, userId) {
       const lines = isDebit
         ? [
             { account_code: coa.BANK_CHARGES || '7100', account_name: 'Bank Charges', debit: amount, credit: 0, description: entry.description || 'Bank charge' },
-            { account_code: bankCoa, account_name: bankName, debit: 0, credit: amount, description: entry.description || 'Bank charge' }
+            // CR bank account (DEBIT-normal asset) reduces cash on hand — contra.
+            { account_code: bankCoa, account_name: bankName, debit: 0, credit: amount, description: entry.description || 'Bank charge', is_contra: /^[156]/.test(String(bankCoa || '')) }
           ]
         : [
             { account_code: bankCoa, account_name: bankName, debit: amount, credit: 0, description: entry.description || 'Bank credit' },
@@ -266,7 +267,7 @@ async function finalizeRecon(statementId, userId) {
       entry.je_id = je._id;
       entry.match_status = 'MATCHED';
     } catch (jeErr) {
-      console.error('Bank recon JE failed for line', entry.line_no, jeErr.message);
+      console.error('[AUTO_JOURNAL_FAILURE] BankRecon line', entry.line_no, jeErr.message);
     }
   }
 

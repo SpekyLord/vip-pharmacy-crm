@@ -25,6 +25,9 @@ const dailyEntrySchema = new mongoose.Schema({
   perdiem_amount: { type: Number, default: 0 },             // effective amount (CRM-computed or override)
   transpo_p2p: { type: Number, default: 0 },
   transpo_special: { type: Number, default: 0 },
+  // @deprecated 2026-04 — ORE flows through ExpenseEntry.expense_type='ORE' only.
+  // Kept in schema for historical audit on pre-retirement POSTED docs.
+  // Pre-save guard below rejects any non-zero write.
   ore_amount: { type: Number, default: 0 },
   car_logbook_id: { type: mongoose.Schema.Types.ObjectId, ref: 'CarLogbookEntry' },
   notes: { type: String, trim: true },
