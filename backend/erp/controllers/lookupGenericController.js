@@ -974,6 +974,17 @@ const SEED_DEFAULTS = {
     { code: 'REQUIRE_BATCH', label: 'Require Batch/Lot # on GRN Lines', metadata: { value: 1, description: 'Set to 1 (default) for pharmacy/FDA tracking. Set to 0 for verticals where batch tracking is not needed. When 0, blank batches are stored as "N/A" to preserve FIFO grouping.' } },
     { code: 'REQUIRE_EXPIRY', label: 'Require Expiry Date on GRN Lines', metadata: { value: 1, description: 'Set to 1 (default) for pharmacy. Set to 0 for non-perishable inventory. When 0, blank expiries are stored as 9999-12-31 so FIFO still sorts real-expiry stock first. MIN_EXPIRY_DAYS floor still applies when the user voluntarily enters an expiry.' } },
   ],
+  // Per-entity Sales Entry / Opening AR thresholds. Read by `getSalesSetting`
+  // in salesController.js; subscribers tune via Control Center → Lookup Tables
+  // without a code change.
+  //
+  //   - REQUIRE_CSI_PHOTO: block Validate for CSI rows with no csi_photo_url.
+  //     Default 1 (pharmacy compliance — receipt photo is audit evidence).
+  //     Flip to 0 for verticals where a signed PDF or e-invoice is sufficient;
+  //     the Approval Hub still surfaces the photo field for any row that has it.
+  SALES_SETTINGS: [
+    { code: 'REQUIRE_CSI_PHOTO', label: 'Require CSI Photo on Validate', metadata: { value: 1, description: 'Set to 1 (default) to block Validate when a CSI/Opening AR row has no photo attached. Set to 0 to allow posting without a photo (e.g. service-only subscribers).' } },
+  ],
   // Phase SG-Q2 — Period lock modules. UI (Period Locks page) reads this to render
   // toggle rows per module. Each code becomes a lockable unit. Subscribers can add
   // their own modules via Control Center → Lookup Tables (no code change).

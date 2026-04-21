@@ -77,6 +77,7 @@ const POPULATED_LOADERS = {
       .populate('hospital_id', 'hospital_name')
       .populate('customer_id', 'customer_name')
       .populate('warehouse_id', 'warehouse_name warehouse_code')
+      .populate('posted_by', 'name')
       .lean();
   },
 
@@ -85,6 +86,7 @@ const POPULATED_LOADERS = {
       .populate('bdm_id', 'name email')
       .populate('hospital_id', 'hospital_name')
       .populate('customer_id', 'customer_name')
+      .populate('posted_by', 'name')
       .lean();
   },
 
@@ -92,18 +94,21 @@ const POPULATED_LOADERS = {
     return ExpenseEntry.findOne({ _id: id, ...filter })
       .populate('bdm_id', 'name email')
       .populate('recorded_on_behalf_of', 'name')
+      .populate('posted_by', 'name')
       .lean();
   },
 
   CALF: async (id, filter) => {
     return PrfCalf.findOne({ _id: id, doc_type: 'CALF', ...filter })
       .populate('bdm_id', 'name email')
+      .populate('posted_by', 'name')
       .lean();
   },
 
   PRF: async (id, filter) => {
     return PrfCalf.findOne({ _id: id, doc_type: 'PRF', ...filter })
       .populate('bdm_id', 'name email')
+      .populate('posted_by', 'name')
       .lean();
   },
 
@@ -113,6 +118,7 @@ const POPULATED_LOADERS = {
       .populate('vendor_id', 'vendor_name')
       .populate('bdm_id', 'name email')
       .populate('reviewed_by', 'name')
+      .populate('posted_by', 'name')
       .lean();
   },
 

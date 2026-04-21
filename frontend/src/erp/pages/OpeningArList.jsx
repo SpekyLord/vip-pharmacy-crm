@@ -48,7 +48,7 @@ import RejectionBanner from '../components/RejectionBanner';
 import CsiPhoto, { csiPhotoStyles } from '../components/CsiPhoto';
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError, showSuccess, showWarning } from '../utils/errorToast';
+import { showError, showSuccess, showWarning, showApprovalPending } from '../utils/errorToast';
 
 function toTitleCase(str) {
   if (!str) return str;
@@ -308,13 +308,22 @@ export default function OpeningArList() {
     // so the president isn't confused by a generic "FIFO deduction" prompt.
     if (!window.confirm('Submit this Opening AR entry? AR journal will be created (no stock deduction).')) return;
     try {
-      await sales.submitSales([saleId]);
+      // Submit returns 202 with { approval_pending: true, message } when the
+      // caller's role is not in MODULE_DEFAULT_ROLES.SALES. Opening AR submits
+      // through the same gateApproval as live sales (module='SALES'), so the
+      // Hub banner must be surfaced here too — mirrors OpeningArEntry.
+      const res = await sales.submitSales([saleId]);
+      if (res?.approval_pending) {
+        showApprovalPending(res.message);
+      }
       loadSales(pagination.page);
     } catch (err) {
-      // Approval-gated posts raise 202 with approval_pending — delegate the
-      // message surface to the shared error classifier (keeps the banner
-      // consistent with SalesList).
-      showError(err, 'Could not submit Opening AR');
+      if (err?.response?.data?.approval_pending) {
+        showApprovalPending(err.response.data.message);
+        loadSales(pagination.page);
+      } else {
+        showError(err, 'Could not submit Opening AR');
+      }
     }
   };
 
