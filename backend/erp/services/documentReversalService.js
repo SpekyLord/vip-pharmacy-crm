@@ -64,6 +64,7 @@ const OfficeSupplyTransaction = require('../models/OfficeSupplyTransaction');
 
 const { reverseJournal } = require('./journalEngine');
 const { checkHardBlockers } = require('./dependentDocChecker');
+const { unmarkUsed: unmarkCsiUsed } = require('./csiBookletService');
 
 // ───────────────────────────────────────────────────────────────────────────────
 // Module → period-lock key mapping (matches PeriodLock.module enum)
@@ -298,6 +299,19 @@ async function reverseSale({ doc, userId, reason, tenantFilter }) {
       await doc.save({ session });
     });
   } finally { session.endSession(); }
+
+  // Release the CSI number back to the booklet so the contractor can re-issue
+  // the same CSI# on a corrected sale. Mirrors the reopen path
+  // (salesController.reopenSales). Non-blocking: a failure here only means the
+  // booklet tracker is out of sync — the reversal itself has already committed.
+  if ((doc.sale_type || 'CSI') === 'CSI' && doc.doc_ref) {
+    try {
+      await unmarkCsiUsed(doc.entity_id, doc.doc_ref);
+      sideEffects.push('csi_number_released');
+    } catch (csiErr) {
+      console.error('CSI unmarkUsed failed on reversal (non-blocking):', doc.doc_ref, csiErr.message);
+    }
+  }
 
   return { doc_type: 'SALES_LINE', doc_id: doc._id, doc_ref: doc.doc_ref || doc.invoice_number, mode: 'SAP_STORNO', reversal_event_id: reversalEvent?._id, side_effects: sideEffects };
 }
