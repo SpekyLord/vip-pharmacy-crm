@@ -275,8 +275,17 @@ doctorSchema.index({ supportDuringCoverage: 1 });
 doctorSchema.index({ programsToImplement: 1 });
 doctorSchema.index({ clientType: 1 });
 doctorSchema.index({ 'hospitals.hospital_id': 1 });
-// Phase M1 — partner referral code is unique when present (sparse to allow nulls)
-doctorSchema.index({ 'partnerProgram.referralCode': 1 }, { unique: true, sparse: true });
+// Phase M1 — partner referral code is unique when set. `sparse` doesn't work here
+// because the schema writes `referralCode: null` by default, which the sparse index
+// still indexes and then collides across every unenrolled doctor. Partial filter
+// restricts the unique constraint to documents that actually have a string code.
+doctorSchema.index(
+  { 'partnerProgram.referralCode': 1 },
+  {
+    unique: true,
+    partialFilterExpression: { 'partnerProgram.referralCode': { $type: 'string' } },
+  }
+);
 
 // Virtual: Full name (combines firstName and lastName)
 doctorSchema.virtual('fullName').get(function () {
