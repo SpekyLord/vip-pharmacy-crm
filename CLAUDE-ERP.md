@@ -179,6 +179,62 @@ When the consultant delivers the gap list, the concrete work gets its own Phase 
 
 ---
 
+## Phase G1.6 — Logbook-Driven Per-Diem + Per-Role Thresholds + Cleanup Queue UX (April 22, 2026)
+
+Closes the nine-item follow-up backlog queued at the end of G1.5. Ships non-pharma per-diem (CarLogbook-sourced), per-role threshold overrides without code deploys, a "Needs Cleanup" admin filter for the locality/province backfill workflow, and CPT Excel parser support for the two new structured-address columns. Three items from the backlog remain deliberately deferred (see end of section for rationale).
+
+### Contract — what changed vs G1.5
+
+| Surface | G1.5 state | G1.6 change |
+|---|---|---|
+| Per-diem source | `eligibility_source='logbook'` resolved but aggregation returned zeros (stub) | `smerCrmBridge.getDailyLogbookCounts()` reads from `CarLogbookEntry` (POSTED + `official_km > 0`). 1 qualifying day = 1 `md_count`. Admin configures tier thresholds per role. |
+| Per-role tier thresholds | Hardcoded chain: `CompProfile > Settings.PERDIEM_MD_FULL/HALF` | New layer between: `CompProfile > PERDIEM_RATES.metadata.full_tier_threshold/half_tier_threshold > Settings`. `null` at any layer = defer to next. Delivery-driver example: `full_tier_threshold=1` → any worked day triggers FULL. |
+| Admin address cleanup | Backfill script existed, but admin had no way to *see* which doctors were missing locality/province | `GET /api/doctors?needsCleanup=true` + frontend FilterDropdown. Dedicated "Location" column on DoctorManagement shows `{locality}, {province}` or a `Needs Cleanup` pill when blank. |
+| CPT Excel import | Locality/province columns never emitted by the parser | `excelParser.js` now reads optional cols AN (LOCALITY) + AO (PROVINCE). Legacy workbooks silently pass through; enhanced templates populate on import so backfill queue stays empty. |
+| BDM Client modal | Already had cascading picker from G1.5 (survey confirmed) | No change. Flagged in original deferred list but was stale. |
+| Report-view cleanup | Admin visit report showed raw address only | Address cell now stacks `clinicOfficeAddress` over `{locality}, {province}` when present. Non-disruptive to CPT Excel export layout. |
+
+### Files changed
+
+**Backend (6):**
+- `controllers/doctorController.js` — `needsCleanup=true` filter; refactored to `$and`-compose with search so both can coexist.
+- `controllers/clientController.js` — same filter composition for regular clients.
+- `utils/excelParser.js` — `CPT_COLS.LOCALITY=39 (AN)`, `CPT_COLS.PROVINCE=40 (AO)`. Legacy workbooks return empty strings → importController's `|| undefined` preserves the old "skip on empty" behavior.
+- `erp/services/perdiemCalc.js` — `resolvePerdiemThresholds(settings, compProfile, perdiemConfig?)` 3-arg signature. Precedence chain: CompProfile > PERDIEM_RATES > Settings. `computePerdiemTier` + `computePerdiemAmount` accept trailing optional `perdiemConfig`. Unused callers unaffected (backward compatible).
+- `erp/services/smerCrmBridge.js` — imports `CarLogbookEntry`. `getDailyMdCounts(opts.source)` dispatches: `visit` (default) → Visit aggregation; `logbook` → new `getDailyLogbookCounts`; `manual|none` → empty. `getDailyVisitDetails(opts.source)` mirrored for drill-down. Exports now include `getDailyLogbookCounts`.
+- `erp/controllers/expenseController.js` — `getSmerCrmMdCounts` passes `source: perdiemConfig.eligibility_source` + `perdiemConfig` (5th arg) into `computePerdiemAmount`. `getSmerCrmVisitDetail` resolves source before drill-down. `getPerdiemConfig` (display endpoint) pulls perdiemConfig with try/catch so unseeded entities degrade instead of throwing on a GET.
+
+**Backend lookups (1):**
+- `erp/controllers/lookupGenericController.js` — `PERDIEM_RATES` seed updated: `logbook` annotation moved from "stub" to "wired"; added `DELIVERY_DRIVER` example row (`rate_php: 500`, `eligibility_source: 'logbook'`, `full_tier_threshold: 1`, `allow_weekend: true`).
+
+**Frontend (3):**
+- `pages/admin/DoctorsPage.jsx` — `filters.needsCleanup` threaded through both `fetchDoctors` and `fetchRegularClients`; `fetchRegularClients` useCallback dep array updated.
+- `components/admin/DoctorManagement.jsx` — new Location column with conditional `Needs Cleanup` pill; new FilterDropdown for cleanup toggle.
+- `components/admin/EmployeeVisitReport.jsx` — address cell stacks clinicOffice + structured location; both VIP and regular-client tables.
+
+### Governance
+
+- **Rule #3 (lookup-driven)**: per-role thresholds now live in `PERDIEM_RATES.metadata`. Non-pharma subscribers flip `full_tier_threshold` and `half_tier_threshold` via Control Center → Lookup Tables without a deploy.
+- **Rule #21 (no silent fallback)**: missing `PERDIEM_RATES` row still throws in the strict path (SMER generation, approval, payroll). Only the display-only `GET /expenses/perdiem-config` degrades — admin sees Settings-defaults until they seed the row.
+- **Rule #20 (period locks + audit)**: no changes. Logbook source reads only `status: 'POSTED'` entries to preserve audit integrity — paying per-diem on an in-progress DRAFT would risk double-payment on reopen.
+
+### Deliberately deferred (unchanged from user's G1.5 backlog)
+
+| Item | Why still deferred |
+|---|---|
+| Flip Doctor/Client validators to `.notEmpty()` on CREATE | Runtime data dependency — can't verify backfill queue is empty from code. Schedule after admin runs backfill script + confirms zero `Needs Cleanup` rows. |
+| Migrate `settings.REVOLVING_FUND_AMOUNT \|\| 8000` fallback in expenseController | Explicitly flagged as "separate follow-up phase". Needs its own PR — touches travel-advance resolution chain across 2 call sites with different semantics. |
+| Extend `PH_LOCALITIES` seed to full ~1,600 PSGC rows | Needs external PSA dataset. Starter seed (~50 rows) already works; admin can add ad-hoc via Control Center today. Phase G1.7+ when PSA feed is plumbed in. |
+
+### Known risk notes (carried forward from G1.5)
+
+- Mid-cycle PERDIEM_RATES edits don't affect existing DRAFT SMERs — rate is stamped at `SmerEntry.create` time. Editing mid-cycle only affects NEW SMERs. Matches revolving-fund semantics.
+- POSTED legacy SMERs keep their originally-stamped rate on reopen via the Reversal Console (does not re-fetch from lookup). Historical ledger integrity preserved.
+- Universal approval service's best-effort CRM enrichment (line 502) still hard-codes `visit` source — non-pharma approvals show empty `cities_visited`. Non-blocking (best-effort), upgrade when approval-review needs logbook-aware drill-down.
+- Pre-existing pattern `computePerdiemAmount(tier === 'FULL' ? 999 : 3, ...)` in 4+ call sites would fail if `full_tier_threshold > 999` or `half_tier_threshold > 3` (unlikely but theoretically possible). Preserved as-is to keep scope contained; rewrite to `computePerdiemAmountForTier(tier, rate)` in a follow-up.
+
+---
+
 ## Phase G1.5 — Per-Diem Integrity + Structured Doctor Address + Non-Pharma Ready (April 21, 2026)
 
 Closes the four governance gaps surfaced in the April 21 per-diem audit (items #4/#5/#6/#7): flagged-photo visits earned per-diem, hardcoded ₱800 rate fallback, weekend exclusion was hardcoded not configurable, and per-diem notes leaked raw clinic addresses instead of clean `City, Province` labels. Also preps per-diem for non-pharma subsidiaries (delivery drivers, field techs) by routing rate resolution through a per-entity × per-role lookup.

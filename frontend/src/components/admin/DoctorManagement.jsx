@@ -1727,6 +1727,16 @@ const DoctorManagement = ({
                   ...employees.map(e => ({ value: e._id, label: e.name })),
                 ]}
               />
+              {/* Phase G1.6 — Needs Cleanup filter: clients missing structured locality/province.
+                  Drives the admin backfill workflow for SMER per-diem notes. */}
+              <FilterDropdown
+                value={filters.needsCleanup || ''}
+                onChange={(val) => handleFilterChange('needsCleanup', val)}
+                options={[
+                  { value: '', label: 'All Locations' },
+                  { value: 'true', label: 'Needs Cleanup (missing locality/province)' },
+                ]}
+              />
           </>
         )}
         </div>
@@ -1745,6 +1755,7 @@ const DoctorManagement = ({
                     <th>Client Type</th>
                     <th>Specialization</th>
                     <th>Hospital / Address</th>
+                    <th>Location</th>
                     <th>Assigned BDM</th>
                     <th>Visit Freq</th>
                     <th>Engagement</th>
@@ -1776,6 +1787,25 @@ const DoctorManagement = ({
                       </td>
                       <td>{doctor.specialization || '—'}</td>
                       <td>{doctor.clinicOfficeAddress || doctor.hospital || '—'}</td>
+                      <td>
+                        {doctor.locality && doctor.province ? (
+                          <span style={{ fontSize: 12 }}>{doctor.locality}, {doctor.province}</span>
+                        ) : (
+                          <span
+                            style={{
+                              fontSize: 11,
+                              padding: '2px 8px',
+                              borderRadius: 10,
+                              background: '#fef3c7',
+                              color: '#92400e',
+                              fontWeight: 500,
+                            }}
+                            title="Missing structured locality/province — blocks SMER per-diem note formatting"
+                          >
+                            Needs Cleanup
+                          </span>
+                        )}
+                      </td>
                       <td>{doctor.assignedTo?.name || doctor._ownerName || '—'}</td>
                       <td>
                         <span className={`visit-freq-badge freq-${doctor.visitFrequency || 2}`}>

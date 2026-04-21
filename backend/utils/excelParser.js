@@ -38,6 +38,12 @@ const CPT_COLS = {
   BIRTHDAY: 36,       // AK
   ANNIVERSARY: 37,    // AL
   OTHER: 38,          // AM
+  // Phase G1.6 — optional structured address columns. Legacy workbooks leave these
+  // blank; enhanced CPT templates populate them so the backfill queue stays empty
+  // on import. Free-text: validated against PH_LOCALITIES / PH_PROVINCES lookups
+  // by the admin at review-and-approve time, not at parse time.
+  LOCALITY: 39,       // AN
+  PROVINCE: 40,       // AO
 };
 
 // Day sheet column indices (0-based)
@@ -285,6 +291,11 @@ const parseCPTMasterSheet = (worksheet, errors) => {
       birthday: parseExcelDate(cellVal(row, CPT_COLS.BIRTHDAY)),
       anniversary: parseExcelDate(cellVal(row, CPT_COLS.ANNIVERSARY)),
       otherDetails: cellStr(row, CPT_COLS.OTHER),
+      // Phase G1.6 — optional structured address (empty on legacy workbooks).
+      // importController stores as-is; admin review/approve surface + backfill
+      // script reconcile against the PH_LOCALITIES / PH_PROVINCES lookups.
+      locality: cellStr(row, CPT_COLS.LOCALITY),
+      province: cellStr(row, CPT_COLS.PROVINCE),
     });
   }
 

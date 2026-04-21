@@ -124,16 +124,18 @@ const createSmer = catchAsync(async (req, res) => {
   }
 
   // Auto-compute per diem for each daily entry (skip overridden entries)
-  // Per diem thresholds: CompProfile per-person → Settings global fallback
+  // Phase G1.6 — threshold chain: CompProfile per-person → PERDIEM_RATES per-role → Settings global.
+  // Passing perdiemConfig as 5th arg ensures preview (getSmerCrmMdCounts) and
+  // create/update/post all resolve to the same tier for non-pharma subscribers.
   let dailyEntries = (req.body.daily_entries || []).map(entry => {
     // "No Work" — force zero everything, skip per diem computation
     if (entry.activity_type === 'NO_WORK') return enforceNoWorkRules(entry);
     if (entry.perdiem_override && entry.override_tier) {
       // Override set — use override_tier for amount, preserve CRM md_count
-      const { amount } = computePerdiemAmount(entry.override_tier === 'FULL' ? 999 : 3, perdiemRate, settings, compProfile);
+      const { amount } = computePerdiemAmount(entry.override_tier === 'FULL' ? 999 : 3, perdiemRate, settings, compProfile, perdiemConfig);
       return { ...entry, perdiem_tier: entry.override_tier, perdiem_amount: amount };
     }
-    const { tier, amount } = computePerdiemAmount(entry.md_count || 0, perdiemRate, settings, compProfile);
+    const { tier, amount } = computePerdiemAmount(entry.md_count || 0, perdiemRate, settings, compProfile, perdiemConfig);
     return { ...entry, perdiem_tier: tier, perdiem_amount: amount };
   });
 
@@ -166,9 +168,18 @@ const updateSmer = catchAsync(async (req, res) => {
   const settings = await Settings.getSettings();
   const perdiemRate = req.body.perdiem_rate || smer.perdiem_rate;
   const compProfile = await loadBdmCompProfile(smer.bdm_id, smer.entity_id);
+  // Phase G1.6 — resolve per-role config so update recomputes the SAME tier the
+  // preview showed. Must use SMER's entity_id (not req.entityId) in case admin
+  // is editing cross-entity. Degrades to undefined if lookup missing (display-only).
+  let perdiemConfig;
+  try {
+    perdiemConfig = await resolvePerdiemConfig({ entityId: smer.entity_id, role: 'BDM' });
+  } catch (_) {
+    perdiemConfig = undefined;
+  }
 
   // Re-compute per diem if daily entries changed (skip overridden entries)
-  // Per diem thresholds: CompProfile per-person → Settings global fallback
+  // Phase G1.6 — threshold chain: CompProfile per-person → PERDIEM_RATES per-role → Settings global.
   if (req.body.daily_entries) {
     req.body.daily_entries = req.body.daily_entries.map(entry => {
       // Strip empty strings from enum fields
@@ -180,10 +191,10 @@ const updateSmer = catchAsync(async (req, res) => {
       if (cleaned.activity_type === 'NO_WORK') return enforceNoWorkRules(cleaned);
 
       if (cleaned.perdiem_override && cleaned.override_tier) {
-        const { amount } = computePerdiemAmount(cleaned.override_tier === 'FULL' ? 999 : 3, perdiemRate, settings, compProfile);
+        const { amount } = computePerdiemAmount(cleaned.override_tier === 'FULL' ? 999 : 3, perdiemRate, settings, compProfile, perdiemConfig);
         return { ...cleaned, perdiem_tier: cleaned.override_tier, perdiem_amount: amount };
       }
-      const { tier, amount } = computePerdiemAmount(cleaned.md_count || 0, perdiemRate, settings, compProfile);
+      const { tier, amount } = computePerdiemAmount(cleaned.md_count || 0, perdiemRate, settings, compProfile, perdiemConfig);
       return { ...cleaned, perdiem_tier: tier, perdiem_amount: amount };
     });
   }
@@ -466,9 +477,17 @@ const overridePerdiemDay = catchAsync(async (req, res) => {
 
   if (remove_override) {
     // Remove override — revert to CRM-computed tier (no approval needed)
+    // Phase G1.6 — include perdiemConfig so revert matches current preview tier
+    // under per-role thresholds. Degrade-to-undefined if lookup missing.
     const settings = await Settings.getSettings();
     const compProfile = await loadBdmCompProfile(smer.bdm_id, smer.entity_id);
-    const { tier, amount } = computePerdiemAmount(entry.md_count || 0, smer.perdiem_rate, settings, compProfile);
+    let perdiemConfig;
+    try {
+      perdiemConfig = await resolvePerdiemConfig({ entityId: smer.entity_id, role: 'BDM' });
+    } catch (_) {
+      perdiemConfig = undefined;
+    }
+    const { tier, amount } = computePerdiemAmount(entry.md_count || 0, smer.perdiem_rate, settings, compProfile, perdiemConfig);
     entry.perdiem_override = false;
     entry.override_tier = undefined;
     entry.override_reason = undefined;
@@ -506,7 +525,15 @@ const overridePerdiemDay = catchAsync(async (req, res) => {
   const docRef = `${smer.period}-${smer.cycle}-Day${entry.day}`;
   const settings = await Settings.getSettings();
   const compProfile = await loadBdmCompProfile(smer.bdm_id, smer.entity_id);
-  const { amount: overrideAmount } = computePerdiemAmount(override_tier === 'FULL' ? 999 : 3, smer.perdiem_rate, settings, compProfile);
+  // Phase G1.6 — include perdiemConfig so override-amount matches the tier the
+  // post path will compute (identical resolver chain, same multiplier).
+  let overridePerdiemConfig;
+  try {
+    overridePerdiemConfig = await resolvePerdiemConfig({ entityId: smer.entity_id, role: 'BDM' });
+  } catch (_) {
+    overridePerdiemConfig = undefined;
+  }
+  const { amount: overrideAmount } = computePerdiemAmount(override_tier === 'FULL' ? 999 : 3, smer.perdiem_rate, settings, compProfile, overridePerdiemConfig);
 
   const isManagement = [ROLES.PRESIDENT, ROLES.CEO, ROLES.ADMIN, ROLES.FINANCE].includes(req.user.role);
 
@@ -610,7 +637,15 @@ const applyPerdiemOverride = catchAsync(async (req, res) => {
 
   const settings = await Settings.getSettings();
   const compProfile = await loadBdmCompProfile(smer.bdm_id, smer.entity_id);
-  const { amount } = computePerdiemAmount(override_tier === 'FULL' ? 999 : 3, smer.perdiem_rate, settings, compProfile);
+  // Phase G1.6 — include perdiemConfig so approved-override recompute uses the
+  // same threshold chain as the request-time preview.
+  let applyPerdiemConfig;
+  try {
+    applyPerdiemConfig = await resolvePerdiemConfig({ entityId: smer.entity_id, role: 'BDM' });
+  } catch (_) {
+    applyPerdiemConfig = undefined;
+  }
+  const { amount } = computePerdiemAmount(override_tier === 'FULL' ? 999 : 3, smer.perdiem_rate, settings, compProfile, applyPerdiemConfig);
   const oldTier = entry.perdiem_tier;
 
   entry.perdiem_override = true;
@@ -2518,13 +2553,14 @@ const getSmerCrmMdCounts = catchAsync(async (req, res) => {
   const dateKeyFor = (day) => `${year}-${pad(month)}-${pad(day)}`;
 
   // Phase G1.5 — resolve per-entity × per-role per-diem config BEFORE querying
-  // the CRM bridge, so we can pass skip_flagged into the aggregation filter.
+  // the CRM bridge, so we can pass skip_flagged + source into the aggregation.
+  // Phase G1.6 — dispatch source (visit/logbook/manual/none) per subscriber config.
   const perdiemConfig = await resolvePerdiemConfig({ entityId: req.entityId, role: 'BDM' });
   const dailyCounts = await getDailyMdCounts(
     bdmUserId,
     dateKeyFor(startDay),
     dateKeyFor(endDay),
-    { skipFlagged: perdiemConfig.skip_flagged }
+    { skipFlagged: perdiemConfig.skip_flagged, source: perdiemConfig.eligibility_source }
   );
 
   const settings = await Settings.getSettings();
@@ -2546,7 +2582,8 @@ const getSmerCrmMdCounts = catchAsync(async (req, res) => {
 
     const dateKey = dateKeyFor(day);
     const crmData = dailyCounts[dateKey] || { md_count: 0, unique_doctors: 0 };
-    const { tier, amount } = computePerdiemAmount(crmData.md_count, perdiemRate, settings, compProfile);
+    // Phase G1.6 — pass perdiemConfig so per-role thresholds apply (CompProfile > PERDIEM_RATES > Settings).
+    const { tier, amount } = computePerdiemAmount(crmData.md_count, perdiemRate, settings, compProfile, perdiemConfig);
 
     entries.push({
       day,
@@ -2601,7 +2638,11 @@ const getSmerCrmVisitDetail = catchAsync(async (req, res) => {
     return res.status(403).json({ success: false, message: 'CRM bridge is for BDM users. Admins must pass ?bdm_id=.' });
   }
 
-  const visits = await getDailyVisitDetails(bdmUserId, date);
+  // Phase G1.6 — resolve source so drill-down reads from the correct backing store
+  // (CRM Visit for pharma; CarLogbook for non-pharma). No fallback: if the lookup
+  // row is missing the resolver throws, matching Rule #21 (no silent zero).
+  const drillConfig = await resolvePerdiemConfig({ entityId: req.entityId, role: 'BDM' });
+  const visits = await getDailyVisitDetails(bdmUserId, date, { source: drillConfig.eligibility_source });
 
   res.json({
     success: true,
@@ -3040,14 +3081,26 @@ const getRevolvingFundAmount = catchAsync(async (req, res) => {
 /**
  * GET /expenses/perdiem-config
  * Resolve per diem thresholds for the current BDM.
- * CompProfile per-person thresholds → Settings global fallback.
- * null/undefined in CompProfile = use global. 0 IS a valid override.
- * Returns: { fullThreshold, halfThreshold, source: 'COMP_PROFILE'|'SETTINGS' }
+ * CompProfile per-person → PERDIEM_RATES per-role (Phase G1.6) → Settings global fallback.
+ * null/undefined at any layer = defer to next. 0 IS a valid override at any layer.
+ * Returns: { fullThreshold, halfThreshold, source: 'COMP_PROFILE'|'PERDIEM_RATES'|'SETTINGS' }
  */
 const getPerdiemConfig = catchAsync(async (req, res) => {
   const settings = await Settings.getSettings();
   const compProfile = await loadBdmCompProfile(req.bdmId, req.entityId);
-  const resolved = resolvePerdiemThresholds(settings, compProfile);
+
+  // Phase G1.6 — pull per-role perdiem config (may throw if lookup row is
+  // missing for this entity). Caught + swallowed so the display endpoint
+  // degrades gracefully when PERDIEM_RATES isn't seeded yet; the strict
+  // resolver path (getSmerCrmMdCounts, SMER submit) still enforces it.
+  let perdiemConfig;
+  try {
+    perdiemConfig = await resolvePerdiemConfig({ entityId: req.entityId, role: 'BDM' });
+  } catch (_) {
+    perdiemConfig = undefined;
+  }
+
+  const resolved = resolvePerdiemThresholds(settings, compProfile, perdiemConfig);
 
   res.json({
     success: true,

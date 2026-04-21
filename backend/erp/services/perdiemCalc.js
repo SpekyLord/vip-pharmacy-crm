@@ -1,20 +1,27 @@
 /**
  * Per Diem Calculator — MD count → tier → amount
  *
- * Threshold resolution (per-person override → global fallback):
- *   1. CompProfile.perdiem_engagement_threshold_full / _half (per-BDM)
- *   2. Settings.PERDIEM_MD_FULL / PERDIEM_MD_HALF (global defaults)
+ * Threshold resolution (per-person override → per-role → global fallback):
+ *   1. CompProfile.perdiem_engagement_threshold_full / _half (per-BDM override)
+ *   2. PERDIEM_RATES.metadata.full_tier_threshold / half_tier_threshold (per-role, Phase G1.6)
+ *   3. Settings.PERDIEM_MD_FULL / PERDIEM_MD_HALF (global defaults)
  *
  * Tier logic:
  *   ≥ fullThreshold MDs → FULL (100% per diem)
  *   ≥ halfThreshold MDs → HALF (50% per diem)
  *   below halfThreshold  → ZERO (0% per diem)
  *
+ * Phase G1.6 — per-role layer lets non-pharma subscribers configure thresholds
+ * per role without touching CompProfile or Settings globals. Example: a delivery
+ * driver role with full_tier_threshold=1 (any worked day gets full per-diem)
+ * without affecting the pharma BDM default of 8. Admin controls this via Control
+ * Center → Lookup Tables → PERDIEM_RATES.{role}.metadata.
+ *
  * Follows the revolving_fund_amount pattern:
- *   CompProfile value takes precedence; Settings is the fallback.
- *   Unlike revolving fund (where 0 = use global), thresholds treat
- *   null/undefined as "use global" — 0 IS a valid value (means
- *   "always at least HALF, regardless of MD count").
+ *   CompProfile value takes precedence; PERDIEM_RATES is the per-role layer;
+ *   Settings is the global fallback. Unlike revolving fund (where 0 = use
+ *   global), thresholds treat null/undefined as "defer to next layer" — 0 IS
+ *   a valid value (means "always at least this tier, regardless of MD count").
  */
 
 const TIER_MULTIPLIER = {
@@ -24,24 +31,36 @@ const TIER_MULTIPLIER = {
 };
 
 /**
- * Resolve per diem thresholds from CompProfile → Settings fallback.
- * null/undefined in CompProfile = use global. 0 is a valid override.
+ * Resolve per diem thresholds from CompProfile → PERDIEM_RATES → Settings fallback.
+ * null/undefined at any layer = defer to next layer. 0 is a valid override at any layer.
  * @param {Object} settings - ERP Settings document (global defaults)
- * @param {Object} [compProfile] - BDM's active CompProfile (optional)
+ * @param {Object} [compProfile] - BDM's active CompProfile (optional, highest precedence)
+ * @param {Object} [perdiemConfig] - Per-role config from resolvePerdiemConfig (Phase G1.6)
  * @returns {{ fullThreshold: Number, halfThreshold: Number, source: String }}
  */
-function resolvePerdiemThresholds(settings, compProfile) {
+function resolvePerdiemThresholds(settings, compProfile, perdiemConfig) {
   const globalFull = settings?.PERDIEM_MD_FULL ?? 8;
   const globalHalf = settings?.PERDIEM_MD_HALF ?? 3;
+
+  // Phase G1.6 — per-role layer from PERDIEM_RATES.metadata. resolvePerdiemConfig
+  // already coerces to Number | null, so undefined coercion is safe here.
+  const roleFull = perdiemConfig?.full_tier_threshold;
+  const roleHalf = perdiemConfig?.half_tier_threshold;
 
   const personFull = compProfile?.perdiem_engagement_threshold_full;
   const personHalf = compProfile?.perdiem_engagement_threshold_half;
 
-  // null/undefined = use global; any number (including 0) = person override
-  const fullThreshold = (personFull != null) ? personFull : globalFull;
-  const halfThreshold = (personHalf != null) ? personHalf : globalHalf;
+  // Precedence: CompProfile > PERDIEM_RATES > Settings. null/undefined = defer.
+  const fullThreshold = (personFull != null) ? personFull
+    : (roleFull != null) ? roleFull
+    : globalFull;
+  const halfThreshold = (personHalf != null) ? personHalf
+    : (roleHalf != null) ? roleHalf
+    : globalHalf;
 
-  const source = (personFull != null || personHalf != null) ? 'COMP_PROFILE' : 'SETTINGS';
+  let source = 'SETTINGS';
+  if (personFull != null || personHalf != null) source = 'COMP_PROFILE';
+  else if (roleFull != null || roleHalf != null) source = 'PERDIEM_RATES';
 
   return { fullThreshold, halfThreshold, source };
 }
@@ -51,10 +70,11 @@ function resolvePerdiemThresholds(settings, compProfile) {
  * @param {Number} mdCount - Number of MDs covered that day
  * @param {Object} settings - ERP Settings document
  * @param {Object} [compProfile] - BDM's active CompProfile (optional)
+ * @param {Object} [perdiemConfig] - Per-role config from resolvePerdiemConfig (Phase G1.6, optional)
  * @returns {String} 'FULL' | 'HALF' | 'ZERO'
  */
-function computePerdiemTier(mdCount, settings, compProfile) {
-  const { fullThreshold, halfThreshold } = resolvePerdiemThresholds(settings, compProfile);
+function computePerdiemTier(mdCount, settings, compProfile, perdiemConfig) {
+  const { fullThreshold, halfThreshold } = resolvePerdiemThresholds(settings, compProfile, perdiemConfig);
 
   if (mdCount >= fullThreshold) return 'FULL';
   if (mdCount >= halfThreshold) return 'HALF';
@@ -67,10 +87,11 @@ function computePerdiemTier(mdCount, settings, compProfile) {
  * @param {Number} perdiemRate - BDM's per diem rate (from CompProfile or Settings default)
  * @param {Object} settings
  * @param {Object} [compProfile] - BDM's active CompProfile (optional)
+ * @param {Object} [perdiemConfig] - Per-role config from resolvePerdiemConfig (Phase G1.6, optional)
  * @returns {{ tier: String, amount: Number }}
  */
-function computePerdiemAmount(mdCount, perdiemRate, settings, compProfile) {
-  const tier = computePerdiemTier(mdCount, settings, compProfile);
+function computePerdiemAmount(mdCount, perdiemRate, settings, compProfile, perdiemConfig) {
+  const tier = computePerdiemTier(mdCount, settings, compProfile, perdiemConfig);
   const multiplier = TIER_MULTIPLIER[tier];
   const amount = Math.round(perdiemRate * multiplier * 100) / 100;
   return { tier, amount };

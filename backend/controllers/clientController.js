@@ -44,14 +44,33 @@ const getAllClients = catchAsync(async (req, res) => {
   const accessFilter = getAccessFilter(req.user);
   const filter = { isActive: true, ...accessFilter };
 
-  // Search
+  // Compose search + needsCleanup clauses via $and (Phase G1.6).
+  const andClauses = [];
+
   if (req.query.search) {
     const safeSearch = sanitizeSearchString(req.query.search);
-    filter.$or = [
-      { firstName: { $regex: safeSearch, $options: 'i' } },
-      { lastName: { $regex: safeSearch, $options: 'i' } },
-      { clinicOfficeAddress: { $regex: safeSearch, $options: 'i' } },
-    ];
+    andClauses.push({
+      $or: [
+        { firstName: { $regex: safeSearch, $options: 'i' } },
+        { lastName: { $regex: safeSearch, $options: 'i' } },
+        { clinicOfficeAddress: { $regex: safeSearch, $options: 'i' } },
+      ],
+    });
+  }
+
+  if (req.query.needsCleanup === 'true' || req.query.needsCleanup === true) {
+    andClauses.push({
+      $or: [
+        { locality: { $in: [null, ''] } },
+        { locality: { $exists: false } },
+        { province: { $in: [null, ''] } },
+        { province: { $exists: false } },
+      ],
+    });
+  }
+
+  if (andClauses.length) {
+    filter.$and = andClauses;
   }
 
   let query = Client.find(filter)
