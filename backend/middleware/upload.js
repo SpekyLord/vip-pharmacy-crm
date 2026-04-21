@@ -19,8 +19,24 @@ const { uploadVisitPhoto, uploadCommScreenshot, uploadProductImage, uploadAvatar
  * Compress an image buffer using sharp.
  * Resizes to fit within maxDim x maxDim and converts to JPEG at given quality.
  * Returns { buffer, mimetype }.
+ *
+ * Fast-path: JPEGs under 1 MB were almost certainly pre-compressed by the
+ * frontend (erp/utils/compressImage.js targets 1600px/70%, ~300-500 KB).
+ * Re-encoding them with sharp+mozjpeg is 300-500ms of CPU that typically
+ * GROWS the file (80% re-encode > 70% source) — pure waste on every OCR
+ * call, every manual upload, every expense/visit photo. Skip and return
+ * the incoming buffer as-is.
  */
+const COMPRESS_FAST_PATH_MAX_BYTES = 1_000_000; // 1 MB
+
 const compressImage = async (buffer, originalMimetype, { maxDim = 1920, quality = 80 } = {}) => {
+  if (
+    originalMimetype === 'image/jpeg'
+    && Buffer.isBuffer(buffer)
+    && buffer.length <= COMPRESS_FAST_PATH_MAX_BYTES
+  ) {
+    return { buffer, mimetype: 'image/jpeg' };
+  }
   try {
     const compressed = await sharp(buffer)
       .resize(maxDim, maxDim, { fit: 'inside', withoutEnlargement: true })

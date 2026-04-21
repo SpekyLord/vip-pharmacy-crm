@@ -88,8 +88,12 @@ export default function ScanCSIModal({ open, onClose, onApply, hospitals = [], p
     setReviewConfirmed(false);
 
     try {
-      const exif = await extractExifDateTime(file);
-      const result = await processDocument(file, docType, exif);
+      // Photo-only paths (re-upload after rejection, proof-only upload) don't
+      // need OCR — skip the Vision + AI pipeline so the call returns as soon
+      // as S3 responds. Also skip EXIF extraction since nothing consumes it
+      // downstream in photoOnly mode.
+      const exif = photoOnly ? null : await extractExifDateTime(file);
+      const result = await processDocument(file, docType, exif, { skipOcr: photoOnly });
       setOcrData(result);
 
       if (photoOnly) {
