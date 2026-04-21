@@ -105,7 +105,7 @@ function StalenessLine({ d }) {
   if (!bits.length) return null;
   return (
     <div style={{ marginBottom: 6, fontSize: 11, color: 'var(--erp-muted)' }}>
-      {bits.map(([k, v], i) => (
+      {bits.map(([k, v]) => (
         <span key={k} style={{ marginRight: 10 }}><strong>{k}:</strong> {v}{d.reopen_count > 2 && k === 'Reopened' ? ' ⚠' : ''}</span>
       ))}
     </div>
