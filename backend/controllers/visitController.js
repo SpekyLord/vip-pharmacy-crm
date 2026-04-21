@@ -256,7 +256,7 @@ const createVisit = catchAsync(async (req, res) => {
   }
 
   // Populate doctor info for response
-  await visit.populate('doctor', 'firstName lastName specialization clinicOfficeAddress');
+  await visit.populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province');
 
   res.status(201).json({
     success: true,
@@ -317,7 +317,7 @@ const getAllVisits = catchAsync(async (req, res) => {
   const skip = parsedLimit === 0 ? 0 : (page - 1) * parsedLimit;
 
   let visitQuery = Visit.find(query)
-    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province')
     .populate('user', 'name email')
     .sort({ visitDate: -1 })
     .skip(skip);
@@ -352,7 +352,7 @@ const getAllVisits = catchAsync(async (req, res) => {
  */
 const getVisitById = catchAsync(async (req, res) => {
   const visit = await Visit.findById(req.params.id)
-    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress phone')
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province phone')
     .populate('user', 'name email')
     .populate('productsDiscussed.product', 'name category description image');
 
@@ -411,7 +411,7 @@ const updateVisit = catchAsync(async (req, res) => {
     req.params.id,
     updates,
     { new: true, runValidators: true }
-  ).populate('doctor', 'firstName lastName specialization clinicOfficeAddress');
+  ).populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province');
 
   res.json({
     success: true,
@@ -492,7 +492,7 @@ const getVisitsByUser = catchAsync(async (req, res) => {
 
   const [visits, total] = await Promise.all([
     Visit.find(query)
-      .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
+      .populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province')
       .sort({ visitDate: -1 })
       .skip(skip)
       .limit(parseInt(limit)),
@@ -709,7 +709,7 @@ const getTodayVisits = catchAsync(async (req, res) => {
     user: req.user._id,
     visitDate: { $gte: today, $lt: tomorrow },
     status: 'completed',
-  }).populate('doctor', 'firstName lastName specialization clinicOfficeAddress');
+  }).populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province');
 
   // Skip photo signing in list view
   res.json({
@@ -762,7 +762,7 @@ const getMyVisits = catchAsync(async (req, res) => {
 
   // Build the base query
   let visitQuery = Visit.find(query)
-    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province')
     .populate('productsDiscussed.product', 'name category description image')
     .sort({ visitDate: -1 })
     .skip(skip);
@@ -867,7 +867,7 @@ const getEmployeeReport = catchAsync(async (req, res) => {
     assignedTo: userId,
     isActive: true,
   })
-    .select('firstName lastName specialization clinicOfficeAddress visitFrequency')
+    .select('firstName lastName specialization clinicOfficeAddress locality province visitFrequency')
     .lean();
 
   // Fetch all visits by this employee for the selected month
@@ -967,6 +967,8 @@ const getEmployeeReport = catchAsync(async (req, res) => {
       fullName: doctor.fullName,
       specialization: doctor.specialization,
       clinicOfficeAddress: doctor.clinicOfficeAddress,
+      locality: doctor.locality,
+      province: doctor.province,
       visitFrequency: doctor.visitFrequency || 4,
       visitGrid: visitGrid,
       visitCount: doctorVisits.length,
@@ -995,7 +997,7 @@ const getEmployeeReport = catchAsync(async (req, res) => {
   // Get unique client IDs and fetch client details
   const clientIds = [...new Set(clientVisits.map(cv => cv.client.toString()))];
   const clients = await Client.find({ _id: { $in: clientIds } })
-    .select('firstName lastName specialization clinicOfficeAddress')
+    .select('firstName lastName specialization clinicOfficeAddress locality province')
     .lean();
   const clientMap = new Map(clients.map(c => [c._id.toString(), c]));
 
@@ -1019,6 +1021,8 @@ const getEmployeeReport = catchAsync(async (req, res) => {
       lastName: client.lastName,
       specialization: client.specialization || '',
       clinicOfficeAddress: client.clinicOfficeAddress || '',
+      locality: client.locality || '',
+      province: client.province || '',
       visitCount: cvList.length,
       visits: cvList.map(cv => ({
         visitDate: cv.visitDate,
@@ -1096,7 +1100,7 @@ const getGPSReview = catchAsync(async (req, res) => {
 
   const [visits, total] = await Promise.all([
     Visit.find(query)
-      .populate('doctor', 'firstName lastName clinicOfficeAddress location')
+      .populate('doctor', 'firstName lastName clinicOfficeAddress locality province location')
       .populate('user', 'name email')
       .sort({ visitDate: -1 })
       .skip(skip)
@@ -1137,6 +1141,8 @@ const getGPSReview = catchAsync(async (req, res) => {
         firstName: visit.doctor?.firstName,
         lastName: visit.doctor?.lastName,
         clinicOfficeAddress: visit.doctor?.clinicOfficeAddress,
+        locality: visit.doctor?.locality,
+        province: visit.doctor?.province,
       },
       employeeLocation: empLat && empLng ? { lat: empLat, lng: empLng } : null,
       clinicLocation:

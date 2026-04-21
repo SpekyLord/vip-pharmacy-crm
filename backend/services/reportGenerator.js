@@ -191,7 +191,7 @@ async function gatherCompliance(visitQuery, filters) {
 
 async function gatherVisits(visitQuery) {
   const visits = await Visit.find(visitQuery)
-    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province')
     .populate('user', 'name email')
     .select('visitDate weekLabel monthYear location photos engagementTypes productsDiscussed purpose')
     .sort({ visitDate: -1 })
@@ -273,6 +273,8 @@ function formatSheet(type, data) {
         'VIP Client': v.doctor ? `${v.doctor.lastName}, ${v.doctor.firstName}` : '',
         Specialization: v.doctor?.specialization || '',
         'Clinic Address': v.doctor?.clinicOfficeAddress || '',
+        Locality: v.doctor?.locality || '',
+        Province: v.doctor?.province || '',
         'Photos Count': v.photos?.length || 0,
         'Engagement Types': (v.engagementTypes || []).join(', '),
         Purpose: v.purpose || '',

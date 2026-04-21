@@ -464,7 +464,7 @@ const createClientVisit = catchAsync(async (req, res) => {
 
   const visit = await ClientVisit.create(visitData);
 
-  await visit.populate('client', 'firstName lastName specialization clinicOfficeAddress');
+  await visit.populate('client', 'firstName lastName specialization clinicOfficeAddress locality province');
 
   res.status(201).json({
     success: true,
@@ -554,7 +554,7 @@ const getMyClientVisits = catchAsync(async (req, res) => {
 
   const [visits, total] = await Promise.all([
     ClientVisit.find(query)
-      .populate('client', 'firstName lastName specialization clinicOfficeAddress phone')
+      .populate('client', 'firstName lastName specialization clinicOfficeAddress locality province phone')
       .sort({ visitDate: -1 })
       .skip(skip)
       .limit(parseInt(limit)),
@@ -620,7 +620,7 @@ const getClientVisitsByUser = catchAsync(async (req, res) => {
 
   const [visits, total] = await Promise.all([
     ClientVisit.find(query)
-      .populate('client', 'firstName lastName specialization clinicOfficeAddress phone')
+      .populate('client', 'firstName lastName specialization clinicOfficeAddress locality province phone')
       .populate('user', 'name email')
       .sort({ visitDate: -1 })
       .skip(skip)
@@ -827,7 +827,7 @@ const getScheduledToday = catchAsync(async (req, res) => {
  */
 const getClientVisitById = catchAsync(async (req, res) => {
   const visit = await ClientVisit.findById(req.params.visitId)
-    .populate('client', 'firstName lastName specialization clinicOfficeAddress')
+    .populate('client', 'firstName lastName specialization clinicOfficeAddress locality province')
     .populate('user', 'name email');
 
   if (!visit) {

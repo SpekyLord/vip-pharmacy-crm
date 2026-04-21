@@ -2,7 +2,7 @@
 
 > **Last Updated**: April 21, 2026
 > **Version**: 7.0
-> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G5 + H1-H5 + Phase 34 + Phase 3a + Phase 3c Complete. Phase 3c (Apr 18, 2026): **Comprehensive hardcoded-role migration** — 30 destructive endpoints across ~15 modules now use `erpSubAccessCheck(module, key)` instead of `roleCheck('admin','finance','president')`. Baseline danger set grew 1 → 10 keys; 19 new sub-perms appear in the Access Template editor (period force-unlock, year-end, settings write, transfer pricing, people terminate/login mgmt, master data deactivate/delete, lookup deletes, etc.). Phase 3a (Apr 18, 2026): **Lookup-driven Danger Sub-Permission Gate + President-Reverse rollout**. Hardcoded `roleCheck('president')` on destructive endpoints replaced with `erpSubAccessCheck('accounting','reverse_posted')` so subsidiaries can delegate to CFO/Finance via Access Template editor without a code change. Rollout adds per-module `/president-reverse` routes to Expenses (ORE/ACCESS), PRF/CALF, and Petty Cash — on top of the existing Sales + Collection endpoints. Baseline danger set stays hardcoded (platform safety floor); subscribers extend via ERP_DANGER_SUB_PERMISSIONS lookup (5-min cache, busted on lookup write). Phase G5 (Apr 18, 2026): Fixed privileged-user BDM filter fallback bug in 9 ERP endpoints.
+> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G5 + G1.5 + H1-H5 + Phase 34 + Phase 3a + Phase 3c Complete. Phase 3c (Apr 18, 2026): **Comprehensive hardcoded-role migration** — 30 destructive endpoints across ~15 modules now use `erpSubAccessCheck(module, key)` instead of `roleCheck('admin','finance','president')`. Baseline danger set grew 1 → 10 keys; 19 new sub-perms appear in the Access Template editor (period force-unlock, year-end, settings write, transfer pricing, people terminate/login mgmt, master data deactivate/delete, lookup deletes, etc.). Phase 3a (Apr 18, 2026): **Lookup-driven Danger Sub-Permission Gate + President-Reverse rollout**. Hardcoded `roleCheck('president')` on destructive endpoints replaced with `erpSubAccessCheck('accounting','reverse_posted')` so subsidiaries can delegate to CFO/Finance via Access Template editor without a code change. Rollout adds per-module `/president-reverse` routes to Expenses (ORE/ACCESS), PRF/CALF, and Petty Cash — on top of the existing Sales + Collection endpoints. Baseline danger set stays hardcoded (platform safety floor); subscribers extend via ERP_DANGER_SUB_PERMISSIONS lookup (5-min cache, busted on lookup write). Phase G5 (Apr 18, 2026): Fixed privileged-user BDM filter fallback bug in 9 ERP endpoints.
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -122,6 +122,121 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 | G1.2 | Payslip Transparency & SMER-ORE Retirement Hardening — pre-save guard + always-show Personal Gas + ONE-STOP / INSTALLMENT N/M kind badge + installment expandable | ✅ |
 | G1.3 | Employee Payslip `deduction_lines[]` Parity — shared sub-schema + Personal Gas for logbook-eligible employees + `/payroll/:id/breakdown` + lazy backfill for historical payslips | ✅ |
 | G1.4 | Employee DeductionSchedule wiring (INSTALLMENT N/M on Payslip) + Finance per-line add/verify/correct/reject UI + IncomeReport shared-schema convergence | ✅ |
+
+---
+
+## Phase G1.5 — Per-Diem Integrity + Structured Doctor Address + Non-Pharma Ready (April 21, 2026)
+
+Closes the four governance gaps surfaced in the April 21 per-diem audit (items #4/#5/#6/#7): flagged-photo visits earned per-diem, hardcoded ₱800 rate fallback, weekend exclusion was hardcoded not configurable, and per-diem notes leaked raw clinic addresses instead of clean `City, Province` labels. Also preps per-diem for non-pharma subsidiaries (delivery drivers, field techs) by routing rate resolution through a per-entity × per-role lookup.
+
+### Contract — what changed vs pre-G1.5
+
+| Surface | Before G1.5 | After G1.5 |
+|---|---|---|
+| Per-diem rate resolution | `Settings.PERDIEM_RATE_DEFAULT \|\| 800` (silent fallback) | `Lookup(PERDIEM_RATES).metadata.rate_php` — throws `ApiError(400)` if no row. Rule #21 clean. |
+| Flagged-photo visit | Still earned per-diem | `PERDIEM_RATES.metadata.skip_flagged=true` drops it from the CRM aggregation. Visit stays in CRM for audit. |
+| Weekend per-diem | Hardcoded `if (dow===0 \|\| dow===6) continue` | `PERDIEM_RATES.metadata.allow_weekend` (default false for pharma; non-pharma flips via Control Center). |
+| SMER per-diem "locations" note | Raw `clinicOfficeAddress` concatenation (e.g. "Rm 302 Medical Arts Bldg, Jaro") | Structured `${locality}, ${province}` from Doctor/Client (e.g. "Iloilo City, Iloilo; Digos City, Davao del Sur"). Fallback to raw address only for pre-backfill legacy docs. |
+| Doctor/Client schema | `clinicOfficeAddress` free-text only | Added optional `locality` + `province` (required on CREATE via validator; optional on UPDATE for legacy cleanup). Text indexes kept; new indexes on `locality` + `province`. |
+| Subscription readiness | Single hardcoded rate, pharma-only | One `PERDIEM_RATES` row per role (BDM/ECOMMERCE_BDM/…/DELIVERY_DRIVER); non-pharma seeds their own rate + `eligibility_source` without touching code. |
+
+### Lookup shape
+
+`PERDIEM_RATES` Lookup — per-entity × per-role per-diem config:
+
+```js
+{
+  category: 'PERDIEM_RATES',
+  code: 'BDM',  // or 'ECOMMERCE_BDM', 'DELIVERY_DRIVER' (future), etc.
+  label: 'BDM (pharma field rep) — visit-driven per-diem',
+  metadata: {
+    rate_php: 800,                   // hard requirement: > 0 number (resolver throws otherwise)
+    eligibility_source: 'visit',     // 'visit' (CRM Visit) | 'logbook' (CarLogbook, G1.6 stub) | 'manual' | 'none'
+    skip_flagged: true,              // true = photoFlags[] non-empty → no per-diem
+    allow_weekend: false,            // false = Sat/Sun dropped from aggregation
+    full_tier_threshold: null,       // null = use CompProfile → Settings chain; number = override here
+    half_tier_threshold: null,
+  }
+}
+```
+
+`PH_PROVINCES` + `PH_LOCALITIES` Lookups — reference data for structured address:
+
+```js
+// PH_PROVINCES — 82 rows seeded (ISO 3166-2:PH-like codes)
+{ code: 'ILI', label: 'Iloilo', metadata: { region: 'VISAYAS' } }
+
+// PH_LOCALITIES — starter ~50 rows (cities VIP BDMs operate in); admin adds more via Control Center
+{ code: 'ILOILO_CITY_ILI', label: 'Iloilo City', metadata: { type: 'city', province_code: 'ILI' } }
+```
+
+### Resolver contract
+
+`resolvePerdiemConfig({ entityId, role })` in `backend/erp/services/perdiemCalc.js`:
+
+- Missing/inactive PERDIEM_RATES row → throws `ApiError(400, "Seed PERDIEM_RATES for role X before running payroll...")`.
+- Invalid `rate_php` (NaN, zero, negative) → throws `ApiError(400, "PERDIEM_RATES.X.metadata.rate_php invalid...")`.
+- Valid row → returns normalized config (`skip_flagged` defaults true, `allow_weekend` defaults false, thresholds default null).
+
+Callers: `expenseController.createSmer` (rate stamped on SMER at create), `expenseController.getSmerCrmMdCounts` (passes `skip_flagged` + `allow_weekend` to bridge). Downstream readers (`updateSmer`, per-diem override approve/reject, `repairStuckPerdiemOverrides`, `universalApprovalService.approvePerdiemOverride`) continue to use `smer.perdiem_rate` — the rate stamped at create time. Rate only re-resolves on SMER creation; no cross-request drift.
+
+### Key files
+
+| File | Change |
+|---|---|
+| `backend/erp/services/perdiemCalc.js` | Added `resolvePerdiemConfig({ entityId, role })` with ApiError propagation. Existing `computePerdiemAmount` signature unchanged (caller resolves rate). |
+| `backend/erp/services/smerCrmBridge.js` | `getDailyMdCounts(..., opts)` accepts `{ skipFlagged }`. `photoFlags` filter applied via `$or: [{photoFlags:{$exists:false}}, {photoFlags:{$size:0}}]`. Doctor fetch now selects `locality province`. `locations` field built as unique `${locality}, ${province}` set per day (fallback to clinicOfficeAddress for legacy). |
+| `backend/erp/controllers/expenseController.js` | `createSmer`: rate via `resolvePerdiemConfig` (role='BDM'), `req.body.perdiem_rate` still honored as explicit override. `getSmerCrmMdCounts`: pre-resolves config, passes `skipFlagged` to bridge, weekend skip now driven by `config.allow_weekend`. Zero `\|\| 800` literals remain. |
+| `backend/erp/models/Settings.js` | Removed `PERDIEM_RATE_DEFAULT`. Kept `PERDIEM_MD_FULL/HALF` as thresholds (CompProfile/lookup can override via `resolvePerdiemThresholds`). |
+| `backend/erp/scripts/seedSettings.js` + `testPhase7.js` | References to `PERDIEM_RATE_DEFAULT` removed. Test fixture uses constant 800 with explicit comment. |
+| `backend/erp/controllers/lookupGenericController.js` | Added `PERDIEM_RATES`, `PH_PROVINCES` (82 rows), `PH_LOCALITIES` (~50-row starter) to `SEED_DEFAULTS`. `PERDIEM_RATES` rows use `insert_only_metadata` so admin's per-entity rate edits survive re-seed. |
+| `backend/models/Doctor.js` + `backend/models/Client.js` | Added optional `locality` + `province` fields with length caps + indexes. |
+| `backend/middleware/validation.js` | Create validators require `locality`/`province`. Update validators keep them optional so admin can edit other fields on legacy records pre-backfill. |
+| `backend/controllers/visitController.js`, `productAssignmentController.js`, `clientController.js`, `communicationLogController.js`, `services/reportGenerator.js`, `utils/aiMatcher.js`, `models/Visit.js`, `models/Schedule.js`, `models/ProductAssignment.js`, `smerCrmBridge.js` | `.populate('doctor'/'client', '...locality province')` + response-shape additions across ~20 sites so frontend consumers receive the structured fields. |
+| `backend/controllers/importController.js` | `buildDoctorFields` carries optional `locality`/`province` from CPT parser (future CPT workbooks can add columns; legacy workbooks skip these and rely on backfill). |
+| `backend/erp/scripts/backfillDoctorLocality.js` | **NEW.** Dry-run / `--apply` migration: parses last 2 comma-separated tokens from legacy `clinicOfficeAddress`, fuzzy-matches against PH_LOCALITIES + PH_PROVINCES, auto-applies on confident match, emits a "needs review" report for partial/no-match rows. Idempotent. |
+| `frontend/src/components/admin/DoctorManagement.jsx` | `useLookupOptions('PH_PROVINCES'/'PH_LOCALITIES')` hooks, cascading Province → Locality dropdown inserted after the free-text address field, required on create. Payload propagates both fields. |
+| `frontend/src/erp/components/WorkflowGuide.jsx` | `smer-entry` and `payslip-view` entries updated to document PERDIEM_RATES dependency, flagged-photo exclusion, weekend toggle, and structured address source. |
+
+### Integrity invariants
+
+- **Loud failure (Rule #21)**: Missing or invalid `PERDIEM_RATES` row never silently defaults to ₱800. SMER create/CRM-md-counts endpoints return HTTP 400 with a clear remediation message ("Seed PERDIEM_RATES for role X in Control Center"). Admin and Finance see the failure; ledger stays consistent.
+- **Rate persistence (no drift)**: `smer.perdiem_rate` is stamped at create time from the resolver. Downstream override flows (apply-override, approval-service, repair script) use the stamped rate, not a fresh lookup. If admin changes the PERDIEM_RATES row mid-cycle, existing DRAFT/VALID SMERs keep their original rate; new SMERs get the new rate. Matches the existing revolving-fund precedence chain.
+- **Flagged filter is advisory on CRM-side**: The photoFlags filter runs in the SMER-CRM-bridge aggregation only. The Visit record itself is unchanged — CRM audit/review workflows continue to surface flagged visits. Admin unflag after POSTED → existing Phase 34-P per-diem override remains the retroactive correction path (no auto-recompute).
+- **Fallback locale rendering**: `locality/province` are optional in schema; when null (legacy doc pre-backfill), `getDailyMdCounts` falls back to `clinicOfficeAddress` for the locations note, then `locality` only, then null. Never crashes on missing fields.
+- **CPT import compatibility**: Pre-G1.5 CPT workbooks (no locality/province columns) still import cleanly — backfill handles the gap. Post-G1.5 workbooks can add `locality` + `province` columns for zero-cleanup imports.
+- **Populate path coverage**: Every `.populate('doctor'/'client', ...)` call updated to include `locality province`. Visit-based responses, GPS verification, product assignments, communication logs, schedules, report generator, and AI matcher all emit the structured fields.
+
+### Rule adherence
+
+- **Rule #2 (end-to-end wiring)** — PERDIEM_RATES lookup → seed defaults → SEED_DEFAULTS auto-seed on first lookup fetch → `resolvePerdiemConfig` → expenseController create/CRM-counts → smerCrmBridge aggregation → SMER document → downstream approval & override flows (already pass `smer.perdiem_rate`). Frontend: lookup API → useLookupOptions hook → DoctorManagement cascading dropdowns → doctorService payload → doctorController validation → Doctor/Client model → populate paths → Visit responses → SMER UI. Sidebar access unchanged.
+- **Rule #3 (no hardcoded business values)** — ₱800 literal eliminated from codebase (grep for `\|\| 800` in per-diem code paths returns zero matches). Weekend policy, flagged-photo policy, thresholds (future), rate per role — all lookup-driven. PH_PROVINCES + PH_LOCALITIES are reference data (lookup-driven too; admin extends the locality list without code).
+- **Rule #19 (subscription-ready)** — New non-pharma subsidiary onboarding recipe:
+  1. `Entity.create({ name: 'VIP Logistics' })`
+  2. First lookup fetch auto-seeds PERDIEM_RATES.BDM + .ECOMMERCE_BDM pharma defaults
+  3. Admin edits PERDIEM_RATES rows in Control Center → updates `rate_php`, adds DELIVERY_DRIVER row with `eligibility_source='logbook'`, `allow_weekend=true`, adjusted thresholds
+  4. Per-diem flow runs immediately for the new role set
+- **Rule #21 (no silent fallbacks)** — `|| 800` removed; `resolvePerdiemConfig` throws on missing row. Weekend check reads config explicitly, not a hardcoded check. Flagged-photo filter reads config explicitly.
+
+### Migration notes
+
+- **No backfill required for PERDIEM_RATES** — lazy-seeds on first API call to `/api/erp/lookup-values/PERDIEM_RATES` via the existing `seedCategory` fallback. For production, run `seedAllLookups.js` once to prime all entities.
+- **Doctor/Client locality backfill** — run `backfillDoctorLocality.js` in dry-run mode first to see the split (auto-match vs review). `--apply` writes the auto-match results; admin cleans the review queue via existing DoctorManagement page. Backfill is idempotent.
+- **Legacy SMERs pre-G1.5**: unchanged. Rate stamped at create time; CRM-bridge locations recomputed on re-open (next time `getSmerCrmMdCounts` runs). Already-POSTED SMERs keep their original per-diem journal entries; no recompute risk.
+- **`Settings.PERDIEM_RATE_DEFAULT` removal**: existing Settings documents that have this field set in the DB are harmless — Mongoose simply won't expose it since it's not in the schema. No migration needed.
+
+### Test plan
+
+- **Happy path (pharma)**: BDM with PERDIEM_RATES.BDM seeded (₱800, visit, skip_flagged:true, allow_weekend:false) + 5 valid weekday visits, no flagged photos, all doctors have locality+province → SMER CRM-md-counts returns ₱4000 total, locations = "Iloilo City, Iloilo; Bacolod City, Negros Occidental" (deduplicated).
+- **Failure 1 (missing PERDIEM_RATES)**: Delete the BDM row → SMER create / CRM-counts endpoint returns HTTP 400 with remediation message. No silent ₱800.
+- **Failure 2 (flagged visit)**: 3 valid + 2 flagged visits in a day → md_count reports 3, per-diem tier drops accordingly.
+- **Failure 3 (unflag after POST)**: Admin flags a visit after SMER POSTED → per-diem does NOT auto-recompute. Admin uses Phase 34-P per-diem override (existing path) to adjust.
+- **Failure 4 (legacy doctor null locality)**: Doctor without locality/province → locations note falls back to clinicOfficeAddress; no crash.
+- **Failure 5 (weekend toggle ON)**: Admin flips PERDIEM_RATES.BDM.allow_weekend=true → Saturday visits now count toward per-diem.
+- **Subscription path (non-pharma stub)**: New entity + DELIVERY_DRIVER row with eligibility_source='logbook' → resolver returns config; bridge stub logs "logbook source not yet wired — G1.6" without crashing.
+- **CPT import (legacy workbook without locality cols)**: Imports cleanly; doctors land without locality/province; backfillDoctorLocality.js auto-matches ≥80% on a typical VIP CPT, flags rest for review.
+- **Populate path coverage**: Visit response shape includes `doctor.locality` + `doctor.province`; GPS verification, product assignments, communication logs, Schedule listing all emit the new fields.
+- **Integrity**: `node -c` clean on 12 modified backend files. `npx vite build` clean. `grep \|\| 800` in per-diem paths → 0 matches. `grep PERDIEM_RATE_DEFAULT` in non-comment code → 0 matches.
 
 ---
 

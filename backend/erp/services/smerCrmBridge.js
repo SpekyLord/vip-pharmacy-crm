@@ -63,12 +63,25 @@ async function getDailyMdCount(bdmUserId, date) {
 /**
  * Get MD visit counts for a BDM across a date range (for SMER generation)
  * Returns a map of date string → visit count
+ *
+ * Phase G1.5 (Apr 2026):
+ * - Optional `skipFlagged` flag — when true, visits with non-empty photoFlags
+ *   (duplicate_photo, date_mismatch, etc.) are excluded from the count. Flagged
+ *   visits stay in CRM (audit trail preserved); only per-diem credit drops.
+ * - `locations` now uses structured `locality, province` from Doctor (per Rule #3 +
+ *   user preference for "Iloilo City, Iloilo" style notes). Falls back to raw
+ *   clinicOfficeAddress when a legacy doctor has no locality/province yet (post
+ *   backfill, all doctors should have these fields).
+ *
  * @param {String} bdmUserId
  * @param {Date|String} startDate
  * @param {Date|String} endDate
- * @returns {Promise<Object>} { "2026-04-01": 8, "2026-04-02": 5, ... }
+ * @param {Object} [opts]
+ * @param {Boolean} [opts.skipFlagged=false] - Skip visits with photoFlags (per-diem integrity)
+ * @returns {Promise<Object>} { "2026-04-01": { md_count, unique_doctors, locations }, ... }
  */
-async function getDailyMdCounts(bdmUserId, startDate, endDate) {
+async function getDailyMdCounts(bdmUserId, startDate, endDate, opts = {}) {
+  const { skipFlagged = false } = opts;
   // Accept Date objects or YYYY-MM-DD strings; normalize to Manila calendar keys.
   const startKey = typeof startDate === 'string' && /^\d{4}-\d{2}-\d{2}/.test(startDate)
     ? startDate.slice(0, 10)
@@ -77,16 +90,25 @@ async function getDailyMdCounts(bdmUserId, startDate, endDate) {
     ? endDate.slice(0, 10)
     : toManilaDateKey(endDate);
 
+  const baseMatch = {
+    user: typeof bdmUserId === 'string'
+      ? require('mongoose').Types.ObjectId.createFromHexString(bdmUserId)
+      : bdmUserId,
+    visitDate: { $gte: manilaDayStart(startKey), $lte: manilaDayEnd(endKey) },
+    status: 'completed'
+  };
+
+  // Phase G1.5 — flagged-photo filter. Non-flagged visits either have photoFlags
+  // missing (sparse index) or empty array. Match both shapes.
+  if (skipFlagged) {
+    baseMatch.$or = [
+      { photoFlags: { $exists: false } },
+      { photoFlags: { $size: 0 } }
+    ];
+  }
+
   const pipeline = [
-    {
-      $match: {
-        user: typeof bdmUserId === 'string'
-          ? require('mongoose').Types.ObjectId.createFromHexString(bdmUserId)
-          : bdmUserId,
-        visitDate: { $gte: manilaDayStart(startKey), $lte: manilaDayEnd(endKey) },
-        status: 'completed'
-      }
-    },
+    { $match: baseMatch },
     {
       // Group by Manila calendar day (YYYY-MM-DD), de-dup doctors per day.
       $group: {
@@ -111,17 +133,26 @@ async function getDailyMdCounts(bdmUserId, startDate, endDate) {
   const doctorMap = new Map();
   if (allDoctorIds.size > 0) {
     const doctors = await Doctor.find({ _id: { $in: [...allDoctorIds] } })
-      .select('firstName lastName clinicOfficeAddress').lean();
+      .select('firstName lastName clinicOfficeAddress locality province').lean();
     for (const d of doctors) doctorMap.set(d._id.toString(), d);
   }
 
   const counts = {};
   for (const r of results) {
-    // Build location summary from visited doctors' addresses
-    const addresses = r.doctors_visited
-      .map(id => doctorMap.get(id.toString())?.clinicOfficeAddress)
+    // Phase G1.5 — build location summary from structured locality+province.
+    // Format: "Iloilo City, Iloilo" or "Digos City, Davao del Sur".
+    // Fallback to clinicOfficeAddress for pre-backfill legacy doctors.
+    const locationLabels = r.doctors_visited
+      .map(id => {
+        const d = doctorMap.get(id.toString());
+        if (!d) return null;
+        if (d.locality && d.province) return `${d.locality}, ${d.province}`;
+        if (d.locality) return d.locality;
+        if (d.clinicOfficeAddress) return d.clinicOfficeAddress;
+        return null;
+      })
       .filter(Boolean);
-    const uniqueAddresses = [...new Set(addresses)];
+    const uniqueLocations = [...new Set(locationLabels)];
 
     // md_count is "per-person" — count DISTINCT MDs visited that day, not raw
     // visit rows. The weekly-unique index makes these equal today, but naming
@@ -130,7 +161,7 @@ async function getDailyMdCounts(bdmUserId, startDate, endDate) {
     counts[r._id] = {
       md_count: uniqueMdCount,
       unique_doctors: uniqueMdCount,
-      locations: uniqueAddresses.join(', ')
+      locations: uniqueLocations.join('; ')
     };
   }
   return counts;
@@ -153,7 +184,7 @@ async function getDailyVisitDetails(bdmUserId, date) {
     visitDate: { $gte: manilaDayStart(dateKey), $lte: manilaDayEnd(dateKey) },
     status: 'completed'
   })
-    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province')
     .select('doctor visitDate visitType engagementTypes weekLabel')
     .sort({ visitDate: 1 })
     .lean();

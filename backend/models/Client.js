@@ -31,6 +31,20 @@ const clientSchema = new mongoose.Schema(
       trim: true,
       maxlength: [500, 'Clinic/Office address cannot exceed 500 characters'],
     },
+    // Phase G1.5 — mirrors Doctor.locality/province. Used for per-diem notes
+    // when SMER visits include regular (non-VIP) clients. Seeded from PH_LOCALITIES / PH_PROVINCES.
+    locality: {
+      type: String,
+      trim: true,
+      maxlength: [100, 'Locality cannot exceed 100 characters'],
+      index: true,
+    },
+    province: {
+      type: String,
+      trim: true,
+      maxlength: [100, 'Province cannot exceed 100 characters'],
+      index: true,
+    },
     phone: {
       type: String,
       trim: true,

@@ -245,7 +245,10 @@ async function main() {
       bdm_id: bdmId,
       period: TEST_PERIOD,
       cycle: TEST_CYCLE,
-      perdiem_rate: settings.PERDIEM_RATE_DEFAULT || 800,
+      // Phase G1.5 — rate now lives in PERDIEM_RATES lookup. Test fixture uses
+      // the pharma default (₱800) directly; production resolvePerdiemConfig throws
+      // on missing lookup row instead of silently falling back.
+      perdiem_rate: 800,
       daily_entries: [
         { day: 3, entry_date: periodToDate(TEST_PERIOD, 3), day_of_week: 'TUE', md_count: 8, perdiem_tier: 'FULL', perdiem_amount: 800, transpo_p2p: 150 },
         { day: 4, entry_date: periodToDate(TEST_PERIOD, 4), day_of_week: 'WED', md_count: 5, perdiem_tier: 'HALF', perdiem_amount: 400, transpo_p2p: 200 },

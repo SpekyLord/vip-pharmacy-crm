@@ -7,8 +7,9 @@ const settingsSchema = new mongoose.Schema({
     default: 1
   },
 
-  // Per Diem
-  PERDIEM_RATE_DEFAULT: { type: Number, default: 800 },
+  // Per Diem — rate moved to PERDIEM_RATES lookup in Phase G1.5 (per-entity × per-role,
+  // non-pharma-ready). Thresholds remain here as global fallback; CompProfile per-person
+  // override and (future) PERDIEM_RATES.{full,half}_tier_threshold override them.
   PERDIEM_MD_FULL: { type: Number, default: 8 },
   PERDIEM_MD_HALF: { type: Number, default: 3 },
 

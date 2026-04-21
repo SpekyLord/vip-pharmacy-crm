@@ -6807,5 +6807,5 @@ See `CLAUDE-ERP.md` § Phase G1.4 for the authoritative write-up. Summary:
 - [ ] **Integrity**: `node -c` clean on all modified backend files; `npx vite build` clean; grep for `\\|\\| 800` in per-diem code paths returns zero matches; grep for `PERDIEM_RATE_DEFAULT` returns zero matches.
 
 ### Status
-- [ ] Phase G1.5 SHIPPED (to be flipped on successful verification).
+- [x] Phase G1.5 SHIPPED (April 21, 2026). Integrity verified: 21 backend files `node -c` clean, `npx vite build` clean in 12.18s, zero `|| 800` and zero `PERDIEM_RATE_DEFAULT` in code (only documentation references remain).
 

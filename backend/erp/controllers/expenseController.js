@@ -15,7 +15,7 @@ const ErpAuditLog = require('../models/ErpAuditLog');
 const DocumentAttachment = require('../models/DocumentAttachment');
 const Settings = require('../models/Settings');
 const { catchAsync } = require('../../middleware/errorHandler');
-const { computePerdiemAmount, resolvePerdiemThresholds } = require('../services/perdiemCalc');
+const { computePerdiemAmount, resolvePerdiemThresholds, resolvePerdiemConfig } = require('../services/perdiemCalc');
 // fuelTracker computations handled by CarLogbookEntry pre-save hook
 const { generateExpenseSummary } = require('../services/expenseSummary');
 const { getDailyMdCounts, getDailyVisitDetails } = require('../services/smerCrmBridge');
@@ -106,7 +106,12 @@ const createSmer = catchAsync(async (req, res) => {
   }
 
   const settings = await Settings.getSettings();
-  const perdiemRate = req.body.perdiem_rate || settings.PERDIEM_RATE_DEFAULT || 800;
+  // Phase G1.5 — rate resolved via PERDIEM_RATES lookup (per-entity × per-role).
+  // No silent ₱800 fallback; missing row throws ApiError(400) so payroll blocks loudly.
+  // `req.body.perdiem_rate` remains an explicit one-off override (e.g., admin seeds a
+  // one-time promotional rate without editing the lookup).
+  const perdiemConfig = await resolvePerdiemConfig({ entityId: req.entityId, role: 'BDM' });
+  const perdiemRate = req.body.perdiem_rate || perdiemConfig.rate_php;
 
   // Load CompProfile once — used for both revolving fund and per diem thresholds
   const compProfile = await loadBdmCompProfile(req.bdmId, req.entityId);
@@ -2512,10 +2517,18 @@ const getSmerCrmMdCounts = catchAsync(async (req, res) => {
   const pad = (n) => String(n).padStart(2, '0');
   const dateKeyFor = (day) => `${year}-${pad(month)}-${pad(day)}`;
 
-  const dailyCounts = await getDailyMdCounts(bdmUserId, dateKeyFor(startDay), dateKeyFor(endDay));
+  // Phase G1.5 — resolve per-entity × per-role per-diem config BEFORE querying
+  // the CRM bridge, so we can pass skip_flagged into the aggregation filter.
+  const perdiemConfig = await resolvePerdiemConfig({ entityId: req.entityId, role: 'BDM' });
+  const dailyCounts = await getDailyMdCounts(
+    bdmUserId,
+    dateKeyFor(startDay),
+    dateKeyFor(endDay),
+    { skipFlagged: perdiemConfig.skip_flagged }
+  );
 
   const settings = await Settings.getSettings();
-  const perdiemRate = settings.PERDIEM_RATE_DEFAULT || 800;
+  const perdiemRate = perdiemConfig.rate_php;
   const compProfile = await loadBdmCompProfile(bdmUserId, req.entityId);
 
   // Build daily entries with CRM data
@@ -2527,7 +2540,9 @@ const getSmerCrmMdCounts = catchAsync(async (req, res) => {
     // of server TZ. Apr 1 2026 is a Wednesday in every timezone.
     const date = new Date(Date.UTC(year, month - 1, day));
     const dow = date.getUTCDay();
-    if (dow === 0 || dow === 6) continue; // Skip weekends
+    // Phase G1.5 — weekend policy is lookup-driven via PERDIEM_RATES.allow_weekend.
+    // Pharma default: false (skip Sat/Sun). Non-pharma subscribers flip via Control Center.
+    if (!perdiemConfig.allow_weekend && (dow === 0 || dow === 6)) continue;
 
     const dateKey = dateKeyFor(day);
     const crmData = dailyCounts[dateKey] || { md_count: 0, unique_doctors: 0 };

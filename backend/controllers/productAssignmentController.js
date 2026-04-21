@@ -55,7 +55,7 @@ const getAllAssignments = catchAsync(async (req, res) => {
   const [assignments, total] = await Promise.all([
     ProductAssignment.find(filter)
       .populate('product', 'name category image description')
-      .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
+      .populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province')
       .populate('assignedBy', 'name email')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -136,7 +136,7 @@ const createAssignment = catchAsync(async (req, res) => {
   });
 
   await assignment.populate('product', 'name category image description');
-  await assignment.populate('doctor', 'firstName lastName specialization clinicOfficeAddress');
+  await assignment.populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province');
   await assignment.populate('assignedBy', 'name email');
 
   res.status(201).json({
@@ -168,7 +168,7 @@ const updateAssignment = catchAsync(async (req, res) => {
 
   await assignment.save();
   await assignment.populate('product', 'name category image description');
-  await assignment.populate('doctor', 'firstName lastName specialization clinicOfficeAddress');
+  await assignment.populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province');
   await assignment.populate('assignedBy', 'name email');
 
   res.status(200).json({
@@ -258,7 +258,7 @@ const getAssignmentsByProduct = catchAsync(async (req, res) => {
     product: productId,
     status: 'active',
   })
-    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province')
     .populate('assignedBy', 'name')
     .sort({ priority: 1 });
 
@@ -361,7 +361,7 @@ const getMyAssignments = catchAsync(async (req, res) => {
   const [assignments, total] = await Promise.all([
     ProductAssignment.find(filter)
       .populate('product', 'name category image')
-      .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
+      .populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit),

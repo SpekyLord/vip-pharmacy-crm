@@ -267,8 +267,8 @@ const getAllLogs = catchAsync(async (req, res) => {
 const getLogById = catchAsync(async (req, res) => {
   const log = await CommunicationLog.findById(req.params.id)
     .populate('user', 'name email')
-    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress phone email')
-    .populate('client', 'firstName lastName specialization clinicOfficeAddress phone email');
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province phone email')
+    .populate('client', 'firstName lastName specialization clinicOfficeAddress locality province phone email');
 
   if (!log) {
     throw new NotFoundError('Communication log not found');

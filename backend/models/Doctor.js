@@ -40,6 +40,22 @@ const doctorSchema = new mongoose.Schema(
       trim: true,
       maxlength: [500, 'Clinic/Office address cannot exceed 500 characters'],
     },
+    // Phase G1.5 (Apr 2026) — Structured locality + province for SMER per-diem notes
+    // (e.g. "Iloilo City, Iloilo"). Populated from PH_LOCALITIES / PH_PROVINCES lookups.
+    // Optional in schema so legacy records stay readable; validation layer requires
+    // them on new Doctor creation. Backfill script fills existing rows best-effort.
+    locality: {
+      type: String,
+      trim: true,
+      maxlength: [100, 'Locality cannot exceed 100 characters'],
+      index: true,
+    },
+    province: {
+      type: String,
+      trim: true,
+      maxlength: [100, 'Province cannot exceed 100 characters'],
+      index: true,
+    },
     // GeoJSON for location-based queries
     location: {
       type: {

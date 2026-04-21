@@ -1334,6 +1334,9 @@ const DoctorManagement = ({
   const { programs: lookupPrograms, supportTypes: lookupSupportTypes } = useLookupData();
   const { options: ENGAGEMENT_LEVELS } = useLookupOptions('ENGAGEMENT_LEVEL');
   const { options: CLIENT_TYPE_OPTIONS } = useLookupOptions('VIP_CLIENT_TYPE');
+  // Phase G1.5 — PH_PROVINCES + PH_LOCALITIES cascading dropdowns.
+  const { options: PROVINCE_OPTIONS } = useLookupOptions('PH_PROVINCES');
+  const { options: LOCALITY_OPTIONS } = useLookupOptions('PH_LOCALITIES');
 
   // Hospital list from CRM-Bridge
   const [hospitals, setHospitals] = useState([]);
@@ -1422,6 +1425,8 @@ const DoctorManagement = ({
       lastName: '',
       specialization: '',
       clinicOfficeAddress: '',
+      locality: '',
+      province: '',
       phone: '',
       email: '',
       messengerId: '',
@@ -1453,6 +1458,8 @@ const DoctorManagement = ({
       lastName: doctor.lastName || '',
       specialization: doctor.specialization || '',
       clinicOfficeAddress: doctor.clinicOfficeAddress || '',
+      locality: doctor.locality || '',
+      province: doctor.province || '',
       phone: doctor.phone || '',
       email: doctor.email || '',
       messengerId: doctor.messengerId || '',
@@ -1550,6 +1557,14 @@ const DoctorManagement = ({
     }
     if (formData.clinicOfficeAddress && formData.clinicOfficeAddress.trim()) {
       doctorData.clinicOfficeAddress = formData.clinicOfficeAddress.trim();
+    }
+    // Phase G1.5 — structured locality + province (used by SMER per-diem notes,
+    // required on create, optional on update for legacy cleanup flow).
+    if (formData.locality && formData.locality.trim()) {
+      doctorData.locality = formData.locality.trim();
+    }
+    if (formData.province && formData.province.trim()) {
+      doctorData.province = formData.province.trim();
     }
     if (formData.phone && formData.phone.trim()) {
       doctorData.phone = formData.phone.trim();
@@ -2070,8 +2085,60 @@ const DoctorManagement = ({
                   name="clinicOfficeAddress"
                   value={formData.clinicOfficeAddress}
                   onChange={handleFormChange}
-                  placeholder="Hospital, clinic, or office address"
+                  placeholder="Full address (e.g. Rizal St., Barangay 1, Iloilo City, Iloilo)"
                 />
+              </div>
+
+              {/* Phase G1.5 — Cascading Province → Locality dropdowns for structured address.
+                  Province picked first; Locality filters to matching province_code.
+                  Label shown on SMER per-diem notes is `${locality}, ${province}`. */}
+              <div className="form-row">
+                <div className="form-group">
+                  <label htmlFor="province">
+                    Province <span style={{ color: '#dc2626' }}>*</span>
+                  </label>
+                  <SelectField
+                    id="province"
+                    name="province"
+                    value={formData.province}
+                    onChange={(e) => {
+                      // Clear locality when province changes so cascading works
+                      setFormData(prev => ({ ...prev, province: e.target.value, locality: '' }));
+                    }}
+                    required
+                  >
+                    <option value="">— Select Province —</option>
+                    {PROVINCE_OPTIONS.map((p) => (
+                      <option key={p.code} value={p.label}>{p.label}</option>
+                    ))}
+                  </SelectField>
+                </div>
+                <div className="form-group">
+                  <label htmlFor="locality">
+                    City / Municipality <span style={{ color: '#dc2626' }}>*</span>
+                  </label>
+                  <SelectField
+                    id="locality"
+                    name="locality"
+                    value={formData.locality}
+                    onChange={handleFormChange}
+                    disabled={!formData.province}
+                    required
+                  >
+                    <option value="">
+                      {formData.province ? '— Select Locality —' : '— Pick province first —'}
+                    </option>
+                    {LOCALITY_OPTIONS
+                      .filter((l) => {
+                        if (!formData.province) return false;
+                        const prov = PROVINCE_OPTIONS.find(p => p.label === formData.province);
+                        return prov && l.metadata?.province_code === prov.code;
+                      })
+                      .map((l) => (
+                        <option key={l.code} value={l.label}>{l.label}</option>
+                      ))}
+                  </SelectField>
+                </div>
               </div>
 
               <div className="form-row">

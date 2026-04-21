@@ -150,7 +150,7 @@ scheduleSchema.statics.getVisitableEntries = async function (userId, date = new 
       { status: 'carried' },
     ],
   })
-    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress visitFrequency')
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province visitFrequency')
     .sort({ scheduledWeek: 1, scheduledDay: 1 });
 };
 
@@ -162,7 +162,7 @@ scheduleSchema.statics.getCycleSchedule = async function (userId, cycleNumber) {
     user: userId,
     cycleNumber,
   })
-    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress visitFrequency')
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province visitFrequency')
     .sort({ scheduledWeek: 1, scheduledDay: 1 });
 };
 
