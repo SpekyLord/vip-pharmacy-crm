@@ -121,7 +121,7 @@ export default function InvitesPage() {
                 <tr><td colSpan={7} className="inv-empty">Loading invites…</td></tr>
               )}
               {!loading && items.length === 0 && (
-                <tr><td colSpan={7} className="inv-empty">No invites yet. Open a VIP Client's chat and tap a channel with no ID set to generate one.</td></tr>
+                <tr><td colSpan={7} className="inv-empty">No invites yet. Open a VIP Client&apos;s chat and tap a channel with no ID set to generate one.</td></tr>
               )}
               {!loading && items.map((inv) => {
                 const recipient = inv.doctor
