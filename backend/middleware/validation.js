@@ -207,15 +207,16 @@ const createDoctorValidation = [
     .isLength({ max: 500 })
     .withMessage('Clinic/Office address cannot exceed 500 characters'),
   // Phase G1.5 — structured locality/province (source of truth for SMER per-diem notes).
-  // Required on CREATE so new Doctor records carry the structured address from day one.
+  // OPTIONAL during rollout so legacy flows (BDM ClientAddModal, CPT insertMany
+  // bulk import) don't regress. Admin DoctorManagement form + backfill script
+  // populate; UI gates on admin's side. Flip to `.notEmpty()` in a follow-up
+  // phase once backfill completes and every BDM flow has the structured picker.
   body('locality')
-    .notEmpty()
-    .withMessage('Locality (city/municipality) is required — pick from PH_LOCALITIES')
+    .optional()
     .isLength({ max: 100 })
     .withMessage('Locality cannot exceed 100 characters'),
   body('province')
-    .notEmpty()
-    .withMessage('Province is required — pick from PH_PROVINCES')
+    .optional()
     .isLength({ max: 100 })
     .withMessage('Province cannot exceed 100 characters'),
   body('visitFrequency')
@@ -523,15 +524,15 @@ const createClientValidation = [
     .optional()
     .isLength({ max: 500 })
     .withMessage('Clinic/Office address cannot exceed 500 characters'),
-  // Phase G1.5 — Client mirror of Doctor locality/province. Required on CREATE.
+  // Phase G1.5 — Client mirror of Doctor locality/province. OPTIONAL during
+  // rollout (see createDoctorValidation for rationale). BDM ClientAddModal.jsx
+  // does not yet carry locality/province fields; enforce via backfill + admin curation.
   body('locality')
-    .notEmpty()
-    .withMessage('Locality (city/municipality) is required — pick from PH_LOCALITIES')
+    .optional()
     .isLength({ max: 100 })
     .withMessage('Locality cannot exceed 100 characters'),
   body('province')
-    .notEmpty()
-    .withMessage('Province is required — pick from PH_PROVINCES')
+    .optional()
     .isLength({ max: 100 })
     .withMessage('Province cannot exceed 100 characters'),
   body('phone')
