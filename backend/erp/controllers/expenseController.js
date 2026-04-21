@@ -73,24 +73,35 @@ function enforceNoWorkRules(entry) {
 // ═══════════════════════════════════════════
 
 const createSmer = catchAsync(async (req, res) => {
-  // Pre-check for an existing non-reversed SMER on the same (entity, bdm, period, cycle).
-  // Surfaces a clear 409 instead of the raw E11000 duplicate-key error. Reversed
-  // rows (deletion_event_id stamped) are excluded — the partial unique index on
-  // SmerEntry allows re-creation after reversal.
+  // Pre-check for an existing SMER on (entity, bdm, period, cycle). Two cases:
+  //   (1) non-reversed dupe → return a clean 409 (not a raw E11000) so the UI
+  //       can redirect her to the existing draft.
+  //   (2) reversed dupe (deletion_event_id stamped) → archive-rename its period
+  //       to `${period}::REV::${_id}` so the unique key frees up for the new
+  //       SMER. The reversed row keeps its _id, daily entries, deletion_event_id,
+  //       and the reversal TransactionEvent — full audit is preserved.
   if (req.body.period && req.body.cycle) {
-    const existing = await SmerEntry.findOne({
+    const dupes = await SmerEntry.find({
       entity_id: req.entityId,
       bdm_id: req.bdmId,
       period: req.body.period,
       cycle: req.body.cycle,
-      deletion_event_id: { $exists: false },
-    }).select('_id status').lean();
-    if (existing) {
+    }).select('_id status period cycle deletion_event_id').lean();
+
+    const liveDupe = dupes.find(d => !d.deletion_event_id);
+    if (liveDupe) {
       return res.status(409).json({
         success: false,
-        message: `You already have a ${existing.status} SMER for ${req.body.period} ${req.body.cycle}. Open it instead of creating a new one.`,
-        data: { smer_id: existing._id, status: existing.status },
+        message: `You already have a ${liveDupe.status} SMER for ${req.body.period} ${req.body.cycle}. Open it instead of creating a new one.`,
+        data: { smer_id: liveDupe._id, status: liveDupe.status },
       });
+    }
+
+    for (const d of dupes.filter(d => d.deletion_event_id)) {
+      await SmerEntry.updateOne(
+        { _id: d._id },
+        { $set: { period: `${d.period}::REV::${d._id}` } }
+      );
     }
   }
 
