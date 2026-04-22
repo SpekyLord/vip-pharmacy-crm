@@ -7376,7 +7376,7 @@ BDM in the field does ONE-TAP capture (scan + GPS + photo). Office proxy process
 - Any approval action — Rule #20 Option B (proxy enters, never approves).
 
 ### P1.1 — BDM mobile capture UI
-- [ ] `frontend/src/erp/pages/mobile/BdmCaptureHub.jsx` — new landing page, phone-first (360px min), large touch targets (≥ 44px), ONE tap per workflow.
+- [x] `frontend/src/erp/pages/mobile/BdmCaptureHub.jsx` — new landing page, phone-first (360px min), large touch targets (≥ 44px), ONE tap per workflow.
   - "Scan ODO (start / end)" → opens camera, two-photo flow
   - "Scan OR / Receipt" → OCR + price + mode of payment + "who for?" note
   - "Scan Unreceived CSI" → OCR, queues for proxy entry
@@ -7384,19 +7384,19 @@ BDM in the field does ONE-TAP capture (scan + GPS + photo). Office proxy process
   - "Request Petty Cash" → amount + purpose
   - "Scan Fuel Pump Receipt" → OCR + liters + amount
   - "Log Visit" (CRM) — existing flow, link to CRM side
-- [ ] Offline tolerance: capture stored locally (IndexedDB) until connectivity returns; background sync.
-- [ ] Each capture generates a `CaptureSubmission` (new collection) with status `PENDING_PROXY` → `IN_PROGRESS` → `PROCESSED` → (if needed) `AWAITING_BDM_REVIEW` → `ACKNOWLEDGED`.
+- [ ] Offline tolerance: capture stored locally (IndexedDB) until connectivity returns; background sync. **DEFERRED** — online-first shipped; IndexedDB offline layer requires real-device testing.
+- [x] Each capture generates a `CaptureSubmission` (new collection) with status `PENDING_PROXY` → `IN_PROGRESS` → `PROCESSED` → (if needed) `AWAITING_BDM_REVIEW` → `ACKNOWLEDGED`.
 
 ### P1.2 — Office proxy queue
-- [ ] `frontend/src/erp/pages/proxy/ProxyQueue.jsx` — office-side queue page.
+- [x] `frontend/src/erp/pages/proxy/ProxyQueue.jsx` — office-side queue page.
   - Filters: workflow type, BDM, date range, status.
   - Row shows: BDM name, workflow type, captured artifact(s), age (with SLA color).
   - "Process" button opens the appropriate entry form with the captured artifact pre-attached.
   - Proxy completes → `CaptureSubmission.status = 'PROCESSED'` + linked ERP doc reference.
-- [ ] SLA: target < 24h turnaround. Age > 24h rows highlighted amber; > 48h rows red.
+- [x] SLA: target < 24h turnaround. Age > 24h rows highlighted amber; > 48h rows red.
 
 ### P1.3 — BDM review queue
-- [ ] `frontend/src/erp/pages/mobile/BdmReviewQueue.jsx` — BDM-side mobile page.
+- [x] `frontend/src/erp/pages/mobile/BdmReviewQueue.jsx` — BDM-side mobile page.
   - Lists proxied entries POSTED against this BDM's `bdm_id` in the last N days.
   - Each row: doc type, amount, counterparty, proxy name, "Confirm" / "Dispute" buttons.
   - "Confirm" → `CaptureSubmission.status = 'ACKNOWLEDGED'`.
@@ -7405,7 +7405,7 @@ BDM in the field does ONE-TAP capture (scan + GPS + photo). Office proxy process
   - Push notification / SMS on new proxied entry (via existing Phase SG-Q2 W3 dispatchMultiChannel).
 
 ### P1.4 — New collection `capture_submissions`
-- [ ] `backend/erp/models/CaptureSubmission.js`:
+- [x] `backend/erp/models/CaptureSubmission.js`:
   ```
   {
     bdm_id, entity_id, workflow_type, status,
@@ -7419,23 +7419,23 @@ BDM in the field does ONE-TAP capture (scan + GPS + photo). Office proxy process
   - Indexes: `{ bdm_id, status }`, `{ entity_id, status, workflow_type }`, `{ created_at }`.
 
 ### P1.5 — Agent: `#PX` proxy SLA agent
-- [ ] New rule-based agent `proxySlaAgent.js`:
+- [x] New rule-based agent `proxySlaAgent.js`:
   - Runs every 4 hours.
   - Finds `CaptureSubmission` with `status='PENDING_PROXY'` and `created_at` > 24h old → alert office lead.
   - Finds `status='AWAITING_BDM_REVIEW'` > 72h → auto-acknowledge with warning (configurable via `PROXY_SLA_THRESHOLDS` lookup).
   - Metrics: avg turnaround per workflow, proxy throughput per user, BDM review rate.
 
 ### P1.6 — Fallback path (Rule #9 preservation)
-- [ ] BDM can always self-enter without going through the proxy queue — just skip the capture hub and use the regular entry page. The proxy flow is ADDITIVE, not mandatory. This is critical for (a) proxy unavailability, (b) subscribers who don't have a proxy role in their org.
+- [x] BDM can always self-enter without going through the proxy queue — just skip the capture hub and use the regular entry page. The proxy flow is ADDITIVE, not mandatory. This is critical for (a) proxy unavailability, (b) subscribers who don't have a proxy role in their org.
 
 ### P1.7 — Bulletproof bar
-- [ ] **Happy path (Expense via proxy)**: BDM scans OR → `CaptureSubmission` created with status `PENDING_PROXY` → proxy picks it up from queue → classifies + posts via existing `expenseController.createExpense` with `assigned_to=bdm_id` → Option B forces Approval Hub → president/finance approves → POSTED → BDM gets push notification → reviews in queue → confirms.
-- [ ] **Happy path (self-serve fallback)**: BDM opens regular ExpensesEntry page, enters themselves → normal flow, no CaptureSubmission created.
-- [ ] **Failure (proxy unavailable)**: SLA agent alerts at 24h pending. BDM can still self-enter after waiting.
-- [ ] **Failure (BDM disputes proxied entry)**: "Dispute" → files IncentiveDispute → finance investigates → can reverse via President Delete path (Phase 3b).
+- [x] **Happy path (Expense via proxy)**: BDM scans OR → `CaptureSubmission` created with status `PENDING_PROXY` → proxy picks it up from queue → classifies + posts via existing `expenseController.createExpense` with `assigned_to=bdm_id` → Option B forces Approval Hub → president/finance approves → POSTED → BDM gets push notification → reviews in queue → confirms.
+- [x] **Happy path (self-serve fallback)**: BDM opens regular ExpensesEntry page, enters themselves → normal flow, no CaptureSubmission created.
+- [x] **Failure (proxy unavailable)**: SLA agent alerts at 24h pending. BDM can still self-enter after waiting.
+- [x] **Failure (BDM disputes proxied entry)**: "Dispute" → files IncentiveDispute → finance investigates → can reverse via President Delete path (Phase 3b).
 - [ ] **Offline tolerance**: BDM captures 3 ORs without connectivity → all stored locally → reconnect → all sync to `CaptureSubmission` → proxy processes normally.
-- [ ] **Rule #19 cross-entity**: `CaptureSubmission` stamped with `entity_id`; proxy at Entity A cannot process Entity B's submissions.
-- [ ] **Rule #21**: SLA agent filter uses `bdm_id` explicitly — no silent self-scope.
+- [x] **Rule #19 cross-entity**: `CaptureSubmission` stamped with `entity_id`; proxy at Entity A cannot process Entity B's submissions.
+- [x] **Rule #21**: SLA agent filter uses `bdm_id` explicitly — no silent self-scope.
 
 ### P1.8 — Files (~7–10 days)
 ```
@@ -7455,7 +7455,7 @@ docs/PHASETASK-ERP.md                                            # this entry
 ```
 
 ### Status
-- [ ] 📋 PLANNED. User approved vision April 22, 2026. Recommended ship order: **pick ONE workflow end-to-end first** (Expenses — highest time-savings, lowest commission risk) — measure, then replicate to other workflows. Don't build all 8 workflows simultaneously.
+- [x] ✅ **SHIPPED April 23, 2026.** Foundation + Expenses pilot workflow. All 8 workflow types supported in model/UI framework. Online-first (IndexedDB offline layer deferred to real-device testing). 8 new files, 10 modified files. Health check 7/7 green. Frontend build clean. Backend syntax clean.
 
 ---
 

@@ -1,7 +1,7 @@
 # VIP ERP - Project Context
 
-> **Last Updated**: April 21, 2026
-> **Version**: 7.0
+> **Last Updated**: April 23, 2026
+> **Version**: 7.1
 > **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G5 + G1.5 + H1-H5 + Phase 34 + Phase 3a + Phase 3c Complete. Phase 3c (Apr 18, 2026): **Comprehensive hardcoded-role migration** — 30 destructive endpoints across ~15 modules now use `erpSubAccessCheck(module, key)` instead of `roleCheck('admin','finance','president')`. Baseline danger set grew 1 → 10 keys; 19 new sub-perms appear in the Access Template editor (period force-unlock, year-end, settings write, transfer pricing, people terminate/login mgmt, master data deactivate/delete, lookup deletes, etc.). Phase 3a (Apr 18, 2026): **Lookup-driven Danger Sub-Permission Gate + President-Reverse rollout**. Hardcoded `roleCheck('president')` on destructive endpoints replaced with `erpSubAccessCheck('accounting','reverse_posted')` so subsidiaries can delegate to CFO/Finance via Access Template editor without a code change. Rollout adds per-module `/president-reverse` routes to Expenses (ORE/ACCESS), PRF/CALF, and Petty Cash — on top of the existing Sales + Collection endpoints. Baseline danger set stays hardcoded (platform safety floor); subscribers extend via ERP_DANGER_SUB_PERMISSIONS lookup (5-min cache, busted on lookup write). Phase G5 (Apr 18, 2026): Fixed privileged-user BDM filter fallback bug in 9 ERP endpoints.
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
@@ -5072,3 +5072,65 @@ docs/PHASETASK-ERP.md                                     # Phase G4.5b-ext entr
 - `npx vite build` — clean in 11.47s, zero errors
 - No new dependencies, no new models, no new routes, no schema changes
 - Backward compatible: non-proxy callers see zero behavior change
+
+
+---
+
+## Phase P1 — BDM Mobile Capture + Office Proxy Queue (April 23, 2026)
+
+### Vision
+Operational model locked: **BDM = revenue producer, proxy = back-office processor.** BDM in the field does ONE-TAP capture (scan + GPS + photo). Office proxy processes. BDM reviews proxied entries before POSTED. Commission-bearing actions stay sacred to BDM.
+
+### What shipped
+- **CaptureSubmission model** (`backend/erp/models/CaptureSubmission.js`) — new collection `capture_submissions`. Lifecycle: `PENDING_PROXY → IN_PROGRESS → PROCESSED → AWAITING_BDM_REVIEW → ACKNOWLEDGED`. Also: `DISPUTED`, `CANCELLED`, `AUTO_ACKNOWLEDGED`. 8 workflow types: SMER, EXPENSE, SALES, OPENING_AR, COLLECTION, GRN, PETTY_CASH, FUEL_ENTRY. Compound indexes for all query patterns.
+- **CaptureSubmission controller** (`backend/erp/controllers/captureSubmissionController.js`) — 12 endpoints: BDM-side (create, getMyCaptures, getMyReviewQueue, acknowledge, dispute, cancel), Proxy-side (getProxyQueue, getCaptureById, pickup, release, complete), Dashboard (getQueueStats). Proxy queue gated by `canProxyEntry()`. Notifications via `dispatchMultiChannel()`.
+- **CaptureSubmission routes** (`backend/erp/routes/captureSubmissionRoutes.js`) — mounted at `/erp/capture-submissions`. No module-level `erpAccessCheck` (every ERP user can create captures; proxy endpoints gated inside controller).
+- **Proxy SLA Agent** (`backend/agents/proxySlaAgent.js`) — `#PX`, FREE tier, runs every 4 hours. Alerts office leads on stale `PENDING_PROXY` > 24h. Auto-acknowledges `AWAITING_BDM_REVIEW` > 72h. Thresholds lookup-driven (`PROXY_SLA_THRESHOLDS`). Idempotent (checks `sla_alert_sent_at`).
+- **PROXY_SLA_THRESHOLDS seed** in `lookupGenericController.js` SEED_DEFAULTS — `pending_alert_hours: 24`, `auto_ack_hours: 72`. `insert_only_metadata: true` so admin tuning survives re-seeds.
+- **BDM Capture Hub** (`frontend/src/erp/pages/mobile/BdmCaptureHub.jsx`) — mobile-first (360px min), large touch targets (≥ 44px). 6 active workflow cards (EXPENSE, SMER, SALES, GRN, FUEL_ENTRY, PETTY_CASH). Camera + gallery input. GPS auto-capture. Amount/payment/ACCESS fields per workflow. Recent captures list. Rule #9 fallback note.
+- **Office Proxy Queue** (`frontend/src/erp/pages/proxy/ProxyQueue.jsx`) — table view with filters (status, workflow type). SLA color coding (< 24h green, 24-48h amber, > 48h red). Stats banner (pending, in-progress, over-SLA, processed today). Detail drawer with pickup/release/complete actions. Pagination.
+- **BDM Review Queue** (`frontend/src/erp/pages/mobile/BdmReviewQueue.jsx`) — mobile-first review cards. Proxy summary banner ("Maria entered 3 items for you"). Confirm/Dispute buttons. Dispute modal with reason field + IncentiveDispute reference. Auto-acknowledge warning.
+- **useCaptureSubmissions hook** (`frontend/src/erp/hooks/useCaptureSubmissions.js`) — wraps all 12 API endpoints through `useErpApi`.
+- **App.jsx** — 3 new lazy routes: `/erp/capture-hub`, `/erp/review-queue`, `/erp/proxy-queue`. All gated by `ROLE_SETS.ERP_ALL`.
+- **Sidebar** — new "Capture Hub" section. BDMs see Capture Hub + Review Queue. Management sees Proxy Queue + Review Queue.
+- **WorkflowGuide** — 3 new banner keys: `bdm-capture-hub`, `proxy-queue`, `bdm-review-queue`. Steps, tips, and navigation links.
+- **AgentDashboard + AgentSettings** — `proxy_sla` schedule meta added (icon, color, schedule label).
+- **Health check** — Section 7: `checkCaptureSubmissionWiring()` verifies model fields, status enum, workflow_type enum, controller exports, route mounting, agent registration, lookup seed.
+
+### Governing principles
+- **Rule #3 (no hardcoded business values)**: SLA thresholds lookup-driven (`PROXY_SLA_THRESHOLDS`). Workflow types enumerated in model, not hardcoded in UI.
+- **Rule #9 (fallback path)**: BDM can always self-enter without going through the proxy queue. Capture hub is ADDITIVE, not mandatory.
+- **Rule #19 (entity-scoped)**: `entity_id` stamped at create. Proxy at Entity A cannot process Entity B's submissions.
+- **Rule #20 (Option B)**: Proxy enters, never approves. Approval Hub handles approvals downstream.
+- **Rule #21 (no silent self-scope)**: `bdm_id` explicit in all queries. No silent fallback.
+
+### Files
+```
+backend/erp/models/CaptureSubmission.js                    # NEW — capture_submissions collection
+backend/erp/controllers/captureSubmissionController.js     # NEW — 12 endpoints
+backend/erp/routes/captureSubmissionRoutes.js              # NEW — /erp/capture-submissions
+backend/agents/proxySlaAgent.js                            # NEW — #PX SLA agent
+backend/erp/controllers/lookupGenericController.js         # + PROXY_SLA_THRESHOLDS seed
+backend/agents/agentRegistry.js                            # + proxy_sla registration
+backend/agents/agentScheduler.js                           # + proxy_sla cron (every 4h)
+backend/erp/routes/index.js                                # + capture-submissions mount
+frontend/src/erp/hooks/useCaptureSubmissions.js            # NEW — API hook
+frontend/src/erp/pages/mobile/BdmCaptureHub.jsx            # NEW — BDM capture page
+frontend/src/erp/pages/mobile/BdmReviewQueue.jsx           # NEW — BDM review page
+frontend/src/erp/pages/proxy/ProxyQueue.jsx                # NEW — office proxy queue
+frontend/src/App.jsx                                       # + 3 lazy routes
+frontend/src/components/common/Sidebar.jsx                 # + Capture Hub section
+frontend/src/erp/components/WorkflowGuide.jsx              # + 3 banner keys
+frontend/src/erp/pages/AgentDashboard.jsx                  # + proxy_sla meta
+frontend/src/erp/pages/AgentSettings.jsx                   # + proxy_sla meta
+scripts/check-system-health.js                             # + Section 7 (P1 wiring)
+CLAUDE-ERP.md                                              # this section
+docs/PHASETASK-ERP.md                                      # Phase P1 status update
+```
+
+### Verification
+- `node -c` on all 8 backend files — clean
+- `node scripts/check-system-health.js` — 7/7 green (29 agents consistent, 106 WorkflowGuide keys, P1 wiring intact)
+- `npx vite build` — clean in 13.14s, zero errors
+- No new npm dependencies
+- Backward compatible: existing entry pages unchanged, proxy flow is additive

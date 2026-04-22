@@ -113,6 +113,8 @@ const AGENT_META = {
   expansion_readiness:   { icon: Rocket,        color: '#7c3aed', schedule: '1st of month 10 AM' },
   // Phase G9.R1
   task_overdue:          { icon: Clock,         color: '#ea580c', schedule: 'Weekdays 6:15 AM' },
+  // Phase P1 — Proxy SLA Escalator (#PX)
+  proxy_sla:             { icon: Clock,         color: '#f59e0b', schedule: 'Every 4 hours' },
   // Phase G9.R8 — Inbox Retention (#MR)
   message_retention:     { icon: Mail,          color: '#475569', schedule: 'Daily 2:00 AM' },
 };

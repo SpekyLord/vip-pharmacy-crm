@@ -60,6 +60,9 @@ import {
   MessageSquare,
   Presentation,
   Handshake,
+  Smartphone,
+  ListChecks,
+  ScanLine,
 } from 'lucide-react';
 
 /* =============================================================================
@@ -781,6 +784,29 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     if (isAdmin) expItems.push({ path: '/erp/credit-cards', label: 'Credit Cards', icon: CreditCard });
     expItems.sort((a, b) => a.label.localeCompare(b.label));
     sections.push({ title: 'Expenses', collapsible: true, defaultOpen: true, items: expItems });
+  }
+
+  // ── Phase P1 — Capture Hub (BDM mobile capture + office proxy queue) ─────
+  // Visible to all ERP users. BDMs see Capture Hub + Review Queue;
+  // admin/finance/president see Proxy Queue. Additive — not mandatory.
+  {
+    const captureItems = [];
+    // BDM-shaped roles get the mobile capture hub + review queue
+    if ([ROLES.CONTRACTOR, ROLES.EMPLOYEE].includes(role)) {
+      captureItems.push({ path: '/erp/capture-hub', label: 'Capture Hub', icon: ScanLine });
+      captureItems.push({ path: '/erp/review-queue', label: 'Review Queue', icon: ListChecks });
+    }
+    // Admin/finance/president get the proxy queue
+    if (ROLE_SETS.MANAGEMENT.includes(role)) {
+      captureItems.push({ path: '/erp/proxy-queue', label: 'Proxy Queue', icon: Smartphone });
+      // Management also sees review queue (for monitoring)
+      if (!captureItems.find(i => i.path === '/erp/review-queue')) {
+        captureItems.push({ path: '/erp/review-queue', label: 'Review Queue', icon: ListChecks });
+      }
+    }
+    if (captureItems.length > 0) {
+      sections.push({ title: 'Capture Hub', collapsible: true, defaultOpen: false, items: captureItems });
+    }
   }
 
   // ── My Income (contractors only — BDMs view their own payslips) ─────────

@@ -218,6 +218,11 @@ const CommandPalette   = lazyRetry(() => import('./erp/components/CommandPalette
 // Phase G8 (P2-9) — Tasks page (backs CREATE_TASK / LIST_OVERDUE_ITEMS Copilot tools)
 const TasksPage = lazyRetry(() => import('./erp/pages/TasksPage'));
 
+// Phase P1 — BDM Mobile Capture + Office Proxy Queue
+const BdmCaptureHub = lazyRetry(() => import('./erp/pages/mobile/BdmCaptureHub'));
+const BdmReviewQueue = lazyRetry(() => import('./erp/pages/mobile/BdmReviewQueue'));
+const ProxyQueue = lazyRetry(() => import('./erp/pages/proxy/ProxyQueue'));
+
 // Standalone routes redirect to ControlCenter with the right section param
 const AgentSettingsRedirect = () => <Navigate to="/erp/control-center?section=agent-settings" replace />;
 const EntityManagerRedirect = () => <Navigate to="/erp/control-center?section=entities" replace />;
@@ -932,6 +937,11 @@ function App() {
 
           {/* Phase G8 (P2-9) — Tasks (cross-cutting productivity; every ERP user) */}
           <Route path="/erp/tasks" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL}><TasksPage /></ProtectedRoute>} />
+
+          {/* Phase P1 — BDM Mobile Capture + Office Proxy Queue */}
+          <Route path="/erp/capture-hub" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL}><BdmCaptureHub /></ProtectedRoute>} />
+          <Route path="/erp/review-queue" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL}><BdmReviewQueue /></ProtectedRoute>} />
+          <Route path="/erp/proxy-queue" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL}><ProxyQueue /></ProtectedRoute>} />
 
           {/* Orphaned page direct routes — redirect to Control Center with correct section */}
           <Route path="/erp/agent-settings" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><AgentSettingsRedirect /></ProtectedRoute>} />

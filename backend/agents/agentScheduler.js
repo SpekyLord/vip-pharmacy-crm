@@ -107,6 +107,12 @@ function initAgentScheduler() {
   cron.schedule('15 6 * * 1-5', () => triggerScheduled('task_overdue', 'Task Overdue Notifier'), { timezone: TIMEZONE });
   console.log('[AgentScheduler]   ✓ #TO Task Overdue - weekdays 6:15 AM');
 
+  // Phase P1 — Proxy SLA Escalator. Every 4 hours Manila — catches stale
+  // PENDING_PROXY (>24h) and AWAITING_BDM_REVIEW (>72h) CaptureSubmissions.
+  // Thresholds lookup-driven (PROXY_SLA_THRESHOLDS). Idempotent.
+  cron.schedule('0 */4 * * *', () => triggerScheduled('proxy_sla', 'Proxy SLA Escalator'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #PX Proxy SLA - every 4 hours');
+
   // Phase G9.R8 — Inbox Retention. Nightly 02:00 Manila — low-traffic window.
   // Two-stage soft-delete → hard-delete. Per-entity settings in INBOX_RETENTION
   // lookup (Control Center → Inbox Retention Settings). Safety guards never

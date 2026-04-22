@@ -41,6 +41,10 @@ const AGENT_DEFINITIONS = {
   // Walks every active entity for overdue tasks (status OPEN/IN_PROGRESS/BLOCKED, due_date < now)
   // and pushes `notifyTaskEvent({ event: 'overdue' })` per task. Cooldown via TASK_OVERDUE_COOLDOWN_DAYS lookup.
   task_overdue:          { key: 'task_overdue',          label: 'Task Overdue Notifier',          modulePath: './taskOverdueAgent',           type: 'FREE', schedule: 'Weekdays 6:15 AM' },
+  // Phase P1 — Proxy SLA Escalator (FREE; no AI)
+  // Walks every active entity for stale CaptureSubmissions (PENDING_PROXY > 24h,
+  // AWAITING_BDM_REVIEW > 72h). Thresholds lookup-driven (PROXY_SLA_THRESHOLDS).
+  proxy_sla:             { key: 'proxy_sla',             label: 'Proxy SLA Escalator',            modulePath: './proxySlaAgent',              type: 'FREE', schedule: 'Every 4 hours' },
   // Phase G9.R8 — Inbox Retention (FREE; no AI)
   // Two-stage soft-delete → hard-delete for old archived / read / AI-agent /
   // broadcast messages, per-entity lookup-driven (INBOX_RETENTION). Safety
