@@ -219,6 +219,7 @@ const modalStyles = `
 const ClientAddModal = ({ client, onClose, onSaved }) => {
   const { programs: PROGRAMS, supportTypes: SUPPORT_TYPES } = useLookupData();
   const { options: ENGAGEMENT_LEVELS } = useLookupOptions('ENGAGEMENT_LEVEL');
+  const { options: CLIENT_TYPE_OPTIONS } = useLookupOptions('VIP_CLIENT_TYPE');
   // Phase G1.5 — structured address for SMER per-diem notes ("City, Province")
   const { options: PROVINCE_OPTIONS } = useLookupOptions('PH_PROVINCES');
   const { options: LOCALITY_OPTIONS } = useLookupOptions('PH_LOCALITIES');
@@ -231,6 +232,7 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
     firstName: client?.firstName || '',
     lastName: client?.lastName || '',
     specialization: client?.specialization || '',
+    clientType: client?.clientType || '',
     clinicOfficeAddress: client?.clinicOfficeAddress || '',
     locality: client?.locality || '',
     province: client?.province || '',
@@ -265,9 +267,29 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
+    // Hard block — minimum viable record (same contract as before).
     if (!formData.firstName.trim() || !formData.lastName.trim()) {
       setError('First name and last name are required.');
       return;
+    }
+
+    // Soft warning — these fields are important for SMER per-diem notes,
+    // performance reporting, and seamless Client→VIP promotion. Backend
+    // accepts null (schema is .optional()) so we just nudge the BDM here.
+    // If admin adds a seed gap (e.g., BDM's province has no seeded localities),
+    // the BDM can still save — warning tells them what's missing.
+    const missing = [];
+    if (!formData.specialization?.trim()) missing.push('VIP Specialty');
+    if (!formData.clientType?.trim()) missing.push('Type of Client');
+    if (!formData.locality?.trim()) missing.push('Locality (city/municipality)');
+    if (missing.length > 0) {
+      const proceed = window.confirm(
+        `The following recommended fields are empty:\n\n  • ${missing.join('\n  • ')}\n\n` +
+        `These help with SMER per-diem notes and performance reporting. ` +
+        `You can save now and fill them in later, but it's better to capture them ` +
+        `while you're with the client.\n\nSave anyway?`
+      );
+      if (!proceed) return;
     }
 
     setSaving(true);
@@ -283,6 +305,7 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
       notes: formData.notes,
       schedulingMode: formData.schedulingMode,
     };
+    if (formData.clientType?.trim()) submitData.clientType = formData.clientType.trim();
 
     // Only include visit frequency for strict mode
     if (formData.schedulingMode === 'strict') {
@@ -383,7 +406,14 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
 
             <div className="client-form-row">
               <div className="client-form-group">
-                <label>Specialization</label>
+                <label>
+                  VIP Specialty
+                  {!formData.specialization?.trim() && (
+                    <span style={{ color: '#f59e0b', fontSize: 11, marginLeft: 6, fontWeight: 500 }}>
+                      (recommended)
+                    </span>
+                  )}
+                </label>
                 <input
                   type="text"
                   value={formData.specialization}
@@ -393,6 +423,28 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
                 />
               </div>
               <div className="client-form-group">
+                <label>
+                  Type of Client
+                  {!formData.clientType?.trim() && (
+                    <span style={{ color: '#f59e0b', fontSize: 11, marginLeft: 6, fontWeight: 500 }}>
+                      (recommended)
+                    </span>
+                  )}
+                </label>
+                <SelectField
+                  value={formData.clientType}
+                  onChange={(e) => handleChange('clientType', e.target.value)}
+                >
+                  <option value="">— Select —</option>
+                  {CLIENT_TYPE_OPTIONS.map((o) => (
+                    <option key={o.code} value={o.code}>{o.label}</option>
+                  ))}
+                </SelectField>
+              </div>
+            </div>
+
+            <div className="client-form-row">
+              <div className="client-form-group">
                 <label>Phone</label>
                 <input
                   type="text"
@@ -401,9 +453,6 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
                   placeholder="e.g. +63 912 345 6789"
                 />
               </div>
-            </div>
-
-            <div className="client-form-row">
               <div className="client-form-group">
                 <label>Email</label>
                 <input
@@ -413,15 +462,16 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
                   placeholder="email@example.com"
                 />
               </div>
-              <div className="client-form-group">
-                <label>Outlet Indicator</label>
-                <input
-                  type="text"
-                  value={formData.outletIndicator}
-                  onChange={(e) => handleChange('outletIndicator', e.target.value)}
-                  placeholder="e.g. MMC, AMC, PHC"
-                />
-              </div>
+            </div>
+
+            <div className="client-form-group">
+              <label>Outlet Indicator</label>
+              <input
+                type="text"
+                value={formData.outletIndicator}
+                onChange={(e) => handleChange('outletIndicator', e.target.value)}
+                placeholder="e.g. MMC, AMC, PHC"
+              />
             </div>
 
             <div className="client-form-group">
@@ -462,7 +512,14 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
                 </SelectField>
               </div>
               <div className="client-form-group">
-                <label>City / Municipality</label>
+                <label>
+                  City / Municipality
+                  {formData.province && !formData.locality && (
+                    <span style={{ color: '#f59e0b', fontSize: 11, marginLeft: 6, fontWeight: 500 }}>
+                      (recommended)
+                    </span>
+                  )}
+                </label>
                 <SelectField
                   value={formData.locality}
                   onChange={(e) => handleChange('locality', e.target.value)}
@@ -481,6 +538,14 @@ const ClientAddModal = ({ client, onClose, onSaved }) => {
                       <option key={l.code} value={l.label}>{l.label}</option>
                     ))}
                 </SelectField>
+                {formData.province && LOCALITY_OPTIONS.filter(l => {
+                  const prov = PROVINCE_OPTIONS.find(p => p.label === formData.province);
+                  return prov && l.metadata?.province_code === prov.code;
+                }).length === 0 && (
+                  <small style={{ color: '#6b7280', fontSize: 11, display: 'block', marginTop: 4 }}>
+                    No localities seeded for this province yet — ask admin to add via Control Center → Lookup Tables → PH_LOCALITIES, or leave empty and fill later.
+                  </small>
+                )}
               </div>
             </div>
 

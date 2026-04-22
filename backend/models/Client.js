@@ -26,6 +26,17 @@ const clientSchema = new mongoose.Schema(
       trim: true,
       maxlength: [100, 'Specialization cannot exceed 100 characters'],
     },
+    // Mirrors Doctor.clientType so regular clients carry the same categorization
+    // (MD, Hospital, Diagnostic Center, Industrial, etc.) and transfer seamlessly
+    // to the Doctor record on Client→VIP promotion. Values driven by the
+    // VIP_CLIENT_TYPE lookup — no enum here so subscribers can add their own.
+    clientType: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      maxlength: [50, 'Client type cannot exceed 50 characters'],
+      index: true,
+    },
     clinicOfficeAddress: {
       type: String,
       trim: true,

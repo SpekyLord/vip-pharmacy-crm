@@ -4,26 +4,42 @@
  * Exercises the new per-diem config + CRM bridge + locality/province paths
  * against a live MongoDB connection (staging only — NEVER run against prod).
  *
- * What it covers:
- *   1. resolvePerdiemConfig happy path (seeded row returns normalized config)
- *   2. resolvePerdiemConfig missing row → ApiError(400)
- *   3. resolvePerdiemConfig invalid rate_php → ApiError(400)
- *   4. getDailyMdCounts happy path (5 visits, all clean photos, structured address)
- *   5. getDailyMdCounts skipFlagged filter (flagged visit drops from count)
- *   6. getDailyMdCounts legacy fallback (Doctor w/o locality → uses clinicOfficeAddress)
- *   7. getDailyMdCounts weekend toggle (allow_weekend=false drops Saturday; true keeps)
+ * Two test suites:
  *
- * What it does NOT cover (manual test required):
+ * A) Service-layer suite (always runs; only needs DB)
+ *   1. resolvePerdiemConfig happy path
+ *   2. resolvePerdiemConfig missing / invalid / inactive row → ApiError(400)
+ *   3. getDailyMdCounts happy path + structured "City, Province"
+ *   4. getDailyMdCounts skipFlagged filter
+ *   5. getDailyMdCounts legacy fallback (null locality → clinicOfficeAddress)
+ *   6. PERDIEM_RATES metadata toggle (allow_weekend)
+ *
+ * B) HTTP-layer suite (only runs if server is reachable)
+ *   7. POST /api/doctors persists locality + province + clientType
+ *   8. PUT /api/doctors/:id persists locality + province updates
+ *   9. POST /api/clients persists locality + province + clientType (BDM flow)
+ *  10. PUT /api/clients/:id persists locality + province + clientType updates
+ *
+ *   Suite B would have caught the April 22 post-audit bug (Client/Doctor controllers
+ *   were dropping locality/province via their destructuring / allowlist contracts).
+ *   Configure admin + BDM credentials via env vars — see CONFIG section below.
+ *
+ * What it still does NOT cover (manual test required):
  *   - UI-level error toast rendering (HTTP 400 surface in SMER create page)
- *   - DoctorManagement cascading dropdown behavior
- *   - Actual frontend X-Entity-Id header propagation
+ *   - Cascading dropdown client-side behavior
  *   - Full SMER create → validate → submit → POST journal flow
  *
  * Data isolation: creates test records with prefix `SMOKE_G15_` under a test
  * entity (`SMOKE_G15_ENTITY`). Cleanup runs on exit regardless of pass/fail.
  *
  * Usage (from backend/):
- *   node erp/scripts/smokeTestPhaseG15.js
+ *   node erp/scripts/smokeTestPhaseG15.js                  # service-layer only
+ *   SMOKE_API_URL=http://localhost:5000 \\
+ *   SMOKE_ADMIN_EMAIL=admin@vipcrm.com \\
+ *   SMOKE_ADMIN_PASSWORD=Admin123!@# \\
+ *   SMOKE_BDM_EMAIL=juan@vipcrm.com \\
+ *   SMOKE_BDM_PASSWORD=BDM123!@# \\
+ *   node erp/scripts/smokeTestPhaseG15.js                  # + HTTP suite
  *
  * Exit code: 0 = all pass, 1 = any fail
  */
@@ -324,6 +340,182 @@ async function testDeactivatedRow({ entity }) {
 }
 
 // ═══════════════════════════════════════════
+// HTTP-LAYER TESTS (optional — requires server running + test creds)
+// ═══════════════════════════════════════════
+//
+// Rationale: service-layer tests miss controller-level field whitelist bugs
+// (the April 22 post-audit fix: Doctor/Client controllers were dropping
+// locality/province via their destructuring contracts). These tests hit the
+// actual Express routes so the request → controller → model path is exercised.
+
+const API_URL = process.env.SMOKE_API_URL || 'http://localhost:5000';
+const ADMIN_EMAIL = process.env.SMOKE_ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.SMOKE_ADMIN_PASSWORD;
+const BDM_EMAIL = process.env.SMOKE_BDM_EMAIL;
+const BDM_PASSWORD = process.env.SMOKE_BDM_PASSWORD;
+
+// Very small cookie jar — CRM auth uses httpOnly Set-Cookie, so we capture the
+// Set-Cookie headers from /api/auth/login and forward them on subsequent requests.
+function parseCookies(setCookieHeader) {
+  if (!setCookieHeader) return '';
+  // Node's fetch returns set-cookie as a single joined string or via getSetCookie().
+  // Handle both shapes.
+  const raw = Array.isArray(setCookieHeader) ? setCookieHeader : [setCookieHeader];
+  return raw.map(c => c.split(';')[0]).join('; ');
+}
+
+async function httpLogin(email, password) {
+  const res = await fetch(`${API_URL}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`login failed for ${email}: HTTP ${res.status} ${text.slice(0, 200)}`);
+  }
+  // Node 18+ fetch: use headers.getSetCookie() if available, otherwise fall back to raw.
+  const setCookies = typeof res.headers.getSetCookie === 'function'
+    ? res.headers.getSetCookie()
+    : res.headers.get('set-cookie');
+  const cookie = parseCookies(setCookies);
+  if (!cookie) throw new Error(`login returned no cookies for ${email}`);
+  return cookie;
+}
+
+async function httpJson(method, url, cookie, body) {
+  const res = await fetch(`${API_URL}${url}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      Cookie: cookie,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  let json = null;
+  try { json = text ? JSON.parse(text) : null; } catch { /* non-JSON */ }
+  return { status: res.status, ok: res.ok, json, text };
+}
+
+async function serverReachable() {
+  try {
+    // Most Express apps have a health route; try a lightweight call first
+    const res = await fetch(`${API_URL}/api/health`, { method: 'GET' });
+    return res.ok || res.status === 404;  // 404 means server up but no /health — still fine
+  } catch {
+    return false;
+  }
+}
+
+async function httpTestDoctorCreatePersistsLocality(adminCookie, fixtures) {
+  const body = {
+    firstName: `${PREFIX}_HTTP_Doc`,
+    lastName: `${PREFIX}_Create`,
+    specialization: 'Oncology',
+    locality: 'Iloilo City',
+    province: 'Iloilo',
+    clientType: 'MD',
+    assignedTo: fixtures.bdm._id.toString(),
+  };
+  const res = await httpJson('POST', '/api/doctors', adminCookie, body);
+  assert(res.status === 201, `expected 201, got ${res.status}: ${res.text.slice(0, 200)}`);
+  const created = res.json?.data;
+  assert(created, `expected created doctor in response.data`);
+  assert(created.locality === 'Iloilo City', `POST /api/doctors dropped locality (got "${created.locality}") — controller whitelist bug`);
+  assert(created.province === 'Iloilo', `POST /api/doctors dropped province (got "${created.province}") — controller whitelist bug`);
+  assert(created.clientType === 'MD', `POST /api/doctors dropped clientType (got "${created.clientType}")`);
+  return created._id;
+}
+
+async function httpTestDoctorUpdatePersistsLocality(adminCookie, doctorId) {
+  const body = { locality: 'Bacolod City', province: 'Negros Occidental' };
+  const res = await httpJson('PUT', `/api/doctors/${doctorId}`, adminCookie, body);
+  assert(res.status === 200, `expected 200, got ${res.status}: ${res.text.slice(0, 200)}`);
+  const updated = res.json?.data;
+  assert(updated?.locality === 'Bacolod City', `PUT /api/doctors dropped locality update (got "${updated?.locality}")`);
+  assert(updated?.province === 'Negros Occidental', `PUT /api/doctors dropped province update (got "${updated?.province}")`);
+}
+
+async function httpTestClientCreatePersistsFields(bdmCookie) {
+  const body = {
+    firstName: `${PREFIX}_HTTP_Client`,
+    lastName: `${PREFIX}_Create`,
+    specialization: 'General Practice',
+    clientType: 'PERSON',
+    locality: 'Iloilo City',
+    province: 'Iloilo',
+  };
+  const res = await httpJson('POST', '/api/clients', bdmCookie, body);
+  assert(res.status === 201, `expected 201, got ${res.status}: ${res.text.slice(0, 200)}`);
+  const created = res.json?.data;
+  assert(created, `expected created client in response.data`);
+  assert(created.locality === 'Iloilo City', `POST /api/clients dropped locality (got "${created.locality}") — controller whitelist bug`);
+  assert(created.province === 'Iloilo', `POST /api/clients dropped province (got "${created.province}") — controller whitelist bug`);
+  assert(created.clientType === 'PERSON', `POST /api/clients dropped clientType (got "${created.clientType}") — controller whitelist bug`);
+  return created._id;
+}
+
+async function httpTestClientUpdatePersistsFields(bdmCookie, clientId) {
+  const body = { locality: 'Bacolod City', province: 'Negros Occidental', clientType: 'PHARMACY' };
+  const res = await httpJson('PUT', `/api/clients/${clientId}`, bdmCookie, body);
+  assert(res.status === 200, `expected 200, got ${res.status}: ${res.text.slice(0, 200)}`);
+  const updated = res.json?.data;
+  assert(updated?.locality === 'Bacolod City', `PUT /api/clients dropped locality update (got "${updated?.locality}")`);
+  assert(updated?.province === 'Negros Occidental', `PUT /api/clients dropped province update (got "${updated?.province}")`);
+  assert(updated?.clientType === 'PHARMACY', `PUT /api/clients dropped clientType update (got "${updated?.clientType}")`);
+}
+
+async function httpCleanupRecords(ids) {
+  // Delete via Mongoose (no HTTP delete endpoint ownership check risk).
+  const Doctor = require('../../models/Doctor');
+  const Client = require('../../models/Client');
+  if (ids.doctorId) await Doctor.deleteOne({ _id: ids.doctorId });
+  if (ids.clientId) await Client.deleteOne({ _id: ids.clientId });
+}
+
+async function runHttpSuite(fixtures) {
+  // Skip conditions
+  if (!await serverReachable()) {
+    log('  (server not reachable at ' + API_URL + ' — skipping HTTP suite)');
+    return;
+  }
+  if (!ADMIN_EMAIL || !ADMIN_PASSWORD || !BDM_EMAIL || !BDM_PASSWORD) {
+    log('  (SMOKE_ADMIN_* / SMOKE_BDM_* env vars not set — skipping HTTP suite)');
+    log('  Set: SMOKE_ADMIN_EMAIL, SMOKE_ADMIN_PASSWORD, SMOKE_BDM_EMAIL, SMOKE_BDM_PASSWORD');
+    return;
+  }
+
+  let adminCookie, bdmCookie, doctorId, clientId;
+  try {
+    adminCookie = await httpLogin(ADMIN_EMAIL, ADMIN_PASSWORD);
+    bdmCookie = await httpLogin(BDM_EMAIL, BDM_PASSWORD);
+  } catch (e) {
+    log(`  (login failed — skipping HTTP suite: ${e.message})`);
+    return;
+  }
+
+  try {
+    await runTest('POST /api/doctors persists locality + province + clientType', async () => {
+      doctorId = await httpTestDoctorCreatePersistsLocality(adminCookie, fixtures);
+    });
+    if (doctorId) {
+      await runTest('PUT /api/doctors/:id persists locality + province updates', () =>
+        httpTestDoctorUpdatePersistsLocality(adminCookie, doctorId));
+    }
+    await runTest('POST /api/clients persists locality + province + clientType', async () => {
+      clientId = await httpTestClientCreatePersistsFields(bdmCookie);
+    });
+    if (clientId) {
+      await runTest('PUT /api/clients/:id persists locality + province + clientType updates', () =>
+        httpTestClientUpdatePersistsFields(bdmCookie, clientId));
+    }
+  } finally {
+    try { await httpCleanupRecords({ doctorId, clientId }); } catch (e) { log(`  (http cleanup error: ${e.message})`); }
+  }
+}
+
+// ═══════════════════════════════════════════
 // MAIN
 // ═══════════════════════════════════════════
 
@@ -349,7 +541,7 @@ async function main() {
     log(`  structured doctor: ${fixtures.structDoctor._id}`);
     log(`  legacy doctor: ${fixtures.legacyDoctor._id}`);
 
-    log('\n── tests ──');
+    log('\n── service-layer tests ──');
     await runTest('resolvePerdiemConfig happy path', () => testResolveHappyPath(fixtures));
     await runTest('resolvePerdiemConfig missing row throws 400', () => testResolveMissingRow(fixtures));
     await runTest('resolvePerdiemConfig invalid rate throws 400', () => testResolveInvalidRate(fixtures));
@@ -358,6 +550,9 @@ async function main() {
     await runTest('getDailyMdCounts skipFlagged filter', () => testFlaggedFilter(fixtures));
     await runTest('getDailyMdCounts legacy fallback to clinicOfficeAddress', () => testLegacyFallback(fixtures));
     await runTest('PERDIEM_RATES metadata toggle (allow_weekend)', () => testWeekendPolicy(fixtures));
+
+    log('\n── http-layer tests ──');
+    await runHttpSuite(fixtures);
   } finally {
     log('\n── cleanup ──');
     try { await cleanup(); } catch (e) { log(`  cleanup error: ${e.message}`); }
