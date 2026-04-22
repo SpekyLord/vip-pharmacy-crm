@@ -304,9 +304,9 @@ function checkAgentEnums() {
   if (issues === startIssues) console.log(`  ✓ All ${allKeys.size} agent keys consistent across 5 sources`);
 }
 
-// ═══ 5. Proxy Entry wiring (Phases G4.5a + G4.5b) ═══
+// ═══ 5. Proxy Entry wiring (Phases G4.5a + G4.5b + G4.5c.1) ═══
 function checkProxyEntryWiring() {
-  console.log('\n5. Proxy Entry Wiring (Phase G4.5a + G4.5b)');
+  console.log('\n5. Proxy Entry Wiring (Phase G4.5a + G4.5b + G4.5c.1)');
   console.log('─'.repeat(40));
   const startIssues = issues;
 
@@ -344,6 +344,8 @@ function checkProxyEntryWiring() {
     'VALID_OWNER_ROLES:',
     'SALES__PROXY_ENTRY', 'SALES__OPENING_AR_PROXY',
     'COLLECTIONS__PROXY_ENTRY', 'INVENTORY__GRN_PROXY_ENTRY',
+    // Phase G4.5c.1 — single-entry Expenses proxy sub-perm.
+    'EXPENSES__PROXY_ENTRY',
   ]) {
     if (!lookupSeed.includes(key)) warn('PROXY', `SEED_DEFAULTS missing ${key}`);
   }
@@ -388,6 +390,40 @@ function checkProxyEntryWiring() {
     warn('PROXY', "collectionController.js does not call widenFilterForProxy with module='collections', subKey='proxy_entry'");
   }
 
+  // expenseController uses helper (Phase G4.5c.1, single-entry expenses path)
+  const expCtrl = fs.readFileSync(path.join(ERP_CONTROLLERS, 'expenseController.js'), 'utf-8');
+  for (const fn of ['resolveOwnerForWrite', 'widenFilterForProxy']) {
+    if (!expCtrl.includes(fn)) warn('PROXY', `expenseController.js does not import/use ${fn}`);
+  }
+  if (!/forceApproval/.test(expCtrl)) {
+    warn('PROXY', 'expenseController.js submitExpenses missing forceApproval flag (Option B — forced hub for proxied rows)');
+  }
+  if (!/'expenses'.*subKey:\s*'proxy_entry'|subKey:\s*'proxy_entry'.*'expenses'/s.test(expCtrl)) {
+    warn('PROXY', "expenseController.js does not call widenFilterForProxy with module='expenses', subKey='proxy_entry'");
+  }
+  // Unified audit codes (Phase G4.5c.1) — createExpense emits PROXY_CREATE,
+  // updateExpense emits PROXY_UPDATE, matching Sales/Collections/GRN.
+  if (!/log_type:\s*'PROXY_CREATE'/.test(expCtrl)) {
+    warn('PROXY', 'expenseController.createExpense does not emit PROXY_CREATE audit (unified code)');
+  }
+  if (!/log_type:\s*'PROXY_UPDATE'/.test(expCtrl)) {
+    warn('PROXY', 'expenseController.updateExpense does not emit PROXY_UPDATE audit (unified code)');
+  }
+
+  // Phase G4.5c.1 — ExpenseEntry.calf_override field (president-only CALF
+  // bypass; decoupled from recorded_on_behalf_of to prevent admin/contractor
+  // proxies from silently bypassing the CALF requirement).
+  const expModelPath = path.join(ERP_MODELS, 'ExpenseEntry.js');
+  if (fs.existsSync(expModelPath)) {
+    const expModel = fs.readFileSync(expModelPath, 'utf-8');
+    if (!/calf_override\s*:\s*\{\s*type:\s*Boolean/.test(expModel)) {
+      warn('PROXY', 'ExpenseEntry model missing calf_override field — CALF bypass still piggybacks on recorded_on_behalf_of (regression risk)');
+    }
+    if (/if\s*\(\s*this\.recorded_on_behalf_of\s*\)\s*\{\s*line\.calf_required\s*=\s*false/.test(expModel)) {
+      warn('PROXY', 'ExpenseEntry pre-save hook still bypasses CALF via recorded_on_behalf_of — admin/contractor proxies will silently skip CALF');
+    }
+  }
+
   // inventoryController uses helper (G4.5b, GRN paths)
   const invCtrl = fs.readFileSync(path.join(ERP_CONTROLLERS, 'inventoryController.js'), 'utf-8');
   for (const fn of ['resolveOwnerForWrite', 'widenFilterForProxy']) {
@@ -403,12 +439,14 @@ function checkProxyEntryWiring() {
     warn('PROXY', 'inventoryController.createGrn missing warehouse-access cross-check — target BDM could receive into a warehouse they are not assigned to');
   }
 
-  // Models: recorded_on_behalf_of on SalesLine (G4.5a) + Collection, GrnEntry, Undertaking (G4.5b)
+  // Models: recorded_on_behalf_of on SalesLine (G4.5a) + Collection, GrnEntry,
+  // Undertaking (G4.5b) + ExpenseEntry (G4.5c.1)
   for (const { file, label } of [
     { file: 'SalesLine.js', label: 'SalesLine' },
     { file: 'Collection.js', label: 'Collection' },
     { file: 'GrnEntry.js', label: 'GrnEntry' },
     { file: 'Undertaking.js', label: 'Undertaking' },
+    { file: 'ExpenseEntry.js', label: 'ExpenseEntry' },
   ]) {
     const modelPath = path.join(ERP_MODELS, file);
     if (!fs.existsSync(modelPath)) {
@@ -461,7 +499,8 @@ function checkProxyEntryWiring() {
     }
   }
   // Entry pages mount OwnerPicker + send assigned_to in payload
-  for (const page of ['SalesEntry.jsx', 'OpeningArEntry.jsx', 'CollectionSession.jsx', 'GrnEntry.jsx']) {
+  // Expenses.jsx doubles as entry + list on single page (not split like Sales).
+  for (const page of ['SalesEntry.jsx', 'OpeningArEntry.jsx', 'CollectionSession.jsx', 'GrnEntry.jsx', 'Expenses.jsx']) {
     const p = path.join(PAGES_DIR, page);
     if (!fs.existsSync(p)) continue;
     const src = fs.readFileSync(p, 'utf-8');
@@ -469,7 +508,7 @@ function checkProxyEntryWiring() {
     if (!src.includes('assigned_to')) warn('PROXY', `${page} payload missing assigned_to field`);
   }
   // List pages render Proxied pill (reads recorded_on_behalf_of)
-  for (const page of ['SalesList.jsx', 'OpeningArList.jsx', 'Collections.jsx', 'GrnEntry.jsx']) {
+  for (const page of ['SalesList.jsx', 'OpeningArList.jsx', 'Collections.jsx', 'GrnEntry.jsx', 'Expenses.jsx']) {
     const p = path.join(PAGES_DIR, page);
     if (!fs.existsSync(p)) continue;
     const src = fs.readFileSync(p, 'utf-8');
@@ -478,7 +517,7 @@ function checkProxyEntryWiring() {
     }
   }
 
-  if (issues === startIssues) console.log('  ✓ Proxy entry wiring intact (G4.5a + G4.5b)');
+  if (issues === startIssues) console.log('  ✓ Proxy entry wiring intact (G4.5a + G4.5b + G4.5c.1)');
 }
 
 // ═══ Phase FRA-A — FRA dual-write to User.entity_ids ═══

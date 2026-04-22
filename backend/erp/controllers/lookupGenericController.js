@@ -552,6 +552,13 @@ const SEED_DEFAULTS = {
     // Expenses
     { code: 'EXPENSES__BATCH_UPLOAD', label: 'Batch OR Upload (OCR)', metadata: { module: 'expenses', key: 'batch_upload', sort_order: 1 } },
     { code: 'EXPENSES__REOPEN', label: 'Re-open Posted Expenses', metadata: { module: 'expenses', key: 'reopen', sort_order: 2 } },
+    // Phase G4.5c.1 — Proxy Entry for single-entry Expenses (OR-based). Paired
+    // with PROXY_ENTRY_ROLES.EXPENSES lookup (default admin/finance/president).
+    // Tick surfaces OwnerPicker on Expenses Entry + widens list/update to all
+    // BDMs in the entity. Batch OR Upload is a separate sub-perm above
+    // (batch_upload) because it uses a different audit code path and the
+    // president-only CALF override flow (calf_override on ExpenseEntry).
+    { code: 'EXPENSES__PROXY_ENTRY', label: 'Record Expense on behalf of another BDM', metadata: { module: 'expenses', key: 'proxy_entry', sort_order: 3 } },
     // Purchasing
     { code: 'PURCHASING__PO_CREATE', label: 'Create/Edit Purchase Orders', metadata: { module: 'purchasing', key: 'po_create', sort_order: 1 } },
     { code: 'PURCHASING__PO_APPROVE', label: 'Approve Purchase Orders', metadata: { module: 'purchasing', key: 'po_approve', sort_order: 2 } },
