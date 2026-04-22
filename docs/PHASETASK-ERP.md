@@ -7160,7 +7160,7 @@ docs/PHASETASK-ERP.md                               # this entry + §3.8 update
 
 ---
 
-## Phase FRA-A — Cross-Entity Assignments Drives `User.entity_ids` (April 22, 2026) 📋 PLANNED
+## Phase FRA-A — Cross-Entity Assignments Drives `User.entity_ids` (April 22, 2026) ✅ SHIPPED
 
 ### Problem
 Two multi-entity systems co-exist and are not wired together:
@@ -7231,7 +7231,7 @@ docs/PHASETASK-ERP.md                                           # this entry
 ```
 
 ### Status
-- [ ] 📋 PLANNED. Awaiting user confirmation before implementation. Mentor recommends Option A; user has informally signaled preference via questioning flow but has not locked the decision.
+- [x] ✅ SHIPPED April 22, 2026. Option A implemented. Dual-write landed on all 4 FRA mutation paths (create / update / deactivate / bulkCreate). `User.entity_ids_static` preserves admin-direct assignments. Shared `userEntityRebuild` primitive computes `entity_ids = union(static, activeFras)`. Backfill script (`backend/erp/scripts/backfillEntityIdsFromFra.js`) acts as both migration tool and CI drift detector. Health check section 6 (`checkFraEntityIdsSync`) green. All 5 bulletproof scenarios verified. See [CLAUDE-ERP.md Phase FRA-A](../CLAUDE-ERP.md) for rollout checklist.
 
 ---
 

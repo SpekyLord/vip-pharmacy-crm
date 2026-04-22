@@ -4878,3 +4878,87 @@ Per-row handlers on all three list pages:
 - PRF/CALF and Car Logbook lifecycle actions remain on their existing pages unchanged.
 - Payroll already uses per-payslip actions.
 - GRN/Undertaking is a dual-model cycle wrapper; the approve action is intrinsically per-GRN — unaffected.
+
+
+---
+
+## Phase FRA-A — Cross-Entity Assignments Drive `User.entity_ids` (April 22, 2026)
+
+### Problem
+Two multi-entity systems co-existed but didn't talk to each other:
+- `User.entity_ids` (scalar array) — what [tenantFilter.js](backend/erp/middleware/tenantFilter.js) reads on every ERP request to validate `X-Entity-Id` and set `req.entityId`.
+- `FunctionalRoleAssignment` (Phase 31) — richer per-(person, entity, function) row with date windows, approval limits, status. Admin maintains these in **Control Center → People & Access → Role Assignments**.
+
+Consequence: admin assigns Juan to MG and CO. via FRA, UI says ACTIVE, but Juan's entity picker never offers MG and CO., `tenantFilter` never sets `req.entityId = mg_id`, and `resolveOwnerForWrite` throws "target not assigned to the current entity." FRA rows were cosmetic.
+
+### Decision — Option A (dual-write) over Option B (union-of-sources bridge)
+- `User.entity_ids` stays authoritative for entity access — `tenantFilter` hot path unchanged.
+- FRA controller mutations (create / update / deactivate / bulkCreate) now propagate to `User.entity_ids` via a shared rebuild primitive.
+- FRA stays as optional metadata layer (date windows, approval_limit, status, functional_role) — useful for reporting and future per-entity approval-limit enforcement. Not load-bearing for auth.
+
+### Implementation
+
+**`backend/models/User.js`** — new field `entity_ids_static: [ObjectId]` with sparse index. Captures admin-direct assignments (BDM Management → userController.updateUser) so they're preserved when an FRA rebuild runs. Without this, deactivating an FRA would `$pull` an entity the admin intentionally granted.
+
+**`backend/erp/utils/userEntityRebuild.js`** — shared primitive. Computes `entity_ids = union(entity_ids_static, activeFraEntityIds)` where `activeFraEntityIds` is every `entity_id` from every active+ACTIVE FRA whose `person_id` links to a PeopleMaster with `user_id = userId`. Exports:
+- `rebuildUserEntityIdsForUser(userId)` — low-level, writes only if diff
+- `rebuildUserEntityIdsFromPerson(personId)` — FRA controllers call this (person_id is what they have)
+- `safeRebuildFromPerson(personId, ctx)` — swallow-and-log wrapper; FRA mutation never fails due to rebuild hiccup
+
+**`backend/erp/controllers/functionalRoleController.js`** — `safeRebuildFromPerson` called on every mutation path:
+- `createAssignment` → rebuild for new person
+- `updateAssignment` → rebuild (entity_id / status / is_active may have changed)
+- `deactivateAssignment` → rebuild (pulls entity from entity_ids unless another active FRA or static baseline holds it)
+- `bulkCreate` → single rebuild per person at end
+
+**`backend/controllers/userController.js:updateUser`** — when admin writes `entity_ids`, mirror to `entity_ids_static` and call `rebuildUserEntityIdsForUser`. Ensures admin-direct assignment persists through subsequent FRA rebuilds AND unions with any active FRAs at write time.
+
+**`backend/erp/scripts/backfillEntityIdsFromFra.js`** — idempotent migration + drift detector.
+- Default (dry-run): scans all Users, reports drift, exits 1 if any drift.
+- `--apply`: writes. Seeds `entity_ids_static = current entity_ids` on first run (captures pre-FRA-A admin assignments). Rebuilds `entity_ids` as union.
+- `--user <id>`: scope to one user.
+- Usage as CI drift gate: `node backend/erp/scripts/backfillEntityIdsFromFra.js && echo "no drift"`.
+
+**`scripts/check-system-health.js`** — new section 6 `checkFraEntityIdsSync` asserts wiring (file-level):
+- `entity_ids_static` field + index present on User model
+- `userEntityRebuild.js` helper exists with expected exports
+- functionalRoleController imports helper + calls `safeRebuildFromPerson` ≥ 4 times (one per mutation path)
+- userController.updateUser mirrors to static + calls rebuild
+- Backfill script exists with `--apply` / `--user` flags
+
+### Bulletproof walkthrough (all passing)
+
+| Scenario | Expected | Result |
+|---|---|---|
+| Happy path: admin creates FRA (Juan → MG → SALES) | Juan's `entity_ids` now includes MG; picker shows MG; proxy-target check passes for MG ops | ✅ |
+| Deactivate: is_active=false on Juan's MG FRA | `entity_ids` drops MG (no other active FRA, not in static) | ✅ |
+| Multi-role: Juan has ACCOUNTING + SALES at MG; deactivate SALES only | `entity_ids` keeps MG (ACCOUNTING still active) | ✅ |
+| Static preservation: admin assigned Juan to VIP + MG pre-FRA, then adds FRA for BLW | Static = [VIP, MG], entity_ids = [VIP, MG, BLW]; deactivating BLW FRA later keeps [VIP, MG] | ✅ |
+| Drift: backfill --dry-run after apply | 0 drift, exit 0 | ✅ |
+| Rule #19 cross-entity: entity added to `entity_ids` | Still requires `X-Entity-Id` header to switch — no silent cross-entity writes | ✅ (unchanged `tenantFilter`) |
+| Rule #21 no silent self-fallback: `resolveOwnerForWrite` | Still throws 403 on cross-entity target | ✅ (unchanged) |
+
+### Known operational caveats
+- **JWT staleness**: if `protect` middleware reads `entity_ids` from a cached User fetch, changes take effect next request. Typical session lifecycle handles this fine; if a user has a stale token, logout/refresh applies the new entity.
+- **Date-window enforcement**: `FRA.valid_from` / `valid_to` are data-only today. `tenantFilter` auth gate reads static `entity_ids`. Future subscribers wanting time-bounded deployment will need a `tenantFilter` extension (not an FRA-bridge rebuild).
+- **Approval limit**: `FRA.approval_limit` is data-only. Future phase to wire into `approvalService`.
+- **Strict function-gate**: module ↔ `FRA.functional_role` matching NOT implemented. Sub-perms remain the function gate. If a subscriber asks, add `MODULE_FRA_REQUIRED` lookup with null default.
+
+### Files touched (Phase FRA-A)
+```
+backend/models/User.js                                           # + entity_ids_static + sparse index
+backend/erp/utils/userEntityRebuild.js                           # NEW — shared rebuild primitive
+backend/erp/controllers/functionalRoleController.js              # dual-write on 4 mutation paths
+backend/controllers/userController.js                            # updateUser mirrors + rebuilds
+backend/erp/scripts/backfillEntityIdsFromFra.js                  # NEW — migration + drift detector
+scripts/check-system-health.js                                   # + checkFraEntityIdsSync (section 6)
+CLAUDE-ERP.md                                                    # this section
+docs/PHASETASK-ERP.md                                            # status flip 📋 → ✅
+```
+
+### Rollout checklist (ops)
+1. Deploy code.
+2. Run `node backend/erp/scripts/backfillEntityIdsFromFra.js` — review drift report.
+3. Run `node backend/erp/scripts/backfillEntityIdsFromFra.js --apply` — persist static seed + union rebuild.
+4. Re-run dry-run → expect exit 0 (0 drift).
+5. Add dry-run to CI as a pre-deploy gate.

@@ -481,6 +481,87 @@ function checkProxyEntryWiring() {
   if (issues === startIssues) console.log('  ✓ Proxy entry wiring intact (G4.5a + G4.5b)');
 }
 
+// ═══ Phase FRA-A — FRA dual-write to User.entity_ids ═══
+// Verifies the wiring that makes FunctionalRoleAssignment rows propagate to
+// User.entity_ids (what tenantFilter reads). Without this, FRA rows are
+// cosmetic and cross-entity proxy writes fail with "target not assigned to
+// the current entity" even though the admin believes the person is assigned.
+// Live drift count (actual DB state vs expected union) is surfaced by the
+// backfill script's --dry-run: `node backend/erp/scripts/backfillEntityIdsFromFra.js`.
+function checkFraEntityIdsSync() {
+  const startIssues = issues;
+  console.log('\n6. FRA → User.entity_ids Sync (Phase FRA-A)');
+  console.log('─'.repeat(40));
+
+  // User model has entity_ids_static field (admin-direct baseline)
+  const userModelPath = path.join(ROOT, 'backend', 'models', 'User.js');
+  const userModel = fs.readFileSync(userModelPath, 'utf-8');
+  if (!/entity_ids_static\s*:\s*\[/.test(userModel)) {
+    warn('FRA', 'User model missing entity_ids_static field — FRA rebuild cannot preserve admin-direct assignments');
+  }
+  if (!/userSchema\.index\(\s*\{\s*entity_ids_static\s*:/.test(userModel)) {
+    warn('FRA', 'User model missing entity_ids_static index — drift reports will be slow');
+  }
+
+  // Shared rebuild helper present with expected exports
+  const rebuildPath = path.join(ROOT, 'backend', 'erp', 'utils', 'userEntityRebuild.js');
+  if (!fs.existsSync(rebuildPath)) {
+    warn('FRA', 'backend/erp/utils/userEntityRebuild.js missing — dual-write cannot function');
+  } else {
+    const rebuild = fs.readFileSync(rebuildPath, 'utf-8');
+    for (const ex of ['rebuildUserEntityIdsForUser', 'rebuildUserEntityIdsFromPerson', 'safeRebuildFromPerson']) {
+      if (!new RegExp(`(module\\.exports|exports\\.)\\s*[={].*${ex}|${ex}\\s*[,}]`).test(rebuild)) {
+        warn('FRA', `userEntityRebuild.js does not export ${ex}`);
+      }
+    }
+    // Union formula invariant
+    if (!/entity_ids_static/.test(rebuild) || !/FunctionalRoleAssignment/.test(rebuild)) {
+      warn('FRA', 'userEntityRebuild.js does not compute union(entity_ids_static, activeFras)');
+    }
+  }
+
+  // functionalRoleController calls rebuild on every mutation path
+  const fraCtrlPath = path.join(ERP_CONTROLLERS, 'functionalRoleController.js');
+  if (!fs.existsSync(fraCtrlPath)) {
+    warn('FRA', 'functionalRoleController.js missing — expected at backend/erp/controllers/functionalRoleController.js');
+  } else {
+    const fraCtrl = fs.readFileSync(fraCtrlPath, 'utf-8');
+    if (!/require\(['"]\.\.\/utils\/userEntityRebuild['"]\)/.test(fraCtrl)) {
+      warn('FRA', 'functionalRoleController.js does not import userEntityRebuild — FRA mutations will not propagate');
+    }
+    // Each mutation path must trigger a rebuild. Count occurrences — one per
+    // mutation handler (createAssignment, updateAssignment, deactivateAssignment,
+    // bulkCreate = 4 minimum).
+    const rebuildCalls = (fraCtrl.match(/safeRebuildFromPerson\s*\(/g) || []).length;
+    if (rebuildCalls < 4) {
+      warn('FRA', `functionalRoleController.js calls safeRebuildFromPerson ${rebuildCalls} times, expected ≥4 (create, update, deactivate, bulkCreate)`);
+    }
+  }
+
+  // userController.updateUser mirrors admin-direct entity_ids to static + rebuilds
+  const userCtrlPath = path.join(ROOT, 'backend', 'controllers', 'userController.js');
+  const userCtrl = fs.readFileSync(userCtrlPath, 'utf-8');
+  if (!/entity_ids_static\s*=/.test(userCtrl)) {
+    warn('FRA', 'userController.js does not mirror admin-direct entity_ids to entity_ids_static — admin writes will be dropped on next FRA rebuild');
+  }
+  if (!/rebuildUserEntityIdsForUser/.test(userCtrl)) {
+    warn('FRA', 'userController.js does not call rebuildUserEntityIdsForUser — admin-direct entity_ids writes will not union with active FRAs');
+  }
+
+  // Backfill script present (required for migration + drift detection)
+  const backfillPath = path.join(ROOT, 'backend', 'erp', 'scripts', 'backfillEntityIdsFromFra.js');
+  if (!fs.existsSync(backfillPath)) {
+    warn('FRA', 'backend/erp/scripts/backfillEntityIdsFromFra.js missing — pre-FRA-A users have no entity_ids_static baseline');
+  } else {
+    const backfill = fs.readFileSync(backfillPath, 'utf-8');
+    if (!/--apply/.test(backfill) || !/--user/.test(backfill)) {
+      warn('FRA', 'backfillEntityIdsFromFra.js does not support --apply / --user flags — expected dry-run safe default');
+    }
+  }
+
+  if (issues === startIssues) console.log('  ✓ FRA → User.entity_ids wiring intact (Phase FRA-A)');
+}
+
 // ═══ Run all checks ═══
 console.log('System Health Check');
 console.log('═'.repeat(40));
@@ -491,6 +572,7 @@ checkWorkflowGuides();
 checkControlCenter();
 checkAgentEnums();
 checkProxyEntryWiring();
+checkFraEntityIdsSync();
 
 console.log('\n' + '═'.repeat(40));
 if (issues > beforeIssues) {

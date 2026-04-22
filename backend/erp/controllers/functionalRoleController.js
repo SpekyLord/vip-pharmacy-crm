@@ -8,6 +8,11 @@
 const FunctionalRoleAssignment = require('../models/FunctionalRoleAssignment');
 const PeopleMaster = require('../models/PeopleMaster');
 const { catchAsync } = require('../../middleware/errorHandler');
+// Phase FRA-A (April 22, 2026) — dual-write: every FRA mutation rebuilds
+// the linked User's entity_ids as union(entity_ids_static, activeFraEntityIds)
+// so `tenantFilter` (which reads entity_ids on every ERP request) stays in
+// sync with FRA-driven cross-entity deployment.
+const { safeRebuildFromPerson } = require('../utils/userEntityRebuild');
 
 // Build query filter — president can operate cross-entity, others scoped to working entity
 const idFilter = (req, id) => {
@@ -109,6 +114,9 @@ const createAssignment = catchAsync(async (req, res) => {
     .populate(POPULATE_FIELDS)
     .lean();
 
+  // Phase FRA-A dual-write: propagate to User.entity_ids.
+  await safeRebuildFromPerson(person_id, 'createAssignment');
+
   res.status(201).json({ success: true, data: populated });
 });
 
@@ -129,6 +137,12 @@ const updateAssignment = catchAsync(async (req, res) => {
   ).populate(POPULATE_FIELDS).lean();
 
   if (!assignment) return res.status(404).json({ success: false, message: 'Assignment not found' });
+
+  // Phase FRA-A dual-write: entity_id / status / is_active may have changed.
+  // Rebuild covers every case (add, remove, no-op).
+  const personId = assignment.person_id?._id || assignment.person_id;
+  await safeRebuildFromPerson(personId, 'updateAssignment');
+
   res.json({ success: true, data: assignment });
 });
 
@@ -142,6 +156,13 @@ const deactivateAssignment = catchAsync(async (req, res) => {
   ).populate(POPULATE_FIELDS).lean();
 
   if (!assignment) return res.status(404).json({ success: false, message: 'Assignment not found' });
+
+  // Phase FRA-A dual-write: rebuild pulls the entity_id from User.entity_ids
+  // unless (a) another active FRA at this entity for this person still
+  // exists, or (b) the entity is in User.entity_ids_static (admin-direct).
+  const personId = assignment.person_id?._id || assignment.person_id;
+  await safeRebuildFromPerson(personId, 'deactivateAssignment');
+
   res.json({ success: true, data: assignment, message: 'Assignment revoked' });
 });
 
@@ -207,6 +228,10 @@ const bulkCreate = catchAsync(async (req, res) => {
   }
 
   const created = await FunctionalRoleAssignment.insertMany(docs);
+
+  // Phase FRA-A dual-write: one rebuild for the person covers all created
+  // rows (all share person_id — just different entity_id / role).
+  await safeRebuildFromPerson(person_id, 'bulkCreate');
 
   const populated = await FunctionalRoleAssignment.find({
     _id: { $in: created.map(c => c._id) },
