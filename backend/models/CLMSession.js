@@ -6,6 +6,7 @@
  *
  * Key features:
  * - Slide-level engagement tracking (time per slide, interactions)
+ * - Dynamic product selection from CRM (scalable, not hardcoded)
  * - Facebook Messenger QR scan conversion tracking
  * - BDM notes and interest-level scoring
  * - Follow-up scheduling
@@ -30,6 +31,26 @@ const slideEventSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const productPresentedSchema = new mongoose.Schema(
+  {
+    product: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'CrmProduct',
+      required: true,
+    },
+    // Snapshot fields — so the record remains valid even if the product is later edited/deleted
+    productName: { type: String, trim: true },
+    productGenericName: { type: String, trim: true },
+    productDosage: { type: String, trim: true },
+    productImage: { type: String, trim: true },
+    // Engagement
+    interestShown: { type: Boolean, default: false },
+    timeSpentMs: { type: Number, default: 0 },
+    notes: { type: String, trim: true, maxlength: 500 },
+  },
+  { _id: false }
+);
+
 const clmSessionSchema = new mongoose.Schema(
   {
     // ── References ──────────────────────────────────────────────────
@@ -44,6 +65,9 @@ const clmSessionSchema = new mongoose.Schema(
       required: [true, 'Doctor (VIP Client) is required'],
     },
 
+    // ── Products presented (scalable — pulled from CRM) ─────────────
+    productsPresented: [productPresentedSchema],
+
     // ── Session timing ──────────────────────────────────────────────
     startedAt: {
       type: Date,
@@ -56,7 +80,7 @@ const clmSessionSchema = new mongoose.Schema(
     // ── Slide engagement ────────────────────────────────────────────
     slideEvents: [slideEventSchema],
     slidesViewedCount: { type: Number, default: 0 },
-    totalSlides: { type: Number, default: 9 },
+    totalSlides: { type: Number, default: 6 },
 
     // ── Messenger QR conversion ─────────────────────────────────────
     messengerRef: { type: String, trim: true },   // e.g. CLM_<sessionId>_<doctorId>_<userId>
@@ -101,5 +125,6 @@ clmSessionSchema.index({ user: 1, createdAt: -1 });
 clmSessionSchema.index({ doctor: 1, createdAt: -1 });
 clmSessionSchema.index({ status: 1 });
 clmSessionSchema.index({ qrScanned: 1 });
+clmSessionSchema.index({ 'productsPresented.product': 1 });
 
 module.exports = mongoose.model('CLMSession', clmSessionSchema);

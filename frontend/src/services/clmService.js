@@ -2,13 +2,14 @@
  * CLM Service
  *
  * API calls for Closed Loop Marketing (Partnership Presentation) sessions.
+ * Supports scalable product selection from CRM.
  */
 import api from './api';
 
 const clmService = {
   // ── Session lifecycle ─────────────────────────────────────────────
-  startSession: async (doctorId, location) => {
-    const response = await api.post('/clm/sessions', { doctorId, location });
+  startSession: async (doctorId, location, productIds = []) => {
+    const response = await api.post('/clm/sessions', { doctorId, location, productIds });
     return response.data;
   },
 
@@ -20,6 +21,20 @@ const clmService = {
   // ── Slide events ──────────────────────────────────────────────────
   recordSlideEvents: async (sessionId, slideEvents) => {
     const response = await api.put(`/clm/sessions/${sessionId}/slides`, { slideEvents });
+    return response.data;
+  },
+
+  // ── Product management ────────────────────────────────────────────
+  addProducts: async (sessionId, productIds) => {
+    const response = await api.put(`/clm/sessions/${sessionId}/products`, { productIds });
+    return response.data;
+  },
+
+  updateProductInterest: async (sessionId, productId, data) => {
+    const response = await api.put(`/clm/sessions/${sessionId}/product-interest`, {
+      productId,
+      ...data,
+    });
     return response.data;
   },
 

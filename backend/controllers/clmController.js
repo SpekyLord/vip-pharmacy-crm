@@ -4,19 +4,41 @@
  * Handles Closed Loop Marketing session CRUD and analytics:
  * - Start / end / update sessions
  * - Record slide events
+ * - Product selection and interest tracking (scalable, from CRM)
  * - Mark QR scanned (webhook-ready)
  * - Analytics aggregation for admin dashboard
  */
 const CLMSession = require('../models/CLMSession');
+const CrmProduct = require('../models/CrmProduct');
 
 // ── Helpers ─────────────────────────────────────────────────────────
 const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
 // ── Start a new CLM session ─────────────────────────────────────────
 const startSession = asyncHandler(async (req, res) => {
-  const { doctorId, location } = req.body;
+  const { doctorId, location, productIds } = req.body;
   if (!doctorId) {
     return res.status(400).json({ success: false, message: 'doctorId is required' });
+  }
+
+  // Build productsPresented with snapshot data from CRM
+  let productsPresented = [];
+  if (productIds && Array.isArray(productIds) && productIds.length > 0) {
+    const products = await CrmProduct.find({
+      _id: { $in: productIds },
+      isActive: true,
+    }).lean();
+
+    productsPresented = products.map((p) => ({
+      product: p._id,
+      productName: p.name,
+      productGenericName: p.genericName || '',
+      productDosage: p.dosage || '',
+      productImage: p.image || '',
+      interestShown: false,
+      timeSpentMs: 0,
+      notes: '',
+    }));
   }
 
   const session = await CLMSession.create({
@@ -24,6 +46,7 @@ const startSession = asyncHandler(async (req, res) => {
     doctor: doctorId,
     startedAt: new Date(),
     location: location || {},
+    productsPresented,
     status: 'in_progress',
   });
 
@@ -32,13 +55,17 @@ const startSession = asyncHandler(async (req, res) => {
   session.messengerRef = messengerRef;
   await session.save();
 
-  res.status(201).json({ success: true, data: session });
+  // Return with populated refs
+  const populated = await CLMSession.findById(session._id)
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress');
+
+  res.status(201).json({ success: true, data: populated });
 });
 
 // ── End / complete a session ────────────────────────────────────────
 const endSession = asyncHandler(async (req, res) => {
   const { id } = req.params;
-  const { interestLevel, bdmNotes, followUpDate, outcome } = req.body;
+  const { interestLevel, bdmNotes, followUpDate, outcome, productsPresented } = req.body;
 
   const session = await CLMSession.findById(id);
   if (!session) {
@@ -48,12 +75,94 @@ const endSession = asyncHandler(async (req, res) => {
   session.endedAt = new Date();
   session.totalDurationMs = session.endedAt - session.startedAt;
   session.status = 'completed';
-  session.slidesViewedCount = session.slideEvents.length;
+  session.slidesViewedCount = new Set(session.slideEvents.map((e) => e.slideIndex)).size;
 
   if (interestLevel) session.interestLevel = interestLevel;
   if (bdmNotes) session.bdmNotes = bdmNotes;
   if (followUpDate) session.followUpDate = followUpDate;
   if (outcome) session.outcome = outcome;
+
+  // Update product interest data if provided
+  if (productsPresented && Array.isArray(productsPresented)) {
+    for (const update of productsPresented) {
+      const existing = session.productsPresented.find(
+        (p) => p.product.toString() === update.productId
+      );
+      if (existing) {
+        if (update.interestShown !== undefined) existing.interestShown = update.interestShown;
+        if (update.timeSpentMs !== undefined) existing.timeSpentMs = update.timeSpentMs;
+        if (update.notes !== undefined) existing.notes = update.notes;
+      }
+    }
+  }
+
+  await session.save();
+  res.json({ success: true, data: session });
+});
+
+// ── Add products to an in-progress session ──────────────────────────
+const addProducts = asyncHandler(async (req, res) => {
+  const session = await CLMSession.findById(req.params.id);
+  if (!session) {
+    return res.status(404).json({ success: false, message: 'Session not found' });
+  }
+
+  const { productIds } = req.body;
+  if (!productIds || !Array.isArray(productIds) || productIds.length === 0) {
+    return res.status(400).json({ success: false, message: 'productIds array is required' });
+  }
+
+  // Fetch product data and add only new ones (avoid duplicates)
+  const existingIds = new Set(session.productsPresented.map((p) => p.product.toString()));
+  const newIds = productIds.filter((id) => !existingIds.has(id));
+
+  if (newIds.length > 0) {
+    const products = await CrmProduct.find({
+      _id: { $in: newIds },
+      isActive: true,
+    }).lean();
+
+    const newEntries = products.map((p) => ({
+      product: p._id,
+      productName: p.name,
+      productGenericName: p.genericName || '',
+      productDosage: p.dosage || '',
+      productImage: p.image || '',
+      interestShown: false,
+      timeSpentMs: 0,
+      notes: '',
+    }));
+
+    session.productsPresented.push(...newEntries);
+    await session.save();
+  }
+
+  res.json({ success: true, data: session });
+});
+
+// ── Update product interest for a session ───────────────────────────
+const updateProductInterest = asyncHandler(async (req, res) => {
+  const session = await CLMSession.findById(req.params.id);
+  if (!session) {
+    return res.status(404).json({ success: false, message: 'Session not found' });
+  }
+
+  const { productId, interestShown, timeSpentMs, notes } = req.body;
+  if (!productId) {
+    return res.status(400).json({ success: false, message: 'productId is required' });
+  }
+
+  const entry = session.productsPresented.find(
+    (p) => p.product.toString() === productId
+  );
+
+  if (!entry) {
+    return res.status(404).json({ success: false, message: 'Product not found in this session' });
+  }
+
+  if (interestShown !== undefined) entry.interestShown = interestShown;
+  if (timeSpentMs !== undefined) entry.timeSpentMs = timeSpentMs;
+  if (notes !== undefined) entry.notes = notes;
 
   await session.save();
   res.json({ success: true, data: session });
@@ -71,7 +180,9 @@ const recordSlideEvents = asyncHandler(async (req, res) => {
 
   if (Array.isArray(slideEvents)) {
     session.slideEvents.push(...slideEvents);
-    session.slidesViewedCount = session.slideEvents.length;
+    session.slidesViewedCount = new Set(
+      session.slideEvents.map((e) => e.slideIndex)
+    ).size;
   }
 
   await session.save();
@@ -161,7 +272,8 @@ const getAllSessions = asyncHandler(async (req, res) => {
 const getSessionById = asyncHandler(async (req, res) => {
   const session = await CLMSession.findById(req.params.id)
     .populate('user', 'firstName lastName')
-    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress');
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
+    .populate('productsPresented.product', 'name genericName dosage category image');
 
   if (!session) {
     return res.status(404).json({ success: false, message: 'Session not found' });
@@ -178,7 +290,7 @@ const getAnalytics = asyncHandler(async (req, res) => {
     if (startDate) match.createdAt.$gte = new Date(startDate);
     if (endDate) match.createdAt.$lte = new Date(endDate);
   }
-  if (userId) match.user = require('mongoose').Types.ObjectId(userId);
+  if (userId) match.user = new (require('mongoose').Types.ObjectId)(userId);
 
   const [summary] = await CLMSession.aggregate([
     { $match: match },
@@ -198,7 +310,7 @@ const getAnalytics = asyncHandler(async (req, res) => {
     },
   ]);
 
-  // Slide-level heatmap: average time per slide index
+  // Slide-level heatmap
   const slideHeatmap = await CLMSession.aggregate([
     { $match: match },
     { $unwind: '$slideEvents' },
@@ -252,6 +364,34 @@ const getAnalytics = asyncHandler(async (req, res) => {
     },
   ]);
 
+  // Product interest analytics — which products generate the most interest
+  const productAnalytics = await CLMSession.aggregate([
+    { $match: match },
+    { $unwind: '$productsPresented' },
+    {
+      $group: {
+        _id: '$productsPresented.product',
+        productName: { $first: '$productsPresented.productName' },
+        timesPresentedCount: { $sum: 1 },
+        interestCount: { $sum: { $cond: ['$productsPresented.interestShown', 1, 0] } },
+        avgTimeSpentMs: { $avg: '$productsPresented.timeSpentMs' },
+      },
+    },
+    {
+      $addFields: {
+        interestRate: {
+          $cond: [
+            { $gt: ['$timesPresentedCount', 0] },
+            { $multiply: [{ $divide: ['$interestCount', '$timesPresentedCount'] }, 100] },
+            0,
+          ],
+        },
+      },
+    },
+    { $sort: { interestCount: -1 } },
+    { $limit: 20 },
+  ]);
+
   res.json({
     success: true,
     data: {
@@ -268,6 +408,7 @@ const getAnalytics = asyncHandler(async (req, res) => {
       },
       slideHeatmap,
       topBdms,
+      productAnalytics,
     },
   });
 });
@@ -275,6 +416,8 @@ const getAnalytics = asyncHandler(async (req, res) => {
 module.exports = {
   startSession,
   endSession,
+  addProducts,
+  updateProductInterest,
   recordSlideEvents,
   markQrDisplayed,
   markQrScanned,
