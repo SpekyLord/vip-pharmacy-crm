@@ -81,6 +81,22 @@ async function tryAutoReply({ channel, contactId, doctorId, userId }) {
     if (!settings.AUTOREPLY_ENABLED) return;
     if (!isOutsideBusinessHours(settings)) return;
 
+    // Phase M1.11 — Hard gate: if this Doctor has withdrawn consent on this channel
+    // (via STOP keyword or one-click unsubscribe), never auto-reply. Would otherwise
+    // violate the opt-out promise the moment they message back for any reason.
+    if (doctorId) {
+      try {
+        const Doctor = require('../models/Doctor');
+        const d = await Doctor.findById(doctorId).select(`marketingConsent.${channel}`).lean();
+        if (d?.marketingConsent?.[channel]?.withdrawn_at) return;
+      } catch (err) {
+        // Non-fatal: if consent check fails we default to skipping the auto-reply
+        // rather than risking an out-of-band send to a possibly-opted-out user.
+        console.warn(`[AutoReply] Consent check failed for Doctor ${doctorId}:`, err.message);
+        return;
+      }
+    }
+
     const cooldown = settings.AUTOREPLY_COOLDOWN_MINUTES || 60;
     if (isCooldownActive(channel, contactId, cooldown)) return;
 

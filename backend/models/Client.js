@@ -147,6 +147,43 @@ const clientSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+
+    // Phase M1 (Apr 2026) — Per-channel marketing consent ledger (RA 10173 DPA).
+    // Mirrors Doctor.marketingConsent so regular clients carry consent seamlessly
+    // on VIP promotion. Written by webhook `bindFromInviteRef()` on invite reply
+    // and by the M1.11 opt-out handler on inbound STOP keyword.
+    marketingConsent: {
+      MESSENGER: {
+        consented: { type: Boolean, default: false },
+        at: { type: Date, default: null },
+        source: { type: String, default: null },
+        withdrawn_at: { type: Date, default: null },
+      },
+      VIBER: {
+        consented: { type: Boolean, default: false },
+        at: { type: Date, default: null },
+        source: { type: String, default: null },
+        withdrawn_at: { type: Date, default: null },
+      },
+      WHATSAPP: {
+        consented: { type: Boolean, default: false },
+        at: { type: Date, default: null },
+        source: { type: String, default: null },
+        withdrawn_at: { type: Date, default: null },
+      },
+      EMAIL: {
+        consented: { type: Boolean, default: false },
+        at: { type: Date, default: null },
+        source: { type: String, default: null },
+        withdrawn_at: { type: Date, default: null },
+      },
+      SMS: {
+        consented: { type: Boolean, default: false },
+        at: { type: Date, default: null },
+        source: { type: String, default: null },
+        withdrawn_at: { type: Date, default: null },
+      },
+    },
   },
   {
     timestamps: true,

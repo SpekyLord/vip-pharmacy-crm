@@ -1029,6 +1029,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
   - `INVITE_TEMPLATES` — per-channel default message templates with merge tokens (`{{bdmFirstName}}`, `{{doctorFirstName}}`, `{{pageHandle}}`)
   - `MD_PARTNER_SETTINGS` — `rebate_pct` (default 5%), `payout_threshold_php` (default 1000), `ewt_rate_pct` (default 5%), `agreement_template_version` (default v1)
 - [ ] **M1.6** — Email sending via AWS SES (reuse AWS stack; same credentials as S3). New `backend/services/emailService.js` with `sendEmail({ to, subject, html, text, unsubscribeToken })`. Rate-limit per recipient (no more than 1 email/day from the same sender to the same address during M1).
+- [x] **M1.11** — Inbound STOP/UNSUBSCRIBE/OPT OUT keyword handler (Apr 22, 2026). New `backend/utils/optOut.js` exporting `handleInboundOptOut()` + `isOptOutKeyword()`. Wired into Messenger, Viber, and WhatsApp webhook handlers **before** `bindFromInviteRef()` and any provider-ID / AI-match resolution so a STOP on an invite deep-link cannot auto-consent-then-withdraw. Settings-driven (`OPT_OUT_ENABLED`, `OPT_OUT_KEYWORDS`, `OPT_OUT_ACK_TEMPLATE`) with hardcoded fallbacks so a DB outage never defeats compliance. Known sender: withdraws `marketingConsent.<CHANNEL>.withdrawn_at`, writes CommunicationLog `source='opt_out'`, fires ack via `dispatchMessage()`. Unknown sender: still logged to pending-triage with `source='opt_out'` + ack sent. Idempotent (repeat STOP re-stamps timestamp). Also patches `autoReply.tryAutoReply()` to skip when the resolved Doctor has `withdrawn_at` set (prevents post-opt-out auto-reply regression). **Required integrity fixes shipped alongside**: `CommunicationLog.source` enum expanded to `['manual','api','invite_reply','opt_out','system']` — earlier M1 code wrote `'invite_reply'` against a `['manual','api']` enum and was silently losing logs to webhook try/catch. `Client` model got the `marketingConsent` block that M1 writes to but was missing, so strict-mode updates were dropping silently for non-VIP clients. Frontend build clean; 14/14 keyword unit tests pass. **Follow-up (M1.12)**: START keyword handler + CommLogsPage filter by `source='opt_out'`.
 
 ### M1 Frontend
 
@@ -1056,6 +1057,7 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 - [ ] MD Partner enrollment produces unique referral code, PDF agreement, S3 URL
 - [ ] Unsubscribe flow writes `withdrawn_at` and flips consent to false
 - [ ] `/admin/invites` triage page shows pending invites
+- [x] Inbound STOP on any of Messenger/Viber/WhatsApp writes `withdrawn_at`, logs `source='opt_out'`, and sends an ack on the same channel (M1.11)
 
 ### M1 Gating & Risk
 

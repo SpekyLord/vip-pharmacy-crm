@@ -57,11 +57,16 @@ const communicationLogSchema = new mongoose.Schema(
     },
 
     // Source mode
+    //   manual        — BDM uploaded screenshot proof
+    //   api           — Auto-logged from webhook (inbound) or dispatchMessage (outbound)
+    //   invite_reply  — Phase M1: inbound first-reply bound via ?ref=doc_<id> deep-link
+    //   opt_out       — Phase M1.11: inbound STOP/UNSUBSCRIBE keyword recorded for compliance
+    //   system        — Reserved for agent-generated logs (e.g., campaign dispatcher receipts)
     source: {
       type: String,
       enum: {
-        values: ['manual', 'api'],
-        message: 'Source must be manual or api',
+        values: ['manual', 'api', 'invite_reply', 'opt_out', 'system'],
+        message: 'Source must be one of: manual, api, invite_reply, opt_out, system',
       },
       default: 'manual',
     },

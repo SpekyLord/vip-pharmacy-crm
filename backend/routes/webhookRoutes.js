@@ -20,6 +20,7 @@ const InviteLink = require('../models/InviteLink');
 const { handleFacebookDataDeletion } = require('../services/dataDeletionService');
 const { tryAutoReply } = require('../utils/autoReply');
 const { fetchSenderInfo, matchSenderToDoctor } = require('../utils/aiMatcher');
+const { handleInboundOptOut } = require('../utils/optOut');
 
 /**
  * Phase M1 — Bind an external messaging ID to a Doctor/Client via invite referral.
@@ -219,6 +220,17 @@ router.post('/whatsapp', rawJson, verifyMetaSignature, async (req, res) => {
           const from = msg.from; // phone number
           const text = msg.text?.body || '';
           if (from && text) {
+            // Phase M1.11 — Honor STOP/UNSUBSCRIBE/OPT OUT before any bind/match logic.
+            // Keyword match withdraws consent + logs + acks. Returning { handled: true }
+            // short-circuits the remaining processing for this message.
+            const optOut = await handleInboundOptOut({
+              channel: 'WHATSAPP',
+              text,
+              senderId: from,
+              messageId: msg.id,
+            });
+            if (optOut?.handled) continue;
+
             const Doctor = require('../models/Doctor');
             const doctor = await Doctor.findOne({
               $or: [{ whatsappNumber: from }, { phone: from }],
@@ -363,6 +375,18 @@ router.post('/messenger', rawJson, verifyMetaSignature, async (req, res) => {
           const senderId = event.sender.id;
           const text = event.message.text || '';
           if (senderId && text) {
+            // Phase M1.11 — Opt-out runs BEFORE bindFromInviteRef so a STOP message
+            // that arrives with ?ref=doc_<id> on first contact does NOT auto-consent
+            // the recipient moments before withdrawing it. If matched, the remaining
+            // bind / AI-match / pending-triage paths are skipped for this event.
+            const optOut = await handleInboundOptOut({
+              channel: 'MESSENGER',
+              text,
+              senderId,
+              messageId: event.message.mid,
+            });
+            if (optOut?.handled) continue;
+
             // Phase M1 — If this message carries a referral `ref`, bind the PSID to
             // the Doctor/Client named in the ref and stamp consent. This takes
             // precedence over `messengerId` lookup and AI-match.
@@ -551,6 +575,19 @@ router.post('/viber', rawJson, verifyViberSignature, async (req, res) => {
       const senderId = body.sender.id;
       const text = body.message.text || '';
       if (senderId && text) {
+        // Phase M1.11 — Opt-out runs BEFORE tracking_data bind so a STOP reply on an
+        // invite link does NOT auto-consent before withdrawing. Unlike Messenger's
+        // for-of `continue`, Viber delivers one event per request — return early.
+        const optOut = await handleInboundOptOut({
+          channel: 'VIBER',
+          text,
+          senderId,
+          messageId: String(body.message_token || ''),
+          senderName: body.sender.name || null,
+          senderProfilePic: body.sender.avatar || null,
+        });
+        if (optOut?.handled) return res.sendStatus(200);
+
         // Phase M1 — Viber passes the deep-link context on `message.tracking_data`
         // (for `viber://pa?chatURI=<bot>&context=<ref>` links). Bind and consent here
         // before falling through to viberId lookup.

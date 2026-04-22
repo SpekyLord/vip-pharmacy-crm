@@ -1350,7 +1350,7 @@ Added communication logging and messaging API integrations for BDM-to-client int
 ### New Models & Routes
 - **CommunicationLog** (`backend/models/CommunicationLog.js`): Unified log for screenshot uploads + API messages. Supports both Doctor (VIP) and Client (Regular) references.
 - **communicationLogRoutes** (`/api/communication-logs`): CRUD + screenshot upload + API send
-- **webhookRoutes** (`/api/webhooks`): WhatsApp, Messenger, Viber delivery receipts + inbound messages
+- **webhookRoutes** (`/api/webhooks`): WhatsApp, Messenger, Viber delivery receipts + inbound messages. Phase M1.11 (Apr 2026): inbound STOP/UNSUBSCRIBE/OPT OUT keyword detection runs in all three handlers **before** any invite-ref binding or provider-ID match — keyword hit writes `Doctor.marketingConsent.<CHANNEL>.withdrawn_at`, logs `CommunicationLog.source='opt_out'`, and fires an ack via `dispatchMessage()`. Lookup-driven: `Settings.OPT_OUT_KEYWORDS`, `OPT_OUT_ACK_TEMPLATE`, `OPT_OUT_ENABLED`. Utility at `backend/utils/optOut.js`.
 
 ### Doctor/Client Model Extensions
 - Added: `whatsappNumber`, `viberId`, `messengerId`, `preferredChannel` to both Doctor and Client models
