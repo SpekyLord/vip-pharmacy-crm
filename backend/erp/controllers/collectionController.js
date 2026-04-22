@@ -177,7 +177,14 @@ const getOpenCsisEndpoint = catchAsync(async (req, res) => {
 const getArAgingEndpoint = catchAsync(async (req, res) => {
   const entityId = (req.isPresident || req.isAdmin || req.isFinance) && req.query.entity_id
     ? req.query.entity_id : req.entityId;
-  const bdmId = (req.isPresident || req.isAdmin || req.isFinance)
+  // Phase G4.5b-ext — contractor-proxy (with collections.proxy_entry ticked)
+  // can pass ?bdm_id= to view the target BDM's AR aging. Mirrors the
+  // getOpenCsisEndpoint pattern established in G4.5b. Without this, a proxy
+  // can record collections but cannot verify the AR state of the BDM they
+  // are helping — a blind spot that undermines data accuracy.
+  const { canProxy } = await canProxyEntry(req, 'collections', 'proxy_entry');
+  const privileged = req.isPresident || req.isAdmin || req.isFinance || canProxy;
+  const bdmId = privileged
     ? (req.query.bdm_id || null)
     : req.bdmId;
 
@@ -189,7 +196,12 @@ const getArAgingEndpoint = catchAsync(async (req, res) => {
 const getCollectionRateEndpoint = catchAsync(async (req, res) => {
   const entityId = (req.isPresident || req.isAdmin || req.isFinance) && req.query.entity_id
     ? req.query.entity_id : req.entityId;
-  const bdmId = (req.isPresident || req.isAdmin || req.isFinance)
+  // Phase G4.5b-ext — same proxy-aware privilege widening as getArAgingEndpoint
+  // and getOpenCsisEndpoint. Proxy can view collection rate of the BDMs they
+  // file on behalf of, enabling full AR → Collection → Rate verification loop.
+  const { canProxy } = await canProxyEntry(req, 'collections', 'proxy_entry');
+  const privileged = req.isPresident || req.isAdmin || req.isFinance || canProxy;
+  const bdmId = privileged
     ? (req.query.bdm_id || null)
     : req.bdmId;
 
