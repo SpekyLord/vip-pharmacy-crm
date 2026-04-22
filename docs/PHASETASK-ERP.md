@@ -7235,7 +7235,7 @@ docs/PHASETASK-ERP.md                                           # this entry
 
 ---
 
-## Phase G4.5c — Proxy Entry Refactor (Expenses) + Port to Petty Cash + Fuel Entry (April 22, 2026) 🚧 PARTIAL (G4.5c.1 ✅ SHIPPED; G4.5c.2/G4.5c.3 still 📋 PLANNED)
+## Phase G4.5c — Proxy Entry Refactor (Expenses) + Port to Petty Cash + Fuel Entry (April 22, 2026) 🚧 PARTIAL (G4.5c.1 ✅ SHIPPED · G4.5c.2 ⏭️ SKIPPED · G4.5c.3 📋 PLANNED)
 
 ### Problem
 Phase G4.5a (Sales + Opening AR) and G4.5b (Collections + GRN) established the shared `resolveOwnerScope.js` helper + Option B force-approval pattern. Three more back-office modules are candidates for proxy entry — with different levels of readiness:
@@ -7263,29 +7263,33 @@ Add Option B force-approval on each module's submit path (already proven in G4.5
 - [ ] `frontend/src/erp/pages/ExpensesEntry.jsx`: swap legacy picker → `<OwnerPicker module="expenses" subKey="proxy_entry" />`.
 - [ ] `frontend/src/erp/pages/Expenses.jsx`: add "Proxied" pill to OR number column (already has the column — just add pill when `row.recorded_on_behalf_of`).
 
-### G4.5c.2 — Petty Cash proxy entry
-- [ ] `backend/erp/controllers/pettyCashController.js`: wire `resolveOwnerForWrite` + `widenFilterForProxy` on `createPettyCashEntry`, `updatePettyCashEntry`, `getPettyCashList`, `getPettyCashById`, `submitPettyCash`, `reconcilePettyCash`.
-- [ ] `backend/erp/models/PettyCashEntry.js`: add `recorded_on_behalf_of: ObjectId ref User` + sparse index.
-- [ ] `backend/erp/controllers/lookupGenericController.js`: seed `PETTY_CASH__PROXY_ENTRY` sub-perm + `PETTY_CASH` entry in `PROXY_ENTRY_ROLES`.
-- [ ] `frontend/src/erp/pages/PettyCash.jsx`: `<OwnerPicker module="petty_cash" ... />` + Proxied pill.
+### G4.5c.2 — Petty Cash proxy entry ⏭️ SKIPPED (April 23, 2026)
+**Decision (user, April 23, 2026):** Skip. Petty cash stays BDM-owned end-to-end (file + reconcile). Rationale:
+- Low-stakes, small-amount, high-frequency flow — proxy overhead outweighs benefit.
+- BDM-side mobile request → office finance disburses (already supported via existing `pettyCashController` create + reconcile pair). No need for a "proxy creates on behalf of BDM" path.
+- Existing fund-disbursement audit + reconciliation gates (period lock + JE rebuild) already cover the integrity surface.
+- Phase P1 will introduce a "request petty cash" capture in the BDM mobile hub when sequenced — that hub-side flow is the BDM-driven request path, not a proxy.
+- If a subscriber later asks for proxy on petty cash (e.g., absentee BDM), reuse the G4.5a/c.1 helper pattern; estimated ~2h.
+- ~~`backend/erp/controllers/pettyCashController.js`~~ — not refactored.
+- ~~`backend/erp/models/PettyCashEntry.js`~~ — `recorded_on_behalf_of` not added.
+- ~~`backend/erp/controllers/lookupGenericController.js`~~ — `PETTY_CASH__PROXY_ENTRY` sub-perm not seeded; `PETTY_CASH` not added to PROXY_ENTRY_ROLES / VALID_OWNER_ROLES.
+- ~~`frontend/src/erp/pages/PettyCash.jsx`~~ — no OwnerPicker, no Proxied pill.
 
 ### G4.5c.3 — Fuel Entry proxy entry
 - [ ] Same pattern. `fuelEntryController.js` + `FuelEntry.js` model + lookup seed + frontend picker + pill.
 - [ ] BDM mobile UI: scan pump receipt (already wired in Phase H3/H4 OCR), enter liters + amount + GPS. Proxy classifies COA (ORE-fuel / logbook-gas / personal) and posts.
 
 ### G4.5c.4 — Health check extension
-- [ ] `scripts/check-system-health.js: checkProxyEntryWiring()`:
-  - Add Expenses / Petty Cash / Fuel Entry to the module list.
-  - Verify `recorded_on_behalf_of` on 3 more models.
-  - Verify `resolveOwnerScope` import on 3 more controllers.
-  - Verify `MODULE_AUTO_POST.{EXPENSES,PETTY_CASH,FUEL_ENTRY}` presence.
-  - Verify OwnerPicker mount on 3 more entry pages.
+- [x] `scripts/check-system-health.js: checkProxyEntryWiring()` — extended for Expenses (G4.5c.1). Petty Cash skipped (no proxy port). Fuel Entry pending G4.5c.3.
+  - Expenses ✅ added to module list, audit code asserts (PROXY_CREATE/PROXY_UPDATE), forceApproval check, calf_override regression guard.
+  - Petty Cash — N/A (skipped per G4.5c.2 decision).
+  - Fuel Entry — pending G4.5c.3.
 
 ### G4.5c.5 — Bulletproof bar
-- [ ] Non-regression: existing Expenses batch-upload flow unchanged (separate `expenses.batch_upload` sub-perm).
-- [ ] Audit history convergence: query `ErpAuditLog.find({ log_type: 'PROXY_CREATE' })` returns results across Sales / Collections / GRN / Expenses / Petty Cash / Fuel (one filter, all modules).
-- [ ] Option B force-approval fires for proxied submits across all 6 modules.
-- [ ] Build clean; health check green (now 6 modules covered, up from 4).
+- [x] Non-regression: existing Expenses batch-upload flow unchanged (separate `expenses.batch_upload` sub-perm). ✅ G4.5c.1 verified.
+- [x] Audit history convergence: query `ErpAuditLog.find({ log_type: 'PROXY_CREATE' })` returns Sales / Opening AR / Collections / GRN / Expenses (5 modules). Petty Cash absent by design. Fuel pending. ✅
+- [x] Option B force-approval fires for proxied submits across the 5 wired modules. ✅
+- [x] Build clean; health check green (5 proxy modules covered + FRA-A section 6). ✅
 
 ### G4.5c.6 — Files
 ```
@@ -7308,8 +7312,8 @@ docs/PHASETASK-ERP.md                                            # this entry
 
 ### Status
 - [x] **G4.5c.1 Expenses refactor ✅ SHIPPED April 23, 2026**. `expenseController.js` ported to shared `resolveOwnerForWrite` / `widenFilterForProxy`. Audit codes unified to `PROXY_CREATE` / `PROXY_UPDATE`. Option B `forceApproval` on submit when any row is proxied. Fixed latent CALF-bypass conflation on `recorded_on_behalf_of` — added explicit `calf_override` field (president-only, via batch-upload role gate). Frontend: OwnerPicker mounted on create form; Proxied pill on list (table + card view). Health check section 5 extended (5 modules, calf_override regression guard). Build clean 43.49s. See [CLAUDE-ERP.md Phase G4.5c.1](../CLAUDE-ERP.md).
-- [ ] G4.5c.2 (Petty Cash) — still 📋 PLANNED.
-- [ ] G4.5c.3 (Fuel Entry) — still 📋 PLANNED.
+- [x] **G4.5c.2 Petty Cash ⏭️ SKIPPED April 23, 2026** (user decision). Petty Cash stays BDM-owned end-to-end; low-stakes high-frequency flow doesn't justify proxy overhead. Existing fund-disbursement audit + period-lock + JE-rebuild gates already cover integrity. Phase P1 mobile capture hub will surface a "request petty cash" BDM-driven flow (not a proxy). If a subscriber later asks for petty-cash proxy, reuse the G4.5a/c.1 helper pattern (~2h estimate).
+- [ ] G4.5c.3 (Fuel Entry) — still 📋 PLANNED. Same shared-helper pattern; BDM mobile UI already wired in Phase H3/H4 OCR (scan pump receipt → liters/amount/GPS); proxy classifies COA (ORE-fuel / logbook-gas / personal) and posts.
 
 ---
 
@@ -7506,7 +7510,8 @@ docs/PHASETASK-ERP.md                                            # this entry
 4. **Measure**: BDM time saved, proxy throughput, BDM review rate. Tune before replicating.
 5. **Phase P1 — remaining workflows** (~4–6 days) — SMER, Fuel, Petty Cash, GRN, Sales, OR.
 6. **Phase P2** (~3–5 days) — signed-CSI commission gate, dashboards, subscriber profile toggles.
-7. **Phase G4.5c.2 + c.3** — Petty Cash + Fuel proxy ports (interleave with P1 if natural).
+7. ~~**Phase G4.5c.2** Petty Cash proxy port~~ — **SKIPPED April 23, 2026** (user decision). BDM-owned end-to-end stays the model.
+8. **Phase G4.5c.3** Fuel Entry proxy port — interleave with P1 if natural; not blocking.
 
 **Total estimate**: 3–4 weeks if sequenced cleanly. Do NOT try to ship all workflows simultaneously — one fully proven beats seven half-built.
 
