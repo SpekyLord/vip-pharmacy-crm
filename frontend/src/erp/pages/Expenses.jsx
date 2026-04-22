@@ -20,6 +20,8 @@ import WorkflowGuide from '../components/WorkflowGuide';
 import RejectionBanner from '../components/RejectionBanner';
 import { showError } from '../utils/errorToast';
 import PresidentReverseModal from '../components/PresidentReverseModal';
+// Phase G4.5c.1 — proxy entry for single-entry Expenses.
+import OwnerPicker from '../components/OwnerPicker';
 
 // ── ScanORModal — camera → OR parser → pre-fill expense line ──
  
@@ -394,6 +396,8 @@ export default function Expenses() {
   const [expenses, setExpenses] = useState([]);
   const [editingExpense, setEditingExpense] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  // Phase G4.5c.1 — proxy entry: "Record on behalf of" BDM id. Empty = self.
+  const [assignedTo, setAssignedTo] = useState('');
   const [reverseTarget, setReverseTarget] = useState(null);
   const [summary, setSummary] = useState(null);
   const [period, setPeriod] = useState(() => {
@@ -599,7 +603,13 @@ export default function Expenses() {
 
   const removeLine = (idx) => setLines(prev => prev.filter((_, i) => i !== idx));
 
-  const handleNew = () => { setEditingExpense(null); setLines([]); addLine(); setShowForm(true); };
+  const handleNew = () => {
+    setEditingExpense(null);
+    setLines([]);
+    addLine();
+    setAssignedTo(''); // Phase G4.5c.1 — default to self on new entry
+    setShowForm(true);
+  };
 
   const handleEdit = async (expense) => {
     try {
@@ -630,10 +640,15 @@ export default function Expenses() {
     if (issues.length) { showError(null, issues.join('. ')); return; }
 
     savingRef.current = true;
+    // Phase G4.5c.1 — send assigned_to ONLY on create. Update path strips it
+    // on the backend because ownership is locked after first save.
     const data = { period, cycle, lines };
     try {
-      if (editingExpense) { await updateExpense(editingExpense._id, data); }
-      else { await createExpense(data); }
+      if (editingExpense) {
+        await updateExpense(editingExpense._id, data);
+      } else {
+        await createExpense({ ...data, assigned_to: assignedTo || undefined });
+      }
       setShowForm(false);
       loadExpenses();
     } catch (err) { console.error('[Expenses] Save failed:', err.message); showError(err, 'Could not save expense'); }
@@ -967,7 +982,14 @@ export default function Expenses() {
                   {visibleExpenses.map(e => (
                     <React.Fragment key={e._id}>
                     <tr style={{ borderBottom: e.status === 'ERROR' ? 'none' : '1px solid var(--erp-border, #dbe4f0)' }}>
-                      <td style={{ padding: 8 }}>{e.bdm_id?.name || '—'}</td>
+                      <td style={{ padding: 8 }}>
+                        {e.bdm_id?.name || '—'}
+                        {e.recorded_on_behalf_of && (
+                          <span title={`Keyed on behalf by ${e.recorded_on_behalf_of?.name || 'proxy'}`} style={{ marginLeft: 6, padding: '1px 6px', fontSize: 10, borderRadius: 4, background: '#ede9fe', color: '#6d28d9', fontWeight: 600 }}>
+                            Proxied
+                          </span>
+                        )}
+                      </td>
                       <td style={{ padding: 8 }}>{e.period}</td>
                       <td style={{ padding: 8 }}>{e.cycle}</td>
                       <td style={{ padding: 8, textAlign: 'right' }}>{e.line_count || 0}</td>
@@ -1039,7 +1061,14 @@ export default function Expenses() {
                   <div className="erp-expense-card-header">
                     <div>
                       <div style={{ fontWeight: 600 }}>{e.period}</div>
-                      <div style={{ fontSize: 12, color: 'var(--erp-muted, #5f7188)' }}>{e.cycle} · {e.bdm_id?.name || '—'}</div>
+                      <div style={{ fontSize: 12, color: 'var(--erp-muted, #5f7188)' }}>
+                        {e.cycle} · {e.bdm_id?.name || '—'}
+                        {e.recorded_on_behalf_of && (
+                          <span title={`Keyed on behalf by ${e.recorded_on_behalf_of?.name || 'proxy'}`} style={{ marginLeft: 6, padding: '1px 6px', fontSize: 10, borderRadius: 4, background: '#ede9fe', color: '#6d28d9', fontWeight: 600 }}>
+                            Proxied
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 12, color: '#fff', background: STATUS_COLORS[e.status] || '#6b7280' }}>{e.status}</span>
                   </div>
@@ -1122,6 +1151,13 @@ export default function Expenses() {
                 <h2 style={{ margin: 0, fontSize: 18 }}>{editingExpense ? 'Edit' : 'New'} Expense — {period} {cycle}</h2>
                 <button onClick={() => setShowForm(false)} style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', cursor: 'pointer' }}>Cancel</button>
               </div>
+
+              {/* Phase G4.5c.1 — Proxy Entry (renders null when caller is not eligible). */}
+              {!editingExpense && (
+                <div style={{ marginBottom: 12 }}>
+                  <OwnerPicker module="expenses" subKey="proxy_entry" moduleLookupCode="EXPENSES" value={assignedTo} onChange={setAssignedTo} />
+                </div>
+              )}
 
               {/* Expense Lines */}
               {lines.map((line, idx) => (

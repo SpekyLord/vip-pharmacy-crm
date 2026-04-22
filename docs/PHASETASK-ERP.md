@@ -7235,7 +7235,7 @@ docs/PHASETASK-ERP.md                                           # this entry
 
 ---
 
-## Phase G4.5c — Proxy Entry Refactor (Expenses) + Port to Petty Cash + Fuel Entry (April 22, 2026) 📋 PLANNED
+## Phase G4.5c — Proxy Entry Refactor (Expenses) + Port to Petty Cash + Fuel Entry (April 22, 2026) 🚧 PARTIAL (G4.5c.1 ✅ SHIPPED; G4.5c.2/G4.5c.3 still 📋 PLANNED)
 
 ### Problem
 Phase G4.5a (Sales + Opening AR) and G4.5b (Collections + GRN) established the shared `resolveOwnerScope.js` helper + Option B force-approval pattern. Three more back-office modules are candidates for proxy entry — with different levels of readiness:
@@ -7307,7 +7307,9 @@ docs/PHASETASK-ERP.md                                            # this entry
 ```
 
 ### Status
-- [ ] 📋 PLANNED. Ordering: G4.5c.1 (Expenses refactor) first — highest user-visible benefit, lowest risk. Then G4.5c.2 (Petty Cash). Then G4.5c.3 (Fuel Entry).
+- [x] **G4.5c.1 Expenses refactor ✅ SHIPPED April 23, 2026**. `expenseController.js` ported to shared `resolveOwnerForWrite` / `widenFilterForProxy`. Audit codes unified to `PROXY_CREATE` / `PROXY_UPDATE`. Option B `forceApproval` on submit when any row is proxied. Fixed latent CALF-bypass conflation on `recorded_on_behalf_of` — added explicit `calf_override` field (president-only, via batch-upload role gate). Frontend: OwnerPicker mounted on create form; Proxied pill on list (table + card view). Health check section 5 extended (5 modules, calf_override regression guard). Build clean 43.49s. See [CLAUDE-ERP.md Phase G4.5c.1](../CLAUDE-ERP.md).
+- [ ] G4.5c.2 (Petty Cash) — still 📋 PLANNED.
+- [ ] G4.5c.3 (Fuel Entry) — still 📋 PLANNED.
 
 ---
 
