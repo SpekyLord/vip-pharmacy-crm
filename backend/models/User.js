@@ -107,7 +107,24 @@ const userSchema = new mongoose.Schema(
     },
     // Phase 26: Multi-entity access — lists ALL entities this user can work with.
     // Superset of entity_id (primary). If empty, user only has access to entity_id.
+    //
+    // Phase FRA-A: `entity_ids` is the EFFECTIVE working set, rebuilt as
+    //   union(entity_ids_static, activeFraEntityIds)
+    // on every FRA mutation and every admin-direct write. Do not edit
+    // `entity_ids` directly from new code paths — write to `entity_ids_static`
+    // (admin-direct) or create an FRA row and let the controller rebuild.
     entity_ids: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Entity',
+    }],
+    // Phase FRA-A (April 22, 2026) — admin-direct assignments baseline.
+    //
+    // Captures what admin explicitly assigned via BDM Management /
+    // userController.updateUser. Preserved across FRA rebuilds so that
+    // deactivating an FRA never removes an entity the admin intentionally
+    // granted. Seeded by backfillEntityIdsFromFra.js at migration time
+    // from the then-current `entity_ids` snapshot.
+    entity_ids_static: [{
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Entity',
     }],
@@ -196,6 +213,9 @@ userSchema.index({ passwordResetExpires: 1 }, { expireAfterSeconds: 0 });
 userSchema.index({ entity_id: 1 });
 userSchema.index({ entity_id: 1, role: 1 });
 userSchema.index({ entity_ids: 1 });
+// Phase FRA-A: static baseline index (sparse — only users with admin-direct
+// assignments carry this). Used by rebuild logic + backfill drift queries.
+userSchema.index({ entity_ids_static: 1 }, { sparse: true });
 // ERP access control index
 userSchema.index({ 'erp_access.enabled': 1 });
 

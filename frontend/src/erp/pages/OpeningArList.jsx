@@ -327,6 +327,24 @@ export default function OpeningArList() {
     }
   };
 
+  const handleValidate = async (saleId) => {
+    if (!window.confirm('Validate this Opening AR entry? Required fields, duplicate CSI#, and credit limit will be checked.')) return;
+    try {
+      const res = await sales.validateSales([saleId]);
+      const rowResult = res?.errors?.find(e => String(e.sale_id) === String(saleId));
+      if (rowResult?.messages?.length) {
+        showError(null, `Validation failed:\n${rowResult.messages.join('\n')}`);
+      } else if (rowResult?.warnings?.length) {
+        showWarning(rowResult.warnings.join('\n'));
+      } else {
+        showSuccess('Opening AR validated — Submit is now available.');
+      }
+      loadSales(pagination.page);
+    } catch (err) {
+      showError(err, 'Could not validate Opening AR');
+    }
+  };
+
   const handleReopen = async (id) => {
     // Reopen is safe for OPENING_AR (no InventoryLedger entries), but the
     // confirmation still mentions the general re-open semantics in case a
@@ -460,7 +478,18 @@ export default function OpeningArList() {
                   {data.map(sale => (
                     <tr key={sale._id} onClick={() => viewDetail(sale._id)}>
                       <td data-label="Date">{new Date(sale.csi_date).toLocaleDateString('en-PH')}</td>
-                      <td data-label="CSI #"><strong>{sale.doc_ref}</strong></td>
+                      <td data-label="CSI #">
+                        <strong>{sale.doc_ref}</strong>
+                        {sale.recorded_on_behalf_of && (
+                          <span
+                            className="badge"
+                            style={{ marginLeft: 6, background: '#ede9fe', color: '#6d28d9', fontSize: 10, padding: '1px 6px', borderRadius: 8 }}
+                            title={`Keyed by ${sale.recorded_on_behalf_of?.name || sale.created_by?.name || 'proxy user'} on behalf of ${sale.bdm_id?.name || 'BDM'}`}
+                          >
+                            Proxied
+                          </span>
+                        )}
+                      </td>
                       <td data-label="Hospital">
                         {toTitleCase(sale.hospital_id?.hospital_name) || sale.customer_id?.customer_name || '-'}
                         <span className="badge" style={{ ...OPENING_AR_BADGE, marginLeft: 6, fontSize: 10 }}>Opening AR</span>
@@ -482,6 +511,11 @@ export default function OpeningArList() {
                       </td>
                       <td data-label="Actions" onClick={e => e.stopPropagation()}>
                         <div className="oarlist-actions">
+                          {(sale.status === 'DRAFT' || sale.status === 'ERROR') && (
+                            <button className="btn btn-warning btn-sm" onClick={() => handleValidate(sale._id)}>
+                              Validate
+                            </button>
+                          )}
                           {sale.status === 'VALID' && (
                             <button className="btn btn-sm" style={{ background: '#16a34a', color: '#fff' }} onClick={() => handleSubmit(sale._id)}>
                               Submit

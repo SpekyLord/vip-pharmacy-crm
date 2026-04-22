@@ -16,6 +16,11 @@ router.post('/validate', c.validateSales);
 // (body is { sale_ids } with no date field, so middleware can't extract period)
 router.post('/submit', c.submitSales);
 router.post('/reopen', periodLockCheck('SALES'), c.reopenSales);
+// Received-CSI attachment (t=4 dunning proof). Period-lock is enforced
+// inside the controller because it uses the sale's own csi_date, not the
+// request body.
+router.put('/:id/received-csi', c.attachReceivedCsi);
+
 router.post('/:id/request-deletion', c.requestDeletion);
 // Phase 3c — legacy approve-deletion path (President Reverse preferred). Tier 2 lookup-only.
 router.post('/:id/approve-deletion', erpSubAccessCheck('accounting', 'approve_deletion'), c.approveDeletion);

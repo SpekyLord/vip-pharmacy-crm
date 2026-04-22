@@ -20,7 +20,7 @@ export default function PrivacyPolicyPage() {
   return (
     <div style={pageStyles.container}>
       <h1 style={pageStyles.h1}>Privacy Policy</h1>
-      <p style={pageStyles.meta}>Last updated: April 18, 2026</p>
+      <p style={pageStyles.meta}>Last updated: April 22, 2026</p>
 
       <p style={pageStyles.p}>
         VIOS Integrated (&quot;we&quot;, &quot;us&quot;, &quot;our&quot;) operates the VIP Pharmacy CRM platform and associated
@@ -119,7 +119,40 @@ export default function PrivacyPolicyPage() {
         , subject to the legal retention obligations listed above.
       </p>
 
-      <h2 style={pageStyles.h2}>5. International Data Transfers</h2>
+      <h2 style={pageStyles.h2}>5. Consent and Opt-Out</h2>
+      <p style={pageStyles.p}>
+        <strong>Consent</strong>: We only message you through Facebook Messenger, Viber,
+        WhatsApp, Email, or SMS after you have taken an explicit opt-in action. This typically
+        happens when you tap a personalized invitation link we send you and reply to our first
+        message, which we record as your consent (with timestamp and source) in our consent
+        ledger. You may also provide consent directly to one of our Business Development
+        Managers in person.
+      </p>
+      <p style={pageStyles.p}>
+        <strong>Opt-Out</strong>: You may opt out of any messaging channel at any time:
+      </p>
+      <ul style={pageStyles.ul}>
+        <li style={pageStyles.li}>
+          Reply with &quot;STOP&quot;, &quot;UNSUBSCRIBE&quot;, or &quot;OPT OUT&quot; on any
+          messaging channel.
+        </li>
+        <li style={pageStyles.li}>
+          Click the unsubscribe link at the bottom of any email from us.
+        </li>
+        <li style={pageStyles.li}>
+          Contact your assigned Business Development Manager or email{' '}
+          <a href="mailto:yourpartner@viosintegrated.net" style={pageStyles.a}>
+            yourpartner@viosintegrated.net
+          </a>
+          .
+        </li>
+      </ul>
+      <p style={pageStyles.p}>
+        Once you opt out, we will stop sending messages on that channel immediately. Opting
+        out of one channel does not affect others; each channel is controlled independently.
+      </p>
+
+      <h2 style={pageStyles.h2}>6. International Data Transfers</h2>
       <p style={pageStyles.p}>
         Your messaging data is transmitted through Meta (Facebook Messenger, WhatsApp) and Viber,
         which may process data on servers located outside the Philippines, including in the United
@@ -129,14 +162,14 @@ export default function PrivacyPolicyPage() {
         data outside the Philippines under standard contractual safeguards.
       </p>
 
-      <h2 style={pageStyles.h2}>6. Security</h2>
+      <h2 style={pageStyles.h2}>7. Security</h2>
       <p style={pageStyles.p}>
         We use industry-standard security measures including encryption in transit (HTTPS),
         httpOnly cookies for authentication, account lockout protections, and signed URLs for
         media. No system is perfectly secure, but we take reasonable steps to protect your data.
       </p>
 
-      <h2 style={pageStyles.h2}>7. Your Rights</h2>
+      <h2 style={pageStyles.h2}>8. Your Rights</h2>
       <p style={pageStyles.p}>
         Under the Philippine Data Privacy Act (Republic Act No. 10173), you have the right to be
         informed, to object, to access, to rectify, to erase or block, to damages, to data
@@ -148,19 +181,19 @@ export default function PrivacyPolicyPage() {
         .
       </p>
 
-      <h2 style={pageStyles.h2}>8. Children</h2>
+      <h2 style={pageStyles.h2}>9. Children</h2>
       <p style={pageStyles.p}>
         Our services are not directed to children under 13. We do not knowingly collect personal
         information from children.
       </p>
 
-      <h2 style={pageStyles.h2}>9. Changes to This Policy</h2>
+      <h2 style={pageStyles.h2}>10. Changes to This Policy</h2>
       <p style={pageStyles.p}>
         We may update this policy from time to time. Material changes will be posted on this page
         with an updated &quot;Last updated&quot; date.
       </p>
 
-      <h2 style={pageStyles.h2}>10. Contact</h2>
+      <h2 style={pageStyles.h2}>11. Contact</h2>
       <p style={pageStyles.p}>
         Questions? Email{' '}
         <a href="mailto:yourpartner@viosintegrated.net" style={pageStyles.a}>

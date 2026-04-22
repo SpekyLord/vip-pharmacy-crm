@@ -25,6 +25,8 @@ const PettyCashTransaction = require('../models/PettyCashTransaction');
 const Collection = require('../models/Collection');
 const { validateCsiNumber, markUsed: markCsiUsed, unmarkUsed: unmarkCsiUsed } = require('../services/csiBookletService');
 const Lookup = require('../models/Lookup');
+// Phase G4.5a — proxy entry (record on behalf of another BDM)
+const { resolveOwnerForWrite, widenFilterForProxy } = require('../utils/resolveOwnerScope');
 
 /**
  * Read a numeric flag from the per-entity SALES_SETTINGS lookup with a hard
@@ -293,10 +295,26 @@ const postSaleRow = async (row, userId, opts = {}) => {
 // ═══════════════════════════════════════════════════════════
 
 const createSale = catchAsync(async (req, res) => {
+  // Determine source first so we can pick the right proxy sub-perm key.
+  // Opening AR is gated by `sales.opening_ar_proxy`; live sales by `sales.proxy_entry`.
+  const willBeOpeningAr = !!(req.user.live_date && req.body.csi_date &&
+    new Date(req.body.csi_date) < new Date(req.user.live_date));
+  const proxySubKey = willBeOpeningAr ? 'opening_ar_proxy' : 'proxy_entry';
+
+  let owner;
+  try {
+    owner = await resolveOwnerForWrite(req, 'sales', { subKey: proxySubKey });
+  } catch (err) {
+    if (err.statusCode === 403) return res.status(403).json({ success: false, message: err.message });
+    throw err;
+  }
+
+  const { assigned_to: _discardAssignedTo, ...bodyWithoutAssignedTo } = req.body || {};
   const saleData = {
-    ...req.body,
+    ...bodyWithoutAssignedTo,
     entity_id: req.entityId,
-    bdm_id: req.bdmId,
+    bdm_id: owner.ownerId,
+    recorded_on_behalf_of: owner.proxiedBy,
     created_by: req.user._id,
     status: 'DRAFT'
   };
@@ -340,13 +358,31 @@ const createSale = catchAsync(async (req, res) => {
   }
 
   const sale = await SalesLine.create(saleData);
+
+  // Phase G4.5a — audit proxy creation so Activity Monitor can surface it.
+  if (owner.isOnBehalf) {
+    await ErpAuditLog.logChange({
+      entity_id: req.entityId,
+      bdm_id: owner.ownerId,
+      log_type: 'PROXY_CREATE',
+      target_ref: sale._id.toString(),
+      target_model: 'SalesLine',
+      changed_by: req.user._id,
+      note: `Proxy create: ${sale.source || 'SALES_LINE'} ${sale.doc_ref || sale._id} keyed by ${req.user.name || req.user._id} (${req.user.role}) on behalf of BDM ${owner.ownerId}`
+    }).catch(err => console.error('[createSale] PROXY_CREATE audit failed (non-critical):', err.message));
+  }
+
   res.status(201).json({ success: true, data: sale });
 });
 
 const updateSale = catchAsync(async (req, res) => {
+  // Phase G4.5a — proxy can edit any BDM's DRAFT row within the entity when
+  // sales.proxy_entry (or opening_ar_proxy) is ticked. Non-proxy callers stay
+  // scoped to their own bdm_id via the base tenantFilter.
+  const scope = await widenFilterForProxy(req, 'sales', { subKey: 'proxy_entry' });
   const sale = await SalesLine.findOne({
     _id: req.params.id,
-    ...req.tenantFilter
+    ...scope
   });
 
   if (!sale) {
@@ -356,16 +392,23 @@ const updateSale = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Only DRAFT sales can be edited' });
   }
 
+  // Phase G4.5a — ownership is locked on edit. Strip assigned_to / bdm_id /
+  // recorded_on_behalf_of from the body so a proxy can't silently reassign a
+  // row to a different owner via update. Reassignment requires delete + recreate.
+  const { assigned_to: _discardAssigned, bdm_id: _discardBdm, recorded_on_behalf_of: _discardProxy, ...editableBody } = req.body || {};
+
   // Track changes for audit
   const changes = [];
-  for (const [key, val] of Object.entries(req.body)) {
+  for (const [key, val] of Object.entries(editableBody)) {
     if (['_id', 'entity_id', 'bdm_id', 'created_at', 'created_by', 'status'].includes(key)) continue;
     if (JSON.stringify(sale[key]) !== JSON.stringify(val)) {
       changes.push({ field: key, old: sale[key], new: val });
     }
   }
 
-  Object.assign(sale, req.body);
+  const isProxyEdit = String(sale.bdm_id) !== String(req.user._id);
+
+  Object.assign(sale, editableBody);
   sale.status = 'DRAFT'; // Reset to DRAFT on edit
   sale.validation_errors = [];
 
@@ -377,12 +420,14 @@ const updateSale = catchAsync(async (req, res) => {
 
   await sale.save();
 
-  // Audit log
+  // Audit log — bdm_id tracks the owner (not the editor) so owner-scoped audit
+  // filtering still works; log_type flips to PROXY_UPDATE when the editor
+  // (req.user) is not the owner (Phase G4.5a).
   for (const change of changes) {
     await ErpAuditLog.logChange({
       entity_id: req.entityId,
-      bdm_id: req.bdmId,
-      log_type: 'SALES_EDIT',
+      bdm_id: sale.bdm_id,
+      log_type: isProxyEdit ? 'PROXY_UPDATE' : 'SALES_EDIT',
       target_ref: sale._id.toString(),
       target_model: 'SalesLine',
       field_changed: change.field,
@@ -396,9 +441,11 @@ const updateSale = catchAsync(async (req, res) => {
 });
 
 const deleteDraftRow = catchAsync(async (req, res) => {
+  // Phase G4.5a — proxy can delete another BDM's DRAFT within the entity.
+  const scope = await widenFilterForProxy(req, 'sales', { subKey: 'proxy_entry' });
   const sale = await SalesLine.findOne({
     _id: req.params.id,
-    ...req.tenantFilter
+    ...scope
   });
 
   if (!sale) {
@@ -424,7 +471,9 @@ const deleteDraftRow = catchAsync(async (req, res) => {
 });
 
 const getSales = catchAsync(async (req, res) => {
-  const filter = { ...req.tenantFilter };
+  // Phase G4.5a — widen filter to all BDMs in entity when caller is an eligible
+  // proxy. Non-proxy callers stay scoped to their own bdm_id via tenantFilter.
+  const filter = await widenFilterForProxy(req, 'sales', { subKey: 'proxy_entry' });
 
   if (req.query.status) filter.status = req.query.status;
   if (req.query.hospital_id) filter.hospital_id = req.query.hospital_id;
@@ -452,6 +501,8 @@ const getSales = catchAsync(async (req, res) => {
       .populate('hospital_id', 'hospital_name')
       .populate('customer_id', 'customer_name customer_type')
       .populate('bdm_id', 'name')
+      .populate('recorded_on_behalf_of', 'name')
+      .populate('created_by', 'name')
       .sort({ csi_date: -1 })
       .skip(skip)
       .limit(limit)
@@ -467,13 +518,17 @@ const getSales = catchAsync(async (req, res) => {
 });
 
 const getSaleById = catchAsync(async (req, res) => {
+  // Phase G4.5a — widen for proxy reads.
+  const scope = await widenFilterForProxy(req, 'sales', { subKey: 'proxy_entry' });
   const sale = await SalesLine.findOne({
     _id: req.params.id,
-    ...req.tenantFilter
+    ...scope
   })
     .populate('hospital_id', 'hospital_name')
     .populate('customer_id', 'customer_name customer_type')
     .populate('bdm_id', 'name')
+    .populate('recorded_on_behalf_of', 'name')
+    .populate('created_by', 'name')
     .lean();
 
   if (!sale) {
@@ -489,8 +544,10 @@ const getSaleById = catchAsync(async (req, res) => {
 
 const validateSales = catchAsync(async (req, res) => {
   const editable = await getEditableStatuses(req.entityId, 'SALES');
+  // Phase G4.5a — proxy can validate rows owned by other BDMs in the entity.
+  const scope = await widenFilterForProxy(req, 'sales', { subKey: 'proxy_entry' });
   const filter = {
-    ...req.tenantFilter,
+    ...scope,
     status: { $in: editable }
   };
 
@@ -505,11 +562,17 @@ const validateSales = catchAsync(async (req, res) => {
   }
 
   // Per-entity lookup-driven flags — fetched once, applied per-row below.
-  // REQUIRE_CSI_PHOTO (default 1): block posting of CSI rows that have no
-  // photo attached. Covers live sales AND Opening AR — both share sale_type=
-  // CSI and the same csi_photo_url field. Subscribers who don't need photo
-  // proof (e.g. service-only entities) flip to 0 via Control Center.
-  const requireCsiPhoto = (await getSalesSetting(req.entityId, 'REQUIRE_CSI_PHOTO', 1)) ? true : false;
+  //
+  // REQUIRE_CSI_PHOTO_OPENING_AR (default 1): gate Validate for OPENING_AR
+  // rows only. Historical entries should already have the signed CSI in
+  // hand at entry time, so we block VALID until one of csi_photo_url OR
+  // csi_received_photo_url is populated ("any proof OK"). Subscribers flip
+  // to 0 via Control Center if they're backfilling without scans.
+  //
+  // Live Sales (source=SALES_LINE) deliberately has NO photo gate at
+  // Validate or Submit — the signed CSI is a post-delivery artifact and is
+  // attached later via PUT /sales/:id/received-csi on SalesList.
+  const requireCsiPhotoOpeningAr = (await getSalesSetting(req.entityId, 'REQUIRE_CSI_PHOTO_OPENING_AR', 1)) ? true : false;
 
   // Build fresh stock snapshot from InventoryLedger
   // Phase 17: If rows have warehouse_id, scope snapshot to that warehouse.
@@ -544,13 +607,15 @@ const validateSales = catchAsync(async (req, res) => {
       if (!row.doc_ref) rowErrors.push('Document reference (CSI#) is required');
       if (!row.line_items || row.line_items.length === 0) rowErrors.push('At least one line item is required');
 
-      // CSI photo proof — required by default for audit/compliance. Covers live
-      // sales AND Opening AR (both are sale_type=CSI). Lookup-driven via
-      // SALES_SETTINGS.REQUIRE_CSI_PHOTO so subscribers can relax the rule
-      // without a code change. Error message matches the field the user sees
-      // in both SalesEntry and OpeningArEntry (Scan CSI / re-upload button).
-      if (requireCsiPhoto && !row.csi_photo_url) {
-        rowErrors.push('CSI photo is required — use "Scan CSI" to capture the invoice image before posting.');
+      // CSI photo proof — gated by source (see flag comment above).
+      // OPENING_AR: any proof OK (entry-time scan OR received signed copy).
+      // SALES_LINE: no Validate gate — received photo is a post-posting
+      // artifact attached via PUT /sales/:id/received-csi on SalesList.
+      if (row.source === 'OPENING_AR' && requireCsiPhotoOpeningAr) {
+        const hasAnyProof = !!(row.csi_photo_url || row.csi_received_photo_url);
+        if (!hasAnyProof) {
+          rowErrors.push('CSI photo is required for Opening AR — attach any scan of the signed historical CSI before validating.');
+        }
       }
 
       // Phase 15.2 (softened) — CSI booklet traceability check.
@@ -754,7 +819,9 @@ const validateSales = catchAsync(async (req, res) => {
 
 const submitSales = catchAsync(async (req, res) => {
   const { sale_ids } = req.body;
-  const filter = { ...req.tenantFilter, status: 'VALID' };
+  // Phase G4.5a — proxy can submit rows on behalf of other BDMs in the entity.
+  const scope = await widenFilterForProxy(req, 'sales', { subKey: 'proxy_entry' });
+  const filter = { ...scope, status: 'VALID' };
   if (sale_ids && sale_ids.length) {
     filter._id = { $in: sale_ids.map(id => new mongoose.Types.ObjectId(id)) };
   }
@@ -779,6 +846,12 @@ const submitSales = catchAsync(async (req, res) => {
 
   for (const group of groups) {
     const groupTotal = group.rows.reduce((sum, r) => sum + (r.invoice_total || 0), 0);
+    // Phase G4.5a — if ANY row in the group was proxied (recorded_on_behalf_of
+    // is set), force the whole group through Approval Hub regardless of the
+    // submitter's role. Conservative: never auto-post a batch that contains a
+    // proxied row until Phase G4.5b ships owner-chain approval routing.
+    const proxiedRow = group.rows.find(r => r.recorded_on_behalf_of);
+    const hasProxy = !!proxiedRow;
     const gated = await gateApproval({
       entityId: req.entityId,
       module: group.module,
@@ -786,9 +859,13 @@ const submitSales = catchAsync(async (req, res) => {
       docId: group.rows[0]._id,
       docRef: group.rows.map(r => r.doc_ref || r.invoice_number).filter(Boolean).join(', '),
       amount: groupTotal,
-      description: `Submit ${group.rows.length} ${group.label} entr${group.rows.length === 1 ? 'y' : 'ies'} (total ₱${groupTotal.toLocaleString()})`,
+      description: hasProxy
+        ? `Submit ${group.rows.length} ${group.label} entr${group.rows.length === 1 ? 'y' : 'ies'} (total ₱${groupTotal.toLocaleString()}) — proxy entry, owner approval required`
+        : `Submit ${group.rows.length} ${group.label} entr${group.rows.length === 1 ? 'y' : 'ies'} (total ₱${groupTotal.toLocaleString()})`,
       requesterId: req.user._id,
       requesterName: req.user.name || req.user.email,
+      forceApproval: hasProxy,
+      ownerBdmId: proxiedRow?.bdm_id,
     }, res);
     if (gated) return;
   }
@@ -1020,9 +1097,12 @@ const reopenSales = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'sale_ids required' });
   }
 
+  // Phase G4.5a — widen filter so proxies can reopen on behalf of other BDMs.
+  // Reopen action itself is still gated by the sales.reopen sub-perm middleware.
+  const scope = await widenFilterForProxy(req, 'sales', { subKey: 'proxy_entry' });
   const rows = await SalesLine.find({
     _id: { $in: sale_ids },
-    ...req.tenantFilter,
+    ...scope,
     status: 'POSTED'
   });
 
@@ -1195,9 +1275,11 @@ const reopenSales = catchAsync(async (req, res) => {
 // ═══════════════════════════════════════════════════════════
 
 const requestDeletion = catchAsync(async (req, res) => {
+  // Phase G4.5a — proxy can request deletion for rows owned by other BDMs.
+  const scope = await widenFilterForProxy(req, 'sales', { subKey: 'proxy_entry' });
   const sale = await SalesLine.findOne({
     _id: req.params.id,
-    ...req.tenantFilter,
+    ...scope,
     status: 'POSTED'
   });
 
@@ -1222,9 +1304,12 @@ const requestDeletion = catchAsync(async (req, res) => {
 });
 
 const approveDeletion = catchAsync(async (req, res) => {
+  // Phase G4.5a — proxy sees deletion-requested rows across BDMs; gate is the
+  // accounting.approve_deletion sub-perm at route middleware, not here.
+  const scope = await widenFilterForProxy(req, 'sales', { subKey: 'proxy_entry' });
   const sale = await SalesLine.findOne({
     _id: req.params.id,
-    ...req.tenantFilter,
+    ...scope,
     status: 'DELETION_REQUESTED'
   });
 
@@ -1332,12 +1417,14 @@ const presidentReverseSale = catchAsync(async (req, res) => {
   }
 
   try {
+    // Phase G4.5a — proxy reverse still gated by accounting.reverse_posted danger perm.
+    const scope = await widenFilterForProxy(req, 'sales', { subKey: 'proxy_entry' });
     const result = await presidentReverse({
       doc_type: 'SALES_LINE',
       doc_id: req.params.id,
       reason,
       user: req.user,
-      tenantFilter: req.tenantFilter || {},
+      tenantFilter: scope,
     });
     res.json({
       success: true,
@@ -1349,6 +1436,83 @@ const presidentReverseSale = catchAsync(async (req, res) => {
   } catch (err) {
     return res.status(err.statusCode || 500).json({ success: false, message: err.message });
   }
+});
+
+// ═══════════════════════════════════════════════════════════
+// ATTACH RECEIVED CSI — post-delivery dunning proof (t=4)
+// ═══════════════════════════════════════════════════════════
+// Writes csi_received_photo_url + csi_received_attachment_id + csi_received_at
+// ONLY. Allowed on DRAFT / VALID / POSTED. Blocked on DELETION_REQUESTED and
+// on rows already marked with a deletion_event_id (reversed). Period-lock
+// applies so we don't retroactively attach proof to a closed period.
+//
+// No status transition — the row stays where it was. BDM captures the signed
+// pink/yellow/duplicate copy of the CSI after the hospital acknowledges
+// delivery; this writes that artifact to the ledger-of-record without
+// touching posted inventory/AR side effects.
+const attachReceivedCsi = catchAsync(async (req, res) => {
+  const { csi_received_photo_url, csi_received_attachment_id } = req.body || {};
+  if (!csi_received_photo_url) {
+    return res.status(400).json({
+      success: false,
+      message: 'csi_received_photo_url is required'
+    });
+  }
+
+  const sale = await SalesLine.findOne({
+    _id: req.params.id,
+    ...req.tenantFilter
+  });
+  if (!sale) {
+    return res.status(404).json({ success: false, message: 'Sale not found' });
+  }
+
+  // Status gate — signed-CSI upload is meaningful only while the row is
+  // part of the active ledger. Reversed rows (deletion_event_id) and
+  // DELETION_REQUESTED rows are out of scope. ERROR is included so BDMs
+  // can pre-stage the signed photo while fixing unrelated validation
+  // issues (credit limit, duplicate doc_ref, etc.) — delivery already
+  // happened, don't block proof capture on a transient error state.
+  if (sale.deletion_event_id) {
+    return res.status(400).json({ success: false, message: 'Sale has been reversed — cannot attach received CSI' });
+  }
+  const attachableStatuses = ['DRAFT', 'VALID', 'ERROR', 'POSTED'];
+  if (!attachableStatuses.includes(sale.status)) {
+    return res.status(400).json({
+      success: false,
+      message: `Cannot attach received CSI on a ${sale.status} row`
+    });
+  }
+
+  // Period-lock — don't let a user retroactively stamp evidence on a
+  // closed period. OPENING_AR bypasses by convention (same as submit).
+  try {
+    const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
+    await checkPeriodOpen(sale.entity_id, dateToPeriod(sale.csi_date), { source: sale.source });
+  } catch (err) {
+    return res.status(err.statusCode || 400).json({ success: false, message: err.message });
+  }
+
+  const previousUrl = sale.csi_received_photo_url || null;
+  sale.csi_received_photo_url = csi_received_photo_url;
+  sale.csi_received_attachment_id = csi_received_attachment_id || undefined;
+  sale.csi_received_at = new Date();
+  await sale.save();
+
+  await ErpAuditLog.logChange({
+    entity_id: sale.entity_id,
+    bdm_id: sale.bdm_id,
+    log_type: 'SALES_EDIT',
+    target_ref: sale._id.toString(),
+    target_model: 'SalesLine',
+    field_changed: 'csi_received_photo_url',
+    old_value: previousUrl,
+    new_value: csi_received_photo_url,
+    changed_by: req.user._id,
+    note: previousUrl ? 'Received CSI photo replaced' : 'Received CSI photo attached (dunning proof)'
+  });
+
+  res.json({ success: true, data: sale });
 });
 
 module.exports = {
@@ -1363,5 +1527,6 @@ module.exports = {
   requestDeletion,
   approveDeletion,
   presidentReverseSale,
+  attachReceivedCsi,
   postSaleRow, // shared helper for approval handler
 };

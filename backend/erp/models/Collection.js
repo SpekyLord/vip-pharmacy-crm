@@ -91,6 +91,14 @@ const collectionSchema = new mongoose.Schema({
   // Audit
   created_at: { type: Date, default: Date.now, immutable: true },
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  // Phase G4.5b — Proxy Entry. Present when the caller (created_by) keyed the
+  // row on behalf of another BDM. Value = the proxy's User._id. bdm_id is the
+  // owner (assigned_to). Absence means self-entry. See resolveOwnerScope.js.
+  recorded_on_behalf_of: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: undefined
+  },
   edit_history: [{ type: mongoose.Schema.Types.Mixed }]
 }, {
   timestamps: false,

@@ -202,6 +202,8 @@ const createDoctor = catchAsync(async (req, res) => {
     lastName,
     specialization,
     clinicOfficeAddress,
+    locality,
+    province,
     phone,
     email,
     visitFrequency,
@@ -229,6 +231,11 @@ const createDoctor = catchAsync(async (req, res) => {
     lastName,
     specialization,
     clinicOfficeAddress,
+    // Phase G1.5 post-audit fix — locality/province were defined in the schema
+    // but never whitelisted here, so admin form + ClientAddModal + promotion
+    // carryover all silently dropped them. Now persisted end-to-end.
+    locality,
+    province,
     phone,
     email,
     visitFrequency: visitFrequency || 4,
@@ -288,6 +295,8 @@ const updateDoctor = catchAsync(async (req, res) => {
     'lastName',
     'specialization',
     'clinicOfficeAddress',
+    'locality',   // Phase G1.5 post-audit fix — was being dropped on update
+    'province',   // Phase G1.5 post-audit fix — was being dropped on update
     'phone',
     'email',
     'visitFrequency',

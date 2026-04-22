@@ -396,7 +396,10 @@ async function signPhotoUrls(details, moduleKey) {
   if (!details) return;
   switch (moduleKey) {
     case 'SALES':
-      details.csi_photo_url = await signUrl(details.csi_photo_url);
+      [details.csi_photo_url, details.csi_received_photo_url] = await Promise.all([
+        signUrl(details.csi_photo_url),
+        signUrl(details.csi_received_photo_url),
+      ]);
       break;
     case 'COLLECTION':
       [details.deposit_slip_url, details.cr_photo_url, details.cwt_certificate_url] = await Promise.all([

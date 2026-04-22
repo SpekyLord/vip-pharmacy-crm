@@ -89,6 +89,15 @@ const undertakingSchema = new mongoose.Schema({
 
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   created_at: { type: Date, default: Date.now, immutable: true },
+  // Phase G4.5b — Proxy Entry. Mirrored from the parent GRN (autoUndertakingForGrn)
+  // so the Approval Hub + BDM Undertaking list can show a "Proxied" pill on the UT
+  // even though the GRN is the capture doc. bdm_id is the owner; created_by is the
+  // proxy. See resolveOwnerScope.js.
+  recorded_on_behalf_of: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: undefined
+  },
   edit_history: [{ type: mongoose.Schema.Types.Mixed }]
 }, {
   timestamps: false,

@@ -194,7 +194,21 @@ export default function Collections() {
                 const sc = STATUS_COLORS[c.status] || {};
                 return (
                   <tr key={c._id} onClick={() => viewDetail(c._id)}>
-                    <td style={{ fontWeight: 600 }}>{c.cr_no}</td>
+                    <td style={{ fontWeight: 600 }}>
+                      {c.cr_no}
+                      {/* Phase G4.5b — Proxy Entry pill. recorded_on_behalf_of
+                          is set by the backend when the CR was keyed on behalf
+                          of another BDM. */}
+                      {c.recorded_on_behalf_of && (
+                        <span
+                          className="badge"
+                          style={{ marginLeft: 6, background: '#ede9fe', color: '#6d28d9', fontSize: 10, padding: '1px 6px', borderRadius: 8 }}
+                          title={`Keyed by ${c.recorded_on_behalf_of?.name || 'proxy user'} on behalf of ${c.bdm_id?.name || 'BDM'}`}
+                        >
+                          Proxied
+                        </span>
+                      )}
+                    </td>
                     <td>{c.hospital_id?.hospital_name || c.customer_id?.customer_name || '—'}</td>
                     <td>{new Date(c.cr_date).toLocaleDateString('en-PH')}</td>
                     <td>P{(c.cr_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
@@ -238,7 +252,18 @@ export default function Collections() {
                 <div key={c._id} className="coll-card" onClick={() => viewDetail(c._id)}>
                   <div className="coll-card-header">
                     <div>
-                      <div className="coll-card-title">CR #{c.cr_no}</div>
+                      <div className="coll-card-title">
+                        CR #{c.cr_no}
+                        {c.recorded_on_behalf_of && (
+                          <span
+                            className="badge"
+                            style={{ marginLeft: 6, background: '#ede9fe', color: '#6d28d9', fontSize: 10, padding: '1px 6px', borderRadius: 8 }}
+                            title={`Keyed by ${c.recorded_on_behalf_of?.name || 'proxy user'} on behalf of ${c.bdm_id?.name || 'BDM'}`}
+                          >
+                            Proxied
+                          </span>
+                        )}
+                      </div>
                       <div className="coll-card-sub">{new Date(c.cr_date).toLocaleDateString('en-PH')}</div>
                     </div>
                     <span className="badge" style={{ background: sc.bg, color: sc.text }}>{c.status}</span>

@@ -643,16 +643,25 @@ export default function Expenses() {
   const [actionMsg, setActionMsg] = useState(null);
   const showMsg = (msg, isError = false) => { setActionMsg({ msg, isError }); setTimeout(() => setActionMsg(null), 5000); };
 
-  const handleValidate = async () => { try { const r = await validateExpenses(); showMsg(r?.message || 'Validated'); loadExpenses(); } catch (e) { showMsg(e.response?.data?.message || 'Validation failed', true); } };
-  const handleSubmit = async () => {
+  const handleValidate = async (id) => {
     try {
-      const r = await submitExpenses();
+      const r = await validateExpenses([id]);
+      const row = Array.isArray(r?.data) ? r.data.find(x => String(x._id) === String(id)) : null;
+      if (row?.errors?.length) showMsg(`Validation failed:\n${row.errors.join('\n')}`, true);
+      else if (row?.status === 'VALID') showMsg('Validated — Submit is now available.');
+      else showMsg(r?.message || 'Validated');
+      loadExpenses();
+    } catch (e) { showMsg(e.response?.data?.message || 'Validation failed', true); }
+  };
+  const handleSubmit = async (id) => {
+    try {
+      const r = await submitExpenses([id]);
       if (r?.approval_pending) { showMsg(r.message || 'Approval required — request sent to approver.'); }
       else { showMsg(r?.message || 'Submitted'); }
       loadExpenses();
     } catch (e) {
       if (e?.response?.data?.approval_pending) { showMsg(e.response.data.message || 'Approval required'); loadExpenses(); }
-      else { showMsg(e.response?.data?.message || 'Submit failed — are there VALID entries?', true); }
+      else { showMsg(e.response?.data?.message || 'Submit failed', true); }
     }
   };
   const handleReopen = async (id) => { try { await reopenExpenses([id]); showMsg('Reopened'); loadExpenses(); } catch (e) { showMsg(e.response?.data?.message || 'Reopen failed', true); } };
@@ -737,8 +746,6 @@ export default function Expenses() {
             </div>
             <div className="erp-expenses-actions">
               <button onClick={handleNew} style={{ padding: '6px 16px', borderRadius: 6, background: 'var(--erp-accent, #1e5eff)', color: '#fff', border: 'none', cursor: 'pointer' }}>+ New Expense</button>
-              <button onClick={handleValidate} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#22c55e', color: '#fff', border: 'none', cursor: 'pointer' }}>Validate</button>
-              <button onClick={handleSubmit} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer' }}>Submit</button>
             </div>
           </div>
 
@@ -974,6 +981,12 @@ export default function Expenses() {
                         {editableStatuses.includes(e.status) && (
                           <button onClick={() => handleEdit(e)} style={{ marginRight: 4, padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', cursor: 'pointer' }}>Edit</button>
                         )}
+                        {editableStatuses.includes(e.status) && (
+                          <button onClick={() => handleValidate(e._id)} style={{ marginRight: 4, padding: '2px 8px', fontSize: 12, borderRadius: 4, border: 'none', background: '#22c55e', color: '#fff', cursor: 'pointer' }}>Validate</button>
+                        )}
+                        {e.status === 'VALID' && (
+                          <button onClick={() => handleSubmit(e._id)} style={{ marginRight: 4, padding: '2px 8px', fontSize: 12, borderRadius: 4, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer' }}>Submit</button>
+                        )}
                         {e.status === 'DRAFT' && (
                           <button onClick={() => handleDelete(e._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #ef4444', background: '#fff', color: '#ef4444', cursor: 'pointer' }}>Del</button>
                         )}
@@ -1069,6 +1082,12 @@ export default function Expenses() {
                   <div className="erp-expense-card-actions">
                     {editableStatuses.includes(e.status) && (
                       <button onClick={() => handleEdit(e)} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', cursor: 'pointer' }}>Edit</button>
+                    )}
+                    {editableStatuses.includes(e.status) && (
+                      <button onClick={() => handleValidate(e._id)} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, border: 'none', background: '#22c55e', color: '#fff', cursor: 'pointer' }}>Validate</button>
+                    )}
+                    {e.status === 'VALID' && (
+                      <button onClick={() => handleSubmit(e._id)} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer' }}>Submit</button>
                     )}
                     {e.status === 'DRAFT' && (
                       <button onClick={() => handleDelete(e._id)} style={{ padding: '4px 10px', fontSize: 12, borderRadius: 6, border: '1px solid #ef4444', background: '#fff', color: '#ef4444', cursor: 'pointer' }}>Del</button>

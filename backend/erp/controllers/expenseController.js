@@ -23,6 +23,10 @@ const { journalFromExpense, resolveFundingCoa, getCoaMap, journalFromPrfCalf } =
 const { createAndPostJournal, reverseJournal } = require('../services/journalEngine');
 const JournalEntry = require('../models/JournalEntry');
 const { getEditableStatuses } = require('../services/approvalService');
+// Phase G4.5c.1 (April 22, 2026) — shared proxy-entry resolver. Replaces the
+// inline `assigned_to` handling that lived only in batch upload. Unifies
+// audit codes with Sales / Collections / GRN (PROXY_CREATE / PROXY_UPDATE).
+const { resolveOwnerForWrite, widenFilterForProxy } = require('../utils/resolveOwnerScope');
 
 const { ROLES } = require('../../constants/roles');
 const { detectText } = require('../ocr/visionClient');
@@ -1474,13 +1478,52 @@ const createExpense = catchAsync(async (req, res) => {
   // Auto-classify lines without coa_code before saving
   await autoClassifyLines(req.body.lines, req.entityId);
 
+  // Phase G4.5c.1 — proxy entry resolver. Caller may set body.assigned_to to
+  // record on behalf of another BDM; gate is two-layer (PROXY_ENTRY_ROLES
+  // lookup + expenses.proxy_entry sub-perm). Throws 403 if ineligible.
+  let owner;
+  try {
+    owner = await resolveOwnerForWrite(req, 'expenses', { subKey: 'proxy_entry' });
+  } catch (err) {
+    if (err.statusCode === 403 || err.statusCode === 400) {
+      return res.status(err.statusCode).json({ success: false, message: err.message });
+    }
+    throw err;
+  }
+
+  // Strip proxy-control fields from body so a crafted payload cannot silently
+  // reassign or bypass the helper's gate.
+  const {
+    assigned_to: _discardAssigned,
+    bdm_id: _discardBdm,
+    recorded_on_behalf_of: _discardProxy,
+    calf_override: _discardCalfOverride,
+    ...safeBody
+  } = req.body || {};
+
   const entry = await ExpenseEntry.create({
-    ...req.body,
+    ...safeBody,
     entity_id: req.entityId,
-    bdm_id: req.bdmId,
+    bdm_id: owner.ownerId,
+    recorded_on_behalf_of: owner.proxiedBy,
+    // calf_override is president-only; never set from create-proxy path.
     created_by: req.user._id,
     status: 'DRAFT'
   });
+
+  // Phase G4.5c.1 — unify audit with Sales/Collections/GRN.
+  if (owner.isOnBehalf) {
+    await ErpAuditLog.logChange({
+      entity_id: req.entityId,
+      bdm_id: owner.ownerId,
+      log_type: 'PROXY_CREATE',
+      target_ref: entry._id.toString(),
+      target_model: 'ExpenseEntry',
+      changed_by: req.user._id,
+      note: `Proxy create: Expense ${entry.period}-${entry.cycle} keyed by ${req.user.name || req.user._id} (${req.user.role}) on behalf of BDM ${owner.ownerId}`
+    }).catch(err => console.error('[createExpense] PROXY_CREATE audit failed (non-critical):', err.message));
+  }
+
   // Auto-create linked CALF for company-funded (ACCESS non-cash) lines
   const autoCalf = await autoCalfForSource(entry, 'EXPENSE');
   res.status(201).json({ success: true, data: entry, auto_calf: autoCalf ? { _id: autoCalf._id, calf_number: autoCalf.calf_number, amount: autoCalf.amount } : null });
@@ -1488,7 +1531,9 @@ const createExpense = catchAsync(async (req, res) => {
 
 const updateExpense = catchAsync(async (req, res) => {
   const editable = await getEditableStatuses(req.entityId, 'EXPENSES');
-  const entry = await ExpenseEntry.findOne({ _id: req.params.id, ...req.tenantFilter, status: { $in: editable } });
+  // Phase G4.5c.1 — widen so eligible proxies can edit on behalf.
+  const scope = await widenFilterForProxy(req, 'expenses', { subKey: 'proxy_entry' });
+  const entry = await ExpenseEntry.findOne({ _id: req.params.id, ...scope, status: { $in: editable } });
   if (!entry) return res.status(404).json({ success: false, message: 'Draft expense not found' });
 
   // Block future expense dates on update too
@@ -1506,15 +1551,43 @@ const updateExpense = catchAsync(async (req, res) => {
   // Auto-classify lines without coa_code before saving
   await autoClassifyLines(req.body.lines, req.entityId);
 
-  Object.assign(entry, req.body);
+  // Phase G4.5c.1 — strip ownership fields. A proxy cannot reassign an entry's
+  // owner via update; ownership is stamped at create time only. calf_override
+  // is also locked (president-only, set at batch-upload time).
+  const {
+    assigned_to: _discardAssigned,
+    bdm_id: _discardBdm,
+    recorded_on_behalf_of: _discardProxy,
+    calf_override: _discardCalfOverride,
+    ...safeBody
+  } = req.body || {};
+
+  Object.assign(entry, safeBody);
   await entry.save();
+
+  // Phase G4.5c.1 — audit when the editor is not the owner.
+  const isProxyEdit = String(entry.bdm_id) !== String(req.user._id);
+  if (isProxyEdit) {
+    await ErpAuditLog.logChange({
+      entity_id: req.entityId,
+      bdm_id: entry.bdm_id,
+      log_type: 'PROXY_UPDATE',
+      target_ref: entry._id.toString(),
+      target_model: 'ExpenseEntry',
+      changed_by: req.user._id,
+      note: `Proxy update: Expense ${entry.period}-${entry.cycle} edited by ${req.user.name || req.user._id} (${req.user.role}) on behalf of BDM ${entry.bdm_id}`
+    }).catch(err => console.error('[updateExpense] PROXY_UPDATE audit failed (non-critical):', err.message));
+  }
+
   // Re-run auto-CALF (updates existing or creates new if needed)
   const autoCalf = await autoCalfForSource(entry, 'EXPENSE');
   res.json({ success: true, data: entry, auto_calf: autoCalf ? { _id: autoCalf._id, calf_number: autoCalf.calf_number, amount: autoCalf.amount } : null });
 });
 
 const getExpenseList = catchAsync(async (req, res) => {
-  const filter = { ...req.tenantFilter };
+  // Phase G4.5c.1 — widen so eligible proxies see the BDMs they file on behalf of.
+  const scope = await widenFilterForProxy(req, 'expenses', { subKey: 'proxy_entry' });
+  const filter = { ...scope };
   if (req.query.status) filter.status = req.query.status;
   if (req.query.period) filter.period = req.query.period;
   if (req.query.cycle) filter.cycle = req.query.cycle;
@@ -1534,6 +1607,7 @@ const getExpenseList = catchAsync(async (req, res) => {
   const [docs, total] = await Promise.all([
     ExpenseEntry.find(filter)
       .populate('bdm_id', 'name')
+      .populate('recorded_on_behalf_of', 'name')
       .sort({ period: -1 })
       .skip((page - 1) * limit).limit(limit).lean(),
     ExpenseEntry.countDocuments(filter)
@@ -1543,21 +1617,31 @@ const getExpenseList = catchAsync(async (req, res) => {
 });
 
 const getExpenseById = catchAsync(async (req, res) => {
-  const entry = await ExpenseEntry.findOne({ _id: req.params.id, ...req.tenantFilter })
-    .populate('bdm_id', 'name').lean();
+  // Phase G4.5c.1 — widen for proxy reads.
+  const scope = await widenFilterForProxy(req, 'expenses', { subKey: 'proxy_entry' });
+  const entry = await ExpenseEntry.findOne({ _id: req.params.id, ...scope })
+    .populate('bdm_id', 'name')
+    .populate('recorded_on_behalf_of', 'name')
+    .lean();
   if (!entry) return res.status(404).json({ success: false, message: 'Expense not found' });
   res.json({ success: true, data: entry });
 });
 
 const deleteDraftExpense = catchAsync(async (req, res) => {
-  const result = await ExpenseEntry.findOneAndDelete({ _id: req.params.id, ...req.tenantFilter, status: 'DRAFT' });
+  // Phase G4.5c.1 — proxy can delete DRAFT of BDMs they file on behalf of.
+  const scope = await widenFilterForProxy(req, 'expenses', { subKey: 'proxy_entry' });
+  const result = await ExpenseEntry.findOneAndDelete({ _id: req.params.id, ...scope, status: 'DRAFT' });
   if (!result) return res.status(404).json({ success: false, message: 'Draft expense not found' });
   res.json({ success: true, message: 'Draft expense deleted' });
 });
 
 const validateExpenses = catchAsync(async (req, res) => {
   const editable = await getEditableStatuses(req.entityId, 'EXPENSES');
-  const entries = await ExpenseEntry.find({ ...req.tenantFilter, status: { $in: editable } });
+  // Phase G4.5c.1 — widen for proxy validate.
+  const scope = await widenFilterForProxy(req, 'expenses', { subKey: 'proxy_entry' });
+  const filter = { ...scope, status: { $in: editable } };
+  if (req.body?.expense_ids?.length) filter._id = { $in: req.body.expense_ids };
+  const entries = await ExpenseEntry.find(filter);
 
   for (const entry of entries) {
     // Auto-resolve COA codes before validation (tries vendor/keyword match, then category fallback)
@@ -1617,8 +1701,18 @@ const validateExpenses = catchAsync(async (req, res) => {
 });
 
 const submitExpenses = catchAsync(async (req, res) => {
-  const entries = await ExpenseEntry.find({ ...req.tenantFilter, status: 'VALID' });
+  // Phase G4.5c.1 — widen so eligible proxies can submit on behalf.
+  const scope = await widenFilterForProxy(req, 'expenses', { subKey: 'proxy_entry' });
+  const filter = { ...scope, status: 'VALID' };
+  if (req.body?.expense_ids?.length) filter._id = { $in: req.body.expense_ids };
+  const entries = await ExpenseEntry.find(filter);
   if (!entries.length) return res.status(400).json({ success: false, message: 'No VALID expenses to submit' });
+
+  // Phase G4.5c.1 — Option B: if ANY entry was proxy-created (recorded_on_behalf_of
+  // set), force every submit through the Approval Hub regardless of role. Rule #20
+  // four-eyes — a proxy enters, never approves.
+  const proxiedEntry = entries.find(e => e.recorded_on_behalf_of);
+  const hasProxy = !!proxiedEntry;
 
   // Authority matrix gate
   const { gateApproval } = require('../services/approvalService');
@@ -1633,6 +1727,8 @@ const submitExpenses = catchAsync(async (req, res) => {
     description: `Submit ${entries.length} expense entr${entries.length === 1 ? 'y' : 'ies'} (total ₱${expTotalAmount.toLocaleString()})`,
     requesterId: req.user._id,
     requesterName: req.user.name || req.user.email,
+    forceApproval: hasProxy,
+    ownerBdmId: proxiedEntry?.bdm_id,
   }, res);
   if (gated) return;
 
@@ -1763,7 +1859,10 @@ const submitExpenses = catchAsync(async (req, res) => {
 
 const reopenExpenses = catchAsync(async (req, res) => {
   const { expense_ids } = req.body;
-  const entries = await ExpenseEntry.find({ _id: { $in: expense_ids }, ...req.tenantFilter, status: 'POSTED' });
+  // Phase G4.5c.1 — widen so eligible proxies can reopen on behalf. Reopen
+  // itself is still gated by expenses.reopen sub-perm at route middleware.
+  const scope = await widenFilterForProxy(req, 'expenses', { subKey: 'proxy_entry' });
+  const entries = await ExpenseEntry.find({ _id: { $in: expense_ids }, ...scope, status: 'POSTED' });
   if (!entries.length) return res.status(400).json({ success: false, message: 'No POSTED expenses to reopen' });
 
   const reopened = [];
@@ -3004,10 +3103,16 @@ const saveBatchExpenses = catchAsync(async (req, res) => {
   const bdmId = assigned_to || req.user._id;
   const isOnBehalf = assigned_to && assigned_to !== req.user._id.toString();
 
+  // Phase G4.5c.1 — CALF bypass is president-only (matches the original
+  // Phase 18 comment intent; previously leaked to any admin uploader). We
+  // still stamp recorded_on_behalf_of = proxy user for audit trail.
+  const isPresidentProxy = isOnBehalf && req.user.role === ROLES.PRESIDENT;
+
   const entry = await ExpenseEntry.create({
     entity_id: req.entityId,
     bdm_id: bdmId,
-    recorded_on_behalf_of: isOnBehalf ? bdmId : undefined,
+    recorded_on_behalf_of: isOnBehalf ? req.user._id : undefined,
+    calf_override: isPresidentProxy,
     period,
     cycle,
     lines: cleanLines,

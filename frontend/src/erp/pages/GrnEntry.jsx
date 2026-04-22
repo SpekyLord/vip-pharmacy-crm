@@ -26,6 +26,7 @@ import useProducts from '../hooks/useProducts';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 import { getGrnSettings } from '../services/undertakingService';
 import WarehousePicker from '../components/WarehousePicker';
+import OwnerPicker from '../components/OwnerPicker';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -373,6 +374,11 @@ export default function GrnEntry() {
   const navigate = useNavigate();
 
   const [warehouseId, setWarehouseId] = useState('');
+  // Phase G4.5b — Proxy Entry. Empty = self; otherwise target BDM's User._id.
+  // OwnerPicker only renders for eligible proxies (PROXY_ENTRY_ROLES.GRN role
+  // + inventory.grn_proxy_entry sub-perm). Backend also cross-checks that the
+  // target BDM is in Warehouse.assigned_users for the selected warehouse.
+  const [assignedTo, setAssignedTo] = useState('');
   const [lineItems, setLineItems] = useState([emptyLine()]);
   const [grnDate, setGrnDate] = useState(new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
@@ -578,6 +584,11 @@ export default function GrnEntry() {
     setSaving(true);
     try {
       const res = await grn.createGrn({
+        // Phase G4.5b — proxy entry: backend resolves this against
+        // PROXY_ENTRY_ROLES.GRN lookup + inventory.grn_proxy_entry sub-perm and
+        // throws 403 if the caller isn't eligible, 400 if the target BDM isn't
+        // assigned to the selected warehouse. Self-entry when empty.
+        assigned_to: assignedTo || undefined,
         grn_date: grnDate,
         warehouse_id: warehouseId || undefined,
         po_id: linkedPO?.po_id || undefined,
@@ -717,6 +728,12 @@ export default function GrnEntry() {
             <div className="grn-form-grid">
               <div className="form-group">
                 <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterGrn />
+              </div>
+              {/* Phase G4.5b — OwnerPicker renders only for eligible proxies.
+                  Target BDM must also be assigned to the chosen warehouse
+                  (backend rejects with 400 if not). */}
+              <div className="form-group">
+                <OwnerPicker module="inventory" subKey="grn_proxy_entry" moduleLookupCode="GRN" value={assignedTo} onChange={setAssignedTo} />
               </div>
               <div className="form-group">
                 <label>GRN Date</label>
@@ -930,8 +947,20 @@ export default function GrnEntry() {
                 <tbody>
                   {grnList.map(g => (
                     <tr key={g._id}>
-                      {/* Phase 32R-GRN#: human-readable number; legacy rows show id-tail */}
-                      <td style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700 }}>{g.grn_number || g._id.slice(-6)}</td>
+                      {/* Phase 32R-GRN#: human-readable number; legacy rows show id-tail.
+                          Phase G4.5b: Proxied pill when keyed on behalf of another BDM. */}
+                      <td style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 700 }}>
+                        {g.grn_number || g._id.slice(-6)}
+                        {g.recorded_on_behalf_of && (
+                          <span
+                            className="badge"
+                            style={{ marginLeft: 6, background: '#ede9fe', color: '#6d28d9', fontSize: 10, padding: '1px 6px', borderRadius: 8, fontFamily: 'inherit' }}
+                            title={`Keyed by ${g.recorded_on_behalf_of?.name || 'proxy user'} on behalf of ${g.bdm_id?.name || 'BDM'}`}
+                          >
+                            Proxied
+                          </span>
+                        )}
+                      </td>
                       <td>{new Date(g.grn_date).toLocaleDateString('en-PH')}</td>
                       <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{g.po_number || '—'}</td>
                       <td>{g.vendor_id?.vendor_name || '—'}</td>
@@ -978,8 +1007,20 @@ export default function GrnEntry() {
                   <div key={g._id} className="grn-card">
                     <div className="grn-card-header">
                       <div>
-                        {/* Phase 32R-GRN#: lead with the doc number; date/item count go underneath */}
-                        <div className="grn-card-title" style={{ fontFamily: 'monospace' }}>{g.grn_number || new Date(g.grn_date).toLocaleDateString('en-PH')}</div>
+                        {/* Phase 32R-GRN#: lead with the doc number; date/item count go underneath.
+                            Phase G4.5b: Proxied pill when keyed on behalf of another BDM. */}
+                        <div className="grn-card-title" style={{ fontFamily: 'monospace' }}>
+                          {g.grn_number || new Date(g.grn_date).toLocaleDateString('en-PH')}
+                          {g.recorded_on_behalf_of && (
+                            <span
+                              className="badge"
+                              style={{ marginLeft: 6, background: '#ede9fe', color: '#6d28d9', fontSize: 10, padding: '1px 6px', borderRadius: 8, fontFamily: 'inherit' }}
+                              title={`Keyed by ${g.recorded_on_behalf_of?.name || 'proxy user'} on behalf of ${g.bdm_id?.name || 'BDM'}`}
+                            >
+                              Proxied
+                            </span>
+                          )}
+                        </div>
                         <div className="grn-card-sub">
                           {g.grn_number ? `${new Date(g.grn_date).toLocaleDateString('en-PH')} · ` : ''}
                           {g.line_items?.length || 0} item(s)

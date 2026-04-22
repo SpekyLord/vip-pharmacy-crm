@@ -180,7 +180,36 @@ const updateUser = catchAsync(async (req, res) => {
     user.markModified('erp_access');
   }
 
+  // Phase FRA-A (April 22, 2026) — admin-direct entity_ids writes must mirror
+  // to entity_ids_static so they're preserved when an FRA rebuild runs later.
+  // Without this, deactivating an FRA would $pull an entity the admin
+  // explicitly granted via BDM Management.
+  const adminWroteEntityIds = isAdmin && req.body.entity_ids !== undefined;
+  if (adminWroteEntityIds) {
+    user.entity_ids_static = Array.isArray(req.body.entity_ids) ? [...req.body.entity_ids] : [];
+  }
+
   await user.save();
+
+  // Phase FRA-A: recompute effective entity_ids = union(static, activeFraEntityIds).
+  // If the user has no linked PeopleMaster (CRM-only user, new admin account),
+  // rebuild is a no-op — rebuildUserEntityIdsForUser early-exits.
+  if (adminWroteEntityIds) {
+    // Lazy require to avoid cycles during cold-start + keep non-ERP CRM
+    // deploys free of the ERP model graph.
+    const { rebuildUserEntityIdsForUser } = require('../erp/utils/userEntityRebuild');
+    try {
+      await rebuildUserEntityIdsForUser(user._id);
+      // Re-read after rebuild so the response reflects the union, not the
+      // raw admin input.
+      await user.populate({ path: 'entity_ids' }).catch(() => {});
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('[FRA] rebuild failed (updateUser):', err && err.message ? err.message : err);
+      // Intentionally do not fail the API — the admin's direct write
+      // persisted successfully; health check surfaces drift.
+    }
+  }
 
   res.status(200).json({
     success: true,

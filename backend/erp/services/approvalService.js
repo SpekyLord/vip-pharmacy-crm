@@ -336,9 +336,26 @@ const checkApprovalRequired = async (opts) => {
   // President / CEO bypass (cross-entity superusers — they own the company)
   const isPresidentBypass = ROLE_SETS.PRESIDENT_ROLES.includes(requesterRole);
 
-  if (!isPresidentBypass) {
-    const allowedRoles = await getModulePostingRoles(opts.entityId, opts.module);
-    if (allowedRoles && !allowedRoles.includes(requesterRole)) {
+  // Phase G4.5a — proxy entry always routes through Approval Hub. When a
+  // document was recorded on behalf of another BDM, the proxy (even an admin
+  // or finance) does NOT auto-post — the owner (or their approver) must sign
+  // off. Rationale: a clerk keying under someone else's name is four-eyes
+  // territory, and the proxy's authority chain is not the owner's chain
+  // (fixed properly in Phase G4.5b — owner-chain propagation). Until then,
+  // this conservative guard keeps proxy entry safe for contractor clerks.
+  const forceApproval = !!opts.forceApproval;
+
+  if (forceApproval || !isPresidentBypass) {
+    let allowedRoles = await getModulePostingRoles(opts.entityId, opts.module);
+    // Phase G4.5a — if the module is open-post (metadata.roles = null) but the
+    // caller asks for proxy approval, we still need SOME pool to sign off.
+    // Fall back to admin/finance/president so the doc doesn't land in the hub
+    // with zero eligible approvers.
+    if (forceApproval && !allowedRoles) {
+      allowedRoles = [ROLES.ADMIN, ROLES.FINANCE, ROLES.PRESIDENT];
+    }
+    const notAllowed = forceApproval || (allowedRoles && !allowedRoles.includes(requesterRole));
+    if (notAllowed) {
       // Requester not authorized to post → hold for Approval Hub.
       // Check for existing pending/approved request first (idempotent re-submit).
       const existingDefault = await ApprovalRequest.findOne({
@@ -357,6 +374,14 @@ const checkApprovalRequired = async (opts) => {
 
       // Create synthetic request (no rule_id — this is the default-roles gate, not a matrix rule).
       // level: 0 distinguishes from matrix rules (which start at level 1).
+      // Phase G4.5a — forceApproval means proxy entry. Tag as PROXY_ENTRY gate
+      // so the Approval Hub can show an explicit "proxied" label; resolution of
+      // approvers still uses the same allowed_roles list (admin/finance/president
+      // by default) so someone authorized can sign off for the owner.
+      const gateLabel = forceApproval ? 'PROXY_ENTRY' : 'DEFAULT_ROLES';
+      const historyReason = forceApproval
+        ? `Proxy entry — recorded on behalf of another BDM by ${requester?.name || requesterRole}; owner approval required.`
+        : `Posting authority required (submitter role: ${requesterRole}, allowed: ${(allowedRoles || []).join(', ')})`;
       const request = await ApprovalRequest.create({
         entity_id: opts.entityId,
         rule_id: null,
@@ -366,14 +391,19 @@ const checkApprovalRequired = async (opts) => {
         doc_ref: opts.docRef,
         amount: opts.amount,
         description: opts.description,
-        metadata: { ...(opts.metadata || {}), gate: 'DEFAULT_ROLES', allowed_roles: allowedRoles },
+        metadata: {
+          ...(opts.metadata || {}),
+          gate: gateLabel,
+          allowed_roles: allowedRoles,
+          ...(forceApproval ? { proxy_entry: true, proxied_by: opts.requesterId, owner_bdm_id: opts.ownerBdmId } : {}),
+        },
         level: 0,
         requested_by: opts.requesterId,
         status: 'PENDING',
         history: [{
           status: 'PENDING',
           by: opts.requesterId,
-          reason: `Posting authority required (submitter role: ${requesterRole}, allowed: ${allowedRoles.join(', ')})`,
+          reason: historyReason,
         }],
       });
 

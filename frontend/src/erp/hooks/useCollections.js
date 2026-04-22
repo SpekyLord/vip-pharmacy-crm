@@ -5,7 +5,19 @@ export default function useCollections() {
 
   const getCollections = (params) => api.get('/collections', { params });
   const getCollectionById = (id) => api.get(`/collections/${id}`);
-  const getOpenCsis = (id, entityId, { isCustomer } = {}) => api.get('/collections/open-csis', { params: { ...(isCustomer ? { customer_id: id } : { hospital_id: id }), ...(entityId && { entity_id: entityId }) } });
+  // Phase G4.5b — accepts optional bdmId (proxy entry). When the caller is a
+  // proxy (admin/finance/back-office contractor with collections.proxy_entry
+  // ticked) and has selected a target BDM in OwnerPicker, pass that BDM's id
+  // here so backend getOpenCsis returns the target's POSTED CSIs instead of
+  // the proxy's own (empty) list. Backend Rule #21: absence of ?bdm_id= for
+  // a privileged caller = "no filter, see everything in entity".
+  const getOpenCsis = (id, entityId, { isCustomer, bdmId } = {}) => api.get('/collections/open-csis', {
+    params: {
+      ...(isCustomer ? { customer_id: id } : { hospital_id: id }),
+      ...(entityId && { entity_id: entityId }),
+      ...(bdmId && { bdm_id: bdmId }),
+    }
+  });
   const createCollection = (data) => api.post('/collections', data);
   const updateCollection = (id, data) => api.put(`/collections/${id}`, data);
   const deleteDraft = (id) => api.del(`/collections/draft/${id}`);

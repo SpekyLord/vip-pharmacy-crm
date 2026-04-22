@@ -142,7 +142,10 @@ const createClient = catchAsync(async (req, res) => {
     firstName,
     lastName,
     specialization,
+    clientType,
     clinicOfficeAddress,
+    locality,
+    province,
     phone,
     email,
     notes,
@@ -170,6 +173,11 @@ const createClient = catchAsync(async (req, res) => {
     createdBy: req.user._id,
   };
 
+  // Phase G1.5 + post-audit: ensure structured categorization + address fields
+  // actually persist (they were previously dropped by the destructuring contract).
+  if (clientType) clientData.clientType = clientType;
+  if (locality) clientData.locality = locality;
+  if (province) clientData.province = province;
   if (email) clientData.email = email;
   if (schedulingMode) clientData.schedulingMode = schedulingMode;
   if (visitFrequency) clientData.visitFrequency = visitFrequency;
@@ -218,7 +226,10 @@ const updateClient = catchAsync(async (req, res) => {
     'firstName',
     'lastName',
     'specialization',
+    'clientType',
     'clinicOfficeAddress',
+    'locality',
+    'province',
     'phone',
     'email',
     'notes',

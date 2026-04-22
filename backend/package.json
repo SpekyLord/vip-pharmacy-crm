@@ -12,6 +12,7 @@
     "test:smoke": "jest --ci --runInBand --testPathPattern=smoke",
     "startup:check": "node scripts/startupCheck.js",
     "seed": "node scripts/seedData.js",
+    "seed:meta-reviewer": "node scripts/seedMetaReviewer.js",
     "verify:rejection-wiring": "node scripts/verifyRejectionWiring.js",
     "verify:copilot-wiring": "node scripts/verifyCopilotWiring.js",
     "verify:inbox-wiring": "node scripts/verifyInboxWiring.js",

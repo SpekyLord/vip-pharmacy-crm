@@ -15,6 +15,7 @@ import { matchHospital, matchCsis, fieldVal, fieldConfidence, parseCrDate, forma
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
+import OwnerPicker from '../components/OwnerPicker';
 import { showError } from '../utils/errorToast';
 
 const pageStyles = `
@@ -328,6 +329,9 @@ export default function CollectionSession() {
 
   const [hospitalId, setHospitalId] = useState('');
   const [customerId, setCustomerId] = useState('');
+  // Phase G4.5b — proxy entry. Empty = self; otherwise target BDM's User._id.
+  // OwnerPicker only renders for eligible proxies (role + sub-perm).
+  const [assignedTo, setAssignedTo] = useState('');
   const [customerList, setCustomerList] = useState([]);
   const [openCsis, setOpenCsis] = useState([]);
   const [selectedCsis, setSelectedCsis] = useState(new Map());
@@ -520,7 +524,10 @@ export default function CollectionSession() {
   useEffect(() => {
     const activeId = hospitalId || customerId;
     if (!activeId) { setOpenCsis([]); setSelectedCsis(new Map()); return; }
-    collections.getOpenCsis(activeId, null, { isCustomer: !!customerId }).then(res => {
+    // Phase G4.5b — when proxy entry is in use, scope the Open CSIs query to
+    // the target BDM. Without this, backend returns the proxy's own (empty)
+    // AR and the CSI picker looks broken.
+    collections.getOpenCsis(activeId, null, { isCustomer: !!customerId, bdmId: assignedTo || null }).then(res => {
       setOpenCsis(res?.data || []);
       setSelectedCsis(new Map());
       if (hospitalId) {
@@ -528,7 +535,7 @@ export default function CollectionSession() {
         if (h?.cwt_rate) setCwtRate(String(h.cwt_rate));
       }
     }).catch(err => console.error('[CollectionSession]', err.message));
-  }, [hospitalId, customerId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hospitalId, customerId, assignedTo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Deferred CSI auto-selection after OCR scan (open CSIs load async after hospital change)
   useEffect(() => {
@@ -757,6 +764,10 @@ export default function CollectionSession() {
     setSaving(true);
     try {
       await collections.createCollection({
+        // Phase G4.5b — proxy entry: backend resolves this against
+        // PROXY_ENTRY_ROLES.COLLECTIONS lookup + collections.proxy_entry sub-perm
+        // and throws 403 if the caller isn't eligible. Self-entry when empty.
+        assigned_to: assignedTo || undefined,
         hospital_id: hospitalId || undefined, customer_id: customerId || undefined, cr_no: crNo, cr_date: crDate,
         cr_amount: parseFloat(crAmount) || expectedCr,
         settled_csis: selectedList,
@@ -806,7 +817,11 @@ export default function CollectionSession() {
           {/* Step 1: Hospital */}
           <div className="section">
             <h2>1. Select Hospital</h2>
-            <div className="form-row">
+            <div className="form-row" style={{ alignItems: 'flex-end' }}>
+              {/* Phase G4.5b — OwnerPicker renders only for eligible proxies.
+                  When a target BDM is chosen the Open CSIs query below rescopes
+                  to their AR so the picker displays the target's invoices. */}
+              <OwnerPicker module="collections" subKey="proxy_entry" moduleLookupCode="COLLECTIONS" value={assignedTo} onChange={setAssignedTo} />
               <div className="form-group" style={{ flex: 2 }}>
                 <label>Hospital / Customer (one CR per account) {ocrFilledFields.has('hospital') && <span className="ocr-badge">OCR</span>}</label>
                 <SelectField value={hospitalId || customerId || ''} onChange={e => {

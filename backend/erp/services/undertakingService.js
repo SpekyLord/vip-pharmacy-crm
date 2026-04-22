@@ -114,7 +114,11 @@ async function autoUndertakingForGrn(grn, { session } = {}) {
     waybill_photo_url: grn.waybill_photo_url || null,
     line_items: lineItems,
     status: 'DRAFT', // BDM reviews + submits from UT page
-    created_by: grn.created_by || grn.bdm_id
+    created_by: grn.created_by || grn.bdm_id,
+    // Phase G4.5b — mirror proxy flag so the UT inherits ownership metadata.
+    // Without this, a proxied GRN would surface a "Proxied" pill on the GRN
+    // list but the UT in the owner BDM's queue would look self-created.
+    ...(grn.recorded_on_behalf_of ? { recorded_on_behalf_of: grn.recorded_on_behalf_of } : {})
   };
 
   // Mongoose .create() accepts session via array form

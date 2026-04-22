@@ -155,6 +155,22 @@ const settingsSchema = new mongoose.Schema({
   },
   AUTOREPLY_COOLDOWN_MINUTES: { type: Number, default: 60 },  // Don't re-send within N minutes
 
+  // Phase M1.11 — Inbound Opt-Out (STOP/UNSUBSCRIBE keyword detection)
+  //   OPT_OUT_ENABLED      — master toggle; if false, STOP messages are logged as normal inbound
+  //   OPT_OUT_KEYWORDS     — exact-match (post trim+upper) keywords. Subscriber-editable so
+  //                          non-English tenants can add localized variants (e.g., "TIGIL", "ALTO")
+  //   OPT_OUT_ACK_TEMPLATE — ack sent back on same channel; `{CHANNEL}` replaced with channel name
+  OPT_OUT_ENABLED: { type: Boolean, default: true },
+  OPT_OUT_KEYWORDS: {
+    type: [String],
+    default: ['STOP', 'UNSUBSCRIBE', 'OPT OUT', 'OPTOUT', 'UNSUB'],
+  },
+  OPT_OUT_ACK_TEMPLATE: {
+    type: String,
+    default: "You've been unsubscribed from {CHANNEL} messages. To resume, contact your VIP representative.",
+    maxlength: [2000, 'Opt-out ack template cannot exceed 2000 characters'],
+  },
+
   // Updated by
   updated_by: {
     type: mongoose.Schema.Types.ObjectId,

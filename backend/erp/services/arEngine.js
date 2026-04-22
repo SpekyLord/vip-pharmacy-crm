@@ -66,7 +66,19 @@ async function getOpenCsis(entityId, bdmId, hospitalId, customerId) {
         invoice_total: 1, total_net_of_vat: 1, source: 1,
         amount_collected: 1, balance_due: 1, days_outstanding: 1,
         hospital_name: '$hospital.hospital_name',
-        line_items: 1
+        line_items: 1,
+        // Dunning readiness — Finance can only chase receivables that are
+        // backed by a signed CSI. `dunning_ready=false` surfaces POSTED-but-
+        // un-photographed rows so the BDM gets pinged for the proof before
+        // collection follow-up starts.
+        //
+        // Guard: MongoDB's `$cond` treats an empty string as truthy, so we
+        // check string length > 0 explicitly. The controller rejects empty
+        // writes, but this is defense-in-depth against any legacy/manual row
+        // where the field might be "".
+        csi_received_photo_url: 1,
+        csi_received_at: 1,
+        dunning_ready: { $gt: [{ $strLenCP: { $ifNull: ['$csi_received_photo_url', ''] } }, 0] }
       }
     },
     { $sort: { csi_date: 1 } }
@@ -83,6 +95,12 @@ async function getArAging(entityId, bdmId, hospitalId) {
 
   const buckets = { CURRENT: 0, OVERDUE_30: 0, OVERDUE_60: 0, OVERDUE_90: 0, OVERDUE_120: 0 };
   const hospitalMap = new Map();
+  // Dunning-readiness tallies — Finance uses these to see how much of the AR
+  // book is collectable today (signed CSI on file) vs blocked on BDM follow-up.
+  let dunningReadyAr = 0;
+  let dunningReadyCount = 0;
+  let dunningMissingAr = 0;
+  let dunningMissingCount = 0;
 
   for (const csi of openCsis) {
     const days = csi.days_outstanding || 0;
@@ -95,30 +113,54 @@ async function getArAging(entityId, bdmId, hospitalId) {
 
     buckets[bucket] += csi.balance_due;
 
+    // OPENING_AR rows do not require a received-photo (historical bucket; the
+    // signed CSI is already on csi_photo_url at entry). Treat them as
+    // dunning-ready regardless so they don't skew the missing-proof tally.
+    const isReady = !!csi.dunning_ready || csi.source === 'OPENING_AR';
+    if (isReady) {
+      dunningReadyAr += csi.balance_due;
+      dunningReadyCount += 1;
+    } else {
+      dunningMissingAr += csi.balance_due;
+      dunningMissingCount += 1;
+    }
+
     const hid = csi.hospital_id.toString();
     if (!hospitalMap.has(hid)) {
       hospitalMap.set(hid, {
         hospital_id: csi.hospital_id,
         hospital_name: csi.hospital_name || '—',
         CURRENT: 0, OVERDUE_30: 0, OVERDUE_60: 0, OVERDUE_90: 0, OVERDUE_120: 0,
-        total_ar: 0, worst_days: 0, csis: []
+        total_ar: 0, worst_days: 0,
+        dunning_missing_count: 0, dunning_missing_ar: 0,
+        csis: []
       });
     }
     const h = hospitalMap.get(hid);
     h[bucket] += csi.balance_due;
     h.total_ar += csi.balance_due;
     if (days > h.worst_days) h.worst_days = days;
-    h.csis.push({ ...csi, aging_bucket: bucket });
+    if (!isReady) {
+      h.dunning_missing_count += 1;
+      h.dunning_missing_ar += csi.balance_due;
+    }
+    h.csis.push({ ...csi, aging_bucket: bucket, dunning_ready: isReady });
   }
 
-  const hospitals = [...hospitalMap.values()].sort((a, b) => b.total_ar - a.total_ar);
+  const hospitals = [...hospitalMap.values()]
+    .map(h => ({ ...h, dunning_missing_ar: Math.round(h.dunning_missing_ar * 100) / 100 }))
+    .sort((a, b) => b.total_ar - a.total_ar);
   const totalAr = hospitals.reduce((sum, h) => sum + h.total_ar, 0);
 
   return {
     summary: {
       total_ar: Math.round(totalAr * 100) / 100,
       total_csis: openCsis.length,
-      buckets: Object.fromEntries(Object.entries(buckets).map(([k, v]) => [k, Math.round(v * 100) / 100]))
+      buckets: Object.fromEntries(Object.entries(buckets).map(([k, v]) => [k, Math.round(v * 100) / 100])),
+      dunning_ready_ar: Math.round(dunningReadyAr * 100) / 100,
+      dunning_ready_count: dunningReadyCount,
+      dunning_missing_ar: Math.round(dunningMissingAr * 100) / 100,
+      dunning_missing_count: dunningMissingCount
     },
     hospitals
   };

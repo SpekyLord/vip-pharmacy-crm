@@ -763,7 +763,13 @@ const DoctorsPage = () => {
         visitFrequency: regularClient.visitFrequency || 4,
       };
       if (regularClient.specialization) doctorData.specialization = regularClient.specialization;
+      if (regularClient.clientType) doctorData.clientType = regularClient.clientType;
       if (regularClient.clinicOfficeAddress) doctorData.clinicOfficeAddress = regularClient.clinicOfficeAddress;
+      // Phase G1.5 — carry structured address + client categorization through
+      // the Client → VIP promotion so SMER per-diem notes and Doctor filters
+      // render correctly on the new VIP Client from day one.
+      if (regularClient.locality) doctorData.locality = regularClient.locality;
+      if (regularClient.province) doctorData.province = regularClient.province;
       if (regularClient.phone) doctorData.phone = regularClient.phone;
       if (regularClient.email) doctorData.email = regularClient.email;
       if (regularClient.notes) doctorData.notes = regularClient.notes;

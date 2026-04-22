@@ -80,9 +80,22 @@ const salesLineSchema = new mongoose.Schema({
   // When set, sale bypasses AR and deposits directly to the fund
   petty_cash_fund_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PettyCashFund' },
 
-  // CSI photo (OCR-scanned or manually uploaded)
+  // CSI photo captured at entry time. For live Sales (source=SALES_LINE) this
+  // is the OCR-source image — data-entry assist, optional audit crumb. For
+  // historical Opening AR (source=OPENING_AR) this is the signed CSI itself,
+  // since delivery already happened before the row was keyed.
   csi_photo_url: { type: String },
   csi_attachment_id: { type: String },
+
+  // Received CSI photo — the signed/stamped pink/yellow/duplicate copy the
+  // hospital returns after delivery acknowledgment. Captured post-posting via
+  // "Attach Received CSI" on SalesList. Drives dunning-readiness and AR
+  // aging reports; never gates Validate/Submit for live Sales.
+  // For OPENING_AR, validateSales accepts either csi_photo_url OR this field
+  // as "any proof" when REQUIRE_CSI_PHOTO_OPENING_AR is on.
+  csi_received_photo_url: { type: String },
+  csi_received_attachment_id: { type: String },
+  csi_received_at: { type: Date },
 
   line_items: [lineItemSchema],
 
@@ -122,6 +135,14 @@ const salesLineSchema = new mongoose.Schema({
   created_by: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
+  },
+  // Phase G4.5a — Proxy Entry. Present when the caller (created_by) keyed the
+  // row on behalf of another BDM. Value = the proxy's User._id. bdm_id is the
+  // owner (assigned_to). Absence means self-entry. See resolveOwnerScope.js.
+  recorded_on_behalf_of: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: undefined
   },
   edit_history: [{ type: mongoose.Schema.Types.Mixed }]
 }, {

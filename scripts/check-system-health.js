@@ -304,6 +304,264 @@ function checkAgentEnums() {
   if (issues === startIssues) console.log(`  ✓ All ${allKeys.size} agent keys consistent across 5 sources`);
 }
 
+// ═══ 5. Proxy Entry wiring (Phases G4.5a + G4.5b) ═══
+function checkProxyEntryWiring() {
+  console.log('\n5. Proxy Entry Wiring (Phase G4.5a + G4.5b)');
+  console.log('─'.repeat(40));
+  const startIssues = issues;
+
+  const helperPath = path.join(ROOT, 'backend', 'erp', 'utils', 'resolveOwnerScope.js');
+  if (!fs.existsSync(helperPath)) {
+    warn('PROXY', 'backend/erp/utils/resolveOwnerScope.js missing');
+    return;
+  }
+  const helper = fs.readFileSync(helperPath, 'utf-8');
+  for (const ex of [
+    'canProxyEntry', 'resolveOwnerForWrite', 'widenFilterForProxy',
+    'invalidateProxyRolesCache',
+    // Phase G4.5a follow-up — Rule #3 lookup-driven proxy-target role guard.
+    'getValidOwnerRolesForModule', 'invalidateValidOwnerRolesCache',
+  ]) {
+    if (!new RegExp(`(module\\.exports|exports\\.)\\s*[={].*${ex}|${ex}\\s*[,}]`).test(helper)) {
+      warn('PROXY', `resolveOwnerScope.js does not export ${ex}`);
+    }
+  }
+  // The hardcoded VALID_OWNER_ROLES Set has been replaced with a lookup-
+  // driven read. If it's back, someone reverted the Rule #3 cleanup.
+  if (/const\s+VALID_OWNER_ROLES\s*=\s*new\s+Set\s*\(/.test(helper)) {
+    warn('PROXY', 'resolveOwnerScope.js reverted to hardcoded VALID_OWNER_ROLES Set — should read from VALID_OWNER_ROLES lookup');
+  }
+  if (!/getValidOwnerRolesForModule\(\s*req\.entityId/.test(helper)) {
+    warn('PROXY', 'resolveOwnerScope.js resolveOwnerForWrite does not call getValidOwnerRolesForModule — target-role gate is not lookup-driven');
+  }
+
+  // Lookup seed: PROXY_ENTRY_ROLES + per-module sub-perm keys
+  // G4.5a seeded SALES__PROXY_ENTRY + SALES__OPENING_AR_PROXY.
+  // G4.5b adds COLLECTIONS__PROXY_ENTRY + INVENTORY__GRN_PROXY_ENTRY.
+  const lookupSeed = fs.readFileSync(path.join(ERP_CONTROLLERS, 'lookupGenericController.js'), 'utf-8');
+  for (const key of [
+    'PROXY_ENTRY_ROLES:',
+    'VALID_OWNER_ROLES:',
+    'SALES__PROXY_ENTRY', 'SALES__OPENING_AR_PROXY',
+    'COLLECTIONS__PROXY_ENTRY', 'INVENTORY__GRN_PROXY_ENTRY',
+  ]) {
+    if (!lookupSeed.includes(key)) warn('PROXY', `SEED_DEFAULTS missing ${key}`);
+  }
+  // PROXY_ENTRY_ROLES + VALID_OWNER_ROLES must each enumerate all 5 modules
+  // so OwnerPicker + resolveOwnerForWrite can resolve them without falling
+  // back to their respective defaults.
+  // Each module code must appear at least twice — once under PROXY_ENTRY_ROLES,
+  // once under VALID_OWNER_ROLES. A single occurrence means one of the two
+  // seeds is incomplete.
+  for (const moduleCode of ["code: 'SALES'", "code: 'OPENING_AR'", "code: 'COLLECTIONS'", "code: 'EXPENSES'", "code: 'GRN'"]) {
+    const occurrences = (lookupSeed.match(new RegExp(moduleCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+    if (occurrences < 2) {
+      warn('PROXY', `PROXY_ENTRY_ROLES or VALID_OWNER_ROLES seed missing module entry ${moduleCode} (found ${occurrences} occurrences, expected ≥2)`);
+    }
+  }
+  // Cache invalidation wired for both lookup categories
+  if (!lookupSeed.includes('invalidateProxyRolesCache')) {
+    warn('PROXY', 'lookupGenericController.js does not call invalidateProxyRolesCache — admin edits to PROXY_ENTRY_ROLES will take up to 60s TTL to propagate');
+  }
+  if (!lookupSeed.includes('invalidateValidOwnerRolesCache')) {
+    warn('PROXY', 'lookupGenericController.js does not call invalidateValidOwnerRolesCache — admin edits to VALID_OWNER_ROLES will take up to 60s TTL to propagate');
+  }
+
+  // salesController uses helper (G4.5a)
+  const salesCtrl = fs.readFileSync(path.join(ERP_CONTROLLERS, 'salesController.js'), 'utf-8');
+  for (const fn of ['resolveOwnerForWrite', 'widenFilterForProxy']) {
+    if (!salesCtrl.includes(fn)) warn('PROXY', `salesController.js does not import/use ${fn}`);
+  }
+  if (!salesCtrl.includes('forceApproval')) {
+    warn('PROXY', 'salesController.js submitSales missing forceApproval flag (Option B — forced hub for proxied rows)');
+  }
+
+  // collectionController uses helper (G4.5b)
+  const collCtrl = fs.readFileSync(path.join(ERP_CONTROLLERS, 'collectionController.js'), 'utf-8');
+  for (const fn of ['resolveOwnerForWrite', 'widenFilterForProxy']) {
+    if (!collCtrl.includes(fn)) warn('PROXY', `collectionController.js does not import/use ${fn}`);
+  }
+  if (!collCtrl.includes('forceApproval')) {
+    warn('PROXY', 'collectionController.js submitCollections missing forceApproval flag (Option B — forced hub for proxied rows)');
+  }
+  if (!/'collections'.*subKey:\s*'proxy_entry'|subKey:\s*'proxy_entry'.*'collections'/s.test(collCtrl)) {
+    warn('PROXY', "collectionController.js does not call widenFilterForProxy with module='collections', subKey='proxy_entry'");
+  }
+
+  // inventoryController uses helper (G4.5b, GRN paths)
+  const invCtrl = fs.readFileSync(path.join(ERP_CONTROLLERS, 'inventoryController.js'), 'utf-8');
+  for (const fn of ['resolveOwnerForWrite', 'widenFilterForProxy']) {
+    if (!invCtrl.includes(fn)) warn('PROXY', `inventoryController.js does not import/use ${fn}`);
+  }
+  if (!/grn_proxy_entry/.test(invCtrl)) {
+    warn('PROXY', "inventoryController.js does not reference sub-perm key 'grn_proxy_entry'");
+  }
+  // Warehouse-access cross-check: proxy GRN must verify target BDM is in
+  // Warehouse.assigned_users (or manager_id). If this guard is missing, a
+  // proxy could receive stock into a warehouse the target BDM can't access.
+  if (!/assigned_users|warehouse.*not assigned/i.test(invCtrl)) {
+    warn('PROXY', 'inventoryController.createGrn missing warehouse-access cross-check — target BDM could receive into a warehouse they are not assigned to');
+  }
+
+  // Models: recorded_on_behalf_of on SalesLine (G4.5a) + Collection, GrnEntry, Undertaking (G4.5b)
+  for (const { file, label } of [
+    { file: 'SalesLine.js', label: 'SalesLine' },
+    { file: 'Collection.js', label: 'Collection' },
+    { file: 'GrnEntry.js', label: 'GrnEntry' },
+    { file: 'Undertaking.js', label: 'Undertaking' },
+  ]) {
+    const modelPath = path.join(ERP_MODELS, file);
+    if (!fs.existsSync(modelPath)) {
+      warn('PROXY', `${label} model file missing at ${modelPath}`);
+      continue;
+    }
+    const src = fs.readFileSync(modelPath, 'utf-8');
+    if (!src.includes('recorded_on_behalf_of')) {
+      warn('PROXY', `${label} model missing recorded_on_behalf_of field`);
+    }
+  }
+
+  // undertakingService must propagate recorded_on_behalf_of from GRN to the
+  // auto-created Undertaking; otherwise a proxied GRN's UT would look
+  // self-created in the target BDM's queue.
+  const utSvcPath = path.join(ERP_SERVICES, 'undertakingService.js');
+  if (fs.existsSync(utSvcPath)) {
+    const utSvc = fs.readFileSync(utSvcPath, 'utf-8');
+    if (!/recorded_on_behalf_of/.test(utSvc)) {
+      warn('PROXY', 'undertakingService.autoUndertakingForGrn does not propagate recorded_on_behalf_of from GRN to UT');
+    }
+  }
+
+  // MODULE_AUTO_POST has OPENING_AR + COLLECTION (GRN is intentionally excluded —
+  // its auto-post path runs through undertakingController.postSingleUndertaking
+  // on UT acknowledgment, not through the generic approval auto-post dispatcher).
+  const universal = fs.readFileSync(path.join(ERP_CONTROLLERS, 'universalApprovalController.js'), 'utf-8');
+  if (!/OPENING_AR:\s*\{[^}]*sales_line/.test(universal)) {
+    warn('PROXY', "MODULE_AUTO_POST missing OPENING_AR → sales_line — proxied Opening AR won't auto-post after hub approval");
+  }
+  if (!/COLLECTION:\s*\{[^}]*collection/.test(universal)) {
+    warn('PROXY', "MODULE_AUTO_POST missing COLLECTION → collection — proxied Collection won't auto-post after hub approval");
+  }
+
+  // approvalService honors opts.forceApproval
+  const approvalSvc = fs.readFileSync(path.join(ERP_SERVICES, 'approvalService.js'), 'utf-8');
+  if (!/opts\.forceApproval|const\s+forceApproval/.test(approvalSvc)) {
+    warn('PROXY', 'approvalService.js checkApprovalRequired does not read opts.forceApproval');
+  }
+
+  // Frontend OwnerPicker + consumers
+  const pickerPath = path.join(COMPONENTS_DIR, 'OwnerPicker.jsx');
+  if (!fs.existsSync(pickerPath)) {
+    warn('PROXY', 'frontend/src/erp/components/OwnerPicker.jsx missing');
+  } else {
+    const picker = fs.readFileSync(pickerPath, 'utf-8');
+    if (!picker.includes('PROXY_ENTRY_ROLES')) warn('PROXY', 'OwnerPicker.jsx does not read PROXY_ENTRY_ROLES lookup');
+    if (!/===\s*['"]contractor['"]/.test(picker)) {
+      warn('PROXY', "OwnerPicker.jsx does not filter target roles to contractor/employee — admins/finance may appear as invalid proxy targets");
+    }
+  }
+  // Entry pages mount OwnerPicker + send assigned_to in payload
+  for (const page of ['SalesEntry.jsx', 'OpeningArEntry.jsx', 'CollectionSession.jsx', 'GrnEntry.jsx']) {
+    const p = path.join(PAGES_DIR, page);
+    if (!fs.existsSync(p)) continue;
+    const src = fs.readFileSync(p, 'utf-8');
+    if (!src.includes('OwnerPicker')) warn('PROXY', `${page} does not import OwnerPicker`);
+    if (!src.includes('assigned_to')) warn('PROXY', `${page} payload missing assigned_to field`);
+  }
+  // List pages render Proxied pill (reads recorded_on_behalf_of)
+  for (const page of ['SalesList.jsx', 'OpeningArList.jsx', 'Collections.jsx', 'GrnEntry.jsx']) {
+    const p = path.join(PAGES_DIR, page);
+    if (!fs.existsSync(p)) continue;
+    const src = fs.readFileSync(p, 'utf-8');
+    if (!src.includes('recorded_on_behalf_of')) {
+      warn('PROXY', `${page} does not render proxy indicator (recorded_on_behalf_of)`);
+    }
+  }
+
+  if (issues === startIssues) console.log('  ✓ Proxy entry wiring intact (G4.5a + G4.5b)');
+}
+
+// ═══ Phase FRA-A — FRA dual-write to User.entity_ids ═══
+// Verifies the wiring that makes FunctionalRoleAssignment rows propagate to
+// User.entity_ids (what tenantFilter reads). Without this, FRA rows are
+// cosmetic and cross-entity proxy writes fail with "target not assigned to
+// the current entity" even though the admin believes the person is assigned.
+// Live drift count (actual DB state vs expected union) is surfaced by the
+// backfill script's --dry-run: `node backend/erp/scripts/backfillEntityIdsFromFra.js`.
+function checkFraEntityIdsSync() {
+  const startIssues = issues;
+  console.log('\n6. FRA → User.entity_ids Sync (Phase FRA-A)');
+  console.log('─'.repeat(40));
+
+  // User model has entity_ids_static field (admin-direct baseline)
+  const userModelPath = path.join(ROOT, 'backend', 'models', 'User.js');
+  const userModel = fs.readFileSync(userModelPath, 'utf-8');
+  if (!/entity_ids_static\s*:\s*\[/.test(userModel)) {
+    warn('FRA', 'User model missing entity_ids_static field — FRA rebuild cannot preserve admin-direct assignments');
+  }
+  if (!/userSchema\.index\(\s*\{\s*entity_ids_static\s*:/.test(userModel)) {
+    warn('FRA', 'User model missing entity_ids_static index — drift reports will be slow');
+  }
+
+  // Shared rebuild helper present with expected exports
+  const rebuildPath = path.join(ROOT, 'backend', 'erp', 'utils', 'userEntityRebuild.js');
+  if (!fs.existsSync(rebuildPath)) {
+    warn('FRA', 'backend/erp/utils/userEntityRebuild.js missing — dual-write cannot function');
+  } else {
+    const rebuild = fs.readFileSync(rebuildPath, 'utf-8');
+    for (const ex of ['rebuildUserEntityIdsForUser', 'rebuildUserEntityIdsFromPerson', 'safeRebuildFromPerson']) {
+      if (!new RegExp(`(module\\.exports|exports\\.)\\s*[={].*${ex}|${ex}\\s*[,}]`).test(rebuild)) {
+        warn('FRA', `userEntityRebuild.js does not export ${ex}`);
+      }
+    }
+    // Union formula invariant
+    if (!/entity_ids_static/.test(rebuild) || !/FunctionalRoleAssignment/.test(rebuild)) {
+      warn('FRA', 'userEntityRebuild.js does not compute union(entity_ids_static, activeFras)');
+    }
+  }
+
+  // functionalRoleController calls rebuild on every mutation path
+  const fraCtrlPath = path.join(ERP_CONTROLLERS, 'functionalRoleController.js');
+  if (!fs.existsSync(fraCtrlPath)) {
+    warn('FRA', 'functionalRoleController.js missing — expected at backend/erp/controllers/functionalRoleController.js');
+  } else {
+    const fraCtrl = fs.readFileSync(fraCtrlPath, 'utf-8');
+    if (!/require\(['"]\.\.\/utils\/userEntityRebuild['"]\)/.test(fraCtrl)) {
+      warn('FRA', 'functionalRoleController.js does not import userEntityRebuild — FRA mutations will not propagate');
+    }
+    // Each mutation path must trigger a rebuild. Count occurrences — one per
+    // mutation handler (createAssignment, updateAssignment, deactivateAssignment,
+    // bulkCreate = 4 minimum).
+    const rebuildCalls = (fraCtrl.match(/safeRebuildFromPerson\s*\(/g) || []).length;
+    if (rebuildCalls < 4) {
+      warn('FRA', `functionalRoleController.js calls safeRebuildFromPerson ${rebuildCalls} times, expected ≥4 (create, update, deactivate, bulkCreate)`);
+    }
+  }
+
+  // userController.updateUser mirrors admin-direct entity_ids to static + rebuilds
+  const userCtrlPath = path.join(ROOT, 'backend', 'controllers', 'userController.js');
+  const userCtrl = fs.readFileSync(userCtrlPath, 'utf-8');
+  if (!/entity_ids_static\s*=/.test(userCtrl)) {
+    warn('FRA', 'userController.js does not mirror admin-direct entity_ids to entity_ids_static — admin writes will be dropped on next FRA rebuild');
+  }
+  if (!/rebuildUserEntityIdsForUser/.test(userCtrl)) {
+    warn('FRA', 'userController.js does not call rebuildUserEntityIdsForUser — admin-direct entity_ids writes will not union with active FRAs');
+  }
+
+  // Backfill script present (required for migration + drift detection)
+  const backfillPath = path.join(ROOT, 'backend', 'erp', 'scripts', 'backfillEntityIdsFromFra.js');
+  if (!fs.existsSync(backfillPath)) {
+    warn('FRA', 'backend/erp/scripts/backfillEntityIdsFromFra.js missing — pre-FRA-A users have no entity_ids_static baseline');
+  } else {
+    const backfill = fs.readFileSync(backfillPath, 'utf-8');
+    if (!/--apply/.test(backfill) || !/--user/.test(backfill)) {
+      warn('FRA', 'backfillEntityIdsFromFra.js does not support --apply / --user flags — expected dry-run safe default');
+    }
+  }
+
+  if (issues === startIssues) console.log('  ✓ FRA → User.entity_ids wiring intact (Phase FRA-A)');
+}
+
 // ═══ Run all checks ═══
 console.log('System Health Check');
 console.log('═'.repeat(40));
@@ -313,6 +571,8 @@ checkLookupCollections();
 checkWorkflowGuides();
 checkControlCenter();
 checkAgentEnums();
+checkProxyEntryWiring();
+checkFraEntityIdsSync();
 
 console.log('\n' + '═'.repeat(40));
 if (issues > beforeIssues) {

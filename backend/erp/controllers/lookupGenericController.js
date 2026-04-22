@@ -6,6 +6,7 @@ const { invalidateOrParserCache } = require('../ocr/parsers/orParser');
 const { invalidateGuardrailCache } = require('../services/vendorAutoLearner');
 const { invalidateDangerCache } = require('../services/dangerSubPermissions');
 const { invalidateEditableStatuses } = require('../services/approvalService');
+const { invalidateProxyRolesCache, invalidateValidOwnerRolesCache } = require('../utils/resolveOwnerScope');
 
 // Categories whose changes must bust the OR parser's lookup cache (couriers/payment keywords)
 const OR_PARSER_LOOKUP_CATEGORIES = new Set(['OCR_COURIER_ALIASES', 'OCR_PAYMENT_KEYWORDS']);
@@ -17,6 +18,19 @@ const VENDOR_AUTO_LEARN_CATEGORIES = new Set(['VENDOR_AUTO_LEARN_BLOCKLIST', 'VE
 const DANGER_SUB_PERM_CATEGORIES = new Set(['ERP_DANGER_SUB_PERMISSIONS']);
 // Categories whose changes must bust the editable-statuses cache (controller write-guards)
 const REJECTION_CONFIG_CATEGORIES = new Set(['MODULE_REJECTION_CONFIG']);
+
+// Phase G4.5a — bust proxy-entry role cache when admin edits PROXY_ENTRY_ROLES.
+// Cache default is 60s TTL in resolveOwnerScope.js; this makes the edit take
+// effect instantly across all running instances for the entity.
+const PROXY_ENTRY_ROLES_CATEGORIES = new Set(['PROXY_ENTRY_ROLES']);
+
+// Phase G4.5a follow-up — Rule #3 alignment for the proxy-target role guard.
+// VALID_OWNER_ROLES per module controls which roles may be assigned as the
+// owner of a proxied record (default ['contractor','employee'] — BDM-shaped).
+// Subscribers with different org models (director who also sells, branch
+// manager carrying a territory) extend the list via Control Center without
+// a code change. Matching invalidator in resolveOwnerScope.js (60s TTL).
+const VALID_OWNER_ROLES_CATEGORIES = new Set(['VALID_OWNER_ROLES']);
 
 // Phase G6.10/G7 — categories whose seeded rows must default is_active: false so
 // subscribers explicitly opt in (Anthropic-billable features, spend caps that
@@ -516,6 +530,13 @@ const SEED_DEFAULTS = {
     // (which hides the Entry page) post-cutover. Frontend lazily falls back to
     // `opening_ar` if this new code is not yet seeded for the entity.
     { code: 'SALES__OPENING_AR_LIST', label: 'Opening AR Transactions (read-only history)', metadata: { module: 'sales', key: 'opening_ar_list', sort_order: 4 } },
+    // Phase G4.5a — Proxy Entry (April 2026). Lets admin/finance/back-office contractor
+    // record CSIs on behalf of another BDM. Eligible role set is lookup-driven via
+    // PROXY_ENTRY_ROLES.SALES (default admin/finance/president). Tick this sub-perm to
+    // surface the OwnerPicker on Sales Entry and widen read/update to all BDMs in the
+    // entity. See backend/erp/utils/resolveOwnerScope.js + Phase G4.5a in PHASETASK-ERP.
+    { code: 'SALES__PROXY_ENTRY', label: 'Record CSI on behalf of another BDM', metadata: { module: 'sales', key: 'proxy_entry', sort_order: 5 } },
+    { code: 'SALES__OPENING_AR_PROXY', label: 'Record Opening AR on behalf of another BDM', metadata: { module: 'sales', key: 'opening_ar_proxy', sort_order: 6 } },
     // Messaging (Phase G9.R8 — Apr 2026)
     // Gates the admin Inbox Retention Settings page + the Run-Now / Preview
     // retention endpoints. Lookup-driven so subscribers can delegate storage
@@ -523,6 +544,11 @@ const SEED_DEFAULTS = {
     { code: 'MESSAGING__RETENTION_MANAGE', label: 'Manage inbox retention settings', metadata: { module: 'messaging', key: 'retention_manage', sort_order: 10 } },
     // Collections
     { code: 'COLLECTIONS__REOPEN', label: 'Re-open Posted Collections', metadata: { module: 'collections', key: 'reopen', sort_order: 1 } },
+    // Phase G4.5b — Proxy Entry for Collections. Paired with PROXY_ENTRY_ROLES.COLLECTIONS
+    // lookup (default admin/finance/president). Tick surfaces the OwnerPicker on the
+    // Collection Session + widens read/update to all BDMs in the entity. See
+    // backend/erp/utils/resolveOwnerScope.js + Phase G4.5b in PHASETASK-ERP.
+    { code: 'COLLECTIONS__PROXY_ENTRY', label: 'Record Collection Receipt on behalf of another BDM', metadata: { module: 'collections', key: 'proxy_entry', sort_order: 2 } },
     // Expenses
     { code: 'EXPENSES__BATCH_UPLOAD', label: 'Batch OR Upload (OCR)', metadata: { module: 'expenses', key: 'batch_upload', sort_order: 1 } },
     { code: 'EXPENSES__REOPEN', label: 'Re-open Posted Expenses', metadata: { module: 'expenses', key: 'reopen', sort_order: 2 } },
@@ -541,6 +567,12 @@ const SEED_DEFAULTS = {
     // Phase 3c — Inventory danger sub-permissions
     { code: 'INVENTORY__TRANSFER_PRICE_SET', label: 'Set/Bulk-Set Inter-Company Transfer Prices (DANGER)', metadata: { module: 'inventory', key: 'transfer_price_set', sort_order: 5 } },
     { code: 'INVENTORY__WAREHOUSE_MANAGE', label: 'Create/Edit Warehouses (DANGER)', metadata: { module: 'inventory', key: 'warehouse_manage', sort_order: 6 } },
+    // Phase G4.5b — Proxy Entry for GRN. Paired with PROXY_ENTRY_ROLES.GRN lookup
+    // (default admin/finance/president). Tick surfaces the OwnerPicker on GRN Entry
+    // and widens read/update to all BDMs in the entity. Note the sub-perm sits under
+    // the `inventory` module namespace (key 'grn_proxy_entry') because GRN does not
+    // have its own ERP access module. See backend/erp/utils/resolveOwnerScope.js.
+    { code: 'INVENTORY__GRN_PROXY_ENTRY', label: 'Record GRN on behalf of another BDM', metadata: { module: 'inventory', key: 'grn_proxy_entry', sort_order: 7 } },
     // Accounting
     { code: 'ACCOUNTING__JOURNAL_ENTRY', label: 'Journal Entries & COA', metadata: { module: 'accounting', key: 'journal_entry', sort_order: 1 } },
     { code: 'ACCOUNTING__CHECK_WRITING', label: 'Check Writing / Payments', metadata: { module: 'accounting', key: 'check_writing', sort_order: 2 } },
@@ -1006,12 +1038,21 @@ const SEED_DEFAULTS = {
   // in salesController.js; subscribers tune via Control Center → Lookup Tables
   // without a code change.
   //
-  //   - REQUIRE_CSI_PHOTO: block Validate for CSI rows with no csi_photo_url.
-  //     Default 1 (pharmacy compliance — receipt photo is audit evidence).
-  //     Flip to 0 for verticals where a signed PDF or e-invoice is sufficient;
-  //     the Approval Hub still surfaces the photo field for any row that has it.
+  // Why two codes instead of one: the signed CSI is captured at different
+  // times for live Sales vs Opening AR, so the enforcement points differ.
+  //
+  //   - REQUIRE_CSI_PHOTO_OPENING_AR (default 1): gate Validate for historical
+  //     OPENING_AR rows. Any proof is accepted (csi_photo_url OR
+  //     csi_received_photo_url) — signed CSI already exists at entry time.
+  //
+  //   - REQUIRE_CSI_PHOTO_SALES_LINE (default 0): reserved. Live Sales have
+  //     NO gate today — the signed CSI arrives post-delivery and is attached
+  //     via PUT /sales/:id/received-csi on SalesList. Flipping to 1 is a
+  //     future Submit-gate hook if a subscriber wants to block posting until
+  //     delivery proof is attached (non-default; inverts the normal calendar).
   SALES_SETTINGS: [
-    { code: 'REQUIRE_CSI_PHOTO', label: 'Require CSI Photo on Validate', metadata: { value: 1, description: 'Set to 1 (default) to block Validate when a CSI/Opening AR row has no photo attached. Set to 0 to allow posting without a photo (e.g. service-only subscribers).' } },
+    { code: 'REQUIRE_CSI_PHOTO_OPENING_AR', label: 'Require CSI Photo on Opening AR Validate', metadata: { value: 1, description: 'Set to 1 (default) to block Validate for Opening AR (historical) rows with no photo attached. Either the OCR-source image (csi_photo_url) OR the received-CSI (csi_received_photo_url) is accepted. Set to 0 to allow Opening AR entries with no photo.' } },
+    { code: 'REQUIRE_CSI_PHOTO_SALES_LINE', label: 'Require Received CSI Photo on Live Sales Submit (reserved)', metadata: { value: 0, description: 'Set to 1 to block Submit on live Sales rows until the signed received-CSI photo is attached. Default 0 — live Sales typically post at invoice issuance and the signed copy arrives post-delivery. Flip on only if your workflow waits for delivery confirmation before posting.' } },
   ],
   // Phase SG-Q2 — Period lock modules. UI (Period Locks page) reads this to render
   // toggle rows per module. Each code becomes a lockable unit. Subscribers can add
@@ -2358,6 +2399,32 @@ const SEED_DEFAULTS = {
     { code: 'BATANGAS_CITY_BTG', label: 'Batangas City', metadata: { type: 'city', province_code: 'BTG' } },
     { code: 'LIPA_BTG', label: 'Lipa City', metadata: { type: 'city', province_code: 'BTG' } },
   ],
+  // Phase G4.5a — Proxy Entry eligible roles per module (April 2026).
+  // Subscribers add/remove role codes from metadata.roles to delegate proxy entry
+  // without code changes (Rule #3). Tick accompanies `<module>.proxy_entry` sub-perm
+  // on the Access Template. Admin/finance/president are the pragmatic default.
+  // Add 'contractor' to allow a back-office clerk (contractor role) to proxy.
+  // CEO is always denied regardless of this list — view-only role.
+  // Cache: 60s TTL in resolveOwnerScope.js; bust on lookup write.
+  PROXY_ENTRY_ROLES: [
+    { code: 'SALES', label: 'Sales Entry (live CSI)', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 1 } },
+    { code: 'OPENING_AR', label: 'Opening AR Entry (pre-cutover CSI)', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 2 } },
+    { code: 'COLLECTIONS', label: 'Collection Receipts', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 3 } },
+    { code: 'EXPENSES', label: 'Expense Entry / OR', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 4 } },
+    { code: 'GRN', label: 'Goods Receipt (GRN)', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 5 } },
+  ],
+  // Phase G4.5a follow-up — which roles are valid OWNERS of a proxied record
+  // per module. Defaults to BDM-shaped roles ('contractor','employee'); admin/
+  // finance/president/ceo are never per-BDM record owners (reports would break).
+  // Subscribers with different org models extend via Control Center. Matches
+  // the VALID_OWNER_ROLES cache in resolveOwnerScope.js.
+  VALID_OWNER_ROLES: [
+    { code: 'SALES', label: 'Valid proxy targets — Sales', metadata: { roles: ['contractor', 'employee'], sort_order: 1 } },
+    { code: 'OPENING_AR', label: 'Valid proxy targets — Opening AR', metadata: { roles: ['contractor', 'employee'], sort_order: 2 } },
+    { code: 'COLLECTIONS', label: 'Valid proxy targets — Collections', metadata: { roles: ['contractor', 'employee'], sort_order: 3 } },
+    { code: 'EXPENSES', label: 'Valid proxy targets — Expenses', metadata: { roles: ['contractor', 'employee'], sort_order: 4 } },
+    { code: 'GRN', label: 'Valid proxy targets — GRN', metadata: { roles: ['contractor', 'employee'], sort_order: 5 } },
+  ],
 };
 
 // List all distinct categories for current entity
@@ -2488,6 +2555,8 @@ exports.create = catchAsync(async (req, res) => {
   if (VENDOR_AUTO_LEARN_CATEGORIES.has(cat)) invalidateGuardrailCache();
   if (DANGER_SUB_PERM_CATEGORIES.has(cat)) invalidateDangerCache(req.entityId);
   if (REJECTION_CONFIG_CATEGORIES.has(cat)) invalidateEditableStatuses(req.entityId, item.code);
+  if (PROXY_ENTRY_ROLES_CATEGORIES.has(cat)) invalidateProxyRolesCache(req.entityId);
+  if (VALID_OWNER_ROLES_CATEGORIES.has(cat)) invalidateValidOwnerRolesCache(req.entityId);
   res.status(201).json({ success: true, data: item });
 });
 
@@ -2505,6 +2574,8 @@ exports.update = catchAsync(async (req, res) => {
   if (VENDOR_AUTO_LEARN_CATEGORIES.has(item.category)) invalidateGuardrailCache();
   if (DANGER_SUB_PERM_CATEGORIES.has(item.category)) invalidateDangerCache(item.entity_id);
   if (REJECTION_CONFIG_CATEGORIES.has(item.category)) invalidateEditableStatuses(item.entity_id, item.code);
+  if (PROXY_ENTRY_ROLES_CATEGORIES.has(item.category)) invalidateProxyRolesCache(item.entity_id);
+  if (VALID_OWNER_ROLES_CATEGORIES.has(item.category)) invalidateValidOwnerRolesCache(item.entity_id);
   res.json({ success: true, data: item });
 });
 
@@ -2517,6 +2588,8 @@ exports.remove = catchAsync(async (req, res) => {
   if (VENDOR_AUTO_LEARN_CATEGORIES.has(item.category)) invalidateGuardrailCache();
   if (DANGER_SUB_PERM_CATEGORIES.has(item.category)) invalidateDangerCache(item.entity_id);
   if (REJECTION_CONFIG_CATEGORIES.has(item.category)) invalidateEditableStatuses(item.entity_id, item.code);
+  if (PROXY_ENTRY_ROLES_CATEGORIES.has(item.category)) invalidateProxyRolesCache(item.entity_id);
+  if (VALID_OWNER_ROLES_CATEGORIES.has(item.category)) invalidateValidOwnerRolesCache(item.entity_id);
   res.json({ success: true, data: item, message: 'Item deactivated' });
 });
 
@@ -2535,6 +2608,8 @@ exports.seedCategory = catchAsync(async (req, res) => {
   if (VENDOR_AUTO_LEARN_CATEGORIES.has(category)) invalidateGuardrailCache();
   if (DANGER_SUB_PERM_CATEGORIES.has(category)) invalidateDangerCache(req.entityId);
   if (REJECTION_CONFIG_CATEGORIES.has(category)) invalidateEditableStatuses(req.entityId);
+  if (PROXY_ENTRY_ROLES_CATEGORIES.has(category)) invalidateProxyRolesCache(req.entityId);
+  if (VALID_OWNER_ROLES_CATEGORIES.has(category)) invalidateValidOwnerRolesCache(req.entityId);
   const items = await Lookup.find({ entity_id: req.entityId, category }).sort({ sort_order: 1 }).lean();
   res.json({ success: true, data: items, message: `Seeded ${defaults.length} defaults for ${category}` });
 });
@@ -2557,6 +2632,8 @@ exports.seedAll = catchAsync(async (req, res) => {
   // that for seedAll so a fresh entity gets the Access Template editor working right away.
   invalidateDangerCache(req.entityId);
   invalidateEditableStatuses(req.entityId);
+  invalidateProxyRolesCache(req.entityId);
+  invalidateValidOwnerRolesCache(req.entityId);
   const populated = await Lookup.distinct('category', { entity_id: req.entityId });
   res.json({ success: true, data: results, message: `Seeded ${populated.length}/${Object.keys(SEED_DEFAULTS).length} categories` });
 });

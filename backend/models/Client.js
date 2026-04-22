@@ -26,6 +26,17 @@ const clientSchema = new mongoose.Schema(
       trim: true,
       maxlength: [100, 'Specialization cannot exceed 100 characters'],
     },
+    // Mirrors Doctor.clientType so regular clients carry the same categorization
+    // (MD, Hospital, Diagnostic Center, Industrial, etc.) and transfer seamlessly
+    // to the Doctor record on Client→VIP promotion. Values driven by the
+    // VIP_CLIENT_TYPE lookup — no enum here so subscribers can add their own.
+    clientType: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      maxlength: [50, 'Client type cannot exceed 50 characters'],
+      index: true,
+    },
     clinicOfficeAddress: {
       type: String,
       trim: true,
@@ -135,6 +146,43 @@ const clientSchema = new mongoose.Schema(
     isActive: {
       type: Boolean,
       default: true,
+    },
+
+    // Phase M1 (Apr 2026) — Per-channel marketing consent ledger (RA 10173 DPA).
+    // Mirrors Doctor.marketingConsent so regular clients carry consent seamlessly
+    // on VIP promotion. Written by webhook `bindFromInviteRef()` on invite reply
+    // and by the M1.11 opt-out handler on inbound STOP keyword.
+    marketingConsent: {
+      MESSENGER: {
+        consented: { type: Boolean, default: false },
+        at: { type: Date, default: null },
+        source: { type: String, default: null },
+        withdrawn_at: { type: Date, default: null },
+      },
+      VIBER: {
+        consented: { type: Boolean, default: false },
+        at: { type: Date, default: null },
+        source: { type: String, default: null },
+        withdrawn_at: { type: Date, default: null },
+      },
+      WHATSAPP: {
+        consented: { type: Boolean, default: false },
+        at: { type: Date, default: null },
+        source: { type: String, default: null },
+        withdrawn_at: { type: Date, default: null },
+      },
+      EMAIL: {
+        consented: { type: Boolean, default: false },
+        at: { type: Date, default: null },
+        source: { type: String, default: null },
+        withdrawn_at: { type: Date, default: null },
+      },
+      SMS: {
+        consented: { type: Boolean, default: false },
+        at: { type: Date, default: null },
+        source: { type: String, default: null },
+        withdrawn_at: { type: Date, default: null },
+      },
     },
   },
   {
