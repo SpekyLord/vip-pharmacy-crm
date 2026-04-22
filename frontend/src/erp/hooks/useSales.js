@@ -15,11 +15,13 @@ export default function useSales() {
   const approveDeletion = (id, reason) => api.post(`/sales/${id}/approve-deletion`, { reason });
   const presidentReverseSale = (id, { reason, confirm }) =>
     api.post(`/sales/${id}/president-reverse`, { reason, confirm });
+  const attachReceivedCsi = (id, { csi_received_photo_url, csi_received_attachment_id }) =>
+    api.put(`/sales/${id}/received-csi`, { csi_received_photo_url, csi_received_attachment_id });
 
   return {
     ...api,
     getSales, getSaleById, createSale, updateSale, deleteDraft,
     validateSales, submitSales, reopenSales, requestDeletion, approveDeletion,
-    presidentReverseSale,
+    presidentReverseSale, attachReceivedCsi,
   };
 }

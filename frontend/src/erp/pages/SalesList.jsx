@@ -11,6 +11,7 @@ import useErpSubAccess from '../hooks/useErpSubAccess';
 import EntityBadge from '../components/EntityBadge';
 import PresidentReverseModal from '../components/PresidentReverseModal';
 import RejectionBanner from '../components/RejectionBanner';
+import ScanCSIModal from '../components/ScanCSIModal';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -234,6 +235,11 @@ export default function SalesList() {
   const [selectedSale, setSelectedSale] = useState(null);
   const [loading, setLoading] = useState(false);
   const [reverseTarget, setReverseTarget] = useState(null);
+  // Row id of the sale currently targeted by the Attach Received CSI modal.
+  // Null = modal closed. The modal is ScanCSIModal in photoOnly mode — no
+  // OCR, just upload → returns { csi_photo_url, csi_attachment_id } which we
+  // route into PUT /sales/:id/received-csi as the received-CSI proof.
+  const [attachReceivedTarget, setAttachReceivedTarget] = useState(null);
 
   const loadSales = useCallback(async (page = 1) => {
     setLoading(true);
@@ -283,6 +289,43 @@ export default function SalesList() {
       } else {
         showError(err, 'Could not submit sales');
       }
+    }
+  };
+
+  const handleAttachReceivedCsi = async (scannedData) => {
+    if (!attachReceivedTarget) return;
+    const saleId = attachReceivedTarget;
+    setAttachReceivedTarget(null);
+    try {
+      await sales.attachReceivedCsi(saleId, {
+        // ScanCSIModal in photoOnly mode returns the upload in the csi_photo_url
+        // / csi_attachment_id slots. Re-label them to the received-CSI fields
+        // that the backend expects.
+        csi_received_photo_url: scannedData.csi_photo_url || '',
+        csi_received_attachment_id: scannedData.csi_attachment_id || null,
+      });
+      showSuccess('Signed CSI attached — dunning-ready.');
+      loadSales(pagination.page);
+    } catch (err) {
+      showError(err, 'Could not attach received CSI photo');
+    }
+  };
+
+  const handleValidate = async (saleId) => {
+    if (!window.confirm('Validate this sale? Stock, VAT, and required fields will be checked.')) return;
+    try {
+      const res = await sales.validateSales([saleId]);
+      const rowResult = res?.errors?.find(e => String(e.sale_id) === String(saleId));
+      if (rowResult?.messages?.length) {
+        showError(null, `Validation failed:\n${rowResult.messages.join('\n')}`);
+      } else if (rowResult?.warnings?.length) {
+        showWarning(rowResult.warnings.join('\n'));
+      } else {
+        showSuccess('Sale validated — Submit button is now available.');
+      }
+      loadSales(pagination.page);
+    } catch (err) {
+      showError(err, 'Could not validate sale');
     }
   };
 
@@ -408,6 +451,7 @@ export default function SalesList() {
                 <th>Total</th>
                 <th>Source</th>
                 <th>Status</th>
+                <th title="Signed received-CSI attached = dunning-ready">📷</th>
                 {isMultiEntity && <th>Entity</th>}
                 <th>Products</th>
                 <th>Actions</th>
@@ -417,7 +461,18 @@ export default function SalesList() {
               {data.map(sale => (
                 <tr key={sale._id} onClick={() => viewDetail(sale._id)}>
                   <td data-label="Date">{new Date(sale.csi_date).toLocaleDateString('en-PH')}</td>
-                  <td data-label="CSI #"><strong>{sale.doc_ref}</strong></td>
+                  <td data-label="CSI #">
+                    <strong>{sale.doc_ref}</strong>
+                    {sale.recorded_on_behalf_of && (
+                      <span
+                        className="badge"
+                        style={{ marginLeft: 6, background: '#ede9fe', color: '#6d28d9', fontSize: 10, padding: '1px 6px', borderRadius: 8 }}
+                        title={`Keyed by ${sale.recorded_on_behalf_of?.name || sale.created_by?.name || 'proxy user'} on behalf of ${sale.bdm_id?.name || 'BDM'}`}
+                      >
+                        Proxied
+                      </span>
+                    )}
+                  </td>
                   <td data-label="Hospital">{toTitleCase(sale.hospital_id?.hospital_name) || sale.customer_id?.customer_name || '-'}</td>
                   <td data-label="Total">P{(sale.invoice_total || 0).toLocaleString()}</td>
                   <td data-label="Source" style={{ fontSize: 11 }}>
@@ -430,6 +485,29 @@ export default function SalesList() {
                       {sale.status}
                     </span>
                   </td>
+                  <td data-label="Dunning" style={{ textAlign: 'center', fontSize: 14 }} title={(() => {
+                    // OPENING_AR: either csi_photo_url (entry scan) OR the
+                    // received field satisfies "any proof OK" — matches the
+                    // arEngine.getArAging dunning_ready rule so this list
+                    // view and the AR aging report never disagree on the
+                    // same row.
+                    if (sale.source === 'OPENING_AR') {
+                      return (sale.csi_received_photo_url || sale.csi_photo_url)
+                        ? 'Historical signed CSI on file — dunning-ready'
+                        : 'No signed CSI on file';
+                    }
+                    return sale.csi_received_photo_url
+                      ? 'Signed CSI attached — dunning-ready'
+                      : (sale.status === 'POSTED' ? 'POSTED — signed CSI not yet attached' : 'No signed CSI yet');
+                  })()}>
+                    {(() => {
+                      const hasProof = sale.source === 'OPENING_AR'
+                        ? !!(sale.csi_received_photo_url || sale.csi_photo_url)
+                        : !!sale.csi_received_photo_url;
+                      if (hasProof) return '✓';
+                      return sale.status === 'POSTED' ? '⚠️' : '—';
+                    })()}
+                  </td>
                   {isMultiEntity && (
                     <td data-label="Entity"><EntityBadge entity={getEntityById(sale.entity_id)} size="sm" /></td>
                   )}
@@ -440,6 +518,30 @@ export default function SalesList() {
                   </td>
                   <td data-label="Actions" onClick={e => e.stopPropagation()}>
                     <div className="sales-actions">
+                    {(sale.status === 'DRAFT' || sale.status === 'ERROR') && (
+                      <button className="btn btn-warning btn-sm" onClick={() => handleValidate(sale._id)}>
+                        Validate
+                      </button>
+                    )}
+                    {/* Attach Received CSI — t=4 dunning proof. Available on
+                        DRAFT / VALID / ERROR / POSTED (not reversed, not
+                        DELETION_REQUESTED). ERROR included so BDMs can
+                        pre-stage the signed photo while fixing unrelated
+                        validation issues. Skipped for OPENING_AR: historical
+                        entries carry their signed CSI on csi_photo_url at
+                        entry time. */}
+                    {sale.source !== 'OPENING_AR'
+                      && !sale.deletion_event_id
+                      && ['DRAFT', 'VALID', 'ERROR', 'POSTED'].includes(sale.status) && (
+                      <button
+                        className="btn btn-sm"
+                        style={{ background: sale.csi_received_photo_url ? '#64748b' : '#2563eb', color: '#fff' }}
+                        title={sale.csi_received_photo_url ? 'Replace the signed CSI photo' : 'Attach the signed CSI photo (dunning proof)'}
+                        onClick={() => setAttachReceivedTarget(sale._id)}
+                      >
+                        📷 {sale.csi_received_photo_url ? 'Replace CSI' : 'Attach CSI'}
+                      </button>
+                    )}
                     {sale.status === 'VALID' && (
                       <button className="btn btn-sm" style={{ background: '#16a34a', color: '#fff' }} onClick={() => handleSubmit(sale._id)}>
                         Submit
@@ -475,7 +577,7 @@ export default function SalesList() {
                 </tr>
               ))}
               {!data.length && (
-                <tr><td colSpan={isMultiEntity ? 9 : 8} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>
+                <tr><td colSpan={isMultiEntity ? 10 : 9} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>
                   {loading ? 'Loading...' : 'No sales found'}
                 </td></tr>
               )}
@@ -488,6 +590,15 @@ export default function SalesList() {
               </div>
             )}
             </div>
+
+          {/* Attach Received CSI Modal — photo-only (no OCR). */}
+          <ScanCSIModal
+            open={!!attachReceivedTarget}
+            onClose={() => setAttachReceivedTarget(null)}
+            onApply={handleAttachReceivedCsi}
+            photoOnly={true}
+            docType="CSI"
+          />
 
           {/* President Reverse Modal */}
           {reverseTarget && (
@@ -544,6 +655,28 @@ export default function SalesList() {
                 <div style={{ marginTop: 12, textAlign: 'right' }}>
                   <strong>Invoice Total: P{selectedSale.invoice_total?.toLocaleString()}</strong>
                   <br /><span style={{ fontSize: 12, color: 'var(--erp-muted)' }}>VAT: P{selectedSale.total_vat?.toFixed(2)} | Net: P{selectedSale.total_net_of_vat?.toFixed(2)}</span>
+                </div>
+
+                {/* Received CSI (dunning proof) — shown when attached. Detail
+                    modal's selectedSale comes from the list response, which is
+                    a lean-select; the received fields are added to the list
+                    projection below. Raw S3 URLs render inline; signed URLs
+                    come back through the document detail hydrator when
+                    accessed via Approval Hub / Reversal Console.*/}
+                <div style={{ marginTop: 12 }}>
+                  <strong style={{ fontSize: 13 }}>Received CSI (signed):</strong>{' '}
+                  {selectedSale.csi_received_photo_url ? (
+                    <>
+                      <a href={selectedSale.csi_received_photo_url} target="_blank" rel="noopener noreferrer">📷 View</a>
+                      {selectedSale.csi_received_at && (
+                        <span style={{ fontSize: 11, color: 'var(--erp-muted)', marginLeft: 8 }}>
+                          attached {new Date(selectedSale.csi_received_at).toLocaleDateString('en-PH')}
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span style={{ fontSize: 12, color: 'var(--erp-muted)' }}>not yet attached — use 📷 Attach CSI to upload</span>
+                  )}
                 </div>
 
                 <div style={{ marginTop: 12 }}>

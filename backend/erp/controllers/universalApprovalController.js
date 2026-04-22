@@ -71,6 +71,12 @@ const MODULE_AUTO_POST = {
   EXPENSES:    { type: 'expense_entry', action: 'post' },
   PRF_CALF:    { type: 'prf_calf',      action: 'post' },
   SALES:       { type: 'sales_line',    action: 'post' },
+  // OPENING_AR shares the SalesLine model + postSaleRow handler with SALES
+  // (postSaleRow detects source==='OPENING_AR' and skips inventory + COGS).
+  // Without this entry, proxied or contractor-submitted Opening AR rows
+  // would stay in VALID after hub approval and require manual re-submit.
+  // Added Phase G4.5a (Apr 22 2026) alongside proxy entry.
+  OPENING_AR:  { type: 'sales_line',    action: 'post' },
   COLLECTION:  { type: 'collection',    action: 'post' },
   CAR_LOGBOOK: { type: 'car_logbook',   action: 'post' },
   CREDIT_NOTE: { type: 'credit_note',   action: 'post' },

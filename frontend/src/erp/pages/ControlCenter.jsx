@@ -247,6 +247,8 @@ const DEPENDENCY_GUIDE = {
     items: [
       { action: 'When you create/edit a template', deps: 'Apply it to users via People Master > person detail > ERP Access', section: 'people' },
       { action: 'When you change module permissions', deps: 'Affected users will see/lose sidebar items on next login', section: null },
+      { action: 'sales.proxy_entry / sales.opening_ar_proxy (Phase G4.5a)', deps: 'Ticking grants a user the "Record on behalf of" dropdown on Sales / Opening AR Entry. Eligibility is ALSO gated by PROXY_ENTRY_ROLES.SALES (or .OPENING_AR) lookup — if the user\'s role is not in that list the tick has no effect (defense in depth). Edit the lookup via Lookup Tables → PROXY_ENTRY_ROLES.', section: 'lookups' },
+      { action: 'PROXY_ENTRY_ROLES lookup (Phase G4.5a)', deps: 'Per-module array of role codes allowed to proxy. Defaults to admin/finance/president. Add `contractor` to let a back-office clerk proxy for that module (then tick their sales.proxy_entry sub-perm too). Cache TTL 60s; no restart needed. Removing a role here hides the picker and makes the backend 403 on direct API proxy attempts. Cross-entity proxy is never permitted regardless of this lookup.', section: 'lookups' },
     ]
   },
   'coa': {

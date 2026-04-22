@@ -1587,7 +1587,10 @@ async function getUniversalPending(entityId, user, entityIds) {
     const d = item.details || {};
     switch (item.module) {
       case 'SALES':
-        d.csi_photo_url = await signUrl(d.csi_photo_url);
+        [d.csi_photo_url, d.csi_received_photo_url] = await Promise.all([
+          signUrl(d.csi_photo_url),
+          signUrl(d.csi_received_photo_url),
+        ]);
         break;
       case 'COLLECTION':
         [d.deposit_slip_url, d.cr_photo_url, d.cwt_certificate_url] = await Promise.all([

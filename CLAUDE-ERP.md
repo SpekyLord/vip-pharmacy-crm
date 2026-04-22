@@ -179,6 +179,64 @@ When the consultant delivers the gap list, the concrete work gets its own Phase 
 
 ---
 
+## Phase 36 — Received CSI Photo Separation + Dunning Readiness (April 22, 2026)
+
+### Problem
+The single `csi_photo_url` field on `SalesLine` conflated two distinct business artifacts captured at different events:
+- **Entry-time OCR scan** (t=0): a blank/unsigned CSI run through OCR for data-entry assist. Optional.
+- **Post-delivery signed copy** (t=4): the pink/yellow/duplicate copy the hospital returns after acknowledging delivery — the actual dunning-grade proof Finance uses for AR follow-up. Required for collection.
+
+`SALES_SETTINGS.REQUIRE_CSI_PHOTO` (default 1) gated **Validate** on the presence of *any* `csi_photo_url`, regardless of source. This inverted the real calendar for live Sales (stocks ship *after* invoice issuance; the signed copy doesn't exist yet at Validate time) and overwrote the OCR-source image when BDMs later uploaded the signed copy (lost audit trail).
+
+The rejection-fallback "Re-upload CSI Photo" button in SalesEntry was also broken: `handlePhotoReupload` only updated React state and never called `updateSale`, so the URL never reached the DB.
+
+### Fix
+Separate the two artifacts and move the enforcement to the right event.
+
+1. **Schema** ([SalesLine.js](backend/erp/models/SalesLine.js)): new fields `csi_received_photo_url`, `csi_received_attachment_id`, `csi_received_at`. `csi_photo_url` stays as the entry-time OCR source image.
+2. **Validate gate by source** ([salesController.js:validateSales](backend/erp/controllers/salesController.js#L548)):
+   - `OPENING_AR` rows only — blocks when *neither* proof field is set ("any proof OK"), gated by new lookup `REQUIRE_CSI_PHOTO_OPENING_AR` (default 1).
+   - `SALES_LINE` (live Sales) — no Validate gate, no Submit gate. Photo is a post-posting artifact.
+3. **New endpoint** `PUT /sales/:id/received-csi` ([attachReceivedCsi](backend/erp/controllers/salesController.js#L1453)) — writes the three new fields only. Allowed on DRAFT / VALID / ERROR / POSTED. Blocked on DELETION_REQUESTED + reversed (`deletion_event_id`). Period-lock enforced; OPENING_AR rows bypass lock (matches submit). Audit log entry written.
+4. **Lookup split** ([lookupGenericController.js](backend/erp/controllers/lookupGenericController.js#L1026)):
+   - `REQUIRE_CSI_PHOTO_OPENING_AR` (default 1) — gates Opening AR Validate. Per-entity tunable.
+   - `REQUIRE_CSI_PHOTO_SALES_LINE` (default 0) — reserved future Submit-gate hook for live Sales. No enforcement today; flipping to 1 is a future code hook if a subscriber's workflow waits for delivery confirmation before posting.
+5. **Migration script** ([migrateSalesPhotoLookup.js](backend/erp/scripts/migrateSalesPhotoLookup.js)) — one-shot, idempotent. Copies each entity's legacy `REQUIRE_CSI_PHOTO.metadata.value` into the new `_OPENING_AR` code (preserving subscriber tuning), seeds `_SALES_LINE` at 0, deactivates the legacy row.
+6. **Dunning readiness in AR aging** ([arEngine.js:getArAging](backend/erp/services/arEngine.js#L84)) — projects `csi_received_photo_url`, `csi_received_at`, computed `dunning_ready`. Summary gains `dunning_ready_ar/count` + `dunning_missing_ar/count`. OPENING_AR auto-treated as ready (entry-time proof satisfies).
+7. **Document detail builder + hydrator + Approval Hub signing** — all surface + sign the new URL alongside `csi_photo_url`.
+
+### Frontend changes
+- [useSales.js](frontend/src/erp/hooks/useSales.js): `attachReceivedCsi(id, { csi_received_photo_url, csi_received_attachment_id })`.
+- [SalesList.jsx](frontend/src/erp/pages/SalesList.jsx): new 📷 dunning column (✓ attached / ⚠️ missing on POSTED / — otherwise). "Attach CSI" / "Replace CSI" action button on DRAFT/VALID/ERROR/POSTED rows, skipped for OPENING_AR + reversed. ScanCSIModal reused in `photoOnly` mode. Detail modal shows the attached signed CSI link + date, or a hint to attach.
+- [SalesEntry.jsx](frontend/src/erp/pages/SalesEntry.jsx): removed both "📷 Re-upload CSI Photo" buttons (desktop row + mobile card) and the state-only `handlePhotoReupload` handler that never persisted. "📎 Upload CSI" (new-row creation with photo) kept. Lifecycle photo upload now lives only on SalesList per the prior SalesList-owns-lifecycle rule.
+- [WorkflowGuide.jsx](frontend/src/erp/components/WorkflowGuide.jsx): rewrote `sales-entry`, `sales-opening-ar`, `sales-list` photo sections to match the new two-phase flow.
+
+### Governing principles
+- **Rule #3 (no hardcoded business values)**: lookup split is per-entity tunable. Non-pharma / service-only subscribers flip `REQUIRE_CSI_PHOTO_OPENING_AR` to 0 in Control Center without code change. The reserved `_SALES_LINE` lookup is the future-proof hook for subscribers who need delivery-gated posting.
+- **Rule #19 (entity-scoped)**: `getSalesSetting(req.entityId, ...)` reads per-entity; no cross-entity bleed.
+- **Rule #20 (workflow lifecycle)**: period-lock check included; no cross-period retroactive evidence; reversed/deletion-requested rows rejected; audit log entry on every write.
+- **Rule #21 (no silent self-ID fallback)**: attach endpoint uses `req.tenantFilter`, which is already filter-aware. Privileged users can attach to any row in the entity; contractors only to their own.
+- **Rule #1/#4 (bulletproof)**: happy path (attach → column flips), failure paths (reversed → 400, deletion-requested → 400, closed period → 400, empty body → 400), wiring checked across backend + frontend + approval hub + reversal console + AR aging + workflow guide.
+
+### Behavior change (deliberate)
+Existing subscribers with `REQUIRE_CSI_PHOTO=1` today lose the Validate/Submit gate on live Sales. This is intentional: the gate was enforcing a photo that can't physically exist at Validate time. If a subscriber truly wants a delivery-gated Submit, flip `REQUIRE_CSI_PHOTO_SALES_LINE` to 1 and we can wire a Submit-side check in a follow-up (hook documented; enforcement deferred).
+
+### Downstream safety
+- `csi_photo_url` retained — all existing consumers (OpeningArList, DocumentDetailPanel, Collection detail modal, CsiPhoto component, universalApprovalService signing) still work.
+- `CollectionModel.csi_photo_urls[]` (plural, collection-side) untouched.
+- `SalesLine` status enum unchanged. Attach does not mutate status. Reopen does not clear received photo (physical receipt doesn't un-happen when accounting reverses).
+- `getSales` / `getSaleById` return the full document (no `.select()` restriction) — new fields flow naturally.
+- `REVERSAL_HANDLERS` count unchanged. Reversal path preserves `csi_received_photo_url` on the original POSTED row for audit.
+
+### Deploy
+1. Deploy backend + frontend together.
+2. Run `node backend/erp/scripts/migrateSalesPhotoLookup.js` to split the legacy lookup per entity (idempotent, safe to re-run).
+
+### Full detail
+See [docs/PHASETASK-ERP.md](docs/PHASETASK-ERP.md#phase-36--received-csi-photo-separation--dunning-readiness-april-22-2026).
+
+---
+
 ## Phase G1.6 — Logbook-Driven Per-Diem + Per-Role Thresholds + Cleanup Queue UX (April 22, 2026)
 
 Closes the nine-item follow-up backlog queued at the end of G1.5. Ships non-pharma per-diem (CarLogbook-sourced), per-role threshold overrides without code deploys, a "Needs Cleanup" admin filter for the locality/province backfill workflow, and CPT Excel parser support for the two new structured-address columns. Three items from the backlog remain deliberately deferred (see end of section for rationale).
@@ -4623,3 +4681,132 @@ Fix applied:
 Deploy steps for this follow-up:
 1. `node erp/scripts/migrateSmerUniqueIndex.js` (dry-run) → review report → `--apply`.
 2. Schema index definition change is picked up automatically on next app restart; the migration is for the already-created index on live DB.
+
+
+## Phase G4.5a — Proxy Entry for Sales + Opening AR (April 22, 2026)
+
+**Problem.** Admin, finance, or a back-office contractor had no way to record a CSI or Opening AR entry on behalf of another BDM. Every create path stamped `bdm_id = req.bdmId` (own id); every read applied `req.tenantFilter` which pins contractors to their own `bdm_id`. Ops staff couldn't help a BDM who was in the field, couldn't correct a DRAFT row before posting, couldn't do data-entry pass-throughs during audit cleanups.
+
+**Solution — lookup-driven proxy entry, gated at two layers.** Ported the existing Expenses `assigned_to` + `recorded_on_behalf_of` pattern (Phase 33-O) into a shared helper and wired it into Sales + Opening AR. Rule #3-aligned: eligible roles per module come from the `PROXY_ENTRY_ROLES` lookup; individual delegation is via sub-permission tick.
+
+**Layer 1 — Eligible roles (lookup-driven).**
+`PROXY_ENTRY_ROLES.<MODULE>.metadata.roles` is an array of role codes. Default: `['admin', 'finance', 'president']`. Admin adds `'contractor'` to let a back-office clerk proxy for that module. CEO is **always** denied. President **always** passes (no matter the list).
+
+**Layer 2 — Per-person grant (sub-permission).**
+New keys:
+- `sales.proxy_entry` — record live CSI on behalf of another BDM
+- `sales.opening_ar_proxy` — record Opening AR (pre-cutover) on behalf of another BDM
+
+Both gates must pass. Role eligibility without the tick means the picker hides and the API returns 403. Tick without role eligibility means the same. Defense in depth — frontend gate + backend gate — so a proxy cannot bypass via direct API POST.
+
+**Shared helper.** [backend/erp/utils/resolveOwnerScope.js](backend/erp/utils/resolveOwnerScope.js) exports:
+- `canProxyEntry(req, moduleKey, subKey?)` — boolean both layers.
+- `resolveOwnerForWrite(req, moduleKey, opts?)` — returns `{ ownerId, proxiedBy, isOnBehalf }`. Throws HTTP 403 if caller asked for proxy but is not eligible (no silent self-fallback — Rule #21).
+- `widenFilterForProxy(req, moduleKey, opts?)` — copy of `req.tenantFilter` with `bdm_id` stripped when eligible. Keeps `entity_id` — proxy is never cross-entity.
+- 60-second per-entity cache; `invalidateProxyRolesCache(entityId)` for bust.
+
+**salesController wiring.** All reads, writes, and lifecycle transitions flow through the helper:
+
+| Operation | Change |
+|---|---|
+| `createSale` | Accepts `assigned_to`; picks sub-key based on whether csi_date < live_date (OPENING_AR → `opening_ar_proxy`, else `proxy_entry`). Stamps `bdm_id`, `recorded_on_behalf_of`, `created_by`. Audit `PROXY_CREATE` when `isOnBehalf`. |
+| `updateSale` | `widenFilterForProxy` on lookup. Body's `assigned_to` / `bdm_id` / `recorded_on_behalf_of` stripped — ownership locked on edit. Audit flips to `PROXY_UPDATE` when editor ≠ owner. |
+| `deleteDraftRow` | Widened filter so proxy can delete a DRAFT owned by another BDM. |
+| `getSales`, `getSaleById` | Widened filter. Response populates `recorded_on_behalf_of` + `created_by` for the "Proxied" pill. |
+| `validateSales`, `submitSales` | Widened filter. Proxy can run the full DRAFT → VALID → POSTED flow on behalf. |
+| `reopenSales`, `requestDeletion`, `approveDeletion`, `presidentReverseSale` | Widened filter. The respective danger sub-perm (`sales.reopen`, `accounting.approve_deletion`, `accounting.reverse_posted`) still gates the action; widening only lets the proxy *find* the row. |
+
+**SalesLine model.** New field `recorded_on_behalf_of: { type: ObjectId, ref: 'User' }`. Set when the row was proxied; absent for self-entry. `created_by` holds the proxy's id; `bdm_id` is always the owner. Three fields give unambiguous audit: *who the row belongs to* (bdm_id) vs *who keyed it* (created_by) vs *whether it was a proxy* (recorded_on_behalf_of).
+
+**Frontend — `OwnerPicker` component.** [frontend/src/erp/components/OwnerPicker.jsx](frontend/src/erp/components/OwnerPicker.jsx). Shared, lookup-aware dropdown. Renders nothing when the caller is not eligible, so mount unconditionally. Fetches `PROXY_ENTRY_ROLES` via `useLookupOptions`, checks sub-permission via `useErpSubAccess`, loads the people list via `usePeople`. "Self — {name} (role)" is the first option.
+
+Wired into:
+- [SalesEntry.jsx](frontend/src/erp/pages/SalesEntry.jsx) — picker in the toolbar row. `assigned_to` ships in the payload for CSI, Cash Receipt, and Service Invoice flows.
+- [OpeningArEntry.jsx](frontend/src/erp/pages/OpeningArEntry.jsx) — picker above the banner. Uses `subKey="opening_ar_proxy"` + `moduleLookupCode="OPENING_AR"`.
+- [SalesList.jsx](frontend/src/erp/pages/SalesList.jsx) + [OpeningArList.jsx](frontend/src/erp/pages/OpeningArList.jsx) — "Proxied" pill next to the CSI number when `sale.recorded_on_behalf_of` is set. Tooltip: "Keyed by X on behalf of Y".
+
+**Governing invariants preserved.**
+- **Rule #20 — "Any person can CREATE, but authority POSTS".** Strongly enforced for proxy entry. Any submit where at least one row has `recorded_on_behalf_of` set is **forced through Approval Hub** regardless of the submitter's role — even admin/finance. The `gateApproval({ forceApproval: true, ownerBdmId })` contract in [approvalService.js](backend/erp/services/approvalService.js) bypasses the president/CEO fast-path and the `MODULE_DEFAULT_ROLES` allowlist when `forceApproval` is true. The synthetic `ApprovalRequest` carries `metadata.gate = 'PROXY_ENTRY'` + `proxied_by` + `owner_bdm_id` for audit. Conservative safeguard (Option B) until Phase G4.5b implements owner-chain routing (Option C). Option B = safe today; Option C = correct later.
+- **Rule #21 — "No silent self-fallback".** `resolveOwnerForWrite` throws 403 when caller requested proxy but is not eligible. `widenFilterForProxy` only widens after the gate passes. Non-proxy callers are unchanged.
+- **Edit-while-posted still locked.** Proxy cannot edit a POSTED row. Reopen (`sales.reopen`) is a separate sub-perm. Granting both `sales.proxy_entry` and `sales.reopen` to an ops clerk lets them reopen + edit + repost another BDM's posted row — intended ops capability.
+- **Cross-entity still locked.** `entity_id` scope preserved in the widened filter. Proxy at Entity A cannot touch Entity B.
+
+**Rollout.**
+- Sub-permission seed runs on first Access Template render per entity (existing `seedEntityLookups` path — no separate migration).
+- `PROXY_ENTRY_ROLES` lookup seeds with default `['admin', 'finance', 'president']` for all 5 modules. Admin adds `'contractor'` per module from Control Center → Lookup Tables.
+- No data migration. Existing SalesLine rows have no `recorded_on_behalf_of` field — they're self-entry by definition.
+- Non-proxy callers see zero behavior change.
+
+**Bulletproof bar.**
+- Build clean in 8.91s (`npx vite build`).
+- `node -c` clean on [resolveOwnerScope.js](backend/erp/utils/resolveOwnerScope.js), [salesController.js](backend/erp/controllers/salesController.js), [lookupGenericController.js](backend/erp/controllers/lookupGenericController.js), [SalesLine.js](backend/erp/models/SalesLine.js).
+- Happy path: admin → Sales Entry → picks BDM Juan → creates CSI → stamped `bdm_id=juan._id`, `recorded_on_behalf_of=admin._id`, `created_by=admin._id`. Juan sees his row in his Sales List without the "Proxied" pill; admin sees the same row with the pill.
+- Failure path: contractor without role in `PROXY_ENTRY_ROLES.SALES` sends `assigned_to` directly via API → 403 "Proxy entry denied for sales.proxy_entry".
+- Activity Monitor surface: filter by `log_type: PROXY_CREATE` shows every proxied row; `PROXY_UPDATE` shows every proxied edit.
+
+**Deferred (Phase G4.5b + G4.5c).**
+- Collections + GRN proxy (same pattern; port `resolveOwnerScope` into their controllers).
+- Expenses refactor to use the shared helper (keeps existing behavior; unifies audit action codes).
+- `approvalService`: today `forceApproval` sends the proxied doc to **any user in `allowedRoles`** (admin/finance/president by default). G4.5b will add `ownerBdmId` → `owner.reports_to` chain resolution, so approvals route to the owner's direct authority, not just a broad pool. The request already carries `owner_bdm_id` in metadata for that upgrade.
+- Lookup-write cache bust: currently relies on 60s TTL; `invalidateProxyRolesCache` should be called from the generic lookup write path for instant propagation.
+
+---
+
+## Phase PR1 — Per-Row Lifecycle Policy for Sales / Opening AR / Expenses (April 22, 2026)
+
+### Governing Principle
+All transactional lifecycle actions (Validate / Submit / Re-open / Request Deletion / Approve Deletion / President Delete) act **one row at a time** and live on the **list page**, not the entry page. The entry page is strictly a capture tool. No bulk-validate, bulk-submit, or bulk-reopen buttons exist anywhere in the UI for these modules.
+
+### Why (Rule 0 stress-test)
+Sales, Opening AR, and Expenses all carry per-row state that makes atomic batch operations unsafe **in practice** even when safe **at the database level**:
+- Each Sales/Opening AR row has its own FIFO stock snapshot, VAT balance, credit-limit projection, CSI-booklet audit, and gateApproval threshold.
+- Each Expense row has its own COA validation, OR gate, CALF link check.
+- A batch success toast can mask a silent ERROR on one of N rows; a batch failure can block N-1 good rows behind one bad one. Recovery from a bad bulk-reopen is 10× the cost of a bad bulk-submit because reversals cascade to JE, stock, AR, and commission accruals.
+
+Sales aren't a multi-leg journal entry that must post atomically. Each CSI is an independent financial event — atomicity buys nothing, costs forensic pain.
+
+### Per-Module Implementation
+| Module | Entry page buttons | List page buttons (per-row) |
+|---|---|---|
+| **Sales** | Save Drafts · Scan CSI · Upload CSI · +Add Row. Per-row Validate + Post inside the grid is kept for the in-session create-then-validate flow — each grid button passes `[r._id]` to the hook. | Validate (DRAFT/ERROR) · Submit (VALID) · Re-open (POSTED, admin) · Req. Delete (POSTED, non-admin) · Approve Delete (DELETION_REQUESTED, w/ accounting.approve_deletion) · President Delete (w/ accounting.reverse_posted). |
+| **Opening AR** | Save Drafts · Scan CSI · Upload CSI · +Add Row. No lifecycle buttons anywhere on entry — validation is canonically a List action. | Same 6 buttons as Sales, plus source is locked to OPENING_AR. |
+| **Expenses** | + New Expense form (and Batch OR Upload when `expenses.batch_upload` granted). | Validate (DRAFT/ERROR) · Submit (VALID) · Re-open (POSTED, admin) · Del (DRAFT) · President Delete (w/ accounting.reverse_posted). |
+| **Collections** | Reference pattern — already per-row before Phase PR1. | Validate · Submit · Re-open · Del · President Delete. |
+
+### Backend Contract (Expenses)
+`validateExpenses` + `submitExpenses` in [backend/erp/controllers/expenseController.js](backend/erp/controllers/expenseController.js) accept optional `expense_ids` body param:
+```js
+const filter = { ...req.tenantFilter, status: 'VALID' };
+if (req.body?.expense_ids?.length) filter._id = { $in: req.body.expense_ids };
+const entries = await ExpenseEntry.find(filter);
+```
+- Spread-first tenant filter preserves entity isolation — cross-entity ids are silently stripped.
+- Absent `expense_ids` → unchanged legacy behavior (matches all editable/VALID entries in scope), so proxy flow + any unmigrated caller continues to work.
+- Per-entry safety gates (`checkPeriodOpen`, `gateApproval`, CALF-POSTED check, auto-journal) remain in the controller loop and fire regardless of body shape. Per-row submit simply means a single-entry loop with a tiny transaction scope.
+
+Sales `submitSales` already supported optional `sale_ids`; no backend change needed for Sales/Opening AR.
+
+### Frontend Contract
+`useExpenses.validateExpenses(ids)` / `submitExpenses(ids)` send `{ expense_ids: ids }` when the array is non-empty, `{}` otherwise. The type signature is compatible with existing callers that pass no args.
+
+Per-row handlers on all three list pages:
+- `handleValidate(id)`: calls `validateExpenses/validateSales([id])`, reads the single row's result from `res.data` / `res.errors`, shows targeted success/error toast, refreshes the list.
+- `handleSubmit(id)`: same pattern. Handles HTTP 202 `approval_pending` via both success body and thrown error (belt-and-braces for legacy axios interceptors).
+
+### Integrity Checklist Applied
+- **Rule 1 banners**: 5 page banners (`sales-entry`, `sales-list`, `sales-opening-ar`, `sales-opening-ar-list`, `expenses`) rewritten to match the new UI. No banner references a removed button.
+- **Rule 2 wiring**: all 17 per-row button `onClick` references resolve to defined handlers; route wiring + body parser verified.
+- **Rule 3 lookup-driven**: lifecycle statuses sourced from `getEditableStatuses(entityId, moduleKey)`; MODULE_DEFAULT_ROLES untouched; no hardcoded role lists introduced.
+- **Rule 19 scalability**: subscription-ready — subscribers don't inherit any hardcoded per-row or bulk policy; the backend accepts both shapes.
+- **Rule 20 workflow safety**: period-lock still fires per-entry in controller; gateApproval still wraps every submit; approval_pending 202 handled on all per-row buttons; no lifecycle route middleware severed.
+- **Rule 21 bdm_id**: no self-id fallback introduced. `req.tenantFilter` unchanged.
+- **Cross-entity isolation**: `filter._id = { $in: ids }` ANDed with tenant spread — stress-tested by construction.
+
+### Known Bug Fixed During Rollout
+[SalesEntry.jsx:1100](frontend/src/erp/pages/SalesEntry.jsx#L1100) — per-row Post button inside the entry grid was silently calling `sales.submitSales()` with NO id (bulk leak). Now passes `[r._id]` with full `approval_pending` handling. This bug predated Phase PR1 but was caught during the Rule 0 sweep.
+
+### Deferred / Out of Scope
+- SMER still uses a single-row lifecycle bound to a per-cycle document (one entry per BDM per cycle) — no bulk concept applies, no Phase PR1 change needed.
+- PRF/CALF and Car Logbook lifecycle actions remain on their existing pages unchanged.
+- Payroll already uses per-payslip actions.
+- GRN/Undertaking is a dual-model cycle wrapper; the approve action is intrinsically per-GRN — unaffected.

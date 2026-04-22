@@ -1557,7 +1557,9 @@ const deleteDraftExpense = catchAsync(async (req, res) => {
 
 const validateExpenses = catchAsync(async (req, res) => {
   const editable = await getEditableStatuses(req.entityId, 'EXPENSES');
-  const entries = await ExpenseEntry.find({ ...req.tenantFilter, status: { $in: editable } });
+  const filter = { ...req.tenantFilter, status: { $in: editable } };
+  if (req.body?.expense_ids?.length) filter._id = { $in: req.body.expense_ids };
+  const entries = await ExpenseEntry.find(filter);
 
   for (const entry of entries) {
     // Auto-resolve COA codes before validation (tries vendor/keyword match, then category fallback)
@@ -1617,7 +1619,9 @@ const validateExpenses = catchAsync(async (req, res) => {
 });
 
 const submitExpenses = catchAsync(async (req, res) => {
-  const entries = await ExpenseEntry.find({ ...req.tenantFilter, status: 'VALID' });
+  const filter = { ...req.tenantFilter, status: 'VALID' };
+  if (req.body?.expense_ids?.length) filter._id = { $in: req.body.expense_ids };
+  const entries = await ExpenseEntry.find(filter);
   if (!entries.length) return res.status(400).json({ success: false, message: 'No VALID expenses to submit' });
 
   // Authority matrix gate

@@ -39,6 +39,7 @@ import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
 import ScanCSIModal from '../components/ScanCSIModal';
 import CsiPhoto, { csiPhotoStyles } from '../components/CsiPhoto';
+import OwnerPicker from '../components/OwnerPicker';
 import { useRejectionConfig } from '../hooks/useRejectionConfig';
 import { showError, showApprovalPending, showSuccess } from '../utils/errorToast';
 
@@ -187,7 +188,8 @@ export default function OpeningArEntry() {
   const [productMaster, setProductMaster] = useState([]);
   const [customerList, setCustomerList] = useState([]);
   const [rows, setRows] = useState(() => [buildEmptyRow(defaultBackdate)]);
-  const [validationErrors, setValidationErrors] = useState([]);
+  // Phase G4.5a — proxy entry for Opening AR (uses sales.opening_ar_proxy sub-perm).
+  const [assignedTo, setAssignedTo] = useState('');
   const [actionLoading, setActionLoading] = useState('');
   const [scanModalOpen, setScanModalOpen] = useState(false);
   // null = full OCR scan (create new row from extracted data);
@@ -258,29 +260,6 @@ export default function OpeningArEntry() {
       });
     return () => { cancelled = true; };
   }, [editId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Re-fetch ONLY the rows currently visible on the page (by _id) — used after
-  // validate/submit so the user sees the updated status chip without pulling the
-  // whole backlog back onto Entry. If a row has no _id yet (unsaved), it's left
-  // untouched.
-  const refreshCurrentRows = useCallback(async () => {
-    const ids = rows.filter(r => r._id).map(r => r._id);
-    if (!ids.length) return;
-    try {
-      const fresh = await Promise.all(
-        ids.map(id => sales.getSaleById(id).then(r => r?.data).catch(() => null))
-      );
-      const byId = new Map(fresh.filter(Boolean).map(s => [String(s._id), s]));
-      setRows(prev => prev.map(r => {
-        if (!r._id) return r;
-        const updated = byId.get(String(r._id));
-        if (!updated) return r;
-        return { ...updated, csi_date: toDateInput(updated.csi_date), _isNew: false };
-      }));
-    } catch (err) {
-      console.error('[OpeningArEntry] refresh rows:', err.message);
-    }
-  }, [rows, sales]);
 
   // ── Build product dropdown options from ProductMaster (no stock filter) ──
   const productOptions = useMemo(() => {
@@ -468,6 +447,8 @@ export default function OpeningArEntry() {
 
       const payload = {
         sale_type: 'CSI',
+        // Phase G4.5a proxy entry (gated by sales.opening_ar_proxy sub-perm + PROXY_ENTRY_ROLES.OPENING_AR)
+        assigned_to: assignedTo || undefined,
         hospital_id: row.hospital_id || undefined,
         customer_id: row.customer_id || undefined,
         csi_date: row.csi_date,
@@ -504,78 +485,12 @@ export default function OpeningArEntry() {
         // new CSIs, and surface a success banner directing them to the List.
         showSuccess(`${savedIds.length} draft${savedIds.length === 1 ? '' : 's'} saved. View in Opening AR Transactions.`);
         setRows([buildEmptyRow(defaultBackdate)]);
-        setValidationErrors([]);
       } else if (!warnings.length) {
         showError(null, 'No rows saved. Each row needs a hospital/customer, CSI #, backdated date, and at least one valid line item.');
       }
     } catch (err) {
       console.error('[OpeningArEntry] save:', err);
       showError(err, 'Could not save opening AR row');
-    } finally {
-      setActionLoading('');
-    }
-  };
-
-  const handleValidate = async () => {
-    setActionLoading('validate');
-    try {
-      // Persist any unsaved rows inline, then hydrate them back so validate sees
-      // their new _ids. Unlike Save Drafts, we keep the rows on-screen so the user
-      // immediately sees the VALID / ERROR outcome.
-      const { warnings, savedFull } = await persistNewRows();
-      if (warnings.length) showError(null, warnings.join('\n'));
-      if (savedFull.length) {
-        setRows(prev => {
-          const newIds = savedFull.map(s => s);
-          let cursor = 0;
-          return prev.map(r => {
-            if (!r._isNew) return r;
-            const replacement = newIds[cursor++];
-            if (!replacement) return r;
-            return { ...replacement, csi_date: toDateInput(replacement.csi_date), _isNew: false };
-          });
-        });
-      }
-      // Build id list from the freshly-saved rows + any pre-existing editable rows.
-      const preExistingIds = rows.filter(r => r._id && editableStatuses.includes(r.status)).map(r => r._id);
-      const ids = [...preExistingIds, ...savedFull.map(s => s._id)];
-      const res = await sales.validateSales(ids.length ? ids : undefined);
-      setValidationErrors(res?.errors || []);
-      await refreshCurrentRows();
-    } catch (err) {
-      console.error('[OpeningArEntry] validate:', err);
-      showError(err, 'Validation failed');
-    } finally {
-      setActionLoading('');
-    }
-  };
-
-  const handleSubmit = async () => {
-    setActionLoading('submit');
-    try {
-      const ids = rows.filter(r => r._id && r.status === 'VALID').map(r => r._id);
-      if (!ids.length) {
-        showError(null, 'No VALID rows to post. Run Validate first.');
-        return;
-      }
-      const res = await sales.submitSales(ids);
-      if (res?.approval_pending) {
-        showApprovalPending(res.message);
-      } else if (res?.posted_count) {
-        // Posted rows belong to Opening AR Transactions — reset Entry to a blank row.
-        showSuccess(`${res.posted_count} opening AR row(s) posted to AR + Sales Revenue (no inventory impact). View in Opening AR Transactions.`);
-        setValidationErrors([]);
-        setRows([buildEmptyRow(defaultBackdate)]);
-        return;
-      }
-      await refreshCurrentRows();
-    } catch (err) {
-      if (err?.response?.data?.approval_pending) {
-        showApprovalPending(err.response.data.message);
-        await refreshCurrentRows();
-      } else {
-        showError(err, 'Submit failed');
-      }
     } finally {
       setActionLoading('');
     }
@@ -605,8 +520,6 @@ export default function OpeningArEntry() {
   }
 
   const hasNew = rows.some(r => r._isNew);
-  const hasDraftOrError = rows.some(r => editableStatuses.includes(r.status));
-  const hasValid = rows.some(r => r.status === 'VALID');
 
   // ── Render ─────────────────────────────────────────────────────────────
   return (
@@ -632,6 +545,11 @@ export default function OpeningArEntry() {
             <Link to="/erp/csi-booklets" className="sales-nav-tab">
               {canCsiBooklets ? 'CSI Booklets' : 'My CSI'}
             </Link>
+          </div>
+
+          {/* Phase G4.5a — proxy entry dropdown (hidden unless caller is eligible) */}
+          <div style={{ margin: '8px 0', display: 'flex', justifyContent: 'flex-end' }}>
+            <OwnerPicker module="sales" subKey="opening_ar_proxy" moduleLookupCode="OPENING_AR" value={assignedTo} onChange={setAssignedTo} label="Opening AR — record on behalf of" />
           </div>
 
           <div className="oar-banner">
@@ -666,27 +584,10 @@ export default function OpeningArEntry() {
                 <button className="btn btn-primary" onClick={saveAll} disabled={!hasNew || actionLoading === 'save'}>
                   {actionLoading === 'save' ? 'Saving...' : 'Save Drafts'}
                 </button>
-                <button className="btn btn-warning" onClick={handleValidate} disabled={!hasDraftOrError || actionLoading === 'validate'}>
-                  {actionLoading === 'validate' ? 'Validating...' : 'Validate'}
-                </button>
-                <button className="btn btn-success" onClick={handleSubmit} disabled={!hasValid || actionLoading === 'submit'}>
-                  {actionLoading === 'submit' ? 'Posting...' : 'Post Opening AR'}
-                </button>
               </div>
             </div>
 
             {productLoading && <div style={{ fontSize: 12, color: 'var(--erp-muted)', marginBottom: 8 }}>Loading product master...</div>}
-
-            {validationErrors.length > 0 && (
-              <div className="oar-error-banner">
-                <strong>Validation issues ({validationErrors.length}):</strong>
-                <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
-                  {validationErrors.slice(0, 10).map((e, i) => (
-                    <li key={i}>{typeof e === 'string' ? e : (e.message || JSON.stringify(e))}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
 
             {/* ── Desktop / Tablet table ──
                 Layout: header fields (Hospital / Date / CSI# / Totals / Photo / Status)

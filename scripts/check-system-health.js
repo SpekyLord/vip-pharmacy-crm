@@ -304,6 +304,95 @@ function checkAgentEnums() {
   if (issues === startIssues) console.log(`  ✓ All ${allKeys.size} agent keys consistent across 5 sources`);
 }
 
+// ═══ 5. Proxy Entry wiring (Phase G4.5a) ═══
+function checkProxyEntryWiring() {
+  console.log('\n5. Proxy Entry Wiring (Phase G4.5a)');
+  console.log('─'.repeat(40));
+  const startIssues = issues;
+
+  const helperPath = path.join(ROOT, 'backend', 'erp', 'utils', 'resolveOwnerScope.js');
+  if (!fs.existsSync(helperPath)) {
+    warn('PROXY', 'backend/erp/utils/resolveOwnerScope.js missing');
+    return;
+  }
+  const helper = fs.readFileSync(helperPath, 'utf-8');
+  for (const ex of ['canProxyEntry', 'resolveOwnerForWrite', 'widenFilterForProxy', 'invalidateProxyRolesCache']) {
+    if (!new RegExp(`(module\\.exports|exports\\.)\\s*[={].*${ex}|${ex}\\s*[,}]`).test(helper)) {
+      warn('PROXY', `resolveOwnerScope.js does not export ${ex}`);
+    }
+  }
+
+  // Lookup seed: PROXY_ENTRY_ROLES + SALES__PROXY_ENTRY + SALES__OPENING_AR_PROXY
+  const lookupSeed = fs.readFileSync(path.join(ERP_CONTROLLERS, 'lookupGenericController.js'), 'utf-8');
+  for (const key of ['PROXY_ENTRY_ROLES:', 'SALES__PROXY_ENTRY', 'SALES__OPENING_AR_PROXY']) {
+    if (!lookupSeed.includes(key)) warn('PROXY', `SEED_DEFAULTS missing ${key}`);
+  }
+  // Cache invalidation wired
+  if (!lookupSeed.includes('invalidateProxyRolesCache')) {
+    warn('PROXY', 'lookupGenericController.js does not call invalidateProxyRolesCache — admin edits to PROXY_ENTRY_ROLES will take up to 60s TTL to propagate');
+  }
+
+  // salesController uses helper
+  const salesCtrl = fs.readFileSync(path.join(ERP_CONTROLLERS, 'salesController.js'), 'utf-8');
+  for (const fn of ['resolveOwnerForWrite', 'widenFilterForProxy']) {
+    if (!salesCtrl.includes(fn)) warn('PROXY', `salesController.js does not import/use ${fn}`);
+  }
+  // forceApproval wired
+  if (!salesCtrl.includes('forceApproval')) {
+    warn('PROXY', 'salesController.js submitSales missing forceApproval flag (Option B — forced hub for proxied rows)');
+  }
+
+  // SalesLine model field
+  const salesModel = fs.readFileSync(path.join(ERP_MODELS, 'SalesLine.js'), 'utf-8');
+  if (!salesModel.includes('recorded_on_behalf_of')) {
+    warn('PROXY', 'SalesLine model missing recorded_on_behalf_of field');
+  }
+
+  // MODULE_AUTO_POST has OPENING_AR
+  const universal = fs.readFileSync(path.join(ERP_CONTROLLERS, 'universalApprovalController.js'), 'utf-8');
+  if (!/OPENING_AR:\s*\{[^}]*sales_line/.test(universal)) {
+    warn('PROXY', "MODULE_AUTO_POST missing OPENING_AR → sales_line — proxied Opening AR won't auto-post after hub approval");
+  }
+
+  // approvalService honors opts.forceApproval
+  const approvalSvc = fs.readFileSync(path.join(ERP_SERVICES, 'approvalService.js'), 'utf-8');
+  if (!/opts\.forceApproval|const\s+forceApproval/.test(approvalSvc)) {
+    warn('PROXY', 'approvalService.js checkApprovalRequired does not read opts.forceApproval');
+  }
+
+  // Frontend OwnerPicker + consumers
+  const pickerPath = path.join(COMPONENTS_DIR, 'OwnerPicker.jsx');
+  if (!fs.existsSync(pickerPath)) {
+    warn('PROXY', 'frontend/src/erp/components/OwnerPicker.jsx missing');
+  } else {
+    const picker = fs.readFileSync(pickerPath, 'utf-8');
+    if (!picker.includes('PROXY_ENTRY_ROLES')) warn('PROXY', 'OwnerPicker.jsx does not read PROXY_ENTRY_ROLES lookup');
+    // Must filter by contractor/employee role only (no admins in the dropdown)
+    // Look for a contractor-role filter anywhere in the picker (either `role === 'contractor'`
+    // or a local alias like `r === 'contractor'`). The value must be quoted.
+    if (!/===\s*['"]contractor['"]/.test(picker)) {
+      warn('PROXY', "OwnerPicker.jsx does not filter target roles to contractor/employee — admins/finance may appear as invalid proxy targets");
+    }
+  }
+  for (const page of ['SalesEntry.jsx', 'OpeningArEntry.jsx']) {
+    const p = path.join(PAGES_DIR, page);
+    if (!fs.existsSync(p)) continue;
+    const src = fs.readFileSync(p, 'utf-8');
+    if (!src.includes('OwnerPicker')) warn('PROXY', `${page} does not import OwnerPicker`);
+    if (!src.includes('assigned_to')) warn('PROXY', `${page} payload missing assigned_to field`);
+  }
+  for (const page of ['SalesList.jsx', 'OpeningArList.jsx']) {
+    const p = path.join(PAGES_DIR, page);
+    if (!fs.existsSync(p)) continue;
+    const src = fs.readFileSync(p, 'utf-8');
+    if (!src.includes('recorded_on_behalf_of')) {
+      warn('PROXY', `${page} does not render proxy indicator (recorded_on_behalf_of)`);
+    }
+  }
+
+  if (issues === startIssues) console.log('  ✓ Proxy entry wiring intact');
+}
+
 // ═══ Run all checks ═══
 console.log('System Health Check');
 console.log('═'.repeat(40));
@@ -313,6 +402,7 @@ checkLookupCollections();
 checkWorkflowGuides();
 checkControlCenter();
 checkAgentEnums();
+checkProxyEntryWiring();
 
 console.log('\n' + '═'.repeat(40));
 if (issues > beforeIssues) {

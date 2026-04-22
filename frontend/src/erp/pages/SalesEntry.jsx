@@ -12,6 +12,7 @@ import useReports from '../hooks/useReports';
 import useErpSubAccess from '../hooks/useErpSubAccess';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 import WarehousePicker from '../components/WarehousePicker';
+import OwnerPicker from '../components/OwnerPicker';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -565,9 +566,10 @@ export default function SalesEntry() {
 
   const [saleType, setSaleType] = useState('CSI'); // CSI, CASH_RECEIPT, SERVICE_INVOICE
   const [warehouseId, setWarehouseId] = useState('');
+  // Phase G4.5a — proxy entry: empty = self; set to a User._id to file under another BDM.
+  const [assignedTo, setAssignedTo] = useState('');
   const [rows, setRows] = useState([emptyRow()]);
   const [stockProducts, setStockProducts] = useState([]);
-  const [validationErrors, setValidationErrors] = useState([]);
   const [actionLoading, setActionLoading] = useState('');
   const [scanModalOpen, setScanModalOpen] = useState(false);
   // Rejection-fallback flow: re-upload a CSI photo to a previously-rejected row
@@ -758,28 +760,11 @@ export default function SalesEntry() {
 
   const addRow = () => setRows(prev => [...prev, emptyRow()]);
 
-  // Rejection-fallback: attach a fresh CSI photo to an existing row without
-  // re-keying line items. Triggered from the "Re-upload CSI Photo" button on
-  // rows whose status is DRAFT/ERROR with rejection_reason set.
-  const handlePhotoReupload = useCallback((rowIdx, scannedData) => {
-    setRows(prev => {
-      const updated = [...prev];
-      if (!updated[rowIdx]) return prev;
-      updated[rowIdx] = {
-        ...updated[rowIdx],
-        csi_photo_url: scannedData.csi_photo_url || updated[rowIdx].csi_photo_url,
-        csi_attachment_id: scannedData.csi_attachment_id || updated[rowIdx].csi_attachment_id
-      };
-      return updated;
-    });
-    setPhotoOnlyRowIdx(null);
-    showSuccess('Photo attached. Re-validate and resubmit when ready.');
-  }, []);
-
   // Proof-only upload: create a fresh row with just the CSI photo attached.
   // The BDM fills in hospital / CSI# / line items manually afterwards. Distinct
-  // from Scan CSI (which runs OCR and pre-fills) and from Re-upload CSI Photo
-  // (which only targets a rejected existing row).
+  // from Scan CSI (which runs OCR and pre-fills). Attaching the signed
+  // received-CSI to an already-persisted row is a SalesList-only lifecycle
+  // action (PUT /sales/:id/received-csi), not done here.
   const handlePhotoUploadNewRow = useCallback((scannedData) => {
     const newRow = {
       ...emptyRow(),
@@ -791,16 +776,11 @@ export default function SalesEntry() {
     showSuccess('Photo attached to new row. Fill in the hospital, CSI#, and line items, then save.');
   }, []);
 
-  // Unified apply handler for the photo-only modal. Routes based on whether a
-  // specific row index is being targeted (rejection re-upload) or the 'NEW'
-  // sentinel (proof-only upload to a brand-new row).
   const handlePhotoOnlyApply = useCallback((scannedData) => {
     if (photoOnlyRowIdx === 'NEW') {
       handlePhotoUploadNewRow(scannedData);
-    } else if (typeof photoOnlyRowIdx === 'number') {
-      handlePhotoReupload(photoOnlyRowIdx, scannedData);
     }
-  }, [photoOnlyRowIdx, handlePhotoUploadNewRow, handlePhotoReupload]);
+  }, [photoOnlyRowIdx, handlePhotoUploadNewRow]);
 
   // Apply OCR scan results as a new row
   const handleScanApply = useCallback((scannedData) => {
@@ -873,6 +853,10 @@ export default function SalesEntry() {
 
         const payload = {
           sale_type: saleType,
+          // Phase G4.5a — proxy entry. Empty = self; otherwise file under the
+          // selected BDM (backend gates via sales.proxy_entry sub-perm + role
+          // membership in PROXY_ENTRY_ROLES.SALES lookup).
+          assigned_to: assignedTo || undefined,
           hospital_id: row.hospital_id || undefined,
           customer_id: row.customer_id || undefined,
           csi_date: row.csi_date,
@@ -934,73 +918,6 @@ export default function SalesEntry() {
     } catch (err) { console.error('[SalesEntry] load error:', err.message); }
   };
 
-  const handleValidate = async () => {
-    setActionLoading('validate');
-    try {
-      // Save unsaved rows first
-      await saveAll();
-      const res = await sales.validateSales();
-      if (res?.errors?.length) {
-        setValidationErrors(res.errors);
-      } else {
-        setValidationErrors([]);
-      }
-      await loadSales();
-    } catch (err) {
-      console.error('Validate error:', err);
-    } finally {
-      setActionLoading('');
-    }
-  };
-
-  const handleSubmit = async () => {
-    setActionLoading('submit');
-    try {
-      const res = await sales.submitSales();
-      if (res?.approval_pending) {
-        showApprovalPending(res.message);
-        await loadSales();
-      } else if (res?.posted_count) {
-        setValidationErrors([]);
-        await loadSales();
-      }
-    } catch (err) {
-      if (err?.response?.data?.approval_pending) {
-        showApprovalPending(err.response.data.message);
-        await loadSales();
-      } else {
-        showError(err, 'Submit failed');
-      }
-    } finally {
-      setActionLoading('');
-    }
-  };
-
-  const handleReopen = async () => {
-    setActionLoading('reopen');
-    try {
-      const postedIds = rows.filter(r => r.status === 'POSTED' && r._id).map(r => r._id);
-      if (postedIds.length) {
-        const res = await sales.reopenSales(postedIds);
-        const failed = res?.failed || [];
-        if (failed.length) {
-          showWarning(failed.map(f => `${f.doc_ref || f._id}: ${f.error}`).join('\n'));
-        } else {
-          showSuccess(res?.message || 'Reopened');
-        }
-        await loadSales();
-      }
-    } catch (err) {
-      showError(err, 'Could not reopen sale');
-    } finally {
-      setActionLoading('');
-    }
-  };
-
-  const hasPosted = rows.some(r => r.status === 'POSTED');
-  const hasDraftOrError = rows.some(r => rejectionEditableStatuses.includes(r.status));
-  const allValid = rows.length > 0 && rows.every(r => r.status === 'VALID' || r.status === 'POSTED');
-
   return (
     <div className="admin-page erp-page sales-entry-page">
       <style>{pageStyles}</style>
@@ -1019,8 +936,9 @@ export default function SalesEntry() {
                 {canManageCsi ? 'CSI Booklets' : 'My CSI'}
               </Link>
             </div>
-            <div className="sales-toolbar-row">
+            <div className="sales-toolbar-row" style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
               <WarehousePicker value={warehouseId} onChange={setWarehouseId} filterType="PHARMA" compact />
+              <OwnerPicker module="sales" subKey="proxy_entry" moduleLookupCode="SALES" value={assignedTo} onChange={setAssignedTo} />
             </div>
             {/* Phase 18: Sale Type Tabs */}
             <div className="sale-type-tabs">
@@ -1055,17 +973,6 @@ export default function SalesEntry() {
                     <button className="btn btn-primary" onClick={saveAll} disabled={actionLoading === 'save'}>
                       {actionLoading === 'save' ? 'Saving...' : 'Save Drafts'}
                     </button>
-                    <button className="btn btn-warning" onClick={handleValidate} disabled={!hasDraftOrError || !!actionLoading}>
-                      {actionLoading === 'validate' ? 'Validating...' : 'Validate Sales'}
-                    </button>
-                    <button className="btn btn-success" onClick={handleSubmit} disabled={!allValid || !!actionLoading}>
-                      {actionLoading === 'submit' ? 'Submitting...' : 'Submit Sales'}
-                    </button>
-                    {hasPosted && (
-                      <button className="btn btn-danger" onClick={handleReopen} disabled={!!actionLoading}>
-                        {actionLoading === 'reopen' ? 'Reopening...' : 'Re-open'}
-                      </button>
-                    )}
                   </div>
                 </div>
               )}
@@ -1125,6 +1032,7 @@ export default function SalesEntry() {
                   try {
                     const payload = {
                       sale_type: 'SERVICE_INVOICE',
+                      assigned_to: assignedTo || undefined, // Phase G4.5a proxy entry
                       hospital_id: serviceForm.customer_type === 'hospital' ? serviceForm.customer_ref : undefined,
                       customer_id: serviceForm.customer_type === 'customer' ? serviceForm.customer_ref : undefined,
                       csi_date: serviceForm.csi_date,
@@ -1189,9 +1097,17 @@ export default function SalesEntry() {
                                 <button className="btn btn-success btn-sm" disabled={!!actionLoading} onClick={async () => {
                                   setActionLoading('submit');
                                   try {
-                                    await sales.submitSales();
+                                    const res = await sales.submitSales([r._id]);
+                                    if (res?.approval_pending) showApprovalPending(res.message);
                                     await loadSales();
-                                  } catch (err) { showError(err, 'Could not post sale'); } finally { setActionLoading(''); }
+                                  } catch (err) {
+                                    if (err?.response?.data?.approval_pending) {
+                                      showApprovalPending(err.response.data.message);
+                                      await loadSales();
+                                    } else {
+                                      showError(err, 'Could not post sale');
+                                    }
+                                  } finally { setActionLoading(''); }
                                 }}>Post</button>
                               )}
                               {r.status === 'POSTED' && (
@@ -1416,20 +1332,7 @@ export default function SalesEntry() {
                   {isRejectedRow(row) && (
                     <tr className="sales-row-reject">
                       <td colSpan={7}>
-                        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                          <div style={{ flex: '1 1 360px', minWidth: 0 }}>
-                            <RejectionBanner row={row} moduleKey="SALES" variant="row" />
-                          </div>
-                          <button
-                            type="button"
-                            className="btn btn-sm btn-outline"
-                            onClick={() => setPhotoOnlyRowIdx(idx)}
-                            title="Re-upload a clearer CSI photo without re-keying line items"
-                            style={{ whiteSpace: 'nowrap' }}
-                          >
-                            📷 Re-upload CSI Photo
-                          </button>
-                        </div>
+                        <RejectionBanner row={row} moduleKey="SALES" variant="row" />
                       </td>
                     </tr>
                   )}
@@ -1468,17 +1371,7 @@ export default function SalesEntry() {
                     moduleKey="SALES"
                     variant="page"
                     docLabel={row.doc_ref ? `CSI ${row.doc_ref}` : `Row ${idx + 1}`}
-                  >
-                    <button
-                      type="button"
-                      className="rjb-btn rjb-btn-primary"
-                      onClick={() => setPhotoOnlyRowIdx(idx)}
-                      title="Re-upload a clearer CSI photo without re-keying line items"
-                      style={{ background: '#2563eb' }}
-                    >
-                      📷 Re-upload CSI Photo
-                    </button>
-                  </RejectionBanner>
+                  />
                 )}
                 <label>{saleType === 'CSI' ? 'Hospital' : 'Customer'}</label>
                 <SelectField value={row.hospital_id?._id || row.hospital_id || row.customer_id?._id || row.customer_id || ''} onChange={e => {
@@ -1578,44 +1471,6 @@ export default function SalesEntry() {
             })}
           </div>}
 
-          {/* Validation Error / Warning Panel — only show for CSI/CASH_RECEIPT modes */}
-          {saleType !== 'SERVICE_INVOICE' && validationErrors.length > 0 && (() => {
-            const hardErrors = validationErrors.filter(e => (e.messages || []).length > 0);
-            const softWarnings = validationErrors.filter(e => (e.warnings || []).length > 0);
-            return (
-              <>
-                {hardErrors.length > 0 && (
-                  <div className="error-panel">
-                    <h3>Validation Errors ({hardErrors.length})</h3>
-                    <ul>
-                      {hardErrors.map((err, i) => (
-                        <li key={`err-${i}`}>
-                          <strong>{err.doc_ref || err.sale_id}:</strong>{' '}
-                          {err.messages.join('; ')}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                {softWarnings.length > 0 && (
-                  <div className="error-panel" style={{ background: '#fef3c7', borderColor: '#fcd34d', color: '#92400e' }}>
-                    <h3 style={{ color: '#78350f' }}>Warnings — informational only ({softWarnings.length})</h3>
-                    <ul>
-                      {softWarnings.map((err, i) => (
-                        <li key={`warn-${i}`}>
-                          <strong>{err.doc_ref || err.sale_id}:</strong>{' '}
-                          {err.warnings.join('; ')}
-                        </li>
-                      ))}
-                    </ul>
-                    <div style={{ fontSize: 12, fontStyle: 'italic', marginTop: 6 }}>
-                      Warnings do NOT block posting. They are a paper-trail trace for the CSI booklet audit.
-                    </div>
-                  </div>
-                )}
-              </>
-            );
-          })()}
         </main>
       </div>
       {/* Scan CSI Modal — primary scan flow (full OCR + line-item matching) */}
@@ -1626,9 +1481,9 @@ export default function SalesEntry() {
         hospitals={hospitals}
         productOptions={productOptions}
       />
-      {/* Photo-only modal — shared by two flows:
-          (1) 'NEW' → toolbar "Upload CSI" creates a fresh row with photo attached (no OCR)
-          (2) <number> → rejection "Re-upload CSI Photo" attaches photo to existing row */}
+      {/* Photo-only modal — 'NEW' → toolbar "Upload CSI" creates a fresh row
+          with photo attached (no OCR). Re-attaching the signed CSI to an
+          already-persisted row is a SalesList-only lifecycle action now. */}
       <ScanCSIPhotoFallback
         open={photoOnlyRowIdx !== null}
         onClose={() => setPhotoOnlyRowIdx(null)}

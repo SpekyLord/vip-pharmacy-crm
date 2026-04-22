@@ -49,8 +49,8 @@ export default function useExpenses() {
   const createExpense = (data) => api.post('/expenses/ore-access', data);
   const updateExpense = (id, data) => api.put(`/expenses/ore-access/${id}`, data);
   const deleteDraftExpense = (id) => api.del(`/expenses/ore-access/${id}`);
-  const validateExpenses = () => api.post('/expenses/ore-access/validate', {});
-  const submitExpenses = () => api.post('/expenses/ore-access/submit', {});
+  const validateExpenses = (ids) => api.post('/expenses/ore-access/validate', ids?.length ? { expense_ids: ids } : {});
+  const submitExpenses = (ids) => api.post('/expenses/ore-access/submit', ids?.length ? { expense_ids: ids } : {});
   const reopenExpenses = (ids) => api.post('/expenses/ore-access/reopen', { expense_ids: ids });
 
   // ═══ Batch Upload (President/Admin) ═══

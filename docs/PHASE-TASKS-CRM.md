@@ -1061,6 +1061,8 @@ C.2 ───→ B.5b (BDM Performance DCR part)
 
 - **Safe to build pre-NPC** (inbound-only + 1:1 email; no broadcast)
 - **Legal review**: MD Partner Agreement template must be reviewed by counsel before any MD signs. Ship the wizard but hide the "Enroll" button behind a `MD_PARTNER_LIVE=false` flag until counsel clears it.
+- **Meta App Review for `pages_messaging`** (1-3 weeks calendar time): Messenger outbound to non-admin/non-tester accounts requires `pages_messaging` Advanced Access. App is currently in Live mode but permission not granted → sends to real MDs silently drop until approved. Submit in parallel with M1 UX polish — calendar time runs regardless of when you start. Assets needed: Privacy Policy URL, ToS URL, Data Deletion Instructions URL (endpoint exists at `/api/webhooks/facebook/data-deletion`), 1024x1024 app icon, 45-90s screencast of the invite → reply flow, test admin + MD credentials for Meta reviewer, written use-case description. During review window, real MDs receive invites via **Viber** (no review needed) + **Email** (SES) — Messenger activates the day Meta approves, no code change.
+- **Viber Bot URI**: set `VIBER_BOT_URI` in `backend/.env` for Viber invite deep links. No Meta-style review needed; Viber Business Messages API is open once the bot is registered.
 
 ---
 
