@@ -304,9 +304,9 @@ function checkAgentEnums() {
   if (issues === startIssues) console.log(`  ✓ All ${allKeys.size} agent keys consistent across 5 sources`);
 }
 
-// ═══ 5. Proxy Entry wiring (Phase G4.5a) ═══
+// ═══ 5. Proxy Entry wiring (Phases G4.5a + G4.5b) ═══
 function checkProxyEntryWiring() {
-  console.log('\n5. Proxy Entry Wiring (Phase G4.5a)');
+  console.log('\n5. Proxy Entry Wiring (Phase G4.5a + G4.5b)');
   console.log('─'.repeat(40));
   const startIssues = issues;
 
@@ -322,36 +322,103 @@ function checkProxyEntryWiring() {
     }
   }
 
-  // Lookup seed: PROXY_ENTRY_ROLES + SALES__PROXY_ENTRY + SALES__OPENING_AR_PROXY
+  // Lookup seed: PROXY_ENTRY_ROLES + per-module sub-perm keys
+  // G4.5a seeded SALES__PROXY_ENTRY + SALES__OPENING_AR_PROXY.
+  // G4.5b adds COLLECTIONS__PROXY_ENTRY + INVENTORY__GRN_PROXY_ENTRY.
   const lookupSeed = fs.readFileSync(path.join(ERP_CONTROLLERS, 'lookupGenericController.js'), 'utf-8');
-  for (const key of ['PROXY_ENTRY_ROLES:', 'SALES__PROXY_ENTRY', 'SALES__OPENING_AR_PROXY']) {
+  for (const key of [
+    'PROXY_ENTRY_ROLES:',
+    'SALES__PROXY_ENTRY', 'SALES__OPENING_AR_PROXY',
+    'COLLECTIONS__PROXY_ENTRY', 'INVENTORY__GRN_PROXY_ENTRY',
+  ]) {
     if (!lookupSeed.includes(key)) warn('PROXY', `SEED_DEFAULTS missing ${key}`);
+  }
+  // PROXY_ENTRY_ROLES must enumerate all 5 modules so OwnerPicker can resolve
+  // them without falling back to the admin/finance/president default.
+  for (const moduleCode of ["code: 'SALES'", "code: 'OPENING_AR'", "code: 'COLLECTIONS'", "code: 'EXPENSES'", "code: 'GRN'"]) {
+    if (!lookupSeed.includes(moduleCode)) {
+      warn('PROXY', `PROXY_ENTRY_ROLES seed missing module entry ${moduleCode}`);
+    }
   }
   // Cache invalidation wired
   if (!lookupSeed.includes('invalidateProxyRolesCache')) {
     warn('PROXY', 'lookupGenericController.js does not call invalidateProxyRolesCache — admin edits to PROXY_ENTRY_ROLES will take up to 60s TTL to propagate');
   }
 
-  // salesController uses helper
+  // salesController uses helper (G4.5a)
   const salesCtrl = fs.readFileSync(path.join(ERP_CONTROLLERS, 'salesController.js'), 'utf-8');
   for (const fn of ['resolveOwnerForWrite', 'widenFilterForProxy']) {
     if (!salesCtrl.includes(fn)) warn('PROXY', `salesController.js does not import/use ${fn}`);
   }
-  // forceApproval wired
   if (!salesCtrl.includes('forceApproval')) {
     warn('PROXY', 'salesController.js submitSales missing forceApproval flag (Option B — forced hub for proxied rows)');
   }
 
-  // SalesLine model field
-  const salesModel = fs.readFileSync(path.join(ERP_MODELS, 'SalesLine.js'), 'utf-8');
-  if (!salesModel.includes('recorded_on_behalf_of')) {
-    warn('PROXY', 'SalesLine model missing recorded_on_behalf_of field');
+  // collectionController uses helper (G4.5b)
+  const collCtrl = fs.readFileSync(path.join(ERP_CONTROLLERS, 'collectionController.js'), 'utf-8');
+  for (const fn of ['resolveOwnerForWrite', 'widenFilterForProxy']) {
+    if (!collCtrl.includes(fn)) warn('PROXY', `collectionController.js does not import/use ${fn}`);
+  }
+  if (!collCtrl.includes('forceApproval')) {
+    warn('PROXY', 'collectionController.js submitCollections missing forceApproval flag (Option B — forced hub for proxied rows)');
+  }
+  if (!/'collections'.*subKey:\s*'proxy_entry'|subKey:\s*'proxy_entry'.*'collections'/s.test(collCtrl)) {
+    warn('PROXY', "collectionController.js does not call widenFilterForProxy with module='collections', subKey='proxy_entry'");
   }
 
-  // MODULE_AUTO_POST has OPENING_AR
+  // inventoryController uses helper (G4.5b, GRN paths)
+  const invCtrl = fs.readFileSync(path.join(ERP_CONTROLLERS, 'inventoryController.js'), 'utf-8');
+  for (const fn of ['resolveOwnerForWrite', 'widenFilterForProxy']) {
+    if (!invCtrl.includes(fn)) warn('PROXY', `inventoryController.js does not import/use ${fn}`);
+  }
+  if (!/grn_proxy_entry/.test(invCtrl)) {
+    warn('PROXY', "inventoryController.js does not reference sub-perm key 'grn_proxy_entry'");
+  }
+  // Warehouse-access cross-check: proxy GRN must verify target BDM is in
+  // Warehouse.assigned_users (or manager_id). If this guard is missing, a
+  // proxy could receive stock into a warehouse the target BDM can't access.
+  if (!/assigned_users|warehouse.*not assigned/i.test(invCtrl)) {
+    warn('PROXY', 'inventoryController.createGrn missing warehouse-access cross-check — target BDM could receive into a warehouse they are not assigned to');
+  }
+
+  // Models: recorded_on_behalf_of on SalesLine (G4.5a) + Collection, GrnEntry, Undertaking (G4.5b)
+  for (const { file, label } of [
+    { file: 'SalesLine.js', label: 'SalesLine' },
+    { file: 'Collection.js', label: 'Collection' },
+    { file: 'GrnEntry.js', label: 'GrnEntry' },
+    { file: 'Undertaking.js', label: 'Undertaking' },
+  ]) {
+    const modelPath = path.join(ERP_MODELS, file);
+    if (!fs.existsSync(modelPath)) {
+      warn('PROXY', `${label} model file missing at ${modelPath}`);
+      continue;
+    }
+    const src = fs.readFileSync(modelPath, 'utf-8');
+    if (!src.includes('recorded_on_behalf_of')) {
+      warn('PROXY', `${label} model missing recorded_on_behalf_of field`);
+    }
+  }
+
+  // undertakingService must propagate recorded_on_behalf_of from GRN to the
+  // auto-created Undertaking; otherwise a proxied GRN's UT would look
+  // self-created in the target BDM's queue.
+  const utSvcPath = path.join(ERP_SERVICES, 'undertakingService.js');
+  if (fs.existsSync(utSvcPath)) {
+    const utSvc = fs.readFileSync(utSvcPath, 'utf-8');
+    if (!/recorded_on_behalf_of/.test(utSvc)) {
+      warn('PROXY', 'undertakingService.autoUndertakingForGrn does not propagate recorded_on_behalf_of from GRN to UT');
+    }
+  }
+
+  // MODULE_AUTO_POST has OPENING_AR + COLLECTION (GRN is intentionally excluded —
+  // its auto-post path runs through undertakingController.postSingleUndertaking
+  // on UT acknowledgment, not through the generic approval auto-post dispatcher).
   const universal = fs.readFileSync(path.join(ERP_CONTROLLERS, 'universalApprovalController.js'), 'utf-8');
   if (!/OPENING_AR:\s*\{[^}]*sales_line/.test(universal)) {
     warn('PROXY', "MODULE_AUTO_POST missing OPENING_AR → sales_line — proxied Opening AR won't auto-post after hub approval");
+  }
+  if (!/COLLECTION:\s*\{[^}]*collection/.test(universal)) {
+    warn('PROXY', "MODULE_AUTO_POST missing COLLECTION → collection — proxied Collection won't auto-post after hub approval");
   }
 
   // approvalService honors opts.forceApproval
@@ -367,21 +434,20 @@ function checkProxyEntryWiring() {
   } else {
     const picker = fs.readFileSync(pickerPath, 'utf-8');
     if (!picker.includes('PROXY_ENTRY_ROLES')) warn('PROXY', 'OwnerPicker.jsx does not read PROXY_ENTRY_ROLES lookup');
-    // Must filter by contractor/employee role only (no admins in the dropdown)
-    // Look for a contractor-role filter anywhere in the picker (either `role === 'contractor'`
-    // or a local alias like `r === 'contractor'`). The value must be quoted.
     if (!/===\s*['"]contractor['"]/.test(picker)) {
       warn('PROXY', "OwnerPicker.jsx does not filter target roles to contractor/employee — admins/finance may appear as invalid proxy targets");
     }
   }
-  for (const page of ['SalesEntry.jsx', 'OpeningArEntry.jsx']) {
+  // Entry pages mount OwnerPicker + send assigned_to in payload
+  for (const page of ['SalesEntry.jsx', 'OpeningArEntry.jsx', 'CollectionSession.jsx', 'GrnEntry.jsx']) {
     const p = path.join(PAGES_DIR, page);
     if (!fs.existsSync(p)) continue;
     const src = fs.readFileSync(p, 'utf-8');
     if (!src.includes('OwnerPicker')) warn('PROXY', `${page} does not import OwnerPicker`);
     if (!src.includes('assigned_to')) warn('PROXY', `${page} payload missing assigned_to field`);
   }
-  for (const page of ['SalesList.jsx', 'OpeningArList.jsx']) {
+  // List pages render Proxied pill (reads recorded_on_behalf_of)
+  for (const page of ['SalesList.jsx', 'OpeningArList.jsx', 'Collections.jsx', 'GrnEntry.jsx']) {
     const p = path.join(PAGES_DIR, page);
     if (!fs.existsSync(p)) continue;
     const src = fs.readFileSync(p, 'utf-8');
@@ -390,7 +456,7 @@ function checkProxyEntryWiring() {
     }
   }
 
-  if (issues === startIssues) console.log('  ✓ Proxy entry wiring intact');
+  if (issues === startIssues) console.log('  ✓ Proxy entry wiring intact (G4.5a + G4.5b)');
 }
 
 // ═══ Run all checks ═══

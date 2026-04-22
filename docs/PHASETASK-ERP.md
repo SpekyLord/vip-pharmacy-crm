@@ -6920,7 +6920,7 @@ Precedent: Phase 33-O (Car Logbook / Smer / Expenses / PrfCalf BDM picker) and E
 - Add `OwnerPicker` variant for Collections (session-level) and GRN (warehouse + owner).
 
 ### Status
-- [ ] Phase G4.5a IN PROGRESS (April 22, 2026) — wiring Sales + Opening AR. G4.5b and G4.5c deferred to separate sessions.
+- [x] Phase G4.5a SHIPPED April 22, 2026 — Sales + Opening AR proxy entry live on `dev` (commit c4d8b87). Build clean in 9.98s, system health check green (5/5 including dedicated proxy-wiring check). G4.5b (Collections + GRN proxy port) and G4.5c (Expenses refactor to shared helper) deferred.
 
 ## Phase 36 — Received CSI Photo Separation + Dunning Readiness (April 22, 2026)
 
@@ -7035,6 +7035,72 @@ docs/PHASETASK-ERP.md                                    # this entry
 
 ### Status
 - [x] Phase 36 SHIPPED April 22, 2026. Migration script pending run on prod.
+
+## Phase G4.5b — Proxy Entry for Collections + GRN (April 22, 2026) ✅
+
+### Problem
+Phase G4.5a delivered proxy entry for Sales + Opening AR. Collections and GRN — the other two high-volume back-office modules — still required the owner BDM to key every row themselves. Finance clerks could not record a CR on behalf of a BDM in the field; warehouse personnel could not capture a GRN on behalf of the BDM on the waybill. The goal was to port the G4.5a helper, picker, and Option B force-approval pattern without regressing the module-specific constraints (Collections' hospital-scoped CSI picker, GRN's warehouse-scoped ledger).
+
+### Solution
+Same two-layer gate as G4.5a (`PROXY_ENTRY_ROLES.<MODULE>` lookup + `<module>.<subKey>` on Access Template). Sub-perm keys: `collections.proxy_entry` and `inventory.grn_proxy_entry`. Same Option B — every proxied submit forces through Approval Hub via `forceApproval: hasProxy, ownerBdmId`. Two module-specific guards were added on top:
+
+1. **Collections — CSI picker rescope.** The Open CSIs endpoint honored `?bdm_id=` for admin/finance/president; extended to honor it for contractor-proxy with `collections.proxy_entry` ticked. Without this, a proxy contractor would see "no open CSIs" and dead-end.
+2. **GRN — warehouse-access cross-check.** `createGrn` loads the selected warehouse and rejects with 400 if the resolved target BDM is not in `Warehouse.assigned_users` (or `manager_id`). `widenFilterForProxy` does NOT override warehouse-level assignment — this is defense in depth.
+3. **GRN — Undertaking ownership mirror.** `autoUndertakingForGrn` propagates `recorded_on_behalf_of` from GRN to the auto-created UT so the target BDM (not the proxy) sees the UT in their own queue. The acknowledgment cascade (`postSingleUndertaking`) already runs in the target's scope and posts the linked GRN in the same session — no separate auto-post wiring needed. GRN is intentionally excluded from `MODULE_AUTO_POST` (comment at [universalApprovalController.js:67](backend/erp/controllers/universalApprovalController.js#L67)) because the UT acknowledgment IS the post.
+
+### Files touched (~14 files, backend + frontend + health check + docs)
+
+**Backend (7)**
+```
+backend/erp/utils/resolveOwnerScope.js                    # unchanged (G4.5a helper reused)
+backend/erp/controllers/collectionController.js           # full proxy wiring: create/update/delete/list/get/openCsis/validate/submit/reopen/requestDeletion/approveDeletion/presidentReverse
+backend/erp/controllers/inventoryController.js            # createGrn + getGrnList proxy wiring + warehouse cross-check + reassignment receiver owner-aware
+backend/erp/controllers/lookupGenericController.js        # seed COLLECTIONS__PROXY_ENTRY + INVENTORY__GRN_PROXY_ENTRY sub-perms
+backend/erp/services/undertakingService.js                # propagate recorded_on_behalf_of GRN → UT
+backend/erp/models/Collection.js                          # recorded_on_behalf_of field
+backend/erp/models/GrnEntry.js                            # recorded_on_behalf_of field
+backend/erp/models/Undertaking.js                         # recorded_on_behalf_of field (mirrored from GRN)
+```
+
+**Frontend (5)**
+```
+frontend/src/erp/hooks/useCollections.js                  # getOpenCsis(id, entityId, { isCustomer, bdmId }) — new bdmId opt
+frontend/src/erp/pages/CollectionSession.jsx              # OwnerPicker mount + assigned_to payload + CSI picker rescope effect dep
+frontend/src/erp/pages/Collections.jsx                    # Proxied pill (table + card layouts)
+frontend/src/erp/pages/GrnEntry.jsx                       # OwnerPicker mount + assigned_to payload + Proxied pill (table + card)
+frontend/src/erp/components/WorkflowGuide.jsx             # proxy tips on collections / collection-session / grn-entry keys
+```
+
+**Health check + docs (2)**
+```
+scripts/check-system-health.js                            # checkProxyEntryWiring extended: +10 checks across Collections + GRN + Undertaking + warehouse guard
+CLAUDE-ERP.md                                             # Phase G4.5b section
+docs/PHASETASK-ERP.md                                     # this entry
+```
+
+### Bulletproof bar
+- [x] `node -c` clean on every backend file edited (Collection.js, GrnEntry.js, Undertaking.js, undertakingService.js, collectionController.js, inventoryController.js, lookupGenericController.js).
+- [x] `npx vite build` clean — three passes during development, all green under 10s.
+- [x] `node scripts/check-system-health.js` 5/5 green, with the G4.5b section of `checkProxyEntryWiring()` validating all new wiring points: `recorded_on_behalf_of` on 3 new models, helper-import + forceApproval in collectionController, helper-import + warehouse cross-check in inventoryController, `grn_proxy_entry` sub-perm seed, Undertaking ownership mirror, `MODULE_AUTO_POST.COLLECTION` presence, OwnerPicker on 4 entry pages, Proxied pill on 4 list pages, all 5 `PROXY_ENTRY_ROLES` module codes seeded.
+- [x] Happy path Collections verified end-to-end at code level: admin keys CR on behalf of Juan → CSI picker rescopes to Juan's AR (hook sends `?bdm_id=juan._id`) → create stamps `bdm_id=juan, recorded_on_behalf_of=admin` + PROXY_CREATE audit row → submit calls `gateApproval({forceApproval: true, ownerBdmId: juan})` → ApprovalRequest with metadata tagging → approve dispatches `MODULE_AUTO_POST.COLLECTION` handler → POSTED.
+- [x] Happy path GRN verified end-to-end at code level: admin keys GRN on behalf of Maria → warehouse picker → `createGrn` confirms Maria in `Warehouse.assigned_users` → GRN created with Maria's bdm_id + admin's `recorded_on_behalf_of` + PROXY_CREATE audit → `autoUndertakingForGrn` inherits both fields → target BDM Maria sees UT in HER queue (not admin's) → submits UT → approver acknowledges → `postSingleUndertaking` cascades `approveGrnCore` → GRN POSTED atomically in same session.
+- [x] Failure path (GRN warehouse mismatch): proxy picks target BDM not assigned to selected warehouse → 400 "Target BDM is not assigned to warehouse {code}. Add them to the warehouse assignment list before recording GRN on their behalf."
+- [x] Failure path (role denial, any module): contractor without `{module}.proxy_entry` ticked sends `assigned_to` via API → 403 "Proxy entry denied for {module}.proxy_entry. Your role or Access Template does not grant proxy rights for this module."
+- [x] Failure path (cross-entity): proxy picks a BDM in a different entity → 403 (existing G4.5a guard, unchanged).
+- [x] Backward compatibility: non-proxy callers (no `assigned_to` in body) see zero behavior change — `resolveOwnerForWrite` short-circuits to self-entry, filter stays `req.tenantFilter`.
+- [x] No hardcoded role/module lists. `PROXY_ENTRY_ROLES` + sub-perm seeds are admin-editable in Control Center → Lookup Tables; subscribers delegate without code changes (Rule #3).
+- [x] Period locks + reopen safety preserved — no change to existing guards.
+
+### Known gaps (deferred to G4.5b-extended / G4.5c)
+- **Owner-chain approval routing (Option C).** `forceApproval` still resolves approvers from `allowedRoles` (admin/finance/president pool), not the owner's `reports_to` chain. Fine for admin/finance proxy. Risky for contractor-proxy with a specific reporting line — the approval could land with someone who is not the owner's direct authority. ApprovalRequest metadata already carries `owner_bdm_id` ready for the upgrade.
+- **Expenses refactor to shared helper (Phase G4.5c).** Expenses has its own legacy `assigned_to` pattern from Phase 33-O. Unifying on `resolveOwnerScope.js` would reduce duplication and align audit action codes (PROXY_CREATE / PROXY_UPDATE).
+- **Contractor-proxy + accounting.reverse_posted.** The GRN `presidentReverseGrn` factory (`buildPresidentReverseHandler`) uses raw `req.tenantFilter`. For admin/finance proxy this is already wide. For the narrow case of a contractor granted both `inventory.grn_proxy_entry` AND `accounting.reverse_posted` (DANGER sub-perm, effectively always president-only), a widen would be needed. Not a blocker.
+
+### Status
+- [x] Phase G4.5b SHIPPED April 22, 2026. Same day as G4.5a.
+- Smoke test pending per handoff plan — user will test Sales + Collections + GRN together after G4.5b ships.
+
+---
 
 ## Phase PR1 — Per-Row Lifecycle Policy (April 22, 2026) ✅
 

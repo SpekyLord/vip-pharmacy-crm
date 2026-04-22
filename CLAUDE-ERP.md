@@ -4744,11 +4744,61 @@ Wired into:
 - Failure path: contractor without role in `PROXY_ENTRY_ROLES.SALES` sends `assigned_to` directly via API → 403 "Proxy entry denied for sales.proxy_entry".
 - Activity Monitor surface: filter by `log_type: PROXY_CREATE` shows every proxied row; `PROXY_UPDATE` shows every proxied edit.
 
-**Deferred (Phase G4.5b + G4.5c).**
-- Collections + GRN proxy (same pattern; port `resolveOwnerScope` into their controllers).
-- Expenses refactor to use the shared helper (keeps existing behavior; unifies audit action codes).
-- `approvalService`: today `forceApproval` sends the proxied doc to **any user in `allowedRoles`** (admin/finance/president by default). G4.5b will add `ownerBdmId` → `owner.reports_to` chain resolution, so approvals route to the owner's direct authority, not just a broad pool. The request already carries `owner_bdm_id` in metadata for that upgrade.
+**Deferred (Phase G4.5c + G4.5b-extended).**
+- Expenses refactor to use the shared helper (keeps existing behavior; unifies audit action codes). — G4.5c
+- `approvalService`: today `forceApproval` sends the proxied doc to **any user in `allowedRoles`** (admin/finance/president by default). A future pass will add `ownerBdmId` → `owner.reports_to` chain resolution, so approvals route to the owner's direct authority, not just a broad pool. The request already carries `owner_bdm_id` in metadata for that upgrade. — G4.5b-extended
 - Lookup-write cache bust: currently relies on 60s TTL; `invalidateProxyRolesCache` should be called from the generic lookup write path for instant propagation.
+
+---
+
+## Phase G4.5b — Proxy Entry for Collections + GRN (April 22, 2026)
+
+**Problem.** G4.5a delivered proxy entry for Sales + Opening AR only. The other two high-volume back-office modules — Collections (Collection Receipts) and GRN (Goods Receipt Notes) — still required the owner BDM to key every row themselves. Finance clerks and admins could not record a CR on behalf of a BDM still on a field visit, and receiving warehouse personnel could not capture a GRN on behalf of the BDM listed on the waybill.
+
+**Solution — port the G4.5a pattern, with two module-specific guards.** The shared `resolveOwnerScope.js` helper is unchanged. `collectionController` and `inventoryController` (GRN paths) now call it exactly like `salesController`. Same two-layer gate (role ∈ `PROXY_ENTRY_ROLES.<MODULE>` lookup + `<module>.<subKey>` tick on Access Template). Same Option B — proxied submits force through Approval Hub via `forceApproval: hasProxy, ownerBdmId`.
+
+**Module-specific guards added this phase.**
+1. **Collections — CSI picker rescope.** The Collection Session's "Open CSIs" dropdown (`getOpenCsisEndpoint`) already applied a Rule #21 privileged-query pattern for admin/finance/president (honors `?bdm_id=`, no silent self-fallback). Extended this privileged bucket to include contractor-proxy with `collections.proxy_entry` ticked — without this a proxy contractor would see "no open CSIs" for any hospital and dead-end. [collectionController.js:109](backend/erp/controllers/collectionController.js#L109).
+2. **GRN — warehouse-access cross-check.** `widenFilterForProxy` relaxes `bdm_id` but does **not** grant the target BDM warehouse access. `inventoryController.createGrn` now loads the selected `Warehouse` and rejects with a clear 400 if `owner.ownerId` is not in `assigned_users` or `manager_id`. Without this guard, a proxy could receive stock into a warehouse the target BDM doesn't own, creating orphaned ledger rows. [inventoryController.js:437](backend/erp/controllers/inventoryController.js#L437).
+3. **GRN — Undertaking ownership mirror.** Every GRN auto-creates a sibling Undertaking via `autoUndertakingForGrn` (Phase 32R). Phase G4.5b propagates `recorded_on_behalf_of` from GRN to the UT so the target BDM sees the UT in their own queue (not the proxy's) — the acknowledgment cascade already runs in the target's scope, and `postSingleUndertaking` posts the linked GRN in the same session. [undertakingService.js:108](backend/erp/services/undertakingService.js#L108).
+
+**Architecture — direction of data flow.**
+```
+ Proxy (admin/finance/back-office contractor) keys a row
+   ├─ Collection Session     → assigned_to    → resolveOwnerForWrite("collections", "proxy_entry")
+   │                         → Collection {bdm_id=target, recorded_on_behalf_of=proxy}
+   │                         → submit  → gateApproval({forceApproval: true, ownerBdmId: target})
+   │                         → ApprovalRequest (metadata.gate='PROXY_ENTRY') → Approval Hub
+   │                         → approve → MODULE_AUTO_POST.COLLECTION handler → POSTED
+   │
+   └─ GRN Entry              → assigned_to    → resolveOwnerForWrite("inventory", "grn_proxy_entry")
+                             → Warehouse.assigned_users cross-check (400 on miss)
+                             → GrnEntry {bdm_id=target, recorded_on_behalf_of=proxy}
+                             → autoUndertakingForGrn mirrors {bdm_id, recorded_on_behalf_of}
+                             → target BDM submits UT → approver acknowledges UT
+                             → postSingleUndertaking cascades → GRN auto-approved atomically
+```
+
+**Key invariants.**
+- `recorded_on_behalf_of` is ONLY written on create. Update path strips `assigned_to`/`bdm_id`/`recorded_on_behalf_of` from the body — ownership is immutable once filed. Reassignment requires delete + recreate (draft only). [collectionController.js:65](backend/erp/controllers/collectionController.js#L65).
+- `widenFilterForProxy` keeps `entity_id` scoping. Cross-entity proxy is denied inside `resolveOwnerForWrite` (target's `entity_id`/`entity_ids` must include `req.entityId`).
+- GRN is intentionally NOT in `MODULE_AUTO_POST` — its "approve target" is the Undertaking, not the GRN itself. Proxy GRN inherits this: the UT is the choke point, not the GRN. Direct `approveGrn` already enforces `UT.status === 'ACKNOWLEDGED'` for non-president callers ([inventoryController.js:812](backend/erp/controllers/inventoryController.js#L812)).
+- Sub-perm `inventory.grn_proxy_entry` sits under the `inventory` module namespace (not its own module) because GRN does not have a dedicated ERP access module. Lookup seed: `INVENTORY__GRN_PROXY_ENTRY`.
+- Non-proxy callers see zero behavior change. Backward compat guaranteed because `resolveOwnerForWrite` short-circuits to self-entry when `body.assigned_to` is absent or matches `req.user._id`.
+
+**Bulletproof bar.**
+- Build clean (`npx vite build` multiple passes).
+- `node -c` clean on Collection.js, GrnEntry.js, Undertaking.js, undertakingService.js, collectionController.js, inventoryController.js, lookupGenericController.js.
+- Health check `node scripts/check-system-health.js` 5/5 green. `checkProxyEntryWiring()` now validates **all** proxy plumbing across Sales, Opening AR, Collections, and GRN — including the Undertaking ownership propagation + warehouse-access cross-check.
+- Happy path (Collections): admin → Collection Session → OwnerPicker picks BDM Juan → CSI picker loads Juan's open invoices → records CR → stamped `bdm_id=juan._id`, `recorded_on_behalf_of=admin._id`. Submit → 202 pending → admin/finance/president approves from Approval Hub → posts via `MODULE_AUTO_POST.COLLECTION`.
+- Happy path (GRN): admin → GRN Entry → OwnerPicker picks BDM Maria → Warehouse picker → Maria is in `warehouse.assigned_users` → GRN + UT created with Maria's bdm_id + admin's `recorded_on_behalf_of`. Maria submits UT → approver acknowledges → GRN posts atomically.
+- Failure path (GRN warehouse mismatch): admin picks BDM Pedro who is NOT assigned to warehouse "WH-MAIN" → 400 "Target BDM is not assigned to warehouse …"
+- Failure path (role denial): contractor without `collections.proxy_entry` sends `assigned_to` directly via API → 403 "Proxy entry denied for collections.proxy_entry".
+
+**Deferred (Phase G4.5b-extended / G4.5c).**
+- Owner-chain approval routing (Option C). `forceApproval` still resolves approvers from `allowedRoles` (admin/finance/president pool), not the owner's `reports_to` chain. Risk is narrow for admin/finance proxy (same pool would approve anyway) but real for contractor-proxy with a specific reporting line.
+- Expenses refactor to shared helper (Phase G4.5c).
+- `president-reverse` paths for Collections use `widenFilterForProxy` + pass the widened filter into `documentReversalService`. GRN `presidentReverseGrn` still goes through the generic `buildPresidentReverseHandler` factory which uses raw `req.tenantFilter` — for admin/finance proxy this is already wide (no `bdm_id` in their tenantFilter); for hypothetical contractor-proxy with `accounting.reverse_posted`, a widen would be needed. Not a blocker given the DANGER sub-perm is almost always reserved for president.
 
 ---
 

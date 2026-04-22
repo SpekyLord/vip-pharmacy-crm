@@ -27,38 +27,83 @@ const { getEditableStatuses } = require('../services/approvalService');
 const Settings = require('../models/Settings');
 const PettyCashFund = require('../models/PettyCashFund');
 const PettyCashTransaction = require('../models/PettyCashTransaction');
+const { resolveOwnerForWrite, widenFilterForProxy, canProxyEntry } = require('../utils/resolveOwnerScope');
 
 // ═══ CRUD ═══
 
 const createCollection = catchAsync(async (req, res) => {
+  // Phase G4.5b — Proxy Entry. Admin/finance/back-office contractor (with
+  // collections.proxy_entry sub-perm + PROXY_ENTRY_ROLES.COLLECTIONS role) can
+  // record a CR on behalf of another BDM by passing assigned_to. Falls back to
+  // self-entry when assigned_to is absent or matches the caller. Rule #21: if
+  // body.assigned_to is set but caller isn't eligible, throws 403 — never
+  // silently uses caller's id.
+  let owner;
+  try {
+    owner = await resolveOwnerForWrite(req, 'collections', { subKey: 'proxy_entry' });
+  } catch (err) {
+    if (err.statusCode === 403 || err.statusCode === 400) {
+      return res.status(err.statusCode).json({ success: false, message: err.message });
+    }
+    throw err;
+  }
+
+  const { assigned_to: _discardAssignedTo, ...bodyWithoutAssignedTo } = req.body || {};
   const data = {
-    ...req.body,
+    ...bodyWithoutAssignedTo,
     entity_id: req.entityId,
-    bdm_id: req.bdmId,
+    bdm_id: owner.ownerId,
+    recorded_on_behalf_of: owner.proxiedBy,
     created_by: req.user._id,
     status: 'DRAFT'
   };
   const collection = await Collection.create(data);
+
+  // Phase G4.5b — audit proxy creation so Activity Monitor + Approval Hub can surface it.
+  if (owner.isOnBehalf) {
+    await ErpAuditLog.logChange({
+      entity_id: req.entityId,
+      bdm_id: owner.ownerId,
+      log_type: 'PROXY_CREATE',
+      target_ref: collection._id.toString(),
+      target_model: 'Collection',
+      changed_by: req.user._id,
+      note: `Proxy create: CR ${collection.cr_no || collection._id} keyed by ${req.user.name || req.user._id} (${req.user.role}) on behalf of BDM ${owner.ownerId}`
+    }).catch(err => console.error('[createCollection] PROXY_CREATE audit failed (non-critical):', err.message));
+  }
+
   res.status(201).json({ success: true, data: collection });
 });
 
 const updateCollection = catchAsync(async (req, res) => {
-  const collection = await Collection.findOne({ _id: req.params.id, ...req.tenantFilter, status: 'DRAFT' });
+  // Phase G4.5b — proxy can edit any BDM's DRAFT collection within the entity
+  // when collections.proxy_entry is ticked. Non-proxy callers stay scoped to
+  // their own bdm_id via the base tenantFilter.
+  const scope = await widenFilterForProxy(req, 'collections', { subKey: 'proxy_entry' });
+  const collection = await Collection.findOne({ _id: req.params.id, ...scope, status: 'DRAFT' });
   if (!collection) return res.status(404).json({ success: false, message: 'Draft collection not found' });
 
-  Object.assign(collection, req.body);
+  // Ownership is locked on edit. Strip assigned_to / bdm_id / recorded_on_behalf_of
+  // so a proxy can't silently reassign a row via update — reassignment requires
+  // delete + recreate.
+  const { assigned_to: _discardAssigned, bdm_id: _discardBdm, recorded_on_behalf_of: _discardProxy, ...editableBody } = req.body || {};
+  Object.assign(collection, editableBody);
   await collection.save();
   res.json({ success: true, data: collection });
 });
 
 const deleteDraftCollection = catchAsync(async (req, res) => {
-  const result = await Collection.findOneAndDelete({ _id: req.params.id, ...req.tenantFilter, status: 'DRAFT' });
+  // Phase G4.5b — proxy can delete any BDM's DRAFT within entity scope.
+  const scope = await widenFilterForProxy(req, 'collections', { subKey: 'proxy_entry' });
+  const result = await Collection.findOneAndDelete({ _id: req.params.id, ...scope, status: 'DRAFT' });
   if (!result) return res.status(404).json({ success: false, message: 'Draft collection not found' });
   res.json({ success: true, message: 'Draft deleted' });
 });
 
 const getCollections = catchAsync(async (req, res) => {
-  const filter = { ...req.tenantFilter };
+  // Phase G4.5b — proxy widens to all BDMs in the entity.
+  const scope = await widenFilterForProxy(req, 'collections', { subKey: 'proxy_entry' });
+  const filter = { ...scope };
   if (req.query.status) filter.status = req.query.status;
   if (req.query.hospital_id) filter.hospital_id = req.query.hospital_id;
   if (req.query.cr_date_from || req.query.cr_date_to) {
@@ -91,12 +136,15 @@ const getCollections = catchAsync(async (req, res) => {
 });
 
 const getCollectionById = catchAsync(async (req, res) => {
-  // President sees all; others scoped by entity (+ bdm for employees)
-  const filter = { _id: req.params.id, ...req.tenantFilter };
+  // President sees all; others scoped by entity (+ bdm for employees).
+  // Phase G4.5b — proxy widens to all BDMs in the entity.
+  const scope = await widenFilterForProxy(req, 'collections', { subKey: 'proxy_entry' });
+  const filter = { _id: req.params.id, ...scope };
   const collection = await Collection.findOne(filter)
     .populate('hospital_id', 'hospital_name tin cwt_rate payment_terms')
     .populate('customer_id', 'customer_name customer_type tin payment_terms')
     .populate('bdm_id', 'name')
+    .populate('recorded_on_behalf_of', 'name')
     .populate('petty_cash_fund_id', 'fund_code fund_name')
     .populate('bank_account_id', 'bank_name bank_code')
     .lean();
@@ -113,7 +161,12 @@ const getOpenCsisEndpoint = catchAsync(async (req, res) => {
 
   const entityId = (req.isPresident || req.isAdmin || req.isFinance) && req.query.entity_id
     ? req.query.entity_id : req.entityId;
-  const bdmId = (req.isPresident || req.isAdmin || req.isFinance)
+  // Phase G4.5b — contractor-proxy (with collections.proxy_entry ticked) honors
+  // ?bdm_id= too, so the Collection Session's CSI picker can render the target
+  // BDM's open invoices. Without this, a proxy would see no CSIs and dead-end.
+  const { canProxy } = await canProxyEntry(req, 'collections', 'proxy_entry');
+  const privileged = req.isPresident || req.isAdmin || req.isFinance || canProxy;
+  const bdmId = privileged
     ? (req.query.bdm_id || null)
     : req.bdmId;
 
@@ -148,7 +201,9 @@ const getCollectionRateEndpoint = catchAsync(async (req, res) => {
 
 const validateCollections = catchAsync(async (req, res) => {
   const editable = await getEditableStatuses(req.entityId, 'COLLECTION');
-  const filter = { ...req.tenantFilter, status: { $in: editable } };
+  // Phase G4.5b — proxy can validate rows owned by other BDMs in the entity.
+  const scope = await widenFilterForProxy(req, 'collections', { subKey: 'proxy_entry' });
+  const filter = { ...scope, status: { $in: editable } };
   if (req.body.collection_ids?.length) filter._id = { $in: req.body.collection_ids };
 
   const rows = await Collection.find(filter);
@@ -284,7 +339,9 @@ const validateCollections = catchAsync(async (req, res) => {
 const submitCollections = catchAsync(async (req, res) => {
   let warnings;
   const { collection_ids } = req.body;
-  const filter = { ...req.tenantFilter, status: 'VALID' };
+  // Phase G4.5b — proxy can submit rows owned by other BDMs in the entity.
+  const scope = await widenFilterForProxy(req, 'collections', { subKey: 'proxy_entry' });
+  const filter = { ...scope, status: 'VALID' };
   if (collection_ids && collection_ids.length) {
     filter._id = { $in: collection_ids.map(id => new mongoose.Types.ObjectId(id)) };
   }
@@ -295,9 +352,15 @@ const submitCollections = catchAsync(async (req, res) => {
 
   const settings = await Settings.getSettings();
 
-  // Authority matrix gate — single gate for batch
+  // Authority matrix gate — single gate for batch.
+  // Phase G4.5b — if ANY row in the batch was proxied (recorded_on_behalf_of
+  // is set), force the whole batch through Approval Hub regardless of the
+  // submitter's role. Conservative: never auto-post a batch that contains a
+  // proxied row until owner-chain approval routing lands (G4.5b-extended).
   const { gateApproval } = require('../services/approvalService');
   const crTotalAmount = validRows.reduce((sum, r) => sum + (r.cr_amount || 0), 0);
+  const proxiedRow = validRows.find(r => r.recorded_on_behalf_of);
+  const hasProxy = !!proxiedRow;
   const gated = await gateApproval({
     entityId: req.entityId,
     module: 'COLLECTION',
@@ -305,9 +368,13 @@ const submitCollections = catchAsync(async (req, res) => {
     docId: validRows[0]._id,
     docRef: validRows.map(r => r.cr_no).filter(Boolean).join(', '),
     amount: crTotalAmount,
-    description: `Submit ${validRows.length} collection${validRows.length === 1 ? '' : 's'} (total ₱${crTotalAmount.toLocaleString()})`,
+    description: hasProxy
+      ? `Submit ${validRows.length} collection${validRows.length === 1 ? '' : 's'} (total ₱${crTotalAmount.toLocaleString()}) — proxy entry, owner approval required`
+      : `Submit ${validRows.length} collection${validRows.length === 1 ? '' : 's'} (total ₱${crTotalAmount.toLocaleString()})`,
     requesterId: req.user._id,
     requesterName: req.user.name || req.user.email,
+    forceApproval: hasProxy,
+    ownerBdmId: proxiedRow?.bdm_id,
   }, res);
   if (gated) return;
 
@@ -560,7 +627,10 @@ const reopenCollections = catchAsync(async (req, res) => {
   const { collection_ids } = req.body;
   if (!collection_ids?.length) return res.status(400).json({ success: false, message: 'collection_ids required' });
 
-  const rows = await Collection.find({ _id: { $in: collection_ids }, ...req.tenantFilter, status: 'POSTED' });
+  // Phase G4.5b — proxy can reopen rows owned by other BDMs in the entity
+  // (subject to the separate collections.reopen danger sub-perm).
+  const scope = await widenFilterForProxy(req, 'collections', { subKey: 'proxy_entry' });
+  const rows = await Collection.find({ _id: { $in: collection_ids }, ...scope, status: 'POSTED' });
   if (!rows.length) return res.status(404).json({ success: false, message: 'No POSTED collections found' });
 
   const reopened = [];
@@ -667,7 +737,9 @@ const reopenCollections = catchAsync(async (req, res) => {
 // ═══ DELETION ═══
 
 const requestDeletion = catchAsync(async (req, res) => {
-  const collection = await Collection.findOne({ _id: req.params.id, ...req.tenantFilter, status: 'POSTED' });
+  // Phase G4.5b — proxy can request deletion of rows owned by other BDMs.
+  const scope = await widenFilterForProxy(req, 'collections', { subKey: 'proxy_entry' });
+  const collection = await Collection.findOne({ _id: req.params.id, ...scope, status: 'POSTED' });
   if (!collection) return res.status(404).json({ success: false, message: 'Posted collection not found' });
 
   collection.status = 'DELETION_REQUESTED';
@@ -685,7 +757,10 @@ const requestDeletion = catchAsync(async (req, res) => {
 });
 
 const approveDeletion = catchAsync(async (req, res) => {
-  const collection = await Collection.findOne({ _id: req.params.id, ...req.tenantFilter, status: 'DELETION_REQUESTED' });
+  // Phase G4.5b — proxy can approve deletion for rows owned by other BDMs
+  // within entity scope.
+  const scope = await widenFilterForProxy(req, 'collections', { subKey: 'proxy_entry' });
+  const collection = await Collection.findOne({ _id: req.params.id, ...scope, status: 'DELETION_REQUESTED' });
   if (!collection) return res.status(404).json({ success: false, message: 'Collection not found' });
 
   // Reversal event
@@ -734,13 +809,16 @@ const presidentReverseCollection = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Reason is required' });
   }
 
+  // Phase G4.5b — proxy/admin may president-reverse rows owned by other BDMs
+  // within the entity. accounting.reverse_posted sub-perm still gates the route.
+  const scope = await widenFilterForProxy(req, 'collections', { subKey: 'proxy_entry' });
   try {
     const result = await presidentReverse({
       doc_type: 'COLLECTION',
       doc_id: req.params.id,
       reason,
       user: req.user,
-      tenantFilter: req.tenantFilter || {},
+      tenantFilter: scope,
     });
     res.json({
       success: true,

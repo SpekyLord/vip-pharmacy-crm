@@ -536,6 +536,11 @@ const SEED_DEFAULTS = {
     { code: 'MESSAGING__RETENTION_MANAGE', label: 'Manage inbox retention settings', metadata: { module: 'messaging', key: 'retention_manage', sort_order: 10 } },
     // Collections
     { code: 'COLLECTIONS__REOPEN', label: 'Re-open Posted Collections', metadata: { module: 'collections', key: 'reopen', sort_order: 1 } },
+    // Phase G4.5b — Proxy Entry for Collections. Paired with PROXY_ENTRY_ROLES.COLLECTIONS
+    // lookup (default admin/finance/president). Tick surfaces the OwnerPicker on the
+    // Collection Session + widens read/update to all BDMs in the entity. See
+    // backend/erp/utils/resolveOwnerScope.js + Phase G4.5b in PHASETASK-ERP.
+    { code: 'COLLECTIONS__PROXY_ENTRY', label: 'Record Collection Receipt on behalf of another BDM', metadata: { module: 'collections', key: 'proxy_entry', sort_order: 2 } },
     // Expenses
     { code: 'EXPENSES__BATCH_UPLOAD', label: 'Batch OR Upload (OCR)', metadata: { module: 'expenses', key: 'batch_upload', sort_order: 1 } },
     { code: 'EXPENSES__REOPEN', label: 'Re-open Posted Expenses', metadata: { module: 'expenses', key: 'reopen', sort_order: 2 } },
@@ -554,6 +559,12 @@ const SEED_DEFAULTS = {
     // Phase 3c — Inventory danger sub-permissions
     { code: 'INVENTORY__TRANSFER_PRICE_SET', label: 'Set/Bulk-Set Inter-Company Transfer Prices (DANGER)', metadata: { module: 'inventory', key: 'transfer_price_set', sort_order: 5 } },
     { code: 'INVENTORY__WAREHOUSE_MANAGE', label: 'Create/Edit Warehouses (DANGER)', metadata: { module: 'inventory', key: 'warehouse_manage', sort_order: 6 } },
+    // Phase G4.5b — Proxy Entry for GRN. Paired with PROXY_ENTRY_ROLES.GRN lookup
+    // (default admin/finance/president). Tick surfaces the OwnerPicker on GRN Entry
+    // and widens read/update to all BDMs in the entity. Note the sub-perm sits under
+    // the `inventory` module namespace (key 'grn_proxy_entry') because GRN does not
+    // have its own ERP access module. See backend/erp/utils/resolveOwnerScope.js.
+    { code: 'INVENTORY__GRN_PROXY_ENTRY', label: 'Record GRN on behalf of another BDM', metadata: { module: 'inventory', key: 'grn_proxy_entry', sort_order: 7 } },
     // Accounting
     { code: 'ACCOUNTING__JOURNAL_ENTRY', label: 'Journal Entries & COA', metadata: { module: 'accounting', key: 'journal_entry', sort_order: 1 } },
     { code: 'ACCOUNTING__CHECK_WRITING', label: 'Check Writing / Payments', metadata: { module: 'accounting', key: 'check_writing', sort_order: 2 } },

@@ -235,7 +235,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Generate SOA', path: '/erp/collections/soa' },
       { label: 'Petty Cash', path: '/erp/petty-cash' },
     ],
-    tip: 'Overdue accounts (>30 days) are flagged. Cash payments routed to a Petty Cash Fund auto-create a POSTED deposit on submission and auto-void on reopen. Only ACTIVE funds that accept deposits (REVOLVING or DEPOSIT_ONLY mode) are available. President Delete — for the President (or anyone granted accounting.reverse_posted in Access Templates): one-click delete of bad CRs. POSTED rows trigger SAP Storno (reverses collection + CWT + commission journals, deletes VAT/CWT ledger entries, voids petty cash deposit, decrements fund balance — all in a single transaction; original kept for audit). DRAFT/VALID/ERROR rows hard-delete. All actions logged.',
+    tip: 'Overdue accounts (>30 days) are flagged. Cash payments routed to a Petty Cash Fund auto-create a POSTED deposit on submission and auto-void on reopen. Only ACTIVE funds that accept deposits (REVOLVING or DEPOSIT_ONLY mode) are available. President Delete — for the President (or anyone granted accounting.reverse_posted in Access Templates): one-click delete of bad CRs. POSTED rows trigger SAP Storno (reverses collection + CWT + commission journals, deletes VAT/CWT ledger entries, voids petty cash deposit, decrements fund balance — all in a single transaction; original kept for audit). DRAFT/VALID/ERROR rows hard-delete. All actions logged. A small "Proxied" pill next to CR # means the row was keyed by someone other than the owner BDM (Phase G4.5b proxy entry) — tooltip shows who keyed vs who owns.',
   },
   'collection-session': {
     title: 'Recording a Collection',
@@ -246,12 +246,13 @@ const WORKFLOW_GUIDES = {
       'Choose payment destination — Petty Cash Fund (ACTIVE, deposit-enabled) or Bank Account',
       'Enter amount received — can be partial or full payment',
       'Validate and Post to clear the AR and create deposit journal',
+      'Proxy entry (Phase G4.5b): if the "Record on behalf of" dropdown appears at the top of the hospital step, picking a BDM files the CR under their bdm_id and rescopes the Open CSIs picker to their AR. Every proxied submit is forced through Approval Hub regardless of your role (owner approval required, four-eyes guard).',
     ],
     next: [
       { label: 'View All Collections', path: '/erp/collections' },
       { label: 'View AR Aging', path: '/erp/collections/ar' },
     ],
-    tip: 'Collections support both hospital and customer targets — the system validates CSIs and AR balance for whichever entity type is used. Opening AR (pre-go-live) CSIs are fully collectable. CWT is auto-computed if applicable. When routed to a petty cash fund, a POSTED deposit is auto-created on submission and auto-voided on reopen. The fund must be ACTIVE and accept deposits (REVOLVING or DEPOSIT_ONLY). Arriving from AR Aging? The hospital and invoice are pre-filled — entity/BDM scope is still enforced by the backend so out-of-scope URLs resolve to an empty form. Role visibility: President/admin/finance see every BDM\'s open CSIs for the selected hospital by default (use the BDM filter to narrow); BDMs see only their own.',
+    tip: 'Collections support both hospital and customer targets — the system validates CSIs and AR balance for whichever entity type is used. Opening AR (pre-go-live) CSIs are fully collectable. CWT is auto-computed if applicable. When routed to a petty cash fund, a POSTED deposit is auto-created on submission and auto-voided on reopen. The fund must be ACTIVE and accept deposits (REVOLVING or DEPOSIT_ONLY). Arriving from AR Aging? The hospital and invoice are pre-filled — entity/BDM scope is still enforced by the backend so out-of-scope URLs resolve to an empty form. Role visibility: President/admin/finance see every BDM\'s open CSIs for the selected hospital by default (use the BDM filter to narrow); BDMs see only their own. Proxy entry eligibility is two-layer: role ∈ PROXY_ENTRY_ROLES.COLLECTIONS (lookup, default admin/finance/president) AND collections.proxy_entry ticked on Access Template. Add `contractor` to the lookup to delegate to a back-office clerk.',
   },
   'ar-aging': {
     title: 'Accounts Receivable Aging',
@@ -474,13 +475,14 @@ const WORKFLOW_GUIDES = {
       'Tap "Scan Undertaking Paper" to OCR the physical Undertaking — batch, expiry, and qty auto-fill for every matched product line (marked ✓). Unmatched rows stay open for manual entry.',
       'For any line not covered by the scan: type the batch/lot # from the packaging (optional when GRN_SETTINGS → REQUIRE_BATCH = 0), pick expiry via calendar (optional when REQUIRE_EXPIRY = 0; floored at today + MIN_EXPIRY_DAYS when provided), enter received qty',
       'Tap "Save & Validate" — backend checks batch/expiry/qty/waybill (skipping the checks turned off in GRN_SETTINGS), then auto-creates the Undertaking and deep-links you there for a read-only double-check before routing for approval',
+      'Proxy entry (Phase G4.5b): if the "Record on behalf of" dropdown appears next to the Warehouse picker, choosing a BDM files the GRN under their bdm_id and mirrors ownership onto the auto-created Undertaking (so the target BDM sees the UT in their queue). Backend also cross-checks that the target BDM is assigned to the selected warehouse — picking a warehouse they can\'t access rejects with a clear 400.',
     ],
     next: [
       { label: 'Undertaking (Review)', path: '/erp/undertaking' },
       { label: 'My Stock', path: '/erp/my-stock' },
       { label: 'Purchase Orders', path: '/erp/purchase-orders' },
     ],
-    tip: 'Phase 32R — GRN is the capture surface. All batch/lot + expiry + qty data is entered here, and the paper Undertaking becomes the OCR source that auto-fills lines in bulk. The Undertaking page downstream is a read-only approval wrapper, not another data-entry form. Every GRN auto-assigns a human-readable number on create — `GRN-{TERR|ENTITY}{MMDDYY}-{NNN}` (e.g. `GRN-ILO042026-001`, matching the CALF/PO/JE format) — sequenced atomically per territory-per-day. Subscribers in non-pharmacy verticals can relax batch/expiry requirements in Control Center → GRN Settings — FIFO stays intact because blanks become safe sentinels (batch="N/A", expiry=9999-12-31).',
+    tip: 'Phase 32R — GRN is the capture surface. All batch/lot + expiry + qty data is entered here, and the paper Undertaking becomes the OCR source that auto-fills lines in bulk. The Undertaking page downstream is a read-only approval wrapper, not another data-entry form. Every GRN auto-assigns a human-readable number on create — `GRN-{TERR|ENTITY}{MMDDYY}-{NNN}` (e.g. `GRN-ILO042026-001`, matching the CALF/PO/JE format) — sequenced atomically per territory-per-day. Subscribers in non-pharmacy verticals can relax batch/expiry requirements in Control Center → GRN Settings — FIFO stays intact because blanks become safe sentinels (batch="N/A", expiry=9999-12-31). Proxy entry eligibility (Phase G4.5b) is two-layer: role ∈ PROXY_ENTRY_ROLES.GRN (lookup, default admin/finance/president) AND inventory.grn_proxy_entry ticked on Access Template. A "Proxied" pill shows on the GRN list next to the GRN #; the auto-created Undertaking inherits the same ownership so the acknowledgment cascade reaches the target BDM, not the proxy.',
   },
   // Phase 32R — Undertaking (read-only approval wrapper over a captured GRN)
   'undertaking-entry': {

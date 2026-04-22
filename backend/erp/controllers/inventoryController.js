@@ -12,6 +12,7 @@ const PurchaseOrder = require('../models/PurchaseOrder');
 const TransactionEvent = require('../models/TransactionEvent');
 const Settings = require('../models/Settings');
 const ErpAuditLog = require('../models/ErpAuditLog');
+const { resolveOwnerForWrite, widenFilterForProxy } = require('../utils/resolveOwnerScope');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { getMyStock: getMyStockAgg, getAvailableBatches } = require('../services/fifoEngine');
 const { cleanBatchNo } = require('../utils/normalize');
@@ -441,6 +442,41 @@ const createGrn = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'At least one line item is required' });
   }
 
+  // Phase G4.5b — Proxy Entry. Admin/finance/back-office contractor (with
+  // inventory.grn_proxy_entry sub-perm + PROXY_ENTRY_ROLES.GRN role) can record
+  // a GRN on behalf of another BDM via `assigned_to`. Falls back to self-entry
+  // when absent. Rule #21: denial on ineligible proxy is explicit (never silent
+  // self-fallback). Defense in depth: the target BDM must also have access to
+  // the receiving warehouse (Warehouse.assigned_users) — widening tenantFilter
+  // does not override warehouse-level assignment.
+  let owner;
+  try {
+    owner = await resolveOwnerForWrite(req, 'inventory', { subKey: 'grn_proxy_entry' });
+  } catch (err) {
+    if (err.statusCode === 403 || err.statusCode === 400) {
+      return res.status(err.statusCode).json({ success: false, message: err.message });
+    }
+    throw err;
+  }
+
+  if (owner.isOnBehalf && warehouse_id) {
+    const Warehouse = require('../models/Warehouse');
+    const wh = await Warehouse.findOne({ _id: warehouse_id, entity_id: req.entityId })
+      .select('warehouse_code warehouse_name assigned_users manager_id')
+      .lean();
+    if (!wh) {
+      return res.status(404).json({ success: false, message: 'Warehouse not found for this entity' });
+    }
+    const assignedIds = (wh.assigned_users || []).map(id => String(id));
+    if (wh.manager_id) assignedIds.push(String(wh.manager_id));
+    if (!assignedIds.includes(String(owner.ownerId))) {
+      return res.status(400).json({
+        success: false,
+        message: `Target BDM is not assigned to warehouse ${wh.warehouse_code || wh.warehouse_name}. Add them to the warehouse assignment list before recording GRN on their behalf.`
+      });
+    }
+  }
+
   // Phase 32R: waybill is evidence of physical delivery. Required at capture
   // time — subscribers CAN relax this via GRN_SETTINGS.WAYBILL_REQUIRED if their
   // workflow permits (e.g. internal transfer with no waybill), see below.
@@ -549,8 +585,11 @@ const createGrn = catchAsync(async (req, res) => {
     if (!reassignment) {
       return res.status(404).json({ success: false, message: 'Internal transfer not found or not awaiting GRN' });
     }
-    // Receiving contractor must be the target BDM
-    if (reassignment.target_bdm_id.toString() !== req.bdmId?.toString()
+    // Receiving contractor must be the target BDM. Phase G4.5b — for proxied
+    // entry, we compare against the RESOLVED owner (target BDM), not the proxy
+    // caller's req.bdmId — otherwise a back-office proxy would be rejected for
+    // receiving on behalf of the true receiver.
+    if (reassignment.target_bdm_id.toString() !== String(owner.ownerId)
         && !req.isAdmin && !req.isPresident) {
       return res.status(403).json({ success: false, message: 'Only the receiving contractor can create GRN for this transfer' });
     }
@@ -614,7 +653,8 @@ const createGrn = catchAsync(async (req, res) => {
     await session.withTransaction(async () => {
       const [created] = await GrnEntry.create([{
         entity_id: req.entityId,
-        bdm_id: req.bdmId,
+        bdm_id: owner.ownerId,
+        recorded_on_behalf_of: owner.proxiedBy,
         warehouse_id: warehouse_id || undefined,
         source_type,
         grn_number,
@@ -632,6 +672,9 @@ const createGrn = catchAsync(async (req, res) => {
       }], { session });
       grn = created;
 
+      // Phase G4.5b — autoUndertakingForGrn inherits bdm_id + recorded_on_behalf_of
+      // from the GRN so the target BDM sees the UT in their queue (otherwise the
+      // acknowledgment cascade would dead-end on a UT owned by the proxy).
       undertaking = await autoUndertakingForGrn(grn, { session });
     });
   } finally {
@@ -643,7 +686,7 @@ const createGrn = catchAsync(async (req, res) => {
 
   await ErpAuditLog.logChange({
     entity_id: req.entityId,
-    bdm_id: req.bdmId,
+    bdm_id: owner.ownerId,
     log_type: 'STATUS_CHANGE',
     target_ref: grn._id.toString(),
     target_model: 'GrnEntry',
@@ -654,6 +697,21 @@ const createGrn = catchAsync(async (req, res) => {
       ? `Internal transfer GRN ${grn_number} created with ${line_items.length} item(s); auto-Undertaking ${undertaking.undertaking_number} in DRAFT (BDM review)`
       : `GRN ${grn_number} created with ${line_items.length} item(s); auto-Undertaking ${undertaking.undertaking_number} in DRAFT (BDM review)`
   });
+
+  // Phase G4.5b — audit proxy creation so Activity Monitor + Approval Hub can
+  // surface it. Separate from the STATUS_CHANGE log above so filter queries for
+  // log_type: 'PROXY_CREATE' return clean proxy-only rows.
+  if (owner.isOnBehalf) {
+    await ErpAuditLog.logChange({
+      entity_id: req.entityId,
+      bdm_id: owner.ownerId,
+      log_type: 'PROXY_CREATE',
+      target_ref: grn._id.toString(),
+      target_model: 'GrnEntry',
+      changed_by: req.user._id,
+      note: `Proxy create: GRN ${grn_number} keyed by ${req.user.name || req.user._id} (${req.user.role}) on behalf of BDM ${owner.ownerId}. Auto-Undertaking ${undertaking.undertaking_number} inherits ownership.`
+    }).catch(err => console.error('[createGrn] PROXY_CREATE audit failed (non-critical):', err.message));
+  }
 
   res.status(201).json({
     success: true,
@@ -884,7 +942,9 @@ const approveGrn = catchAsync(async (req, res) => {
  * GET /grn — List GRNs with status filter
  */
 const getGrnList = catchAsync(async (req, res) => {
-  const filter = { ...req.tenantFilter };
+  // Phase G4.5b — proxy widens to all BDMs in the entity.
+  const scope = await widenFilterForProxy(req, 'inventory', { subKey: 'grn_proxy_entry' });
+  const filter = { ...scope };
   if (req.query.status) filter.status = req.query.status;
   if (req.query.po_id) filter.po_id = req.query.po_id;
 
@@ -900,6 +960,7 @@ const getGrnList = catchAsync(async (req, res) => {
   const [grns, total] = await Promise.all([
     GrnEntry.find(filter)
       .populate('bdm_id', 'name email')
+      .populate('recorded_on_behalf_of', 'name')
       .populate('reviewed_by', 'name')
       .populate('vendor_id', 'vendor_name vendor_code')
       .sort({ created_at: -1 })
