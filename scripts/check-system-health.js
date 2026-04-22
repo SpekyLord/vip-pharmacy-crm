@@ -516,8 +516,27 @@ function checkProxyEntryWiring() {
       warn('PROXY', `${page} does not render proxy indicator (recorded_on_behalf_of)`);
     }
   }
+  // Phase G4.5b-ext — AR Aging + Collection Rate endpoints must use
+  // canProxyEntry so proxy-eligible contractors can view their target BDMs'
+  // AR data. Without this, a proxy can record collections but cannot verify
+  // the AR state — a blind spot that undermines data accuracy.
+  if (!/canProxyEntry.*getArAgingEndpoint|getArAgingEndpoint[\s\S]*?canProxyEntry/.test(collCtrl)) {
+    // Check if canProxyEntry appears near getArAgingEndpoint
+    const arAgingIdx = collCtrl.indexOf('getArAgingEndpoint');
+    const arAgingBlock = arAgingIdx >= 0 ? collCtrl.slice(arAgingIdx, arAgingIdx + 600) : '';
+    if (!arAgingBlock.includes('canProxyEntry')) {
+      warn('PROXY', 'collectionController.getArAgingEndpoint does not call canProxyEntry — proxy contractors cannot view target BDM AR aging (Phase G4.5b-ext)');
+    }
+  }
+  {
+    const crIdx = collCtrl.indexOf('getCollectionRateEndpoint');
+    const crBlock = crIdx >= 0 ? collCtrl.slice(crIdx, crIdx + 600) : '';
+    if (!crBlock.includes('canProxyEntry')) {
+      warn('PROXY', 'collectionController.getCollectionRateEndpoint does not call canProxyEntry — proxy contractors cannot view target BDM collection rate (Phase G4.5b-ext)');
+    }
+  }
 
-  if (issues === startIssues) console.log('  ✓ Proxy entry wiring intact (G4.5a + G4.5b + G4.5c.1)');
+  if (issues === startIssues) console.log('  \u2713 Proxy entry wiring intact (G4.5a + G4.5b + G4.5b-ext + G4.5c.1)');
 }
 
 // ═══ Phase FRA-A — FRA dual-write to User.entity_ids ═══

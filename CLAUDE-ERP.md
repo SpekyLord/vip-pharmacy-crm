@@ -5036,3 +5036,39 @@ scripts/check-system-health.js                                   # section 5 ext
 CLAUDE-ERP.md                                                    # this section
 docs/PHASETASK-ERP.md                                            # status flip 📋 → ✅
 ```
+
+---
+
+## Phase G4.5b-ext — Proxy-Aware AR Aging + Collection Rate Endpoints (April 23, 2026)
+
+### Problem
+Phase G4.5b extended the Open CSIs endpoint (`getOpenCsisEndpoint`) so that contractor-proxies with `collections.proxy_entry` ticked could pass `?bdm_id=` to view the target BDM's open invoices. However, the two companion read endpoints — `getArAgingEndpoint` and `getCollectionRateEndpoint` — were not updated. They still restricted `?bdm_id=` to president/admin/finance only. This created a **blind spot**: a proxy could record collections on behalf of a BDM but could not verify that BDM's AR aging or collection rate — undermining data accuracy and the full AR → Collection → Rate verification loop.
+
+### Fix
+Mirror the existing `getOpenCsisEndpoint` proxy pattern into both endpoints. The change is minimal and surgical:
+
+1. **`getArAgingEndpoint`** — call `canProxyEntry(req, 'collections', 'proxy_entry')` and include the result in the `privileged` boolean that gates `?bdm_id=` passthrough. Entity scope (`req.entityId`) unchanged.
+2. **`getCollectionRateEndpoint`** — same pattern. Proxy can now view collection rate of the BDMs they file on behalf of.
+3. **WorkflowGuide** — `ar-aging` tip updated to mention proxy access (Phase G4.5b-ext).
+4. **Health check** — `checkProxyEntryWiring()` extended with two new checks: verifies `canProxyEntry` appears in both `getArAgingEndpoint` and `getCollectionRateEndpoint` blocks.
+
+### Governing principles
+- **Rule #3 (no hardcoded business values)**: no new hardcoded roles. Reuses the existing `PROXY_ENTRY_ROLES.COLLECTIONS` lookup + `collections.proxy_entry` sub-permission. Subscribers delegate without code changes.
+- **Rule #19 (entity-scoped)**: `req.entityId` unchanged. No cross-entity bleed.
+- **Rule #21 (no silent self-ID fallback)**: non-proxy contractors still receive `req.bdmId` (their own data only). No silent widening.
+
+### Files changed
+```
+backend/erp/controllers/collectionController.js           # getArAgingEndpoint + getCollectionRateEndpoint proxy-aware
+frontend/src/erp/components/WorkflowGuide.jsx             # ar-aging tip updated
+scripts/check-system-health.js                            # checkProxyEntryWiring extended (+2 checks)
+CLAUDE-ERP.md                                             # this section
+docs/PHASETASK-ERP.md                                     # Phase G4.5b-ext entry
+```
+
+### Verification
+- `node -c backend/erp/controllers/collectionController.js` — clean
+- `node scripts/check-system-health.js` — 6/6 green (G4.5b-ext checks passing)
+- `npx vite build` — clean in 11.47s, zero errors
+- No new dependencies, no new models, no new routes, no schema changes
+- Backward compatible: non-proxy callers see zero behavior change

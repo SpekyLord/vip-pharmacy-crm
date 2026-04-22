@@ -267,7 +267,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Collect Payment', path: '/erp/collections/session' },
       { label: 'Generate SOA', path: '/erp/collections/soa' },
     ],
-    tip: 'High AR aging affects your collection rate and profit sharing eligibility. The "Collect" quick-action deep-links to the Collection form with the hospital (and optionally the specific invoice) pre-selected — posting logic, authority gating, and journal entries still run through the single Collections workflow so the ledger stays consistent across entities and subscribers. Role visibility: President/admin/finance see all BDMs\' CSIs across the working entity by default (use the BDM filter to scope); BDMs see only their own.',
+    tip: 'High AR aging affects your collection rate and profit sharing eligibility. The "Collect" quick-action deep-links to the Collection form with the hospital (and optionally the specific invoice) pre-selected — posting logic, authority gating, and journal entries still run through the single Collections workflow so the ledger stays consistent across entities and subscribers. Role visibility: President/admin/finance see all BDMs\' CSIs across the working entity by default (use the BDM filter to scope); BDMs see only their own. Proxy-eligible contractors (role ∈ PROXY_ENTRY_ROLES.COLLECTIONS + collections.proxy_entry ticked) can also pass ?bdm_id= to view the AR aging and collection rate of the BDMs they file on behalf of (Phase G4.5b-ext).',
   },
   'expenses': {
     title: 'Recording Expenses (ORE / ACCESS)',

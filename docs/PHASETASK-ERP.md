@@ -7095,14 +7095,40 @@ docs/PHASETASK-ERP.md                                     # this entry
 - **Owner-chain approval routing (Option C).** `forceApproval` still resolves approvers from `allowedRoles` (admin/finance/president pool), not the owner's `reports_to` chain. Fine for admin/finance proxy. Risky for contractor-proxy with a specific reporting line — the approval could land with someone who is not the owner's direct authority. ApprovalRequest metadata already carries `owner_bdm_id` ready for the upgrade.
 - **Expenses refactor to shared helper (Phase G4.5c).** Expenses has its own legacy `assigned_to` pattern from Phase 33-O. Unifying on `resolveOwnerScope.js` would reduce duplication and align audit action codes (PROXY_CREATE / PROXY_UPDATE).
 - **Contractor-proxy + accounting.reverse_posted.** The GRN `presidentReverseGrn` factory (`buildPresidentReverseHandler`) uses raw `req.tenantFilter`. For admin/finance proxy this is already wide. For the narrow case of a contractor granted both `inventory.grn_proxy_entry` AND `accounting.reverse_posted` (DANGER sub-perm, effectively always president-only), a widen would be needed. Not a blocker.
-
 ### Status
 - [x] Phase G4.5b SHIPPED April 22, 2026. Same day as G4.5a.
 - Smoke test pending per handoff plan — user will test Sales + Collections + GRN together after G4.5b ships.
 
 ---
 
-## Phase PR1 — Per-Row Lifecycle Policy (April 22, 2026) ✅
+## Phase G4.5b-ext — Proxy-Aware AR Aging + Collection Rate Endpoints (April 23, 2026) ✓
+
+### Problem
+Phase G4.5b extended `getOpenCsisEndpoint` so contractor-proxies with `collections.proxy_entry` could pass `?bdm_id=`. The two companion read endpoints — `getArAgingEndpoint` and `getCollectionRateEndpoint` — were not updated. A proxy could record collections but could not verify the target BDM's AR aging or collection rate — a blind spot.
+
+### Fix
+Mirror the `getOpenCsisEndpoint` proxy pattern:
+- [x] `getArAgingEndpoint`: call `canProxyEntry(req, 'collections', 'proxy_entry')`, include result in `privileged` boolean gating `?bdm_id=`.
+- [x] `getCollectionRateEndpoint`: same pattern.
+- [x] `WorkflowGuide.jsx`: `ar-aging` tip updated to mention proxy access.
+- [x] `check-system-health.js`: `checkProxyEntryWiring()` extended with 2 new checks for `canProxyEntry` in both endpoints.
+
+### Bulletproof bar
+- [x] `node -c collectionController.js` — clean.
+- [x] `node scripts/check-system-health.js` — 6/6 green (G4.5b-ext checks passing).
+- [x] `npx vite build` — clean in 11.47s.
+- [x] No new dependencies, models, routes, or schema changes.
+- [x] Backward compatible: non-proxy callers see zero behavior change.
+- [x] Rule #3: reuses existing `PROXY_ENTRY_ROLES.COLLECTIONS` lookup + `collections.proxy_entry` sub-perm.
+- [x] Rule #19: entity scope unchanged.
+- [x] Rule #21: no silent self-ID fallback.
+
+### Status
+- [x] Phase G4.5b-ext SHIPPED April 23, 2026.
+
+---
+
+## Phase PR1 — Per-Row Lifecycle Policy (April 22, 2026) ✓✅
 
 ### Problem
 Four transactional modules (Sales, Opening AR, Expenses, Collections) had split lifecycle UX:
