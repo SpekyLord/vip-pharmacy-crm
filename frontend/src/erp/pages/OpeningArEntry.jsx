@@ -41,7 +41,7 @@ import ScanCSIModal from '../components/ScanCSIModal';
 import CsiPhoto, { csiPhotoStyles } from '../components/CsiPhoto';
 import OwnerPicker from '../components/OwnerPicker';
 import { useRejectionConfig } from '../hooks/useRejectionConfig';
-import { showError, showApprovalPending, showSuccess } from '../utils/errorToast';
+import { showError, showSuccess } from '../utils/errorToast';
 
 const STATUS_COLORS = {
   DRAFT: { bg: '#e2e8f0', text: '#475569', label: 'Draft' },

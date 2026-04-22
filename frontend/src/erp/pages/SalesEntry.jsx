@@ -21,7 +21,7 @@ import { useRejectionConfig } from '../hooks/useRejectionConfig';
 // Shared modal — used in photo-only mode for the rejection-fallback flow.
 // The inline ScanCSIModal below remains the primary scan UX for live entries.
 import ScanCSIPhotoFallback from '../components/ScanCSIModal';
-import { showError, showApprovalPending, showSuccess, showWarning } from '../utils/errorToast';
+import { showError, showApprovalPending, showSuccess } from '../utils/errorToast';
 import { matchHospital, matchProduct, fieldVal, fieldConfidence } from '../utils/ocrMatching';
 
 const STATUS_COLORS = {

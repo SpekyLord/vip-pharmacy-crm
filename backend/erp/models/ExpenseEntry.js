@@ -40,8 +40,19 @@ const expenseEntrySchema = new mongoose.Schema({
   bdm_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
 
   // Phase 18: office staff can record expenses on behalf of president (no credential sharing)
-  // When set, CALF is never required (president override)
+  // Phase G4.5c.1 split — `recorded_on_behalf_of` is now pure proxy audit
+  // (matches Sales/Collection/GRN shape). CALF bypass moves to its own
+  // explicit field `calf_override` below. Previously conflated: proxy =
+  // CALF bypass, which silently granted CALF-bypass to every admin/finance
+  // /contractor proxy once the broader create-proxy path landed in G4.5c.1.
   recorded_on_behalf_of: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+
+  // President-only override of the CALF requirement (Phase G4.5c.1). Set
+  // by `saveBatchExpenses` ONLY when `req.user.role === 'president'`. Pre-save
+  // hook reads this flag (not `recorded_on_behalf_of`) so that admin/finance
+  // /contractor proxies DO NOT inherit the CALF bypass — consistent with the
+  // validate-time / submit-time gates which already enforce president-only.
+  calf_override: { type: Boolean, default: false },
 
   // Period
   period: { type: String, required: true, trim: true },       // "2026-04"
@@ -99,8 +110,10 @@ expenseEntrySchema.pre('save', async function () {
     line.net_of_vat = Math.round(((line.amount || 0) - (line.vat_amount || 0)) * 100) / 100;
 
     // CALF flag: ACCESS with non-cash payment requires CALF. ORE and cash ACCESS are always exempt.
-    // Phase 18: recorded_on_behalf_of (president override) = CALF never required
-    if (this.recorded_on_behalf_of) {
+    // Phase G4.5c.1 — explicit calf_override (set by president batch upload
+    // flow only). Proxy audit (`recorded_on_behalf_of`) NO LONGER triggers
+    // CALF bypass on its own — validate/submit still honor president role.
+    if (this.calf_override) {
       line.calf_required = false;
     } else if (line.expense_type === 'ACCESS' && line.payment_mode !== 'CASH') {
       line.calf_required = true;
