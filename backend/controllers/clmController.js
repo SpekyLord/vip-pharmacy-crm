@@ -1,0 +1,285 @@
+/**
+ * CLM Controller
+ *
+ * Handles Closed Loop Marketing session CRUD and analytics:
+ * - Start / end / update sessions
+ * - Record slide events
+ * - Mark QR scanned (webhook-ready)
+ * - Analytics aggregation for admin dashboard
+ */
+const CLMSession = require('../models/CLMSession');
+
+// ── Helpers ─────────────────────────────────────────────────────────
+const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+
+// ── Start a new CLM session ─────────────────────────────────────────
+const startSession = asyncHandler(async (req, res) => {
+  const { doctorId, location } = req.body;
+  if (!doctorId) {
+    return res.status(400).json({ success: false, message: 'doctorId is required' });
+  }
+
+  const session = await CLMSession.create({
+    user: req.user._id,
+    doctor: doctorId,
+    startedAt: new Date(),
+    location: location || {},
+    status: 'in_progress',
+  });
+
+  // Build the Messenger ref for QR tracking
+  const messengerRef = `CLM_${session._id}_${doctorId}_${req.user._id}`;
+  session.messengerRef = messengerRef;
+  await session.save();
+
+  res.status(201).json({ success: true, data: session });
+});
+
+// ── End / complete a session ────────────────────────────────────────
+const endSession = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { interestLevel, bdmNotes, followUpDate, outcome } = req.body;
+
+  const session = await CLMSession.findById(id);
+  if (!session) {
+    return res.status(404).json({ success: false, message: 'Session not found' });
+  }
+
+  session.endedAt = new Date();
+  session.totalDurationMs = session.endedAt - session.startedAt;
+  session.status = 'completed';
+  session.slidesViewedCount = session.slideEvents.length;
+
+  if (interestLevel) session.interestLevel = interestLevel;
+  if (bdmNotes) session.bdmNotes = bdmNotes;
+  if (followUpDate) session.followUpDate = followUpDate;
+  if (outcome) session.outcome = outcome;
+
+  await session.save();
+  res.json({ success: true, data: session });
+});
+
+// ── Record slide events (batch) ─────────────────────────────────────
+const recordSlideEvents = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { slideEvents } = req.body;
+
+  const session = await CLMSession.findById(id);
+  if (!session) {
+    return res.status(404).json({ success: false, message: 'Session not found' });
+  }
+
+  if (Array.isArray(slideEvents)) {
+    session.slideEvents.push(...slideEvents);
+    session.slidesViewedCount = session.slideEvents.length;
+  }
+
+  await session.save();
+  res.json({ success: true, data: session });
+});
+
+// ── Mark QR as displayed ────────────────────────────────────────────
+const markQrDisplayed = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const session = await CLMSession.findById(id);
+  if (!session) {
+    return res.status(404).json({ success: false, message: 'Session not found' });
+  }
+  session.qrDisplayedAt = new Date();
+  await session.save();
+  res.json({ success: true, data: session });
+});
+
+// ── Mark QR as scanned (called by Messenger webhook or manually) ────
+const markQrScanned = asyncHandler(async (req, res) => {
+  const { messengerRef } = req.body;
+
+  let session;
+  if (messengerRef) {
+    session = await CLMSession.findOne({ messengerRef });
+  } else if (req.params.id) {
+    session = await CLMSession.findById(req.params.id);
+  }
+
+  if (!session) {
+    return res.status(404).json({ success: false, message: 'Session not found' });
+  }
+
+  session.qrScanned = true;
+  session.qrScannedAt = new Date();
+  await session.save();
+  res.json({ success: true, data: session });
+});
+
+// ── Get my sessions (BDM) ───────────────────────────────────────────
+const getMySessions = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20, status, doctorId } = req.query;
+  const filter = { user: req.user._id };
+  if (status) filter.status = status;
+  if (doctorId) filter.doctor = doctorId;
+
+  const sessions = await CLMSession.find(filter)
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(Number(limit));
+
+  const total = await CLMSession.countDocuments(filter);
+
+  res.json({
+    success: true,
+    data: sessions,
+    pagination: { page: Number(page), limit: Number(limit), total },
+  });
+});
+
+// ── Get all sessions (admin) ────────────────────────────────────────
+const getAllSessions = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 20, status, userId, doctorId } = req.query;
+  const filter = {};
+  if (status) filter.status = status;
+  if (userId) filter.user = userId;
+  if (doctorId) filter.doctor = doctorId;
+
+  const sessions = await CLMSession.find(filter)
+    .populate('user', 'firstName lastName')
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
+    .sort({ createdAt: -1 })
+    .skip((page - 1) * limit)
+    .limit(Number(limit));
+
+  const total = await CLMSession.countDocuments(filter);
+
+  res.json({
+    success: true,
+    data: sessions,
+    pagination: { page: Number(page), limit: Number(limit), total },
+  });
+});
+
+// ── Get single session detail ───────────────────────────────────────
+const getSessionById = asyncHandler(async (req, res) => {
+  const session = await CLMSession.findById(req.params.id)
+    .populate('user', 'firstName lastName')
+    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress');
+
+  if (!session) {
+    return res.status(404).json({ success: false, message: 'Session not found' });
+  }
+  res.json({ success: true, data: session });
+});
+
+// ── Analytics summary ───────────────────────────────────────────────
+const getAnalytics = asyncHandler(async (req, res) => {
+  const { startDate, endDate, userId } = req.query;
+  const match = { status: 'completed' };
+  if (startDate || endDate) {
+    match.createdAt = {};
+    if (startDate) match.createdAt.$gte = new Date(startDate);
+    if (endDate) match.createdAt.$lte = new Date(endDate);
+  }
+  if (userId) match.user = require('mongoose').Types.ObjectId(userId);
+
+  const [summary] = await CLMSession.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: null,
+        totalSessions: { $sum: 1 },
+        avgDurationMs: { $avg: '$totalDurationMs' },
+        avgInterestLevel: { $avg: '$interestLevel' },
+        avgSlidesViewed: { $avg: '$slidesViewedCount' },
+        qrDisplayedCount: { $sum: { $cond: [{ $ifNull: ['$qrDisplayedAt', false] }, 1, 0] } },
+        qrScannedCount: { $sum: { $cond: ['$qrScanned', 1, 0] } },
+        interestedCount: { $sum: { $cond: [{ $eq: ['$outcome', 'interested'] }, 1, 0] } },
+        maybeCount: { $sum: { $cond: [{ $eq: ['$outcome', 'maybe'] }, 1, 0] } },
+        notInterestedCount: { $sum: { $cond: [{ $eq: ['$outcome', 'not_interested'] }, 1, 0] } },
+      },
+    },
+  ]);
+
+  // Slide-level heatmap: average time per slide index
+  const slideHeatmap = await CLMSession.aggregate([
+    { $match: match },
+    { $unwind: '$slideEvents' },
+    {
+      $group: {
+        _id: '$slideEvents.slideIndex',
+        avgDurationMs: { $avg: '$slideEvents.durationMs' },
+        viewCount: { $sum: 1 },
+        slideTitle: { $first: '$slideEvents.slideTitle' },
+      },
+    },
+    { $sort: { _id: 1 } },
+  ]);
+
+  // Top BDMs by conversion
+  const topBdms = await CLMSession.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: '$user',
+        totalSessions: { $sum: 1 },
+        conversions: { $sum: { $cond: ['$qrScanned', 1, 0] } },
+        avgInterest: { $avg: '$interestLevel' },
+      },
+    },
+    { $sort: { conversions: -1 } },
+    { $limit: 10 },
+    {
+      $lookup: {
+        from: 'users',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'bdm',
+      },
+    },
+    { $unwind: '$bdm' },
+    {
+      $project: {
+        bdmName: { $concat: ['$bdm.firstName', ' ', '$bdm.lastName'] },
+        totalSessions: 1,
+        conversions: 1,
+        avgInterest: 1,
+        conversionRate: {
+          $cond: [
+            { $gt: ['$totalSessions', 0] },
+            { $multiply: [{ $divide: ['$conversions', '$totalSessions'] }, 100] },
+            0,
+          ],
+        },
+      },
+    },
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      summary: summary || {
+        totalSessions: 0,
+        avgDurationMs: 0,
+        avgInterestLevel: 0,
+        avgSlidesViewed: 0,
+        qrDisplayedCount: 0,
+        qrScannedCount: 0,
+        interestedCount: 0,
+        maybeCount: 0,
+        notInterestedCount: 0,
+      },
+      slideHeatmap,
+      topBdms,
+    },
+  });
+});
+
+module.exports = {
+  startSession,
+  endSession,
+  recordSlideEvents,
+  markQrDisplayed,
+  markQrScanned,
+  getMySessions,
+  getAllSessions,
+  getSessionById,
+  getAnalytics,
+};

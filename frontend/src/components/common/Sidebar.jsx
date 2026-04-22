@@ -58,6 +58,8 @@ import {
   Target,
   Trophy,
   MessageSquare,
+  Presentation,
+  Handshake,
 } from 'lucide-react';
 
 /* =============================================================================
@@ -1024,6 +1026,7 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
               { path: '/admin/comm-logs', label: 'Comm Logs', icon: MessageSquare },
               { path: '/admin/invites', label: 'Invite Triage', icon: MessageSquare },
               { path: '/admin/message-templates', label: 'Msg Templates', icon: MessageSquare },
+              { path: '/admin/clm-sessions', label: 'CLM Sessions', icon: Presentation },
               { path: '/admin/settings', label: 'Programs', icon: Settings },
             ],
           },
@@ -1055,6 +1058,7 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
               { path: '/bdm/inbox', label: 'Mail', icon: Inbox, badge: unreadCount || null },
               { path: '/bdm/visits', label: 'My Visits', icon: ClipboardCheck },
               { path: '/bdm/comm-log', label: 'Comm Log', icon: MessageSquare },
+              { path: '/bdm/partnership', label: 'Partnership', icon: Handshake },
             ],
           },
         ],

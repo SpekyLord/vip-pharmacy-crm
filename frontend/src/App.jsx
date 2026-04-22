@@ -49,6 +49,8 @@ const CallPlanPage = lazyRetry(() => import('./pages/employee/CallPlanPage'));
 const DoctorDetailPage = lazyRetry(() => import('./pages/employee/DoctorDetailPage'));
 const ProductSpecPage = lazyRetry(() => import('./pages/employee/ProductSpecPage'));
 const CommLogPage = lazyRetry(() => import('./pages/employee/CommLogPage'));
+// CLM — Closed Loop Marketing (Partnership Presentation)
+const PartnershipCLM = lazyRetry(() => import('./pages/employee/PartnershipCLM'));
 
 // Admin pages
 const AdminDashboard = lazyRetry(() => import('./pages/admin/AdminDashboard'));
@@ -66,6 +68,7 @@ const SettingsPage = lazyRetry(() => import('./pages/admin/SettingsPage'));
 const CommLogsPage = lazyRetry(() => import('./pages/admin/CommLogsPage'));
 const MessageTemplatesPage = lazyRetry(() => import('./pages/admin/MessageTemplatesPage'));
 const InvitesPage = lazyRetry(() => import('./pages/admin/InvitesPage'));
+const CLMSessionsPage = lazyRetry(() => import('./pages/admin/CLMSessionsPage'));
 
 // ERP pages
 const ErpDashboard = lazyRetry(() => import('./erp/pages/ErpDashboard'));
@@ -364,6 +367,15 @@ function App() {
               </ProtectedRoute>
             }
           />
+          {/* CLM — Partnership Presentation */}
+          <Route
+            path="/bdm/partnership"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BDM_ADMIN}>
+                <PartnershipCLM />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Admin Routes */}
           <Route
@@ -395,6 +407,15 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_ONLY}>
                 <BDMVisitsPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* CLM Admin — Partnership Session Analytics */}
+          <Route
+            path="/admin/clm-sessions"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_ONLY}>
+                <CLMSessionsPage />
               </ProtectedRoute>
             }
           />
