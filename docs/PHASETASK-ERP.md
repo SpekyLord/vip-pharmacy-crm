@@ -7158,3 +7158,353 @@ docs/PHASETASK-ERP.md                               # this entry + §3.8 update
 ### Status
 - [x] Phase PR1 SHIPPED April 22, 2026. Build clean. Per-row policy enforced end-to-end. No bulk lifecycle action surfaces remain in Sales / Opening AR / Expenses UI.
 
+---
+
+## Phase FRA-A — Cross-Entity Assignments Drives `User.entity_ids` (April 22, 2026) 📋 PLANNED
+
+### Problem
+Two multi-entity systems co-exist and are not wired together:
+- `User.entity_ids` (scalar array) — what [tenantFilter.js](backend/erp/middleware/tenantFilter.js) reads to validate `X-Entity-Id` and set `req.entityId`.
+- `FunctionalRoleAssignment` (Phase 31) — richer per-(person, entity, function) record with date windows, approval limits, status. Maintained from **Control Center → People & Access → Role Assignments**.
+
+Consequence: admin assigns employee to MG and CO. via FRA, UI shows ACTIVE, but the entity picker never offers MG and CO., `tenantFilter` never sets `req.entityId = mg_id`, and `resolveOwnerForWrite` throws "target not assigned to the current entity." FRA rows are cosmetic.
+
+### Decision (mentor-mode — locked before coding)
+**Option A** wins over Option B (union-of-sources bridge).
+
+- Keep `User.entity_ids` authoritative for entity access (what `tenantFilter` reads today — unchanged hot path).
+- Teach the **Cross-Entity Assignments** admin UI (FRA create/update/delete) to ALSO push the entity_id onto the person's `User.entity_ids` (and remove it when the FRA row is the last active one for that entity).
+- FRA stays as an **optional** metadata layer: date windows (`valid_from`/`valid_to`), `approval_limit`, `functional_role`, `status` (ACTIVE/SUSPENDED/EXPIRED/REVOKED). Useful for reporting/audit ("who handled ACCOUNTING at MG and CO. in Q2 2026?") and for subscribers who need time-bounded deployments or per-entity approval caps — never load-bearing for auth.
+- Function access continues to flow from Access Template sub-permissions (existing pattern). Functions are near-identical across entities, so FRA's `functional_role` is redundant with sub-perms for the auth gate.
+
+### Why Option A beats Option B
+- Option B (union-of-sources bridge) requires: 5-min per-user cache in `tenantFilter`, cache-bust across two controllers, and reading FRA on every authenticated ERP request. ~3–5 hours.
+- Option A requires: one controller update on the FRA maintenance surface. ~1 hour.
+- Option A preserves the Phase 31 investment (FRA data + UI unchanged) while making the data actually flow. Option B would have been correct engineering for a use case (temporary deployments, per-entity approval limits) we don't exercise today.
+- Rule #9 (no data duplication): there's a thin duplication of "this person works at these entities" across both stores. Mitigated by: (a) FRA controller is the ONLY admin surface that writes both — no dual-write from elsewhere, (b) health check guards against drift.
+
+### FRA-A.1 — FRA controller dual-write
+- [ ] `backend/erp/controllers/functionalRoleAssignmentController.js`:
+  - `createAssignment`: after FRA.save(), `$addToSet` `fra.entity_id` onto the linked User's `entity_ids` (via PeopleMaster → User lookup).
+  - `updateAssignment`: if `entity_id` changed, rebuild the User's union from their active FRA rows + any static entity_ids admin had before FRA (tracked via a `User.entity_ids_static` array — migration below).
+  - `deleteAssignment` / `deactivate`: rebuild union, `$pull` the entity_id if no other active FRA at that entity remains.
+- [ ] One-time `backend/erp/scripts/backfillEntityIdsFromFra.js` (idempotent):
+  - For each User with a linked PeopleMaster, compute union of (current `entity_ids`) + (active FRA entity_ids).
+  - Seed `entity_ids_static` = current `entity_ids` at migration time (preserves pre-FRA assignments).
+  - Write resulting union to `User.entity_ids`. Log diffs for audit.
+- [ ] `backend/models/User.js`:
+  - New field `entity_ids_static: [ObjectId]` — entities admin assigned outside the FRA flow (e.g., via BDM Management page). Rebuild logic: `entity_ids = union(entity_ids_static, activeFraEntityIds)`.
+
+### FRA-A.2 — PeopleMaster link guard
+- [ ] `resolveOwnerForWrite` already checks target entity via `User.entity_ids`. With FRA-A.1 in place, FRA rows will have already propagated — no helper change needed. Confirm via health check.
+- [ ] Edge case: User with no linked PeopleMaster but an FRA row somehow (shouldn't happen — FRA requires `person_id`). If encountered in backfill, log and skip (don't crash).
+
+### FRA-A.3 — Health check
+- [ ] `scripts/check-system-health.js`: new `checkFraEntityIdsSync()`:
+  - For every active FRA row, assert `User.entity_ids` for the linked person includes `fra.entity_id`.
+  - Report drift count. Zero = green.
+  - Runs in < 5s against 100+ FRA rows (single aggregation).
+
+### FRA-A.4 — Deferred / out-of-scope
+- **Date-window enforcement in `tenantFilter`**: today's auth gate is static `entity_ids`. Future subscribers wanting time-bounded deployment would need `tenantFilter` to filter by `valid_from`/`valid_to`. Punt until a subscriber asks. When they do, it's a `tenantFilter` extension, not a FRA-bridge rebuild.
+- **Approval limit enforcement**: `FRA.approval_limit` is data-only today. Future phase to wire into `approvalService`.
+- **Strict function-gate** (module ↔ FRA.functional_role matching): not implemented. Sub-perms are the function gate. If a subscriber asks for strict, add `MODULE_FRA_REQUIRED` lookup with `null` default (off).
+
+### FRA-A.5 — Bulletproof bar
+- [ ] Happy path: admin creates FRA (Juan → MG and CO. → SALES) → Juan's `User.entity_ids` now includes MG and CO. → Juan's entity picker shows MG and CO. → proxy-write target check passes for MG and CO. ops.
+- [ ] Deactivate path: admin sets `is_active=false` on Juan's MG and CO. FRA → Juan's `entity_ids` `$pull`s MG and CO. (unless another active FRA for MG and CO. exists for him) → entity picker drops MG and CO. → immediate effect (no cache TTL).
+- [ ] Multi-role path: Juan has ACCOUNTING + SALES FRAs at MG and CO. → deactivate SALES → MG and CO. still in `entity_ids` (ACCOUNTING keeps it) → deactivate ACCOUNTING → MG and CO. removed.
+- [ ] Static preservation: admin assigned Juan to VIP and MG and CO. via BDM Management (pre-FRA) → backfill stores both in `entity_ids_static` → adding an FRA for BLW leaves VIP + MG and CO. intact + adds BLW.
+- [ ] Rule #9 drift check: health check reports 0 FRA-sync drift after migration.
+- [ ] Rule #19 cross-entity isolation: adding entity to `entity_ids` still requires explicit `X-Entity-Id` header to switch — no silent cross-entity writes.
+- [ ] Rule #21 no silent self-fallback: `resolveOwnerForWrite` behavior unchanged; still throws 403 on cross-entity target.
+- [ ] Build clean; `node -c` on modified controllers; `node scripts/check-system-health.js` green.
+
+### FRA-A.6 — Files to touch (~1.5 hours)
+```
+backend/erp/controllers/functionalRoleAssignmentController.js  # dual-write on create/update/delete
+backend/models/User.js                                          # + entity_ids_static
+backend/erp/scripts/backfillEntityIdsFromFra.js                 # NEW, idempotent
+scripts/check-system-health.js                                  # + checkFraEntityIdsSync
+CLAUDE-ERP.md                                                   # Phase FRA-A section
+docs/PHASETASK-ERP.md                                           # this entry
+```
+
+### Status
+- [ ] 📋 PLANNED. Awaiting user confirmation before implementation. Mentor recommends Option A; user has informally signaled preference via questioning flow but has not locked the decision.
+
+---
+
+## Phase G4.5c — Proxy Entry Refactor (Expenses) + Port to Petty Cash + Fuel Entry (April 22, 2026) 📋 PLANNED
+
+### Problem
+Phase G4.5a (Sales + Opening AR) and G4.5b (Collections + GRN) established the shared `resolveOwnerScope.js` helper + Option B force-approval pattern. Three more back-office modules are candidates for proxy entry — with different levels of readiness:
+
+1. **Expenses** — already has `assigned_to` + `recorded_on_behalf_of` from Phase 33-O legacy pattern + Phase G1 batch-upload. Audit codes differ from G4.5a's `PROXY_CREATE` / `PROXY_UPDATE`. Refactor to shared helper to unify audit trail and eliminate duplication.
+2. **Petty Cash** — no proxy today. BDMs file and reconcile their own. Office finance should be able to reconcile receipts on behalf (classification is policy knowledge).
+3. **Fuel Entry** — no proxy today. BDMs scan pump receipt + enter liters/amount. Office finance classifies COA (ORE-fuel vs logbook-gas vs personal) and posts.
+
+### Solution — same two-layer pattern
+Reuse `resolveOwnerScope.js` helper. Add per-module sub-perms:
+- `expenses.proxy_entry` — deprecates the legacy batch-upload-only path (batch upload remains its own sub-perm, but single-entry proxy now uses the shared helper).
+- `petty_cash.proxy_entry`
+- `fuel_entry.proxy_entry`
+
+Add Option B force-approval on each module's submit path (already proven in G4.5a + G4.5b).
+
+### G4.5c.1 — Expenses refactor (highest priority)
+- [ ] `backend/erp/controllers/expenseController.js`:
+  - Replace inline `assigned_to` handling with `resolveOwnerForWrite(req, 'expenses', { subKey: 'proxy_entry' })`.
+  - Replace inline list filter with `widenFilterForProxy(req, 'expenses', ...)`.
+  - Unify audit codes: `EXPENSE_CREATE_PROXY` → `PROXY_CREATE` (same as Sales), `EXPENSE_UPDATE_PROXY` → `PROXY_UPDATE`.
+  - Option B on `submitExpenses` (already had per-row submit from Phase PR1 — just add `forceApproval` flag when `recorded_on_behalf_of` present on any row being submitted).
+- [ ] `backend/erp/models/Expense.js`: confirm `recorded_on_behalf_of` field matches the Sales/Collection/GRN shape (ObjectId ref User, sparse index).
+- [ ] `backend/erp/controllers/lookupGenericController.js`: seed `EXPENSES__PROXY_ENTRY` sub-perm row.
+- [ ] `frontend/src/erp/pages/ExpensesEntry.jsx`: swap legacy picker → `<OwnerPicker module="expenses" subKey="proxy_entry" />`.
+- [ ] `frontend/src/erp/pages/Expenses.jsx`: add "Proxied" pill to OR number column (already has the column — just add pill when `row.recorded_on_behalf_of`).
+
+### G4.5c.2 — Petty Cash proxy entry
+- [ ] `backend/erp/controllers/pettyCashController.js`: wire `resolveOwnerForWrite` + `widenFilterForProxy` on `createPettyCashEntry`, `updatePettyCashEntry`, `getPettyCashList`, `getPettyCashById`, `submitPettyCash`, `reconcilePettyCash`.
+- [ ] `backend/erp/models/PettyCashEntry.js`: add `recorded_on_behalf_of: ObjectId ref User` + sparse index.
+- [ ] `backend/erp/controllers/lookupGenericController.js`: seed `PETTY_CASH__PROXY_ENTRY` sub-perm + `PETTY_CASH` entry in `PROXY_ENTRY_ROLES`.
+- [ ] `frontend/src/erp/pages/PettyCash.jsx`: `<OwnerPicker module="petty_cash" ... />` + Proxied pill.
+
+### G4.5c.3 — Fuel Entry proxy entry
+- [ ] Same pattern. `fuelEntryController.js` + `FuelEntry.js` model + lookup seed + frontend picker + pill.
+- [ ] BDM mobile UI: scan pump receipt (already wired in Phase H3/H4 OCR), enter liters + amount + GPS. Proxy classifies COA (ORE-fuel / logbook-gas / personal) and posts.
+
+### G4.5c.4 — Health check extension
+- [ ] `scripts/check-system-health.js: checkProxyEntryWiring()`:
+  - Add Expenses / Petty Cash / Fuel Entry to the module list.
+  - Verify `recorded_on_behalf_of` on 3 more models.
+  - Verify `resolveOwnerScope` import on 3 more controllers.
+  - Verify `MODULE_AUTO_POST.{EXPENSES,PETTY_CASH,FUEL_ENTRY}` presence.
+  - Verify OwnerPicker mount on 3 more entry pages.
+
+### G4.5c.5 — Bulletproof bar
+- [ ] Non-regression: existing Expenses batch-upload flow unchanged (separate `expenses.batch_upload` sub-perm).
+- [ ] Audit history convergence: query `ErpAuditLog.find({ log_type: 'PROXY_CREATE' })` returns results across Sales / Collections / GRN / Expenses / Petty Cash / Fuel (one filter, all modules).
+- [ ] Option B force-approval fires for proxied submits across all 6 modules.
+- [ ] Build clean; health check green (now 6 modules covered, up from 4).
+
+### G4.5c.6 — Files
+```
+backend/erp/controllers/expenseController.js
+backend/erp/controllers/pettyCashController.js
+backend/erp/controllers/fuelEntryController.js
+backend/erp/controllers/lookupGenericController.js              # + 3 sub-perm seeds, + 2 PROXY_ENTRY_ROLES codes (PETTY_CASH, FUEL_ENTRY)
+backend/erp/models/Expense.js                                    # confirm shape
+backend/erp/models/PettyCashEntry.js                             # + recorded_on_behalf_of
+backend/erp/models/FuelEntry.js                                  # + recorded_on_behalf_of
+frontend/src/erp/pages/ExpensesEntry.jsx
+frontend/src/erp/pages/Expenses.jsx
+frontend/src/erp/pages/PettyCash.jsx
+frontend/src/erp/pages/FuelEntry.jsx
+frontend/src/erp/components/WorkflowGuide.jsx                    # proxy tips on 3 more page keys
+scripts/check-system-health.js                                   # extend checkProxyEntryWiring
+CLAUDE-ERP.md                                                    # Phase G4.5c section
+docs/PHASETASK-ERP.md                                            # this entry
+```
+
+### Status
+- [ ] 📋 PLANNED. Ordering: G4.5c.1 (Expenses refactor) first — highest user-visible benefit, lowest risk. Then G4.5c.2 (Petty Cash). Then G4.5c.3 (Fuel Entry).
+
+---
+
+## Phase P1 — BDM Mobile Capture + Office Proxy Queue (April 22, 2026) 📋 PLANNED
+
+### Vision
+Operational model locked with user: **BDM = revenue producer, proxy = back-office processor.** Every task classified by:
+- Physical presence in field required? → BDM
+- Classification / policy judgment required? → proxy
+- Data entry from captured artifact? → proxy
+- Unlocks commission / revenue? → BDM (incentive alignment)
+
+BDM in the field does ONE-TAP capture (scan + GPS + photo). Office proxy processes. BDM reviews proxied entries before POSTED. Commission-bearing actions stay sacred to BDM.
+
+### Workflows covered
+
+| # | Workflow | BDM captures | Proxy processes | Commission lever |
+|---|---|---|---|---|
+| 1 | SMER + per-diem | Starting ODO photo, ending ODO photo, personal km declaration | Compile SMER doc, per-diem calculation, override request | — |
+| 2 | Expenses (OR-based) | Scan OR, enter price + mode of payment, note for whom (ACCESS) | Classify ORE/ACCESS, COA map, CALF link + validate + submit | — |
+| 3 | Sales (live) | OCR unreceived CSI at point of sale | Proxy enters into ERP, submits through Approval Hub | **Commission gated until BDM uploads signed CSI (Phase P2)** |
+| 4 | Opening AR | — | All proxy | — |
+| 5 | Collections | **BDM keys** (commission lever) | — | Yes — BDM priority |
+| 6 | GRN | BDM scans product, counts qty, uploads batch/expiry + waybill | — | — |
+| 7 | Petty Cash | Mobile request ("I need ₱5k") | Reconcile receipts, post | — |
+| 8 | Fuel Entry | Scan pump receipt | Classify COA + post | — |
+
+### Non-negotiable BDM-only actions
+- Visit logging (CRM) — GPS + photo + commission.
+- Signed CSI delivery proof upload — commission gate.
+- Personal gas / personal km declaration — honesty gate.
+- Collection entry — commission lever.
+- KPI self-attestation — accountability.
+- Any approval action — Rule #20 Option B (proxy enters, never approves).
+
+### P1.1 — BDM mobile capture UI
+- [ ] `frontend/src/erp/pages/mobile/BdmCaptureHub.jsx` — new landing page, phone-first (360px min), large touch targets (≥ 44px), ONE tap per workflow.
+  - "Scan ODO (start / end)" → opens camera, two-photo flow
+  - "Scan OR / Receipt" → OCR + price + mode of payment + "who for?" note
+  - "Scan Unreceived CSI" → OCR, queues for proxy entry
+  - "Scan GRN Item" → barcode / product picker + qty + batch/expiry + waybill photo
+  - "Request Petty Cash" → amount + purpose
+  - "Scan Fuel Pump Receipt" → OCR + liters + amount
+  - "Log Visit" (CRM) — existing flow, link to CRM side
+- [ ] Offline tolerance: capture stored locally (IndexedDB) until connectivity returns; background sync.
+- [ ] Each capture generates a `CaptureSubmission` (new collection) with status `PENDING_PROXY` → `IN_PROGRESS` → `PROCESSED` → (if needed) `AWAITING_BDM_REVIEW` → `ACKNOWLEDGED`.
+
+### P1.2 — Office proxy queue
+- [ ] `frontend/src/erp/pages/proxy/ProxyQueue.jsx` — office-side queue page.
+  - Filters: workflow type, BDM, date range, status.
+  - Row shows: BDM name, workflow type, captured artifact(s), age (with SLA color).
+  - "Process" button opens the appropriate entry form with the captured artifact pre-attached.
+  - Proxy completes → `CaptureSubmission.status = 'PROCESSED'` + linked ERP doc reference.
+- [ ] SLA: target < 24h turnaround. Age > 24h rows highlighted amber; > 48h rows red.
+
+### P1.3 — BDM review queue
+- [ ] `frontend/src/erp/pages/mobile/BdmReviewQueue.jsx` — BDM-side mobile page.
+  - Lists proxied entries POSTED against this BDM's `bdm_id` in the last N days.
+  - Each row: doc type, amount, counterparty, proxy name, "Confirm" / "Dispute" buttons.
+  - "Confirm" → `CaptureSubmission.status = 'ACKNOWLEDGED'`.
+  - "Dispute" → files `IncentiveDispute` row with reference to the ERP doc.
+  - Banner: "Maria entered 3 sales for you this week — review."
+  - Push notification / SMS on new proxied entry (via existing Phase SG-Q2 W3 dispatchMultiChannel).
+
+### P1.4 — New collection `capture_submissions`
+- [ ] `backend/erp/models/CaptureSubmission.js`:
+  ```
+  {
+    bdm_id, entity_id, workflow_type, status,
+    captured_artifacts: [{ kind, url, ocr_result, gps, timestamp }],
+    proxy_id, proxy_started_at, proxy_completed_at,
+    linked_doc_kind, linked_doc_id,
+    bdm_acknowledged_at, disputed_at, dispute_reason,
+    created_at, created_by
+  }
+  ```
+  - Indexes: `{ bdm_id, status }`, `{ entity_id, status, workflow_type }`, `{ created_at }`.
+
+### P1.5 — Agent: `#PX` proxy SLA agent
+- [ ] New rule-based agent `proxySlaAgent.js`:
+  - Runs every 4 hours.
+  - Finds `CaptureSubmission` with `status='PENDING_PROXY'` and `created_at` > 24h old → alert office lead.
+  - Finds `status='AWAITING_BDM_REVIEW'` > 72h → auto-acknowledge with warning (configurable via `PROXY_SLA_THRESHOLDS` lookup).
+  - Metrics: avg turnaround per workflow, proxy throughput per user, BDM review rate.
+
+### P1.6 — Fallback path (Rule #9 preservation)
+- [ ] BDM can always self-enter without going through the proxy queue — just skip the capture hub and use the regular entry page. The proxy flow is ADDITIVE, not mandatory. This is critical for (a) proxy unavailability, (b) subscribers who don't have a proxy role in their org.
+
+### P1.7 — Bulletproof bar
+- [ ] **Happy path (Expense via proxy)**: BDM scans OR → `CaptureSubmission` created with status `PENDING_PROXY` → proxy picks it up from queue → classifies + posts via existing `expenseController.createExpense` with `assigned_to=bdm_id` → Option B forces Approval Hub → president/finance approves → POSTED → BDM gets push notification → reviews in queue → confirms.
+- [ ] **Happy path (self-serve fallback)**: BDM opens regular ExpensesEntry page, enters themselves → normal flow, no CaptureSubmission created.
+- [ ] **Failure (proxy unavailable)**: SLA agent alerts at 24h pending. BDM can still self-enter after waiting.
+- [ ] **Failure (BDM disputes proxied entry)**: "Dispute" → files IncentiveDispute → finance investigates → can reverse via President Delete path (Phase 3b).
+- [ ] **Offline tolerance**: BDM captures 3 ORs without connectivity → all stored locally → reconnect → all sync to `CaptureSubmission` → proxy processes normally.
+- [ ] **Rule #19 cross-entity**: `CaptureSubmission` stamped with `entity_id`; proxy at Entity A cannot process Entity B's submissions.
+- [ ] **Rule #21**: SLA agent filter uses `bdm_id` explicitly — no silent self-scope.
+
+### P1.8 — Files (~7–10 days)
+```
+backend/erp/models/CaptureSubmission.js                          # NEW
+backend/erp/controllers/captureSubmissionController.js           # NEW
+backend/erp/routes/captureSubmissionRoutes.js                    # NEW
+backend/erp/agents/proxySlaAgent.js                              # NEW
+backend/erp/controllers/lookupGenericController.js               # + PROXY_SLA_THRESHOLDS
+frontend/src/erp/pages/mobile/BdmCaptureHub.jsx                  # NEW
+frontend/src/erp/pages/mobile/BdmReviewQueue.jsx                 # NEW
+frontend/src/erp/pages/proxy/ProxyQueue.jsx                      # NEW
+frontend/src/erp/hooks/useCaptureSubmissions.js                  # NEW
+frontend/src/erp/components/WorkflowGuide.jsx                    # 3+ new banner keys
+scripts/check-system-health.js                                   # + CaptureSubmission checks
+CLAUDE-ERP.md                                                    # Phase P1 section
+docs/PHASETASK-ERP.md                                            # this entry
+```
+
+### Status
+- [ ] 📋 PLANNED. User approved vision April 22, 2026. Recommended ship order: **pick ONE workflow end-to-end first** (Expenses — highest time-savings, lowest commission risk) — measure, then replicate to other workflows. Don't build all 8 workflows simultaneously.
+
+---
+
+## Phase P2 — Proxy-Aware UX + Signed-CSI Commission Gate (April 22, 2026) 📋 PLANNED
+
+### Vision
+Commission alignment: **no signed delivery proof, no commission.** BDM captures the raw CSI at the point of sale, proxy enters it into ERP (Phase P1), sale goes through Approval Hub → POSTED. But commission accrual is **gated** until the BDM uploads the signed delivery receipt (hospital stamp + pink/yellow/duplicate copy). This kills the "BDM logs fake sales for commission" fraud vector entirely.
+
+Builds on Phase 36 (`SalesLine.csi_received_photo_url`), which already separates entry-time OCR from post-delivery signed proof.
+
+### P2.1 — Commission gate on signed CSI
+- [ ] `backend/erp/models/SalesLine.js`: add `commission_eligible: Boolean` (default false) — flipped true only when `csi_received_photo_url` is non-empty AND status is POSTED.
+- [ ] `backend/erp/services/kpiSnapshotAgent.js`: filter sales for KPI/commission accrual by `commission_eligible=true`.
+- [ ] `backend/erp/services/incentivePayoutService.js`: IncentivePayout rows only accrue for `commission_eligible=true` sales.
+- [ ] `backend/erp/controllers/salesController.js: attachReceivedCsi`: on successful attach of POSTED row → set `commission_eligible=true` → trigger kpiSnapshotAgent recompute for the owner BDM's current period.
+- [ ] `backend/erp/controllers/lookupGenericController.js`: `SALES_SETTINGS.COMMISSION_GATE_ON_SIGNED_CSI` (default 1) — subscriber toggle. Pharma defaults ON; other industries default OFF via `PROFILE_DEFAULTS`.
+
+### P2.2 — Per-line commission eligibility
+- [ ] When hospital accepts partial delivery (e.g., 90% of a 10-line CSI, 10% rejected) — model at the line level, not the doc level. Each line independently commission-gated.
+- [ ] Signed proof may cover partial lines (e.g., "proof shows 9 of 10 lines delivered") — BDM marks per-line delivered vs rejected when attaching proof. Rejected lines: no commission, system-generated Credit Note via Phase 36 flow.
+
+### P2.3 — Dashboard surface
+- [ ] BDM Dashboard: "Commission-pending sales (missing signed CSI): ₱X across N sales." Link to list.
+- [ ] Admin Dashboard: "Commission exposure held back by missing signed CSI: ₱X across N BDMs." Ages > 30 days flagged red.
+- [ ] Statistics Page: new tab "Delivery Proof Compliance" — per-BDM % of POSTED sales with signed CSI.
+
+### P2.4 — Proxy throughput metrics
+- [ ] Admin Dashboard widget: proxy throughput (avg turnaround per workflow, per proxy user, last 7d / 30d).
+- [ ] Active proxies leaderboard — volume + SLA compliance.
+- [ ] Alert: proxy queue depth > 50 → email admin.
+
+### P2.5 — Proxy-unavailability banner
+- [ ] When no user holds `<module>.proxy_entry` sub-perm at current entity → banner on BDM capture hub: "No proxy staff available — self-entry only today." Fallback path (P1.6) remains.
+
+### P2.6 — Subscriber model toggles
+- [ ] `PROFILE_DEFAULTS.pharma`: `{ COMMISSION_GATE_ON_SIGNED_CSI: 1, PROXY_SLA_THRESHOLDS: {...} }`.
+- [ ] `PROFILE_DEFAULTS.general_trading`: commission gate off, proxy SLA looser. Keeps subscribers outside pharma from inheriting pharma-specific controls.
+
+### P2.7 — Bulletproof bar
+- [ ] Happy path: sale entered by proxy → POSTED → `commission_eligible=false` → BDM uploads signed CSI → `commission_eligible=true` → kpiSnapshotAgent recomputes → commission accrues in BDM's IncentivePayout draft.
+- [ ] Failure (fake sale): proxy enters sale without real delivery → BDM never uploads signed CSI → `commission_eligible` stays false → no commission accrual, period. Sale appears in "Commission-pending" dashboard, ages into alert.
+- [ ] Failure (partial delivery): 9 of 10 lines signed → 9 lines `commission_eligible=true`, 1 line stays false → 1 line auto-generates Credit Note (Phase 36).
+- [ ] Failure (subscriber without gate): subscriber toggles `COMMISSION_GATE_ON_SIGNED_CSI=0` → all POSTED sales are `commission_eligible=true` immediately (back-compat to pre-P2 behavior).
+- [ ] Rule #19: `commission_eligible` stamped with entity scope — cross-entity leaks blocked.
+- [ ] Rule #20: attaching signed CSI does NOT require reopen (already handled in Phase 36).
+- [ ] Existing IncentivePayout flow (Phase SG-Q2 W2) — the only change is the filter at accrual time.
+
+### P2.8 — Files (~3–5 days)
+```
+backend/erp/models/SalesLine.js                                  # + commission_eligible
+backend/erp/controllers/salesController.js                       # flip commission_eligible on attach + on POSTED
+backend/erp/services/kpiSnapshotAgent.js                         # filter by commission_eligible
+backend/erp/services/incentivePayoutService.js                   # same filter
+backend/erp/controllers/lookupGenericController.js               # + SALES_SETTINGS.COMMISSION_GATE_ON_SIGNED_CSI + PROFILE_DEFAULTS
+frontend/src/erp/pages/EmployeeDashboard.jsx                     # commission-pending widget (if exists)
+frontend/src/erp/pages/admin/AdminDashboard.jsx                  # exposure widget
+frontend/src/erp/pages/admin/StatisticsPage.jsx                  # Delivery Proof Compliance tab
+frontend/src/erp/components/WorkflowGuide.jsx                    # banner update on sales-list + BDM capture hub
+CLAUDE-ERP.md                                                    # Phase P2 section
+docs/PHASETASK-ERP.md                                            # this entry
+```
+
+### Status
+- [ ] 📋 PLANNED. Dependencies: Phase 36 (csi_received_photo_url — shipped), Phase SG-Q2 W2 (IncentivePayout — shipped). Ship after P1 pilot workflow (Expenses) is proven.
+
+---
+
+## Proxy Expansion Roadmap (Apr 22, 2026)
+
+**Known gaps documented (deferred):** G4.5b-extended (owner-chain approval routing — Option C); G4.5c (Expenses refactor to shared helper).
+
+**Shipped today**: G4.5a (Sales + Opening AR), G4.5b (Collections + GRN), Phase 36 (Received CSI separation), PR1 (Per-row lifecycle).
+
+**Planned order (mentor-recommended)**:
+1. **Phase FRA-A** (~1.5h) — close the FRA ↔ tenantFilter gap. Unblocks any subscriber with cross-entity deployment. Confirm Option A with user first.
+2. **Phase G4.5c.1** (Expenses refactor, ~2h) — converge audit codes, unlock unified Activity Monitor filter.
+3. **Phase P1 — Expenses workflow only** (~3–4 days) — first end-to-end BDM-capture + proxy-queue + BDM-review flow. PROVE the pattern before replicating.
+4. **Measure**: BDM time saved, proxy throughput, BDM review rate. Tune before replicating.
+5. **Phase P1 — remaining workflows** (~4–6 days) — SMER, Fuel, Petty Cash, GRN, Sales, OR.
+6. **Phase P2** (~3–5 days) — signed-CSI commission gate, dashboards, subscriber profile toggles.
+7. **Phase G4.5c.2 + c.3** — Petty Cash + Fuel proxy ports (interleave with P1 if natural).
+
+**Total estimate**: 3–4 weeks if sequenced cleanly. Do NOT try to ship all workflows simultaneously — one fully proven beats seven half-built.
+
