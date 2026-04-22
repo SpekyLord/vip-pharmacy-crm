@@ -4749,6 +4749,24 @@ Wired into:
 - `approvalService`: today `forceApproval` sends the proxied doc to **any user in `allowedRoles`** (admin/finance/president by default). A future pass will add `ownerBdmId` → `owner.reports_to` chain resolution, so approvals route to the owner's direct authority, not just a broad pool. The request already carries `owner_bdm_id` in metadata for that upgrade. — G4.5b-extended
 - Lookup-write cache bust: currently relies on 60s TTL; `invalidateProxyRolesCache` should be called from the generic lookup write path for instant propagation.
 
+### Phase G4.5a follow-up — `VALID_OWNER_ROLES` lookup (April 22, 2026)
+
+**Problem.** The proxy-target role guard in [resolveOwnerScope.js](backend/erp/utils/resolveOwnerScope.js) was a hardcoded `Set([ROLES.CONTRACTOR, 'employee'])`. A subscriber whose org includes a "director who also sells" or a "branch manager carrying a territory" couldn't proxy-target that role without a code change — Rule #3 violation dressed up as a type guard.
+
+**Fix.** Added `VALID_OWNER_ROLES` lookup category (5 module codes: SALES, OPENING_AR, COLLECTIONS, EXPENSES, GRN — each with default `metadata.roles = ['contractor','employee']`). `resolveOwnerForWrite` now reads the lookup instead of the hardcoded Set. 60-second in-proc cache keyed `${entityId}::${moduleKey}`, bust on lookup write (parallel plumbing to PROXY_ENTRY_ROLES). New exports: `getValidOwnerRolesForModule`, `invalidateValidOwnerRolesCache`.
+
+**Files touched (3).**
+- `backend/erp/utils/resolveOwnerScope.js` — lookup reader + invalidator + updated `resolveOwnerForWrite`
+- `backend/erp/controllers/lookupGenericController.js` — SEED_DEFAULTS entry + 5 cache-bust call sites (create, update, remove, seedCategory, seedAll)
+- `scripts/check-system-health.js` — asserts lookup seeded, helpers exported, `getValidOwnerRolesForModule(req.entityId, ...)` called in resolveOwnerForWrite, and the hardcoded Set is not re-introduced
+
+**Behavior today = behavior before.** Default `['contractor','employee']` matches the original hardcoded Set exactly. Existing subscribers see zero change. Subscribers with different org models extend per-module via Control Center → Lookup Tables → VALID_OWNER_ROLES without a code deploy. Error message when a non-listed role is picked tells the admin exactly which lookup/code to edit.
+
+**Integrity.**
+- Build clean in 13.34s (`npx vite build`).
+- `node -c` clean on both modified backend files.
+- `scripts/check-system-health.js` — 5/5 sections green, including extended proxy-entry check that verifies the VALID_OWNER_ROLES path end-to-end.
+
 ---
 
 ## Phase G4.5b — Proxy Entry for Collections + GRN (April 22, 2026)

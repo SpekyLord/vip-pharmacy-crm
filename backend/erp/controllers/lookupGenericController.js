@@ -6,7 +6,7 @@ const { invalidateOrParserCache } = require('../ocr/parsers/orParser');
 const { invalidateGuardrailCache } = require('../services/vendorAutoLearner');
 const { invalidateDangerCache } = require('../services/dangerSubPermissions');
 const { invalidateEditableStatuses } = require('../services/approvalService');
-const { invalidateProxyRolesCache } = require('../utils/resolveOwnerScope');
+const { invalidateProxyRolesCache, invalidateValidOwnerRolesCache } = require('../utils/resolveOwnerScope');
 
 // Categories whose changes must bust the OR parser's lookup cache (couriers/payment keywords)
 const OR_PARSER_LOOKUP_CATEGORIES = new Set(['OCR_COURIER_ALIASES', 'OCR_PAYMENT_KEYWORDS']);
@@ -23,6 +23,14 @@ const REJECTION_CONFIG_CATEGORIES = new Set(['MODULE_REJECTION_CONFIG']);
 // Cache default is 60s TTL in resolveOwnerScope.js; this makes the edit take
 // effect instantly across all running instances for the entity.
 const PROXY_ENTRY_ROLES_CATEGORIES = new Set(['PROXY_ENTRY_ROLES']);
+
+// Phase G4.5a follow-up — Rule #3 alignment for the proxy-target role guard.
+// VALID_OWNER_ROLES per module controls which roles may be assigned as the
+// owner of a proxied record (default ['contractor','employee'] — BDM-shaped).
+// Subscribers with different org models (director who also sells, branch
+// manager carrying a territory) extend the list via Control Center without
+// a code change. Matching invalidator in resolveOwnerScope.js (60s TTL).
+const VALID_OWNER_ROLES_CATEGORIES = new Set(['VALID_OWNER_ROLES']);
 
 // Phase G6.10/G7 — categories whose seeded rows must default is_active: false so
 // subscribers explicitly opt in (Anthropic-billable features, spend caps that
@@ -2405,6 +2413,18 @@ const SEED_DEFAULTS = {
     { code: 'EXPENSES', label: 'Expense Entry / OR', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 4 } },
     { code: 'GRN', label: 'Goods Receipt (GRN)', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 5 } },
   ],
+  // Phase G4.5a follow-up — which roles are valid OWNERS of a proxied record
+  // per module. Defaults to BDM-shaped roles ('contractor','employee'); admin/
+  // finance/president/ceo are never per-BDM record owners (reports would break).
+  // Subscribers with different org models extend via Control Center. Matches
+  // the VALID_OWNER_ROLES cache in resolveOwnerScope.js.
+  VALID_OWNER_ROLES: [
+    { code: 'SALES', label: 'Valid proxy targets — Sales', metadata: { roles: ['contractor', 'employee'], sort_order: 1 } },
+    { code: 'OPENING_AR', label: 'Valid proxy targets — Opening AR', metadata: { roles: ['contractor', 'employee'], sort_order: 2 } },
+    { code: 'COLLECTIONS', label: 'Valid proxy targets — Collections', metadata: { roles: ['contractor', 'employee'], sort_order: 3 } },
+    { code: 'EXPENSES', label: 'Valid proxy targets — Expenses', metadata: { roles: ['contractor', 'employee'], sort_order: 4 } },
+    { code: 'GRN', label: 'Valid proxy targets — GRN', metadata: { roles: ['contractor', 'employee'], sort_order: 5 } },
+  ],
 };
 
 // List all distinct categories for current entity
@@ -2536,6 +2556,7 @@ exports.create = catchAsync(async (req, res) => {
   if (DANGER_SUB_PERM_CATEGORIES.has(cat)) invalidateDangerCache(req.entityId);
   if (REJECTION_CONFIG_CATEGORIES.has(cat)) invalidateEditableStatuses(req.entityId, item.code);
   if (PROXY_ENTRY_ROLES_CATEGORIES.has(cat)) invalidateProxyRolesCache(req.entityId);
+  if (VALID_OWNER_ROLES_CATEGORIES.has(cat)) invalidateValidOwnerRolesCache(req.entityId);
   res.status(201).json({ success: true, data: item });
 });
 
@@ -2554,6 +2575,7 @@ exports.update = catchAsync(async (req, res) => {
   if (DANGER_SUB_PERM_CATEGORIES.has(item.category)) invalidateDangerCache(item.entity_id);
   if (REJECTION_CONFIG_CATEGORIES.has(item.category)) invalidateEditableStatuses(item.entity_id, item.code);
   if (PROXY_ENTRY_ROLES_CATEGORIES.has(item.category)) invalidateProxyRolesCache(item.entity_id);
+  if (VALID_OWNER_ROLES_CATEGORIES.has(item.category)) invalidateValidOwnerRolesCache(item.entity_id);
   res.json({ success: true, data: item });
 });
 
@@ -2567,6 +2589,7 @@ exports.remove = catchAsync(async (req, res) => {
   if (DANGER_SUB_PERM_CATEGORIES.has(item.category)) invalidateDangerCache(item.entity_id);
   if (REJECTION_CONFIG_CATEGORIES.has(item.category)) invalidateEditableStatuses(item.entity_id, item.code);
   if (PROXY_ENTRY_ROLES_CATEGORIES.has(item.category)) invalidateProxyRolesCache(item.entity_id);
+  if (VALID_OWNER_ROLES_CATEGORIES.has(item.category)) invalidateValidOwnerRolesCache(item.entity_id);
   res.json({ success: true, data: item, message: 'Item deactivated' });
 });
 
@@ -2586,6 +2609,7 @@ exports.seedCategory = catchAsync(async (req, res) => {
   if (DANGER_SUB_PERM_CATEGORIES.has(category)) invalidateDangerCache(req.entityId);
   if (REJECTION_CONFIG_CATEGORIES.has(category)) invalidateEditableStatuses(req.entityId);
   if (PROXY_ENTRY_ROLES_CATEGORIES.has(category)) invalidateProxyRolesCache(req.entityId);
+  if (VALID_OWNER_ROLES_CATEGORIES.has(category)) invalidateValidOwnerRolesCache(req.entityId);
   const items = await Lookup.find({ entity_id: req.entityId, category }).sort({ sort_order: 1 }).lean();
   res.json({ success: true, data: items, message: `Seeded ${defaults.length} defaults for ${category}` });
 });
@@ -2609,6 +2633,7 @@ exports.seedAll = catchAsync(async (req, res) => {
   invalidateDangerCache(req.entityId);
   invalidateEditableStatuses(req.entityId);
   invalidateProxyRolesCache(req.entityId);
+  invalidateValidOwnerRolesCache(req.entityId);
   const populated = await Lookup.distinct('category', { entity_id: req.entityId });
   res.json({ success: true, data: results, message: `Seeded ${populated.length}/${Object.keys(SEED_DEFAULTS).length} categories` });
 });

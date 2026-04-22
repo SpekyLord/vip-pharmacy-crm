@@ -20,13 +20,19 @@ const Lookup = require('../models/Lookup');
 const User = require('../../models/User');
 const { ROLES } = require('../../constants/roles');
 
-// Valid target roles for proxy entry. Proxies file under a BDM-shaped owner;
-// admin / finance / president / ceo never own per-BDM transactional records.
-// 'employee' is legacy code for 'contractor' still present in DB rows.
-const VALID_OWNER_ROLES = new Set([ROLES.CONTRACTOR, 'employee']);
+// Default proxy-target ("owner") roles when VALID_OWNER_ROLES lookup is not
+// yet seeded for an entity. Proxies file under a BDM-shaped owner; admin /
+// finance / president / ceo never own per-BDM transactional records (KPIs,
+// commission accruals, per-BDM reports would break). 'employee' is legacy
+// code for 'contractor' still present in DB rows — kept in the default for
+// back-compat. Subscribers with different org models (director who also
+// sells, branch manager carrying a territory) extend the list per-module
+// via Control Center → Lookup Tables → VALID_OWNER_ROLES.
+const DEFAULT_VALID_OWNER_ROLES = [ROLES.CONTRACTOR, 'employee'];
 
 const CACHE_TTL_MS = 60_000;
 const _proxyRolesCache = new Map();
+const _validOwnerRolesCache = new Map();
 
 const DEFAULT_PROXY_ROLES = [ROLES.ADMIN, ROLES.FINANCE, ROLES.PRESIDENT];
 
@@ -62,6 +68,41 @@ function invalidateProxyRolesCache(entityId = null) {
   const prefix = `${entityId}::`;
   for (const key of Array.from(_proxyRolesCache.keys())) {
     if (key.startsWith(prefix)) _proxyRolesCache.delete(key);
+  }
+}
+
+async function getValidOwnerRolesForModule(entityId, moduleKey) {
+  const cacheKey = `${entityId}::${moduleKey}`;
+  const cached = _validOwnerRolesCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.roles;
+
+  let roles = DEFAULT_VALID_OWNER_ROLES;
+  try {
+    const doc = await Lookup.findOne({
+      entity_id: entityId,
+      category: 'VALID_OWNER_ROLES',
+      code: String(moduleKey).toUpperCase(),
+      is_active: true,
+    }).lean();
+    if (doc && Array.isArray(doc.metadata?.roles) && doc.metadata.roles.length) {
+      roles = doc.metadata.roles;
+    }
+  } catch (err) {
+    console.warn('[resolveOwnerScope] VALID_OWNER_ROLES lookup failed, using defaults:', err.message);
+  }
+
+  _validOwnerRolesCache.set(cacheKey, { ts: Date.now(), roles });
+  return roles;
+}
+
+function invalidateValidOwnerRolesCache(entityId = null) {
+  if (!entityId) {
+    _validOwnerRolesCache.clear();
+    return;
+  }
+  const prefix = `${entityId}::`;
+  for (const key of Array.from(_validOwnerRolesCache.keys())) {
+    if (key.startsWith(prefix)) _validOwnerRolesCache.delete(key);
   }
 }
 
@@ -118,9 +159,11 @@ async function resolveOwnerForWrite(req, moduleKey, { subKey = 'proxy_entry' } =
     err.statusCode = 400;
     throw err;
   }
-  if (!VALID_OWNER_ROLES.has(target.role)) {
+  const validOwnerRoles = await getValidOwnerRolesForModule(req.entityId, moduleKey);
+  if (!validOwnerRoles.includes(target.role)) {
     const err = new Error(
-      `Proxy target role '${target.role}' is not a valid owner for ${moduleKey}. Only BDM-shaped roles (contractor/employee) can own per-BDM records.`
+      `Proxy target role '${target.role}' is not a valid owner for ${moduleKey}. ` +
+      `Configured valid owner roles (VALID_OWNER_ROLES.${String(moduleKey).toUpperCase()}): ${validOwnerRoles.join(', ')}.`
     );
     err.statusCode = 400;
     throw err;
@@ -160,4 +203,6 @@ module.exports = {
   invalidateProxyRolesCache,
   hasProxySubPermission,
   getProxyRolesForModule,
+  getValidOwnerRolesForModule,
+  invalidateValidOwnerRolesCache,
 };

@@ -316,10 +316,23 @@ function checkProxyEntryWiring() {
     return;
   }
   const helper = fs.readFileSync(helperPath, 'utf-8');
-  for (const ex of ['canProxyEntry', 'resolveOwnerForWrite', 'widenFilterForProxy', 'invalidateProxyRolesCache']) {
+  for (const ex of [
+    'canProxyEntry', 'resolveOwnerForWrite', 'widenFilterForProxy',
+    'invalidateProxyRolesCache',
+    // Phase G4.5a follow-up — Rule #3 lookup-driven proxy-target role guard.
+    'getValidOwnerRolesForModule', 'invalidateValidOwnerRolesCache',
+  ]) {
     if (!new RegExp(`(module\\.exports|exports\\.)\\s*[={].*${ex}|${ex}\\s*[,}]`).test(helper)) {
       warn('PROXY', `resolveOwnerScope.js does not export ${ex}`);
     }
+  }
+  // The hardcoded VALID_OWNER_ROLES Set has been replaced with a lookup-
+  // driven read. If it's back, someone reverted the Rule #3 cleanup.
+  if (/const\s+VALID_OWNER_ROLES\s*=\s*new\s+Set\s*\(/.test(helper)) {
+    warn('PROXY', 'resolveOwnerScope.js reverted to hardcoded VALID_OWNER_ROLES Set — should read from VALID_OWNER_ROLES lookup');
+  }
+  if (!/getValidOwnerRolesForModule\(\s*req\.entityId/.test(helper)) {
+    warn('PROXY', 'resolveOwnerScope.js resolveOwnerForWrite does not call getValidOwnerRolesForModule — target-role gate is not lookup-driven');
   }
 
   // Lookup seed: PROXY_ENTRY_ROLES + per-module sub-perm keys
@@ -328,21 +341,30 @@ function checkProxyEntryWiring() {
   const lookupSeed = fs.readFileSync(path.join(ERP_CONTROLLERS, 'lookupGenericController.js'), 'utf-8');
   for (const key of [
     'PROXY_ENTRY_ROLES:',
+    'VALID_OWNER_ROLES:',
     'SALES__PROXY_ENTRY', 'SALES__OPENING_AR_PROXY',
     'COLLECTIONS__PROXY_ENTRY', 'INVENTORY__GRN_PROXY_ENTRY',
   ]) {
     if (!lookupSeed.includes(key)) warn('PROXY', `SEED_DEFAULTS missing ${key}`);
   }
-  // PROXY_ENTRY_ROLES must enumerate all 5 modules so OwnerPicker can resolve
-  // them without falling back to the admin/finance/president default.
+  // PROXY_ENTRY_ROLES + VALID_OWNER_ROLES must each enumerate all 5 modules
+  // so OwnerPicker + resolveOwnerForWrite can resolve them without falling
+  // back to their respective defaults.
+  // Each module code must appear at least twice — once under PROXY_ENTRY_ROLES,
+  // once under VALID_OWNER_ROLES. A single occurrence means one of the two
+  // seeds is incomplete.
   for (const moduleCode of ["code: 'SALES'", "code: 'OPENING_AR'", "code: 'COLLECTIONS'", "code: 'EXPENSES'", "code: 'GRN'"]) {
-    if (!lookupSeed.includes(moduleCode)) {
-      warn('PROXY', `PROXY_ENTRY_ROLES seed missing module entry ${moduleCode}`);
+    const occurrences = (lookupSeed.match(new RegExp(moduleCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+    if (occurrences < 2) {
+      warn('PROXY', `PROXY_ENTRY_ROLES or VALID_OWNER_ROLES seed missing module entry ${moduleCode} (found ${occurrences} occurrences, expected ≥2)`);
     }
   }
-  // Cache invalidation wired
+  // Cache invalidation wired for both lookup categories
   if (!lookupSeed.includes('invalidateProxyRolesCache')) {
     warn('PROXY', 'lookupGenericController.js does not call invalidateProxyRolesCache — admin edits to PROXY_ENTRY_ROLES will take up to 60s TTL to propagate');
+  }
+  if (!lookupSeed.includes('invalidateValidOwnerRolesCache')) {
+    warn('PROXY', 'lookupGenericController.js does not call invalidateValidOwnerRolesCache — admin edits to VALID_OWNER_ROLES will take up to 60s TTL to propagate');
   }
 
   // salesController uses helper (G4.5a)
