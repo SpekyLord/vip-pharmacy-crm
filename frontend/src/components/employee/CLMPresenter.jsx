@@ -22,10 +22,11 @@ import {
   Shield,
 } from 'lucide-react';
 
-const VIP_TRADEMARK = '/manus-storage/vip-trademark_38b05c5f.png';
-const VIP_LOGO_CIRCLE = '/manus-storage/vip-logo-circle_f0efe592.png';
-const VIPRAZOLE_IMG = '/manus-storage/viprazole_134fef57.jpg';
-const VIPTRIAXONE_IMG = '/manus-storage/viptriaxone_fabc0ece.jpg';
+// CLM assets bundled in public/clm/ for offline availability (no S3 dependency)
+const VIP_TRADEMARK = '/clm/vip-trademark.png';
+const VIP_LOGO_CIRCLE = '/clm/vip-logo-circle.svg';
+const VIPRAZOLE_IMG = '/clm/viprazole.jpg';
+const VIPTRIAXONE_IMG = '/clm/viptriaxone.jpg';
 
 const STATIC_SLIDES = [
   { id: 'hero', title: 'VIP Inc.', subtitle: 'Online Pharmacy Partnership', icon: Building2, type: 'hero' },

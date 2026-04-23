@@ -8,8 +8,12 @@ import api from './api';
 
 const clmService = {
   // ── Session lifecycle ─────────────────────────────────────────────
-  startSession: async (doctorId, location, productIds = []) => {
-    const response = await api.post('/clm/sessions', { doctorId, location, productIds });
+  startSession: async (doctorId, location, productIds = [], idempotencyKey = null) => {
+    const config = {};
+    if (idempotencyKey) {
+      config.headers = { 'X-Idempotency-Key': idempotencyKey };
+    }
+    const response = await api.post('/clm/sessions', { doctorId, location, productIds }, config);
     return response.data;
   },
 

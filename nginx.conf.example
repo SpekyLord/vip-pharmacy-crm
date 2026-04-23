@@ -57,6 +57,25 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
+    # Service worker — MUST NOT be cached (browsers check for updates)
+    location = /sw.js {
+        expires off;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Service-Worker-Allowed "/";
+    }
+
+    # Web manifest
+    location = /manifest.json {
+        expires 1d;
+        add_header Cache-Control "public";
+    }
+
+    # CLM presentation assets — long cache (versioned via CACHE_VERSION in sw.js)
+    location /clm/ {
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+    }
+
     # Static file caching
     location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2)$ {
         expires 30d;
