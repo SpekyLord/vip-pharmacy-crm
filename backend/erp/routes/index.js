@@ -76,6 +76,12 @@ router.use('/incentive-disputes', require('./incentiveDisputeRoutes'));
 // resolve their direct reports', admin/finance/president resolve any.
 router.use('/variance-alerts', require('./varianceAlertRoutes'));
 
+// ═══ Phase P1 — BDM Mobile Capture + Office Proxy Queue ═══
+// Cross-cutting capture pipeline — no module-level erpAccessCheck (every ERP
+// user can create captures; proxy endpoints gated inside the controller via
+// canProxyEntry). Entity scoping enforced in every endpoint.
+router.use('/capture-submissions', require('./captureSubmissionRoutes'));
+
 // ═══ Phase G8 (P2-9) — Tasks (Secretary Copilot backing store) ═══
 // Cross-cutting productivity collection — no erpAccessCheck (every ERP user
 // can maintain their own tasks). Controller enforces Rule #21 entity scoping.

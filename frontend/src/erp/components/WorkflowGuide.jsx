@@ -1748,6 +1748,72 @@ const WORKFLOW_GUIDES = {
     ],
     tip: 'Tier budgets represent the amount — the president decides what reward matches that budget (trip, gadget, cash).',
   },
+
+  // ═══ Phase P1 — BDM Mobile Capture + Office Proxy Queue ═══
+  'bdm-capture-hub': {
+    title: 'BDM Capture Hub',
+    subtitle: 'One-tap field capture — scan receipts, ODO, CSI, and more from your phone.',
+    steps: [
+      'Tap a workflow card to open the capture modal',
+      'Take a photo or select from gallery',
+      'Add amount, payment mode, and notes as needed',
+      'Submit — the office team will process your capture',
+      'Check the Review Queue to confirm proxied entries',
+    ],
+    tips: [
+      'GPS is captured automatically — make sure location services are enabled',
+      'You can always enter expenses directly from the Expenses page (this is optional)',
+      'Pending captures appear in the office Proxy Queue within seconds',
+      'If the office team makes a mistake, use the Review Queue to dispute',
+    ],
+    next: [
+      { label: 'Review Queue', path: '/erp/review-queue' },
+      { label: 'Expenses', path: '/erp/expenses' },
+    ],
+    tip: 'The Capture Hub is additive — you can always skip it and enter records directly.',
+  },
+  'proxy-queue': {
+    title: 'Office Proxy Queue',
+    subtitle: 'Process BDM field captures — classify, enter, and submit on their behalf.',
+    steps: [
+      'Review the queue — oldest items first (SLA: < 24h green, > 24h amber, > 48h red)',
+      'Click a row to view the captured artifact and BDM notes',
+      'Pick Up the submission to claim it',
+      'Open the appropriate entry form and create the ERP record',
+      'Return here and Mark Complete — the BDM will be notified to review',
+    ],
+    tips: [
+      'SLA target is < 24h turnaround — amber rows need attention',
+      'Red rows (> 48h) will trigger an automated alert to management',
+      'You can Release a submission back to the queue if you can\'t finish',
+      'Rule #20: proxy enters, never approves — the Approval Hub handles approvals',
+    ],
+    next: [
+      { label: 'Expenses', path: '/erp/expenses' },
+      { label: 'Sales Entry', path: '/erp/sales/entry' },
+    ],
+    tip: 'Process Expense captures first — highest time-savings, lowest risk.',
+  },
+  'bdm-review-queue': {
+    title: 'BDM Review Queue',
+    subtitle: 'Confirm or dispute entries that the office team processed on your behalf.',
+    steps: [
+      'Review each proxied entry — check amount, classification, and notes',
+      'Tap Confirm if the entry looks correct',
+      'Tap Dispute if something is wrong — provide a reason',
+      'Disputes are filed as IncentiveDispute records for finance to investigate',
+    ],
+    tips: [
+      'Entries auto-acknowledge after 72 hours if you don\'t review them',
+      'Disputed entries can be reversed via the President\'s Reversal Console',
+      'Check this queue regularly — it\'s your accountability checkpoint',
+    ],
+    next: [
+      { label: 'Capture Hub', path: '/erp/capture-hub' },
+      { label: 'Dispute Center', path: '/erp/incentive-disputes' },
+    ],
+    tip: 'Review promptly — auto-acknowledgment kicks in after 72 hours.',
+  },
 };
 
 /**

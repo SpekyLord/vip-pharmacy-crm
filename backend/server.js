@@ -323,6 +323,8 @@ const createApp = () => {
   app.use('/api/message-templates', userLimiter, require('./routes/messageTemplateRoutes'));
   app.use('/api/sent', userLimiter, require('./routes/sentRoutes'));
   app.use('/api/erp', userLimiter, require('./erp/routes'));
+  // ═══ CLM — Closed Loop Marketing (Partnership Presentation) ═══
+  app.use('/api/clm', userLimiter, require('./routes/clmRoutes'));
 
   app.use(notFound);
   app.use(errorHandler);

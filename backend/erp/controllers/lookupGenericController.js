@@ -2432,6 +2432,12 @@ const SEED_DEFAULTS = {
     { code: 'EXPENSES', label: 'Valid proxy targets — Expenses', metadata: { roles: ['contractor', 'employee'], sort_order: 4 } },
     { code: 'GRN', label: 'Valid proxy targets — GRN', metadata: { roles: ['contractor', 'employee'], sort_order: 5 } },
   ],
+  // Phase P1 — Proxy SLA thresholds. Lookup-driven so subscribers can tune
+  // without code changes. pending_alert_hours = when to alert office lead;
+  // auto_ack_hours = when to auto-acknowledge stale BDM reviews.
+  PROXY_SLA_THRESHOLDS: [
+    { code: 'DEFAULT', label: 'Default Proxy SLA Thresholds', metadata: { pending_alert_hours: 24, auto_ack_hours: 72, description: 'Hours before SLA alert (pending) and auto-acknowledgment (review)' }, insert_only_metadata: true },
+  ],
 };
 
 // List all distinct categories for current entity

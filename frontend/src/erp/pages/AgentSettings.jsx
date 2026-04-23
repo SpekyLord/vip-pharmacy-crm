@@ -53,6 +53,8 @@ const AGENT_SCHEDULE = {
   expansion_readiness:   '1st of month 10 AM',
   // Phase G9.R1 — Task Overdue Notifier (#TO)
   task_overdue:          'Weekdays 6:15 AM',
+  // Phase P1 — Proxy SLA Escalator (#PX)
+  proxy_sla:             'Every 4 hours',
   // Phase G9.R8 — Inbox Retention (#MR)
   message_retention:     'Daily 2:00 AM',
 };

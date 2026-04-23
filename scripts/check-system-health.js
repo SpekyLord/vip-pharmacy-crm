@@ -620,6 +620,100 @@ function checkFraEntityIdsSync() {
   if (issues === startIssues) console.log('  ✓ FRA → User.entity_ids wiring intact (Phase FRA-A)');
 }
 
+// ═══ 7. Phase P1 — CaptureSubmission + Proxy Queue Wiring ═══
+function checkCaptureSubmissionWiring() {
+  const startIssues = issues;
+  console.log('\n7. CaptureSubmission + Proxy Queue (Phase P1)');
+  console.log('─'.repeat(40));
+
+  // Model exists
+  const modelPath = path.join(ERP_MODELS, 'CaptureSubmission.js');
+  if (!fs.existsSync(modelPath)) {
+    warn('P1', 'CaptureSubmission model missing at backend/erp/models/CaptureSubmission.js');
+  } else {
+    const model = fs.readFileSync(modelPath, 'utf-8');
+    // Check required fields
+    for (const field of ['bdm_id', 'entity_id', 'workflow_type', 'status', 'captured_artifacts']) {
+      if (!new RegExp(`${field}\\s*:`).test(model)) {
+        warn('P1', `CaptureSubmission model missing field: ${field}`);
+      }
+    }
+    // Check status enum includes full lifecycle
+    for (const st of ['PENDING_PROXY', 'IN_PROGRESS', 'PROCESSED', 'AWAITING_BDM_REVIEW', 'ACKNOWLEDGED', 'DISPUTED', 'CANCELLED', 'AUTO_ACKNOWLEDGED']) {
+      if (!model.includes(`'${st}'`)) {
+        warn('P1', `CaptureSubmission model missing status: ${st}`);
+      }
+    }
+    // Check workflow_type enum
+    for (const wt of ['SMER', 'EXPENSE', 'SALES', 'GRN', 'FUEL_ENTRY', 'PETTY_CASH']) {
+      if (!model.includes(`'${wt}'`)) {
+        warn('P1', `CaptureSubmission model missing workflow_type: ${wt}`);
+      }
+    }
+  }
+
+  // Controller exists with expected exports
+  const ctrlPath = path.join(ERP_CONTROLLERS, 'captureSubmissionController.js');
+  if (!fs.existsSync(ctrlPath)) {
+    warn('P1', 'captureSubmissionController.js missing');
+  } else {
+    const ctrl = fs.readFileSync(ctrlPath, 'utf-8');
+    for (const fn of ['createCapture', 'getMyCaptures', 'getMyReviewQueue', 'acknowledgeCapture', 'disputeCapture', 'getProxyQueue', 'pickupCapture', 'completeCapture', 'getQueueStats']) {
+      if (!new RegExp(`${fn}\\s*[,}]`).test(ctrl) && !new RegExp(`exports\\.${fn}`).test(ctrl)) {
+        warn('P1', `captureSubmissionController.js does not export ${fn}`);
+      }
+    }
+    // Must use canProxyEntry for queue access gating
+    if (!/canProxyEntry/.test(ctrl)) {
+      warn('P1', 'captureSubmissionController.js does not use canProxyEntry — proxy queue ungated');
+    }
+    // Must use dispatchMultiChannel for notifications
+    if (!/dispatchMultiChannel/.test(ctrl)) {
+      warn('P1', 'captureSubmissionController.js does not use dispatchMultiChannel — notifications missing');
+    }
+  }
+
+  // Routes exist and are wired in index
+  const routesPath = path.join(ROOT, 'backend', 'erp', 'routes', 'captureSubmissionRoutes.js');
+  if (!fs.existsSync(routesPath)) {
+    warn('P1', 'captureSubmissionRoutes.js missing');
+  }
+  const routeIndex = fs.readFileSync(path.join(ROOT, 'backend', 'erp', 'routes', 'index.js'), 'utf-8');
+  if (!/captureSubmissionRoutes/.test(routeIndex)) {
+    warn('P1', 'captureSubmissionRoutes not mounted in routes/index.js');
+  }
+
+  // Agent exists and is registered
+  const agentPath = path.join(ROOT, 'backend', 'agents', 'proxySlaAgent.js');
+  if (!fs.existsSync(agentPath)) {
+    warn('P1', 'proxySlaAgent.js missing at backend/agents/');
+  } else {
+    const agent = fs.readFileSync(agentPath, 'utf-8');
+    if (!/PROXY_SLA_THRESHOLDS/.test(agent)) {
+      warn('P1', 'proxySlaAgent.js does not read PROXY_SLA_THRESHOLDS lookup');
+    }
+    if (!/AUTO_ACKNOWLEDGED/.test(agent)) {
+      warn('P1', 'proxySlaAgent.js does not handle auto-acknowledgment');
+    }
+  }
+  const registry = fs.readFileSync(path.join(ROOT, 'backend', 'agents', 'agentRegistry.js'), 'utf-8');
+  if (!/proxy_sla/.test(registry)) {
+    warn('P1', 'proxy_sla agent not registered in agentRegistry.js');
+  }
+  const scheduler = fs.readFileSync(path.join(ROOT, 'backend', 'agents', 'agentScheduler.js'), 'utf-8');
+  if (!/proxy_sla/.test(scheduler)) {
+    warn('P1', 'proxy_sla agent not scheduled in agentScheduler.js');
+  }
+
+  // Lookup seed: PROXY_SLA_THRESHOLDS
+  const lookupCtrl = fs.readFileSync(path.join(ERP_CONTROLLERS, 'lookupGenericController.js'), 'utf-8');
+  if (!/PROXY_SLA_THRESHOLDS/.test(lookupCtrl)) {
+    warn('P1', 'PROXY_SLA_THRESHOLDS not seeded in lookupGenericController.js');
+  }
+
+  if (issues === startIssues) console.log('  ✓ CaptureSubmission + Proxy Queue wiring intact (Phase P1)');
+}
+
 // ═══ Run all checks ═══
 console.log('System Health Check');
 console.log('═'.repeat(40));
@@ -631,6 +725,7 @@ checkControlCenter();
 checkAgentEnums();
 checkProxyEntryWiring();
 checkFraEntityIdsSync();
+checkCaptureSubmissionWiring();
 
 console.log('\n' + '═'.repeat(40));
 if (issues > beforeIssues) {

@@ -49,6 +49,8 @@ const CallPlanPage = lazyRetry(() => import('./pages/employee/CallPlanPage'));
 const DoctorDetailPage = lazyRetry(() => import('./pages/employee/DoctorDetailPage'));
 const ProductSpecPage = lazyRetry(() => import('./pages/employee/ProductSpecPage'));
 const CommLogPage = lazyRetry(() => import('./pages/employee/CommLogPage'));
+// CLM — Closed Loop Marketing (Partnership Presentation)
+const PartnershipCLM = lazyRetry(() => import('./pages/employee/PartnershipCLM'));
 
 // Admin pages
 const AdminDashboard = lazyRetry(() => import('./pages/admin/AdminDashboard'));
@@ -66,6 +68,7 @@ const SettingsPage = lazyRetry(() => import('./pages/admin/SettingsPage'));
 const CommLogsPage = lazyRetry(() => import('./pages/admin/CommLogsPage'));
 const MessageTemplatesPage = lazyRetry(() => import('./pages/admin/MessageTemplatesPage'));
 const InvitesPage = lazyRetry(() => import('./pages/admin/InvitesPage'));
+const CLMSessionsPage = lazyRetry(() => import('./pages/admin/CLMSessionsPage'));
 
 // ERP pages
 const ErpDashboard = lazyRetry(() => import('./erp/pages/ErpDashboard'));
@@ -214,6 +217,11 @@ const CommandPalette   = lazyRetry(() => import('./erp/components/CommandPalette
 
 // Phase G8 (P2-9) — Tasks page (backs CREATE_TASK / LIST_OVERDUE_ITEMS Copilot tools)
 const TasksPage = lazyRetry(() => import('./erp/pages/TasksPage'));
+
+// Phase P1 — BDM Mobile Capture + Office Proxy Queue
+const BdmCaptureHub = lazyRetry(() => import('./erp/pages/mobile/BdmCaptureHub'));
+const BdmReviewQueue = lazyRetry(() => import('./erp/pages/mobile/BdmReviewQueue'));
+const ProxyQueue = lazyRetry(() => import('./erp/pages/proxy/ProxyQueue'));
 
 // Standalone routes redirect to ControlCenter with the right section param
 const AgentSettingsRedirect = () => <Navigate to="/erp/control-center?section=agent-settings" replace />;
@@ -364,6 +372,15 @@ function App() {
               </ProtectedRoute>
             }
           />
+          {/* CLM — Partnership Presentation */}
+          <Route
+            path="/bdm/partnership"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BDM_ADMIN}>
+                <PartnershipCLM />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Admin Routes */}
           <Route
@@ -395,6 +412,15 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_ONLY}>
                 <BDMVisitsPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* CLM Admin — Partnership Session Analytics */}
+          <Route
+            path="/admin/clm-sessions"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_ONLY}>
+                <CLMSessionsPage />
               </ProtectedRoute>
             }
           />
@@ -911,6 +937,11 @@ function App() {
 
           {/* Phase G8 (P2-9) — Tasks (cross-cutting productivity; every ERP user) */}
           <Route path="/erp/tasks" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL}><TasksPage /></ProtectedRoute>} />
+
+          {/* Phase P1 — BDM Mobile Capture + Office Proxy Queue */}
+          <Route path="/erp/capture-hub" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL}><BdmCaptureHub /></ProtectedRoute>} />
+          <Route path="/erp/review-queue" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL}><BdmReviewQueue /></ProtectedRoute>} />
+          <Route path="/erp/proxy-queue" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL}><ProxyQueue /></ProtectedRoute>} />
 
           {/* Orphaned page direct routes — redirect to Control Center with correct section */}
           <Route path="/erp/agent-settings" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><AgentSettingsRedirect /></ProtectedRoute>} />

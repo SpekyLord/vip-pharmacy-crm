@@ -58,6 +58,11 @@ import {
   Target,
   Trophy,
   MessageSquare,
+  Presentation,
+  Handshake,
+  Smartphone,
+  ListChecks,
+  ScanLine,
 } from 'lucide-react';
 
 /* =============================================================================
@@ -781,6 +786,29 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     sections.push({ title: 'Expenses', collapsible: true, defaultOpen: true, items: expItems });
   }
 
+  // ── Phase P1 — Capture Hub (BDM mobile capture + office proxy queue) ─────
+  // Visible to all ERP users. BDMs see Capture Hub + Review Queue;
+  // admin/finance/president see Proxy Queue. Additive — not mandatory.
+  {
+    const captureItems = [];
+    // BDM-shaped roles get the mobile capture hub + review queue
+    if ([ROLES.CONTRACTOR, ROLES.EMPLOYEE].includes(role)) {
+      captureItems.push({ path: '/erp/capture-hub', label: 'Capture Hub', icon: ScanLine });
+      captureItems.push({ path: '/erp/review-queue', label: 'Review Queue', icon: ListChecks });
+    }
+    // Admin/finance/president get the proxy queue
+    if (ROLE_SETS.MANAGEMENT.includes(role)) {
+      captureItems.push({ path: '/erp/proxy-queue', label: 'Proxy Queue', icon: Smartphone });
+      // Management also sees review queue (for monitoring)
+      if (!captureItems.find(i => i.path === '/erp/review-queue')) {
+        captureItems.push({ path: '/erp/review-queue', label: 'Review Queue', icon: ListChecks });
+      }
+    }
+    if (captureItems.length > 0) {
+      sections.push({ title: 'Capture Hub', collapsible: true, defaultOpen: false, items: captureItems });
+    }
+  }
+
   // ── My Income (contractors only — BDMs view their own payslips) ─────────
   if (role === ROLES.CONTRACTOR && (hasModule('reports') || hasModule('people'))) {
     sections.push({
@@ -1024,6 +1052,7 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
               { path: '/admin/comm-logs', label: 'Comm Logs', icon: MessageSquare },
               { path: '/admin/invites', label: 'Invite Triage', icon: MessageSquare },
               { path: '/admin/message-templates', label: 'Msg Templates', icon: MessageSquare },
+              { path: '/admin/clm-sessions', label: 'CLM Sessions', icon: Presentation },
               { path: '/admin/settings', label: 'Programs', icon: Settings },
             ],
           },
@@ -1055,6 +1084,7 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
               { path: '/bdm/inbox', label: 'Mail', icon: Inbox, badge: unreadCount || null },
               { path: '/bdm/visits', label: 'My Visits', icon: ClipboardCheck },
               { path: '/bdm/comm-log', label: 'Comm Log', icon: MessageSquare },
+              { path: '/bdm/partnership', label: 'Partnership', icon: Handshake },
             ],
           },
         ],
