@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+jobs:
+  build-test-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm ci
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Backend startup check (production-like config validation)
+        working-directory: backend
+        env:
+          NODE_ENV: production
+          MONGO_URI: mongodb://127.0.0.1:27017/vip-crm-ci
+          JWT_SECRET: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          JWT_REFRESH_SECRET: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          CORS_ORIGINS: https://example.com
+          HEALTH_EXPOSE_DETAILS: false
+          ENABLE_SCHEDULER: false
+        run: npm run startup:check
+
+      - name: Backend unit and smoke tests
+        working-directory: backend
+        env:
+          NODE_ENV: test
+          MONGO_URI: mongodb://127.0.0.1:27017/vip-crm-ci
+          JWT_SECRET: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          JWT_REFRESH_SECRET: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+          CORS_ORIGINS: https://example.com
+          ENABLE_SCHEDULER: false
+        run: |
+          npm run test:ci
+          npm run test:smoke
+
+      - name: Frontend changed-file risk lint gate
+        run: node scripts/lintChangedRisk.js
+
+
+      - name: Frontend production build
+        working-directory: frontend
+        env:
+          VITE_API_URL: https://example.com/api
+        run: npm run build
+
+      - name: Backend dependency audit (critical gate)
+        working-directory: backend
+        run: npm audit --omit=dev --audit-level=critical
+
+      - name: Frontend dependency audit (critical gate)
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=critical
+
+      - name: Backend dependency audit report (high+)
+        if: always()
+        working-directory: backend
+        run: npm audit --omit=dev --audit-level=high || true
+
+      - name: Frontend dependency audit report (high+)
+        if: always()
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high || true
+
+
