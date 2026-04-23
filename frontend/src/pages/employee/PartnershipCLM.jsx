@@ -80,7 +80,7 @@ const PartnershipCLM = () => {
       setDoctors(doctorRes.data || []);
       setSessions(sessionRes.data || []);
       setProducts((productRes.data || []).filter((p) => p.isActive !== false));
-    } catch (_err) {
+    } catch {
       toast.error('Failed to load data');
     } finally {
       setLoading(false);
@@ -156,7 +156,7 @@ const PartnershipCLM = () => {
       setActiveSession(res.data);
       setStep('presenting');
       toast.success('Presentation started');
-    } catch (_err) {
+    } catch {
       toast.error('Failed to start session');
     }
   };

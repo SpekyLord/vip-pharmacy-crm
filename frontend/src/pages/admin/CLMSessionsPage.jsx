@@ -45,7 +45,7 @@ const CLMSessionsPage = () => {
       setAnalytics(analyticsRes.data);
       setSessions(sessionsRes.data || []);
       setTotal(sessionsRes.pagination?.total || 0);
-    } catch (_err) {
+    } catch {
       toast.error('Failed to load CLM data');
     } finally {
       setLoading(false);
