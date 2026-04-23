@@ -6,6 +6,22 @@ import { AuthProvider } from './context/AuthContext.jsx';
 import { EntityProvider } from './context/EntityContext.jsx';
 import './index.css';
 import './styles/tablet-optimized.css';
+import { offlineManager } from './utils/offlineManager';
+import { syncOfflineDrafts } from './services/offlineClmSync';
+
+// Register service worker for offline-first PWA capability
+offlineManager.init();
+
+// Auto-sync offline CLM drafts when connectivity returns
+offlineManager.onStatusChange((isOnline) => {
+  if (isOnline) {
+    syncOfflineDrafts().then(({ synced, failed }) => {
+      if (synced > 0) {
+        console.log(`[OfflineSync] Synced ${synced} CLM sessions${failed ? `, ${failed} failed` : ''}`);
+      }
+    });
+  }
+});
 
 // Apply persisted dark mode preference as early as possible
 try {

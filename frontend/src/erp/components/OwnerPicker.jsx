@@ -39,6 +39,7 @@ export default function OwnerPicker({
   const { user } = useAuth();
   const { hasSubPermission } = useErpSubAccess();
   const { options: proxyRolesOpts, loading: rolesLoading } = useLookupOptions('PROXY_ENTRY_ROLES');
+  const { options: validOwnerOpts, loading: validOwnerLoading } = useLookupOptions('VALID_OWNER_ROLES');
   const { getPeopleList } = usePeople();
   const [people, setPeople] = useState([]);
   const [peopleLoading, setPeopleLoading] = useState(false);
@@ -52,12 +53,24 @@ export default function OwnerPicker({
     ? rolesRow.metadata.roles
     : ['admin', 'finance', 'president'];
 
+  // VALID_OWNER_ROLES — who can be the owner of a per-BDM record in this module.
+  // Backend default matches resolveOwnerScope.js (contractor + legacy 'employee').
+  const validOwnerRow = validOwnerOpts.find(o => o.code === lookupCode);
+  const validOwnerRoles = Array.isArray(validOwnerRow?.metadata?.roles) && validOwnerRow.metadata.roles.length
+    ? validOwnerRow.metadata.roles
+    : ['contractor', 'employee'];
+
   const role = user?.role;
   const isPresident = role === 'president';
   const isCeo = role === 'ceo';
   const roleEligible = isPresident || (!isCeo && eligibleRoles.includes(role));
   const subTicked = isPresident || hasSubPermission(module, subKey);
   const canProxy = roleEligible && subTicked;
+  // Phase G4.5d: if the caller's own role isn't a valid owner (e.g. admin,
+  // finance, president), self-file would create orphaned ownership. Hide the
+  // Self option so the dropdown forces a BDM selection — matches the backend
+  // Rule #21 guard in resolveOwnerScope.js.
+  const callerIsValidOwner = validOwnerRoles.includes(role);
 
   useEffect(() => {
     let alive = true;
@@ -77,17 +90,22 @@ export default function OwnerPicker({
     return () => { alive = false; };
   }, [canProxy, getPeopleList]);
 
-  if (rolesLoading) return null;
+  if (rolesLoading || validOwnerLoading) return null;
   if (!canProxy) return null;
 
-  const selfLabel = `Self — ${user?.name || 'me'} (${role})`;
+  const selfLabel = callerIsValidOwner
+    ? `Self — ${user?.name || 'me'} (${role})`
+    : `— Select a BDM —`;
+  const titleHint = callerIsValidOwner
+    ? 'Choose whose record this will belong to. Leave on Self to file under your own id.'
+    : `Role '${role}' cannot own per-${module} records. Pick the BDM who owns this transaction.`;
 
   return (
     <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 2, minWidth: 220 }}>
       <label style={{ fontSize: 11, color: '#6d28d9', fontWeight: 600 }}>
         {label}
         <span style={{ color: '#9ca3af', fontWeight: 400, marginLeft: 4 }}>
-          (proxy)
+          {callerIsValidOwner ? '(proxy)' : '(required)'}
         </span>
       </label>
       <select
@@ -97,11 +115,11 @@ export default function OwnerPicker({
         style={{
           padding: '6px 10px',
           borderRadius: 6,
-          border: '1px solid #a78bfa',
+          border: `1px solid ${callerIsValidOwner ? '#a78bfa' : '#f59e0b'}`,
           fontSize: 13,
           background: disabled ? '#f3f4f6' : '#fff',
         }}
-        title="Choose whose record this will belong to. Leave on Self to file under your own id."
+        title={titleHint}
       >
         <option value="">{selfLabel}</option>
         {people

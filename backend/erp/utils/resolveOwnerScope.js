@@ -134,7 +134,24 @@ async function canProxyEntry(req, moduleKey, subKey = 'proxy_entry') {
 async function resolveOwnerForWrite(req, moduleKey, { subKey = 'proxy_entry' } = {}) {
   const rawAssigned = req.body?.assigned_to || null;
   const selfId = String(req.user._id);
+
+  // Rule #21 guard (write path, Phase G4.5d). Silent self-fill is only safe
+  // when the caller's own role is a VALID_OWNER_ROLES member. For admin /
+  // finance / president, stamping their _id onto bdm_id would corrupt per-BDM
+  // KPIs, commissions, and Approval Hub hydration. Force them to pick an owner.
+  const validOwnerRoles = await getValidOwnerRolesForModule(req.entityId, moduleKey);
+  const callerIsValidOwner = validOwnerRoles.includes(req.user.role);
+
   if (!rawAssigned || String(rawAssigned) === selfId) {
+    if (!callerIsValidOwner) {
+      const err = new Error(
+        `Owner must be selected for ${moduleKey}. Role '${req.user.role}' does not own ` +
+        `per-BDM records — pick a BDM in "Record on behalf of". ` +
+        `Valid owner roles: ${validOwnerRoles.join(', ')}.`
+      );
+      err.statusCode = 400;
+      throw err;
+    }
     return { ownerId: req.user._id, proxiedBy: undefined, isOnBehalf: false };
   }
   const { canProxy } = await canProxyEntry(req, moduleKey, subKey);
@@ -159,7 +176,6 @@ async function resolveOwnerForWrite(req, moduleKey, { subKey = 'proxy_entry' } =
     err.statusCode = 400;
     throw err;
   }
-  const validOwnerRoles = await getValidOwnerRolesForModule(req.entityId, moduleKey);
   if (!validOwnerRoles.includes(target.role)) {
     const err = new Error(
       `Proxy target role '${target.role}' is not a valid owner for ${moduleKey}. ` +

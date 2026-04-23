@@ -114,6 +114,16 @@ const clmSessionSchema = new mongoose.Schema(
       enum: ['in_progress', 'completed', 'abandoned'],
       default: 'in_progress',
     },
+
+    // ── Offline sync idempotency ────────────────────────────────────
+    // Generated client-side when a session is created offline.
+    // Used to detect duplicate sync attempts (BDM syncs same draft twice).
+    // Null for sessions created while online (no conflict risk).
+    idempotencyKey: {
+      type: String,
+      trim: true,
+      sparse: true,  // Only index non-null values
+    },
   },
   {
     timestamps: true,
@@ -126,5 +136,8 @@ clmSessionSchema.index({ doctor: 1, createdAt: -1 });
 clmSessionSchema.index({ status: 1 });
 clmSessionSchema.index({ qrScanned: 1 });
 clmSessionSchema.index({ 'productsPresented.product': 1 });
+// Sparse unique index on idempotencyKey — prevents duplicate offline syncs
+// Only applies to sessions created offline (key is null for online sessions)
+clmSessionSchema.index({ idempotencyKey: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('CLMSession', clmSessionSchema);
