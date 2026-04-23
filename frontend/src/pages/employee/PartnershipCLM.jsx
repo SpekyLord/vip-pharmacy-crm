@@ -9,7 +9,7 @@
  * 5. View past session history
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+// react-router-dom navigate available if needed
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import CLMPresenter from '../../components/employee/CLMPresenter';
@@ -40,8 +40,7 @@ import {
 } from 'lucide-react';
 
 const PartnershipCLM = () => {
-  const { user } = useAuth();
-  const navigate = useNavigate();
+  useAuth();
 
   // ── State ─────────────────────────────────────────────────────
   const [doctors, setDoctors] = useState([]);
@@ -81,7 +80,7 @@ const PartnershipCLM = () => {
       setDoctors(doctorRes.data || []);
       setSessions(sessionRes.data || []);
       setProducts((productRes.data || []).filter((p) => p.isActive !== false));
-    } catch (err) {
+    } catch (_err) {
       toast.error('Failed to load data');
     } finally {
       setLoading(false);
@@ -157,7 +156,7 @@ const PartnershipCLM = () => {
       setActiveSession(res.data);
       setStep('presenting');
       toast.success('Presentation started');
-    } catch (err) {
+    } catch (_err) {
       toast.error('Failed to start session');
     }
   };

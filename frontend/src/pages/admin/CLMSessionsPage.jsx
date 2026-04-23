@@ -20,9 +20,7 @@ import {
   Clock,
   MessageCircle,
   Star,
-  TrendingUp,
   Calendar,
-  User,
   CheckCircle2,
   XCircle,
   HelpCircle,
@@ -47,7 +45,7 @@ const CLMSessionsPage = () => {
       setAnalytics(analyticsRes.data);
       setSessions(sessionsRes.data || []);
       setTotal(sessionsRes.pagination?.total || 0);
-    } catch (err) {
+    } catch (_err) {
       toast.error('Failed to load CLM data');
     } finally {
       setLoading(false);
