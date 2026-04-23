@@ -14,11 +14,26 @@ const CrmProduct = require('../models/CrmProduct');
 // ── Helpers ─────────────────────────────────────────────────────────
 const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 
-// ── Start a new CLM session ─────────────────────────────────────────
+// ── Start a new CLM session ───────────────────────────────────────
 const startSession = asyncHandler(async (req, res) => {
   const { doctorId, location, productIds } = req.body;
   if (!doctorId) {
     return res.status(400).json({ success: false, message: 'doctorId is required' });
+  }
+
+  // Idempotency check — prevent duplicate offline syncs
+  // If client sends X-Idempotency-Key header, check if a session with that key already exists.
+  // If so, return 409 Conflict so the client knows to delete the draft.
+  const idempotencyKey = req.headers['x-idempotency-key'];
+  if (idempotencyKey) {
+    const existing = await CLMSession.findOne({ idempotencyKey }).lean();
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: 'Duplicate session — already synced.',
+        data: existing,
+      });
+    }
   }
 
   // Build productsPresented with snapshot data from CRM
@@ -48,6 +63,7 @@ const startSession = asyncHandler(async (req, res) => {
     location: location || {},
     productsPresented,
     status: 'in_progress',
+    ...(idempotencyKey ? { idempotencyKey } : {}),
   });
 
   // Build the Messenger ref for QR tracking
