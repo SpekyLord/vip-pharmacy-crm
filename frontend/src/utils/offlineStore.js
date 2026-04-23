@@ -2,9 +2,14 @@
  * Offline Store — IndexedDB-backed local cache for BDM offline data
  *
  * Stores:
- *   - doctors:  Cached doctor list for offline doctor selection
- *   - products: Cached product list for offline product selection
- *   - clmDraft: In-progress CLM session data (before sync)
+ *   - doctors:        Cached doctor list for offline doctor selection
+ *   - products:       Cached product list for offline product selection
+ *   - product_images: Product image blobs keyed by product._id (survives S3 signed URL expiry)
+ *   - clm_drafts:     In-progress CLM session data (before sync)
+ *
+ * IMPORTANT: Product images from S3 use signed URLs that expire in 1 hour (SEC-007).
+ * We fetch the image bytes while online and store them as Blobs in IndexedDB,
+ * keyed by product._id — NOT by URL. This means images work offline indefinitely.
  *
  * This is NOT a replacement for the API — it's a fallback cache.
  * When online, the app always fetches from the API and updates the cache.
@@ -12,11 +17,12 @@
  */
 
 const DB_NAME = 'vip-offline-data';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Bumped from 1 → 2 to add product_images store
 
 const STORES = {
   DOCTORS: 'doctors',
   PRODUCTS: 'products',
+  PRODUCT_IMAGES: 'product_images',
   CLM_DRAFTS: 'clm_drafts',
 };
 
@@ -30,6 +36,9 @@ function openDB() {
       }
       if (!db.objectStoreNames.contains(STORES.PRODUCTS)) {
         db.createObjectStore(STORES.PRODUCTS, { keyPath: '_id' });
+      }
+      if (!db.objectStoreNames.contains(STORES.PRODUCT_IMAGES)) {
+        db.createObjectStore(STORES.PRODUCT_IMAGES, { keyPath: 'productId' });
       }
       if (!db.objectStoreNames.contains(STORES.CLM_DRAFTS)) {
         db.createObjectStore(STORES.CLM_DRAFTS, { keyPath: 'id', autoIncrement: true });
@@ -64,6 +73,17 @@ async function getAll(storeName) {
   const req = store.getAll();
   return new Promise((resolve, reject) => {
     req.onsuccess = () => { db.close(); resolve(req.result); };
+    req.onerror = () => { db.close(); reject(req.error); };
+  });
+}
+
+async function getOne(storeName, key) {
+  const db = await openDB();
+  const tx = db.transaction(storeName, 'readonly');
+  const store = tx.objectStore(storeName);
+  const req = store.get(key);
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => { db.close(); resolve(req.result || null); };
     req.onerror = () => { db.close(); reject(req.error); };
   });
 }
@@ -126,6 +146,76 @@ const offlineStore = {
       return await getAll(STORES.PRODUCTS);
     } catch {
       return [];
+    }
+  },
+
+  // ── Product Images (blob cache — survives S3 signed URL expiry) ──
+  /**
+   * Download a product image from its S3 signed URL and store the bytes
+   * in IndexedDB keyed by productId. The URL will expire in 1 hour,
+   * but the cached bytes persist indefinitely.
+   *
+   * @param {string} productId - The product's _id
+   * @param {string} imageUrl  - Current S3 signed URL (valid for ~1 hour)
+   */
+  async cacheProductImage(productId, imageUrl) {
+    if (!productId || !imageUrl) return;
+    try {
+      const response = await fetch(imageUrl, { mode: 'cors' });
+      if (!response.ok) return;
+      const blob = await response.blob();
+      await putOne(STORES.PRODUCT_IMAGES, {
+        productId,
+        blob,
+        mimeType: blob.type || 'image/jpeg',
+        cachedAt: new Date().toISOString(),
+        size: blob.size,
+      });
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(`[OfflineStore] Failed to cache image for product ${productId}:`, err);
+    }
+  },
+
+  /**
+   * Batch-cache product images. Only fetches images that aren't already cached
+   * (or are older than 23 hours — just under the 24h S3 URL refresh cycle).
+   *
+   * @param {Array<{_id: string, image: string}>} products
+   */
+  async cacheProductImages(products) {
+    if (!products?.length) return;
+    const productsWithImages = products.filter((p) => p.image);
+    // Fire-and-forget: don't block the UI
+    for (const product of productsWithImages) {
+      try {
+        const existing = await getOne(STORES.PRODUCT_IMAGES, product._id);
+        // Skip if already cached within the last 23 hours
+        if (existing?.cachedAt) {
+          const age = Date.now() - new Date(existing.cachedAt).getTime();
+          if (age < 23 * 60 * 60 * 1000) continue;
+        }
+        await this.cacheProductImage(product._id, product.image);
+      } catch {
+        // Non-critical — continue with next product
+      }
+    }
+  },
+
+  /**
+   * Get a cached product image as an object URL (for use in <img src>).
+   * Returns null if not cached.
+   *
+   * @param {string} productId
+   * @returns {Promise<string|null>} Object URL or null
+   */
+  async getProductImageUrl(productId) {
+    try {
+      const record = await getOne(STORES.PRODUCT_IMAGES, productId);
+      if (!record?.blob) return null;
+      return URL.createObjectURL(record.blob);
+    } catch {
+      return null;
     }
   },
 

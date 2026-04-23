@@ -264,9 +264,45 @@ self.addEventListener('sync', (event) => {
   }
 });
 
+/**
+ * Replay queued requests with JWT token refresh orchestration.
+ *
+ * Problem: Access token is 15 min (httpOnly cookie). If BDM was offline
+ * for >15 min, the cookie is stale. On replay, the server returns 401.
+ *
+ * Solution: On first 401, call POST /api/auth/refresh-token (refresh token
+ * is 7 days, also httpOnly cookie). If refresh succeeds, the server sets
+ * new cookies and we retry. If refresh fails (expired/revoked), notify
+ * the user that re-login is required.
+ */
+let tokenRefreshAttempted = false;
+
+async function attemptTokenRefresh() {
+  try {
+    const refreshUrl = new URL('/api/auth/refresh-token', self.location.origin).href;
+    const response = await fetch(refreshUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+      credentials: 'include',
+    });
+    if (response.ok) {
+      tokenRefreshAttempted = false; // Reset for future cycles
+      return true;
+    }
+    // 401/403 = refresh token also expired — user must re-login
+    return false;
+  } catch {
+    // Network error during refresh
+    return false;
+  }
+}
+
 async function replayQueue() {
   const queued = await getQueuedRequests();
   if (!queued.length) return;
+
+  tokenRefreshAttempted = false;
 
   for (const item of queued) {
     try {
@@ -276,13 +312,58 @@ async function replayQueue() {
         body: item.body || undefined,
         credentials: 'include',
       });
-      if (response.ok || response.status < 500) {
+
+      if (response.ok || (response.status >= 200 && response.status < 400)) {
         await removeQueuedRequest(item.id);
+        continue;
       }
-      // If 5xx, leave in queue for next sync
+
+      // 401 = access token expired — try refresh
+      if (response.status === 401 && !tokenRefreshAttempted) {
+        tokenRefreshAttempted = true;
+        const refreshed = await attemptTokenRefresh();
+        if (refreshed) {
+          // Retry this request with fresh token
+          const retryResponse = await fetch(item.url, {
+            method: item.method,
+            headers: item.headers,
+            body: item.body || undefined,
+            credentials: 'include',
+          });
+          if (retryResponse.ok || (retryResponse.status >= 200 && retryResponse.status < 400)) {
+            await removeQueuedRequest(item.id);
+            continue;
+          }
+          // Still failing after refresh — leave in queue
+        } else {
+          // Refresh failed — notify user they need to re-login
+          const clients = await self.clients.matchAll();
+          clients.forEach((client) => {
+            client.postMessage({
+              type: 'VIP_SYNC_AUTH_REQUIRED',
+              message: 'Session expired. Please log in again to sync offline data.',
+            });
+          });
+          break; // Stop replaying — all requests will fail without auth
+        }
+      }
+
+      // 409 Conflict = duplicate — remove from queue (server already has it)
+      if (response.status === 409) {
+        await removeQueuedRequest(item.id);
+        continue;
+      }
+
+      // 4xx (other than 401/409) = client error, remove to prevent infinite retry
+      if (response.status >= 400 && response.status < 500) {
+        await removeQueuedRequest(item.id);
+        continue;
+      }
+
+      // 5xx = server error, leave in queue for next sync
     } catch {
-      // Still offline — leave in queue
-      break; // Stop trying if we're still offline
+      // Network error — still offline
+      break;
     }
   }
 

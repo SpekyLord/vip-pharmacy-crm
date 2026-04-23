@@ -1,19 +1,21 @@
 /**
- * OfflineBanner — Persistent banner showing offline status and sync queue
+ * OfflineBanner — Persistent banner showing offline status, sync queue, and auth state
  *
  * Displays:
  *   - Yellow warning banner when offline
- *   - Green sync banner when back online with pending items
+ *   - Blue sync banner when back online with pending items
+ *   - Red auth banner when sync failed due to expired tokens (re-login required)
+ *   - Green success flash when sync completes
  *   - Hidden when online with no pending items
  *
  * Placement: Top of the app layout, below Navbar.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { WifiOff, Wifi, RefreshCw, CloudOff, Upload } from 'lucide-react';
+import { WifiOff, Wifi, RefreshCw, CloudOff, Upload, AlertTriangle, LogIn } from 'lucide-react';
 import { useOffline } from '../../hooks/useOffline';
 
 const OfflineBanner = () => {
-  const { isOnline, queueCount, triggerSync } = useOffline();
+  const { isOnline, queueCount, triggerSync, authRequired, clearAuth } = useOffline();
   const [syncing, setSyncing] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [showSyncSuccess, setShowSyncSuccess] = useState(false);
@@ -40,6 +42,29 @@ const OfflineBanner = () => {
     setSyncing(true);
     triggerSync();
   }, [triggerSync]);
+
+  const handleReLogin = useCallback(() => {
+    clearAuth();
+    // Navigate to login — the auth:logout event will clear tokens
+    window.dispatchEvent(new CustomEvent('auth:logout'));
+  }, [clearAuth]);
+
+  // Auth required — red banner (highest priority)
+  if (authRequired && queueCount > 0) {
+    return (
+      <div style={styles.authBanner}>
+        <AlertTriangle size={16} />
+        <span style={styles.bannerText}>
+          <strong>Session expired.</strong> {queueCount} offline {queueCount === 1 ? 'session' : 'sessions'} waiting.
+          Please log in again to sync your data.
+        </span>
+        <button onClick={handleReLogin} style={styles.authBtn}>
+          <LogIn size={14} />
+          Log In
+        </button>
+      </div>
+    );
+  }
 
   // Nothing to show
   if (isOnline && queueCount === 0 && !showSyncSuccess && dismissed) return null;
@@ -180,6 +205,32 @@ const styles = {
     fontWeight: 500,
     zIndex: 1000,
     flexShrink: 0,
+  },
+  authBanner: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '8px 16px',
+    background: 'linear-gradient(135deg, #991b1b, #dc2626)',
+    color: '#fecaca',
+    fontSize: '13px',
+    fontWeight: 500,
+    zIndex: 1000,
+    flexShrink: 0,
+  },
+  authBtn: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '4px',
+    marginLeft: 'auto',
+    background: 'rgba(255,255,255,0.25)',
+    border: 'none',
+    color: '#fff',
+    padding: '4px 12px',
+    borderRadius: '6px',
+    fontSize: '12px',
+    fontWeight: 600,
+    cursor: 'pointer',
   },
 };
 

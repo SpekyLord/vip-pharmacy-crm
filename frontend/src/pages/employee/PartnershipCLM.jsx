@@ -14,6 +14,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import CLMPresenter from '../../components/employee/CLMPresenter';
 import OfflineBanner from '../../components/common/OfflineBanner';
+import ProductImage from '../../components/common/ProductImage';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import { useAuth } from '../../hooks/useAuth';
 import { useOffline } from '../../hooks/useOffline';
@@ -39,7 +40,6 @@ import {
   BarChart3,
   Package,
   Check,
-  Pill,
 } from 'lucide-react';
 
 const PartnershipCLM = () => {
@@ -91,6 +91,8 @@ const PartnershipCLM = () => {
         // Cache for offline use (fire-and-forget)
         offlineStore.cacheDoctors(doctorData);
         offlineStore.cacheProducts(productData);
+        // Cache product image bytes in IndexedDB (survives S3 signed URL expiry)
+        offlineStore.cacheProductImages(productData);
       } else {
         // Offline: load from IndexedDB cache
         const [cachedDoctors, cachedProducts] = await Promise.all([
@@ -265,7 +267,10 @@ const PartnershipCLM = () => {
 
       if (isOfflineSession) {
         // Save complete draft to IndexedDB for later sync
+        // idempotencyKey prevents duplicate sessions if sync replays twice
+        const idempotencyKey = `clm_${Date.now()}_${selectedDoctor?._id}_${Math.random().toString(36).slice(2, 10)}`;
         await offlineStore.saveDraft({
+          idempotencyKey,
           doctorId: selectedDoctor?._id,
           doctorName: selectedDoctor ? `${selectedDoctor.firstName} ${selectedDoctor.lastName}` : 'Unknown',
           location: activeSession?.location || {},
@@ -298,7 +303,9 @@ const PartnershipCLM = () => {
           productId,
           interestShown: interested,
         }));
+           const fallbackKey = `clm_${Date.now()}_${selectedDoctor?._id}_${Math.random().toString(36).slice(2, 10)}`;
         await offlineStore.saveDraft({
+          idempotencyKey: fallbackKey,
           doctorId: selectedDoctor?._id,
           doctorName: selectedDoctor ? `${selectedDoctor.firstName} ${selectedDoctor.lastName}` : 'Unknown',
           location: activeSession?.location || {},
@@ -309,7 +316,7 @@ const PartnershipCLM = () => {
           startedAt: activeSession?.startedAt,
           endedAt: new Date().toISOString(),
         });
-        toast.success('Network error \u2014 session saved offline');
+        toast.success('Network error — session saved offline');
       } catch {
         toast.error('Failed to save session');
       }
@@ -507,12 +514,13 @@ const PartnershipCLM = () => {
                             <div className="clm-check-off" />
                           )}
                         </div>
-                        {p.image ? (
-                          <img src={p.image} alt={p.name} className="clm-product-img"
-                            onError={(e) => { e.target.style.display = 'none'; }} />
-                        ) : (
-                          <div className="clm-product-placeholder"><Pill size={28} /></div>
-                        )}
+                        <ProductImage
+                          productId={p._id}
+                          imageUrl={p.image}
+                          alt={p.name}
+                          className="clm-product-img"
+                          placeholderClassName="clm-product-placeholder"
+                        />
                         <div className="clm-product-details">
                           <h4>{p.name}</h4>
                           {p.genericName && <p className="clm-product-generic">{p.genericName}</p>}
