@@ -36,6 +36,13 @@ const prfCalfSchema = new mongoose.Schema({
   entity_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Entity', required: true },
   bdm_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
 
+  // Phase G4.5e — Proxy Entry audit. Present when an eBDM / office clerk keyed
+  // the PRF/CALF on behalf of the `bdm_id` owner. Drives forceApproval on submit
+  // so the doc always routes through the Approval Hub (Rule #20 four-eyes).
+  // Also propagated automatically by autoCalfForSource when the source expense /
+  // logbook was itself proxy-created.
+  recorded_on_behalf_of: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: undefined },
+
   // Document type
   doc_type: { type: String, required: true }, // Lookup: PRF_DOC_TYPE
 

@@ -56,15 +56,35 @@ const startSession = asyncHandler(async (req, res) => {
     }));
   }
 
-  const session = await CLMSession.create({
-    user: req.user._id,
-    doctor: doctorId,
-    startedAt: new Date(),
-    location: location || {},
-    productsPresented,
-    status: 'in_progress',
-    ...(idempotencyKey ? { idempotencyKey } : {}),
-  });
+  // Race-safe create: two concurrent offline syncs with the same idempotency
+  // key can both pass the findOne() check above, then race on insert. The
+  // sparse unique index on idempotencyKey guarantees only one wins (the other
+  // hits E11000). Convert that duplicate-key error into a clean 409 — same
+  // shape as the pre-check path — instead of surfacing a 500.
+  let session;
+  try {
+    session = await CLMSession.create({
+      user: req.user._id,
+      doctor: doctorId,
+      startedAt: new Date(),
+      location: location || {},
+      productsPresented,
+      status: 'in_progress',
+      ...(idempotencyKey ? { idempotencyKey } : {}),
+    });
+  } catch (err) {
+    if (err && err.code === 11000 && idempotencyKey) {
+      const existing = await CLMSession.findOne({ idempotencyKey }).lean();
+      if (existing) {
+        return res.status(409).json({
+          success: false,
+          message: 'Duplicate session — already synced.',
+          data: existing,
+        });
+      }
+    }
+    throw err;
+  }
 
   // Build the Messenger ref for QR tracking
   const messengerRef = `CLM_${session._id}_${doctorId}_${req.user._id}`;
@@ -237,6 +257,22 @@ const markQrScanned = asyncHandler(async (req, res) => {
   await session.save();
   res.json({ success: true, data: session });
 });
+
+// ── Messenger webhook conversion (internal helper, not HTTP) ────────
+// Called from webhookRoutes.js when a Messenger event carries a CLM ref.
+// Idempotent: if already scanned, returns the session without overwriting
+// qrScannedAt so the original conversion attribution is preserved.
+const markClmSessionConverted = async (messengerRef) => {
+  if (!messengerRef) return null;
+  const session = await CLMSession.findOne({ messengerRef });
+  if (!session) return null;
+  if (!session.qrScanned) {
+    session.qrScanned = true;
+    session.qrScannedAt = new Date();
+    await session.save();
+  }
+  return session;
+};
 
 // ── Get my sessions (BDM) ───────────────────────────────────────────
 const getMySessions = asyncHandler(async (req, res) => {
@@ -437,6 +473,7 @@ module.exports = {
   recordSlideEvents,
   markQrDisplayed,
   markQrScanned,
+  markClmSessionConverted,
   getMySessions,
   getAllSessions,
   getSessionById,

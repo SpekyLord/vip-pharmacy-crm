@@ -36,8 +36,18 @@ const _validOwnerRolesCache = new Map();
 
 const DEFAULT_PROXY_ROLES = [ROLES.ADMIN, ROLES.FINANCE, ROLES.PRESIDENT];
 
-async function getProxyRolesForModule(entityId, moduleKey) {
-  const cacheKey = `${entityId}::${moduleKey}`;
+// Phase G4.5e — helpers accept an optional `lookupCode` so a module that
+// shares a sub-permission namespace with another (e.g. car_logbook + prf_calf
+// both live under the `expenses` module) can still have its own role allowlist
+// and VALID_OWNER_ROLES row. Falls back to `moduleKey.toUpperCase()` so every
+// pre-G4.5e call site stays byte-identical.
+function resolveLookupCode(moduleKey, lookupCode) {
+  return String(lookupCode || moduleKey || '').toUpperCase();
+}
+
+async function getProxyRolesForModule(entityId, moduleKey, lookupCode) {
+  const code = resolveLookupCode(moduleKey, lookupCode);
+  const cacheKey = `${entityId}::${code}`;
   const cached = _proxyRolesCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.roles;
 
@@ -46,7 +56,7 @@ async function getProxyRolesForModule(entityId, moduleKey) {
     const doc = await Lookup.findOne({
       entity_id: entityId,
       category: 'PROXY_ENTRY_ROLES',
-      code: String(moduleKey).toUpperCase(),
+      code,
       is_active: true,
     }).lean();
     if (doc && Array.isArray(doc.metadata?.roles) && doc.metadata.roles.length) {
@@ -71,8 +81,9 @@ function invalidateProxyRolesCache(entityId = null) {
   }
 }
 
-async function getValidOwnerRolesForModule(entityId, moduleKey) {
-  const cacheKey = `${entityId}::${moduleKey}`;
+async function getValidOwnerRolesForModule(entityId, moduleKey, lookupCode) {
+  const code = resolveLookupCode(moduleKey, lookupCode);
+  const cacheKey = `${entityId}::${code}`;
   const cached = _validOwnerRolesCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < CACHE_TTL_MS) return cached.roles;
 
@@ -81,7 +92,7 @@ async function getValidOwnerRolesForModule(entityId, moduleKey) {
     const doc = await Lookup.findOne({
       entity_id: entityId,
       category: 'VALID_OWNER_ROLES',
-      code: String(moduleKey).toUpperCase(),
+      code,
       is_active: true,
     }).lean();
     if (doc && Array.isArray(doc.metadata?.roles) && doc.metadata.roles.length) {
@@ -114,9 +125,21 @@ function hasProxySubPermission(user, moduleKey, subKey) {
   return !!(subs && subs[subKey]);
 }
 
-async function canProxyEntry(req, moduleKey, subKey = 'proxy_entry') {
+async function canProxyEntry(req, moduleKey, subKeyOrOpts = 'proxy_entry', maybeOpts) {
+  // Back-compat signature: (req, moduleKey, 'subKey_string')
+  //     new signature: (req, moduleKey, { subKey, lookupCode })
+  //     either/or:    (req, moduleKey, 'subKey_string', { lookupCode })
+  let subKey = 'proxy_entry';
+  let lookupCode;
+  if (typeof subKeyOrOpts === 'string') {
+    subKey = subKeyOrOpts;
+    if (maybeOpts && typeof maybeOpts === 'object') lookupCode = maybeOpts.lookupCode;
+  } else if (subKeyOrOpts && typeof subKeyOrOpts === 'object') {
+    subKey = subKeyOrOpts.subKey || subKey;
+    lookupCode = subKeyOrOpts.lookupCode;
+  }
   if (!req || !req.user) return { canProxy: false, proxyRoles: DEFAULT_PROXY_ROLES };
-  const proxyRoles = await getProxyRolesForModule(req.entityId, moduleKey);
+  const proxyRoles = await getProxyRolesForModule(req.entityId, moduleKey, lookupCode);
   const role = req.user.role;
   const roleEligible = role === ROLES.PRESIDENT || proxyRoles.includes(role);
   if (!roleEligible) return { canProxy: false, proxyRoles };
@@ -131,7 +154,7 @@ async function canProxyEntry(req, moduleKey, subKey = 'proxy_entry') {
  * Throws an Error with .statusCode=403 if the caller requested proxy but
  * isn't eligible.
  */
-async function resolveOwnerForWrite(req, moduleKey, { subKey = 'proxy_entry' } = {}) {
+async function resolveOwnerForWrite(req, moduleKey, { subKey = 'proxy_entry', lookupCode } = {}) {
   const rawAssigned = req.body?.assigned_to || null;
   const selfId = String(req.user._id);
 
@@ -139,13 +162,13 @@ async function resolveOwnerForWrite(req, moduleKey, { subKey = 'proxy_entry' } =
   // when the caller's own role is a VALID_OWNER_ROLES member. For admin /
   // finance / president, stamping their _id onto bdm_id would corrupt per-BDM
   // KPIs, commissions, and Approval Hub hydration. Force them to pick an owner.
-  const validOwnerRoles = await getValidOwnerRolesForModule(req.entityId, moduleKey);
+  const validOwnerRoles = await getValidOwnerRolesForModule(req.entityId, moduleKey, lookupCode);
   const callerIsValidOwner = validOwnerRoles.includes(req.user.role);
 
   if (!rawAssigned || String(rawAssigned) === selfId) {
     if (!callerIsValidOwner) {
       const err = new Error(
-        `Owner must be selected for ${moduleKey}. Role '${req.user.role}' does not own ` +
+        `Owner must be selected for ${lookupCode || moduleKey}. Role '${req.user.role}' does not own ` +
         `per-BDM records — pick a BDM in "Record on behalf of". ` +
         `Valid owner roles: ${validOwnerRoles.join(', ')}.`
       );
@@ -154,10 +177,10 @@ async function resolveOwnerForWrite(req, moduleKey, { subKey = 'proxy_entry' } =
     }
     return { ownerId: req.user._id, proxiedBy: undefined, isOnBehalf: false };
   }
-  const { canProxy } = await canProxyEntry(req, moduleKey, subKey);
+  const { canProxy } = await canProxyEntry(req, moduleKey, { subKey, lookupCode });
   if (!canProxy) {
     const err = new Error(
-      `Proxy entry denied for ${moduleKey}.${subKey}. Your role or Access Template does not grant proxy rights for this module.`
+      `Proxy entry denied for ${lookupCode || moduleKey}.${subKey}. Your role or Access Template does not grant proxy rights for this module.`
     );
     err.statusCode = 403;
     throw err;
@@ -177,9 +200,10 @@ async function resolveOwnerForWrite(req, moduleKey, { subKey = 'proxy_entry' } =
     throw err;
   }
   if (!validOwnerRoles.includes(target.role)) {
+    const resolvedCode = String(lookupCode || moduleKey).toUpperCase();
     const err = new Error(
-      `Proxy target role '${target.role}' is not a valid owner for ${moduleKey}. ` +
-      `Configured valid owner roles (VALID_OWNER_ROLES.${String(moduleKey).toUpperCase()}): ${validOwnerRoles.join(', ')}.`
+      `Proxy target role '${target.role}' is not a valid owner for ${lookupCode || moduleKey}. ` +
+      `Configured valid owner roles (VALID_OWNER_ROLES.${resolvedCode}): ${validOwnerRoles.join(', ')}.`
     );
     err.statusCode = 400;
     throw err;
@@ -203,9 +227,9 @@ async function resolveOwnerForWrite(req, moduleKey, { subKey = 'proxy_entry' } =
  * so this is a no-op for them. It only widens the scope for a contractor who
  * has been granted the sub-permission.
  */
-async function widenFilterForProxy(req, moduleKey, { subKey = 'proxy_entry' } = {}) {
+async function widenFilterForProxy(req, moduleKey, { subKey = 'proxy_entry', lookupCode } = {}) {
   const base = { ...(req.tenantFilter || {}) };
-  const { canProxy } = await canProxyEntry(req, moduleKey, subKey);
+  const { canProxy } = await canProxyEntry(req, moduleKey, { subKey, lookupCode });
   if (!canProxy) return base;
   const widened = { ...base };
   delete widened.bdm_id;

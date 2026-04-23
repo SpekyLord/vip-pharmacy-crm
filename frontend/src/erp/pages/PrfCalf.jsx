@@ -16,6 +16,8 @@ import RejectionBanner from '../components/RejectionBanner';
 import { useRejectionConfig } from '../hooks/useRejectionConfig';
 import { showError, showSuccess, showApprovalPending } from '../utils/errorToast';
 import PresidentReverseModal from '../components/PresidentReverseModal';
+// Phase G4.5e — proxy entry for PRF/CALF.
+import OwnerPicker from '../components/OwnerPicker';
 
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
@@ -38,6 +40,8 @@ export default function PrfCalf() {
   const [docs, setDocs] = useState([]);
   const [editingDoc, setEditingDoc] = useState(null);
   const [showForm, setShowForm] = useState(false);
+  // Phase G4.5e — OwnerPicker value: proxy target BDM _id (empty = self).
+  const [assignedTo, setAssignedTo] = useState('');
   // Phase 33 — Linked-expenses inline drill-down cache keyed by CALF _id
   const [linksByCalfId, setLinksByCalfId] = useState({});
   const [openLinkRowId, setOpenLinkRowId] = useState(null);
@@ -118,6 +122,10 @@ export default function PrfCalf() {
       notes: `Auto-filled from pending rebates. Original total: ₱${partner.total_rebate}, already paid: ₱${partner.paid || 0}`,
       photo_urls: []
     });
+    // Phase G4.5e — when auto-creating from a pending rebate surfaced via
+    // proxy-widened list, default the OwnerPicker to the rebate's bdm_id so
+    // the new PRF lands on the target BDM, not the proxy's self-id.
+    setAssignedTo(partner.bdm_id && String(partner.bdm_id) !== String(user?._id) ? String(partner.bdm_id) : '');
     setShowForm(true);
   };
 
@@ -149,6 +157,10 @@ export default function PrfCalf() {
       notes: `${sourceLabel}: ${lineDetails}`,
       photo_urls: linkedPhotos
     });
+    // Phase G4.5e — default OwnerPicker to the source doc's bdm_id when a
+    // proxy surfaces a pending CALF line they manage on behalf of. Falls back
+    // to self (empty) when the source is the proxy's own entry.
+    setAssignedTo(item.bdm_id && String(item.bdm_id) !== String(user?._id) ? String(item.bdm_id) : '');
     setShowForm(true);
   };
 
@@ -165,7 +177,7 @@ export default function PrfCalf() {
     notes: '', photo_urls: []
   });
 
-  const handleNew = (docType) => { setEditingDoc(null); resetForm(docType); setShowForm(true); };
+  const handleNew = (docType) => { setEditingDoc(null); resetForm(docType); setAssignedTo(''); setShowForm(true); };
 
   const handleEdit = async (doc) => {
     try {
@@ -214,8 +226,15 @@ export default function PrfCalf() {
       amount: form.doc_type === 'PRF' ? form.rebate_amount : form.advance_amount
     };
     try {
-      if (editingDoc) { await updatePrfCalf(editingDoc._id, data); }
-      else { await createPrfCalf(data); }
+      if (editingDoc) {
+        // Phase G4.5e — update does not take assigned_to (ownership is locked
+        // at create time; backend strips the field defensively).
+        await updatePrfCalf(editingDoc._id, data);
+      } else {
+        // Phase G4.5e — pass body.assigned_to when recording on behalf.
+        // OwnerPicker renders only when proxy-eligible; undefined when self-filing.
+        await createPrfCalf({ ...data, assigned_to: assignedTo || undefined });
+      }
       setShowForm(false);
       loadDocs();
     } catch (err) { showError(err, 'Could not save PRF/CALF'); }
@@ -488,7 +507,12 @@ export default function PrfCalf() {
                       <td style={{ padding: 8, textAlign: 'center' }}>
                         <span style={{ padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700, color: '#fff', background: d.doc_type === 'PRF' ? '#7c3aed' : '#0891b2' }}>{d.doc_type}</span>
                       </td>
-                      <td style={{ padding: 8 }}>{d.bdm_id?.name || '—'}</td>
+                      <td style={{ padding: 8 }}>
+                        {d.bdm_id?.name || '—'}
+                        {d.recorded_on_behalf_of && (
+                          <span title={`Recorded on behalf by ${d.recorded_on_behalf_of?.name || 'proxy'}`} style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 999, fontSize: 10, fontWeight: 700, background: '#f5f3ff', color: '#6d28d9', border: '1px solid #c4b5fd' }}>Proxied</span>
+                        )}
+                      </td>
                       <td style={{ padding: 8 }}>{d.period} {d.cycle}</td>
                       <td style={{ padding: 8, fontSize: 13 }}>
                         {d.doc_type === 'PRF' ? (
@@ -685,6 +709,22 @@ export default function PrfCalf() {
                 </h2>
                 <button onClick={() => setShowForm(false)} style={{ padding: '4px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', cursor: 'pointer' }}>Cancel</button>
               </div>
+
+              {/* Phase G4.5e — OwnerPicker only on CREATE (not edit — ownership
+                  is locked at create time). Component renders null when the
+                  caller isn't proxy-eligible (role + sub-perm gate). */}
+              {!editingDoc && (
+                <div style={{ marginBottom: 12 }}>
+                  <OwnerPicker
+                    module="expenses"
+                    subKey="prf_calf_proxy"
+                    moduleLookupCode="PRF_CALF"
+                    value={assignedTo}
+                    onChange={setAssignedTo}
+                    label="Record PRF/CALF on behalf of"
+                  />
+                </div>
+              )}
 
               {/* PRF Form */}
               {form.doc_type === 'PRF' && (

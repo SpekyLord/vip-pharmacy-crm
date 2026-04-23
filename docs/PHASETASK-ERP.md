@@ -7537,7 +7537,71 @@ docs/PHASETASK-ERP.md                                            # this entry
 5. **Phase P1 — remaining workflows** (~4–6 days) — SMER, Fuel, Petty Cash, GRN, Sales, OR.
 6. **Phase P2** (~3–5 days) — signed-CSI commission gate, dashboards, subscriber profile toggles.
 7. ~~**Phase G4.5c.2** Petty Cash proxy port~~ — **SKIPPED April 23, 2026** (user decision). BDM-owned end-to-end stays the model.
-8. **Phase G4.5c.3** Fuel Entry proxy port — interleave with P1 if natural; not blocking.
+8. ~~**Phase G4.5c.3** Fuel Entry proxy port~~ — **SUPERSEDED April 23, 2026** by Phase G4.5e (Car Logbook + PRF/CALF + Undertaking bundle). Shipped.
 
 **Total estimate**: 3–4 weeks if sequenced cleanly. Do NOT try to ship all workflows simultaneously — one fully proven beats seven half-built.
+
+---
+
+## Phase G4.5e — Car Logbook + PRF/CALF + Undertaking Proxy Ports (April 23, 2026) ✅ SHIPPED
+
+### Why this phase supersedes the old G4.5c.3 line item
+G4.5c.3 (Fuel Entry proxy port) was planned as a standalone ~1d port. After the Apr 23 policy decision (BDMs → CRM-only; eBDMs Judy / Jay Ann → ERP proxies), a gap analysis showed three modules — not one — were blocking the policy rollout:
+- **Fuel / Car Logbook** (per-cycle submit + per-fuel approval)
+- **CALF / PRF_CALF** (gates non-cash fuel posting; expenses depend on POSTED CALFs)
+- **Undertaking** (GRN receipt confirmation, auto-approves linked GRN on acknowledge)
+
+All three share the same proxy pattern (the G4.5a template from Sales), so bundling them into one phase cost less than three sequential c.3 / c.4 / c.5 tickets. G4.5c.3 is now a strict subset of G4.5e.
+
+### Scope delivered
+1. **Shared helper extension** — `resolveOwnerScope.js` accepts optional `lookupCode`, so a module that shares a sub-permission namespace (e.g. all three live under `expenses` / `inventory`) can still own a distinct PROXY_ENTRY_ROLES / VALID_OWNER_ROLES row. Back-compat: pre-G4.5e callers unchanged.
+2. **3 new sub-perms** — `EXPENSES__CAR_LOGBOOK_PROXY`, `EXPENSES__PRF_CALF_PROXY`, `INVENTORY__UNDERTAKING_PROXY`. Lookup-driven, admin-editable via Control Center.
+3. **3 new PROXY_ENTRY_ROLES rows** — CAR_LOGBOOK, PRF_CALF, UNDERTAKING (default admin/finance/president; subscribers add `contractor` to delegate to eBDMs).
+4. **3 new VALID_OWNER_ROLES rows** — same 3 codes (default contractor/employee).
+5. **Model: +`recorded_on_behalf_of`** on CarLogbookEntry, CarLogbookCycle, PrfCalf. Cycle auto-propagates from per-day docs via `refreshTotalsFromDays`.
+6. **Controllers ported**:
+   - `expenseController.js` — Car Logbook (12 endpoints) + PRF/CALF (10 endpoints) use shared helper. Legacy `resolveCarLogbookScope` deleted. `autoCalfForSource` propagates proxy audit to auto-CALFs. `submitCarLogbook` / `submitFuelEntryForApproval` / `submitPrfCalf` force-route through Approval Hub when ANY doc is proxy-created (Rule #20 four-eyes).
+   - `undertakingController.js` — 5 endpoints (list/detail/submit/acknowledge/reject) use `widenFilterForProxy` + `canProxyEntry`. `submitUndertaking` force-routes when UT inherits proxy audit from GRN. New `PROXY_SUBMIT` audit code.
+7. **Frontend**:
+   - `CarLogbook.jsx` — existing BDM picker reused as both read-audit picker and proxy-write target selector. `canProxyCarLogbook` sub-perm check softens `viewingSelf` gate. Send `assigned_to` on create.
+   - `PrfCalf.jsx` — `OwnerPicker` mounted on entry form, auto-defaults target when creating CALF / PRF from pending lines / rebates. "Proxied" pill on list row.
+   - `UndertakingDetail.jsx` — submit button gate includes `inventory.undertaking_proxy`. Purple "Proxied" badge on header.
+8. **Banners** — `car-logbook`, `prf-calf`, `undertaking-entry` WorkflowGuide tips all describe Phase G4.5e proxy flow + Rule #20 four-eyes + lookup-driven configurability.
+9. **Diagnostic** — `findOrphanedOwnerRecords.js` extended from 4 → 7 collections.
+10. **Health check** — section 5 now covers 8 modules (was 5), 8 sub-perm codes, 3 new controller checks, 3 new model field checks, 2 new frontend page checks.
+
+### Integrity guarantees (from plan)
+- **Rule #20** — forceApproval on every proxied submit across 4 surfaces (cycle, per-fuel, CALF, UT).
+- **Rule #21** — helper throws 400 when non-BDM caller omits `assigned_to`. No silent self-fill.
+- **Rule #19 entity isolation** — helper validates target's entity. Preserved.
+- **Rule #3 lookup-driven** — all role lists + sub-perms admin-editable. Subscribers configure without code changes.
+- **Auto-CALF proxy chain** — source expense / logbook's proxy audit propagates to auto-CALF so diagnostic sweeps catch orphans end-to-end.
+- **Cycle upsert integrity** — `CarLogbookCycle` binds on target BDM's `bdm_id`; caller id never leaks onto per-BDM records.
+- **Ownership-lock on update** — `assigned_to` / `bdm_id` / `recorded_on_behalf_of` stripped from body on every update path.
+
+### Status
+- [x] Helper extension (resolveOwnerScope)
+- [x] 3 model schema additions
+- [x] Sub-perm + lookup seeds
+- [x] Car Logbook backend port (incl. per-fuel + SMER destination helpers)
+- [x] CALF / PRF_CALF backend port
+- [x] Undertaking backend port
+- [x] autoCalfForSource proxy propagation
+- [x] Frontend: CarLogbook.jsx + PrfCalf.jsx + UndertakingDetail.jsx
+- [x] WorkflowGuide tips
+- [x] findOrphanedOwnerRecords.js coverage
+- [x] Health check section 5
+- [x] CLAUDE-ERP.md section
+- [x] This PHASETASK-ERP.md entry
+
+### Operational handoff (not in code)
+1. Deploy to prod.
+2. Admin ticks the 3 new sub-perms on Judy + Jay Ann's Access Templates.
+3. Admin optionally adds `contractor` to the 3 new PROXY_ENTRY_ROLES metadata.roles lists (to let eBDMs proxy).
+4. Smoke test — eBDM proxies a cycle, CALF, UT for a field BDM; verify Approval Hub card owner is target BDM + audit log shows PROXY_CREATE / PROXY_SUBMIT.
+5. Only after smoke tests pass: run `backfillEntityIdsFromFra.js --apply` + revoke cross-entity FRAs for field BDMs (BDMs → CRM-only policy).
+
+### Follow-ups (not in this phase)
+- Health check section 5 only covers the BASE proxy wiring. Phase G4.5b-ext pattern (AR Aging / Collection Rate endpoints calling canProxyEntry) may benefit from similar extensions for Car Logbook's `fuelEfficiencyService` and related analytics surfaces if proxy contractors need cross-BDM visibility there. Not blocking.
+- Phase G4.5c.3 (standalone Fuel Entry port) is superseded. Remove from the "Planned order" list — it's shipped as part of G4.5e.
 

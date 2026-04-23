@@ -116,13 +116,14 @@ const clmSessionSchema = new mongoose.Schema(
     },
 
     // ── Offline sync idempotency ────────────────────────────────────
-    // Generated client-side when a session is created offline.
+    // Generated client-side when a session is created offline (UUIDv4 shape).
     // Used to detect duplicate sync attempts (BDM syncs same draft twice).
     // Null for sessions created while online (no conflict risk).
+    // maxlength bounds a hostile client from writing megabytes into the index.
     idempotencyKey: {
       type: String,
       trim: true,
-      sparse: true,  // Only index non-null values
+      maxlength: 128,
     },
   },
   {

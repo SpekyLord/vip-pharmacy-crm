@@ -1,23 +1,29 @@
 /**
- * Find Orphaned Owner Records — Phase G4.5d (April 23, 2026).
+ * Find Orphaned Owner Records — Phase G4.5d / extended G4.5e (April 23, 2026).
  *
  * Context: before G4.5d, `resolveOwnerForWrite` silently fell back to
  * `req.user._id` when `assigned_to` was missing in the request body. For
  * admin / finance / president this meant a non-BDM user id could land on
  * `bdm_id`, corrupting per-BDM KPIs, commissions, and Approval Hub hydration.
  *
- * This script sweeps the four transactional collections that carry a
+ * This script sweeps every transactional collection that carries a
  * `bdm_id` owner field and flags rows where `bdm_id` points to a user whose
  * role is NOT in VALID_OWNER_ROLES for that module. It is READ-ONLY —
  * reassigning ownership is a human decision (which BDM should own it?) and
  * must be done via the app (re-open → edit → re-submit with OwnerPicker).
+ *
+ * Phase G4.5e (Apr 23, 2026) extended coverage from 4 → 7 collections:
+ *   + prf_calf        (PrfCalf)          VALID_OWNER_ROLES.PRF_CALF
+ *   + car_logbook_day (CarLogbookEntry)  VALID_OWNER_ROLES.CAR_LOGBOOK
+ *   + undertaking     (Undertaking)      VALID_OWNER_ROLES.UNDERTAKING
  *
  * Usage (from backend/):
  *   node erp/scripts/findOrphanedOwnerRecords.js
  *
  * Optional flags:
  *   --entity <id>    Scope to a single entity (default: all entities)
- *   --module <name>  Scope to one of: sales, collections, expenses, car_logbook
+ *   --module <name>  Scope to one of: sales, collections, expenses, car_logbook,
+ *                     car_logbook_day, prf_calf, undertaking
  *   --csv            Emit a CSV block to stdout (doc_ref, date, amount, etc.)
  */
 require('dotenv').config();
@@ -59,6 +65,30 @@ const MODULES = [
     lookupCode: 'CAR_LOGBOOK',
     modelPath: '../models/CarLogbookCycle',
     displayFields: { ref: 'cycle_ref', date: 'period', amount: 'total_amount' },
+  },
+  // Phase G4.5e — per-day logbook docs. The cycle wrapper and the per-day docs
+  // both carry bdm_id and are upserted independently, so both need sweeping.
+  {
+    key: 'car_logbook_day',
+    lookupCode: 'CAR_LOGBOOK',
+    modelPath: '../models/CarLogbookEntry',
+    displayFields: { ref: '_id', date: 'entry_date', amount: 'total_fuel_amount' },
+  },
+  // Phase G4.5e — PrfCalf docs.
+  {
+    key: 'prf_calf',
+    lookupCode: 'PRF_CALF',
+    modelPath: '../models/PrfCalf',
+    displayFields: { ref: 'calf_number', date: 'created_at', amount: 'amount' },
+  },
+  // Phase G4.5e — Undertaking docs. bdm_id is inherited from the GRN, so
+  // orphans here usually indicate an upstream GRN bdm_id issue — fix the GRN
+  // first (which will cascade if the UT is still DRAFT/SUBMITTED).
+  {
+    key: 'undertaking',
+    lookupCode: 'UNDERTAKING',
+    modelPath: '../models/Undertaking',
+    displayFields: { ref: 'undertaking_number', date: 'receipt_date', amount: null },
   },
 ];
 
@@ -155,7 +185,8 @@ async function main() {
               u?.role || '',
               row[mod.displayFields.ref] || row._id,
               row[mod.displayFields.date] || '',
-              row[mod.displayFields.amount] || '',
+              // Phase G4.5e — some models (Undertaking) have no amount field.
+              mod.displayFields.amount ? (row[mod.displayFields.amount] ?? '') : '',
               row.status || '',
               !!row.recorded_on_behalf_of,
               String(row._id),
