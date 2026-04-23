@@ -80,7 +80,6 @@ async function syncOfflineDrafts() {
         // 401 = auth expired — stop syncing entirely
         if (status === 401) {
           authRequired = true;
-          // eslint-disable-next-line no-console
           console.warn('[OfflineCLMSync] Auth expired — stopping sync. User must re-login.');
           break;
         }
@@ -88,7 +87,6 @@ async function syncOfflineDrafts() {
         // 409 = conflict/duplicate — server already has this session
         // This happens when the idempotency key matches an existing session
         if (status === 409) {
-          // eslint-disable-next-line no-console
           console.info('[OfflineCLMSync] Duplicate detected for draft:', draft.id, '— removing.');
           await offlineStore.deleteDraft(draft.id);
           synced++; // Count as synced since server has the data
@@ -97,7 +95,6 @@ async function syncOfflineDrafts() {
 
         // 4xx (other) = client error — remove to prevent infinite retry
         if (status && status >= 400 && status < 500) {
-          // eslint-disable-next-line no-console
           console.warn('[OfflineCLMSync] Client error for draft:', draft.id, status, '— removing.');
           await offlineStore.deleteDraft(draft.id);
           failed++;
@@ -105,7 +102,6 @@ async function syncOfflineDrafts() {
         }
 
         // 5xx or network error — leave in queue for next sync
-        // eslint-disable-next-line no-console
         console.warn('[OfflineCLMSync] Failed to sync draft:', draft.id, err);
         failed++;
 

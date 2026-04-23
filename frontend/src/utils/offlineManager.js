@@ -62,10 +62,8 @@ const offlineManager = {
         // Check queue count on init
         this.requestQueueCount();
 
-        // eslint-disable-next-line no-console
         console.log('[OfflineManager] Service worker registered');
       } catch (err) {
-        // eslint-disable-next-line no-console
         console.warn('[OfflineManager] SW registration failed:', err);
       }
     }

@@ -118,7 +118,6 @@ const offlineStore = {
     try {
       await putAll(STORES.DOCTORS, doctors);
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.warn('[OfflineStore] Failed to cache doctors:', err);
     }
   },
@@ -136,7 +135,6 @@ const offlineStore = {
     try {
       await putAll(STORES.PRODUCTS, products);
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.warn('[OfflineStore] Failed to cache products:', err);
     }
   },
@@ -172,7 +170,6 @@ const offlineStore = {
         size: blob.size,
       });
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.warn(`[OfflineStore] Failed to cache image for product ${productId}:`, err);
     }
   },
@@ -228,7 +225,6 @@ const offlineStore = {
         savedAt: new Date().toISOString(),
       });
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.warn('[OfflineStore] Failed to save CLM draft:', err);
     }
   },
@@ -245,7 +241,6 @@ const offlineStore = {
     try {
       await deleteOne(STORES.CLM_DRAFTS, id);
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.warn('[OfflineStore] Failed to delete CLM draft:', err);
     }
   },

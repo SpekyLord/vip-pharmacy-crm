@@ -17,7 +17,6 @@ offlineManager.onStatusChange((isOnline) => {
   if (isOnline) {
     syncOfflineDrafts().then(({ synced, failed }) => {
       if (synced > 0) {
-        // eslint-disable-next-line no-console
         console.log(`[OfflineSync] Synced ${synced} CLM sessions${failed ? `, ${failed} failed` : ''}`);
       }
     });

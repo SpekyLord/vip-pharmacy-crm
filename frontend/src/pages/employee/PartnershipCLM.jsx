@@ -44,7 +44,7 @@ import {
 
 const PartnershipCLM = () => {
   useAuth();
-  const { isOnline } = useOffline();
+  useOffline(); // initializes offline listeners; OfflineBanner consumes state via its own hook
 
   // ── State ─────────────────────────────────────────────────────
   const [doctors, setDoctors] = useState([]);

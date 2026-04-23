@@ -11,7 +11,7 @@
  * Placement: Top of the app layout, below Navbar.
  */
 import { useState, useEffect, useCallback } from 'react';
-import { WifiOff, Wifi, RefreshCw, CloudOff, Upload, AlertTriangle, LogIn } from 'lucide-react';
+import { Wifi, RefreshCw, CloudOff, Upload, AlertTriangle, LogIn } from 'lucide-react';
 import { useOffline } from '../../hooks/useOffline';
 
 const OfflineBanner = () => {
