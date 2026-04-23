@@ -304,9 +304,9 @@ function checkAgentEnums() {
   if (issues === startIssues) console.log(`  ✓ All ${allKeys.size} agent keys consistent across 5 sources`);
 }
 
-// ═══ 5. Proxy Entry wiring (Phases G4.5a + G4.5b + G4.5c.1) ═══
+// ═══ 5. Proxy Entry wiring (Phases G4.5a + G4.5b + G4.5c.1 + G4.5e) ═══
 function checkProxyEntryWiring() {
-  console.log('\n5. Proxy Entry Wiring (Phase G4.5a + G4.5b + G4.5c.1)');
+  console.log('\n5. Proxy Entry Wiring (Phase G4.5a + G4.5b + G4.5c.1 + G4.5e)');
   console.log('─'.repeat(40));
   const startIssues = issues;
 
@@ -338,24 +338,28 @@ function checkProxyEntryWiring() {
   // Lookup seed: PROXY_ENTRY_ROLES + per-module sub-perm keys
   // G4.5a seeded SALES__PROXY_ENTRY + SALES__OPENING_AR_PROXY.
   // G4.5b adds COLLECTIONS__PROXY_ENTRY + INVENTORY__GRN_PROXY_ENTRY.
+  // G4.5c.1 adds EXPENSES__PROXY_ENTRY.
+  // G4.5e adds EXPENSES__CAR_LOGBOOK_PROXY + EXPENSES__PRF_CALF_PROXY + INVENTORY__UNDERTAKING_PROXY.
   const lookupSeed = fs.readFileSync(path.join(ERP_CONTROLLERS, 'lookupGenericController.js'), 'utf-8');
   for (const key of [
     'PROXY_ENTRY_ROLES:',
     'VALID_OWNER_ROLES:',
     'SALES__PROXY_ENTRY', 'SALES__OPENING_AR_PROXY',
     'COLLECTIONS__PROXY_ENTRY', 'INVENTORY__GRN_PROXY_ENTRY',
-    // Phase G4.5c.1 — single-entry Expenses proxy sub-perm.
     'EXPENSES__PROXY_ENTRY',
+    // Phase G4.5e — Car Logbook / PRF-CALF / Undertaking proxy sub-perms.
+    'EXPENSES__CAR_LOGBOOK_PROXY', 'EXPENSES__PRF_CALF_PROXY', 'INVENTORY__UNDERTAKING_PROXY',
   ]) {
     if (!lookupSeed.includes(key)) warn('PROXY', `SEED_DEFAULTS missing ${key}`);
   }
-  // PROXY_ENTRY_ROLES + VALID_OWNER_ROLES must each enumerate all 5 modules
-  // so OwnerPicker + resolveOwnerForWrite can resolve them without falling
-  // back to their respective defaults.
-  // Each module code must appear at least twice — once under PROXY_ENTRY_ROLES,
-  // once under VALID_OWNER_ROLES. A single occurrence means one of the two
-  // seeds is incomplete.
-  for (const moduleCode of ["code: 'SALES'", "code: 'OPENING_AR'", "code: 'COLLECTIONS'", "code: 'EXPENSES'", "code: 'GRN'"]) {
+  // PROXY_ENTRY_ROLES + VALID_OWNER_ROLES must each enumerate all 8 modules
+  // (G4.5a/b/c.1: 5 + G4.5e: 3) so OwnerPicker + resolveOwnerForWrite can
+  // resolve them without falling back to their respective defaults.
+  for (const moduleCode of [
+    "code: 'SALES'", "code: 'OPENING_AR'", "code: 'COLLECTIONS'", "code: 'EXPENSES'", "code: 'GRN'",
+    // Phase G4.5e — new module codes in both PROXY_ENTRY_ROLES + VALID_OWNER_ROLES.
+    "code: 'CAR_LOGBOOK'", "code: 'PRF_CALF'", "code: 'UNDERTAKING'",
+  ]) {
     const occurrences = (lookupSeed.match(new RegExp(moduleCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
     if (occurrences < 2) {
       warn('PROXY', `PROXY_ENTRY_ROLES or VALID_OWNER_ROLES seed missing module entry ${moduleCode} (found ${occurrences} occurrences, expected ≥2)`);
@@ -390,7 +394,7 @@ function checkProxyEntryWiring() {
     warn('PROXY', "collectionController.js does not call widenFilterForProxy with module='collections', subKey='proxy_entry'");
   }
 
-  // expenseController uses helper (Phase G4.5c.1, single-entry expenses path)
+  // expenseController uses helper (Phase G4.5c.1 single-entry expenses + G4.5e Car Logbook + PRF/CALF)
   const expCtrl = fs.readFileSync(path.join(ERP_CONTROLLERS, 'expenseController.js'), 'utf-8');
   for (const fn of ['resolveOwnerForWrite', 'widenFilterForProxy']) {
     if (!expCtrl.includes(fn)) warn('PROXY', `expenseController.js does not import/use ${fn}`);
@@ -400,6 +404,29 @@ function checkProxyEntryWiring() {
   }
   if (!/'expenses'.*subKey:\s*'proxy_entry'|subKey:\s*'proxy_entry'.*'expenses'/s.test(expCtrl)) {
     warn('PROXY', "expenseController.js does not call widenFilterForProxy with module='expenses', subKey='proxy_entry'");
+  }
+  // Phase G4.5e — Car Logbook must use car_logbook_proxy with lookupCode CAR_LOGBOOK.
+  if (!/car_logbook_proxy/.test(expCtrl)) {
+    warn('PROXY', "expenseController.js does not reference sub-perm key 'car_logbook_proxy' (Phase G4.5e Car Logbook port)");
+  }
+  if (!/lookupCode:\s*'CAR_LOGBOOK'/.test(expCtrl)) {
+    warn('PROXY', "expenseController.js does not pass lookupCode: 'CAR_LOGBOOK' — PROXY_ENTRY_ROLES.CAR_LOGBOOK lookup unreachable");
+  }
+  // Phase G4.5e — PRF/CALF uses prf_calf_proxy + PRF_CALF lookup code.
+  if (!/prf_calf_proxy/.test(expCtrl)) {
+    warn('PROXY', "expenseController.js does not reference sub-perm key 'prf_calf_proxy' (Phase G4.5e CALF port)");
+  }
+  if (!/lookupCode:\s*'PRF_CALF'/.test(expCtrl)) {
+    warn('PROXY', "expenseController.js does not pass lookupCode: 'PRF_CALF' — PROXY_ENTRY_ROLES.PRF_CALF lookup unreachable");
+  }
+  // Phase G4.5e — legacy resolveCarLogbookScope must be deleted (replaced by resolveOwnerForWrite).
+  if (/function\s+resolveCarLogbookScope\s*\(/.test(expCtrl)) {
+    warn('PROXY', 'expenseController.js still defines legacy resolveCarLogbookScope — Phase G4.5e should have removed it in favor of resolveOwnerForWrite');
+  }
+  // Phase G4.5e — autoCalfForSource must propagate recorded_on_behalf_of so
+  // the auto-CALF inherits the proxy audit chain from the source doc.
+  if (!/recorded_on_behalf_of:\s*sourceDoc\.recorded_on_behalf_of/.test(expCtrl)) {
+    warn('PROXY', 'expenseController.autoCalfForSource does not propagate recorded_on_behalf_of from source doc — proxy chain breaks at auto-CALF');
   }
   // Unified audit codes (Phase G4.5c.1) — createExpense emits PROXY_CREATE,
   // updateExpense emits PROXY_UPDATE, matching Sales/Collections/GRN.
@@ -439,14 +466,37 @@ function checkProxyEntryWiring() {
     warn('PROXY', 'inventoryController.createGrn missing warehouse-access cross-check — target BDM could receive into a warehouse they are not assigned to');
   }
 
+  // Phase G4.5e — undertakingController proxy wiring.
+  const utCtrlPath = path.join(ERP_CONTROLLERS, 'undertakingController.js');
+  if (fs.existsSync(utCtrlPath)) {
+    const utCtrl = fs.readFileSync(utCtrlPath, 'utf-8');
+    for (const fn of ['widenFilterForProxy', 'canProxyEntry']) {
+      if (!utCtrl.includes(fn)) warn('PROXY', `undertakingController.js does not import/use ${fn} (Phase G4.5e)`);
+    }
+    if (!/undertaking_proxy/.test(utCtrl)) {
+      warn('PROXY', "undertakingController.js does not reference sub-perm key 'undertaking_proxy' (Phase G4.5e)");
+    }
+    if (!/lookupCode:\s*'UNDERTAKING'/.test(utCtrl)) {
+      warn('PROXY', "undertakingController.js does not pass lookupCode: 'UNDERTAKING' — PROXY_ENTRY_ROLES.UNDERTAKING unreachable");
+    }
+    if (!/forceApproval/.test(utCtrl)) {
+      warn('PROXY', 'undertakingController.submitUndertaking missing forceApproval flag (Rule #20 four-eyes for proxy UTs)');
+    }
+  }
+
   // Models: recorded_on_behalf_of on SalesLine (G4.5a) + Collection, GrnEntry,
-  // Undertaking (G4.5b) + ExpenseEntry (G4.5c.1)
+  // Undertaking (G4.5b) + ExpenseEntry (G4.5c.1) + CarLogbookEntry, CarLogbookCycle,
+  // PrfCalf (G4.5e)
   for (const { file, label } of [
     { file: 'SalesLine.js', label: 'SalesLine' },
     { file: 'Collection.js', label: 'Collection' },
     { file: 'GrnEntry.js', label: 'GrnEntry' },
     { file: 'Undertaking.js', label: 'Undertaking' },
     { file: 'ExpenseEntry.js', label: 'ExpenseEntry' },
+    // Phase G4.5e — three new collections carry proxy audit.
+    { file: 'CarLogbookEntry.js', label: 'CarLogbookEntry' },
+    { file: 'CarLogbookCycle.js', label: 'CarLogbookCycle' },
+    { file: 'PrfCalf.js', label: 'PrfCalf' },
   ]) {
     const modelPath = path.join(ERP_MODELS, file);
     if (!fs.existsSync(modelPath)) {
@@ -508,12 +558,39 @@ function checkProxyEntryWiring() {
     if (!src.includes('assigned_to')) warn('PROXY', `${page} payload missing assigned_to field`);
   }
   // List pages render Proxied pill (reads recorded_on_behalf_of)
-  for (const page of ['SalesList.jsx', 'OpeningArList.jsx', 'Collections.jsx', 'GrnEntry.jsx', 'Expenses.jsx']) {
+  // Phase G4.5e adds PrfCalf.jsx and UndertakingDetail.jsx to the check.
+  for (const page of ['SalesList.jsx', 'OpeningArList.jsx', 'Collections.jsx', 'GrnEntry.jsx', 'Expenses.jsx', 'PrfCalf.jsx', 'UndertakingDetail.jsx']) {
     const p = path.join(PAGES_DIR, page);
     if (!fs.existsSync(p)) continue;
     const src = fs.readFileSync(p, 'utf-8');
     if (!src.includes('recorded_on_behalf_of')) {
       warn('PROXY', `${page} does not render proxy indicator (recorded_on_behalf_of)`);
+    }
+  }
+  // Phase G4.5e — entry pages that carry proxy WRITE (OwnerPicker or
+  // equivalent sub-perm gate) + send assigned_to on create. CarLogbook.jsx
+  // uses the existing BDM picker rather than OwnerPicker because the page
+  // was already built around a per-person picker; the gate is canProxyCarLogbook.
+  for (const { page, needle } of [
+    { page: 'PrfCalf.jsx', needle: 'OwnerPicker' },
+    { page: 'CarLogbook.jsx', needle: 'car_logbook_proxy' },
+  ]) {
+    const p = path.join(PAGES_DIR, page);
+    if (!fs.existsSync(p)) continue;
+    const src = fs.readFileSync(p, 'utf-8');
+    if (!src.includes(needle)) warn('PROXY', `${page} missing proxy-write wiring (looking for "${needle}")`);
+    if (!src.includes('assigned_to')) warn('PROXY', `${page} payload missing assigned_to field (Phase G4.5e)`);
+  }
+  // Phase G4.5e — UndertakingDetail.jsx reveals the submit button when the
+  // user has inventory.undertaking_proxy. Without this gate, eBDMs can't submit
+  // on behalf even though the backend permits it.
+  {
+    const utDetail = path.join(PAGES_DIR, 'UndertakingDetail.jsx');
+    if (fs.existsSync(utDetail)) {
+      const src = fs.readFileSync(utDetail, 'utf-8');
+      if (!/undertaking_proxy/.test(src)) {
+        warn('PROXY', 'UndertakingDetail.jsx submit gate does not check undertaking_proxy sub-perm (Phase G4.5e)');
+      }
     }
   }
   // Phase G4.5b-ext — AR Aging + Collection Rate endpoints must use
@@ -536,7 +613,7 @@ function checkProxyEntryWiring() {
     }
   }
 
-  if (issues === startIssues) console.log('  \u2713 Proxy entry wiring intact (G4.5a + G4.5b + G4.5b-ext + G4.5c.1)');
+  if (issues === startIssues) console.log('  \u2713 Proxy entry wiring intact (G4.5a + G4.5b + G4.5b-ext + G4.5c.1 + G4.5e)');
 }
 
 // ═══ Phase FRA-A — FRA dual-write to User.entity_ids ═══

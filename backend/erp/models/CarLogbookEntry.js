@@ -52,6 +52,14 @@ const carLogbookEntrySchema = new mongoose.Schema({
   entity_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Entity', required: true },
   bdm_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
 
+  // Phase G4.5e — Proxy Entry audit. Present when the creator keyed the
+  // logbook on behalf of another BDM (eBDMs like Judy/Jay Ann filing for
+  // field BDMs). Value = proxy's User._id; bdm_id is the owner. Absence =
+  // self-entry. Mirrors Sales/Collection/Expense/GRN/Undertaking shape so the
+  // Approval Hub forces hub-routing (Rule #20 four-eyes) and per-BDM
+  // KPIs/commissions stay correct.
+  recorded_on_behalf_of: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: undefined },
+
   // Period
   period: { type: String, required: true, trim: true },       // "2026-04"
   cycle: { type: String, required: true }, // Lookup: CYCLE

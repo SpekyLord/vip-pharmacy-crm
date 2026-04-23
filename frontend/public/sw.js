@@ -45,9 +45,18 @@ const QUEUEABLE_API_PATHS = [
 ];
 
 // ── IndexedDB for offline queue ────────────────────────────────────
+// DB_VERSION 2 (April 2026): adds `meta` store for current-user tracking so
+// the replay loop can filter queued requests by owner. Prevents BDM1's
+// offline drafts from replaying under BDM2's auth on shared devices.
 const DB_NAME = 'vip-offline-queue';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'pending-requests';
+const META_STORE = 'meta';
+const META_KEY_CURRENT_USER = 'current-user-id';
+
+// Drop queued requests older than this at replay time. Guards against
+// indefinite accumulation when a user abandons drafts.
+const QUEUE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -57,14 +66,61 @@ function openDB() {
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
       }
+      // v1 → v2 migration: add meta store. Existing queued rows (without
+      // userId) will be replayed unfiltered the first time — acceptable
+      // since the upgrade happens on activation, before any new queueing
+      // under the new user-scoped contract.
+      if (!db.objectStoreNames.contains(META_STORE)) {
+        db.createObjectStore(META_STORE, { keyPath: 'key' });
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
 
+// ── User-scope helpers (META store) ────────────────────────────────
+async function getCurrentUserId() {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(META_STORE, 'readonly');
+    const store = tx.objectStore(META_STORE);
+    const req = store.get(META_KEY_CURRENT_USER);
+    return await new Promise((resolve) => {
+      req.onsuccess = () => { db.close(); resolve(req.result?.value || null); };
+      req.onerror = () => { db.close(); resolve(null); };
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function setCurrentUserId(userId) {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(META_STORE, 'readwrite');
+    const store = tx.objectStore(META_STORE);
+    if (userId) {
+      store.put({ key: META_KEY_CURRENT_USER, value: String(userId) });
+    } else {
+      store.delete(META_KEY_CURRENT_USER);
+    }
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = reject;
+    });
+    db.close();
+  } catch (err) {
+    console.warn('[SW] setCurrentUserId failed:', err);
+  }
+}
+
 async function enqueueRequest(request, body) {
   try {
+    // Stamp the queued item with the current user so replay can filter out
+    // other users' drafts on shared devices. null is allowed (pre-v2 rows
+    // behaved the same way; replay treats null userId as "anyone may replay").
+    const userId = await getCurrentUserId();
     const db = await openDB();
     const tx = db.transaction(STORE_NAME, 'readwrite');
     const store = tx.objectStore(STORE_NAME);
@@ -74,6 +130,7 @@ async function enqueueRequest(request, body) {
       headers: Object.fromEntries(request.headers.entries()),
       body: body,
       timestamp: Date.now(),
+      userId,
     });
     await new Promise((resolve, reject) => {
       tx.oncomplete = resolve;
@@ -304,7 +361,33 @@ async function replayQueue() {
 
   tokenRefreshAttempted = false;
 
+  // Read the currently-authenticated user once per replay cycle. On shared
+  // devices (one tablet across multiple BDMs), only items stamped with the
+  // current userId replay — others stay queued until their owner logs back in.
+  // Null currentUser means either no one is logged in (nothing to replay) or
+  // the auth context hasn't sync'd yet — we still allow legacy (pre-v2)
+  // untagged items through so upgrades don't orphan in-flight drafts.
+  const currentUserId = await getCurrentUserId();
+  const now = Date.now();
+
   for (const item of queued) {
+    // Age eviction — drop anything older than QUEUE_MAX_AGE_MS regardless
+    // of owner. Prevents indefinite accumulation on a device that keeps
+    // going offline (stale 5xx loops, abandoned drafts).
+    if (item.timestamp && now - item.timestamp > QUEUE_MAX_AGE_MS) {
+      await removeQueuedRequest(item.id);
+      continue;
+    }
+
+    // User-scope filter — if the item was stamped with a userId (v2+), it
+    // must match the currently-authenticated user. Items without a userId
+    // are legacy (created under v1) and replay as before.
+    if (item.userId && currentUserId && item.userId !== currentUserId) {
+      // Leave in queue — don't replay under the wrong user, but keep the
+      // draft intact so BDM1 can sync it when they log back in.
+      continue;
+    }
+
     try {
       const response = await fetch(item.url, {
         method: item.method,
@@ -394,5 +477,16 @@ self.addEventListener('message', (event) => {
         count: queued.length,
       });
     });
+  }
+
+  // Current-user sync from main thread. Written by AuthContext on login /
+  // session init; cleared on logout. Persisted to the META store so a
+  // restarted SW (browser relaunch, wake from sleep) still sees it on the
+  // next replay cycle without waiting for the main thread to re-announce.
+  if (event.data?.type === 'VIP_SET_USER' && event.data.userId) {
+    setCurrentUserId(event.data.userId);
+  }
+  if (event.data?.type === 'VIP_CLEAR_USER') {
+    setCurrentUserId(null);
   }
 });

@@ -21,6 +21,12 @@ const carLogbookCycleSchema = new mongoose.Schema({
   entity_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Entity', required: true },
   bdm_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
 
+  // Phase G4.5e — Proxy Entry audit. Propagated from the per-day CarLogbookEntry
+  // docs on cycle upsert (when ANY day was proxy-created, the cycle inherits the
+  // proxy reference). Drives forceApproval on submit so the cycle always routes
+  // through the Approval Hub when any day was filed on behalf (Rule #20).
+  recorded_on_behalf_of: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: undefined },
+
   period: { type: String, required: true, trim: true },   // "2026-04"
   cycle: { type: String, required: true },                // Lookup: CYCLE (C1 | C2)
 
@@ -113,6 +119,15 @@ carLogbookCycleSchema.methods.refreshTotalsFromDays = async function () {
   this.total_fuel_amount = Math.round(totalFuelAmount * 100) / 100;
   this.total_official_gas_amount = Math.round(totalOfficialGas * 100) / 100;
   this.total_personal_gas_amount = Math.round(totalPersonalGas * 100) / 100;
+
+  // Phase G4.5e — propagate proxy audit from the first proxy-created day. If
+  // ANY day in the cycle was filed on behalf, the cycle inherits that proxy
+  // reference so submit forces hub routing. Once set, do not clobber — a later
+  // self-edit on a different day should not erase the proxy audit.
+  if (!this.recorded_on_behalf_of) {
+    const proxiedDay = days.find(d => d.recorded_on_behalf_of);
+    if (proxiedDay) this.recorded_on_behalf_of = proxiedDay.recorded_on_behalf_of;
+  }
 
   return this;
 };

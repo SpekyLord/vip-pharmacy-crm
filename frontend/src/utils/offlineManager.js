@@ -29,6 +29,22 @@ const isIOSSafari = typeof navigator !== 'undefined' &&
   /iPad|iPhone|iPod/.test(navigator.userAgent) &&
   !window.MSStream;
 
+// Post a message to the SW controller, buffering it until the controller is
+// populated (the SW has activated + claimed the page). Needed for cold-start
+// flows where AuthContext fires setCurrentUser before activation completes.
+function sendToSW(msg) {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+  if (navigator.serviceWorker.controller) {
+    navigator.serviceWorker.controller.postMessage(msg);
+    return;
+  }
+  const flush = () => {
+    // `once: true` auto-removes the listener after the first fire.
+    navigator.serviceWorker.controller?.postMessage(msg);
+  };
+  navigator.serviceWorker.addEventListener('controllerchange', flush, { once: true });
+}
+
 // Periodic sync interval for iOS fallback (check every 30s when app is foregrounded)
 let periodicSyncTimer = null;
 const PERIODIC_SYNC_INTERVAL = 30_000; // 30 seconds
@@ -160,6 +176,36 @@ const offlineManager = {
     if (navigator.serviceWorker?.controller) {
       navigator.serviceWorker.controller.postMessage({ type: 'VIP_GET_QUEUE_COUNT' });
     }
+  },
+
+  /**
+   * Tell the SW who the currently-authenticated user is. Called by
+   * AuthContext on successful login and on initial session hydration.
+   * The SW persists this to its META store and uses it to scope queued-
+   * request replay so one BDM's drafts don't execute under another BDM's
+   * auth on a shared device.
+   *
+   * On cold-start, AuthContext may fire this BEFORE the SW has activated
+   * and claimed the page (i.e. `navigator.serviceWorker.controller` is
+   * still null). In that window we buffer the message and flush it on the
+   * next `controllerchange` event — otherwise the SW would never learn the
+   * user and the scoping filter would silently fall back to "replay all".
+   *
+   * @param {string} userId — the logged-in user's _id (Mongo ObjectId string)
+   */
+  setCurrentUser(userId) {
+    if (!userId) return;
+    sendToSW({ type: 'VIP_SET_USER', userId: String(userId) });
+  },
+
+  /**
+   * Clear the current-user marker in the SW. Called by AuthContext on
+   * logout. After this, the SW's replay loop skips any queued requests
+   * that have a userId stamped — they wait until their owner logs back in
+   * (or age-evict at 7 days).
+   */
+  clearCurrentUser() {
+    sendToSW({ type: 'VIP_CLEAR_USER' });
   },
 
   /**

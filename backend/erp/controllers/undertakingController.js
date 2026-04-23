@@ -32,6 +32,12 @@ const { buildPresidentReverseHandler } = require('../services/documentReversalSe
 const { gateApproval } = require('../services/approvalService');
 const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
 const { getSignedDownloadUrl, extractKeyFromUrl } = require('../../config/s3');
+// Phase G4.5e (Apr 23, 2026) — shared proxy-entry resolver. UT has no create
+// path (GRN auto-creates UT inheriting bdm_id), so we only need the READ widener
+// + a canProxy check on submit. `recorded_on_behalf_of` propagates automatically
+// from the linked GRN in undertakingService.autoUndertakingForGrn (Phase G4.5b).
+const { widenFilterForProxy, canProxyEntry } = require('../utils/resolveOwnerScope');
+const UNDERTAKING_PROXY_OPTS = { subKey: 'undertaking_proxy', lookupCode: 'UNDERTAKING' };
 
 // S3 bucket is private — raw object URLs return AccessDenied. Sign the waybill
 // and undertaking-paper URLs on the linked GRN before returning to the client
@@ -67,14 +73,18 @@ function getApproveGrnCore() {
  */
 const getUndertakingList = catchAsync(async (req, res) => {
   const { status, period, linked_grn_id, limit = 50, skip = 0 } = req.query;
+  // Phase G4.5e — widen so eligible proxies see target BDMs' UT queue.
+  // widenFilterForProxy returns tenantFilter without bdm_id for an eligible
+  // proxy (contractor with inventory.undertaking_proxy ticked), or tenantFilter
+  // as-is for admin/finance (bdm_id already absent) and for non-proxy BDMs
+  // (bdm_id = self). Rule #21 narrowing via ?bdm_id= preserved.
+  const filter = await widenFilterForProxy(req, 'inventory', UNDERTAKING_PROXY_OPTS);
   const privileged = req.isAdmin || req.isFinance || req.isPresident;
 
-  const filter = { ...(req.tenantFilter || {}) };
-
-  // BDM scope — only applied for non-privileged
-  if (!privileged) {
-    filter.bdm_id = req.bdmId;
-  } else if (req.query.bdm_id) {
+  // BDM scope — only applied for non-privileged + non-proxy users. After
+  // widenFilterForProxy, non-proxy contractors still have filter.bdm_id = self
+  // (from tenantFilter middleware); nothing to add. Privileged users may narrow.
+  if (req.query.bdm_id) {
     filter.bdm_id = req.query.bdm_id;
   }
 
@@ -100,6 +110,7 @@ const getUndertakingList = catchAsync(async (req, res) => {
       })
       .populate('warehouse_id', 'warehouse_name warehouse_code')
       .populate('bdm_id', 'name email')
+      .populate('recorded_on_behalf_of', 'name')
       .populate('acknowledged_by', 'name')
       .sort({ created_at: -1 })
       .limit(Number(limit))
@@ -118,7 +129,9 @@ const getUndertakingList = catchAsync(async (req, res) => {
  * Returns full undertaking + linked GRN (for waybill + context).
  */
 const getUndertakingById = catchAsync(async (req, res) => {
-  const filter = { _id: req.params.id, ...(req.tenantFilter || {}) };
+  // Phase G4.5e — widen for proxy reads.
+  const scope = await widenFilterForProxy(req, 'inventory', UNDERTAKING_PROXY_OPTS);
+  const filter = { _id: req.params.id, ...scope };
   const doc = await Undertaking.findOne(filter)
     .populate({
       path: 'linked_grn_id',
@@ -126,17 +139,15 @@ const getUndertakingById = catchAsync(async (req, res) => {
     })
     .populate('warehouse_id', 'warehouse_name warehouse_code')
     .populate('bdm_id', 'name email')
+    .populate('recorded_on_behalf_of', 'name')
     .populate('acknowledged_by', 'name')
     .populate('line_items.product_id', 'brand_name generic_name dosage_strength unit_code primary_barcode item_key')
     .lean();
   if (!doc) return res.status(404).json({ success: false, message: 'Undertaking not found' });
 
-  // Contractor-scope: non-privileged users can only see their own
-  const privileged = req.isAdmin || req.isFinance || req.isPresident;
-  if (!privileged && String(doc.bdm_id?._id || doc.bdm_id) !== String(req.bdmId)) {
-    return res.status(403).json({ success: false, message: 'Forbidden' });
-  }
-
+  // Phase G4.5e — scope gate is enforced by widenFilterForProxy via the find()
+  // filter above. The earlier manual contractor check is redundant — eligible
+  // proxies pass the widened filter; non-proxy BDMs are self-filtered by tenantFilter.
   await signLinkedGrnPhotos(doc);
 
   res.json({ success: true, data: doc });
@@ -151,7 +162,11 @@ const getUndertakingById = catchAsync(async (req, res) => {
  * to the Approval Hub (HTTP 202 per global rule #20).
  */
 const submitUndertaking = catchAsync(async (req, res) => {
-  const filter = { _id: req.params.id, ...(req.tenantFilter || {}) };
+  // Phase G4.5e — widen for proxy submit. An eBDM with inventory.undertaking_proxy
+  // can submit UTs for BDMs they file on behalf of; non-proxy BDMs still only
+  // submit their own (tenantFilter scopes them to bdm_id = self).
+  const scope = await widenFilterForProxy(req, 'inventory', UNDERTAKING_PROXY_OPTS);
+  const filter = { _id: req.params.id, ...scope };
   const doc = await Undertaking.findOne(filter);
   if (!doc) return res.status(404).json({ success: false, message: 'Undertaking not found' });
 
@@ -162,16 +177,27 @@ const submitUndertaking = catchAsync(async (req, res) => {
     });
   }
 
-  const privileged = req.isAdmin || req.isFinance || req.isPresident;
-  if (!privileged && String(doc.bdm_id) !== String(req.bdmId)) {
-    return res.status(403).json({ success: false, message: 'Forbidden' });
-  }
-
   // Period lock (by receipt_date)
   const period = dateToPeriod(doc.receipt_date || new Date());
   await checkPeriodOpen(doc.entity_id, period);
 
-  // gateApproval — routes non-authorized submitters through Approval Hub (202)
+  // Phase G4.5e — audit the proxy submit (submitter ≠ owner).
+  const isProxySubmit = String(doc.bdm_id) !== String(req.user._id);
+  if (isProxySubmit) {
+    await ErpAuditLog.logChange({
+      entity_id: doc.entity_id,
+      bdm_id: doc.bdm_id,
+      log_type: 'PROXY_SUBMIT',
+      target_ref: doc._id.toString(),
+      target_model: 'Undertaking',
+      changed_by: req.user._id,
+      note: `Proxy submit: Undertaking ${doc.undertaking_number} submitted by ${req.user.name || req.user._id} (${req.user.role}) on behalf of BDM ${doc.bdm_id}`
+    }).catch(err => console.error('[submitUndertaking] PROXY_SUBMIT audit failed (non-critical):', err.message));
+  }
+
+  // gateApproval — routes non-authorized submitters through Approval Hub (202).
+  // Phase G4.5e: force-route when proxy-created (Rule #20 four-eyes).
+  const hasProxy = !!doc.recorded_on_behalf_of;
   const gated = await gateApproval({
     entityId: doc.entity_id,
     module: 'UNDERTAKING',
@@ -181,7 +207,9 @@ const submitUndertaking = catchAsync(async (req, res) => {
     amount: 0, // no monetary impact; matrix matches module-only rules
     description: `Undertaking ${doc.undertaking_number} — GRN receipt confirmation`,
     requesterId: req.user._id,
-    requesterName: req.user.name || req.user.email
+    requesterName: req.user.name || req.user.email,
+    forceApproval: hasProxy,
+    ownerBdmId: doc.bdm_id,
   }, res);
   if (gated) return;
 
@@ -268,7 +296,12 @@ async function postSingleUndertaking(doc, userId) {
  * the Approval Hub at submit time, so this endpoint only hits the authorized path.
  */
 const acknowledgeUndertaking = catchAsync(async (req, res) => {
-  const filter = { _id: req.params.id, ...(req.tenantFilter || {}) };
+  // Phase G4.5e — widen for proxy acknowledge. Acknowledge is usually an
+  // approver action (admin/finance/president have tenantFilter without bdm_id
+  // already), but keep the helper for consistency. The effective permission
+  // gate for acknowledging is MODULE_DEFAULT_ROLES + UT's own approval path.
+  const scope = await widenFilterForProxy(req, 'inventory', UNDERTAKING_PROXY_OPTS);
+  const filter = { _id: req.params.id, ...scope };
   const doc = await Undertaking.findOne(filter);
   if (!doc) return res.status(404).json({ success: false, message: 'Undertaking not found' });
 
@@ -312,7 +345,9 @@ const rejectUndertaking = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'rejection_reason is required' });
   }
 
-  const filter = { _id: req.params.id, ...(req.tenantFilter || {}) };
+  // Phase G4.5e — widen for proxy reject (same shape as acknowledge).
+  const scope = await widenFilterForProxy(req, 'inventory', UNDERTAKING_PROXY_OPTS);
+  const filter = { _id: req.params.id, ...scope };
   const doc = await Undertaking.findOne(filter);
   if (!doc) return res.status(404).json({ success: false, message: 'Undertaking not found' });
 

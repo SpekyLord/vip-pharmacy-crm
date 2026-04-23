@@ -559,6 +559,21 @@ const SEED_DEFAULTS = {
     // (batch_upload) because it uses a different audit code path and the
     // president-only CALF override flow (calf_override on ExpenseEntry).
     { code: 'EXPENSES__PROXY_ENTRY', label: 'Record Expense on behalf of another BDM', metadata: { module: 'expenses', key: 'proxy_entry', sort_order: 3 } },
+    // Phase G4.5e — Proxy Entry for Car Logbook (also covers per-fuel approval).
+    // Paired with PROXY_ENTRY_ROLES.CAR_LOGBOOK + VALID_OWNER_ROLES.CAR_LOGBOOK
+    // lookups. Separate sub-perm from single-entry Expenses because Car Logbook
+    // has its own approval flow (per-cycle LOGBOOK-{period}-{cycle} in the Hub)
+    // and per-fuel sub-approvals. Unblocks the BDMs→CRM-only policy by letting
+    // office-based eBDMs (Judy / Jay Ann) file logbooks on behalf of field BDMs.
+    // See backend/erp/utils/resolveOwnerScope.js + Phase G4.5e in PHASETASK-ERP.
+    { code: 'EXPENSES__CAR_LOGBOOK_PROXY', label: 'Record Car Logbook on behalf of another BDM', metadata: { module: 'expenses', key: 'car_logbook_proxy', sort_order: 4 } },
+    // Phase G4.5e — Proxy Entry for PRF/CALF. Lets eligible proxy roles create
+    // and submit PRF (partner rebate) and CALF (company advance liquidation)
+    // documents on behalf of a BDM. Paired with PROXY_ENTRY_ROLES.PRF_CALF +
+    // VALID_OWNER_ROLES.PRF_CALF lookups. Separate from expenses.proxy_entry
+    // because CALFs auto-cascade to link expenses/logbooks on post — subscribers
+    // may want CALF-only delegation for Finance operators.
+    { code: 'EXPENSES__PRF_CALF_PROXY', label: 'Record PRF/CALF on behalf of another BDM', metadata: { module: 'expenses', key: 'prf_calf_proxy', sort_order: 5 } },
     // Purchasing
     { code: 'PURCHASING__PO_CREATE', label: 'Create/Edit Purchase Orders', metadata: { module: 'purchasing', key: 'po_create', sort_order: 1 } },
     { code: 'PURCHASING__PO_APPROVE', label: 'Approve Purchase Orders', metadata: { module: 'purchasing', key: 'po_approve', sort_order: 2 } },
@@ -580,6 +595,13 @@ const SEED_DEFAULTS = {
     // the `inventory` module namespace (key 'grn_proxy_entry') because GRN does not
     // have its own ERP access module. See backend/erp/utils/resolveOwnerScope.js.
     { code: 'INVENTORY__GRN_PROXY_ENTRY', label: 'Record GRN on behalf of another BDM', metadata: { module: 'inventory', key: 'grn_proxy_entry', sort_order: 7 } },
+    // Phase G4.5e — Proxy Entry for Undertaking. Undertaking's bdm_id is
+    // inherited from its linked GRN (autoUndertakingForGrn), so the proxy
+    // applies only to READ (list/detail) and SUBMIT (DRAFT→SUBMITTED). No
+    // create path exists on the UT controller — UT creation rides on GRN
+    // creation, whose proxy is already gated by inventory.grn_proxy_entry.
+    // Paired with PROXY_ENTRY_ROLES.UNDERTAKING + VALID_OWNER_ROLES.UNDERTAKING.
+    { code: 'INVENTORY__UNDERTAKING_PROXY', label: 'Submit Undertaking on behalf of another BDM', metadata: { module: 'inventory', key: 'undertaking_proxy', sort_order: 8 } },
     // Accounting
     { code: 'ACCOUNTING__JOURNAL_ENTRY', label: 'Journal Entries & COA', metadata: { module: 'accounting', key: 'journal_entry', sort_order: 1 } },
     { code: 'ACCOUNTING__CHECK_WRITING', label: 'Check Writing / Payments', metadata: { module: 'accounting', key: 'check_writing', sort_order: 2 } },
@@ -2419,6 +2441,14 @@ const SEED_DEFAULTS = {
     { code: 'COLLECTIONS', label: 'Collection Receipts', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 3 } },
     { code: 'EXPENSES', label: 'Expense Entry / OR', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 4 } },
     { code: 'GRN', label: 'Goods Receipt (GRN)', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 5 } },
+    // Phase G4.5e (Apr 23, 2026) — Car Logbook, PRF/CALF, Undertaking. Unblocks
+    // the BDMs→CRM-only / eBDMs→ERP-proxy policy. Car Logbook covers per-fuel
+    // submits (fuel lives as a subdoc inside CarLogbookEntry). Undertaking is
+    // submit-only (create path inherits from GRN). Subscribers with different
+    // org models extend via Control Center → Lookup Tables → PROXY_ENTRY_ROLES.
+    { code: 'CAR_LOGBOOK', label: 'Car Logbook (incl. per-fuel approval)', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 6 } },
+    { code: 'PRF_CALF', label: 'PRF (partner rebate) / CALF (company advance liquidation)', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 7 } },
+    { code: 'UNDERTAKING', label: 'Undertaking (GRN receipt confirmation)', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 8 } },
   ],
   // Phase G4.5a follow-up — which roles are valid OWNERS of a proxied record
   // per module. Defaults to BDM-shaped roles ('contractor','employee'); admin/
@@ -2431,6 +2461,13 @@ const SEED_DEFAULTS = {
     { code: 'COLLECTIONS', label: 'Valid proxy targets — Collections', metadata: { roles: ['contractor', 'employee'], sort_order: 3 } },
     { code: 'EXPENSES', label: 'Valid proxy targets — Expenses', metadata: { roles: ['contractor', 'employee'], sort_order: 4 } },
     { code: 'GRN', label: 'Valid proxy targets — GRN', metadata: { roles: ['contractor', 'employee'], sort_order: 5 } },
+    // Phase G4.5e — matching owner-role allowlists for the three new proxy
+    // modules. Defaults to BDM-shaped roles; subscribers extend via Control
+    // Center (e.g. to add a supervisor/branch-manager role that also owns
+    // per-territory Car Logbook records).
+    { code: 'CAR_LOGBOOK', label: 'Valid proxy targets — Car Logbook', metadata: { roles: ['contractor', 'employee'], sort_order: 6 } },
+    { code: 'PRF_CALF', label: 'Valid proxy targets — PRF / CALF', metadata: { roles: ['contractor', 'employee'], sort_order: 7 } },
+    { code: 'UNDERTAKING', label: 'Valid proxy targets — Undertaking', metadata: { roles: ['contractor', 'employee'], sort_order: 8 } },
   ],
   // Phase P1 — Proxy SLA thresholds. Lookup-driven so subscribers can tune
   // without code changes. pending_alert_hours = when to alert office lead;

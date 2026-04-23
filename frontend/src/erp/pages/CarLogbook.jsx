@@ -13,6 +13,11 @@ import RejectionBanner from '../components/RejectionBanner';
 import { showError, showApprovalPending } from '../utils/errorToast';
 import { ROLES, ROLE_SETS } from '../../constants/roles';
 import { useAuth } from '../../hooks/useAuth';
+// Phase G4.5e — proxy eligibility detection reuses the ERP sub-permission hook.
+// When the user has expenses.car_logbook_proxy ticked AND their role is in
+// PROXY_ENTRY_ROLES.CAR_LOGBOOK, they can write to the currently selected BDM's
+// logbook via body.assigned_to on save. Lookup-driven per Rule #3.
+import useErpSubAccess from '../hooks/useErpSubAccess';
 
 // ── Generic Scan Modal (reused for ODOMETER and GAS_RECEIPT) ──
 
@@ -138,6 +143,14 @@ export default function CarLogbook() {
   const isPrivileged = isAdmin; // president/admin/finance may pick which BDM to view
   const isBdm = user?.role === ROLES.CONTRACTOR;
   const { getBdmsByEntity } = useTransfers();
+  // Phase G4.5e — proxy-eligible callers (admin/finance/eBDM with
+  // expenses.car_logbook_proxy ticked) can WRITE to the selected BDM's logbook.
+  // President always eligible. Lookup-driven proxy-role gate is evaluated on
+  // the backend; the frontend only needs the sub-perm check to surface the UI.
+  const { hasSubPermission } = useErpSubAccess();
+  const canProxyCarLogbook = user?.role === ROLES.PRESIDENT
+    || (isPrivileged && hasSubPermission('expenses', 'car_logbook_proxy'))
+    || (isBdm && hasSubPermission('expenses', 'car_logbook_proxy'));
   const {
     getCarLogbookList, createCarLogbook, updateCarLogbook, deleteDraftCarLogbook,
     validateCarLogbook, submitCarLogbook, reopenCarLogbook, submitFuelForApproval,
@@ -169,9 +182,18 @@ export default function CarLogbook() {
   const [bdmOptions, setBdmOptions] = useState([]);
   const [selectedBdmId, setSelectedBdmId] = useState(() => (isBdm ? (user?._id || '') : ''));
   // Viewing own logbook → writes allowed. Viewing someone else's (or no BDM picked
-  // on a privileged account) → read-only. Rule #21: privileged without a selected BDM
-  // cannot submit because the backend would 400 on missing bdm_id.
+  // on a privileged account) → read-only unless proxy-eligible. Rule #21:
+  // privileged without a selected BDM cannot submit because the backend would
+  // 400 on missing bdm_id.
   const viewingSelf = !!selectedBdmId && selectedBdmId === user?._id;
+  // Phase G4.5e — proxy write: eligible caller + a BDM selected (not self).
+  // When true, writes send body.assigned_to = selectedBdmId so the backend
+  // stamps bdm_id = target and records the proxy audit. Self-edits omit
+  // assigned_to (self-file path). Admin/finance/president always need a BDM
+  // selected because their role is not a valid owner.
+  const viewingOther = !!selectedBdmId && selectedBdmId !== user?._id;
+  const canWriteOnBehalf = canProxyCarLogbook && viewingOther;
+  const canWrite = viewingSelf || canWriteOnBehalf;
 
   // Scan state
   const [scanOdoOpen, setScanOdoOpen] = useState(false);
@@ -279,9 +301,11 @@ export default function CarLogbook() {
 
   useEffect(() => { loadAndMerge(); }, [loadAndMerge]);
 
-  // Load BDM options for privileged viewers (entity-scoped). Non-privileged skip this.
+  // Phase G4.5e — load BDM options for privileged viewers AND proxy-eligible
+  // contractors (eBDMs with expenses.car_logbook_proxy ticked). Plain BDMs
+  // without proxy still self-scope via tenantFilter and skip this fetch.
   useEffect(() => {
-    if (!isPrivileged) return;
+    if (!isPrivileged && !canProxyCarLogbook) return;
     if (!user?.entity_id && !(user?.entity_ids && user.entity_ids.length)) return;
     const eid = user?.entity_id || user?.entity_ids?.[0];
     if (!eid) return;
@@ -291,7 +315,7 @@ export default function CarLogbook() {
         setBdmOptions(r?.data || []);
       } catch (err) { console.error('[CarLogbook] load BDMs:', err.message); }
     })();
-  }, [isPrivileged, user?.entity_id, user?.entity_ids]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isPrivileged, canProxyCarLogbook, user?.entity_id, user?.entity_ids]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Row change handler
   const handleRowChange = (idx, field, value) => {
@@ -356,10 +380,10 @@ export default function CarLogbook() {
     const hasData = row.starting_km > 0 || row.ending_km > 0 || row.fuel_entries.length > 0 || row.destination || row.notes;
     if (!hasData && !row._id) return; // nothing to save
 
-    // Strict ownership: BDM saves to their own logbook; the backend stamps bdm_id
-    // from req.bdmId. Writes by privileged users are blocked upstream by viewingSelf,
-    // so no body.bdm_id stamping is needed here. Backend still accepts body.bdm_id
-    // defensively if a future on-behalf flow or script calls the API directly.
+    // Phase G4.5e — on create, send body.assigned_to when filing on behalf
+    // (proxy eligible + viewing another BDM). The backend's resolveOwnerForWrite
+    // stamps bdm_id = target + recorded_on_behalf_of = caller. On update,
+    // ownership is locked — assigned_to is stripped server-side.
     const data = {
       entry_date: row.entry_date,
       starting_km: row.starting_km,
@@ -371,6 +395,7 @@ export default function CarLogbook() {
       period, cycle,
       km_per_liter: settings?.FUEL_EFFICIENCY_DEFAULT || 12
     };
+    const assignedTo = canWriteOnBehalf ? selectedBdmId : undefined;
 
     setSavingRow(idx);
     try {
@@ -383,7 +408,7 @@ export default function CarLogbook() {
           return u;
         });
       } else if (!row._id) {
-        const res = await createCarLogbook(data);
+        const res = await createCarLogbook({ ...data, assigned_to: assignedTo });
         const doc = res?.data;
         setRows(prev => {
           const u = [...prev];
@@ -400,7 +425,7 @@ export default function CarLogbook() {
 
   // Save all dirty rows at once (like SMER's "Create/Update" button)
   const handleSaveAll = async () => {
-    if (!viewingSelf) { showMsg('Read-only: you are viewing another BDM\'s logbook', true); return; }
+    if (!canWrite) { showMsg('Read-only: you are viewing another BDM\'s logbook (proxy sub-perm required to write on behalf)', true); return; }
     const dirtyRows = rows.map((r, i) => ({ ...r, idx: i })).filter(r => r.dirty);
     if (!dirtyRows.length) { showMsg('No changes to save'); return; }
     let saved = 0;
@@ -473,15 +498,19 @@ export default function CarLogbook() {
   // builds one CarLogbookCycle wrapper for this BDM instead of batching all
   // open cycles into a multi-entry ApprovalRequest.
   const handleValidate = async () => {
-    if (!viewingSelf) { showMsg('Read-only: you are viewing another BDM\'s logbook', true); return; }
+    if (!canWrite) { showMsg('Read-only: you are viewing another BDM\'s logbook (proxy sub-perm required to write on behalf)', true); return; }
     for (let i = 0; i < rows.length; i++) { if (rows[i].dirty) await saveRow(i); }
-    try { const r = await validateCarLogbook({ period, cycle }); showMsg(r?.message || 'Validated'); loadAndMerge(); } catch (e) { showMsg(e.response?.data?.message || 'Validation failed', true); }
+    // Phase G4.5e — backend requires explicit bdm_id for privileged/proxy callers.
+    const bdmParam = viewingOther ? { bdm_id: selectedBdmId } : {};
+    try { const r = await validateCarLogbook({ period, cycle, ...bdmParam }); showMsg(r?.message || 'Validated'); loadAndMerge(); } catch (e) { showMsg(e.response?.data?.message || 'Validation failed', true); }
   };
   const handleSubmit = async () => {
-    if (!viewingSelf) { showMsg('Read-only: you are viewing another BDM\'s logbook', true); return; }
+    if (!canWrite) { showMsg('Read-only: you are viewing another BDM\'s logbook (proxy sub-perm required to write on behalf)', true); return; }
     for (let i = 0; i < rows.length; i++) { if (rows[i].dirty) await saveRow(i); }
+    // Phase G4.5e — privileged/proxy submits must pass bdm_id; self-submits omit.
+    const bdmParam = viewingOther ? { bdm_id: selectedBdmId } : {};
     try {
-      const r = await submitCarLogbook({ period, cycle });
+      const r = await submitCarLogbook({ period, cycle, ...bdmParam });
       if (r?.approval_pending) { showApprovalPending(r.message); }
       else showMsg(r?.message || 'Submitted');
       loadAndMerge();
@@ -496,7 +525,7 @@ export default function CarLogbook() {
   // POST /expenses/car-logbook/:id/fuel/:fuel_id/submit. Handle 202 (gateApproval
   // held in Approval Hub) the same way SMER per-diem override does.
   const handleSubmitFuel = async (rowIdx, fuelIdx) => {
-    if (!viewingSelf) { showMsg('Read-only: you are viewing another BDM\'s logbook', true); return; }
+    if (!canWrite) { showMsg('Read-only: you are viewing another BDM\'s logbook (proxy sub-perm required to write on behalf)', true); return; }
     const row = rows[rowIdx];
     if (!row?._id) { showMsg('Save the day first before submitting fuel for approval', true); return; }
     if (row.dirty) { await saveRow(rowIdx); }
@@ -515,7 +544,7 @@ export default function CarLogbook() {
     }
   };
   const handleDelete = async (id, idx) => {
-    if (!viewingSelf) { showMsg('Read-only: you are viewing another BDM\'s logbook', true); return; }
+    if (!canWrite) { showMsg('Read-only: you are viewing another BDM\'s logbook (proxy sub-perm required to write on behalf)', true); return; }
     try {
       await deleteDraftCarLogbook(id);
       showMsg('Deleted');
@@ -565,29 +594,38 @@ export default function CarLogbook() {
             <select value={cycle} onChange={e => setCycle(e.target.value)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)' }}>
               <option value="C1">Cycle 1</option><option value="C2">Cycle 2</option><option value="MONTHLY">Monthly</option>
             </select>
-            {isPrivileged && (
+            {/* Phase G4.5e — BDM picker shows for admin/finance/president (view audit)
+                AND for contractor-proxies (eBDMs with car_logbook_proxy sub-perm).
+                Plain BDMs without proxy still self-scope via tenantFilter. */}
+            {(isPrivileged || canProxyCarLogbook) && (
               <select
                 value={selectedBdmId}
                 onChange={e => setSelectedBdmId(e.target.value)}
-                title="Choose which BDM's logbook to view — required for privileged roles"
-                style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)', minWidth: 180 }}
+                title={canProxyCarLogbook ? 'Choose whose logbook to file on behalf of — required' : 'Choose which BDM\'s logbook to view — required for privileged roles'}
+                style={{ padding: '6px 12px', borderRadius: 6, border: `1px solid ${canWriteOnBehalf ? '#a78bfa' : 'var(--erp-border, #dbe4f0)'}`, minWidth: 180 }}
               >
-                <option value="">Select a BDM…</option>
+                <option value="">{canProxyCarLogbook ? 'Select a BDM to file on behalf…' : 'Select a BDM…'}</option>
                 {bdmOptions.map(b => (
                   <option key={b._id} value={b._id}>{b.name}</option>
                 ))}
               </select>
             )}
-            <button onClick={handleSaveAll} disabled={loading || !viewingSelf || !rows.some(r => r.dirty)} title={!viewingSelf ? 'Read-only: you are viewing another BDM\'s logbook' : undefined} style={{ padding: '6px 16px', borderRadius: 6, background: 'var(--erp-accent, #1e5eff)', color: '#fff', border: 'none', cursor: (loading || !viewingSelf || !rows.some(r => r.dirty)) ? 'default' : 'pointer', opacity: (viewingSelf && rows.some(r => r.dirty)) ? 1 : 0.5 }}>Save Car Logbook</button>
-            <button onClick={handleValidate} disabled={loading || !viewingSelf} title={!viewingSelf ? 'Read-only: you are viewing another BDM\'s logbook' : undefined} style={{ padding: '6px 16px', borderRadius: 6, background: '#22c55e', color: '#fff', border: 'none', cursor: (loading || !viewingSelf) ? 'default' : 'pointer', opacity: viewingSelf ? 1 : 0.5 }}>Validate</button>
-            <button onClick={handleSubmit} disabled={loading || !viewingSelf} title={!viewingSelf ? 'Read-only: you are viewing another BDM\'s logbook' : undefined} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: (loading || !viewingSelf) ? 'default' : 'pointer', opacity: viewingSelf ? 1 : 0.5 }}>Submit</button>
+            <button onClick={handleSaveAll} disabled={loading || !canWrite || !rows.some(r => r.dirty)} title={!canWrite ? 'Read-only: you are viewing another BDM\'s logbook (proxy sub-perm required to write on behalf)' : undefined} style={{ padding: '6px 16px', borderRadius: 6, background: 'var(--erp-accent, #1e5eff)', color: '#fff', border: 'none', cursor: (loading || !canWrite || !rows.some(r => r.dirty)) ? 'default' : 'pointer', opacity: (canWrite && rows.some(r => r.dirty)) ? 1 : 0.5 }}>Save Car Logbook</button>
+            <button onClick={handleValidate} disabled={loading || !canWrite} title={!canWrite ? 'Read-only: you are viewing another BDM\'s logbook (proxy sub-perm required to write on behalf)' : undefined} style={{ padding: '6px 16px', borderRadius: 6, background: '#22c55e', color: '#fff', border: 'none', cursor: (loading || !canWrite) ? 'default' : 'pointer', opacity: canWrite ? 1 : 0.5 }}>Validate</button>
+            <button onClick={handleSubmit} disabled={loading || !canWrite} title={!canWrite ? 'Read-only: you are viewing another BDM\'s logbook (proxy sub-perm required to write on behalf)' : undefined} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: (loading || !canWrite) ? 'default' : 'pointer', opacity: canWrite ? 1 : 0.5 }}>Submit</button>
             <Link to="/erp/prf-calf" style={{ padding: '6px 14px', borderRadius: 6, background: '#f1f5f9', color: 'var(--erp-text, #132238)', textDecoration: 'none', fontSize: 13, border: '1px solid var(--erp-border, #dbe4f0)' }}>PRF / CALF</Link>
           </div>
 
-          {/* Read-only banner when privileged viewer is inspecting someone else's logbook */}
-          {isPrivileged && selectedBdmId && !viewingSelf && (
+          {/* Phase G4.5e — banner varies by proxy eligibility.
+              canWriteOnBehalf → proxy write mode; viewingOther without proxy → read-only audit. */}
+          {viewingOther && canWriteOnBehalf && (
+            <div style={{ padding: 10, marginBottom: 12, borderRadius: 8, background: '#f5f3ff', border: '1px solid #c4b5fd', fontSize: 13, color: '#6d28d9' }}>
+              <strong>Proxy write mode</strong> — recording on behalf of <strong>{bdmOptions.find(b => b._id === selectedBdmId)?.name || 'BDM'}</strong>. Saves stamp <code>bdm_id</code> = target BDM and audit <code>recorded_on_behalf_of</code> = you. Submit force-routes through the Approval Hub (Rule #20 four-eyes).
+            </div>
+          )}
+          {viewingOther && !canWriteOnBehalf && (
             <div style={{ padding: 10, marginBottom: 12, borderRadius: 8, background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: 13, color: '#1e40af' }}>
-              Viewing <strong>{bdmOptions.find(b => b._id === selectedBdmId)?.name || 'BDM'}</strong>&apos;s car logbook — read-only. Only the BDM can edit their own entries.
+              Viewing <strong>{bdmOptions.find(b => b._id === selectedBdmId)?.name || 'BDM'}</strong>&apos;s car logbook — read-only. (Proxy write requires <code>expenses.car_logbook_proxy</code> ticked on your Access Template.)
             </div>
           )}
           {isPrivileged && !selectedBdmId && (

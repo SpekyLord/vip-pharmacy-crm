@@ -678,72 +678,111 @@ const applyPerdiemOverride = catchAsync(async (req, res) => {
 // CAR LOGBOOK ENDPOINTS
 // ═══════════════════════════════════════════
 
-// Rule #21 — Car Logbook is a per-BDM document. Privileged users (president/admin/finance)
-// are NOT BDMs on any record, so `req.bdmId` (their own _id) is never a valid default filter.
-// Resolve scope explicitly: privileged must pass `?bdm_id=` (or body.bdm_id) to pick a BDM;
-// non-privileged always use their own _id. See Phase G5 (CLAUDE-ERP) for precedent.
-function resolveCarLogbookScope(req) {
-  const privileged = !!(req.isPresident || req.isAdmin || req.isFinance);
-  const rawBdm = (req.query && req.query.bdm_id) || (req.body && req.body.bdm_id) || null;
-  const bdmId = privileged ? rawBdm : req.bdmId;
-  return { privileged, bdmId };
-}
+// Phase G4.5e (April 23, 2026) — Car Logbook adopts the shared proxy-entry
+// resolver. Writes use resolveOwnerForWrite (stamps bdm_id = target, seeds
+// recorded_on_behalf_of for proxy audit + hub force-routing). Reads use
+// widenFilterForProxy (eligible proxies see target BDMs' logbooks).
+//
+// The legacy `resolveCarLogbookScope` has been deleted. Frontend Rule #21
+// narrowing via ?bdm_id= is re-applied explicitly on list endpoints below.
+// Unblocks the BDMs→CRM-only / eBDMs→ERP-proxy policy locked Apr 23 2026.
+const CAR_LOGBOOK_PROXY_OPTS = { subKey: 'car_logbook_proxy', lookupCode: 'CAR_LOGBOOK' };
 
 const createCarLogbook = catchAsync(async (req, res) => {
-  const { privileged, bdmId } = resolveCarLogbookScope(req);
-  if (privileged && !bdmId) {
-    return res.status(400).json({
-      success: false,
-      message: 'bdm_id is required — privileged users must specify which BDM the logbook entry belongs to'
-    });
+  // Phase G4.5e proxy resolver. Caller (BDM) → ownerId = self; eligible proxy
+  // (admin/finance/eBDM contractor with expenses.car_logbook_proxy ticked) +
+  // body.assigned_to → ownerId = target BDM, proxiedBy = caller. Throws 400 if
+  // a non-BDM caller omits assigned_to (Rule #21 guard — no silent self-fill).
+  let owner;
+  try {
+    owner = await resolveOwnerForWrite(req, 'expenses', CAR_LOGBOOK_PROXY_OPTS);
+  } catch (err) {
+    if (err.statusCode === 400 || err.statusCode === 403) {
+      return res.status(err.statusCode).json({ success: false, message: err.message });
+    }
+    throw err;
   }
 
   const settings = await Settings.getSettings();
   const kmPerLiter = req.body.km_per_liter || settings.FUEL_EFFICIENCY_DEFAULT || 12;
 
+  // Strip ownership fields from body so a crafted payload cannot silently
+  // reassign owner or proxy audit past the helper's gate.
+  const { assigned_to: _dAssigned, bdm_id: _dBdm, recorded_on_behalf_of: _dProxy, ...safeBody } = req.body || {};
+
   const entry = await CarLogbookEntry.create({
-    ...req.body,
+    ...safeBody,
     km_per_liter: kmPerLiter,
     entity_id: req.entityId,
-    bdm_id: bdmId,
+    bdm_id: owner.ownerId,
+    recorded_on_behalf_of: owner.proxiedBy,
     created_by: req.user._id,
     status: 'DRAFT'
   });
+
+  if (owner.isOnBehalf) {
+    await ErpAuditLog.logChange({
+      entity_id: req.entityId,
+      bdm_id: owner.ownerId,
+      log_type: 'PROXY_CREATE',
+      target_ref: entry._id.toString(),
+      target_model: 'CarLogbookEntry',
+      changed_by: req.user._id,
+      note: `Proxy create: Car Logbook ${entry.period} ${entry.cycle} ${entry.entry_date?.toISOString().split('T')[0]} keyed by ${req.user.name || req.user._id} (${req.user.role}) on behalf of BDM ${owner.ownerId}`
+    }).catch(err => console.error('[createCarLogbook] PROXY_CREATE audit failed (non-critical):', err.message));
+  }
+
   const autoCalf = await autoCalfForSource(entry, 'CARLOGBOOK');
   res.status(201).json({ success: true, data: entry, auto_calf: autoCalf ? { _id: autoCalf._id, calf_number: autoCalf.calf_number, amount: autoCalf.amount } : null });
 });
 
 const updateCarLogbook = catchAsync(async (req, res) => {
-  const { privileged, bdmId } = resolveCarLogbookScope(req);
-  if (privileged && !bdmId) {
-    return res.status(400).json({
-      success: false,
-      message: 'bdm_id is required — privileged users must specify which BDM to scope the edit to'
-    });
-  }
   const editable = await getEditableStatuses(req.entityId, 'CAR_LOGBOOK');
-  const docFilter = { _id: req.params.id, status: { $in: editable } };
-  if (req.entityId) docFilter.entity_id = req.entityId;
-  if (bdmId) docFilter.bdm_id = bdmId;
-  const entry = await CarLogbookEntry.findOne(docFilter);
+  // Phase G4.5e — widen so eligible proxies can edit on behalf.
+  const scope = await widenFilterForProxy(req, 'expenses', CAR_LOGBOOK_PROXY_OPTS);
+  const entry = await CarLogbookEntry.findOne({ _id: req.params.id, ...scope, status: { $in: editable } });
   if (!entry) return res.status(404).json({ success: false, message: 'Draft car logbook entry not found' });
 
-  Object.assign(entry, req.body);
-  // Lock ownership fields so body cannot silently reassign entity/BDM
-  entry.bdm_id = bdmId || entry.bdm_id;
+  // Strip ownership fields — proxy cannot reassign after create; ownership is
+  // stamped at create time only. Edit history lives in audit log.
+  const { assigned_to: _dAssigned, bdm_id: _dBdm, recorded_on_behalf_of: _dProxy, ...safeBody } = req.body || {};
+
+  Object.assign(entry, safeBody);
   if (req.entityId) entry.entity_id = req.entityId;
   await entry.save();
+
+  // Audit when the editor is not the owner.
+  const isProxyEdit = String(entry.bdm_id) !== String(req.user._id);
+  if (isProxyEdit) {
+    await ErpAuditLog.logChange({
+      entity_id: req.entityId,
+      bdm_id: entry.bdm_id,
+      log_type: 'PROXY_UPDATE',
+      target_ref: entry._id.toString(),
+      target_model: 'CarLogbookEntry',
+      changed_by: req.user._id,
+      note: `Proxy update: Car Logbook ${entry.period} ${entry.cycle} ${entry.entry_date?.toISOString().split('T')[0]} edited by ${req.user.name || req.user._id} (${req.user.role}) on behalf of BDM ${entry.bdm_id}`
+    }).catch(err => console.error('[updateCarLogbook] PROXY_UPDATE audit failed (non-critical):', err.message));
+  }
+
   const autoCalf = await autoCalfForSource(entry, 'CARLOGBOOK');
   res.json({ success: true, data: entry, auto_calf: autoCalf ? { _id: autoCalf._id, calf_number: autoCalf.calf_number, amount: autoCalf.amount } : null });
 });
 
 const getCarLogbookList = catchAsync(async (req, res) => {
-  const { privileged, bdmId } = resolveCarLogbookScope(req);
+  // Phase G4.5e — widen so eligible proxies see the BDMs they file on behalf of.
+  // Admin/finance/president already have tenantFilter without bdm_id — this is a
+  // no-op for them; it only strips bdm_id for a contractor-proxy (Judy / Jay Ann).
+  const scope = await widenFilterForProxy(req, 'expenses', CAR_LOGBOOK_PROXY_OPTS);
 
-  // The grid UI is per-person. If a privileged user lands without picking a BDM,
-  // return empty so the frontend shows the "Select a BDM" banner instead of a
-  // cross-BDM mashup that breaks the calendar view.
-  if (privileged && !bdmId) {
+  // Rule #21: privileged (or proxy) callers may narrow by ?bdm_id=. Absence
+  // means "no BDM filter" for admin/finance (they see all) — but the grid UI
+  // is per-person, so the frontend gates with a "Select a BDM" banner at the
+  // view layer. Backend returns an empty set for privileged-no-bdm_id to
+  // preserve the pre-G4.5e contract (frontend banner already depends on it).
+  const privileged = !!(req.isPresident || req.isAdmin || req.isFinance);
+  const bdmId = req.query.bdm_id || (privileged ? null : req.bdmId);
+  if (privileged && !req.query.bdm_id) {
     return res.json({
       success: true,
       data: [],
@@ -752,8 +791,7 @@ const getCarLogbookList = catchAsync(async (req, res) => {
     });
   }
 
-  const filter = {};
-  if (req.entityId) filter.entity_id = req.entityId;
+  const filter = { ...scope };
   if (bdmId) filter.bdm_id = bdmId;
   if (req.query.status) filter.status = req.query.status;
   if (req.query.period) filter.period = req.query.period;
@@ -771,6 +809,7 @@ const getCarLogbookList = catchAsync(async (req, res) => {
   const [docs, total] = await Promise.all([
     CarLogbookEntry.find(filter)
       .populate('bdm_id', 'name')
+      .populate('recorded_on_behalf_of', 'name')
       .sort({ entry_date: -1 })
       .skip((page - 1) * limit).limit(limit).lean(),
     CarLogbookEntry.countDocuments(filter)
@@ -780,29 +819,33 @@ const getCarLogbookList = catchAsync(async (req, res) => {
 });
 
 const getCarLogbookById = catchAsync(async (req, res) => {
-  const { privileged, bdmId } = resolveCarLogbookScope(req);
-  const docFilter = { _id: req.params.id };
-  if (req.entityId) docFilter.entity_id = req.entityId;
-  if (!privileged) docFilter.bdm_id = req.bdmId;
-  else if (bdmId) docFilter.bdm_id = bdmId;
+  // Phase G4.5e — widen for proxy reads. Privileged narrowing via ?bdm_id=
+  // continues via req.query.bdm_id on the frontend.
+  const scope = await widenFilterForProxy(req, 'expenses', CAR_LOGBOOK_PROXY_OPTS);
+  const docFilter = { _id: req.params.id, ...scope };
+  if (req.query.bdm_id) docFilter.bdm_id = req.query.bdm_id;
   const entry = await CarLogbookEntry.findOne(docFilter)
-    .populate('bdm_id', 'name').lean();
+    .populate('bdm_id', 'name')
+    .populate('recorded_on_behalf_of', 'name')
+    .lean();
   if (!entry) return res.status(404).json({ success: false, message: 'Car logbook entry not found' });
   res.json({ success: true, data: entry });
 });
 
 const getSmerDailyByDate = catchAsync(async (req, res) => {
   const { date } = req.params; // YYYY-MM-DD
-  const { privileged, bdmId } = resolveCarLogbookScope(req);
-  // Per-BDM prefill: privileged users must pick a BDM to prefill from their SMER
-  if (privileged && !bdmId) return res.json({ success: true, data: null });
+  // Phase G4.5e — SMER destination prefill for Car Logbook. Widen so proxy
+  // callers see target BDM's SMER entries. Non-privileged BDMs use their own id.
+  const privileged = !!(req.isPresident || req.isAdmin || req.isFinance);
+  const bdmId = req.query.bdm_id || (privileged ? null : req.bdmId);
+  if (privileged && !req.query.bdm_id) return res.json({ success: true, data: null });
 
   const targetDate = new Date(date + 'T00:00:00.000Z');
   const nextDate = new Date(targetDate);
   nextDate.setDate(nextDate.getDate() + 1);
 
-  const smerFilter = { 'daily_entries.entry_date': { $gte: targetDate, $lt: nextDate } };
-  if (req.entityId) smerFilter.entity_id = req.entityId;
+  const scope = await widenFilterForProxy(req, 'expenses', CAR_LOGBOOK_PROXY_OPTS);
+  const smerFilter = { ...scope, 'daily_entries.entry_date': { $gte: targetDate, $lt: nextDate } };
   if (bdmId) smerFilter.bdm_id = bdmId;
 
   const smer = await SmerEntry.findOne(smerFilter).lean();
@@ -829,9 +872,10 @@ const getSmerDestinationsBatch = catchAsync(async (req, res) => {
   const { dates } = req.query; // comma-separated YYYY-MM-DD
   if (!dates) return res.json({ success: true, data: {} });
 
-  const { privileged, bdmId } = resolveCarLogbookScope(req);
-  // Per-BDM prefill: privileged users must pick a BDM
-  if (privileged && !bdmId) return res.json({ success: true, data: {} });
+  // Phase G4.5e — widen for proxy reads; same pattern as getSmerDailyByDate.
+  const privileged = !!(req.isPresident || req.isAdmin || req.isFinance);
+  const bdmId = req.query.bdm_id || (privileged ? null : req.bdmId);
+  if (privileged && !req.query.bdm_id) return res.json({ success: true, data: {} });
 
   const dateList = dates.split(',').filter(Boolean);
   if (!dateList.length) return res.json({ success: true, data: {} });
@@ -840,8 +884,8 @@ const getSmerDestinationsBatch = catchAsync(async (req, res) => {
   const endDate = new Date(dateList[dateList.length - 1] + 'T00:00:00.000Z');
   endDate.setDate(endDate.getDate() + 1);
 
-  const smerFilter = { 'daily_entries.entry_date': { $gte: startDate, $lt: endDate } };
-  if (req.entityId) smerFilter.entity_id = req.entityId;
+  const scope = await widenFilterForProxy(req, 'expenses', CAR_LOGBOOK_PROXY_OPTS);
+  const smerFilter = { ...scope, 'daily_entries.entry_date': { $gte: startDate, $lt: endDate } };
   if (bdmId) smerFilter.bdm_id = bdmId;
 
   const smers = await SmerEntry.find(smerFilter).lean();
@@ -865,32 +909,29 @@ const getSmerDestinationsBatch = catchAsync(async (req, res) => {
 });
 
 const deleteDraftCarLogbook = catchAsync(async (req, res) => {
-  const { privileged, bdmId } = resolveCarLogbookScope(req);
-  if (privileged && !bdmId) {
-    return res.status(400).json({
-      success: false,
-      message: 'bdm_id is required — privileged users must specify which BDM to scope the delete to'
-    });
-  }
-  const docFilter = { _id: req.params.id, status: 'DRAFT' };
-  if (req.entityId) docFilter.entity_id = req.entityId;
-  if (bdmId) docFilter.bdm_id = bdmId;
-  const result = await CarLogbookEntry.findOneAndDelete(docFilter);
+  // Phase G4.5e — proxy can delete DRAFT of BDMs they file on behalf of.
+  const scope = await widenFilterForProxy(req, 'expenses', CAR_LOGBOOK_PROXY_OPTS);
+  const result = await CarLogbookEntry.findOneAndDelete({ _id: req.params.id, ...scope, status: 'DRAFT' });
   if (!result) return res.status(404).json({ success: false, message: 'Draft car logbook not found' });
   res.json({ success: true, message: 'Draft car logbook deleted' });
 });
 
 const validateCarLogbook = catchAsync(async (req, res) => {
-  const { privileged, bdmId } = resolveCarLogbookScope(req);
-  if (privileged && !bdmId) {
+  // Phase G4.5e — widen for proxy validate. Rule #21: privileged callers (and
+  // proxies) should pass a bdm_id context in body/query so validate scopes to
+  // one BDM's cycle — validating the union across all BDMs would be wrong.
+  const scope = await widenFilterForProxy(req, 'expenses', CAR_LOGBOOK_PROXY_OPTS);
+  const privileged = !!(req.isPresident || req.isAdmin || req.isFinance);
+  const rawBdm = (req.query && req.query.bdm_id) || (req.body && req.body.bdm_id) || null;
+  const bdmId = rawBdm || (privileged ? null : req.bdmId);
+  if (privileged && !rawBdm) {
     return res.status(400).json({
       success: false,
-      message: 'bdm_id is required — privileged users must specify which BDM to validate'
+      message: 'bdm_id is required — privileged/proxy users must specify which BDM to validate'
     });
   }
   const editable = await getEditableStatuses(req.entityId, 'CAR_LOGBOOK');
-  const filter = { status: { $in: editable } };
-  if (req.entityId) filter.entity_id = req.entityId;
+  const filter = { ...scope, status: { $in: editable } };
   if (bdmId) filter.bdm_id = bdmId;
   // Scope to the active period+cycle when the frontend provides them so validation
   // runs against the cycle being edited, not every open draft across all months.
@@ -973,17 +1014,13 @@ const validateCarLogbook = catchAsync(async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────
 const submitFuelEntryForApproval = catchAsync(async (req, res) => {
   const { id, fuel_id } = req.params;   // id = CarLogbookEntry day doc id
-  const { privileged, bdmId } = resolveCarLogbookScope(req);
-  if (privileged && !bdmId) {
-    return res.status(400).json({
-      success: false,
-      message: 'bdm_id is required — privileged users must specify which BDM to submit fuel approval for'
-    });
-  }
+  // Phase G4.5e — widen for proxy submit. Rule #21 narrowing: when privileged,
+  // optionally scope by ?bdm_id= (eBDM flow) — the dayDoc's own bdm_id is then
+  // matched exactly. Contractor proxies only see BDMs they can proxy for.
+  const scope = await widenFilterForProxy(req, 'expenses', CAR_LOGBOOK_PROXY_OPTS);
   const editable = await getEditableStatuses(req.entityId, 'CAR_LOGBOOK');
-  const docFilter = { _id: id, status: { $in: editable } };
-  if (req.entityId) docFilter.entity_id = req.entityId;
-  if (bdmId) docFilter.bdm_id = bdmId;
+  const docFilter = { _id: id, ...scope, status: { $in: editable } };
+  if (req.query.bdm_id) docFilter.bdm_id = req.query.bdm_id;
   const dayDoc = await CarLogbookEntry.findOne(docFilter);
   if (!dayDoc) return res.status(404).json({ success: false, message: 'Car logbook day not found or not editable' });
   const fuel = dayDoc.fuel_entries.id(fuel_id);
@@ -1009,6 +1046,9 @@ const submitFuelEntryForApproval = catchAsync(async (req, res) => {
   const { gateApproval } = require('../services/approvalService');
   const dateStr = dayDoc.entry_date ? new Date(dayDoc.entry_date).toISOString().split('T')[0] : '';
   const calfLabel = fuel.calf_id ? `CALF:${fuel.calf_id}` : (fuel.payment_mode || 'CASH');
+  // Phase G4.5e — force hub routing when the parent day was proxy-created
+  // (Rule #20 four-eyes: a proxy entered, never approves).
+  const hasProxy = !!dayDoc.recorded_on_behalf_of;
   const gated = await gateApproval({
     entityId: dayDoc.entity_id,
     module: 'EXPENSES',
@@ -1019,6 +1059,8 @@ const submitFuelEntryForApproval = catchAsync(async (req, res) => {
     description: `Fuel ₱${(fuel.total_amount || 0).toLocaleString()} @ ${fuel.station_name || 'unknown'} on ${dateStr} [${calfLabel}]`,
     requesterId: req.user._id,
     requesterName: req.user.name || req.user.email,
+    forceApproval: hasProxy,
+    ownerBdmId: dayDoc.bdm_id,
   }, res);
 
   if (gated) {
@@ -1042,22 +1084,26 @@ const submitFuelEntryForApproval = catchAsync(async (req, res) => {
 // odometer/fuel/efficiency; the wrapper only carries submit/approve/post state.
 // ─────────────────────────────────────────────────────────────────────────
 const submitCarLogbook = catchAsync(async (req, res) => {
-  // Rule #21 — submit binds a CarLogbookCycle wrapper to a specific BDM. Privileged users
-  // must pass bdm_id explicitly so the wrapper doesn't default to their own user _id
-  // (which would bind some other BDM's VALID entries to a ghost president-owned cycle).
-  const { privileged, bdmId } = resolveCarLogbookScope(req);
-  if (privileged && !bdmId) {
+  // Phase G4.5e — submit binds a CarLogbookCycle wrapper to a specific BDM.
+  // Rule #21: privileged callers (and proxies) must pass bdm_id so the wrapper
+  // doesn't default to their own user _id (which would bind some other BDM's
+  // VALID entries to a ghost president-owned cycle). widenFilterForProxy
+  // ensures eligible proxies can read the target BDM's VALID entries.
+  const scope = await widenFilterForProxy(req, 'expenses', CAR_LOGBOOK_PROXY_OPTS);
+  const privileged = !!(req.isPresident || req.isAdmin || req.isFinance);
+  const rawBdm = (req.query && req.query.bdm_id) || (req.body && req.body.bdm_id) || null;
+  const bdmId = rawBdm || (privileged ? null : req.bdmId);
+  if (privileged && !rawBdm) {
     return res.status(400).json({
       success: false,
-      message: 'bdm_id is required — privileged users must specify which BDM to submit the cycle for'
+      message: 'bdm_id is required — privileged/proxy users must specify which BDM to submit the cycle for'
     });
   }
 
   // Scope to a specific cycle when period+cycle provided (frontend always passes them)
   const period = req.body?.period || req.query?.period;
   const cycle = req.body?.cycle || req.query?.cycle;
-  const scopedFilter = { status: 'VALID' };
-  if (req.entityId) scopedFilter.entity_id = req.entityId;
+  const scopedFilter = { ...scope, status: 'VALID' };
   if (bdmId) scopedFilter.bdm_id = bdmId;
   if (period) scopedFilter.period = period;
   if (cycle) scopedFilter.cycle = cycle;
@@ -1078,12 +1124,15 @@ const submitCarLogbook = catchAsync(async (req, res) => {
   }
 
   // Upsert the CarLogbookCycle wrapper and aggregate totals from the per-day docs.
-  // bdm_id comes from resolved scope (not req.bdmId) so privileged users bind to the chosen BDM.
+  // bdm_id comes from resolved scope (not req.bdmId) so privileged/proxy users
+  // bind to the chosen BDM, never to their own id.
   const upsertFilter = { entity_id: req.entityId, bdm_id: bdmId, period: effPeriod, cycle: effCycle };
   let cycleDoc = await CarLogbookCycle.findOne(upsertFilter);
   if (!cycleDoc) {
     cycleDoc = new CarLogbookCycle({ ...upsertFilter, created_by: req.user._id, km_per_liter: entries[0].km_per_liter || 12 });
   }
+  // Phase G4.5e — refreshTotalsFromDays propagates recorded_on_behalf_of from
+  // the per-day docs into the cycle wrapper (if ANY day was proxy-created).
   await cycleDoc.refreshTotalsFromDays();
   cycleDoc.status = 'VALID';
   await cycleDoc.save();
@@ -1100,6 +1149,8 @@ const submitCarLogbook = catchAsync(async (req, res) => {
   const { gateApproval } = require('../services/approvalService');
   const docRef = `LOGBOOK-${effPeriod}-${effCycle}`;
   const desc = `Submit Car Logbook ${effPeriod} ${effCycle} (${cycleDoc.working_days} working day${cycleDoc.working_days === 1 ? '' : 's'}, total ₱${(cycleDoc.total_fuel_amount || 0).toLocaleString()})`;
+  // Phase G4.5e — force hub routing when any day was proxy-created (Rule #20).
+  const hasProxy = !!cycleDoc.recorded_on_behalf_of;
   const gated = await gateApproval({
     entityId: req.entityId,
     module: 'EXPENSES',
@@ -1110,6 +1161,8 @@ const submitCarLogbook = catchAsync(async (req, res) => {
     description: desc,
     requesterId: req.user._id,
     requesterName: req.user.name || req.user.email,
+    forceApproval: hasProxy,
+    ownerBdmId: cycleDoc.bdm_id,
   }, res);
   if (gated) return;   // held in Approval Hub (202 sent)
 
@@ -1251,10 +1304,13 @@ const reopenCarLogbook = catchAsync(async (req, res) => {
   // fall back to the old per-day reopen path.
   const cycleIds = req.body?.cycle_ids || [];
   const legacyIds = req.body?.logbook_ids || [];
+  // Phase G4.5e — widen for proxy reopen. Reopen sub-perm is still gated at
+  // the route layer (expenses.reopen).
+  const scope = await widenFilterForProxy(req, 'expenses', CAR_LOGBOOK_PROXY_OPTS);
 
   // Preferred path: reopen the cycle wrapper
   if (cycleIds.length) {
-    const cycles = await CarLogbookCycle.find({ _id: { $in: cycleIds }, ...req.tenantFilter, status: 'POSTED' });
+    const cycles = await CarLogbookCycle.find({ _id: { $in: cycleIds }, ...scope, status: 'POSTED' });
     if (!cycles.length) return res.status(400).json({ success: false, message: 'No POSTED cycles to reopen' });
 
     const reopened = [], failed = [];
@@ -1299,7 +1355,7 @@ const reopenCarLogbook = catchAsync(async (req, res) => {
   }
 
   // Legacy fallback: per-day ids passed in. Group by cycle_id (or by period+cycle) and reopen.
-  const entries = await CarLogbookEntry.find({ _id: { $in: legacyIds }, ...req.tenantFilter, status: 'POSTED' });
+  const entries = await CarLogbookEntry.find({ _id: { $in: legacyIds }, ...scope, status: 'POSTED' });
   if (!entries.length) return res.status(400).json({ success: false, message: 'No POSTED logbooks to reopen' });
 
   const cyclesTouched = new Set();
@@ -1385,6 +1441,11 @@ async function autoCalfForSource(sourceDoc, sourceType) {
       calf = await PrfCalf.create({
         entity_id: sourceDoc.entity_id,
         bdm_id: sourceDoc.bdm_id,
+        // Phase G4.5e — propagate proxy audit from source expense/logbook. When
+        // the source was keyed on behalf, the auto-generated CALF inherits the
+        // proxy reference so submit force-routes through the Approval Hub
+        // (Rule #20 four-eyes) and the orphan diagnostic sees the whole chain.
+        recorded_on_behalf_of: sourceDoc.recorded_on_behalf_of || undefined,
         doc_type: 'CALF',
         period: sourceDoc.period,
         cycle: sourceDoc.cycle || 'MONTHLY',
@@ -1912,7 +1973,11 @@ const reopenExpenses = catchAsync(async (req, res) => {
 //      details to process payment. Partner doesn't get paid without PRF.
 // CALF: Company-fund advance + liquidation — attached to expense ORs
 //       paid with company funds (not revolving/cash). Tracks advance vs spent.
+//
+// Phase G4.5e proxy wiring: single shared opts object so every call site reads
+// the same (module, sub-perm, lookup code) triple.
 // ═══════════════════════════════════════════
+const PRF_CALF_PROXY_OPTS = { subKey: 'prf_calf_proxy', lookupCode: 'PRF_CALF' };
 
 const createPrfCalf = catchAsync(async (req, res) => {
   // CALF must be linked to an expense entry — prevent orphan CALFs
@@ -1950,13 +2015,47 @@ const createPrfCalf = catchAsync(async (req, res) => {
     }
   }
 
+  // Phase G4.5e — proxy resolver. Accepts body.assigned_to from an eligible
+  // proxy (admin/finance/eBDM with expenses.prf_calf_proxy). Rule #21: throws
+  // 400 when a non-BDM caller omits assigned_to; no silent self-fill.
+  //
+  // Special case — auto-CALF flow: createPrfCalf is ALSO called synthetically
+  // by autoCalfForSource via PrfCalf.create (not through this endpoint). That
+  // path is a model-level create, so this gate only applies to explicit user
+  // creations through POST /prf-calf (manual PRF or standalone CALF).
+  let owner;
+  try {
+    owner = await resolveOwnerForWrite(req, 'expenses', PRF_CALF_PROXY_OPTS);
+  } catch (err) {
+    if (err.statusCode === 400 || err.statusCode === 403) {
+      return res.status(err.statusCode).json({ success: false, message: err.message });
+    }
+    throw err;
+  }
+
+  // Strip ownership fields so a crafted payload cannot bypass the helper.
+  const { assigned_to: _dAssigned, bdm_id: _dBdm, recorded_on_behalf_of: _dProxy, ...safeBody } = req.body || {};
+
   const doc = await PrfCalf.create({
-    ...req.body,
+    ...safeBody,
     entity_id: req.entityId,
-    bdm_id: req.bdmId,
+    bdm_id: owner.ownerId,
+    recorded_on_behalf_of: owner.proxiedBy,
     created_by: req.user._id,
     status: 'DRAFT'
   });
+
+  if (owner.isOnBehalf) {
+    await ErpAuditLog.logChange({
+      entity_id: req.entityId,
+      bdm_id: owner.ownerId,
+      log_type: 'PROXY_CREATE',
+      target_ref: doc._id.toString(),
+      target_model: 'PrfCalf',
+      changed_by: req.user._id,
+      note: `Proxy create: ${doc.doc_type} ${doc.period}-${doc.cycle} (₱${doc.amount}) keyed by ${req.user.name || req.user._id} (${req.user.role}) on behalf of BDM ${owner.ownerId}`
+    }).catch(err => console.error('[createPrfCalf] PROXY_CREATE audit failed (non-critical):', err.message));
+  }
 
   // ── Back-link: update expense/logbook lines' calf_id when CALF is linked ──
   // Also auto-copy OR photos from linked lines into CALF photo_urls (no double-scan needed)
@@ -2004,14 +2103,32 @@ const createPrfCalf = catchAsync(async (req, res) => {
 
 const updatePrfCalf = catchAsync(async (req, res) => {
   const editable = await getEditableStatuses(req.entityId, 'PRF_CALF');
-  const doc = await PrfCalf.findOne({ _id: req.params.id, ...req.tenantFilter, status: { $in: editable } });
+  // Phase G4.5e — widen for proxy update.
+  const scope = await widenFilterForProxy(req, 'expenses', PRF_CALF_PROXY_OPTS);
+  const doc = await PrfCalf.findOne({ _id: req.params.id, ...scope, status: { $in: editable } });
   if (!doc) return res.status(404).json({ success: false, message: 'Draft PRF/CALF not found' });
 
   // Snapshot old links before update
   const oldLinkedId = doc.linked_expense_id?.toString();
   const oldLineIds = (doc.linked_expense_line_ids || []).map(id => id.toString());
 
-  Object.assign(doc, req.body);
+  // Strip ownership fields — ownership is stamped at create time only.
+  const { assigned_to: _dAssigned, bdm_id: _dBdm, recorded_on_behalf_of: _dProxy, ...safeBody } = req.body || {};
+  Object.assign(doc, safeBody);
+
+  // Audit proxy edits (when editor is not the owner).
+  const isProxyEdit = String(doc.bdm_id) !== String(req.user._id);
+  if (isProxyEdit) {
+    await ErpAuditLog.logChange({
+      entity_id: req.entityId,
+      bdm_id: doc.bdm_id,
+      log_type: 'PROXY_UPDATE',
+      target_ref: doc._id.toString(),
+      target_model: 'PrfCalf',
+      changed_by: req.user._id,
+      note: `Proxy update: ${doc.doc_type} ${doc.period}-${doc.cycle} edited by ${req.user.name || req.user._id} (${req.user.role}) on behalf of BDM ${doc.bdm_id}`
+    }).catch(err => console.error('[updatePrfCalf] PROXY_UPDATE audit failed (non-critical):', err.message));
+  }
 
   // Re-run back-linking if linked source changed
   const newLinkedId = doc.linked_expense_id?.toString();
@@ -2074,7 +2191,9 @@ const updatePrfCalf = catchAsync(async (req, res) => {
 });
 
 const getPrfCalfList = catchAsync(async (req, res) => {
-  const filter = { ...req.tenantFilter };
+  // Phase G4.5e — widen so eligible proxies see the BDMs they file on behalf of.
+  const scope = await widenFilterForProxy(req, 'expenses', PRF_CALF_PROXY_OPTS);
+  const filter = { ...scope };
   if (req.query.doc_type) filter.doc_type = req.query.doc_type;
   if (req.query.status) filter.status = req.query.status;
   if (req.query.period) filter.period = req.query.period;
@@ -2094,6 +2213,7 @@ const getPrfCalfList = catchAsync(async (req, res) => {
   const [docs, total] = await Promise.all([
     PrfCalf.find(filter)
       .populate('bdm_id', 'name')
+      .populate('recorded_on_behalf_of', 'name')
       .populate('posted_by', 'name')
       .sort({ created_at: -1 })
       .skip((page - 1) * limit).limit(limit).lean(),
@@ -2104,8 +2224,11 @@ const getPrfCalfList = catchAsync(async (req, res) => {
 });
 
 const getPrfCalfById = catchAsync(async (req, res) => {
-  const doc = await PrfCalf.findOne({ _id: req.params.id, ...req.tenantFilter })
+  // Phase G4.5e — widen for proxy reads.
+  const scope = await widenFilterForProxy(req, 'expenses', PRF_CALF_PROXY_OPTS);
+  const doc = await PrfCalf.findOne({ _id: req.params.id, ...scope })
     .populate('bdm_id', 'name')
+    .populate('recorded_on_behalf_of', 'name')
     .populate('posted_by', 'name').lean();
   if (!doc) return res.status(404).json({ success: false, message: 'PRF/CALF not found' });
   res.json({ success: true, data: doc });
@@ -2117,7 +2240,9 @@ const getPrfCalfById = catchAsync(async (req, res) => {
 // expenses drew against this CALF" in one place (Phase 33).
 // ─────────────────────────────────────────────────────────────────────────
 const getLinkedExpenses = catchAsync(async (req, res) => {
-  const calf = await PrfCalf.findOne({ _id: req.params.id, ...req.tenantFilter }).lean();
+  // Phase G4.5e — widen for proxy drill-down reads.
+  const scope = await widenFilterForProxy(req, 'expenses', PRF_CALF_PROXY_OPTS);
+  const calf = await PrfCalf.findOne({ _id: req.params.id, ...scope }).lean();
   if (!calf) return res.status(404).json({ success: false, message: 'CALF not found' });
 
   // Fuel entries (per-day CarLogbookEntry.fuel_entries[j] with calf_id = this CALF)
@@ -2191,7 +2316,9 @@ const getLinkedExpenses = catchAsync(async (req, res) => {
 });
 
 const deleteDraftPrfCalf = catchAsync(async (req, res) => {
-  const result = await PrfCalf.findOneAndDelete({ _id: req.params.id, ...req.tenantFilter, status: 'DRAFT' });
+  // Phase G4.5e — proxy can delete DRAFT of BDMs they file on behalf of.
+  const scope = await widenFilterForProxy(req, 'expenses', PRF_CALF_PROXY_OPTS);
+  const result = await PrfCalf.findOneAndDelete({ _id: req.params.id, ...scope, status: 'DRAFT' });
   if (!result) return res.status(404).json({ success: false, message: 'Draft PRF/CALF not found' });
 
   // Clean up calf_id references on linked expense/logbook lines (prevent orphaned refs)
@@ -2218,7 +2345,9 @@ const deleteDraftPrfCalf = catchAsync(async (req, res) => {
 
 const validatePrfCalf = catchAsync(async (req, res) => {
   const editable = await getEditableStatuses(req.entityId, 'PRF_CALF');
-  const docs = await PrfCalf.find({ ...req.tenantFilter, status: { $in: editable } });
+  // Phase G4.5e — widen for proxy validate.
+  const scope = await widenFilterForProxy(req, 'expenses', PRF_CALF_PROXY_OPTS);
+  const docs = await PrfCalf.find({ ...scope, status: { $in: editable } });
 
   for (const doc of docs) {
     const errors = [];
@@ -2298,8 +2427,14 @@ const validatePrfCalf = catchAsync(async (req, res) => {
 });
 
 const submitPrfCalf = catchAsync(async (req, res) => {
-  const docs = await PrfCalf.find({ ...req.tenantFilter, status: 'VALID' });
+  // Phase G4.5e — widen so eligible proxies can submit on behalf.
+  const scope = await widenFilterForProxy(req, 'expenses', PRF_CALF_PROXY_OPTS);
+  const docs = await PrfCalf.find({ ...scope, status: 'VALID' });
   if (!docs.length) return res.status(400).json({ success: false, message: 'No VALID PRF/CALFs to submit' });
+
+  // Phase G4.5e — force hub routing when ANY doc was proxy-created (Rule #20).
+  const proxiedDoc = docs.find(d => d.recorded_on_behalf_of);
+  const hasProxy = !!proxiedDoc;
 
   // Authority matrix gate
   const { gateApproval } = require('../services/approvalService');
@@ -2314,6 +2449,8 @@ const submitPrfCalf = catchAsync(async (req, res) => {
     description: `Submit ${docs.length} PRF/CALF doc${docs.length === 1 ? '' : 's'} (total ₱${prfCalfTotal.toLocaleString()})`,
     requesterId: req.user._id,
     requesterName: req.user.name || req.user.email,
+    forceApproval: hasProxy,
+    ownerBdmId: proxiedDoc?.bdm_id,
   }, res);
   if (gated) return;
 
@@ -2512,7 +2649,10 @@ const submitPrfCalf = catchAsync(async (req, res) => {
 
 const reopenPrfCalf = catchAsync(async (req, res) => {
   const { prf_calf_ids } = req.body;
-  const docs = await PrfCalf.find({ _id: { $in: prf_calf_ids }, ...req.tenantFilter, status: 'POSTED' });
+  // Phase G4.5e — widen for proxy reopen. Reopen sub-perm is still gated at
+  // the route layer (expenses.reopen).
+  const scope = await widenFilterForProxy(req, 'expenses', PRF_CALF_PROXY_OPTS);
+  const docs = await PrfCalf.find({ _id: { $in: prf_calf_ids }, ...scope, status: 'POSTED' });
   if (!docs.length) return res.status(400).json({ success: false, message: 'No POSTED PRF/CALFs to reopen' });
 
   const reopenedDocs = [];
@@ -2775,9 +2915,14 @@ const getSmerCrmVisitDetail = catchAsync(async (req, res) => {
 const getPendingPartnerRebates = catchAsync(async (req, res) => {
   const Collection = require('../models/Collection');
 
+  // Phase G4.5e — widen so eligible proxies see POSTED collections for BDMs
+  // they file on behalf of (lets Judy/Jay Ann generate PRFs for partner rebates
+  // accumulated on field-BDM collections). Reuses PRF_CALF proxy sub-perm.
+  const scope = await widenFilterForProxy(req, 'expenses', PRF_CALF_PROXY_OPTS);
+
   // Get all POSTED collections for this BDM with partner tags
   const collections = await Collection.find({
-    ...req.tenantFilter,
+    ...scope,
     status: 'POSTED',
     'settled_csis.partner_tags.0': { $exists: true }
   }).lean();
@@ -2810,9 +2955,11 @@ const getPendingPartnerRebates = catchAsync(async (req, res) => {
     }
   }
 
-  // Subtract POSTED PRFs for each partner + capture last known bank details
+  // Phase G4.5e — Subtract POSTED PRFs for each partner + capture last known
+  // bank details. Reuse the same widened scope so proxies see the PRF history
+  // of the BDMs they file on behalf of.
   const allPrfs = await PrfCalf.find({
-    ...req.tenantFilter,
+    ...scope,
     doc_type: 'PRF',
     prf_type: { $ne: 'PERSONAL_REIMBURSEMENT' }
   }).sort({ created_at: -1 }).lean();
@@ -2862,9 +3009,14 @@ const getPendingPartnerRebates = catchAsync(async (req, res) => {
 const getPendingCalfLines = catchAsync(async (req, res) => {
   const pending = [];
 
+  // Phase G4.5e — widen so eligible proxies see pending CALF lines across the
+  // BDMs they file on behalf of. Reuses the PRF_CALF proxy sub-perm because
+  // this is the CALF auto-link surface.
+  const scope = await widenFilterForProxy(req, 'expenses', PRF_CALF_PROXY_OPTS);
+
   // 1. ACCESS expense lines needing CALF
   const expenses = await ExpenseEntry.find({
-    ...req.tenantFilter,
+    ...scope,
     'lines.calf_required': true
   }).lean();
 
@@ -2895,9 +3047,10 @@ const getPendingCalfLines = catchAsync(async (req, res) => {
   }
 
   // 2. Car Logbook fuel entries paid with company funds (non-cash)
+  //    Reuse the same widened scope so proxies see target-BDM logbooks too.
   const COMPANY_FUEL_MODES = ['FLEET_CARD', 'CARD', 'GCASH'];
   const logbooks = await CarLogbookEntry.find({
-    ...req.tenantFilter,
+    ...scope,
     'fuel_entries.payment_mode': { $in: COMPANY_FUEL_MODES }
   }).lean();
 
@@ -2925,9 +3078,10 @@ const getPendingCalfLines = catchAsync(async (req, res) => {
     });
   }
 
-  // Filter out items that already have CALF linked
+  // Phase G4.5e — Filter out items that already have CALF linked. Reuse the
+  // proxy-widened scope so the dedup set correctly reflects target BDMs' CALFs.
   const existingCalfs = await PrfCalf.find({
-    ...req.tenantFilter,
+    ...scope,
     doc_type: 'CALF',
     linked_expense_id: { $exists: true }
   }).lean();

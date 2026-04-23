@@ -5134,3 +5134,102 @@ docs/PHASETASK-ERP.md                                      # Phase P1 status upd
 - `npx vite build` — clean in 13.14s, zero errors
 - No new npm dependencies
 - Backward compatible: existing entry pages unchanged, proxy flow is additive
+
+---
+
+## Phase G4.5e — Car Logbook + PRF/CALF + Undertaking Proxy Ports (April 23, 2026)
+
+### Why
+Apr 23 policy decision locked: field BDMs focus on CRM (where they generate revenue); office-based eBDMs (Judy Mae Patrocinio, Jay Ann Protacio) proxy ERP for them. Dry-run of `backfillEntityIdsFromFra.js` on prod showed 5 field-BDM users would drift into cross-entity scope if `--apply` ran — opposite of policy. `--apply` held.
+
+The revocation of field-BDM ERP access + deactivation of cross-entity FRAs was blocked because three high-frequency modules had no proxy path:
+- **Fuel / Car Logbook** — per-cycle LOGBOOK submit + per-fuel Submit Fuel approval
+- **CALF (PRF_CALF)** — company-advance liquidation, *gating* non-cash fuel posting (expenseController:941 cascade)
+- **Undertaking** — GRN receipt confirmation, cascades to GRN APPROVED
+
+Without these, revoking BDM ERP access = workflow deadlock. G4.5e ships all three in one phase.
+
+### What shipped
+
+**Shared helper extension** (back-compat, one-line):
+- `backend/erp/utils/resolveOwnerScope.js` — `resolveOwnerForWrite` / `widenFilterForProxy` / `canProxyEntry` / `getProxyRolesForModule` / `getValidOwnerRolesForModule` accept optional `{ lookupCode }` so a module that shares a sub-permission namespace (e.g. `expenses.car_logbook_proxy`) can still have its own PROXY_ENTRY_ROLES / VALID_OWNER_ROLES lookup row. Falls back to `moduleKey.toUpperCase()` — every pre-G4.5e call site unchanged.
+
+**Car Logbook (+ per-fuel) — `expenseController.js`**
+- `createCarLogbook`, `updateCarLogbook`, `getCarLogbookList`, `getCarLogbookById`, `deleteDraftCarLogbook`, `validateCarLogbook`, `submitFuelEntryForApproval`, `submitCarLogbook`, `reopenCarLogbook`, `getSmerDailyByDate`, `getSmerDestinationsBatch` all use the shared helper with `(moduleKey='expenses', subKey='car_logbook_proxy', lookupCode='CAR_LOGBOOK')`.
+- Legacy `resolveCarLogbookScope` helper deleted — replaced by `resolveOwnerForWrite` (writes) + `widenFilterForProxy` (reads) + inline Rule #21 `?bdm_id=` narrowing.
+- `submitCarLogbook` `gateApproval({ forceApproval: !!cycleDoc.recorded_on_behalf_of, ownerBdmId: cycleDoc.bdm_id })` — Rule #20 four-eyes for any cycle containing a proxy-created day.
+- `submitFuelEntryForApproval` — same pattern, reading from `dayDoc.recorded_on_behalf_of`.
+- `PROXY_CREATE` / `PROXY_UPDATE` audit codes (unified with Sales/Collections/GRN/Expenses).
+
+**CALF / PRF_CALF — `expenseController.js`**
+- `createPrfCalf`, `updatePrfCalf`, `getPrfCalfList`, `getPrfCalfById`, `getLinkedExpenses`, `deleteDraftPrfCalf`, `validatePrfCalf`, `submitPrfCalf`, `reopenPrfCalf`, `getPendingPartnerRebates`, `getPendingCalfLines` use `(moduleKey='expenses', subKey='prf_calf_proxy', lookupCode='PRF_CALF')`.
+- `submitPrfCalf` sets `forceApproval` when any doc has `recorded_on_behalf_of`.
+- **Auto-CALF propagation (integrity)**: `autoCalfForSource` now stamps `recorded_on_behalf_of` from the source expense / logbook so the proxy chain is unbroken across source → CALF → journal. Without this, the auto-CALF for a proxy-created expense would look self-created.
+
+**Undertaking — `undertakingController.js`**
+- UT has no create path (GRN's `autoUndertakingForGrn` creates it inheriting `bdm_id` + `recorded_on_behalf_of`).
+- `getUndertakingList`, `getUndertakingById`, `submitUndertaking`, `acknowledgeUndertaking`, `rejectUndertaking` use `(moduleKey='inventory', subKey='undertaking_proxy', lookupCode='UNDERTAKING')` via `widenFilterForProxy` / `canProxyEntry`.
+- `submitUndertaking` — `forceApproval: !!doc.recorded_on_behalf_of` + `PROXY_SUBMIT` audit.
+
+**Model schema (additive)**
+- `CarLogbookEntry.recorded_on_behalf_of`
+- `CarLogbookCycle.recorded_on_behalf_of` — propagated from per-day docs in `refreshTotalsFromDays` (if ANY day was proxy-created, cycle inherits)
+- `PrfCalf.recorded_on_behalf_of`
+
+**Sub-perm seeds (ERP_SUB_PERMISSION)**
+- `EXPENSES__CAR_LOGBOOK_PROXY` (module=expenses, key=car_logbook_proxy)
+- `EXPENSES__PRF_CALF_PROXY` (module=expenses, key=prf_calf_proxy)
+- `INVENTORY__UNDERTAKING_PROXY` (module=inventory, key=undertaking_proxy)
+
+**Lookup seeds** — `PROXY_ENTRY_ROLES` + `VALID_OWNER_ROLES` each gain 3 rows: `CAR_LOGBOOK`, `PRF_CALF`, `UNDERTAKING`.
+
+**Frontend**
+- `CarLogbook.jsx` — existing per-BDM picker reused for both read-audit and proxy-write. `canProxyCarLogbook` soft-gate: `viewingSelf || (canProxy && viewingOther)`. Send `assigned_to = selectedBdmId` on create; privileged/proxy submits pass `bdm_id` to validate/submit. Dual banner: purple "Proxy write mode" when eligible, blue "read-only" when not.
+- `PrfCalf.jsx` — `OwnerPicker` mounted on create form (renders null when ineligible). Auto-defaults to source doc's `bdm_id` when creating CALF from pending lines / PRF from pending rebates. "Proxied" pill on list row.
+- `UndertakingDetail.jsx` — `canSubmit` soft-gate includes `inventory.undertaking_proxy` sub-perm. Purple "Proxied" badge in header when `recorded_on_behalf_of` present.
+- `WorkflowGuide.jsx` — `car-logbook`, `prf-calf`, `undertaking-entry` tips all describe Phase G4.5e proxy flow, Rule #20 four-eyes, and lookup-driven configurability.
+
+**Diagnostic**
+- `backend/erp/scripts/findOrphanedOwnerRecords.js` — extended from 4 → 7 collections: adds `prf_calf` (PrfCalf), `car_logbook_day` (CarLogbookEntry), `undertaking` (Undertaking). CSV row tolerates models without an amount field.
+
+**Health check (section 5)**
+- Covers 8 modules (was 5). Asserts sub-perm seeds present. Asserts expenseController uses `car_logbook_proxy` + `prf_calf_proxy` + the correct `lookupCode` arguments. Asserts `resolveCarLogbookScope` is deleted. Asserts `autoCalfForSource` propagates `recorded_on_behalf_of`. Asserts undertakingController is proxy-aware. Asserts new `recorded_on_behalf_of` fields on 3 new models. Asserts frontend pages render proxy indicator / proxy-write wiring.
+
+### Integrity guarantees
+- **Four-eyes (Rule #20)** — every proxied submit force-routes through the Approval Hub (car logbook cycle, fuel entry, CALF, UT).
+- **Rule #21** — no silent self-fill; helper throws 400 when a non-BDM caller omits `assigned_to`.
+- **Entity isolation** — helper still validates target user's entity; proxy cannot cross entities.
+- **Ownership-lock on update** — `assigned_to` / `bdm_id` / `recorded_on_behalf_of` stripped from body on all update paths (stamped at create time only).
+- **Auto-CALF chain** — proxy audit propagates source → CALF, so sweeps by `findOrphanedOwnerRecords` catch orphans end-to-end.
+- **Cycle upsert** — `CarLogbookCycle` binds on the resolved `bdm_id` (target BDM), never the caller's id; proxy-created days lift their `recorded_on_behalf_of` into the cycle wrapper for forceApproval.
+
+### Subscription-scalability (Rules #3 / #19)
+- All role lists are lookup-driven (`PROXY_ENTRY_ROLES` + `VALID_OWNER_ROLES`) — admin-editable via Control Center, no code changes.
+- Sub-perm namespace decoupled from lookup code via helper's optional `lookupCode` — subscribers can grant `expenses.car_logbook_proxy` without also granting `expenses.proxy_entry`.
+- No hardcoded business values; CALF gate still honors president-only override (`ExpenseEntry.calf_override`).
+
+### Files touched (Phase G4.5e)
+```
+backend/erp/utils/resolveOwnerScope.js                # + optional lookupCode (back-compat)
+backend/erp/models/CarLogbookEntry.js                 # + recorded_on_behalf_of
+backend/erp/models/CarLogbookCycle.js                 # + recorded_on_behalf_of + propagate in refreshTotalsFromDays
+backend/erp/models/PrfCalf.js                         # + recorded_on_behalf_of
+backend/erp/controllers/expenseController.js         # delete resolveCarLogbookScope; port car_logbook + prf_calf; autoCalfForSource propagation
+backend/erp/controllers/undertakingController.js     # widenFilterForProxy + canProxyEntry + forceApproval + PROXY_SUBMIT audit
+backend/erp/controllers/lookupGenericController.js   # + 3 sub-perms + 3 PROXY_ENTRY_ROLES rows + 3 VALID_OWNER_ROLES rows
+backend/erp/scripts/findOrphanedOwnerRecords.js      # + 3 modules (prf_calf, car_logbook_day, undertaking)
+frontend/src/erp/pages/CarLogbook.jsx                 # canProxyCarLogbook gate; assigned_to on create; dual banner
+frontend/src/erp/pages/PrfCalf.jsx                    # OwnerPicker + assignedTo + Proxied pill + auto-default from source bdm
+frontend/src/erp/pages/UndertakingDetail.jsx          # submit gate includes undertaking_proxy; Proxied badge
+frontend/src/erp/components/WorkflowGuide.jsx         # car-logbook / prf-calf / undertaking-entry tips
+scripts/check-system-health.js                        # section 5 extended for G4.5e (8 modules, 3 sub-perms, controller + model checks)
+CLAUDE-ERP.md                                         # this section
+docs/PHASETASK-ERP.md                                 # Phase G4.5e entry
+```
+
+### Post-ship operational steps (not performed by code)
+1. Deploy G4.5e to prod.
+2. Admin: enable `EXPENSES__CAR_LOGBOOK_PROXY`, `EXPENSES__PRF_CALF_PROXY`, `INVENTORY__UNDERTAKING_PROXY` on Judy + Jay Ann's Access Template (Control Center → Access Templates).
+3. Admin: optionally add `contractor` to `PROXY_ENTRY_ROLES.CAR_LOGBOOK` / `.PRF_CALF` / `.UNDERTAKING` metadata.roles (defaults to admin/finance/president; contractor must be added to allow eBDMs to proxy).
+4. Smoke test: Judy pulls up a field BDM's Car Logbook → Save → Validate → Submit → expect 202 Approval Hub, hub card shows owner = target BDM, proxy audit = Judy.
+5. Only after smoke tests pass: run `backfillEntityIdsFromFra.js --apply` and revoke cross-entity FRAs per the BDMs→CRM-only policy.

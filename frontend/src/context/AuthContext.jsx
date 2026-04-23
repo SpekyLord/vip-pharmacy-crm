@@ -13,6 +13,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import authService from '../services/authService';
 import { classifyError } from '../utils/classifyError';
+import offlineManager from '../utils/offlineManager';
 import { AuthContext } from './AuthContextObject';
 
 const authBootstrapState = {
@@ -59,6 +60,9 @@ export const AuthProvider = ({ children }) => {
     primeAuthBootstrapState(null);
     setUser(null);
     setLoading(false);
+    // Tell the SW the owner is gone so queued offline drafts don't replay
+    // under whoever logs in next on this device.
+    offlineManager.clearCurrentUser();
   }, []);
 
   // Listen for auth:logout events from API interceptor
@@ -79,12 +83,20 @@ export const AuthProvider = ({ children }) => {
         const initialUser = await loadInitialUser();
         if (isMounted) {
           setUser(initialUser);
+          // Sync the SW's current-user marker on session bootstrap so queued
+          // replays run under the right owner even if the SW restarted.
+          if (initialUser?._id) {
+            offlineManager.setCurrentUser(initialUser._id);
+          } else {
+            offlineManager.clearCurrentUser();
+          }
         }
       } catch {
         // No valid session - user is not authenticated
         // No localStorage cleanup needed - cookies are httpOnly
         if (isMounted) {
           setUser(null);
+          offlineManager.clearCurrentUser();
         }
       } finally {
         if (isMounted) {
@@ -116,6 +128,9 @@ export const AuthProvider = ({ children }) => {
       }
       primeAuthBootstrapState(userData);
       setUser(userData);
+      // Stamp the SW with the new owner so any queued drafts filed by this
+      // user replay under their auth (and others' drafts stay parked).
+      offlineManager.setCurrentUser(userData._id);
       return response;
     } catch (err) {
       const { type, message } = classifyError(err, 'Login failed');
@@ -138,6 +153,9 @@ export const AuthProvider = ({ children }) => {
       // Clear user state - cookies are cleared by backend
       primeAuthBootstrapState(null);
       setUser(null);
+      // Clear the SW's current-user marker so queued drafts don't replay
+      // under the next person who logs in on this device.
+      offlineManager.clearCurrentUser();
     }
   }, []);
 

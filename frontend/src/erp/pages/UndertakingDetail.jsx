@@ -106,10 +106,15 @@ export default function UndertakingDetail() {
     return lines.reduce((n, l) => n + (l.variance_flag ? 1 : 0), 0);
   }, [lines]);
 
-  // Only the BDM owner or a privileged user can submit a DRAFT for approval.
+  // Phase G4.5e — proxy-eligible callers (admin/finance with the sub-perm, or
+  // an eBDM contractor granted inventory.undertaking_proxy) can also submit on
+  // behalf. Lookup-driven role check is enforced at the backend; the frontend
+  // only needs the sub-perm check to surface the button.
+  const hasUndertakingProxy = !!(user?.erp_access?.sub_permissions?.inventory?.undertaking_proxy);
   const canSubmit = isDraft && (
     managementLike ||
-    (doc?.bdm_id && user?._id && String(doc.bdm_id._id || doc.bdm_id) === String(user._id))
+    (doc?.bdm_id && user?._id && String(doc.bdm_id._id || doc.bdm_id) === String(user._id)) ||
+    hasUndertakingProxy
   );
 
   const handleSubmit = async () => {
@@ -241,6 +246,14 @@ export default function UndertakingDetail() {
                 Receipt date: {doc.receipt_date ? new Date(doc.receipt_date).toLocaleDateString('en-PH') : '—'}
                 {doc.warehouse_id?.warehouse_name && <> · Warehouse: {doc.warehouse_id.warehouse_name}</>}
                 {doc.bdm_id?.name && <> · BDM: {doc.bdm_id.name}</>}
+                {/* Phase G4.5e — proxy badge. Inherited from GRN via
+                    autoUndertakingForGrn when the GRN was itself proxy-created. */}
+                {doc.recorded_on_behalf_of && (
+                  <>
+                    {' '}
+                    <span title={`Recorded on behalf by ${doc.recorded_on_behalf_of?.name || 'proxy'}`} style={{ padding: '1px 6px', borderRadius: 999, fontSize: 10, fontWeight: 700, background: '#f5f3ff', color: '#6d28d9', border: '1px solid #c4b5fd' }}>Proxied</span>
+                  </>
+                )}
               </div>
             </div>
             <div className="ut-head-attachments">
