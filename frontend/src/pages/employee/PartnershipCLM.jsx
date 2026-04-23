@@ -13,8 +13,11 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import CLMPresenter from '../../components/employee/CLMPresenter';
+import OfflineBanner from '../../components/common/OfflineBanner';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import { useAuth } from '../../hooks/useAuth';
+import { useOffline } from '../../hooks/useOffline';
+import { offlineStore } from '../../utils/offlineStore';
 import doctorService from '../../services/doctorService';
 import productService from '../../services/productService';
 import clmService from '../../services/clmService';
@@ -41,6 +44,7 @@ import {
 
 const PartnershipCLM = () => {
   useAuth();
+  const { isOnline } = useOffline();
 
   // ── State ─────────────────────────────────────────────────────
   const [doctors, setDoctors] = useState([]);
@@ -68,20 +72,58 @@ const PartnershipCLM = () => {
     followUpDate: '',
   });
 
-  // ── Fetch data ────────────────────────────────────────────────
+  // ── Fetch data (with offline fallback) ────────────────────────
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const [doctorRes, sessionRes, productRes] = await Promise.all([
-        doctorService.getAll({ limit: 500 }),
-        clmService.getMySessions({ limit: 50 }),
-        productService.getAll({ limit: 500 }),
-      ]);
-      setDoctors(doctorRes.data || []);
-      setSessions(sessionRes.data || []);
-      setProducts((productRes.data || []).filter((p) => p.isActive !== false));
+      if (navigator.onLine) {
+        // Online: fetch from API and cache for offline use
+        const [doctorRes, sessionRes, productRes] = await Promise.all([
+          doctorService.getAll({ limit: 500 }),
+          clmService.getMySessions({ limit: 50 }),
+          productService.getAll({ limit: 500 }),
+        ]);
+        const doctorData = doctorRes.data || [];
+        const productData = (productRes.data || []).filter((p) => p.isActive !== false);
+        setDoctors(doctorData);
+        setSessions(sessionRes.data || []);
+        setProducts(productData);
+        // Cache for offline use (fire-and-forget)
+        offlineStore.cacheDoctors(doctorData);
+        offlineStore.cacheProducts(productData);
+      } else {
+        // Offline: load from IndexedDB cache
+        const [cachedDoctors, cachedProducts] = await Promise.all([
+          offlineStore.getCachedDoctors(),
+          offlineStore.getCachedProducts(),
+        ]);
+        setDoctors(cachedDoctors);
+        setProducts(cachedProducts.filter((p) => p.isActive !== false));
+        setSessions([]); // Sessions not available offline
+        if (cachedDoctors.length > 0) {
+          toast('Loaded cached data for offline use', { icon: '\u{1F4E1}' });
+        } else {
+          toast.error('No cached data available. Connect to internet first to load VIP Clients.');
+        }
+      }
     } catch {
-      toast.error('Failed to load data');
+      // Network error — try offline cache as fallback
+      try {
+        const [cachedDoctors, cachedProducts] = await Promise.all([
+          offlineStore.getCachedDoctors(),
+          offlineStore.getCachedProducts(),
+        ]);
+        if (cachedDoctors.length > 0) {
+          setDoctors(cachedDoctors);
+          setProducts(cachedProducts.filter((p) => p.isActive !== false));
+          setSessions([]);
+          toast('Using cached data (offline)', { icon: '\u{1F4E1}' });
+        } else {
+          toast.error('Failed to load data and no offline cache available');
+        }
+      } catch {
+        toast.error('Failed to load data');
+      }
     } finally {
       setLoading(false);
     }
@@ -136,7 +178,7 @@ const PartnershipCLM = () => {
     });
   };
 
-  // ── Start presentation ────────────────────────────────────────
+  // ── Start presentation (works offline) ────────────────────────
   const handleStartPresentation = async () => {
     if (!selectedDoctor) return;
     try {
@@ -152,23 +194,49 @@ const PartnershipCLM = () => {
         }
       }
       const productIds = Array.from(selectedProductIds);
-      const res = await clmService.startSession(selectedDoctor._id, location, productIds);
-      setActiveSession(res.data);
+
+      if (navigator.onLine) {
+        // Online: normal API flow
+        const res = await clmService.startSession(selectedDoctor._id, location, productIds);
+        setActiveSession(res.data);
+      } else {
+        // Offline: create a local draft session
+        const offlineSession = {
+          _id: `offline_${Date.now()}`,
+          offlineQueued: true,
+          doctor: selectedDoctor._id,
+          location,
+          productIds,
+          startedAt: new Date().toISOString(),
+        };
+        setActiveSession(offlineSession);
+        toast('Presenting offline — session will sync later', { icon: '\u{1F4E1}' });
+      }
       setStep('presenting');
       toast.success('Presentation started');
     } catch {
-      toast.error('Failed to start session');
+      // Network error — fall back to offline mode
+      const offlineSession = {
+        _id: `offline_${Date.now()}`,
+        offlineQueued: true,
+        doctor: selectedDoctor._id,
+        startedAt: new Date().toISOString(),
+      };
+      setActiveSession(offlineSession);
+      setStep('presenting');
+      toast('Presenting offline — session will sync later', { icon: '\u{1F4E1}' });
     }
   };
 
-  // ── End presentation ──────────────────────────────────────────
+  // ── End presentation (offline-aware) ─────────────────────────
   const handleEndPresentation = async (sessionId, slideEvents) => {
     setStep('doctor');
-    if (sessionId && slideEvents?.length) {
+    // Try to record slide events (non-critical, SW will queue if offline)
+    if (sessionId && slideEvents?.length && !String(sessionId).startsWith('offline_')) {
       try {
         await clmService.recordSlideEvents(sessionId, slideEvents);
       } catch {
-        // Non-critical
+        // Non-critical — queued by service worker if offline
       }
     }
     // Initialize product interest map from selected products
@@ -181,7 +249,7 @@ const PartnershipCLM = () => {
     setShowEndModal(true);
   };
 
-  // ── Submit post-session form ──────────────────────────────────
+  // ── Submit post-session form (offline-aware) ──────────────────
   const handleSubmitEnd = async () => {
     if (!endSessionData?.sessionId) {
       setShowEndModal(false);
@@ -192,27 +260,73 @@ const PartnershipCLM = () => {
         productId,
         interestShown: interested,
       }));
-      await clmService.endSession(endSessionData.sessionId, {
-        ...endForm,
-        productsPresented,
-      });
-      toast.success('Session recorded');
+
+      const isOfflineSession = String(endSessionData.sessionId).startsWith('offline_');
+
+      if (isOfflineSession) {
+        // Save complete draft to IndexedDB for later sync
+        await offlineStore.saveDraft({
+          doctorId: selectedDoctor?._id,
+          doctorName: selectedDoctor ? `${selectedDoctor.firstName} ${selectedDoctor.lastName}` : 'Unknown',
+          location: activeSession?.location || {},
+          productIds: Array.from(selectedProductIds),
+          slideEvents: endSessionData.slideEvents || [],
+          endForm: { ...endForm },
+          productsPresented,
+          startedAt: activeSession?.startedAt,
+          endedAt: new Date().toISOString(),
+        });
+        toast.success('Session saved offline \u2014 will sync when connected');
+      } else {
+        // Online: normal API flow (SW will queue if network fails)
+        await clmService.endSession(endSessionData.sessionId, {
+          ...endForm,
+          productsPresented,
+        });
+        toast.success('Session recorded');
+      }
+
       setShowEndModal(false);
       setEndSessionData(null);
       setProductInterest({});
       setEndForm({ interestLevel: 3, outcome: 'maybe', bdmNotes: '', followUpDate: '' });
-      fetchData();
+      if (!isOfflineSession) fetchData();
     } catch {
-      toast.error('Failed to save session');
+      // Last resort: save as offline draft
+      try {
+        const productsPresented = Object.entries(productInterest).map(([productId, interested]) => ({
+          productId,
+          interestShown: interested,
+        }));
+        await offlineStore.saveDraft({
+          doctorId: selectedDoctor?._id,
+          doctorName: selectedDoctor ? `${selectedDoctor.firstName} ${selectedDoctor.lastName}` : 'Unknown',
+          location: activeSession?.location || {},
+          productIds: Array.from(selectedProductIds),
+          slideEvents: endSessionData.slideEvents || [],
+          endForm: { ...endForm },
+          productsPresented,
+          startedAt: activeSession?.startedAt,
+          endedAt: new Date().toISOString(),
+        });
+        toast.success('Network error \u2014 session saved offline');
+      } catch {
+        toast.error('Failed to save session');
+      }
+      setShowEndModal(false);
+      setEndSessionData(null);
+      setProductInterest({});
+      setEndForm({ interestLevel: 3, outcome: 'maybe', bdmNotes: '', followUpDate: '' });
     }
   };
 
-  // ── QR displayed callback ─────────────────────────────────────
+   // ── QR displayed callback (skip for offline sessions) ─────────
   const handleQrDisplayed = async (sessionId) => {
+    if (!sessionId || String(sessionId).startsWith('offline_')) return;
     try {
       await clmService.markQrDisplayed(sessionId);
     } catch {
-      // Non-critical
+      // Non-critical — SW will queue if offline
     }
   };
 
@@ -254,6 +368,7 @@ const PartnershipCLM = () => {
     <div className="clm-layout">
       <style>{pageStyles}</style>
       <Navbar />
+      <OfflineBanner />
       <div className="clm-content">
         <Sidebar />
         <main className="clm-main">
