@@ -13,8 +13,8 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Clock, User, Filter, ChevronDown, ChevronUp, Eye,
-  Play, ArrowLeft, CheckCircle2, AlertTriangle, XCircle,
+  User, Filter, ChevronDown, ChevronUp, Eye,
+  Play, ArrowLeft, CheckCircle2, XCircle,
   BarChart3, RefreshCw, Camera, Receipt, FileText,
   Truck, Fuel, Wallet, MapPin,
 } from 'lucide-react';

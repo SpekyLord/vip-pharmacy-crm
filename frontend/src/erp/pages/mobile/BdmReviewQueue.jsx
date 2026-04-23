@@ -9,9 +9,9 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import {
-  CheckCircle2, AlertTriangle, XCircle, Clock,
+  CheckCircle2, AlertTriangle,
   Receipt, Camera, FileText, Truck, Fuel, Wallet,
-  ChevronRight, RefreshCw, MessageSquare, ThumbsUp,
+  RefreshCw, MessageSquare, ThumbsUp,
   ThumbsDown, X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -183,7 +183,7 @@ function ReviewCard({ item, onAcknowledge, onDispute, loading }) {
 
 // ── Main Component ──
 export default function BdmReviewQueue() {
-  const { user } = useAuth();
+  useAuth();
   const { getMyReviewQueue, acknowledgeCapture, disputeCapture, loading } = useCaptureSubmissions();
 
   const [items, setItems] = useState([]);

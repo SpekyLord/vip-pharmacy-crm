@@ -216,7 +216,7 @@ const SlideContent = ({ slide, doctorName, products }) => {
       return (
         <div className="clm-slide slide-connect">
           <img src={VIP_LOGO_CIRCLE} alt="VIP" className="connect-logo" />
-          <h2>Let's Grow Together</h2>
+          <h2>Let&apos;s Grow Together</h2>
           <p className="connect-subtitle">Interested in learning more about the partnership?</p>
           <div className="connect-cta">
             <div className="connect-messenger"><MessageCircle size={24} /><div><h3>Messenger Integration</h3><p>Coming soon — pending Meta approval</p></div></div>

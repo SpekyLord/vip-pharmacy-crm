@@ -13,7 +13,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Camera, Receipt, FileText, Truck, Fuel, Wallet,
-  MapPin, Clock, CheckCircle2, AlertTriangle, Upload,
+  MapPin, Clock, Upload,
   ChevronRight, RefreshCw, X,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -357,7 +357,7 @@ function PendingBadge({ count }) {
 
 // ── Main Component ──
 export default function BdmCaptureHub() {
-  const { user } = useAuth();
+  useAuth();
   const { createCapture, getMyCaptures, loading } = useCaptureSubmissions();
   const { gps } = useGps();
 
