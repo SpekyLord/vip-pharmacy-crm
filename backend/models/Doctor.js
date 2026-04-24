@@ -29,6 +29,15 @@ const doctorSchema = new mongoose.Schema(
       trim: true,
       maxlength: [50, 'Last name cannot exceed 50 characters'],
     },
+    // Phase A.5 (Apr 2026) — Canonical name key mirroring ERP Customer.customer_name_clean
+    // and Hospital.hospital_name_clean. Populated by pre-save / pre-findOneAndUpdate hooks
+    // from lastName + firstName. Non-unique today (A.5.1); flipped to globally unique by
+    // A.5.2 migration script after admin dedup via A.5.5 merge tool. See plan:
+    // ~/.claude/plans/phase-a5-canonical-vip-client.md
+    vip_client_name_clean: {
+      type: String,
+      trim: true,
+    },
     // Free-form specialization (client uses "Pedia Hema", "Im Car", "Breast Surg", etc.)
     specialization: {
       type: String,
@@ -93,7 +102,18 @@ const doctorSchema = new mongoose.Schema(
       required: true,
     },
     // Employee assigned to visit this doctor
+    // NOTE: Scalar today. A.5.4 (not yet shipped) flips this to an array so multiple BDMs
+    // can cover one VIP Client (e.g. Jake + Romela both visiting Dr. Sharon in Iloilo).
+    // `primaryAssignee` below is the forward-compatible scalar that A.5.4 migrates to.
     assignedTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    // Phase A.5 (Apr 2026) — Primary ownership scalar. Forward-compatible with A.5.4's
+    // `assignedTo` scalar→array flip. Today it mirrors `assignedTo`; after A.5.4 it stays
+    // scalar while `assignedTo[]` holds every BDM who covers this MD. The A.5.1 migration
+    // script seeds this from the existing `assignedTo` scalar so no app-level read fails.
+    primaryAssignee: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
     },
@@ -104,6 +124,19 @@ const doctorSchema = new mongoose.Schema(
     isActive: {
       type: Boolean,
       default: true,
+    },
+    // Phase A.5 (Apr 2026) — Soft-delete marker set by A.5.5 merge tool. When populated,
+    // this Doctor was absorbed into `mergedInto`. Kept for 30 days after `mergedAt` for
+    // rollback; hard-deleted by daily cron thereafter. A Doctor with `mergedInto` must
+    // also have `isActive: false` (enforced by health check).
+    mergedInto: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Doctor',
+      default: null,
+    },
+    mergedAt: {
+      type: Date,
+      default: null,
     },
     // Clinic/office schedule for planning
     clinicSchedule: {
@@ -275,6 +308,15 @@ doctorSchema.index({ supportDuringCoverage: 1 });
 doctorSchema.index({ programsToImplement: 1 });
 doctorSchema.index({ clientType: 1 });
 doctorSchema.index({ 'hospitals.hospital_id': 1 });
+// Phase A.5 (Apr 2026) — Canonical key lookup index. NON-UNIQUE today because
+// pre-A.5.5-dedup data contains duplicates (e.g. Jake + Romela both covering Iloilo
+// created separate "Dr. Sharon" records). A.5.2 migration script flips this to
+// `{ unique: true }` via `Doctor.syncIndexes()` AFTER admin merges duplicates through
+// the A.5.5 admin merge tool. Mirrors Customer.js:108 / Hospital.js:105 in final shape.
+doctorSchema.index({ vip_client_name_clean: 1 });
+// Phase A.5 — merged-record lookup (cron hard-delete + rollback queries)
+doctorSchema.index({ mergedInto: 1 });
+doctorSchema.index({ mergedAt: 1 });
 // Phase M1 — partner referral code is unique when set. `sparse` doesn't work here
 // because the schema writes `referralCode: null` by default, which the sparse index
 // still indexes and then collides across every unenrolled doctor. Partial filter
@@ -320,8 +362,12 @@ doctorSchema.methods.isAvailableOnDay = function (dayOfWeek) {
 };
 
 // Pre-save hook: auto-clean firstName/lastName to proper case (lookup-driven)
+// + Phase A.5 (Apr 2026): maintain vip_client_name_clean canonical key.
+// Key shape: `lastname|firstname` (lowercased, inner whitespace collapsed).
+// Mirrors Customer.customer_name_clean / Hospital.hospital_name_clean pattern.
 doctorSchema.pre('save', async function (next) {
-  if (!this.isModified('firstName') && !this.isModified('lastName')) return next();
+  const nameModified = this.isModified('firstName') || this.isModified('lastName');
+  if (!nameModified) return next();
   try {
     const { loadNameRules, cleanName } = require('../utils/nameCleanup');
     const rules = await loadNameRules(null);
@@ -331,10 +377,45 @@ doctorSchema.pre('save', async function (next) {
     if (this.isModified('lastName') && this.lastName) {
       this.lastName = cleanName(this.lastName, rules);
     }
+    // Recompute canonical key from the now-cleaned name parts.
+    const last = (this.lastName || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const first = (this.firstName || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    this.vip_client_name_clean = `${last}|${first}`;
     next();
   } catch (error) {
     next(error);
   }
+});
+
+// Phase A.5 (Apr 2026) — mirror pre-save canonical-key recomputation on update paths
+// (findOneAndUpdate / findByIdAndUpdate). Matches Customer.js:96-104 pattern. Reads the
+// incoming `$set` (or top-level) firstName/lastName; if either present, recompute clean
+// parts + canonical key into the same update operator. Does NOT apply cleanName rules
+// here (the UI-level input is trusted for casing on update — same as Customer/Hospital).
+doctorSchema.pre('findOneAndUpdate', function (next) {
+  const update = this.getUpdate() || {};
+  const $set = update.$set || {};
+  const firstName = $set.firstName !== undefined ? $set.firstName : update.firstName;
+  const lastName = $set.lastName !== undefined ? $set.lastName : update.lastName;
+  if (firstName === undefined && lastName === undefined) return next();
+
+  // Need both parts to build the key. If only one is in the update, fetch the other from
+  // the existing doc so the canonical key never goes stale.
+  const target = firstName !== undefined && lastName !== undefined
+    ? Promise.resolve({ firstName, lastName })
+    : this.model.findOne(this.getFilter()).select('firstName lastName').lean().then(doc => ({
+        firstName: firstName !== undefined ? firstName : doc?.firstName,
+        lastName: lastName !== undefined ? lastName : doc?.lastName,
+      }));
+
+  target.then(({ firstName: fn, lastName: ln }) => {
+    const last = (ln || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const first = (fn || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const clean = `${last}|${first}`;
+    if (update.$set) update.$set.vip_client_name_clean = clean;
+    else update.vip_client_name_clean = clean;
+    next();
+  }).catch(next);
 });
 
 // Pre-delete hook to cascade delete related ProductAssignments

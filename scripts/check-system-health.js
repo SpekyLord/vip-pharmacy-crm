@@ -882,6 +882,60 @@ function checkCaptureSubmissionWiring() {
   if (issues === startIssues) console.log('  ✓ CaptureSubmission + Proxy Queue wiring intact (Phase P1)');
 }
 
+// ═══ Phase G4.5h — CALF→Expense One-Acknowledge Cascade ═══
+// Verifies the wiring that makes CALF approval post both the CALF and its
+// linked Expense/CarLogbook in a single MongoDB transaction (matches GRN→UT
+// gold standard). Without this, ACCESS-bearing expenses can end up in a
+// half-posted state (CALF=POSTED, Expense=ERROR).
+function checkCalfOneAckFlow() {
+  const startIssues = issues;
+  console.log('\n8. CALF→Expense One-Ack Cascade (Phase G4.5h)');
+  console.log('─'.repeat(40));
+
+  const expCtrlPath = path.join(ERP_CONTROLLERS, 'expenseController.js');
+  const expCtrl = fs.readFileSync(expCtrlPath, 'utf-8');
+
+  // (a) submitExpenses must redirect ACCESS-bearing expenses to the CALF surface
+  //     instead of the old "CALF must be POSTED first" gate.
+  if (!/This expense posts via its CALF/.test(expCtrl)) {
+    warn('G4.5h', 'expenseController.submitExpenses missing "This expense posts via its CALF" redirect — ACCESS-bearing expenses may still hit the legacy dual-submit gate');
+  }
+  // The old submit-expenses message was "has CALF that is not POSTED (status: …). Post the CALF first." —
+  // narrow the check to that exact shape so the unrelated Car Logbook fuel gate
+  // (which still follows the pre-G4.5h per-fuel pattern) is not flagged.
+  if (/has CALF that is not POSTED[\s\S]{0,120}Post the CALF first/.test(expCtrl)) {
+    warn('G4.5h', 'expenseController still references legacy expense-submit "Post the CALF first" gate — Phase G4.5h should have replaced it with the CALF-redirect path');
+  }
+
+  // (b) postSinglePrfCalf must THROW on cascade re-validation failure (rolls
+  //     back CALF in the same transaction). Old behavior silently set
+  //     source=ERROR and left CALF=POSTED.
+  if (!/Cannot acknowledge CALF — linked/.test(expCtrl)) {
+    warn('G4.5h', 'expenseController.postSinglePrfCalf missing throw-on-cascade-error — validation failure will still leave half-posted state');
+  }
+  if (!/cascadeErrors/.test(expCtrl)) {
+    warn('G4.5h', 'expenseController.postSinglePrfCalf does not surface cascadeErrors on the thrown error — frontend cannot show precise field errors');
+  }
+
+  // (c) submitPrfCalf should delegate to postSinglePrfCalf (shared one-ack
+  //     cascade path). Look for the per-doc loop pattern.
+  if (!/for \(const doc of docs\)\s*\{[\s\S]{0,200}postSinglePrfCalf\(doc/.test(expCtrl)) {
+    warn('G4.5h', 'expenseController.submitPrfCalf does not delegate to postSinglePrfCalf — direct-submit and hub paths may diverge on cascade semantics');
+  }
+
+  // (d) WorkflowGuide entries mention the one-ack cascade so the BDM and
+  //     president learn the new contract from the UI.
+  const guidePath = path.join(COMPONENTS_DIR, 'WorkflowGuide.jsx');
+  if (fs.existsSync(guidePath)) {
+    const guide = fs.readFileSync(guidePath, 'utf-8');
+    if (!/one-acknowledge cascade|one-ack cascade|G4\.5h/i.test(guide)) {
+      warn('G4.5h', 'WorkflowGuide.jsx does not describe the one-acknowledge cascade in expenses/prf-calf entries — users will not know the new contract');
+    }
+  }
+
+  if (issues === startIssues) console.log('  ✓ CALF→Expense one-ack cascade wiring intact (Phase G4.5h)');
+}
+
 // ═══ Run all checks ═══
 console.log('System Health Check');
 console.log('═'.repeat(40));
@@ -894,6 +948,7 @@ checkAgentEnums();
 checkProxyEntryWiring();
 checkFraEntityIdsSync();
 checkCaptureSubmissionWiring();
+checkCalfOneAckFlow();
 
 console.log('\n' + '═'.repeat(40));
 if (issues > beforeIssues) {

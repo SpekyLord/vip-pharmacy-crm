@@ -2157,18 +2157,21 @@ const submitExpenses = catchAsync(async (req, res) => {
     }
   }
 
-  // Pre-submit gate: verify all linked CALFs are POSTED
+  // Phase G4.5h — ACCESS-bearing expenses post via their linked CALF, not via
+  // submitExpenses. Mirror the GRN→UT gold standard (one submit → one approval
+  // → one cascade). If the CALF is already POSTED but the Expense hasn't
+  // cascaded (e.g. an older code path skipped it), allow the submit through as
+  // a legacy drain path — otherwise redirect the caller to the CALF surface.
   for (const entry of entries) {
-    for (const line of (entry.lines || [])) {
-      if (line.calf_required && line.calf_id && req.user.role !== ROLES.PRESIDENT) {
-        const calf = await PrfCalf.findById(line.calf_id).select('status').lean();
-        if (!calf || calf.status !== 'POSTED') {
-          return res.status(400).json({
-            success: false,
-            message: `Cannot post: expense line "${line.establishment || ''}" has CALF that is not POSTED (status: ${calf?.status || 'NOT_FOUND'}). Post the CALF first.`
-          });
-        }
-      }
+    const calfLine = (entry.lines || []).find(l => l.calf_required && l.calf_id);
+    if (!calfLine) continue;
+    const calf = await PrfCalf.findById(calfLine.calf_id).select('status calf_number').lean();
+    if (calf && calf.status !== 'POSTED') {
+      return res.status(400).json({
+        success: false,
+        message: `This expense posts via its CALF (${calf.calf_number || calf._id}). Submit the CALF instead — the CALF acknowledge will post both docs in one step.`,
+        data: { linked_calf_id: calf._id, calf_status: calf.status }
+      });
     }
   }
 
@@ -2804,193 +2807,30 @@ const submitPrfCalf = catchAsync(async (req, res) => {
   const { checkPeriodOpen } = require('../utils/periodLock');
   for (const doc of docs) { await checkPeriodOpen(doc.entity_id, doc.period); }
 
-  const session = await mongoose.startSession();
-  await session.withTransaction(async () => {
-    for (const doc of docs) {
-      const event = await TransactionEvent.create([{
-        entity_id: doc.entity_id,
-        bdm_id: doc.bdm_id,
-        event_type: doc.doc_type,
-        event_date: new Date(),
-        document_ref: `${doc.doc_type}-${doc.prf_number || doc.calf_number || doc.period}`,
-        payload: {
-          prf_calf_id: doc._id,
-          doc_type: doc.doc_type,
-          amount: doc.amount,
-          ...(doc.doc_type === 'PRF' && {
-            payee_name: doc.payee_name,
-            partner_bank: doc.partner_bank,
-            rebate_amount: doc.rebate_amount
-          }),
-          ...(doc.doc_type === 'CALF' && {
-            advance_amount: doc.advance_amount,
-            liquidation_amount: doc.liquidation_amount,
-            balance: doc.balance
-          })
-        },
-        status: 'ACTIVE',
-        created_by: req.user._id
-      }], { session });
-
-      doc.status = 'POSTED';
-      doc.posted_at = new Date();
-      doc.posted_by = req.user._id;
-      doc.event_id = event[0]._id;
-      await doc.save({ session });
-    }
-  });
-  session.endSession();
-
-  // Phase 9.1b: Link DocumentAttachments to events (non-blocking)
-  for (const doc of docs) {
-    if (doc.event_id) {
-      await DocumentAttachment.updateMany(
-        { source_model: 'PrfCalf', source_id: doc._id },
-        { $set: { event_id: doc.event_id } }
-      ).catch(() => {});
-    }
-  }
-
-  // Phase 11/22/H3: Auto-journal — PRF/CALF (shared function in autoJournal.js)
+  // Phase G4.5h — delegate to postSinglePrfCalf so the direct-submit path and
+  // the Approval-Hub path share one transactional cascade. Each doc is atomic:
+  // if a doc's cascade fails (e.g. linked Expense validation error), its CALF
+  // rolls back too — no half-posted state. Other docs in the batch proceed.
+  const posted = [];
+  const failed = [];
   for (const doc of docs) {
     try {
-      const jeData = await journalFromPrfCalf(doc, req.user._id);
-      if (jeData) {
-        jeData.source_event_id = doc.event_id;
-        await createAndPostJournal(doc.entity_id, jeData);
-      }
-    } catch (jeErr) {
-      console.error('[AUTO_JOURNAL_FAILURE] PrfCalf', String(doc._id), jeErr.message);
-    }
-  }
-
-  // ── Auto-validate+submit linked expenses/carlogbooks when CALF is posted ──
-  // Uses MongoDB transaction so source + event are atomic; if anything fails,
-  // both the source status and the TransactionEvent roll back together.
-  const autoResults = [];
-  for (const doc of docs) {
-    if (doc.doc_type !== 'CALF' || !doc.linked_expense_id) continue;
-    try {
-      // Try ExpenseEntry first
-      let source = await ExpenseEntry.findById(doc.linked_expense_id);
-      let sourceType = 'EXPENSE';
-      if (!source) {
-        source = await CarLogbookEntry.findById(doc.linked_expense_id);
-        sourceType = 'CARLOGBOOK';
-      }
-      if (!source || source.status === 'POSTED') continue;
-
-      // Validate
-      const valErrors = [];
-      if (sourceType === 'EXPENSE') {
-        // Auto-resolve COA codes before validation
-        await autoClassifyLines(source.lines, source.entity_id);
-        if (!source.lines.length) valErrors.push('No expense lines');
-        for (let i = 0; i < source.lines.length; i++) {
-          const l = source.lines[i];
-          if (!l.expense_date) valErrors.push(`Line ${i + 1}: date required`);
-          if (!l.amount || l.amount <= 0) valErrors.push(`Line ${i + 1}: amount required`);
-          if (!l.establishment) valErrors.push(`Line ${i + 1}: establishment required`);
-          if (!l.coa_code || l.coa_code === '6900') valErrors.push(`Line ${i + 1}: COA code missing or Miscellaneous (6900). Map "${l.establishment || 'unknown'}" to correct account.`);
-        }
-      } else {
-        if (!source.entry_date) valErrors.push('Entry date required');
-        if (source.ending_km < source.starting_km) valErrors.push('Ending KM < Starting KM');
-      }
-
-      if (valErrors.length) {
-        source.status = 'ERROR';
-        source.validation_errors = valErrors;
-        await source.save();
-        autoResults.push({ source_id: source._id, type: sourceType, status: 'ERROR', errors: valErrors });
-        continue;
-      }
-
-      // Submit inside a transaction — atomic: if JE creation fails, source stays un-posted
-      const autoSession = await mongoose.startSession();
-      try {
-        await autoSession.withTransaction(async () => {
-          source.status = 'POSTED';
-          source.posted_at = new Date();
-          source.posted_by = req.user._id;
-          source.validation_errors = [];
-
-          const event = await TransactionEvent.create([{
-            entity_id: source.entity_id,
-            bdm_id: source.bdm_id,
-            event_type: sourceType === 'EXPENSE' ? 'EXPENSE' : 'CAR_LOGBOOK',
-            event_date: new Date(),
-            document_ref: sourceType === 'EXPENSE'
-              ? `EXP-${source.period}-${source.cycle}`
-              : `LOGBOOK-${source.period}-${source.entry_date?.toISOString().split('T')[0] || ''}`,
-            status: 'ACTIVE',
-            created_by: req.user._id
-          }], { session: autoSession });
-          source.event_id = event[0]._id;
-          await source.save({ session: autoSession });
-
-          // Auto-journal inside the same transaction — ensures POSTED ↔ JE consistency
-          const autoCoaMap = await getCoaMap();
-          if (sourceType === 'EXPENSE') {
-            const lines = [];
-            let totalOre = 0, totalAccess = 0;
-            const desc = `EXP-${source.period}-${source.cycle}`;
-            for (const line of source.lines) {
-              lines.push({ account_code: line.coa_code || autoCoaMap.MISC_EXPENSE || '6900', account_name: line.expense_category || 'Miscellaneous', debit: line.amount, credit: 0, description: desc });
-              if (line.expense_type === 'ORE') totalOre += line.amount || 0;
-              else totalAccess += line.amount || 0;
-            }
-            if (totalOre > 0) lines.push({ account_code: autoCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre, description: desc, is_contra: true });
-            if (totalAccess > 0) {
-              const funding = await resolveFundingCoa(source.lines.find(l => l.expense_type === 'ACCESS') || source, autoCoaMap.AP_TRADE);
-              const d = String(funding.coa_code || '').charAt(0);
-              const isContra = d === '1' || d === '5' || d === '6';
-              lines.push({ account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: totalAccess, description: desc, is_contra: isContra });
-            }
-            if (lines.length >= 2) {
-              await createAndPostJournal(source.entity_id, {
-                je_date: source.posted_at, period: source.period,
-                description: `Expenses: ${desc}`, source_module: 'EXPENSE',
-                source_event_id: source.event_id, source_doc_ref: desc, lines,
-                bir_flag: source.bir_flag || 'BOTH', vat_flag: 'N/A',
-                bdm_id: source.bdm_id, created_by: req.user._id
-              }, { session: autoSession });
-            }
-          } else {
-            // CarLogbook journal — DR 6200, CR funding
-            const fuelTotal = source.official_gas_amount || source.total_fuel_amount || 0;
-            if (fuelTotal > 0) {
-              const funding = await resolveFundingCoa(source.fuel_entries?.[0] || source);
-              await createAndPostJournal(source.entity_id, {
-                je_date: source.posted_at, period: source.period,
-                description: `Car Logbook: ${source.period}`, source_module: 'EXPENSE',
-                source_event_id: source.event_id, source_doc_ref: `LOGBOOK-${source.period}`,
-                lines: [
-                  { account_code: autoCoaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas', debit: fuelTotal, credit: 0, description: `Car Logbook: ${source.period}` },
-                  { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: fuelTotal, description: `Car Logbook: ${source.period}`, is_contra: /^[156]/.test(String(funding.coa_code || '')) }
-                ],
-                bir_flag: 'BOTH', vat_flag: 'N/A',
-                bdm_id: source.bdm_id, created_by: req.user._id
-              }, { session: autoSession });
-            }
-          }
-        });
-
-        autoResults.push({ source_id: source._id, type: sourceType, status: 'POSTED' });
-      } catch (txErr) {
-        // Transaction rolled back — source stays in its previous status, no orphaned events/JEs
-        console.error('Auto-submit linked source transaction failed:', doc.linked_expense_id, txErr.message);
-        autoResults.push({ source_id: doc.linked_expense_id, type: sourceType, status: 'FAILED', error: txErr.message });
-      } finally {
-        autoSession.endSession();
-      }
+      await postSinglePrfCalf(doc, req.user._id);
+      posted.push({ prf_calf_id: doc._id, status: 'POSTED', linked_source_id: doc.linked_expense_id || null });
     } catch (err) {
-      console.error('Auto-submit linked source failed:', doc.linked_expense_id, err.message);
-      autoResults.push({ source_id: doc.linked_expense_id, type: 'UNKNOWN', status: 'FAILED', error: err.message });
+      console.error('submitPrfCalf: per-doc cascade failed', String(doc._id), err.message);
+      failed.push({ prf_calf_id: doc._id, error: err.message, cascade_errors: err.cascadeErrors || null });
     }
   }
-
-  res.json({ success: true, message: `Posted ${docs.length} PRF/CALF(s)`, auto_submitted: autoResults });
+  if (failed.length && !posted.length) {
+    return res.status(400).json({ success: false, message: 'All PRF/CALF submits failed', failed });
+  }
+  res.json({
+    success: true,
+    message: `Posted ${posted.length} PRF/CALF(s)${failed.length ? `, ${failed.length} failed` : ''}`,
+    posted,
+    failed: failed.length ? failed : undefined
+  });
 });
 
 const reopenPrfCalf = catchAsync(async (req, res) => {
@@ -3903,12 +3743,17 @@ const postSingleExpense = async (doc, userId) => {
   await autoClassifyLines(doc.lines, doc.entity_id);
   await doc.save();
 
-  // CALF-POSTED gate — same check as submitExpenses (line 1176)
+  // Phase G4.5h — defense-in-depth. ACCESS-bearing expenses should never reach
+  // postSingleExpense (submitExpenses rejects them upstream). If one does,
+  // something escaped the redirect — fail loudly so the one-ack cascade
+  // contract isn't silently violated.
   for (const line of (doc.lines || [])) {
     if (line.calf_required && line.calf_id) {
-      const calf = await PrfCalf.findById(line.calf_id).select('status').lean();
+      const calf = await PrfCalf.findById(line.calf_id).select('status calf_number').lean();
       if (!calf || calf.status !== 'POSTED') {
-        throw new Error(`Cannot post: line "${line.establishment || ''}" has CALF that is not POSTED (status: ${calf?.status || 'NOT_FOUND'}). Post the CALF first.`);
+        throw new Error(
+          `ACCESS expense reached the approval hub with an unposted CALF (${calf?.calf_number || calf?._id || 'NOT_FOUND'}). Phase G4.5h routes ACCESS expenses via their CALF — acknowledge the CALF instead.`
+        );
       }
     }
   }
@@ -3963,10 +3808,19 @@ const postSingleExpense = async (doc, userId) => {
   } catch (jeErr) { console.error('[AUTO_JOURNAL_FAILURE] ExpenseEntry (approval hub)', String(doc._id), jeErr.message); }
 };
 
+// Phase G4.5h — One-Acknowledge cascade. Matches the GRN→UT gold standard at
+// undertakingController.js:245 (`postSingleUndertaking`): a single president
+// click posts the CALF AND the linked Expense/Car Logbook in one MongoDB
+// session.withTransaction. If the source document fails re-validation the
+// whole transaction rolls back — CALF stays DRAFT/VALID, no half-posted state.
+// (Before G4.5h, source=ERROR + CALF=POSTED was possible and required manual
+// reconciliation.) Auto-journal failures remain non-fatal and are captured in
+// [AUTO_JOURNAL_FAILURE] logs so repostMissingJEs.js can backfill.
 const postSinglePrfCalf = async (doc, userId) => {
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
+      // 1) Post the CALF/PRF itself — status + event
       const [event] = await TransactionEvent.create([{
         entity_id: doc.entity_id, bdm_id: doc.bdm_id, event_type: doc.doc_type,
         event_date: new Date(), document_ref: `${doc.doc_type}-${doc.prf_number || doc.calf_number || doc.period}`,
@@ -3982,121 +3836,126 @@ const postSinglePrfCalf = async (doc, userId) => {
       doc.posted_by = userId;
       doc.event_id = event._id;
       await doc.save({ session });
+
+      // 2) CALF/PRF auto-journal (non-fatal — repostMissingJEs.js backfills)
+      try {
+        const jeData = await journalFromPrfCalf(doc, userId);
+        if (jeData) {
+          jeData.source_event_id = doc.event_id;
+          await createAndPostJournal(doc.entity_id, jeData, { session });
+        }
+      } catch (jeErr) {
+        console.error('[AUTO_JOURNAL_FAILURE] PrfCalf (approval hub)', String(doc._id), jeErr.message);
+      }
+
+      // 3) Cascade — post the linked Expense/CarLogbook in the SAME session
+      if (doc.doc_type !== 'CALF' || !doc.linked_expense_id) return;
+
+      let source = await ExpenseEntry.findById(doc.linked_expense_id).session(session);
+      let sourceType = 'EXPENSE';
+      if (!source) {
+        source = await CarLogbookEntry.findById(doc.linked_expense_id).session(session);
+        sourceType = 'CARLOGBOOK';
+      }
+      if (!source || source.status === 'POSTED') return;
+
+      // Re-validate
+      const valErrors = [];
+      if (sourceType === 'EXPENSE') {
+        await autoClassifyLines(source.lines, source.entity_id);
+        if (!source.lines.length) valErrors.push('No expense lines');
+        for (let i = 0; i < source.lines.length; i++) {
+          const l = source.lines[i];
+          if (!l.expense_date) valErrors.push(`Line ${i + 1}: date required`);
+          if (!l.amount || l.amount <= 0) valErrors.push(`Line ${i + 1}: amount required`);
+          if (!l.establishment) valErrors.push(`Line ${i + 1}: establishment required`);
+          if (!l.coa_code || l.coa_code === '6900') valErrors.push(`Line ${i + 1}: COA code missing or Miscellaneous (6900)`);
+        }
+      } else {
+        if (!source.entry_date) valErrors.push('Entry date required');
+        if (source.ending_km < source.starting_km) valErrors.push('Ending KM < Starting KM');
+      }
+
+      if (valErrors.length) {
+        // Phase G4.5h — throw to roll back the whole transaction. Matches
+        // GRN→UT: if approveGrnCore rejects (e.g. missing waybill,
+        // inventoryController.js:762), the UT acknowledge rolls back too.
+        const cascadeErr = new Error(
+          `Cannot acknowledge CALF — linked ${sourceType === 'EXPENSE' ? 'expense' : 'car logbook'} has validation errors: ${valErrors.join('; ')}`
+        );
+        cascadeErr.statusCode = 400;
+        cascadeErr.cascadeErrors = valErrors;
+        throw cascadeErr;
+      }
+
+      source.status = 'POSTED';
+      source.posted_at = new Date();
+      source.posted_by = userId;
+      source.validation_errors = [];
+      const [sourceEvent] = await TransactionEvent.create([{
+        entity_id: source.entity_id, bdm_id: source.bdm_id,
+        event_type: sourceType === 'EXPENSE' ? 'EXPENSE' : 'CAR_LOGBOOK',
+        event_date: new Date(),
+        document_ref: sourceType === 'EXPENSE'
+          ? `EXP-${source.period}-${source.cycle}`
+          : `LOGBOOK-${source.period}-${source.entry_date?.toISOString().split('T')[0] || ''}`,
+        status: 'ACTIVE', created_by: userId
+      }], { session });
+      source.event_id = sourceEvent._id;
+      await source.save({ session });
+
+      // Source auto-journal (non-fatal, same rationale as CALF JE above)
+      try {
+        const autoCoaMap = await getCoaMap();
+        if (sourceType === 'EXPENSE') {
+          const jLines = [];
+          let totalOre = 0, totalAccess = 0;
+          const desc = `EXP-${source.period}-${source.cycle}`;
+          for (const line of source.lines) {
+            jLines.push({ account_code: line.coa_code || autoCoaMap.MISC_EXPENSE || '6900', account_name: line.expense_category || 'Miscellaneous', debit: line.amount, credit: 0, description: desc });
+            if (line.expense_type === 'ORE') totalOre += line.amount || 0;
+            else totalAccess += line.amount || 0;
+          }
+          if (totalOre > 0) jLines.push({ account_code: autoCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre, description: desc, is_contra: true });
+          if (totalAccess > 0) {
+            const funding = await resolveFundingCoa(source.lines.find(l => l.expense_type === 'ACCESS') || source, autoCoaMap.AP_TRADE);
+            const isContra = /^[156]/.test(String(funding.coa_code || ''));
+            jLines.push({ account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: totalAccess, description: desc, is_contra: isContra });
+          }
+          if (jLines.length >= 2) {
+            await createAndPostJournal(source.entity_id, {
+              je_date: source.posted_at, period: source.period, description: `Expenses: ${desc}`,
+              source_module: 'EXPENSE', source_event_id: source.event_id, source_doc_ref: desc,
+              lines: jLines, bir_flag: source.bir_flag || 'BOTH', vat_flag: 'N/A', bdm_id: source.bdm_id, created_by: userId
+            }, { session });
+          }
+        } else {
+          const fuelTotal = source.official_gas_amount || source.total_fuel_amount || 0;
+          if (fuelTotal > 0) {
+            const funding = await resolveFundingCoa(source.fuel_entries?.[0] || source);
+            await createAndPostJournal(source.entity_id, {
+              je_date: source.posted_at, period: source.period, description: `Car Logbook: ${source.period}`,
+              source_module: 'EXPENSE', source_event_id: source.event_id,
+              source_doc_ref: `LOGBOOK-${source.period}`,
+              lines: [
+                { account_code: autoCoaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas', debit: fuelTotal, credit: 0, description: `Car Logbook: ${source.period}` },
+                { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: fuelTotal, description: `Car Logbook: ${source.period}`, is_contra: /^[156]/.test(String(funding.coa_code || '')) }
+              ],
+              bir_flag: 'BOTH', vat_flag: 'N/A', bdm_id: source.bdm_id, created_by: userId
+            }, { session });
+          }
+        }
+      } catch (srcJeErr) {
+        console.error('[AUTO_JOURNAL_FAILURE] CALF-cascade source', String(source._id), srcJeErr.message);
+      }
     });
   } finally { session.endSession(); }
 
+  // Post-transaction: link DocumentAttachments to the CALF event (non-critical)
   await DocumentAttachment.updateMany(
     { source_model: 'PrfCalf', source_id: doc._id },
     { $set: { event_id: doc.event_id } }
   ).catch(() => {});
-
-  // Phase H3: Auto-journal using shared function
-  try {
-    const jeData = await journalFromPrfCalf(doc, userId);
-    if (jeData) {
-      jeData.source_event_id = doc.event_id;
-      await createAndPostJournal(doc.entity_id, jeData);
-    }
-  } catch (jeErr) { console.error('[AUTO_JOURNAL_FAILURE] PrfCalf (approval hub)', String(doc._id), jeErr.message); }
-
-  // Auto-validate+submit linked expense/logbook when CALF is posted (mirrors submitPrfCalf logic)
-  if (doc.doc_type === 'CALF' && doc.linked_expense_id) {
-    try {
-      let source = await ExpenseEntry.findById(doc.linked_expense_id);
-      let sourceType = 'EXPENSE';
-      if (!source) {
-        source = await CarLogbookEntry.findById(doc.linked_expense_id);
-        sourceType = 'CARLOGBOOK';
-      }
-      if (source && source.status !== 'POSTED') {
-        // Validate
-        const valErrors = [];
-        if (sourceType === 'EXPENSE') {
-          await autoClassifyLines(source.lines, source.entity_id);
-          if (!source.lines.length) valErrors.push('No expense lines');
-          for (let i = 0; i < source.lines.length; i++) {
-            const l = source.lines[i];
-            if (!l.expense_date) valErrors.push(`Line ${i + 1}: date required`);
-            if (!l.amount || l.amount <= 0) valErrors.push(`Line ${i + 1}: amount required`);
-            if (!l.establishment) valErrors.push(`Line ${i + 1}: establishment required`);
-            if (!l.coa_code || l.coa_code === '6900') valErrors.push(`Line ${i + 1}: COA code missing or Miscellaneous (6900)`);
-          }
-        } else {
-          if (!source.entry_date) valErrors.push('Entry date required');
-          if (source.ending_km < source.starting_km) valErrors.push('Ending KM < Starting KM');
-        }
-
-        if (valErrors.length) {
-          source.status = 'ERROR';
-          source.validation_errors = valErrors;
-          await source.save();
-        } else {
-          // Post atomically
-          const autoSession = await mongoose.startSession();
-          try {
-            await autoSession.withTransaction(async () => {
-              source.status = 'POSTED';
-              source.posted_at = new Date();
-              source.posted_by = userId;
-              source.validation_errors = [];
-              const [event] = await TransactionEvent.create([{
-                entity_id: source.entity_id, bdm_id: source.bdm_id,
-                event_type: sourceType === 'EXPENSE' ? 'EXPENSE' : 'CAR_LOGBOOK',
-                event_date: new Date(),
-                document_ref: sourceType === 'EXPENSE'
-                  ? `EXP-${source.period}-${source.cycle}`
-                  : `LOGBOOK-${source.period}-${source.entry_date?.toISOString().split('T')[0] || ''}`,
-                status: 'ACTIVE', created_by: userId
-              }], { session: autoSession });
-              source.event_id = event._id;
-              await source.save({ session: autoSession });
-
-              // Auto-journal
-              const autoCoaMap = await getCoaMap();
-              if (sourceType === 'EXPENSE') {
-                const jLines = [];
-                let totalOre = 0, totalAccess = 0;
-                const desc = `EXP-${source.period}-${source.cycle}`;
-                for (const line of source.lines) {
-                  jLines.push({ account_code: line.coa_code || autoCoaMap.MISC_EXPENSE || '6900', account_name: line.expense_category || 'Miscellaneous', debit: line.amount, credit: 0, description: desc });
-                  if (line.expense_type === 'ORE') totalOre += line.amount || 0;
-                  else totalAccess += line.amount || 0;
-                }
-                if (totalOre > 0) jLines.push({ account_code: autoCoaMap.AR_BDM || '1110', account_name: 'AR — BDM Advances', debit: 0, credit: totalOre, description: desc, is_contra: true });
-                if (totalAccess > 0) {
-                  const funding = await resolveFundingCoa(source.lines.find(l => l.expense_type === 'ACCESS') || source, autoCoaMap.AP_TRADE);
-                  const isContra = /^[156]/.test(String(funding.coa_code || ''));
-                  jLines.push({ account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: totalAccess, description: desc, is_contra: isContra });
-                }
-                if (jLines.length >= 2) {
-                  await createAndPostJournal(source.entity_id, {
-                    je_date: source.posted_at, period: source.period, description: `Expenses: ${desc}`,
-                    source_module: 'EXPENSE', source_event_id: source.event_id, source_doc_ref: desc,
-                    lines: jLines, bir_flag: source.bir_flag || 'BOTH', vat_flag: 'N/A', bdm_id: source.bdm_id, created_by: userId
-                  }, { session: autoSession });
-                }
-              } else {
-                const fuelTotal = source.official_gas_amount || source.total_fuel_amount || 0;
-                if (fuelTotal > 0) {
-                  const funding = await resolveFundingCoa(source.fuel_entries?.[0] || source);
-                  await createAndPostJournal(source.entity_id, {
-                    je_date: source.posted_at, period: source.period, description: `Car Logbook: ${source.period}`,
-                    source_module: 'EXPENSE', source_event_id: source.event_id,
-                    source_doc_ref: `LOGBOOK-${source.period}`,
-                    lines: [
-                      { account_code: autoCoaMap.FUEL_GAS || '6200', account_name: 'Fuel & Gas', debit: fuelTotal, credit: 0, description: `Car Logbook: ${source.period}` },
-                      { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: fuelTotal, description: `Car Logbook: ${source.period}`, is_contra: /^[156]/.test(String(funding.coa_code || '')) }
-                    ],
-                    bir_flag: 'BOTH', vat_flag: 'N/A', bdm_id: source.bdm_id, created_by: userId
-                  }, { session: autoSession });
-                }
-              }
-            });
-          } finally { autoSession.endSession(); }
-        }
-      }
-    } catch (autoErr) { console.error('Auto-submit linked source failed (approval hub):', doc.linked_expense_id, autoErr.message); }
-  }
 };
 
 // President-only: SAP Storno reversal for Expenses (ORE/ACCESS), CALF, and PRF.

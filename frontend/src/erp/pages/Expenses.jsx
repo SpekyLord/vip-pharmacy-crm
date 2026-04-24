@@ -647,7 +647,12 @@ export default function Expenses() {
       if (editingExpense) {
         await updateExpense(editingExpense._id, data);
       } else {
-        await createExpense({ ...data, assigned_to: assignedTo || undefined });
+        // Phase G4.5h — surface auto-CALF so the BDM knows to submit the CALF
+        // (not the expense) to trigger the one-acknowledge cascade.
+        const res = await createExpense({ ...data, assigned_to: assignedTo || undefined });
+        if (res?.auto_calf?._id) {
+          showMsg(`Expense saved. A CALF was auto-created (${res.auto_calf.calf_number || res.auto_calf._id}). Submit the CALF at PRF/CALF — the approval posts both docs in one step.`);
+        }
       }
       setShowForm(false);
       loadExpenses();
@@ -675,8 +680,14 @@ export default function Expenses() {
       else { showMsg(r?.message || 'Submitted'); }
       loadExpenses();
     } catch (e) {
-      if (e?.response?.data?.approval_pending) { showMsg(e.response.data.message || 'Approval required'); loadExpenses(); }
-      else { showMsg(e.response?.data?.message || 'Submit failed', true); }
+      const data = e?.response?.data;
+      if (data?.approval_pending) { showMsg(data.message || 'Approval required'); loadExpenses(); }
+      else if (data?.data?.linked_calf_id) {
+        // Phase G4.5h — ACCESS-bearing expenses route through CALF. Nudge
+        // the user to the CALF surface.
+        showMsg(`${data.message} Go to PRF/CALF to submit it.`, true);
+      }
+      else { showMsg(data?.message || 'Submit failed', true); }
     }
   };
   const handleReopen = async (id) => { try { await reopenExpenses([id]); showMsg('Reopened'); loadExpenses(); } catch (e) { showMsg(e.response?.data?.message || 'Reopen failed', true); } };

@@ -278,7 +278,8 @@ const WORKFLOW_GUIDES = {
       'Select category — COA code auto-resolves from vendor/keyword classification',
       'Attach receipt photo as proof (batch upload available for bulk OR processing)',
       'Verify COA code is NOT 6900 (Miscellaneous) — posting is blocked until mapped to correct account',
-      'Save as DRAFT, then use the **per-row Validate + Submit buttons** in the working expenses table to move each entry through DRAFT → VALID → POSTED. There is no bulk Validate or bulk Submit — each entry has its own COA validation, OR gate, and CALF link check; per-row flow prevents a single bad entry from blocking the rest or vice versa. Submit posts the expense journal.',
+      'Save as DRAFT, then use the **per-row Validate + Submit buttons** in the working expenses table to move each entry through DRAFT → VALID → POSTED. There is no bulk Validate or bulk Submit — each entry has its own COA validation and OR gate; per-row flow prevents a single bad entry from blocking the rest.',
+      '**ACCESS expenses (company-funded) post via the linked CALF** (Phase G4.5h one-ack cascade, matches the GRN→UT gold standard). After save, the system auto-creates a DRAFT CALF covering the ACCESS lines — go to **PRF/CALF** and submit THAT doc. The CALF acknowledge posts both the CALF AND this Expense in one MongoDB transaction. If the cascade fails re-validation, the whole acknowledge rolls back (no half-posted state). ORE-only expenses still post directly via Submit on the expense row.',
     ],
     next: [
       { label: 'Record SMER', path: '/erp/smer' },
@@ -286,7 +287,7 @@ const WORKFLOW_GUIDES = {
       { label: 'PRF / CALF', path: '/erp/prf-calf' },
       { label: 'COA Settings', path: '/erp/settings' },
     ],
-    tip: 'Expenses with COA 6900 (Misc) are BLOCKED from posting — map to correct account first. ACCESS expenses with non-cash payment auto-create a CALF. CALF must be POSTED before expense can post. COA codes are configurable in Settings → COA Mapping. OCR scanning is optional — if it fails or is disabled, the photo still uploads as proof and you fill the form manually. President Delete — for the President (or anyone granted accounting.reverse_posted in Access Templates): one-click delete of bad expense rows. POSTED/DELETION_REQUESTED → SAP Storno (reverses expense + CALF-link clear + journal entries; original kept for audit). DRAFT/VALID/ERROR → hard delete. Blocked if a POSTED CALF still references the row; reverse the CALF first. All actions logged. Proxy Entry (Phase G4.5c.1) — admin/finance (or back-office contractor with expenses.proxy_entry sub-perm ticked) can key an expense on behalf of another BDM; pick the owner in the "Record on behalf of" dropdown. Rows keyed on behalf route through the Approval Hub on submit (Rule #20 four-eyes). CALF requirement is still enforced for proxy-keyed expenses — only the President can bypass CALF, via the batch-upload path.',
+    tip: 'Expenses with COA 6900 (Misc) are BLOCKED from posting — map to correct account first. ACCESS expenses with non-cash payment auto-create a CALF — SUBMIT THE CALF (not the expense) to trigger the one-acknowledge cascade that posts both docs. COA codes are configurable in Settings → COA Mapping. OCR scanning is optional — if it fails or is disabled, the photo still uploads as proof and you fill the form manually. President Delete — for the President (or anyone granted accounting.reverse_posted in Access Templates): one-click delete of bad expense rows. POSTED/DELETION_REQUESTED → SAP Storno (reverses expense + CALF-link clear + journal entries; original kept for audit). DRAFT/VALID/ERROR → hard delete. Blocked if a POSTED CALF still references the row; reverse the CALF first. All actions logged. Proxy Entry (Phase G4.5c.1) — admin/finance (or back-office contractor with expenses.proxy_entry sub-perm ticked) can key an expense on behalf of another BDM; pick the owner in the "Record on behalf of" dropdown. Rows keyed on behalf route through the Approval Hub on submit (Rule #20 four-eyes). CALF requirement is still enforced for proxy-keyed expenses — only the President can bypass CALF, via the batch-upload path.',
   },
   'smer': {
     title: 'SMER (Sales/Marketing Expense Report)',
@@ -332,11 +333,11 @@ const WORKFLOW_GUIDES = {
     title: 'PRF / CALF',
     steps: [
       'PRF (Partner Rebate Form) — record partner rebate payments. Rebates accumulate from collections; BDM creates PRF when ready to pay partner.',
-      'CALF (Cash Advance Liquidation) — liquidate cash advances against expenses',
-      'For PRF: enter partner details, rebate amount, payment mode',
-      'For CALF: link to related expenses — system validates all linked line IDs belong to the expense',
-      'Verify advance vs. liquidation balance before posting',
-      'Validate and Post — auto-journal uses COA codes: AR_BDM (1110) for CALF, PARTNER_REBATE (5200) for PRF',
+      'CALF (Cash Advance Liquidation) — liquidates company-funded (ACCESS) expenses and non-CASH fuel. **A CALF is auto-created whenever you save an ACCESS expense or non-CASH fuel line** — come here to submit it.',
+      'For PRF: enter partner details, rebate amount, payment mode.',
+      'For CALF: link to related expenses — system validates all linked line IDs belong to the expense.',
+      'Verify advance vs. liquidation balance before posting.',
+      'Validate → Submit. **The CALF acknowledge is a one-step cascade (Phase G4.5h, matches GRN→UT):** president approves the CALF in the Approval Hub and the linked Expense (or Car Logbook) flips to POSTED in the same MongoDB transaction. If the linked doc fails re-validation, the whole acknowledge rolls back — CALF stays DRAFT, no half-posted state. PRFs have no cascade (no linked source doc).',
     ],
     next: [
       { label: 'Record Expenses', path: '/erp/expenses' },

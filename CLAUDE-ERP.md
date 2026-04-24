@@ -5298,3 +5298,43 @@ docs/PHASETASK-ERP.md                                # Phase G4.5f entry
 5. Smoke test — per-diem override: eBDM opens override modal on a daily row, tier=FULL, reason + bdm_phone_instruction → Request Override → expect 202 Hub; target BDM inbox receives PERDIEM_OVERRIDE_DECISION when President decides.
 6. Orphan sweep: `node backend/erp/scripts/findOrphanedOwnerRecords.js --module smer_entry` to confirm no pre-G4.5d SMERs are owned by non-BDM users.
 7. After smoke tests pass: the BDMs→CRM-only rollout is complete — revoke the `expenses` module from field BDMs' Access Templates ONLY if an explicit business decision is made to do so (recommendation: leave it on so field BDMs can still read their own SMER in emergencies).
+
+---
+
+## Phase G4.5h — CALF↔Expense One-Acknowledge Cascade (Apr 24 2026)
+
+### Why (Rule #20 reference flow expanded)
+Rule #20 requires linked auto-submits to be wrapped in a MongoDB transaction that rolls back atomically on failure. The canonical reference has been **GRN→UT**: `postSingleUndertaking` opens one `session.withTransaction` that flips UT to ACKNOWLEDGED and calls `approveGrnCore` with the same `session`, so a missing waybill rolls back both ([undertakingController.js:245-290](backend/erp/controllers/undertakingController.js#L245)).
+
+Phase G4.5h brings **CALF→Expense** to the same bar. Before this phase, `postSinglePrfCalf` ran a **nested** `autoSession` for the Expense cascade; on re-validation failure it silently set `Expense.status='ERROR'` while leaving `CALF.status='POSTED'` — a half-posted state requiring hand reconciliation. ACCESS-bearing expenses also had a dual-submit contract (two submits, two ApprovalRequest rows, two president clicks) which was confusing and allowed the submit order to deadlock (Expense submit refused until CALF was POSTED).
+
+### The new contract
+- **ACCESS-bearing expenses post via their linked CALF, not via `submitExpenses`.** `submitExpenses` rejects with HTTP 400 and a `linked_calf_id` in the response body so the frontend can redirect the BDM to PRF/CALF.
+- **One `session.withTransaction` wraps the whole cascade** inside `postSinglePrfCalf`: CALF post + CALF journal + linked source fetch + re-validation + source post + source journal. Journal failures stay non-fatal (same as pre-G4.5h; `repostMissingJEs.js` backfills). Re-validation failures **throw** — whole transaction rolls back, both docs stay DRAFT.
+- **`submitPrfCalf` delegates to `postSinglePrfCalf` per doc** so the direct-submit path (privileged users bypassing the hub) and the hub path share one cascade implementation. Per-doc atomicity — one doc's cascade failure doesn't block others in the batch.
+- **ORE-only expenses unchanged** — no CALF, continue to post directly via `submitExpenses → gateApproval(EXPENSES/EXPENSE_ENTRY)`.
+
+### When adding a new cascade flow, ask:
+1. Does it auto-create the linked doc on source creation? (Use `autoCalfForSource` / `autoUndertakingForGrn` pattern.)
+2. Does the parent doc stay DRAFT until the linked doc's approval cascades it? (Prefer this — GRN→UT and Expense→CALF both do.)
+3. Is the cascade inside **one** `session.withTransaction`? No nested `autoSession`.
+4. Does re-validation failure throw (roll back) or silently mark ERROR (split state)? **Throw.**
+5. Does a health-check section catch regressions? (See `scripts/check-system-health.js` section 8 `checkCalfOneAckFlow`.)
+
+### Files touched
+```
+backend/erp/controllers/expenseController.js     # submitExpenses redirect + postSinglePrfCalf single-session cascade + submitPrfCalf delegation + postSingleExpense defense-in-depth
+backend/erp/scripts/migrateCalfOneAckFlow.js     # new (dry-run default, --apply commits)
+scripts/check-system-health.js                   # + section 8 checkCalfOneAckFlow
+frontend/src/erp/pages/Expenses.jsx              # auto_calf banner + submit 400 redirect
+frontend/src/erp/pages/PrfCalf.jsx               # cascade result rendering (posted[] / failed[] + cascade_errors)
+frontend/src/erp/components/WorkflowGuide.jsx    # expenses + prf-calf entries describe the new contract
+docs/PHASETASK-ERP.md                            # Phase G4.5h entry
+CLAUDE-ERP.md                                    # this section
+```
+
+### Post-ship operational steps (not performed by code)
+1. Deploy G4.5h.
+2. Migration: `node backend/erp/scripts/migrateCalfOneAckFlow.js` (dry-run) surfaces stuck `SUBMITTED` expenses with linked CALFs. CALF=POSTED rows go to a manual-review list (finance hand-posts to avoid backdated JEs). CALF≠POSTED rows get reverted to DRAFT + stale `EXPENSE_ENTRY` ApprovalRequest rows dropped — re-run with `--apply` to commit.
+3. Smoke on staging/prod with a throwaway ACCESS expense: BDM create → banner surfaces auto-CALF → BDM submits the CALF → president approves CALF in Hub → both docs POSTED + JE posted, all in one transaction.
+4. Force-validation-failure test (stale COA) on a throwaway entry → confirm rollback: CALF stays DRAFT, Expense stays DRAFT, no partial journal. This is the regression-detection signal for future work.

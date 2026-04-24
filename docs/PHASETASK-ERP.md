@@ -7691,11 +7691,18 @@ Root cause was a UI gap, not a logic bug:
 - **No Phase 32R design changes.** Waybill stays as a GRN field (not duplicated on UT). UT still displays waybill via populated `linked_grn_id`. Acknowledge cascade still uses one session.
 - **Zero impact on historic data.** Guard is additive at approval time; already-posted GRNs are untouched. Reversal path unchanged.
 
-### Files touched (2)
+### Files touched (3)
 ```
 frontend/src/erp/pages/ApprovalManager.jsx
 backend/erp/controllers/inventoryController.js
+backend/erp/services/documentDetailHydrator.js
 ```
+
+### Tag-along fix — GRN hydrator strictPopulate bomb
+While walking the Reversal Console for the mis-approved GRN, the detail panel threw:
+> `Cannot populate path 'posted_by' because it is not in your schema.`
+
+`documentDetailHydrator.GRN` was calling `.populate('posted_by', 'name')` on `GrnEntry`, but Phase 32R stops GRN at APPROVED (no POSTED state) and the only actor field on the schema is `reviewed_by`. Mongoose 7+ strictPopulate throws rather than silently no-op'ing. Latent since Phase 32R ship. Cross-checked the other 11 hydrators that call `posted_by` — all 11 target models (SalesLine / Collection / ExpenseEntry / PrfCalf / SmerEntry / CarLogbookEntry / JournalEntry / CreditNote / IcSettlement / PettyCashTransaction / InterCompanyTransfer) do carry the field, so no sweep needed; GRN was the lone outlier.
 
 ### Verification
 - `node -c` on `inventoryController.js`: clean.
@@ -7711,4 +7718,77 @@ backend/erp/controllers/inventoryController.js
 - Consider adding `d.linked_grn_id.waybill_photo_url` display to the GRN approval row too (direct `approveGrn` endpoint case), not just UT. Low priority — Phase 32R design routes most approvals through UT, and direct GRN approve is admin-only.
 - If subscribers report the row strip is too busy, collapse the thumbnail into a hover-peek. Not needed for VIP (Approval Hub usage is concentrated president-only).
 - If future Phase adds per-row approver override for "approve without waybill" (e.g., emergency bypass), plumb it through `GRN_SETTINGS.WAYBILL_OVERRIDE_ROLES` lookup and require a justification note stored on `grn.waybill_override_reason`. Not in scope today — the current gate is correct per policy.
+
+---
+
+## Phase G4.5h — CALF↔Expense One-Acknowledge Cascade (Apr 24 2026)
+
+### Problem
+The GRN↔Undertaking flow was already the gold standard: BDM creates a GRN, the system auto-creates a UT, BDM submits only the UT, and the president's single **Acknowledge** click in the Approval Hub posts the UT **and** flips the GRN to APPROVED (stock moves, all in one `session.withTransaction`). See `undertakingController.js:245-290` (`postSingleUndertaking`) and the cascade into `approveGrnCore` at `inventoryController.js:762-834`.
+
+The Expense↔CALF flow did **not** work the same way — even though Rule #20 (CLAUDE.md) expects it to. Instead it was a **dual-submit, dual-gate** flow:
+
+| Step | Pre-G4.5h (Expense↔CALF) | Target (GRN↔UT gold standard) |
+|---|---|---|
+| Auto-create on source | CALF created only if a line has `calf_required=true` (ACCESS + non-CASH) — conditional | UT always auto-created |
+| BDM submits | Both `submitExpenses` (EXPENSE_ENTRY ApprovalRequest) AND `submitPrfCalf` (PRF_CALF ApprovalRequest). Expense submit was **blocked** until CALF was POSTED — chicken-and-egg | Only `submitUndertaking`; GRN stays PENDING |
+| Approval Hub cards | TWO cards (EXPENSE + CALF), president had to approve both | ONE card (UT); GRN never appears |
+| Cascade on approve | `postSinglePrfCalf` tried to post the linked Expense, but: (a) used a **nested** `autoSession.withTransaction`, not the outer one; (b) on re-validation failure, silently set Expense=ERROR and left CALF=POSTED — half-posted state requiring manual reconciliation | UT acknowledge posts UT + GRN in ONE session; if `approveGrnCore` fails (e.g. missing waybill), the UT ack rolls back too |
+
+### Fix
+**Scope.** ACCESS-bearing expenses only (any line with `calf_required=true`). ORE-only expenses keep their current direct Expense→approval flow — unchanged.
+
+**Backend — `backend/erp/controllers/expenseController.js`**
+1. `submitExpenses` now rejects any ACCESS-bearing expense whose linked CALF isn't POSTED. The 400 response surfaces `linked_calf_id` so the frontend can redirect the BDM to PRF/CALF. Old "Post the CALF first" gate killed.
+2. `postSinglePrfCalf` (called from `universalApprovalController.prf_calf` handler when the president approves a CALF card) rewritten as **one** `session.withTransaction`:
+   - Post CALF status + event
+   - CALF auto-journal (non-fatal — `[AUTO_JOURNAL_FAILURE]` log + `repostMissingJEs.js` backfill, same semantics as before)
+   - Cascade: fetch linked Expense/CarLogbookEntry **in the same session**, re-validate (`autoClassifyLines` + COA/amount/establishment/date checks), post status + event, post source auto-journal
+   - **If re-validation throws, the whole transaction rolls back** — CALF stays DRAFT, Expense stays DRAFT, no half-posted state. Matches GRN→UT.
+3. `submitPrfCalf` (direct-submit path, no hub gate) now **delegates to `postSinglePrfCalf` per doc** so the hub and direct-submit paths share one cascade implementation. Per-doc atomicity — one doc's cascade failure doesn't block others in the batch.
+4. `postSingleExpense` gate (line 3741) upgraded to a defense-in-depth error: any ACCESS-bearing expense that reaches the EXPENSE_ENTRY approval hub with an unposted CALF throws with a clear "Phase G4.5h routes ACCESS expenses via their CALF" message. Should be unreachable after G4.5h submit guard.
+
+**Frontend**
+- `frontend/src/erp/pages/Expenses.jsx` — after Expense create, if the response includes `auto_calf`, banner tells the BDM to submit the CALF (not the expense) to trigger the one-ack cascade. `handleSubmit` 400-with-`linked_calf_id` branch surfaces "Go to PRF/CALF to submit it."
+- `frontend/src/erp/pages/PrfCalf.jsx` — `handleSubmit` parses the new `posted[]` / `failed[]` response shape. On success with cascade it shows "Posted N PRF/CALF(s); M linked expense(s)/logbook(s) also posted via cascade." On `failed[]` with `cascade_errors`, surfaces the precise validation failures.
+- `frontend/src/erp/components/WorkflowGuide.jsx` — `expenses` and `prf-calf` entries rewritten to describe the one-ack contract.
+
+**Health check** — new section 8 in `scripts/check-system-health.js` (`checkCalfOneAckFlow`) verifies: (a) submitExpenses has the redirect message, (b) legacy "has CALF that is not POSTED … Post the CALF first" gate is gone, (c) postSinglePrfCalf throws with `cascadeErrors`, (d) submitPrfCalf delegates to postSinglePrfCalf, (e) WorkflowGuide mentions the cascade.
+
+**Migration** — `backend/erp/scripts/migrateCalfOneAckFlow.js` (dry-run default, `--apply` commits). Finds Expense docs stuck in `SUBMITTED` with a linked CALF. CALF=POSTED → logged for manual review (backdated JEs are operator-sensitive). CALF≠POSTED → revert Expense to DRAFT + drop stale `EXPENSE_ENTRY` ApprovalRequest rows so the next CALF submit drives approval cleanly. Idempotent.
+
+### Preserved guards
+- `periodLockCheck('EXPENSE')` on both submit routes — unchanged.
+- Proxy `recorded_on_behalf_of` inheritance from Expense → auto-CALF (Phase G4.5e) — unchanged; `forceApproval: hasProxy` on submit — unchanged.
+- Fund balance / advance-vs-liquidation validation inside `postSinglePrfCalf` — unchanged.
+- Rule #21 privilege filter on PRF/CALF list — unchanged.
+
+### Files touched
+```
+backend/erp/controllers/expenseController.js        (3 edits)
+backend/erp/scripts/migrateCalfOneAckFlow.js        (new)
+scripts/check-system-health.js                      (+section 8)
+frontend/src/erp/pages/Expenses.jsx                 (2 edits: auto_calf banner, submit redirect)
+frontend/src/erp/pages/PrfCalf.jsx                  (1 edit: cascade result handling)
+frontend/src/erp/components/WorkflowGuide.jsx       (2 edits: expenses + prf-calf)
+docs/PHASETASK-ERP.md                               (this section)
+CLAUDE-ERP.md                                       (Rule #20 note)
+```
+
+### Verification
+- `node -c backend/erp/controllers/expenseController.js`: clean.
+- `node -c backend/erp/scripts/migrateCalfOneAckFlow.js`: clean.
+- `node scripts/check-system-health.js`: all 8 sections green.
+- `cd frontend && npx vite build`: clean in 14.71s.
+- Smoke paths to run on staging:
+  1. BDM creates ACCESS+BANK line ₱5k → banner surfaces auto-CALF; `submitExpenses` returns 400 with `linked_calf_id`.
+  2. BDM submits CALF → president approves in hub → CALF POSTED + Expense POSTED in one txn, JE posted.
+  3. Force a stale COA on an expense line → approve CALF → whole txn rolls back; both docs stay DRAFT. (Pre-G4.5h: CALF=POSTED, Expense=ERROR.)
+  4. ORE-only expense: unchanged — `submitExpenses` works as before.
+  5. Proxy-created ACCESS expense by eBDM: CALF inherits `recorded_on_behalf_of`; `submitPrfCalf` forces hub; approve → cascade.
+
+### Out of scope
+- Car Logbook non-CASH fuel still uses the legacy per-fuel CALF-POSTED gate (`submitCarLogbookCycle` line 1535). Its cascade lives in `postSinglePrfCalf` today (the CarLogbookEntry branch), but the fuel-submit-time gate isn't inverted yet. Separate cleanup.
+- Mixed ACCESS+ORE expense: whole doc still waits on CALF approval (existing behavior, not changed).
+- Renaming the CALF "Approve" CTA to "Acknowledge" in ApprovalManager — cosmetic, skipped.
 
