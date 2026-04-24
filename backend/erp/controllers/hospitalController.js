@@ -42,7 +42,11 @@ const getAll = catchAsync(async (req, res) => {
 });
 
 const getById = catchAsync(async (req, res) => {
-  const hospital = await Hospital.findById(req.params.id).lean();
+  // Gate by the same access filter as getAll — a BDM must not be able to fetch a
+  // hospital's detail record by guessing/enumerating _id. 404 on miss (not 403)
+  // so we don't confirm existence to unauthorized callers.
+  const accessFilter = await buildHospitalAccessFilter(req.user);
+  const hospital = await Hospital.findOne({ _id: req.params.id, ...accessFilter }).lean();
   if (!hospital) return res.status(404).json({ success: false, message: 'Hospital not found' });
   res.json({ success: true, data: hospital });
 });
