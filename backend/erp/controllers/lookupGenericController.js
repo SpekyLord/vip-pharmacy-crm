@@ -2449,47 +2449,53 @@ const SEED_DEFAULTS = {
   // Add 'contractor' to allow a back-office clerk (contractor role) to proxy.
   // CEO is always denied regardless of this list — view-only role.
   // Cache: 60s TTL in resolveOwnerScope.js; bust on lookup write.
+  // `insert_only_metadata: true` is load-bearing — without it, buildSeedOps
+  // $set's metadata.roles on every page load and silently reverts admin edits
+  // (breaking Rule #3: subscribers must be able to configure via Control Center).
   PROXY_ENTRY_ROLES: [
-    { code: 'SALES', label: 'Sales Entry (live CSI)', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 1 } },
-    { code: 'OPENING_AR', label: 'Opening AR Entry (pre-cutover CSI)', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 2 } },
-    { code: 'COLLECTIONS', label: 'Collection Receipts', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 3 } },
-    { code: 'EXPENSES', label: 'Expense Entry / OR', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 4 } },
-    { code: 'GRN', label: 'Goods Receipt (GRN)', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 5 } },
+    { code: 'SALES', label: 'Sales Entry (live CSI)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 1 } },
+    { code: 'OPENING_AR', label: 'Opening AR Entry (pre-cutover CSI)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 2 } },
+    { code: 'COLLECTIONS', label: 'Collection Receipts', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 3 } },
+    { code: 'EXPENSES', label: 'Expense Entry / OR', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 4 } },
+    { code: 'GRN', label: 'Goods Receipt (GRN)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 5 } },
     // Phase G4.5e (Apr 23, 2026) — Car Logbook, PRF/CALF, Undertaking. Unblocks
     // the BDMs→CRM-only / eBDMs→ERP-proxy policy. Car Logbook covers per-fuel
     // submits (fuel lives as a subdoc inside CarLogbookEntry). Undertaking is
     // submit-only (create path inherits from GRN). Subscribers with different
     // org models extend via Control Center → Lookup Tables → PROXY_ENTRY_ROLES.
-    { code: 'CAR_LOGBOOK', label: 'Car Logbook (incl. per-fuel approval)', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 6 } },
-    { code: 'PRF_CALF', label: 'PRF (partner rebate) / CALF (company advance liquidation)', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 7 } },
-    { code: 'UNDERTAKING', label: 'Undertaking (GRN receipt confirmation)', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 8 } },
+    { code: 'CAR_LOGBOOK', label: 'Car Logbook (incl. per-fuel approval)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 6 } },
+    { code: 'PRF_CALF', label: 'PRF (partner rebate) / CALF (company advance liquidation)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 7 } },
+    { code: 'UNDERTAKING', label: 'Undertaking (GRN receipt confirmation)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 8 } },
     // Phase G4.5f (Apr 23, 2026) — SMER cycle + per-diem override. Append
     // 'contractor' to metadata.roles in Control Center so eBDMs (Judy / Jay
     // Ann) with the EXPENSES__SMER_PROXY sub-perm can proxy.
-    { code: 'SMER', label: 'SMER (per-diem cycle + per-day override)', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 9 } },
+    { code: 'SMER', label: 'SMER (per-diem cycle + per-day override)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 9 } },
   ],
   // Phase G4.5a follow-up — which roles are valid OWNERS of a proxied record
   // per module. Defaults to BDM-shaped roles ('contractor','employee'); admin/
   // finance/president/ceo are never per-BDM record owners (reports would break).
   // Subscribers with different org models extend via Control Center. Matches
   // the VALID_OWNER_ROLES cache in resolveOwnerScope.js.
+  // `insert_only_metadata: true` — see PROXY_ENTRY_ROLES comment above. Same
+  // revert-on-page-load bug applies here: without the flag, admin edits to
+  // metadata.roles are clobbered every time getByCategory auto-seeds.
   VALID_OWNER_ROLES: [
-    { code: 'SALES', label: 'Valid proxy targets — Sales', metadata: { roles: ['contractor', 'employee'], sort_order: 1 } },
-    { code: 'OPENING_AR', label: 'Valid proxy targets — Opening AR', metadata: { roles: ['contractor', 'employee'], sort_order: 2 } },
-    { code: 'COLLECTIONS', label: 'Valid proxy targets — Collections', metadata: { roles: ['contractor', 'employee'], sort_order: 3 } },
-    { code: 'EXPENSES', label: 'Valid proxy targets — Expenses', metadata: { roles: ['contractor', 'employee'], sort_order: 4 } },
-    { code: 'GRN', label: 'Valid proxy targets — GRN', metadata: { roles: ['contractor', 'employee'], sort_order: 5 } },
+    { code: 'SALES', label: 'Valid proxy targets — Sales', insert_only_metadata: true, metadata: { roles: ['contractor', 'employee'], sort_order: 1 } },
+    { code: 'OPENING_AR', label: 'Valid proxy targets — Opening AR', insert_only_metadata: true, metadata: { roles: ['contractor', 'employee'], sort_order: 2 } },
+    { code: 'COLLECTIONS', label: 'Valid proxy targets — Collections', insert_only_metadata: true, metadata: { roles: ['contractor', 'employee'], sort_order: 3 } },
+    { code: 'EXPENSES', label: 'Valid proxy targets — Expenses', insert_only_metadata: true, metadata: { roles: ['contractor', 'employee'], sort_order: 4 } },
+    { code: 'GRN', label: 'Valid proxy targets — GRN', insert_only_metadata: true, metadata: { roles: ['contractor', 'employee'], sort_order: 5 } },
     // Phase G4.5e — matching owner-role allowlists for the three new proxy
     // modules. Defaults to BDM-shaped roles; subscribers extend via Control
     // Center (e.g. to add a supervisor/branch-manager role that also owns
     // per-territory Car Logbook records).
-    { code: 'CAR_LOGBOOK', label: 'Valid proxy targets — Car Logbook', metadata: { roles: ['contractor', 'employee'], sort_order: 6 } },
-    { code: 'PRF_CALF', label: 'Valid proxy targets — PRF / CALF', metadata: { roles: ['contractor', 'employee'], sort_order: 7 } },
-    { code: 'UNDERTAKING', label: 'Valid proxy targets — Undertaking', metadata: { roles: ['contractor', 'employee'], sort_order: 8 } },
+    { code: 'CAR_LOGBOOK', label: 'Valid proxy targets — Car Logbook', insert_only_metadata: true, metadata: { roles: ['contractor', 'employee'], sort_order: 6 } },
+    { code: 'PRF_CALF', label: 'Valid proxy targets — PRF / CALF', insert_only_metadata: true, metadata: { roles: ['contractor', 'employee'], sort_order: 7 } },
+    { code: 'UNDERTAKING', label: 'Valid proxy targets — Undertaking', insert_only_metadata: true, metadata: { roles: ['contractor', 'employee'], sort_order: 8 } },
     // Phase G4.5f — SMER ownership stays BDM-shaped. Per-BDM per-diem reports,
     // CompProfile thresholds, and revolving-fund draws all key on bdm_id —
     // letting an admin or finance be a SMER owner would corrupt these.
-    { code: 'SMER', label: 'Valid proxy targets — SMER', metadata: { roles: ['contractor', 'employee'], sort_order: 9 } },
+    { code: 'SMER', label: 'Valid proxy targets — SMER', insert_only_metadata: true, metadata: { roles: ['contractor', 'employee'], sort_order: 9 } },
   ],
   // Phase P1 — Proxy SLA thresholds. Lookup-driven so subscribers can tune
   // without code changes. pending_alert_hours = when to alert office lead;
