@@ -34,7 +34,7 @@ export default function CreditNotes() {
   const api = useErpApi();
   const { getMyStock } = useInventory();
   const { hospitals } = useHospitals();
-  const { customers } = useCustomers();
+  const customers = useCustomers();
   const { data: lookups } = useLookupBatch(['RETURN_REASON', 'RETURN_CONDITION']);
   const RETURN_REASONS = (lookups.RETURN_REASON || []).map(o => ({ value: o.code, label: o.label }));
   const RETURN_CONDITIONS = (lookups.RETURN_CONDITION || []).map(o => ({ value: o.code, label: o.label }));
@@ -44,6 +44,7 @@ export default function CreditNotes() {
   const [editing, setEditing] = useState(null);
   const [warehouseId, setWarehouseId] = useState('');
   const [productOptions, setProductOptions] = useState([]);
+  const [customerOptions, setCustomerOptions] = useState([]);
   const [actionLoading, setActionLoading] = useState('');
 
   const [form, setForm] = useState({
@@ -71,6 +72,11 @@ export default function CreditNotes() {
 
   useEffect(() => { loadDocs(); }, [loadDocs]);
   useEffect(() => { loadProducts(); }, [loadProducts]);
+  useEffect(() => {
+    customers.getAll({ limit: 0, status: 'ACTIVE' })
+      .then(res => setCustomerOptions(res?.data || []))
+      .catch(() => setCustomerOptions([]));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateLine = (idx, field, value) => {
     setForm(prev => {
@@ -254,7 +260,7 @@ export default function CreditNotes() {
                 <label style={{ fontSize: 13 }}>Customer:
                   <SelectField value={form.customer_id} onChange={e => setForm(p => ({ ...p, customer_id: e.target.value, hospital_id: '' }))} style={{ marginLeft: 8 }}>
                     <option value="">Select...</option>
-                    {(customers || []).map(c => <option key={c._id} value={c._id}>{c.customer_name}</option>)}
+                    {customerOptions.map(c => <option key={c._id} value={c._id}>{c.customer_name}</option>)}
                   </SelectField>
                 </label>
                 <label style={{ fontSize: 13 }}>Date: <input type="date" value={form.cn_date} onChange={e => setForm(p => ({ ...p, cn_date: e.target.value }))} style={{ marginLeft: 8, padding: '6px 10px', borderRadius: 4, border: '1px solid #dbe4f0' }} /></label>

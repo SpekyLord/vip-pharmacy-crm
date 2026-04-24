@@ -754,6 +754,19 @@ async function approveGrnCore({ grnId, userId, session }) {
     throw Object.assign(new Error(`GRN is ${grn.status}, expected PENDING`), { statusCode: 400 });
   }
 
+  // Phase G4.5g — defense-in-depth waybill gate. createGrn already requires
+  // waybill_photo_url when GRN_SETTINGS.WAYBILL_REQUIRED=1, but this guard
+  // re-checks at approval time so neither the direct approveGrn endpoint nor
+  // the Undertaking-acknowledge cascade can post a GRN whose waybill went
+  // missing (manual seed data, broken S3 URL, lookup flipped mid-cycle).
+  const waybillRequired = await getGrnSetting(grn.entity_id, 'WAYBILL_REQUIRED', 1);
+  if (waybillRequired && !grn.waybill_photo_url) {
+    throw Object.assign(
+      new Error('Cannot approve GRN without waybill photo. Ask the BDM to re-upload the waybill before acknowledging.'),
+      { statusCode: 400 }
+    );
+  }
+
   const isInternalTransfer = grn.source_type === 'INTERNAL_TRANSFER' && grn.reassignment_id;
   const ledgerTxnType = isInternalTransfer ? 'TRANSFER_IN' : 'GRN';
   const eventType = isInternalTransfer ? 'STOCK_REASSIGNMENT_GRN' : 'GRN';

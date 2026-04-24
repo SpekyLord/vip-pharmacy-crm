@@ -353,6 +353,42 @@ export default function ApprovalManager() {
                     </div>
                   </div>
 
+                  {/* Phase G4.5g — UNDERTAKING approvals show BDM owner + linked GRN +
+                      waybill thumbnail on the row itself. The president-level bug this
+                      closes: approving the wrong UT because the approver couldn't tell
+                      two Hub rows apart without expanding, and the waybill was only
+                      visible inside DocumentDetailPanel. */}
+                  {item.module === 'UNDERTAKING' && (
+                    <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, padding: 8, background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 6 }}>
+                      {d.linked_grn_id?.waybill_photo_url ? (
+                        <img
+                          src={d.linked_grn_id.waybill_photo_url}
+                          alt="Waybill"
+                          onClick={(e) => { e.stopPropagation(); setPreviewImage(d.linked_grn_id.waybill_photo_url); }}
+                          style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 4, cursor: 'pointer', border: '1px solid #d97706', flexShrink: 0 }}
+                        />
+                      ) : (
+                        <div title="Missing waybill photo" style={{ width: 56, height: 56, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fee2e2', borderRadius: 4, border: '1px solid #dc2626', color: '#dc2626', fontSize: 20, fontWeight: 700, flexShrink: 0 }}>
+                          ⚠
+                        </div>
+                      )}
+                      <div style={{ fontSize: 12, flex: 1, lineHeight: 1.5 }}>
+                        <div style={{ fontWeight: 700, color: '#92400e' }}>
+                          BDM: {d.bdm_id?.name || '—'}
+                        </div>
+                        <div style={{ color: '#78350f' }}>
+                          GRN {d.linked_grn_id?.grn_number || '—'}
+                          {d.linked_grn_id?.vendor_id?.vendor_name && <> · {d.linked_grn_id.vendor_id.vendor_name}</>}
+                        </div>
+                        {!d.linked_grn_id?.waybill_photo_url && (
+                          <div style={{ color: '#dc2626', fontWeight: 700, marginTop: 2 }}>
+                            No waybill photo — approval will be blocked
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   {/* ── Expandable Detail Panel ──
                       Phase 31: detail rendering extracted to <DocumentDetailPanel />
                       so the same component serves both the Approval Hub AND the

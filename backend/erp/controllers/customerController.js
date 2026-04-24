@@ -10,7 +10,7 @@
  */
 const Customer = require('../models/Customer');
 const { catchAsync } = require('../../middleware/errorHandler');
-const { ROLES, isAdminLike } = require('../../constants/roles');
+const { buildCustomerAccessFilter } = require('../utils/customerAccess');
 const XLSX = require('xlsx');
 const { safeXlsxRead } = require('../../utils/safeXlsxRead');
 
@@ -24,12 +24,11 @@ const getAll = catchAsync(async (req, res) => {
     filter.customer_name = { $regex: req.query.q, $options: 'i' };
   }
 
-  // BDM sees only their tagged customers; admin/president/finance/ceo see all
-  if (!isAdminLike(req.user?.role) || req.query.my === 'true') {
-    filter.tagged_bdms = {
-      $elemMatch: { bdm_id: req.user._id, is_active: { $ne: false } }
-    };
-  }
+  // BDM sees only their tagged customers; admin/president/finance/ceo see all.
+  // ?my=true forces BDM filter even for admin-like roles (parity with hospitalController).
+  const forceMyFilter = req.query.my === 'true';
+  const effectiveUser = forceMyFilter ? { ...req.user, role: 'contractor' } : req.user;
+  Object.assign(filter, await buildCustomerAccessFilter(effectiveUser));
 
   const page = parseInt(req.query.page) || 1;
   const rawLimit = req.query.limit;
@@ -52,7 +51,11 @@ const getAll = catchAsync(async (req, res) => {
 });
 
 const getById = catchAsync(async (req, res) => {
-  const customer = await Customer.findById(req.params.id).lean();
+  // Gate by the same access filter as getAll — a BDM must not be able to fetch a
+  // customer's PII (TIN, credit_limit, contact_phone) by guessing/enumerating _id.
+  // 404 on miss (not 403) so we don't confirm existence to unauthorized callers.
+  const accessFilter = await buildCustomerAccessFilter(req.user);
+  const customer = await Customer.findOne({ _id: req.params.id, ...accessFilter }).lean();
   if (!customer) return res.status(404).json({ success: false, message: 'Customer not found' });
   res.json({ success: true, data: customer });
 });
@@ -118,11 +121,9 @@ const untagBdm = catchAsync(async (req, res) => {
 // ═══ Export Customers (Excel) ═══
 const exportCustomers = catchAsync(async (req, res) => {
   // Customers are global (Phase G5). Export everything the caller can see —
-  // admins get all; BDMs get tagged-only (same rule as getAll).
-  const filter = {};
-  if (!isAdminLike(req.user?.role)) {
-    filter.tagged_bdms = { $elemMatch: { bdm_id: req.user._id, is_active: { $ne: false } } };
-  }
+  // admins get all; BDMs get tagged-only (same rule as getAll). Route is already
+  // admin/finance/president-only via roleCheck, so the filter is defensive.
+  const filter = await buildCustomerAccessFilter(req.user);
   const customers = await Customer.find(filter).sort({ customer_name: 1 })
     .select('-__v -tagged_bdms -customer_name_clean -createdAt -updatedAt')
     .lean();
