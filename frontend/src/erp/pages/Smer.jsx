@@ -199,8 +199,10 @@ export default function Smer() {
   const [travelAdvanceSource, setTravelAdvanceSource] = useState('');  // 'COMP_PROFILE' | 'SETTINGS' | 'MANUAL'
   const [travelAdvanceOverride, setTravelAdvanceOverride] = useState(false);
   const [perdiemRate, setPerdiemRate] = useState(800);
-  // Per diem thresholds: resolved from CompProfile (per-person) → Settings (global fallback)
-  const [perdiemThresholds, setPerdiemThresholds] = useState({ full: 8, half: 3, source: '' });
+  // Per diem thresholds: resolved from CompProfile (per-person) → Settings (global fallback).
+  // eligibility_source + skip_flagged drive the Pull-from-CRM button label and
+  // explain why a non-zero flagged_excluded count appears below it.
+  const [perdiemThresholds, setPerdiemThresholds] = useState({ full: 8, half: 3, source: '', eligibility_source: 'visit', skip_flagged: false });
 
   // Hospital picker state
   const { hospitals } = useHospitals();
@@ -318,7 +320,7 @@ export default function Smer() {
       setTravelAdvance(amount || 0);
       setTravelAdvanceSource(source || 'SETTINGS');
       const pd = pdRes?.data || {};
-      setPerdiemThresholds({ full: pd.fullThreshold ?? 8, half: pd.halfThreshold ?? 3, source: pd.source || '' });
+      setPerdiemThresholds({ full: pd.fullThreshold ?? 8, half: pd.halfThreshold ?? 3, source: pd.source || '', eligibility_source: pd.eligibility_source || 'visit', skip_flagged: !!pd.skip_flagged });
     } catch {
       setTravelAdvance(0);
       setTravelAdvanceSource('');
@@ -340,7 +342,7 @@ export default function Smer() {
       setTravelAdvanceOverride(false);
       setPerdiemRate(data.perdiem_rate || 800);
       const pd = pdRes?.data || {};
-      setPerdiemThresholds({ full: pd.fullThreshold ?? 8, half: pd.halfThreshold ?? 3, source: pd.source || '' });
+      setPerdiemThresholds({ full: pd.fullThreshold ?? 8, half: pd.halfThreshold ?? 3, source: pd.source || '', eligibility_source: pd.eligibility_source || 'visit', skip_flagged: !!pd.skip_flagged });
       setShowForm(true);
     } catch (err) { console.error('[SMER]', err.message); showError(err, 'Could not load SMER'); }
   };
@@ -428,7 +430,11 @@ export default function Smer() {
   const isCrmLinked = user?.role === ROLES.CONTRACTOR; // field BDMs have CRM visits
   const handlePullFromCrm = async () => {
     try {
-      const res = await getSmerCrmMdCounts(period, cycle);
+      // Phase G4.5f follow-up — forward selectedBdmId so privileged + proxy
+      // callers pull the target BDM's CRM visits, not their own (admins have
+      // no Visit rows; eBDM proxies would otherwise pull their own per-diem
+      // counts into someone else's SMER). Self-filers omit; backend self-scopes.
+      const res = await getSmerCrmMdCounts(period, cycle, selectedBdmId || undefined);
       const crmEntries = res?.data?.daily_entries || [];
       if (!crmEntries.length) return;
       const crmMap = Object.fromEntries(crmEntries.map(e => [e.entry_date, e]));
@@ -441,7 +447,10 @@ export default function Smer() {
           const entryDateKey = (entry.entry_date || '').split('T')[0];
           const crm = crmMap[entryDateKey];
           if (!crm) return entry;
-          const updated = { ...entry, md_count: crm.md_count };
+          // Stash flagged_excluded as a transient UI hint so the per-day row can
+          // surface "X flagged not counted" — not persisted on save (server is
+          // the source of truth for flag-driven exclusions on every re-pull).
+          const updated = { ...entry, md_count: crm.md_count, _flaggedExcluded: crm.flagged_excluded || 0 };
           if (!entry.perdiem_override) {
             updated.perdiem_tier = crm.perdiem_tier;
             updated.perdiem_amount = crm.perdiem_amount;
@@ -455,6 +464,7 @@ export default function Smer() {
       });
     } catch (err) {
       console.error('[SMER] CRM pull failed:', err.response?.data || err.message);
+      showError(err, 'Pull from CRM failed');
     }
   };
 
@@ -955,19 +965,38 @@ export default function Smer() {
                   </button>
                   {travelAdvanceSource && !travelAdvanceOverride && <span style={{ fontSize: 10, color: '#6b7280', marginLeft: 2 }}>{travelAdvanceSource === 'COMP_PROFILE' ? 'CompProfile' : 'Default'}</span>}
                 </span>
-                {isCrmLinked && (
-                  <button onClick={handlePullFromCrm} disabled={loading} style={{ padding: '4px 14px', borderRadius: 6, background: '#16a34a', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>Pull from CRM</button>
-                )}
+                {isCrmLinked && (() => {
+                  // Phase G1.5 follow-up — label tracks the resolved data source
+                  // so non-pharma subscribers (logbook source) and manual-entry
+                  // subscribers don't see a misleading "Pull from CRM" button.
+                  const src = perdiemThresholds.eligibility_source;
+                  const pullDisabled = loading || src === 'manual' || src === 'none';
+                  const label = src === 'logbook' ? 'Pull from Logbook' : src === 'manual' || src === 'none' ? 'Pull disabled' : 'Pull from CRM';
+                  return (
+                    <button onClick={handlePullFromCrm} disabled={pullDisabled} title={pullDisabled && (src === 'manual' || src === 'none') ? 'Eligibility source is manual; enter MDs by hand.' : ''} style={{ padding: '4px 14px', borderRadius: 6, background: pullDisabled ? '#9ca3af' : '#16a34a', color: '#fff', border: 'none', cursor: pullDisabled ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600 }}>{label}</button>
+                  );
+                })()}
                 <span style={{ fontSize: 11, color: 'var(--erp-muted, #5f7188)' }}>
                   Full ≥ {perdiemThresholds.full} | Half ≥ {perdiemThresholds.half}
                   {perdiemThresholds.source === 'COMP_PROFILE' && <span style={{ marginLeft: 4, color: '#2563eb', fontWeight: 600 }}>(per-person)</span>}
                 </span>
               </div>
-              {isCrmLinked && (
-                <div style={{ padding: '6px 12px', marginBottom: 12, borderRadius: 6, background: '#f0fdf4', border: '1px solid #bbf7d0', fontSize: 12, color: '#166534' }}>
-                  BDMs: Click <strong>Pull from CRM</strong> to auto-fill MDs/Engagements from your logged visits. You can still edit manually after pulling.
-                </div>
-              )}
+              {isCrmLinked && (() => {
+                // Banner copy mirrors button label so a logbook-sourced subscriber
+                // doesn't read "from your logged visits" when the data actually
+                // comes from CarLogbookEntry. Engagement-types intentionally
+                // dropped — SMER day schema has no engagement field today, so
+                // the bridge cannot carry them; mentioning them was Rule #20
+                // overpromise.
+                const src = perdiemThresholds.eligibility_source;
+                const sourceLabel = src === 'logbook' ? 'POSTED Car Logbook entries' : src === 'manual' || src === 'none' ? 'manual entry only — Pull is disabled for this entity' : 'your logged CRM visits';
+                return (
+                  <div style={{ padding: '6px 12px', marginBottom: 12, borderRadius: 6, background: '#f0fdf4', border: '1px solid #bbf7d0', fontSize: 12, color: '#166534' }}>
+                    BDMs: pull auto-fills MD counts and area visited from {sourceLabel}. You can still edit manually after pulling.
+                    {perdiemThresholds.skip_flagged && src === 'visit' && <span style={{ marginLeft: 6, color: '#9a3412' }}>Visits with photo flags do not count toward per-diem.</span>}
+                  </div>
+                );
+              })()}
 
               {/* Daily Entries Grid — Desktop */}
               <div className="smer-desktop-grid" style={{ overflowX: 'auto', marginBottom: 16 }}>
@@ -1009,6 +1038,11 @@ export default function Smer() {
                         </td>
                         <td style={{ padding: 3, textAlign: 'center' }}>
                           <input type="number" min={0} value={entry.md_count} onChange={e => handleEntryChange(idx, 'md_count', Number(e.target.value))} disabled={entry.activity_type === 'NO_WORK'} style={{ width: 45, padding: '2px 3px', textAlign: 'center', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12, opacity: entry.activity_type === 'NO_WORK' ? 0.4 : 1 }} />
+                          {entry._flaggedExcluded > 0 && (
+                            <div title="Visits with photo flags were excluded from the per-diem count. Open MyVisits to clear the flag." style={{ fontSize: 9, fontWeight: 600, color: '#9a3412', marginTop: 1, cursor: 'help' }}>
+                              {entry._flaggedExcluded} flagged
+                            </div>
+                          )}
                         </td>
                         <td style={{ padding: 3, textAlign: 'center' }}>
                           <span style={{ padding: '1px 5px', borderRadius: 4, fontSize: 10, fontWeight: 600, color: entry.perdiem_tier === 'FULL' ? '#16a34a' : entry.perdiem_tier === 'HALF' ? '#d97706' : '#9ca3af', background: entry.perdiem_tier === 'FULL' ? '#dcfce7' : entry.perdiem_tier === 'HALF' ? '#fef3c7' : '#f3f4f6' }}>
@@ -1078,6 +1112,9 @@ export default function Smer() {
                       <div className="smer-card-field">
                         <label>MDs / Eng.</label>
                         <input type="number" min={0} value={entry.md_count} onChange={e => handleEntryChange(idx, 'md_count', Number(e.target.value))} disabled={entry.activity_type === 'NO_WORK'} style={entry.activity_type === 'NO_WORK' ? { opacity: 0.4 } : undefined} />
+                        {entry._flaggedExcluded > 0 && (
+                          <div style={{ fontSize: 10, fontWeight: 600, color: '#9a3412', marginTop: 2 }}>{entry._flaggedExcluded} flagged not counted</div>
+                        )}
                       </div>
                       <div className="smer-card-field full-width">
                         <label>Hospitals</label>

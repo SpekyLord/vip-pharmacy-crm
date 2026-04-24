@@ -76,6 +76,9 @@ const salesLineSchema = new mongoose.Schema({
   payment_mode: { type: String }, // Validated against PaymentMode lookup
   // Phase 18: service description (SERVICE_INVOICE only — FNB, rental, consulting)
   service_description: { type: String, trim: true },
+  // Phase 15.3: optional PO# written on the physical CSI booklet (overlay draft source).
+  // Not system-generated; captured at entry when the customer provided a PO reference.
+  po_number: { type: String, trim: true },
   // Direct petty cash routing for CASH_RECEIPT/SERVICE_INVOICE with cash payment
   // When set, sale bypasses AR and deposits directly to the fund
   petty_cash_fund_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PettyCashFund' },

@@ -157,6 +157,7 @@ const WORKFLOW_GUIDES = {
       'Red validation = must fix before posting. Yellow = informational (e.g. CSI number outside your allocation) — will NOT block posting.',
       'Post routes through the Approval Hub for users not in MODULE_DEFAULT_ROLES.SALES (lookup-driven, per-entity — default: admin, finance, president). Contractors/BDMs get a "Pending approval" toast and the row stays VALID until an authority posts it from /erp/approvals. If Authority Matrix is enabled, amount-threshold rules can add further escalation on top.',
       'Re-open a POSTED sale from **Sales Transactions** (per-row) to correct it — reverses stock, petty-cash deposit, and journal entries (SAP Storno). The consumed CSI number returns to your available pool. Blocked if a POSTED Collection already settled this CSI; reopen the collection first to release it.',
+      'Draft CSI overlay (Phase 15.3): any CSI-type row with at least one line item shows a "📄 Draft CSI" action in Sales Transactions. Clicking downloads a mm-precise PDF that overlays customer/date/items/totals onto a pre-printed BIR booklet page. Feed your booklet into the printer; do NOT print the draft onto blank paper as a standalone receipt (it is not BIR-valid). Calibrate once per printer on the My CSI page.',
     ],
     next: [
       { label: 'View All Sales', path: '/erp/sales' },
@@ -293,7 +294,7 @@ const WORKFLOW_GUIDES = {
     title: 'SMER (Sales/Marketing Expense Report)',
     steps: [
       'Select the period/cycle — SMER is submitted once per cycle (C1: 1st-15th, C2: 16th-end of month)',
-      'Click "Pull from CRM" to auto-fill MD counts and areas visited from your logged visits',
+      'Click "Pull from CRM" (label changes to "Pull from Logbook" for non-pharma entities) to auto-fill MD counts and area visited',
       'Fill in each day\'s activity type (Office/Field/Other/NO_WORK)',
       'Per Diem too low? Click the [+] button to request an override — you can do this anytime while the SMER is still DRAFT, no need to wait for submit',
       'Select "NO_WORK" for days you did not work — per diem is automatically zero, no overrides allowed',
@@ -1065,8 +1066,11 @@ const WORKFLOW_GUIDES = {
     tip: 'Behind-schedule BDMs are highlighted in red. Aim for 100% completion before payroll run.',
   },
   'csi-booklets': {
-    title: 'CSI Booklets — Monitoring & Traceability',
+    title: 'CSI Booklets, Drafts & Printer Calibration',
     steps: [
+      'Drafts Pending Print (Phase 15.3): sales keyed in the ERP that still need you (or the owner BDM) to print the overlay PDF onto a BIR booklet page, write the real CSI#, and scan it back via the Sales Transactions list. The draft PDF is NOT a valid BIR receipt — it overlays variable data (customer, date, items, totals) onto the pre-printed booklet.',
+      'Printer Calibration (Phase 15.3): first time printing drafts, click Print Calibration Grid. Feed a blank booklet page into your printer, print the grid, measure the mm delta between the booklet\'s "Registered Name" / "Charged to" line and the grid\'s red NAME crosshair, enter Offset X / Offset Y, Save. Typical drift ±1–3mm. Wrong paper-size selection explains larger offsets — fix the paper size first.',
+      'Hard cap: 3 items per draft CSI page. Sales with more items auto-paginate — use consecutive booklet serials across the chunks.',
       'Record a BIR-registered booklet: code, series start/end, optional ATP number + registered address.',
       'Open a booklet → allocate a small range (typically 3–7 numbers) to a specific BDM. No dates required.',
       'Out-of-town BDMs get allocations so HQ can trace who used which CSI number. Iloilo-based users who use booklets directly do not need allocations — the system simply skips monitoring for them.',
@@ -1079,7 +1083,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Access Templates', path: '/erp/control-center?section=access' },
       { label: 'Void Reason Lookup', path: '/erp/control-center?section=lookups' },
     ],
-    tip: 'Monitoring only — sales are NEVER blocked by CSI validation. Out-of-range / voided / already-used numbers surface as yellow warnings on validate. Void reasons are lookup-driven (ERP_CSI_VOID_REASONS) so subscribers can customize without code changes. Access is gated by the inventory.csi_booklets sub-permission (Access Templates).',
+    tip: 'CSI draft overlays (Phase 15.3) need a per-entity CSI_TEMPLATE lookup row — seed via `node backend/erp/scripts/seedCsiTemplates.js --apply` or add/edit rows in Control Center → Lookup Tables → CSI_TEMPLATE. Monitoring only — sales are NEVER blocked by CSI validation. Out-of-range / voided / already-used numbers surface as yellow warnings on validate. Void reasons are lookup-driven (ERP_CSI_VOID_REASONS) so subscribers can customize without code changes. Access is gated by the inventory.csi_booklets sub-permission (Access Templates) — but the Drafts + Calibration panels are visible to all users (a contractor who proxies sales needs them just as much as the BDM who prints).',
   },
   'cycle-reports': {
     title: 'Cycle Reports',

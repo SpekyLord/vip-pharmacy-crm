@@ -7792,3 +7792,95 @@ CLAUDE-ERP.md                                       (Rule #20 note)
 - Mixed ACCESS+ORE expense: whole doc still waits on CALF approval (existing behavior, not changed).
 - Renaming the CALF "Approve" CTA to "Acknowledge" in ApprovalManager — cosmetic, skipped.
 
+---
+
+## Phase 15.3 — CSI Draft Overlay (Print-Into-Booklet)
+
+**Scope**: Proxy / contractor enters a sale in the ERP; system generates a mm-precise PDF the BDM feeds **through** their physical BIR-registered CSI booklet page. The PDF prints only variable data (customer, date, items, totals); the booklet supplies all pre-printed content (CSI#, logo, TIN, ATP footer, column labels). Closes the round-trip BIR compliance dance that Phase G4.5a's proxy entry opened — proxy inputs data, BDM writes the legal receipt, existing Phase 15.2 ScanCSIModal captures the booklet serial back into `SalesLine.doc_ref`.
+
+**Compliance boundary**: The draft is explicitly NOT a BIR receipt. The physical BIR-registered booklet remains the legal document. No CSI#, ATP, TIN, or logo is ever overlaid — only the handwritten fields. Upgrading to true digital CSI (CAS permit) is a separate regulatory track.
+
+### Files (new + modified)
+
+**New**
+- `backend/erp/services/csiDraftRenderer.js` — pdfkit-based renderer. Exports `renderCsiDraft({ sale, entity, template, user, customerLabel, customerAddress, lineDisplay, terms })` + `renderCalibrationGrid({ template, user })`. Pure layout, caller provides hydrated inputs. Hard cap 3 items per page; overflow auto-paginates.
+- `backend/erp/scripts/seedCsiTemplates.js` — upserts `CSI_TEMPLATE` lookup rows for VIP (page 210×260mm, 20-row body) + MG AND CO. (page 160×202mm, 13-row body). Coordinate set locked from 2026-04-24 field-measurement pass against physical booklets. Dry-run by default; `--apply` to commit. Metadata uses `$setOnInsert` so admin edits in Lookup Manager survive reseed. Doubles as the deploy-time health check (shows which entities have/need templates).
+
+**Modified — backend**
+- `backend/erp/models/SalesLine.js` — added `po_number` (optional string, overlay draft source; existing `doc_ref` already carries the CSI booklet serial).
+- `backend/models/User.js` — added `csi_printer_offset_x_mm` + `csi_printer_offset_y_mm` (default 0, per-BDM printer drift compensation).
+- `backend/controllers/userController.js` — `updateProfile` accepts the two calibration fields, validated -20 ≤ mm ≤ 20.
+- `backend/erp/controllers/salesController.js` — added `generateCsiDraft`, `getCsiCalibrationGrid`, `getDraftsPendingCsi` actions. All three use `widenFilterForProxy('sales', {subKey: 'proxy_entry'})` so owner + proxy + admin/finance/president access is preserved (no Rule #21 shortcuts). Audit crumb via `ErpAuditLog.log_type = 'CSI_TRACE'` on each draft generation.
+- `backend/erp/routes/salesRoutes.js` — three new GETs: `/:id/csi-draft`, `/drafts/pending-csi`, `/drafts/calibration-grid`.
+- `backend/package.json` — `pdfkit` dependency.
+
+**Modified — frontend**
+- `frontend/src/erp/hooks/useSales.js` — `csiDraftUrl(id)`, `getDraftsPendingCsi()`, `csiCalibrationUrl()`.
+- `frontend/src/erp/pages/SalesEntry.jsx` — "📄 Draft CSI" button in per-row actions (CSI sale type + ≥1 line item, any status).
+- `frontend/src/erp/pages/CsiBooklets.jsx` — top-of-page "Drafts Pending Print" table (proxy + owner shared view via widened filter) + "Printer Calibration" panel with Offset X/Y inputs, "Print Calibration Grid" button, save. Visible to contractor/admin AND BDM views.
+- `frontend/src/erp/components/WorkflowGuide.jsx` — updated `sales-list` + `csi-booklets` banners to describe the overlay workflow and calibration discipline.
+
+**Modified — tooling**
+- `scripts/check-system-health.js` — section 9 `checkCsiDraftOverlay()` verifies renderer, seed, controller actions, route mounts, model fields, hook exports, page panels all exist. 9/9 green confirms wiring intact.
+
+### Endpoints
+
+| Method | Path | Action |
+|---|---|---|
+| GET | `/api/erp/sales/:id/csi-draft` | Stream overlay PDF for a single sale. Multi-page if >3 items. |
+| GET | `/api/erp/sales/drafts/pending-csi` | List CSI-type sales assigned/proxied where `doc_ref` is still a PROXY-/PENDING- placeholder OR `csi_photo_url` is absent. |
+| GET | `/api/erp/sales/drafts/calibration-grid` | Stream mm-gridded PDF for per-printer alignment. Uses `req.entityId` header. |
+| PUT | `/api/users/profile` | Existing endpoint — now accepts `csi_printer_offset_x_mm` + `csi_printer_offset_y_mm`. |
+
+### Template data shape
+
+`CSI_TEMPLATE` lookup, one row per entity, `metadata`:
+- `page: { width_mm, height_mm }`
+- `header: { name, date, address, terms }` — each `{ x, y }` in mm (top-left origin)
+- `body: { first_row_y_mm, row_height_mm, row_count, max_items_per_page, columns, po_row_index, note_row_start_index, note_row_count }`
+- `totals: { left, right }` — each `{ start_y_mm, row_height_mm, x_mm, align, fields[] }`
+- `text: { po_label, note_line_1, note_line_2, default_terms }`
+- `font: { family, size_pt }`
+
+### Semantics
+
+- **Each sale line = 3 body rows**: item description row (with qty + unit price + amount), Batch row, Exp Date row. If `batch_lot_no` or expiry lookup is missing, only the present rows emit.
+- **Exp date source**: looked up via `InventoryLedger.findOne({ entity_id, product_id, batch_lot_no })`.
+- **Item description**: `brand_name + dosage_strength` per Rule #4.
+- **Terms**: prefers Hospital/Customer `payment_terms` (numeric days) over template `default_terms` (`"30 days"`). Both PDFs confirmed as 30-day default.
+- **PO#**: prints only when `sale.po_number` is set. If empty, the PO# row is blank (no "PO#:" label).
+- **NOTE**: always prints (per template `text.note_line_1` + `text.note_line_2`). Default text matches the physical scans: "NOTE: All expired and damaged items will be / accepted and changed".
+- **VAT totals**: always VAT-inclusive in the Amount column (matches booklet convention); right block always prints, left block prints only non-zero values (both booklet scans showed left block blank).
+- **Overflow**: hard cap 3 items per draft page. Sales with >3 items → multi-page PDF, one booklet page per chunk. BDM assigns consecutive booklet serials across chunks.
+- **Calibration**: per-BDM `csi_printer_offset_x_mm / _y_mm` shifts every drawn coordinate by the same delta. Values bounded to ±20mm (larger drift means wrong paper size).
+
+### Deploy order
+
+1. Ship branch (this work — all 9 sub-phases together, no partial user impact).
+2. On prod: `npm install` (installs `pdfkit` + deps).
+3. `node backend/erp/scripts/seedCsiTemplates.js` → dry-run shows which entities will receive templates.
+4. `node backend/erp/scripts/seedCsiTemplates.js --apply` → commits VIP + MG AND CO. rows.
+5. Admin verifies rows in Control Center → Lookup Tables → CSI_TEMPLATE. Subscribers with other entities add their own rows via Lookup Manager (no code change — Rule #3).
+6. Each BDM runs calibration once from My CSI → print grid → measure → save offset.
+7. Pilot: Judy Mae (contractor proxying for Jenny Rose / Jay Ann) keys one sale → prints overlay → feeds booklet → verifies alignment → scans serial back. Iterate offset if misaligned.
+8. Rollout to all BDMs.
+
+### Smoke paths to run on staging
+
+1. Contractor keys a CSI on behalf of BDM (existing Phase G4.5a flow) → clicks "📄 Draft CSI" in the Sales row → browser downloads `CSI-DRAFT-{doc_ref}-{YYYYMMDD}.pdf`.
+2. BDM opens My CSI → sees the draft in "Drafts Pending Print" → downloads PDF.
+3. BDM opens My CSI → Printer Calibration → clicks "Print Calibration Grid" → enters offset 1.5 / 0.0 → Save. Profile persists.
+4. Sale with 4 items → draft PDF has 2 pages (3 items + 1 item).
+5. Sale with 1 item missing batch_lot_no → batch row blank, exp row blank, item row still prints.
+6. Admin removes CSI_TEMPLATE row for an entity → new draft request returns 400 with "Admin must configure CSI_TEMPLATE" guidance.
+7. `node scripts/check-system-health.js` → section 9 green.
+
+### Out of scope
+
+- Multi-language NOTE text (EN/TL) — one string per template row today.
+- Bulk draft generation for multiple sales (batch-print day).
+- Auto-email draft PDF to BDM phone — download-only today (user sends via Viber / Messenger manually).
+- Full digital CSI replacing paper booklet — separate BIR CAS permit track, months of regulatory work.
+- Foundation Health dashboard card for CSI_TEMPLATE coverage — seed script dry-run fills the same role.
+- Custom font shipping — Helvetica-Bold 10pt from pdfkit built-ins; if subscribers want typewriter-style we'd need to ship a .ttf.
+

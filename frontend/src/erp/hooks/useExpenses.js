@@ -18,8 +18,15 @@ export default function useExpenses() {
   const validateSmer = (body) => api.post('/expenses/smer/validate', body || {});
   const submitSmer = (body) => api.post('/expenses/smer/submit', body || {});
   const reopenSmer = (ids, extra) => api.post('/expenses/smer/reopen', { smer_ids: ids, ...(extra || {}) });
-  const getSmerCrmMdCounts = (period, cycle) => api.get('/expenses/smer/crm-md-counts', { params: { period, cycle } });
-  const getSmerCrmVisitDetail = (date) => api.get(`/expenses/smer/crm-visits/${date}`);
+  // Phase G4.5f follow-up — forward bdmId so privileged + proxy callers scope to
+  // the target BDM's CRM visits, not to req.bdmId (admins have no BDM rows; eBDM
+  // proxies would silently pull their own visits). Self-filers may omit bdmId;
+  // backend then self-scopes via req.bdmId. Mirrors the bdm_id pattern used by
+  // validateSmer / submitSmer / reopenSmer.
+  const getSmerCrmMdCounts = (period, cycle, bdmId) =>
+    api.get('/expenses/smer/crm-md-counts', { params: { period, cycle, ...(bdmId ? { bdm_id: bdmId } : {}) } });
+  const getSmerCrmVisitDetail = (date, bdmId) =>
+    api.get(`/expenses/smer/crm-visits/${date}`, bdmId ? { params: { bdm_id: bdmId } } : undefined);
   const overridePerdiemDay = (smerId, data) => api.post(`/expenses/smer/${smerId}/override-perdiem`, data);
   const applyPerdiemOverride = (smerId, data) => api.post(`/expenses/smer/${smerId}/apply-override`, data);
 

@@ -3006,7 +3006,7 @@ const getSmerCrmMdCounts = catchAsync(async (req, res) => {
     if (!perdiemConfig.allow_weekend && (dow === 0 || dow === 6)) continue;
 
     const dateKey = dateKeyFor(day);
-    const crmData = dailyCounts[dateKey] || { md_count: 0, unique_doctors: 0 };
+    const crmData = dailyCounts[dateKey] || { md_count: 0, unique_doctors: 0, flagged_excluded: 0 };
     // Phase G1.6 — pass perdiemConfig so per-role thresholds apply (CompProfile > PERDIEM_RATES > Settings).
     const { tier, amount } = computePerdiemAmount(crmData.md_count, perdiemRate, settings, compProfile, perdiemConfig);
 
@@ -3016,6 +3016,7 @@ const getSmerCrmMdCounts = catchAsync(async (req, res) => {
       day_of_week: DAYS_OF_WEEK[dow],
       md_count: crmData.md_count,
       unique_doctors: crmData.unique_doctors,
+      flagged_excluded: crmData.flagged_excluded || 0,
       locations: crmData.locations || '',
       perdiem_tier: tier,
       perdiem_amount: amount,
@@ -3029,9 +3030,15 @@ const getSmerCrmMdCounts = catchAsync(async (req, res) => {
       period,
       cycle,
       perdiem_rate: perdiemRate,
+      // Phase G1.5 follow-up — surface the resolved data source so the UI can
+      // adjust button labels ("Pull from CRM" vs "Pull from Logbook") and so a
+      // non-zero flagged_excluded total tells the BDM why their pull undercounts.
+      eligibility_source: perdiemConfig.eligibility_source,
+      skip_flagged: !!perdiemConfig.skip_flagged,
       daily_entries: entries,
       total_md_visits: entries.reduce((s, e) => s + e.md_count, 0),
       total_perdiem: entries.reduce((s, e) => s + e.perdiem_amount, 0),
+      total_flagged_excluded: entries.reduce((s, e) => s + (e.flagged_excluded || 0), 0),
       full_days: entries.filter(e => e.perdiem_tier === 'FULL').length,
       half_days: entries.filter(e => e.perdiem_tier === 'HALF').length,
       zero_days: entries.filter(e => e.perdiem_tier === 'ZERO').length
@@ -3552,7 +3559,13 @@ const getPerdiemConfig = catchAsync(async (req, res) => {
     data: {
       fullThreshold: resolved.fullThreshold,
       halfThreshold: resolved.halfThreshold,
-      source: resolved.source
+      source: resolved.source,
+      // Phase G1.5 follow-up — let the SMER page adjust the Pull-from-CRM button
+      // label and copy on first load (instead of waiting for the user to click
+      // and only then learning the source isn't CRM). Defaults to 'visit' when
+      // PERDIEM_RATES isn't seeded, matching the bridge's pharma default.
+      eligibility_source: perdiemConfig?.eligibility_source || 'visit',
+      skip_flagged: !!perdiemConfig?.skip_flagged
     }
   });
 });

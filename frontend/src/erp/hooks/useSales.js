@@ -18,10 +18,18 @@ export default function useSales() {
   const attachReceivedCsi = (id, { csi_received_photo_url, csi_received_attachment_id }) =>
     api.put(`/sales/${id}/received-csi`, { csi_received_photo_url, csi_received_attachment_id });
 
+  // Phase 15.3 — CSI draft overlay PDF URL. Hand to window.open so the
+  // browser downloads the PDF using the current auth cookie.
+  const csiDraftUrl = (id) => `/api/erp/sales/${id}/csi-draft`;
+  const getDraftsPendingCsi = () => api.get('/sales/drafts/pending-csi');
+  const csiCalibrationUrl = (entityId) =>
+    `/api/erp/sales/drafts/calibration-grid${entityId ? `?entity_id=${entityId}` : ''}`;
+
   return {
     ...api,
     getSales, getSaleById, createSale, updateSale, deleteDraft,
     validateSales, submitSales, reopenSales, requestDeletion, approveDeletion,
     presidentReverseSale, attachReceivedCsi,
+    csiDraftUrl, getDraftsPendingCsi, csiCalibrationUrl,
   };
 }

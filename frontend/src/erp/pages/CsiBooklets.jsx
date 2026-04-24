@@ -2,15 +2,18 @@
  * CSI Booklets Page — Phase 15.2
  * Booklet master, weekly allocation, usage stats
  */
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useContext } from 'react';
 import { showError } from '../utils/errorToast';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useReports from '../hooks/useReports';
 import usePeople from '../hooks/usePeople';
+import useSales from '../hooks/useSales';
 import { useLookupOptions } from '../hooks/useLookups';
 import useErpSubAccess from '../hooks/useErpSubAccess';
 import WorkflowGuide from '../components/WorkflowGuide';
+import { AuthContext } from '../../context/AuthContextObject';
+import api from '../../services/api';
 
 const pageStyles = `
   .booklet-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -113,10 +116,63 @@ const pageStyles = `
 export default function CsiBooklets() {
   const rpt = useReports();
   const people = usePeople();
+  const sales = useSales();
   const { options: voidReasons } = useLookupOptions('ERP_CSI_VOID_REASONS');
   const { hasSubPermission } = useErpSubAccess();
+  const { user } = useContext(AuthContext);
   // Contractor/admin view vs BDM self-service view. Drives page layout.
   const canManage = hasSubPermission('inventory', 'csi_booklets');
+
+  // ── Phase 15.3 — Drafts Pending Print + Printer Calibration ─────
+  const [drafts, setDrafts] = useState([]);
+  const [draftsLoading, setDraftsLoading] = useState(false);
+  const [calib, setCalib] = useState({
+    x: Number(user?.csi_printer_offset_x_mm) || 0,
+    y: Number(user?.csi_printer_offset_y_mm) || 0,
+  });
+  const [calibSaving, setCalibSaving] = useState(false);
+
+  const loadDrafts = useCallback(async () => {
+    setDraftsLoading(true);
+    try {
+      const res = await sales.getDraftsPendingCsi();
+      setDrafts(res?.data || []);
+    } catch (err) {
+      console.warn('[CsiBooklets] drafts load failed:', err.message);
+    }
+    setDraftsLoading(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const [calibSavedFlash, setCalibSavedFlash] = useState(false);
+  const saveCalibration = useCallback(async () => {
+    setCalibSaving(true);
+    try {
+      await api.put('/users/profile', {
+        csi_printer_offset_x_mm: Number(calib.x) || 0,
+        csi_printer_offset_y_mm: Number(calib.y) || 0,
+      });
+      setCalibSavedFlash(true);
+      setTimeout(() => setCalibSavedFlash(false), 2500);
+    } catch (err) {
+      showError(err, 'Could not save calibration');
+    }
+    setCalibSaving(false);
+  }, [calib]);
+
+  useEffect(() => {
+    loadDrafts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Keep local calib input in sync if user profile refreshes elsewhere
+  useEffect(() => {
+    setCalib({
+      x: Number(user?.csi_printer_offset_x_mm) || 0,
+      y: Number(user?.csi_printer_offset_y_mm) || 0,
+    });
+  }, [user?.csi_printer_offset_x_mm, user?.csi_printer_offset_y_mm]);
+  // ─────────────────────────────────────────────────────────────────
   const [booklets, setBooklets] = useState([]);
   const [bdms, setBdms] = useState([]);
   // BDM self-service: just their available numbers (read-only list).
@@ -275,6 +331,139 @@ export default function CsiBooklets() {
         <Sidebar />
         <div className="booklet-main">
           <WorkflowGuide pageKey="csi-booklets" />
+
+          {/* Phase 15.3 — Drafts Pending Print */}
+          <div className="panel" style={{ marginBottom: 16 }}>
+            <div className="panel-title-row">
+              <div>
+                <h3>📄 Drafts Pending Print</h3>
+                <p>
+                  Sales keyed in the ERP that still need the BDM to print the overlay PDF onto a
+                  BIR booklet page, write the real CSI#, and scan it back.
+                  &nbsp;<em>This PDF is NOT a valid BIR receipt — it only overlays variable data
+                  onto the pre-printed booklet.</em>
+                </p>
+              </div>
+              <button
+                className="btn btn-sm"
+                onClick={loadDrafts}
+                disabled={draftsLoading}
+              >
+                {draftsLoading ? 'Loading…' : 'Refresh'}
+              </button>
+            </div>
+            {draftsLoading && <div className="loading">Loading drafts…</div>}
+            {!draftsLoading && drafts.length === 0 && (
+              <div className="empty-state">
+                <p>No sales waiting for CSI overlay. You're all caught up.</p>
+              </div>
+            )}
+            {!draftsLoading && drafts.length > 0 && (
+              <div className="table-wrap">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>CSI Date</th>
+                      <th>BDM (Owner)</th>
+                      <th>Customer</th>
+                      <th style={{ textAlign: 'right' }}>Lines</th>
+                      <th style={{ textAlign: 'right' }}>Amount Due</th>
+                      <th>Status</th>
+                      <th style={{ width: 180 }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {drafts.map((d) => (
+                      <tr key={d._id}>
+                        <td>{d.csi_date ? new Date(d.csi_date).toLocaleDateString() : '-'}</td>
+                        <td>{d.bdm_name || '-'}</td>
+                        <td>{d.customer_name || '-'}</td>
+                        <td className="num">{d.line_count}</td>
+                        <td className="num">
+                          {typeof d.total_amount_due === 'number'
+                            ? d.total_amount_due.toLocaleString('en-PH', { minimumFractionDigits: 2 })
+                            : '-'}
+                        </td>
+                        <td><span className="badge">{d.status}</span></td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            <button
+                              className="btn btn-outline btn-sm"
+                              title="Download overlay PDF for booklet feed"
+                              onClick={() => window.open(sales.csiDraftUrl(d._id), '_blank')}
+                            >
+                              ⬇ Draft PDF
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Phase 15.3 — Printer Calibration */}
+          <div className="panel" style={{ marginBottom: 16 }}>
+            <div className="panel-title-row">
+              <div>
+                <h3>🖨 Printer Calibration</h3>
+                <p>
+                  Align the overlay with your printer once. Print the calibration grid onto a
+                  <strong> blank booklet page</strong>, measure mm delta between the booklet's
+                  "Registered Name" / "Charged to" line and the grid's red NAME crosshair. Enter
+                  the delta here. Repeat if you change printers.
+                </p>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <div className="form-group" style={{ minWidth: 140 }}>
+                <label>Offset X (mm)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="-20"
+                  max="20"
+                  value={calib.x}
+                  onChange={(e) => setCalib((c) => ({ ...c, x: e.target.value }))}
+                />
+              </div>
+              <div className="form-group" style={{ minWidth: 140 }}>
+                <label>Offset Y (mm)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="-20"
+                  max="20"
+                  value={calib.y}
+                  onChange={(e) => setCalib((c) => ({ ...c, y: e.target.value }))}
+                />
+              </div>
+              <button
+                className="btn btn-outline btn-sm"
+                title="Uses your current working entity's CSI template"
+                onClick={() => window.open(sales.csiCalibrationUrl(), '_blank')}
+              >
+                ⬇ Print Calibration Grid
+              </button>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={calibSaving}
+                onClick={saveCalibration}
+              >
+                {calibSaving ? 'Saving…' : 'Save Calibration'}
+              </button>
+              {calibSavedFlash && (
+                <span style={{ fontSize: 12, color: '#047857', fontWeight: 700 }}>✓ Saved</span>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--erp-muted)', marginTop: 8, fontStyle: 'italic' }}>
+              Tip: positive X shifts overlay RIGHT, positive Y shifts DOWN. Typical calibration
+              is ±1–3 mm. Larger deltas usually mean wrong paper size selected in the print dialog.
+            </div>
+          </div>
+
           <div className="booklet-header">
             <div>
               <h1>{canManage ? 'CSI Booklets' : 'My CSI Numbers'}</h1>
