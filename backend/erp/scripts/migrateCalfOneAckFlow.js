@@ -29,7 +29,7 @@
  */
 
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../../../.env') });
+require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 const mongoose = require('mongoose');
 
 const args = new Set(process.argv.slice(2));
