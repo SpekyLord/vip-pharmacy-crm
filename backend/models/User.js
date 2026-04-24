@@ -163,6 +163,14 @@ const userSchema = new mongoose.Schema(
     contract_type: { type: String },
     date_started: { type: Date },
 
+    // ═══ CSI Draft Printer Calibration (Phase 15.3) ═══
+    // Per-BDM mm offset so the draft-CSI overlay PDF lands correctly when
+    // the physical BIR booklet page is fed into their printer. One-time
+    // calibration via the grid helper on the My CSI page. Added by the
+    // user, not inferred — default 0 (perfect alignment).
+    csi_printer_offset_x_mm: { type: Number, default: 0 },
+    csi_printer_offset_y_mm: { type: Number, default: 0 },
+
     // ═══ ERP ACCESS CONTROL (Phase 10) ═══
     erp_access: {
       enabled: { type: Boolean, default: false },

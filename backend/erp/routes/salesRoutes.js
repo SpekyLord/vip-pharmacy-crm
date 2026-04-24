@@ -21,6 +21,11 @@ router.post('/reopen', periodLockCheck('SALES'), c.reopenSales);
 // request body.
 router.put('/:id/received-csi', c.attachReceivedCsi);
 
+// Phase 15.3 — CSI Draft Overlay (read-only PDF; same proxy/owner scope as getSaleById)
+router.get('/drafts/pending-csi', c.getDraftsPendingCsi);
+router.get('/drafts/calibration-grid', c.getCsiCalibrationGrid);
+router.get('/:id/csi-draft', c.generateCsiDraft);
+
 router.post('/:id/request-deletion', c.requestDeletion);
 // Phase 3c — legacy approve-deletion path (President Reverse preferred). Tier 2 lookup-only.
 router.post('/:id/approve-deletion', erpSubAccessCheck('accounting', 'approve_deletion'), c.approveDeletion);

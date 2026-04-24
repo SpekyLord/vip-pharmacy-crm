@@ -106,24 +106,32 @@ async function getDailyMdCounts(bdmUserId, startDate, endDate, opts = {}) {
     status: 'completed'
   };
 
-  // Phase G1.5 — flagged-photo filter. Non-flagged visits either have photoFlags
-  // missing (sparse index) or empty array. Match both shapes.
-  if (skipFlagged) {
-    baseMatch.$or = [
-      { photoFlags: { $exists: false } },
-      { photoFlags: { $size: 0 } }
-    ];
-  }
-
+  // Phase G1.5 follow-up — match ALL completed visits (no flag pre-filter) and
+  // split into flagged vs unflagged inside $group. This lets us return both the
+  // counted md_count AND the flagged_excluded count for UI transparency
+  // ("X flagged not counted today"). The previous $match-time pre-filter hid
+  // flagged drops and made the bridge silently disagree with CRM list view.
   const pipeline = [
     { $match: baseMatch },
     {
       // Group by Manila calendar day (YYYY-MM-DD), de-dup doctors per day.
+      // doctors_unflagged uses $cond → null for flagged rows; null is filtered
+      // in JS below. Non-flagged visits either omit photoFlags (sparse) or have
+      // [] — $size with $ifNull normalizes both shapes.
       $group: {
         _id: {
           $dateToString: { format: '%Y-%m-%d', date: '$visitDate', timezone: MANILA_TZ }
         },
-        doctors_visited: { $addToSet: '$doctor' }
+        doctors_all: { $addToSet: '$doctor' },
+        doctors_unflagged: {
+          $addToSet: {
+            $cond: [
+              { $eq: [{ $size: { $ifNull: ['$photoFlags', []] } }, 0] },
+              '$doctor',
+              null
+            ]
+          }
+        }
       }
     },
     {
@@ -133,10 +141,11 @@ async function getDailyMdCounts(bdmUserId, startDate, endDate, opts = {}) {
 
   const results = await Visit.aggregate(pipeline);
 
-  // Collect all unique doctor IDs across all days to batch-fetch addresses
+  // Collect all unique doctor IDs across all days to batch-fetch addresses.
+  // Use the union of both sets so locations resolve regardless of skipFlagged.
   const allDoctorIds = new Set();
   for (const r of results) {
-    for (const docId of r.doctors_visited) allDoctorIds.add(docId.toString());
+    for (const docId of r.doctors_all) allDoctorIds.add(docId.toString());
   }
   const doctorMap = new Map();
   if (allDoctorIds.size > 0) {
@@ -147,10 +156,17 @@ async function getDailyMdCounts(bdmUserId, startDate, endDate, opts = {}) {
 
   const counts = {};
   for (const r of results) {
+    const unflagged = (r.doctors_unflagged || []).filter(d => d !== null);
+    const flaggedCount = r.doctors_all.length - unflagged.length;
+    // When skipFlagged is on, md_count + locations come from unflagged set only;
+    // otherwise everything counts (and flagged_excluded is reported as 0 since
+    // nothing was actually excluded).
+    const countedDoctors = skipFlagged ? unflagged : r.doctors_all;
+
     // Phase G1.5 — build location summary from structured locality+province.
     // Format: "Iloilo City, Iloilo" or "Digos City, Davao del Sur".
     // Fallback to clinicOfficeAddress for pre-backfill legacy doctors.
-    const locationLabels = r.doctors_visited
+    const locationLabels = countedDoctors
       .map(id => {
         const d = doctorMap.get(id.toString());
         if (!d) return null;
@@ -165,10 +181,11 @@ async function getDailyMdCounts(bdmUserId, startDate, endDate, opts = {}) {
     // md_count is "per-person" — count DISTINCT MDs visited that day, not raw
     // visit rows. The weekly-unique index makes these equal today, but naming
     // them identically removes ambiguity if that constraint ever loosens.
-    const uniqueMdCount = r.doctors_visited.length;
+    const uniqueMdCount = countedDoctors.length;
     counts[r._id] = {
       md_count: uniqueMdCount,
       unique_doctors: uniqueMdCount,
+      flagged_excluded: skipFlagged ? flaggedCount : 0,
       locations: uniqueLocations.join('; ')
     };
   }
@@ -225,6 +242,7 @@ async function getDailyLogbookCounts(bdmUserId, startDate, endDate) {
     counts[dateKey] = {
       md_count: 1,           // Binary: worked = 1. Threshold config determines tier.
       unique_doctors: 1,     // Kept for response-shape parity with visit source.
+      flagged_excluded: 0,   // Logbook source has no photo-flag concept.
       locations: label
     };
   }

@@ -1515,6 +1515,271 @@ const attachReceivedCsi = catchAsync(async (req, res) => {
   res.json({ success: true, data: sale });
 });
 
+// ═══════════════════════════════════════════════════════════
+// CSI DRAFT OVERLAY (Phase 15.3)
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Generate a draft-CSI PDF for a single sale. The PDF overlays only the
+ * variable fields (customer, date, lines, totals) — BDM feeds the physical
+ * BIR booklet page into their printer and the ink lands on pre-printed
+ * blanks. Never a valid BIR receipt. See Phase 15.3 plan for compliance.
+ *
+ * Access: same-scope as getSaleById (owner + proxy + admin/finance/president)
+ * via widenFilterForProxy. No Rule #21 shortcuts.
+ */
+const generateCsiDraft = catchAsync(async (req, res) => {
+  const { renderCsiDraft } = require('../services/csiDraftRenderer');
+  const Entity = require('../models/Entity');
+  const User = require('../../models/User');
+
+  const scope = await widenFilterForProxy(req, 'sales', { subKey: 'proxy_entry' });
+  const sale = await SalesLine.findOne({ _id: req.params.id, ...scope })
+    .populate('hospital_id', 'hospital_name address payment_terms')
+    .populate('customer_id', 'customer_name address payment_terms')
+    .lean();
+
+  if (!sale) {
+    return res.status(404).json({ success: false, message: 'Sale not found' });
+  }
+
+  if (!sale.line_items || sale.line_items.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'Draft CSI unavailable — this sale has no line items.',
+      code: 'CSI_DRAFT_EMPTY_LINES',
+    });
+  }
+
+  const entity = await Entity.findById(sale.entity_id).lean();
+  if (!entity) {
+    return res.status(400).json({ success: false, message: 'Entity not found for sale.' });
+  }
+
+  const template = await Lookup.findOne({
+    entity_id: sale.entity_id,
+    category: 'CSI_TEMPLATE',
+    is_active: true,
+  }).lean();
+
+  if (!template) {
+    return res.status(400).json({
+      success: false,
+      message: `Admin must configure CSI_TEMPLATE for ${entity.entity_name} in Control Center → Lookup Tables before drafts can be generated.`,
+      code: 'CSI_TEMPLATE_NOT_CONFIGURED',
+    });
+  }
+
+  // Load the owning BDM for printer-offset calibration (not req.user — the
+  // proxy might be keying for someone else, and the BDM's printer is the one
+  // that prints the overlay).
+  const owner = await User.findById(sale.bdm_id)
+    .select('name csi_printer_offset_x_mm csi_printer_offset_y_mm')
+    .lean();
+
+  // Resolve product names (Rule #4: brand_name + dosage_strength) and
+  // batch expiry dates from InventoryLedger.
+  const productIds = sale.line_items.map((li) => li.product_id).filter(Boolean);
+  const products = productIds.length
+    ? await ProductMaster.find({ _id: { $in: productIds } })
+        .select('brand_name generic_name dosage_strength')
+        .lean()
+    : [];
+  const productMap = new Map(products.map((p) => [String(p._id), p]));
+
+  const expiryLookups = sale.line_items
+    .filter((li) => li.product_id && li.batch_lot_no)
+    .map((li) => ({
+      entity_id: sale.entity_id,
+      product_id: li.product_id,
+      batch_lot_no: li.batch_lot_no,
+    }));
+
+  let expiryMap = new Map();
+  if (expiryLookups.length) {
+    const ledgerRows = await InventoryLedger.find({ $or: expiryLookups })
+      .select('product_id batch_lot_no expiry_date')
+      .lean();
+    expiryMap = new Map(
+      ledgerRows.map((r) => [`${r.product_id}|${r.batch_lot_no}`, r.expiry_date])
+    );
+  }
+
+  const lineDisplay = sale.line_items.map((li) => {
+    const p = productMap.get(String(li.product_id)) || {};
+    const desc = [p.brand_name, p.dosage_strength].filter(Boolean).join(' ') ||
+                 p.generic_name || 'Item';
+    const key = li.product_id && li.batch_lot_no
+      ? `${li.product_id}|${li.batch_lot_no}` : null;
+    const exp = key ? expiryMap.get(key) : null;
+    return {
+      description: desc,
+      qty: li.qty,
+      unit: li.unit || '',
+      unit_price: li.unit_price,
+      amount: li.line_total,
+      batch_lot_no: li.batch_lot_no,
+      exp_date: exp,
+    };
+  });
+
+  // Terms — prefer hospital/customer payment_terms over template default.
+  const termsDays = sale.hospital_id?.payment_terms
+    || sale.customer_id?.payment_terms
+    || null;
+  const terms = termsDays ? `${termsDays} days`
+    : (template.metadata?.text?.default_terms || '30 days');
+
+  const customerLabel = sale.hospital_id?.hospital_name
+    || sale.customer_id?.customer_name
+    || '';
+  const customerAddress = sale.hospital_id?.address
+    || sale.customer_id?.address
+    || '';
+
+  let pdfBuffer;
+  try {
+    pdfBuffer = await renderCsiDraft({
+      sale,
+      entity,
+      template,
+      user: owner || {},
+      customerLabel,
+      customerAddress,
+      lineDisplay,
+      terms,
+    });
+  } catch (err) {
+    console.error('[generateCsiDraft] render failed:', err);
+    return res.status(500).json({
+      success: false,
+      message: `CSI draft render failed: ${err.message}`,
+    });
+  }
+
+  // Audit crumb — not security-critical but useful for "who printed what"
+  // investigations. Uses CSI_TRACE log_type (Phase 35 generic CSI event
+  // channel) since "draft-print" is a pre-posting event.
+  try {
+    const chunkCount = Math.ceil(
+      sale.line_items.length /
+        (template.metadata?.body?.max_items_per_page || 3)
+    );
+    await ErpAuditLog.create({
+      entity_id: sale.entity_id,
+      bdm_id: sale.bdm_id,
+      log_type: 'CSI_TRACE',
+      target_ref: sale.doc_ref || String(sale._id),
+      target_model: 'SalesLine',
+      changed_by: req.user._id,
+      note: `Draft CSI overlay generated (${template.code}, ${sale.line_items.length} lines, ${chunkCount} page(s))`,
+    });
+  } catch (err) {
+    // Non-fatal — never block a print on a logging hiccup.
+    console.warn('[generateCsiDraft] audit log failed:', err.message);
+  }
+
+  const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const safeRef = (sale.doc_ref || sale._id.toString()).replace(/[^a-zA-Z0-9-]/g, '');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition',
+    `attachment; filename="CSI-DRAFT-${safeRef}-${dateStr}.pdf"`);
+  res.send(pdfBuffer);
+});
+
+/**
+ * Calibration grid PDF for a given entity — BDM prints once onto a blank
+ * booklet page, measures the mm offset between booklet anchors and grid
+ * anchors, enters the delta on the My CSI calibration panel.
+ *
+ * Query: ?entity_id= (required). Uses req.user for offset (shows current
+ * calibration on the grid header so BDM can see if they've already tuned).
+ */
+const getCsiCalibrationGrid = catchAsync(async (req, res) => {
+  const { renderCalibrationGrid } = require('../services/csiDraftRenderer');
+  const User = require('../../models/User');
+
+  const entityId = req.query.entity_id || req.entityId;
+  if (!entityId) {
+    return res.status(400).json({ success: false, message: 'entity_id is required.' });
+  }
+
+  const template = await Lookup.findOne({
+    entity_id: entityId,
+    category: 'CSI_TEMPLATE',
+    is_active: true,
+  }).lean();
+
+  if (!template) {
+    return res.status(400).json({
+      success: false,
+      message: 'No CSI_TEMPLATE configured for this entity.',
+      code: 'CSI_TEMPLATE_NOT_CONFIGURED',
+    });
+  }
+
+  const user = await User.findById(req.user._id)
+    .select('name csi_printer_offset_x_mm csi_printer_offset_y_mm')
+    .lean();
+
+  let pdfBuffer;
+  try {
+    pdfBuffer = await renderCalibrationGrid({ template, user: user || {} });
+  } catch (err) {
+    console.error('[getCsiCalibrationGrid] render failed:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition',
+    `attachment; filename="CSI-Calibration-Grid-${template.code}.pdf"`);
+  res.send(pdfBuffer);
+});
+
+/**
+ * List sales owned by (or proxy-accessible to) the caller that still lack
+ * a written CSI# — i.e. drafts waiting for the BDM to print and scan back.
+ * Feeds the "My CSI → Drafts Pending Print" tab.
+ */
+const getDraftsPendingCsi = catchAsync(async (req, res) => {
+  const scope = await widenFilterForProxy(req, 'sales', { subKey: 'proxy_entry' });
+  // "pending CSI" = CSI-type sales where doc_ref is still a proxy-placeholder
+  // (starts with PROXY- or PENDING-) OR csi_photo_url is absent. BDMs use the
+  // existing ScanCSIModal to write the real doc_ref back after printing.
+  const filter = {
+    ...scope,
+    sale_type: 'CSI',
+    status: { $in: ['DRAFT', 'VALID', 'POSTED'] },
+    $or: [
+      { doc_ref: { $regex: /^(PROXY|PENDING)-/i } },
+      { csi_photo_url: { $in: [null, ''] } },
+    ],
+  };
+
+  const rows = await SalesLine.find(filter)
+    .populate('hospital_id', 'hospital_name')
+    .populate('customer_id', 'customer_name')
+    .populate('bdm_id', 'name')
+    .sort({ csi_date: -1 })
+    .limit(200)
+    .lean();
+
+  res.json({
+    success: true,
+    data: rows.map((r) => ({
+      _id: r._id,
+      doc_ref: r.doc_ref,
+      csi_date: r.csi_date,
+      bdm_name: r.bdm_id?.name,
+      customer_name: r.hospital_id?.hospital_name || r.customer_id?.customer_name,
+      line_count: r.line_items?.length || 0,
+      total_amount_due: r.invoice_total,
+      status: r.status,
+      has_csi_photo: Boolean(r.csi_photo_url),
+    })),
+  });
+});
+
 module.exports = {
   createSale,
   updateSale,
@@ -1529,4 +1794,8 @@ module.exports = {
   presidentReverseSale,
   attachReceivedCsi,
   postSaleRow, // shared helper for approval handler
+  // Phase 15.3 — CSI Draft Overlay
+  generateCsiDraft,
+  getCsiCalibrationGrid,
+  getDraftsPendingCsi,
 };

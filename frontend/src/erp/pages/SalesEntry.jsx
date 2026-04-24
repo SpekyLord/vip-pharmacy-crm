@@ -1115,6 +1115,18 @@ export default function SalesEntry() {
                                   🖨 Print
                                 </button>
                               )}
+                              {/* Phase 15.3 — CSI draft overlay. Available at any status when
+                                  the sale has line items. Non-CSI sale types skip this (they
+                                  don't use the BIR booklet). */}
+                              {r.sale_type === 'CSI' && r.line_items && r.line_items.length > 0 && (
+                                <button
+                                  className="btn btn-outline btn-sm"
+                                  title="Download overlay PDF — feed booklet page into printer"
+                                  onClick={() => window.open(sales.csiDraftUrl(r._id), '_blank')}
+                                >
+                                  📄 Draft CSI
+                                </button>
+                              )}
                               {r.status === 'DRAFT' && (
                                 <button className="btn btn-danger btn-sm" onClick={async () => {
                                   try { await sales.deleteDraft(r._id); await loadSales(); } catch (err) { showError(err, 'Could not delete sale draft'); }

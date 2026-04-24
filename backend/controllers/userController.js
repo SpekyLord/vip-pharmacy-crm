@@ -292,12 +292,27 @@ const updateProfile = catchAsync(async (req, res) => {
     throw new NotFoundError('User not found');
   }
 
-  // Only allow updating limited fields for own profile
+  // Only allow updating limited fields for own profile.
+  // Phase 15.3 — csi_printer_offset_{x,y}_mm are per-user calibration for
+  // the CSI draft overlay PDF. Validated to be finite numbers between
+  // -20 and 20 mm (printer drift beyond this means wrong paper size, not
+  // calibration).
   const allowedFields = ['name', 'phone'];
+  const allowedNumericFields = ['csi_printer_offset_x_mm', 'csi_printer_offset_y_mm'];
 
   allowedFields.forEach((field) => {
     if (req.body[field] !== undefined) {
       user[field] = req.body[field];
+    }
+  });
+
+  allowedNumericFields.forEach((field) => {
+    if (req.body[field] !== undefined && req.body[field] !== null && req.body[field] !== '') {
+      const num = Number(req.body[field]);
+      if (!Number.isFinite(num) || num < -20 || num > 20) {
+        throw new Error(`${field} must be a number between -20 and 20 mm`);
+      }
+      user[field] = num;
     }
   });
 

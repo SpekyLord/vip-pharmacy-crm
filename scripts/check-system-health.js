@@ -936,6 +936,83 @@ function checkCalfOneAckFlow() {
   if (issues === startIssues) console.log('  ✓ CALF→Expense one-ack cascade wiring intact (Phase G4.5h)');
 }
 
+// Phase 15.3 — CSI Draft Overlay. Checks file wiring (renderer, seed,
+// controller exports, route mounts). Lookup-row coverage (every active
+// entity has a CSI_TEMPLATE row) is verified at data level by running
+// `node backend/erp/scripts/seedCsiTemplates.js` (dry-run; flags
+// unmatched entities).
+function checkCsiDraftOverlay() {
+  console.log('\n9. CSI Draft Overlay (Phase 15.3)');
+  console.log('─'.repeat(40));
+  const startIssues = issues;
+
+  const files = {
+    renderer: path.join(ERP_SERVICES, 'csiDraftRenderer.js'),
+    seed: path.join(ROOT, 'backend', 'erp', 'scripts', 'seedCsiTemplates.js'),
+    controller: path.join(ERP_CONTROLLERS, 'salesController.js'),
+    routes: path.join(ROOT, 'backend', 'erp', 'routes', 'salesRoutes.js'),
+    userModel: path.join(ROOT, 'backend', 'models', 'User.js'),
+    salesLine: path.join(ERP_MODELS, 'SalesLine.js'),
+    booklets: path.join(PAGES_DIR, 'CsiBooklets.jsx'),
+    salesEntry: path.join(PAGES_DIR, 'SalesEntry.jsx'),
+    useSales: path.join(ROOT, 'frontend', 'src', 'erp', 'hooks', 'useSales.js'),
+  };
+
+  for (const [label, p] of Object.entries(files)) {
+    if (!fs.existsSync(p)) { warn('CSI_DRAFT', `missing file: ${label} (${p})`); return; }
+  }
+
+  const renderer = fs.readFileSync(files.renderer, 'utf-8');
+  if (!/renderCsiDraft/.test(renderer) || !/renderCalibrationGrid/.test(renderer)) {
+    warn('CSI_DRAFT', 'csiDraftRenderer.js does not export renderCsiDraft + renderCalibrationGrid');
+  }
+  if (!/require\(['"]pdfkit['"]\)/.test(renderer)) {
+    warn('CSI_DRAFT', 'csiDraftRenderer.js does not require pdfkit — overlay PDFs cannot render');
+  }
+
+  const seed = fs.readFileSync(files.seed, 'utf-8');
+  if (!/CSI_TEMPLATE/.test(seed) || !/VIP_TEMPLATE/.test(seed) || !/MG_TEMPLATE/.test(seed)) {
+    warn('CSI_DRAFT', 'seedCsiTemplates.js missing VIP_TEMPLATE / MG_TEMPLATE / CSI_TEMPLATE constants');
+  }
+
+  const ctrl = fs.readFileSync(files.controller, 'utf-8');
+  for (const fn of ['generateCsiDraft', 'getCsiCalibrationGrid', 'getDraftsPendingCsi']) {
+    if (!new RegExp(`${fn}\\b`).test(ctrl)) warn('CSI_DRAFT', `salesController.js missing ${fn}`);
+  }
+
+  const routes = fs.readFileSync(files.routes, 'utf-8');
+  for (const pattern of ['/:id/csi-draft', '/drafts/pending-csi', '/drafts/calibration-grid']) {
+    if (!routes.includes(pattern)) warn('CSI_DRAFT', `salesRoutes.js does not mount ${pattern}`);
+  }
+
+  const userModel = fs.readFileSync(files.userModel, 'utf-8');
+  for (const field of ['csi_printer_offset_x_mm', 'csi_printer_offset_y_mm']) {
+    if (!userModel.includes(field)) warn('CSI_DRAFT', `User model missing ${field}`);
+  }
+
+  const salesLine = fs.readFileSync(files.salesLine, 'utf-8');
+  if (!/po_number/.test(salesLine)) {
+    warn('CSI_DRAFT', 'SalesLine model missing po_number field (overlay PO# row has no source)');
+  }
+
+  const useSales = fs.readFileSync(files.useSales, 'utf-8');
+  for (const fn of ['csiDraftUrl', 'getDraftsPendingCsi', 'csiCalibrationUrl']) {
+    if (!useSales.includes(fn)) warn('CSI_DRAFT', `useSales hook missing ${fn}`);
+  }
+
+  const booklets = fs.readFileSync(files.booklets, 'utf-8');
+  if (!/Drafts Pending Print/.test(booklets) || !/Printer Calibration/.test(booklets)) {
+    warn('CSI_DRAFT', 'CsiBooklets.jsx missing Drafts Pending Print or Printer Calibration panel');
+  }
+
+  const salesEntry = fs.readFileSync(files.salesEntry, 'utf-8');
+  if (!/csiDraftUrl/.test(salesEntry) || !/Draft CSI/.test(salesEntry)) {
+    warn('CSI_DRAFT', 'SalesEntry.jsx missing Draft CSI button');
+  }
+
+  if (issues === startIssues) console.log('  ✓ CSI Draft Overlay wiring intact (Phase 15.3)');
+}
+
 // ═══ Run all checks ═══
 console.log('System Health Check');
 console.log('═'.repeat(40));
@@ -949,6 +1026,7 @@ checkProxyEntryWiring();
 checkFraEntityIdsSync();
 checkCaptureSubmissionWiring();
 checkCalfOneAckFlow();
+checkCsiDraftOverlay();
 
 console.log('\n' + '═'.repeat(40));
 if (issues > beforeIssues) {

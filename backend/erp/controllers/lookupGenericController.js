@@ -40,6 +40,23 @@ const VALID_OWNER_ROLES_CATEGORIES = new Set(['VALID_OWNER_ROLES']);
 // has a chance to review prompts and budget.
 const SUBSCRIPTION_OPT_IN_CATEGORIES = new Set(['AI_COWORK_FEATURES', 'AI_SPEND_CAPS']);
 
+// Categories whose metadata is engineer-owned — buildSeedOps uses $set so
+// central code updates (new COA codes, new OCR keywords) propagate to every
+// subscriber on the next page load. Everything NOT in this set defaults to
+// admin-owned ($setOnInsert), so subscriber admins can edit metadata via the
+// Lookup Manager without their changes being silently reverted.
+//
+// Rule of thumb: add here only if the metadata *must* stay in sync with code
+// (accounting standards, parser tuning). Admin-configurable values (roles,
+// thresholds, flags) stay out so Rule #3 (subscriber-configurable without a
+// code change) actually holds.
+const CODE_AUTHORITATIVE_METADATA_CATEGORIES = new Set([
+  'EXPENSE_CATEGORY',      // coa_code tracks ChartOfAccounts mapping
+  'OCR_EXPENSE_RULES',     // keywords — OCR classifier tuning
+  'OCR_COURIER_ALIASES',   // aliases — OCR parser tuning
+  'OCR_PAYMENT_KEYWORDS',  // aliases + mode_code — OCR parser tuning
+]);
+
 /**
  * Generic Lookup Controller — Phase 24
  * CRUD for configurable dropdown values (replaces hardcoded frontend arrays).
@@ -2517,25 +2534,42 @@ exports.getCategories = catchAsync(async (req, res) => {
 
 // Helper: build bulkWrite ops from seed defaults (supports string or {code,label} items)
 // Label/sort_order are $setOnInsert so admin customizations survive.
-// Metadata routing:
-//   - default → $set on seedAll/seedCategory so code-authoritative metadata (e.g.
-//     coa_code, OCR keywords) propagates to existing entries when engineers update
-//     the seed values in code.
-//   - item.insert_only_metadata: true → $setOnInsert so admin-tunable values
-//     (e.g. PDF_RENDERER.enabled, NOTIFICATION_CHANNELS.enabled) are set once on
-//     first insert and never clobbered by subsequent seedAll runs.
+//
+// Metadata routing (admin-owned by default as of the scalability flip):
+//   1. item.code_authoritative_metadata: true (per-item override) → $set
+//      Use when a row inside an admin-owned category is engineer-tuned.
+//   2. item.insert_only_metadata: true (per-item override) → $setOnInsert
+//      Use when a row inside an engineer-owned category is admin-tunable
+//      (carve-out). Also used as explicit documentation of admin intent;
+//      functionally equivalent to the default now.
+//   3. category ∈ CODE_AUTHORITATIVE_METADATA_CATEGORIES → $set
+//      Engineer owns the metadata for all rows; central code updates
+//      propagate on next page load.
+//   4. default → $setOnInsert
+//      Admin edits survive re-seeds. This is the Rule #3-aligned default
+//      (subscribers configure via Control Center without code changes).
+//
+// The old default was $set. It was flipped when PROXY_ENTRY_ROLES.metadata.roles
+// was silently reverted on every page load, blocking eBDMs from being added as
+// proxy-entry roles. Every SEED_DEFAULTS row was audited; engineer-owned rows
+// stayed $set via the category allowlist above.
 function buildSeedOps(defaults, category, entityId, userId) {
   // Phase G6.10/G7 — billable AI features default OFF so the president must
   // explicitly enable them after reviewing prompts/budgets. All other lookup
   // categories keep the original is_active:true default so dropdowns work
   // immediately on first load.
   const defaultActive = !SUBSCRIPTION_OPT_IN_CATEGORIES.has(category);
+  const categoryIsCodeAuthoritative = CODE_AUTHORITATIVE_METADATA_CATEGORIES.has(category);
   return defaults.map((item, i) => {
     const isObj = typeof item === 'object';
     const label = isObj ? item.label : item;
     const code = isObj ? item.code.toUpperCase() : label.toUpperCase().replace(/[^A-Z0-9]/g, '_');
     const metadata = isObj ? (item.metadata || {}) : {};
-    const insertOnlyMetadata = isObj && item.insert_only_metadata === true;
+    const adminOwnedOverride = isObj && item.insert_only_metadata === true;
+    const engineerOwnedOverride = isObj && item.code_authoritative_metadata === true;
+    // Resolution order: per-item override > category default > global default (admin-owned).
+    const useSetSemantics = engineerOwnedOverride
+      || (categoryIsCodeAuthoritative && !adminOwnedOverride);
     const op = {
       updateOne: {
         filter: { entity_id: entityId, category, code },
@@ -2546,17 +2580,17 @@ function buildSeedOps(defaults, category, entityId, userId) {
       }
     };
     if (Object.keys(metadata).length > 0) {
-      if (insertOnlyMetadata) {
-        // Seed defaults on first insert, preserve admin edits on re-seed.
-        // MongoDB allows embedding `metadata` under $setOnInsert alongside the
-        // existing scalars — no path conflict because metadata is a distinct key.
-        op.updateOne.update.$setOnInsert.metadata = metadata;
-      } else {
-        // Dot-notation $set — code-owned keys propagate, admin-added keys preserved.
+      if (useSetSemantics) {
+        // Engineer owns: dot-notation $set so code-owned keys propagate while
+        // admin-added keys (if any) are preserved.
         op.updateOne.update.$set = {};
         for (const [k, v] of Object.entries(metadata)) {
           op.updateOne.update.$set[`metadata.${k}`] = v;
         }
+      } else {
+        // Admin owns: seed defaults on first insert only. Admin edits via the
+        // Lookup Manager survive subsequent page loads and seedAll runs.
+        op.updateOne.update.$setOnInsert.metadata = metadata;
       }
     }
     return op;
