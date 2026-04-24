@@ -27,20 +27,25 @@ import {
   Package,
   Shield,
 } from 'lucide-react';
-import { resolveClmConfig, CLM_DEFAULTS } from '../../config/clmDefaults';
+import { resolveClmConfig } from '../../config/clmDefaults';
+import ProductImage from '../common/ProductImage';
 
-// Swap img src to the hardcoded default on load failure. Protects the deck if
-// a signed S3 URL expires mid-session or the upload path ever drifts again.
-const fallbackLogo = (e, defaultUrl) => {
-  if (e.target.src !== window.location.origin + defaultUrl && !e.target.src.endsWith(defaultUrl)) {
-    e.target.src = defaultUrl;
-  }
+// Logos come from per-entity branding; absent logos render a neutral Building2
+// placeholder via LogoImg. Product images reuse the shared ProductImage from
+// common/ — it handles IndexedDB offline fallback + Pill placeholder for
+// missing / broken images (SEC-007 signed-URL expiry). Nothing in this file
+// references a specific product or brand — Rule #3 / #19.
+
+// Logo with graceful fallback: shows the signed S3 URL, falls back to the
+// provided placeholder node on load error (e.g. signed URL expired mid-pitch).
+// State is local so multiple instances don't interfere; callers should set
+// key={url} on the parent to reset the failure flag when the URL changes.
+// Exported so the admin LogoCard can reuse the same degradation path.
+export const LogoImg = ({ url, alt, className, placeholder }) => {
+  const [failed, setFailed] = useState(false);
+  if (!url || failed) return placeholder;
+  return <img src={url} alt={alt || ''} className={className} onError={() => setFailed(true)} />;
 };
-
-// Product-slide fallback images bundled in public/clm/ for offline availability.
-// Logo paths come from config (per-entity branding or CLM_DEFAULTS fallback).
-const VIPRAZOLE_IMG = '/clm/viprazole.jpg';
-const VIPTRIAXONE_IMG = '/clm/viptriaxone.jpg';
 
 const buildSlides = (companyName) => [
   { id: 'hero', title: companyName, subtitle: 'Online Pharmacy Partnership', icon: Building2, type: 'hero' },
@@ -123,7 +128,13 @@ const CLMPresenter = ({ session, doctor, products = [], branding, previewMode = 
       <style>{presenterStyles}</style>
       <div className="clm-topbar">
         <div className="clm-topbar-left">
-          <img src={config.logoTrademarkUrl} alt={config.companyName} className="clm-topbar-logo" onError={(e) => fallbackLogo(e, CLM_DEFAULTS.logoTrademarkUrl)} />
+          <LogoImg
+            key={`trademark-${config.logoTrademarkUrl || 'empty'}`}
+            url={config.logoTrademarkUrl}
+            alt={config.companyName}
+            className="clm-topbar-logo"
+            placeholder={null}
+          />
           <span className="clm-slide-counter">{currentSlide + 1} / {totalSlides}</span>
           <span className="clm-doctor-name">{doctorName}</span>
         </div>
@@ -154,7 +165,17 @@ const SlideContent = ({ slide, doctorName, products, config }) => {
     case 'hero':
       return (
         <div className="clm-slide slide-hero">
-          <img src={config.logoCircleUrl} alt={config.companyName} className="hero-logo" onError={(e) => fallbackLogo(e, CLM_DEFAULTS.logoCircleUrl)} />
+          <LogoImg
+            key={`hero-${config.logoCircleUrl || 'empty'}`}
+            url={config.logoCircleUrl}
+            alt={config.companyName}
+            className="hero-logo"
+            placeholder={
+              <div className="hero-logo hero-logo-placeholder" style={{ borderColor: config.primaryColor }}>
+                <Building2 size={56} color={config.primaryColor} />
+              </div>
+            }
+          />
           <div className="hero-badge">{s.hero.badge}</div>
           <h1 className="hero-title">{config.companyName} <span className="text-gold">{s.hero.titleAccent}</span></h1>
           <p className="hero-subtitle">{s.hero.subtitle}</p>
@@ -211,17 +232,34 @@ const SlideContent = ({ slide, doctorName, products, config }) => {
           </div>
         </div>
       );
-    case 'products':
+    case 'products': {
+      // Products slide renders two non-branded states so any subscriber can
+      // pitch with this deck out of the box (Rule #3 / #19):
+      //   products.length > 0  → BDM-curated list from PartnershipCLM
+      //   products.length === 0 → Neutral empty-state card (BDM pressed
+      //                           "Skip — Present without products", or the
+      //                           subscriber has no CRM products yet)
+      const hasProducts = products.length > 0;
       return (
         <div className="clm-slide slide-products">
           <div className="slide-icon-badge"><Package size={28} /></div>
           <h2>Our Products</h2>
-          <p className="slide-lead">{products.length > 0 ? `${products.length} product${products.length !== 1 ? 's' : ''} selected for this presentation` : `${config.companyName}'s own branded products — plus all pharma products you support`}</p>
-          <div className="products-grid">
-            {products.length > 0 ? (
+          <p className="slide-lead">
+            {hasProducts
+              ? `${products.length} product${products.length !== 1 ? 's' : ''} selected for this presentation`
+              : 'General partnership pitch — no specific products selected for this session'}
+          </p>
+          <div className={`products-grid ${hasProducts ? '' : 'products-grid-empty'}`}>
+            {hasProducts ? (
               products.map((p) => (
                 <div key={p._id} className="product-card">
-                  {p.image ? (<img src={p.image} alt={p.name} className="product-img" onError={(e) => { e.target.style.display = 'none'; }} />) : (<div className="product-img-placeholder"><Pill size={32} /></div>)}
+                  <ProductImage
+                    productId={p._id}
+                    imageUrl={p.image}
+                    alt={p.name}
+                    className="product-img"
+                    placeholderClassName="product-img-placeholder"
+                  />
                   <div className="product-info">
                     <h3>{p.name}</h3>
                     {p.genericName && <p className="product-generic">{p.genericName}</p>}
@@ -232,25 +270,33 @@ const SlideContent = ({ slide, doctorName, products, config }) => {
                 </div>
               ))
             ) : (
-              <>
-                <div className="product-card">
-                  <img src={VIPRAZOLE_IMG} alt="VIPRAZOLE" className="product-img" />
-                  <div className="product-info"><h3>VIPRAZOLE</h3><p className="product-generic">Omeprazole</p><p className="product-dosage">40mg Lyophilized Powder for Injection (IV Infusion)</p><span className="product-cat">Proton Pump Inhibitor</span></div>
+              <div className="product-empty-state">
+                <div className="product-empty-icon" style={{ color: config.primaryColor }}>
+                  <Pill size={48} />
                 </div>
-                <div className="product-card">
-                  <img src={VIPTRIAXONE_IMG} alt="VIPTRIAXONE" className="product-img" />
-                  <div className="product-info"><h3>VIPTRIAXONE</h3><p className="product-generic">Ceftriaxone</p><p className="product-dosage">1 gram Powder for Injection (I.M./I.V.)</p><span className="product-cat">Anti-Bacterial (3rd Gen Cephalosporin)</span></div>
-                </div>
-              </>
+                <h3>No products selected for this pitch</h3>
+                <p>Next time, pick the products you want to feature on the previous screen so this slide shows tailored recommendations to your VIP Client.</p>
+              </div>
             )}
           </div>
           <p className="products-footer">{s.products.footer}</p>
         </div>
       );
+    }
     case 'connect':
       return (
         <div className="clm-slide slide-connect">
-          <img src={config.logoCircleUrl} alt={config.companyName} className="connect-logo" onError={(e) => fallbackLogo(e, CLM_DEFAULTS.logoCircleUrl)} />
+          <LogoImg
+            key={`connect-${config.logoCircleUrl || 'empty'}`}
+            url={config.logoCircleUrl}
+            alt={config.companyName}
+            className="connect-logo"
+            placeholder={
+              <div className="connect-logo connect-logo-placeholder" style={{ borderColor: config.primaryColor }}>
+                <Building2 size={48} color={config.primaryColor} />
+              </div>
+            }
+          />
           <h2>{s.connect.title}</h2>
           <p className="connect-subtitle">{s.connect.subtitle}</p>
           <div className="connect-cta">
@@ -289,6 +335,7 @@ const presenterStyles = `
   .integrity-badge { background: #ECFDF5; color: #059669; }
   .slide-hero { text-align: center; padding: 20px 0; }
   .hero-logo { width: 120px; height: 120px; object-fit: contain; margin: 0 auto 20px; display: block; }
+  .hero-logo-placeholder { border-radius: 50%; border: 2px solid currentColor; background: rgba(107, 114, 128, 0.08); display: flex !important; align-items: center; justify-content: center; }
   .hero-badge { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: 2px; color: var(--clm-primary); background: #FFF8E1; padding: 6px 16px; border-radius: 20px; margin-bottom: 16px; }
   .hero-title { font-size: 44px; font-weight: 800; color: #1f2937; line-height: 1.1; margin-bottom: 12px; }
   .text-gold { color: var(--clm-primary); }
@@ -310,6 +357,11 @@ const presenterStyles = `
   .integrity-card p { font-size: 14px; color: #4B5563; line-height: 1.5; }
   .slide-products { max-width: 960px; }
   .products-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; margin-bottom: 16px; max-height: 420px; overflow-y: auto; padding-right: 4px; }
+  .products-grid-empty { grid-template-columns: 1fr; max-height: none; }
+  .product-empty-state { background: #FAFAFA; border: 1px dashed #E5E7EB; border-radius: 14px; padding: 36px 24px; text-align: center; max-width: 480px; margin: 0 auto; }
+  .product-empty-icon { display: inline-flex; width: 80px; height: 80px; border-radius: 50%; background: rgba(107, 114, 128, 0.08); align-items: center; justify-content: center; margin-bottom: 16px; }
+  .product-empty-state h3 { font-size: 17px; font-weight: 700; color: #1f2937; margin-bottom: 8px; }
+  .product-empty-state p { font-size: 14px; color: #6b7280; line-height: 1.5; margin: 0; }
   .product-card { background: #FAFAFA; border: 1px solid #E5E7EB; border-radius: 14px; overflow: hidden; transition: all 0.2s; }
   .product-card:hover { border-color: var(--clm-primary); box-shadow: 0 2px 12px rgba(212,160,23,0.12); }
   .product-img { width: 100%; height: 160px; object-fit: contain; background: #fff; padding: 8px; }
@@ -323,6 +375,7 @@ const presenterStyles = `
   .products-footer { font-size: 14px; color: #9ca3af; text-align: center; font-style: italic; }
   .slide-connect { text-align: center; padding: 20px 0; }
   .connect-logo { width: 80px; height: 80px; object-fit: contain; margin: 0 auto 16px; display: block; }
+  .connect-logo-placeholder { border-radius: 50%; border: 2px solid currentColor; background: rgba(107, 114, 128, 0.08); display: flex !important; align-items: center; justify-content: center; }
   .connect-subtitle { font-size: 17px; color: #6b7280; margin-bottom: 28px; }
   .connect-cta { display: flex; flex-direction: column; gap: 20px; align-items: center; margin-bottom: 28px; }
   .connect-messenger { display: flex; align-items: center; gap: 14px; padding: 20px 32px; background: #FFF8E1; border: 2px solid var(--clm-primary); border-radius: 14px; color: var(--clm-primary); max-width: 400px; width: 100%; }

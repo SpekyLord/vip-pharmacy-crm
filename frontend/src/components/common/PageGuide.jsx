@@ -448,7 +448,7 @@ const PAGE_GUIDES = {
       { label: 'My Visits', path: '/bdm/visits' },
       { label: 'Dashboard', path: '/bdm' },
     ],
-    tip: 'Each product you select shows on slide 5. Mark which ones the VIP Client was interested in before ending the session. If offline, your drafts sync automatically when connectivity returns.',
+    tip: 'Each product you select shows on slide 5. Mark which ones the VIP Client was interested in before ending the session. Skipping products is allowed — slide 5 will show a neutral empty-state card instead of specific products. If offline, your drafts sync automatically when connectivity returns.',
   },
   'clm-sessions-admin': {
     title: 'CLM Sessions Overview',
@@ -477,7 +477,7 @@ const PAGE_GUIDES = {
       { label: 'CLM Sessions', path: '/admin/clm-sessions' },
       { label: 'Entity Settings', path: '/admin/control-center' },
     ],
-    tip: 'Leave any field blank to fall back to the system default (VIP branding + pitch). Each entity has its own branding — subsidiaries and subscribers get independent identities without a code deploy.',
+    tip: 'Leave any field blank to fall back to a neutral placeholder. Each entity has its own branding — subsidiaries and subscribers configure their own identity without a code deploy. Upload both logos before your first BDM pitch to avoid blank placeholders on the deck.',
   },
 };
 

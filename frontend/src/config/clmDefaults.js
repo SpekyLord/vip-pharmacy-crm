@@ -9,25 +9,27 @@
  */
 
 export const CLM_DEFAULTS = {
-  logoCircleUrl: '/clm/vip-logo-circle.svg',
-  logoTrademarkUrl: '/clm/vip-trademark.png',
-  primaryColor: '#D4A017',
-  companyName: 'VIP Inc.',
-  websiteUrl: 'vippharmacy.online',
-  salesEmail: 'sales@vippharmacy.online',
-  phone: '0917 776 0079',
+  // Logos are null on purpose — new subscribers see a neutral placeholder
+  // until they upload their own via CLM Branding. Rule #3 / #19.
+  logoCircleUrl: null,
+  logoTrademarkUrl: null,
+  primaryColor: '#6B7280',
+  companyName: '',
+  websiteUrl: '',
+  salesEmail: '',
+  phone: '',
   slides: {
     hero: {
-      titleAccent: 'Online Pharmacy',
+      titleAccent: '',
       badge: 'PARTNERSHIP OPPORTUNITY',
-      subtitle: 'A startup pharma company capitalizing on local footprint, digitalization, and AI integration',
+      subtitle: 'A startup pharmaceutical company capitalizing on local footprint, digitalization, and AI integration',
     },
     startup: {
       title: 'Who We Are',
-      lead: 'VIP Inc. is a startup pharmaceutical company built on three pillars:',
+      lead: 'A startup pharmaceutical company built on three pillars:',
       pillars: [
         { icon: '\u{1F4CD}', title: 'Local Footprint', body: 'Operating in areas big chains ignore. We know the communities we serve — your patients, your territory.' },
-        { icon: '\u{1F4BB}', title: 'Digitalization', body: 'Online pharmacy at vippharmacy.online — patients order via Messenger, delivered to their door.' },
+        { icon: '\u{1F4BB}', title: 'Digitalization', body: 'Online pharmacy — patients order via Messenger, delivered to their door.' },
         { icon: '\u{1F916}', title: 'AI Integration', body: 'Smart inventory, demand forecasting, and automated patient engagement powered by AI.' },
       ],
     },
@@ -48,7 +50,7 @@ export const CLM_DEFAULTS = {
         { icon: '✅', title: 'No Conflict of Interest', body: 'You are not selling medicines directly. VIP handles all commercial transactions. Your role remains purely clinical.' },
         { icon: '✅', title: 'Patient Choice Preserved', body: 'Patients are free to buy from any pharmacy. VIP is simply an additional, more affordable option.' },
         { icon: '✅', title: 'Transparent Operations', body: 'All transactions are documented. Full audit trail. No hidden arrangements.' },
-        { icon: '✅', title: 'FDA-Compliant', body: 'VIP Inc. operates with proper FDA licenses. All products are sourced from licensed distributors.' },
+        { icon: '✅', title: 'FDA-Compliant', body: 'Operates with proper FDA licenses. All products are sourced from licensed distributors.' },
       ],
     },
     products: {

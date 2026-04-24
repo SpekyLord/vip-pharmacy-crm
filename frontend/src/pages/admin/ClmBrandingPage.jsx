@@ -16,7 +16,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import PageGuide from '../../components/common/PageGuide';
-import CLMPresenter from '../../components/employee/CLMPresenter';
+import CLMPresenter, { LogoImg } from '../../components/employee/CLMPresenter';
 import { useAuth } from '../../hooks/useAuth';
 import clmBrandingService from '../../services/clmBrandingService';
 import { CLM_DEFAULTS } from '../../config/clmDefaults';
@@ -277,32 +277,30 @@ const IdentityTab = ({ draft, branding, setDraftField, pendingCirclePreview, pen
           kind="logoCircle"
           label="Circular Logo"
           helper="Shown on hero + connect slides."
-          currentUrl={pendingCirclePreview || branding?.logoCircleUrl || CLM_DEFAULTS.logoCircleUrl}
-          isDefault={!pendingCirclePreview && !branding?.logoCircleUrl}
+          currentUrl={pendingCirclePreview || branding?.logoCircleUrl || null}
           onSelect={onLogoSelect}
         />
         <LogoCard
           kind="logoTrademark"
           label="Trademark Logo"
           helper="Shown on the presentation top bar."
-          currentUrl={pendingTrademarkPreview || branding?.logoTrademarkUrl || CLM_DEFAULTS.logoTrademarkUrl}
-          isDefault={!pendingTrademarkPreview && !branding?.logoTrademarkUrl}
+          currentUrl={pendingTrademarkPreview || branding?.logoTrademarkUrl || null}
           onSelect={onLogoSelect}
         />
       </div>
 
       <div className="clm-br-grid">
-        <TextField label="Company Name" value={draft.companyName} placeholder={CLM_DEFAULTS.companyName} maxLength={120} onChange={(v) => setDraftField('companyName', v)} />
-        <TextField label="Website URL" value={draft.websiteUrl} placeholder={CLM_DEFAULTS.websiteUrl} maxLength={200} onChange={(v) => setDraftField('websiteUrl', v)} />
-        <TextField label="Sales Email" type="email" value={draft.salesEmail} placeholder={CLM_DEFAULTS.salesEmail} maxLength={120} onChange={(v) => setDraftField('salesEmail', v)} />
-        <TextField label="Phone" value={draft.phone} placeholder={CLM_DEFAULTS.phone} maxLength={40} onChange={(v) => setDraftField('phone', v)} />
-        <ColorField label="Primary Brand Color" value={draft.primaryColor} placeholder={CLM_DEFAULTS.primaryColor} onChange={(v) => setDraftField('primaryColor', v)} />
+        <TextField label="Company Name" value={draft.companyName} placeholder="Your Company, Inc." maxLength={120} onChange={(v) => setDraftField('companyName', v)} />
+        <TextField label="Website URL" value={draft.websiteUrl} placeholder="yourcompany.com" maxLength={200} onChange={(v) => setDraftField('websiteUrl', v)} />
+        <TextField label="Sales Email" type="email" value={draft.salesEmail} placeholder="sales@yourcompany.com" maxLength={120} onChange={(v) => setDraftField('salesEmail', v)} />
+        <TextField label="Phone" value={draft.phone} placeholder="+63 900 000 0000" maxLength={40} onChange={(v) => setDraftField('phone', v)} />
+        <ColorField label="Primary Brand Color" value={draft.primaryColor} placeholder="#6B7280" onChange={(v) => setDraftField('primaryColor', v)} />
       </div>
     </div>
   );
 };
 
-const LogoCard = ({ kind, label, helper, currentUrl, isDefault, onSelect }) => {
+const LogoCard = ({ kind, label, helper, currentUrl, onSelect }) => {
   const inputRef = useRef(null);
   const [dragOver, setDragOver] = useState(false);
 
@@ -322,16 +320,20 @@ const LogoCard = ({ kind, label, helper, currentUrl, isDefault, onSelect }) => {
     >
       <div className="clm-br-logo-label">
         {label}
-        {isDefault && <span className="clm-br-badge-default">Using default</span>}
+        {!currentUrl && <span className="clm-br-badge-default">No logo</span>}
       </div>
       <div className="clm-br-logo-preview">
-        <img
-          src={currentUrl}
+        <LogoImg
+          key={`card-${kind}-${currentUrl || 'empty'}`}
+          url={currentUrl}
           alt={label}
-          onError={(e) => {
-            const defaultUrl = kind === 'logoTrademark' ? CLM_DEFAULTS.logoTrademarkUrl : CLM_DEFAULTS.logoCircleUrl;
-            if (!e.target.src.endsWith(defaultUrl)) e.target.src = defaultUrl;
-          }}
+          placeholder={
+            <div className="clm-br-logo-empty">
+              <ImageIcon size={28} opacity={0.35} />
+              <span>No logo uploaded</span>
+              <small>Deck will render a neutral placeholder until you upload.</small>
+            </div>
+          }
         />
       </div>
       <p className="clm-br-helper">{helper}</p>
@@ -602,6 +604,8 @@ const pageStyles = `
   .clm-br-badge-default { background: #e5e7eb; color: #475569; font-size: 10px; font-weight: 600; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; }
   .clm-br-logo-preview { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; display: flex; align-items: center; justify-content: center; min-height: 110px; margin-bottom: 8px; }
   .clm-br-logo-preview img { max-width: 100%; max-height: 100px; object-fit: contain; }
+  .clm-br-logo-empty { display: flex; flex-direction: column; align-items: center; gap: 4px; color: #94a3b8; font-size: 12px; text-align: center; padding: 6px; }
+  .clm-br-logo-empty small { color: #cbd5e1; font-size: 10px; max-width: 180px; line-height: 1.3; }
   .clm-br-helper { font-size: 11px; color: #64748b; margin: 0 0 10px; }
   .clm-br-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   .clm-br-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }

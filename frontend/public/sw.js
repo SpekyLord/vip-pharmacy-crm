@@ -24,12 +24,10 @@ const SHELL_ASSETS = [
   '/manifest.json',
 ];
 
-const CLM_ASSETS = [
-  '/clm/vip-trademark.png',
-  '/clm/vip-logo-circle.svg',
-  '/clm/viprazole.jpg',
-  '/clm/viptriaxone.jpg',
-];
+// /clm/ has no static pre-cached assets. Branding logos are entity-specific
+// (S3-hosted, signed URLs) and product images come from the CRM product
+// catalog. Both are cached on-demand by the fetch handler below. CLMPresenter
+// gracefully falls back to Lucide placeholders when assets are unavailable.
 
 // API paths to cache for offline data access
 const CACHEABLE_API_PATHS = [
@@ -174,13 +172,16 @@ async function removeQueuedRequest(id) {
   }
 }
 
-// ── Install: pre-cache shell + CLM assets ──────────────────────────
+// ── Install: pre-cache shell assets ────────────────────────────────
+// CLM_CACHE is created lazily on the first /clm/* fetch (see fetch handler
+// below). Keeping the cache name around ensures the cleanup logic in activate
+// still recognizes the current cache and doesn't wipe legitimate on-demand
+// entries across an SW update.
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    Promise.all([
-      caches.open(SHELL_CACHE).then((cache) => cache.addAll(SHELL_ASSETS)),
-      caches.open(CLM_CACHE).then((cache) => cache.addAll(CLM_ASSETS)),
-    ]).then(() => self.skipWaiting())
+    caches.open(SHELL_CACHE)
+      .then((cache) => cache.addAll(SHELL_ASSETS))
+      .then(() => self.skipWaiting())
   );
 });
 
