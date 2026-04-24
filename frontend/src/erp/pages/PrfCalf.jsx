@@ -245,6 +245,19 @@ export default function PrfCalf() {
     try {
       const res = await submitPrfCalf();
       if (res?.approval_pending) { showApprovalPending(res.message); }
+      else if (res?.failed?.length) {
+        // Phase G4.5h — per-doc cascade result. If a CALF's linked Expense
+        // failed re-validation, the whole CALF rolled back (not POSTED).
+        const failNote = res.failed.map(f => f.cascade_errors?.length
+          ? `• ${f.cascade_errors.join('; ')}`
+          : `• ${f.error || 'submit failed'}`).join('\n');
+        showError({ message: `${res.message}\n${failNote}` }, res.message);
+      }
+      else if (res?.posted?.length) {
+        const withCascade = res.posted.filter(p => p.linked_source_id).length;
+        if (withCascade) showSuccess(`Posted ${res.posted.length} PRF/CALF(s); ${withCascade} linked expense(s)/logbook(s) also posted via cascade.`);
+        else showSuccess(res.message);
+      }
       loadDocs();
     } catch (err) {
       if (err?.response?.data?.approval_pending) { showApprovalPending(err.response.data.message); loadDocs(); }

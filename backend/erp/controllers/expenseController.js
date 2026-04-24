@@ -3743,12 +3743,17 @@ const postSingleExpense = async (doc, userId) => {
   await autoClassifyLines(doc.lines, doc.entity_id);
   await doc.save();
 
-  // CALF-POSTED gate — same check as submitExpenses (line 1176)
+  // Phase G4.5h — defense-in-depth. ACCESS-bearing expenses should never reach
+  // postSingleExpense (submitExpenses rejects them upstream). If one does,
+  // something escaped the redirect — fail loudly so the one-ack cascade
+  // contract isn't silently violated.
   for (const line of (doc.lines || [])) {
     if (line.calf_required && line.calf_id) {
-      const calf = await PrfCalf.findById(line.calf_id).select('status').lean();
+      const calf = await PrfCalf.findById(line.calf_id).select('status calf_number').lean();
       if (!calf || calf.status !== 'POSTED') {
-        throw new Error(`Cannot post: line "${line.establishment || ''}" has CALF that is not POSTED (status: ${calf?.status || 'NOT_FOUND'}). Post the CALF first.`);
+        throw new Error(
+          `ACCESS expense reached the approval hub with an unposted CALF (${calf?.calf_number || calf?._id || 'NOT_FOUND'}). Phase G4.5h routes ACCESS expenses via their CALF — acknowledge the CALF instead.`
+        );
       }
     }
   }
