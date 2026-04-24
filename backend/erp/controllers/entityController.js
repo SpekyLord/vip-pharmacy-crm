@@ -1,6 +1,8 @@
 const Entity = require('../models/Entity');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { invalidateEntityCodeCache } = require('../services/docNumbering');
+const { compressImage } = require('../../middleware/upload');
+const { uploadClmBranding } = require('../../config/s3');
 
 /**
  * Entity CRUD Controller — Phase 24
@@ -53,4 +55,61 @@ exports.update = catchAsync(async (req, res) => {
   // up the renamed code immediately instead of waiting for process restart.
   if ('short_name' in updates) invalidateEntityCodeCache(entity._id);
   res.json({ success: true, data: entity });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Phase 5 / PR1 — CLM Branding (per-entity pitch deck identity + slides)
+// ─────────────────────────────────────────────────────────────────────
+
+exports.getClmBranding = catchAsync(async (req, res) => {
+  const entity = await Entity.findById(req.params.id).select('clmBranding').lean();
+  if (!entity) return res.status(404).json({ success: false, message: 'Entity not found' });
+  res.json({ success: true, data: entity.clmBranding || {} });
+});
+
+exports.updateClmBranding = catchAsync(async (req, res) => {
+  const entity = await Entity.findById(req.params.id);
+  if (!entity) return res.status(404).json({ success: false, message: 'Entity not found' });
+  entity.clmBranding = entity.clmBranding || {};
+
+  // Non-president users can only update their own entity (match `update` policy).
+  if (!req.isPresident && req.entityId && req.entityId.toString() !== req.params.id) {
+    return res.status(403).json({ success: false, message: 'Cannot update branding of another entity' });
+  }
+
+  // Identity text fields (validated by Mongoose maxlength + match on save).
+  const identityKeys = ['primaryColor', 'companyName', 'websiteUrl', 'salesEmail', 'phone'];
+  for (const key of identityKeys) {
+    if (req.body[key] !== undefined) {
+      entity.clmBranding[key] = req.body[key] || undefined;
+    }
+  }
+
+  // Slide body text arrives as a JSON-stringified `slides` field because
+  // FormData can't represent nested objects natively.
+  if (req.body.slides !== undefined) {
+    try {
+      const parsed = typeof req.body.slides === 'string' ? JSON.parse(req.body.slides) : req.body.slides;
+      entity.clmBranding.slides = parsed || undefined;
+    } catch {
+      return res.status(400).json({ success: false, message: 'Invalid slides payload — must be valid JSON.' });
+    }
+  }
+
+  // Logo uploads — logoCircle + logoTrademark (multer `upload.fields`).
+  const circle = req.files?.logoCircle?.[0];
+  const trademark = req.files?.logoTrademark?.[0];
+  if (circle) {
+    const { buffer, mimetype } = await compressImage(circle.buffer, circle.mimetype, { maxDim: 600, quality: 85 });
+    const { url } = await uploadClmBranding(buffer, entity._id.toString(), 'logoCircle', mimetype);
+    entity.clmBranding.logoCircleUrl = url;
+  }
+  if (trademark) {
+    const { buffer, mimetype } = await compressImage(trademark.buffer, trademark.mimetype, { maxDim: 600, quality: 85 });
+    const { url } = await uploadClmBranding(buffer, entity._id.toString(), 'logoTrademark', mimetype);
+    entity.clmBranding.logoTrademarkUrl = url;
+  }
+
+  await entity.save();
+  res.json({ success: true, data: entity.clmBranding });
 });

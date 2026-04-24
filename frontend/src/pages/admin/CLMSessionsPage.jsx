@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
+import PageGuide from '../../components/common/PageGuide';
 import clmService from '../../services/clmService';
 import toast from 'react-hot-toast';
 import {
@@ -93,6 +94,7 @@ const CLMSessionsPage = () => {
       <div className="clm-admin-content">
         <Sidebar />
         <main className="clm-admin-main">
+          <PageGuide pageKey="clm-sessions-admin" />
           <div className="clm-admin-header">
             <h1>
               <Presentation size={24} />

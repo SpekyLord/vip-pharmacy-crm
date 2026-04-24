@@ -17,13 +17,16 @@
  *   + car_logbook_day (CarLogbookEntry)  VALID_OWNER_ROLES.CAR_LOGBOOK
  *   + undertaking     (Undertaking)      VALID_OWNER_ROLES.UNDERTAKING
  *
+ * Phase G4.5f (Apr 23, 2026) extended coverage from 7 → 8 collections:
+ *   + smer_entry      (SmerEntry)        VALID_OWNER_ROLES.SMER
+ *
  * Usage (from backend/):
  *   node erp/scripts/findOrphanedOwnerRecords.js
  *
  * Optional flags:
  *   --entity <id>    Scope to a single entity (default: all entities)
  *   --module <name>  Scope to one of: sales, collections, expenses, car_logbook,
- *                     car_logbook_day, prf_calf, undertaking
+ *                     car_logbook_day, prf_calf, undertaking, smer_entry
  *   --csv            Emit a CSV block to stdout (doc_ref, date, amount, etc.)
  */
 require('dotenv').config();
@@ -89,6 +92,17 @@ const MODULES = [
     lookupCode: 'UNDERTAKING',
     modelPath: '../models/Undertaking',
     displayFields: { ref: 'undertaking_number', date: 'receipt_date', amount: null },
+  },
+  // Phase G4.5f — SMER entries. bdm_id is stamped at create (and locked on
+  // update). An orphaned SMER here typically means a pre-G4.5d admin created
+  // a SMER on their own _id before the Rule #21 guard landed — repair by
+  // re-opening the SMER, picking the correct BDM via the G4.5f BDM picker,
+  // and re-submitting. Amount shown: total_reimbursable (per-diem + transport).
+  {
+    key: 'smer_entry',
+    lookupCode: 'SMER',
+    modelPath: '../models/SmerEntry',
+    displayFields: { ref: '_id', date: 'period', amount: 'total_reimbursable' },
   },
 ];
 

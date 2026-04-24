@@ -435,6 +435,50 @@ const PAGE_GUIDES = {
     ],
     tip: 'Email notifications require a valid email address on your profile. Push notifications require browser permission.',
   },
+  'partnership-clm': {
+    title: 'Partnership Presentation (CLM)',
+    steps: [
+      'Pick the VIP Client you are pitching to and the products you plan to feature',
+      'Tap "Start Presentation" to go full-screen — swipe left/right to navigate slides',
+      'Show the QR on the final slide so the VIP Client can message you on Messenger',
+      'End the session to record interest level, outcome, and follow-up date',
+      'Review your past sessions in the History tab',
+    ],
+    next: [
+      { label: 'My Visits', path: '/bdm/visits' },
+      { label: 'Dashboard', path: '/bdm' },
+    ],
+    tip: 'Each product you select shows on slide 5. Mark which ones the VIP Client was interested in before ending the session. If offline, your drafts sync automatically when connectivity returns.',
+  },
+  'clm-sessions-admin': {
+    title: 'CLM Sessions Overview',
+    steps: [
+      'View every BDM partnership pitch with duration, slides viewed, and QR conversion',
+      'Filter by BDM, date range, or outcome to audit field activity',
+      'Drill into a session to see slide-by-slide engagement and product interest',
+      'Use the analytics summary for conversion rate and top-performing BDMs',
+    ],
+    next: [
+      { label: 'Statistics', path: '/admin/statistics' },
+      { label: 'BDM Management', path: '/admin/employees' },
+      { label: 'CLM Branding', path: '/admin/clm-branding' },
+    ],
+  },
+  'clm-branding': {
+    title: 'CLM Branding & Identity',
+    steps: [
+      'Upload your circular logo (shown on hero + connect slides) — PNG or JPEG, max 15 MB',
+      'Upload your trademark logo (shown on the presentation top bar) — PNG or JPEG recommended',
+      'Edit your company name, website URL, sales email, phone, and primary brand color (hex)',
+      'Open the Slide Content tab to edit pitch copy: 3 pillars, 4 opportunity cards, 4 integrity cards, hero subtitle, connect messaging',
+      'Preview updates live on the Preview tab before saving — changes apply to every BDM in this entity',
+    ],
+    next: [
+      { label: 'CLM Sessions', path: '/admin/clm-sessions' },
+      { label: 'Entity Settings', path: '/admin/control-center' },
+    ],
+    tip: 'Leave any field blank to fall back to the system default (VIP branding + pitch). Each entity has its own branding — subsidiaries and subscribers get independent identities without a code deploy.',
+  },
 };
 
 export default function PageGuide({ pageKey, onVisibilityChange }) {

@@ -574,6 +574,15 @@ const SEED_DEFAULTS = {
     // because CALFs auto-cascade to link expenses/logbooks on post — subscribers
     // may want CALF-only delegation for Finance operators.
     { code: 'EXPENSES__PRF_CALF_PROXY', label: 'Record PRF/CALF on behalf of another BDM', metadata: { module: 'expenses', key: 'prf_calf_proxy', sort_order: 5 } },
+    // Phase G4.5f (Apr 23, 2026) — Proxy Entry for SMER + Per-Diem Override.
+    // Paired with PROXY_ENTRY_ROLES.SMER + VALID_OWNER_ROLES.SMER. Distinct
+    // from EXPENSES__PROXY_ENTRY (single-entry expenses) because per-diem is
+    // a different funding flow (advance liquidation vs OR reimbursement) and
+    // subscribers may delegate one without the other. SMER proxy submits also
+    // require a `bdm_phone_instruction` authorization tag enforced by the
+    // controller. Closes the BDMs→CRM-only / eBDMs→ERP-proxy policy locked
+    // Apr 23 2026 — last monthly touchpoint before BDMs can drop ERP.
+    { code: 'EXPENSES__SMER_PROXY', label: 'Record SMER + per-diem override on behalf of another BDM', metadata: { module: 'expenses', key: 'smer_proxy', sort_order: 6 } },
     // Purchasing
     { code: 'PURCHASING__PO_CREATE', label: 'Create/Edit Purchase Orders', metadata: { module: 'purchasing', key: 'po_create', sort_order: 1 } },
     { code: 'PURCHASING__PO_APPROVE', label: 'Approve Purchase Orders', metadata: { module: 'purchasing', key: 'po_approve', sort_order: 2 } },
@@ -882,7 +891,12 @@ const SEED_DEFAULTS = {
   VISIT_TYPE: ['regular', 'follow-up', 'emergency'],
   PHOTO_SOURCE: ['camera', 'gallery', 'clipboard'],
   PHOTO_FLAG: ['date_mismatch', 'duplicate_photo'],
-  MESSAGE_CATEGORY: ['announcement', 'payroll', 'leave', 'policy', 'system', 'compliance_alert', 'other', 'ai_coaching', 'ai_schedule', 'ai_alert'],
+  // Phase G4.5f (Apr 23, 2026) — added 'PERDIEM_SUMMARY' (proxy-posted SMER receipt)
+  // and 'PERDIEM_OVERRIDE_DECISION' (Hub decision receipt for proxied per-diem
+  // overrides). Both fire as best-effort, must_acknowledge=false courtesy
+  // notifications routed by writeProxyReceipt() in expenseController +
+  // universalApprovalController.perdiem_override.
+  MESSAGE_CATEGORY: ['announcement', 'payroll', 'leave', 'policy', 'system', 'compliance_alert', 'other', 'ai_coaching', 'ai_schedule', 'ai_alert', 'PERDIEM_SUMMARY', 'PERDIEM_OVERRIDE_DECISION'],
   MESSAGE_PRIORITY: ['normal', 'important', 'high'],
   // Phase G9.R8 — Inbox retention (Apr 2026)
   // Lookup-driven per-entity retention settings consumed by
@@ -2449,6 +2463,10 @@ const SEED_DEFAULTS = {
     { code: 'CAR_LOGBOOK', label: 'Car Logbook (incl. per-fuel approval)', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 6 } },
     { code: 'PRF_CALF', label: 'PRF (partner rebate) / CALF (company advance liquidation)', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 7 } },
     { code: 'UNDERTAKING', label: 'Undertaking (GRN receipt confirmation)', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 8 } },
+    // Phase G4.5f (Apr 23, 2026) — SMER cycle + per-diem override. Append
+    // 'contractor' to metadata.roles in Control Center so eBDMs (Judy / Jay
+    // Ann) with the EXPENSES__SMER_PROXY sub-perm can proxy.
+    { code: 'SMER', label: 'SMER (per-diem cycle + per-day override)', metadata: { roles: ['admin', 'finance', 'president'], sort_order: 9 } },
   ],
   // Phase G4.5a follow-up — which roles are valid OWNERS of a proxied record
   // per module. Defaults to BDM-shaped roles ('contractor','employee'); admin/
@@ -2468,6 +2486,10 @@ const SEED_DEFAULTS = {
     { code: 'CAR_LOGBOOK', label: 'Valid proxy targets — Car Logbook', metadata: { roles: ['contractor', 'employee'], sort_order: 6 } },
     { code: 'PRF_CALF', label: 'Valid proxy targets — PRF / CALF', metadata: { roles: ['contractor', 'employee'], sort_order: 7 } },
     { code: 'UNDERTAKING', label: 'Valid proxy targets — Undertaking', metadata: { roles: ['contractor', 'employee'], sort_order: 8 } },
+    // Phase G4.5f — SMER ownership stays BDM-shaped. Per-BDM per-diem reports,
+    // CompProfile thresholds, and revolving-fund draws all key on bdm_id —
+    // letting an admin or finance be a SMER owner would corrupt these.
+    { code: 'SMER', label: 'Valid proxy targets — SMER', metadata: { roles: ['contractor', 'employee'], sort_order: 9 } },
   ],
   // Phase P1 — Proxy SLA thresholds. Lookup-driven so subscribers can tune
   // without code changes. pending_alert_hours = when to alert office lead;

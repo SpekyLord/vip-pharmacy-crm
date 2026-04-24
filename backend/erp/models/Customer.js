@@ -1,11 +1,18 @@
 /**
  * Customer Model — Non-hospital customer entities (persons, pharmacies, diagnostic centers, industrial)
  *
- * Separate from Hospital model (which has HEAT-specific fields and global uniqueness).
- * Customers are entity-scoped master data. Admin creates, then tags which BDM/eBDM can access.
- * Same BDM tagging pattern as Hospital.
+ * Mirrors Hospital model: GLOBAL master data, not entity-scoped reads. `entity_id` remains
+ * as a "home entity" label (reports, defaults) but is NOT a visibility/uniqueness boundary.
+ * Visibility is driven by `tagged_bdms` (the BDM tag → the BDMs who sell to this customer),
+ * matching the Hospital + tagged_bdms pattern.
  *
- * Phase 18 — Service Revenue & Cost Center Expenses
+ * Why global: a real customer (e.g. Dr. Sharon) is an organization-level record. When a BDM
+ * tagged to her switches working entity (VIP → subsidiary), she must remain sellable under
+ * the subsidiary's books. AR posting entity is sourced from Sale.entity_id (the selling
+ * entity), NOT from Customer.entity_id — verified across arEngine/collections/creditNotes.
+ *
+ * Phase 18 — Service Revenue & Cost Center Expenses (original entity-scoped design)
+ * Phase G5 — Customer globalization (mirror Hospital pattern) — Apr 2026
  */
 const mongoose = require('mongoose');
 const { cleanName } = require('../utils/nameClean');
@@ -18,10 +25,11 @@ const taggedBdmSchema = new mongoose.Schema({
 }, { _id: false });
 
 const customerSchema = new mongoose.Schema({
+  // Home entity label — set on creation to the creator's working entity. Used for
+  // reporting/defaults only, NOT as a read-filter. See header for design.
   entity_id: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Entity',
-    required: true
+    ref: 'Entity'
   },
   customer_name: {
     type: String,
@@ -95,10 +103,12 @@ customerSchema.pre('findOneAndUpdate', function (next) {
   next();
 });
 
-// Indexes
-customerSchema.index({ entity_id: 1, customer_name_clean: 1 }, { unique: true });
-customerSchema.index({ entity_id: 1, status: 1 });
-customerSchema.index({ entity_id: 1, customer_type: 1 });
+// Indexes — global uniqueness on customer_name_clean (mirror Hospital). The old
+// per-entity compound unique index is dropped by erp/scripts/migrateCustomerGlobalUnique.js.
+customerSchema.index({ customer_name_clean: 1 }, { unique: true });
+customerSchema.index({ status: 1 });
+customerSchema.index({ customer_type: 1 });
+customerSchema.index({ entity_id: 1 }); // non-unique — home entity label for reports
 customerSchema.index({ 'tagged_bdms.bdm_id': 1 });
 customerSchema.index({ customer_name: 'text', customer_aliases: 'text' });
 

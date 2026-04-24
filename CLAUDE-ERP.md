@@ -5233,3 +5233,68 @@ docs/PHASETASK-ERP.md                                 # Phase G4.5e entry
 3. Admin: optionally add `contractor` to `PROXY_ENTRY_ROLES.CAR_LOGBOOK` / `.PRF_CALF` / `.UNDERTAKING` metadata.roles (defaults to admin/finance/president; contractor must be added to allow eBDMs to proxy).
 4. Smoke test: Judy pulls up a field BDM's Car Logbook → Save → Validate → Submit → expect 202 Approval Hub, hub card shows owner = target BDM, proxy audit = Judy.
 5. Only after smoke tests pass: run `backfillEntityIdsFromFra.js --apply` and revoke cross-entity FRAs per the BDMs→CRM-only policy.
+
+---
+
+## Phase G4.5f — SMER + Per-Diem Override Proxy Port (April 23, 2026)
+
+### Why
+G4.5e unblocked Car Logbook / CALF / Undertaking for eBDM proxies. SMER + per-diem override were the last monthly touchpoints preventing a full BDMs→CRM-only rollout. After G4.5f lands, office-based eBDMs (Judy Patrocinio + Jay Ann Protacio) handle the entire monthly ERP cycle after a phone call with the field BDM; field BDMs never touch ERP.
+
+SMER has two proxy surfaces: the cycle (one SMER per BDM per period+cycle) and per-diem override (per daily entry). Both require a short `bdm_phone_instruction` authorization tag so the audit shows what the proxy was told (user decision: no min-length; short tags like "ok with boss" / "in the office" / "with client" are fine — the field is an authorization trail, not a narrative).
+
+### Scope
+Same `resolveOwnerForWrite` + `widenFilterForProxy` template as G4.5a/b/c.1/e; no helper changes required (G4.5e's `lookupCode` extension already supports distinct role rosters per module).
+
+- 1 model gets `recorded_on_behalf_of` + `bdm_phone_instruction` at cycle level AND at daily_entries level (SmerEntry).
+- 1 sub-perm: `EXPENSES__SMER_PROXY` (module `expenses`, key `smer_proxy`, sort_order 6).
+- 1 new row in each of `PROXY_ENTRY_ROLES` + `VALID_OWNER_ROLES` (code `SMER`).
+- 2 new `MESSAGE_CATEGORY` codes: `PERDIEM_SUMMARY` (SMER posted on behalf) + `PERDIEM_OVERRIDE_DECISION` (Hub decision on proxied override).
+- Backend: `expenseController.js` SMER section (10 endpoints — 5 reads widened, 5 writes gated); `universalApprovalController.perdiem_override` extended to emit a decision receipt when the entry was proxied.
+- Frontend: `Smer.jsx` reuses the G4.5e CarLogbook BDM-picker + sub-perm pattern via `canProxySmer`; adds a cycle-level `bdm_phone_instruction` input on the proxy write path and a separate per-override tag input on the override modal.
+- `WorkflowGuide` "smer" tip extended.
+- `findOrphanedOwnerRecords.js` extended 7 → 8 modules (`smer_entry`).
+- `scripts/check-system-health.js` section 5 extended with G4.5f assertions.
+
+### Integrity guarantees (by design)
+- **Rule #20 four-eyes** — `submitSmer` routes through the Approval Hub whenever any SMER in the batch has `recorded_on_behalf_of` OR when the caller is not the SMER owner. `overridePerdiemDay` ALWAYS routes through the Hub on the proxy path — even when the caller is management (admin/finance can't proxy-self-approve).
+- **Rule #21** — no silent self-fill; helper throws 400 when a non-BDM caller omits `assigned_to` on create. `submitSmer` + `validateSmer` require explicit `bdm_id` on the widened path; a single click cannot post every proxy-targetable BDM's VALID SMER.
+- **Rule #19 entity isolation** — helper validates the target's `entity_ids` (inherited from G4.5a); no change required.
+- **Rule #3 lookup-driven** — all role lists + message categories admin-editable via Control Center; no hardcoded business values.
+- **Ownership-lock on update** — `assigned_to` / `bdm_id` / `recorded_on_behalf_of` stripped from body on `updateSmer` (stamped only at create).
+- **CompProfile per target BDM** — `createSmer` loads the per-person CompProfile against `owner.ownerId`, not the caller's id; revolving-fund + per-diem thresholds are the owner's, not the proxy's.
+- **Proxy fields survive approval decision** — the universal override handler mutates a few entry fields but doesn't clobber `recorded_on_behalf_of` / `bdm_phone_instruction` (stamped at request time, persist through APPROVED and REJECTED branches).
+- **Integrity Point A (batch-loop safety)** — `validateSmer` + `submitSmer` on the widened path require an explicit `bdm_id` context; without this, the per-BDM loop becomes an "all BDMs at once" blast radius.
+- **Integrity Point B (apply path widen)** — `applyPerdiemOverride` uses `widenFilterForProxy`; without it, a proxy caller 404s on the apply path because their `tenantFilter` is scoped to their own BDM id.
+- **Authorization tag mandatory on proxy** — `bdm_phone_instruction` required and non-empty after trim at both cycle submit and per-day override request. 400 if missing.
+- **Courtesy receipts are non-blocking** — `writeProxyReceipt` catches inbox write errors so a failed notification never rolls back the underlying SMER write.
+
+### Subscription-scalability (Rules #3 / #19)
+- Role lists lookup-driven (`PROXY_ENTRY_ROLES.SMER` + `VALID_OWNER_ROLES.SMER`) — admin-editable via Control Center → Lookup Tables; no code changes needed to extend proxy eligibility (e.g., add `contractor` so eBDMs can proxy) or owner eligibility (e.g., add a supervisor role that also owns SMERs).
+- `EXPENSES__SMER_PROXY` is distinct from `EXPENSES__PROXY_ENTRY` (single-entry Expenses) and `EXPENSES__CAR_LOGBOOK_PROXY` (Car Logbook) — subscribers delegate per-diem work without granting OR-based expense proxy or fuel proxy.
+- MessageInbox categories seeded (no dead inboxes); receipts obey the lookup-driven `INBOX_ACK_DEFAULTS` flow but are explicitly set `must_acknowledge: false` because they are courtesy notifications, not actionable tasks.
+- Plain BDMs retain `expenses` module access so they can still read their own SMER and log overrides in emergencies — only the proxy WRITE path requires the new sub-perm.
+
+### Files touched (Phase G4.5f)
+```
+backend/erp/models/SmerEntry.js                      # + recorded_on_behalf_of + bdm_phone_instruction (cycle + daily_entries)
+backend/erp/controllers/expenseController.js         # + SMER_PROXY_OPTS + writeProxyReceipt helper; 10 SMER endpoints updated
+backend/erp/controllers/universalApprovalController.js # perdiem_override emits PERDIEM_OVERRIDE_DECISION on proxied decisions
+backend/erp/controllers/lookupGenericController.js   # + EXPENSES__SMER_PROXY + PROXY_ENTRY_ROLES.SMER + VALID_OWNER_ROLES.SMER + 2 MESSAGE_CATEGORY codes
+backend/erp/scripts/findOrphanedOwnerRecords.js      # + smer_entry module (8 modules total)
+frontend/src/erp/hooks/useExpenses.js                # validateSmer/submitSmer/reopenSmer accept body params
+frontend/src/erp/pages/Smer.jsx                      # canProxySmer gate + BDM picker + dual banner + tag inputs + Proxied pills
+frontend/src/erp/components/WorkflowGuide.jsx        # smer tip extended
+scripts/check-system-health.js                       # section 5 extended for G4.5f (9 modules, SMER_PROXY, model + receipt checks)
+CLAUDE-ERP.md                                        # this section
+docs/PHASETASK-ERP.md                                # Phase G4.5f entry
+```
+
+### Post-ship operational steps (not performed by code)
+1. Deploy G4.5f to prod.
+2. Admin: tick `EXPENSES__SMER_PROXY` on Judy Patrocinio + Jay Ann Protacio's Access Template (Control Center → Access Templates).
+3. Admin: optionally add `contractor` to `PROXY_ENTRY_ROLES.SMER` metadata.roles (defaults to admin/finance/president; must be added to allow eBDMs to proxy).
+4. Smoke test — SMER submit: eBDM opens a field BDM's SMER cycle (select BDM in picker), fills a day, Save → Validate → enter "ok with boss" in the proxy note → Submit → expect 202 Approval Hub; card shows owner = target BDM, proxy audit = eBDM; target BDM inbox receives PERDIEM_SUMMARY on President post.
+5. Smoke test — per-diem override: eBDM opens override modal on a daily row, tier=FULL, reason + bdm_phone_instruction → Request Override → expect 202 Hub; target BDM inbox receives PERDIEM_OVERRIDE_DECISION when President decides.
+6. Orphan sweep: `node backend/erp/scripts/findOrphanedOwnerRecords.js --module smer_entry` to confirm no pre-G4.5d SMERs are owned by non-BDM users.
+7. After smoke tests pass: the BDMs→CRM-only rollout is complete — revoke the `expenses` module from field BDMs' Access Templates ONLY if an explicit business decision is made to do so (recommendation: leave it on so field BDMs can still read their own SMER in emergencies).

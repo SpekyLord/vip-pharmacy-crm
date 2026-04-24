@@ -12,9 +12,12 @@ export default function useExpenses() {
   const createSmer = (data) => api.post('/expenses/smer', data);
   const updateSmer = (id, data) => api.put(`/expenses/smer/${id}`, data);
   const deleteDraftSmer = (id) => api.del(`/expenses/smer/${id}`);
-  const validateSmer = () => api.post('/expenses/smer/validate', {});
-  const submitSmer = () => api.post('/expenses/smer/submit', {});
-  const reopenSmer = (ids) => api.post('/expenses/smer/reopen', { smer_ids: ids });
+  // Phase G4.5f — accept optional body so callers can pass { bdm_id, period,
+  // cycle, bdm_phone_instruction } when filing on behalf. Self-filers may omit
+  // body entirely; backend self-scopes via tenantFilter.
+  const validateSmer = (body) => api.post('/expenses/smer/validate', body || {});
+  const submitSmer = (body) => api.post('/expenses/smer/submit', body || {});
+  const reopenSmer = (ids, extra) => api.post('/expenses/smer/reopen', { smer_ids: ids, ...(extra || {}) });
   const getSmerCrmMdCounts = (period, cycle) => api.get('/expenses/smer/crm-md-counts', { params: { period, cycle } });
   const getSmerCrmVisitDetail = (date) => api.get(`/expenses/smer/crm-visits/${date}`);
   const overridePerdiemDay = (smerId, data) => api.post(`/expenses/smer/${smerId}/override-perdiem`, data);

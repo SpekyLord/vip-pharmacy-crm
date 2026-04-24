@@ -16,12 +16,14 @@ import CLMPresenter from '../../components/employee/CLMPresenter';
 import OfflineBanner from '../../components/common/OfflineBanner';
 import ProductImage from '../../components/common/ProductImage';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
+import PageGuide from '../../components/common/PageGuide';
 import { useAuth } from '../../hooks/useAuth';
 import { useOffline } from '../../hooks/useOffline';
 import { offlineStore } from '../../utils/offlineStore';
 import doctorService from '../../services/doctorService';
 import productService from '../../services/productService';
 import clmService from '../../services/clmService';
+import clmBrandingService from '../../services/clmBrandingService';
 import toast from 'react-hot-toast';
 import {
   Presentation,
@@ -43,13 +45,14 @@ import {
 } from 'lucide-react';
 
 const PartnershipCLM = () => {
-  useAuth();
+  const { user } = useAuth();
   useOffline(); // initializes offline listeners; OfflineBanner consumes state via its own hook
 
   // ── State ─────────────────────────────────────────────────────
   const [doctors, setDoctors] = useState([]);
   const [sessions, setSessions] = useState([]);
   const [products, setProducts] = useState([]);
+  const [branding, setBranding] = useState(null);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [productSearch, setProductSearch] = useState('');
@@ -134,6 +137,24 @@ const PartnershipCLM = () => {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Fetch per-entity CLM branding once the user is loaded. Fire-and-forget:
+  // if this fails (offline, network error), CLMPresenter falls back to
+  // CLM_DEFAULTS and the pitch still launches — no blocking.
+  useEffect(() => {
+    const entityId = user?.entity_id || (Array.isArray(user?.entity_ids) && user.entity_ids[0]);
+    if (!entityId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await clmBrandingService.get(entityId);
+        if (!cancelled) setBranding(res?.data || null);
+      } catch {
+        if (!cancelled) setBranding(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
 
   // ── Filtered doctors ──────────────────────────────────────────
   const filteredDoctors = useMemo(() => {
@@ -363,6 +384,7 @@ const PartnershipCLM = () => {
         session={activeSession}
         doctor={selectedDoctor}
         products={selectedProducts}
+        branding={branding}
         onEnd={handleEndPresentation}
         onQrDisplayed={handleQrDisplayed}
       />
@@ -379,6 +401,7 @@ const PartnershipCLM = () => {
       <div className="clm-content">
         <Sidebar />
         <main className="clm-main">
+          <PageGuide pageKey="partnership-clm" />
           {/* ── Page header ─────────────────────────────────────── */}
           <div className="clm-page-header">
             <div>

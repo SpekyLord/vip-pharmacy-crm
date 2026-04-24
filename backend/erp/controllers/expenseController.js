@@ -76,7 +76,87 @@ function enforceNoWorkRules(entry) {
 // SMER ENDPOINTS
 // ═══════════════════════════════════════════
 
+// Phase G4.5f (April 23, 2026) — SMER + per-diem override adopt the shared
+// proxy-entry resolver. Writes use resolveOwnerForWrite (stamps bdm_id =
+// target, seeds recorded_on_behalf_of for audit + hub force-routing). Reads
+// use widenFilterForProxy (eligible proxies see target BDMs' SMERs).
+//
+// Distinct lookup code SMER (not EXPENSES) so subscribers can configure the
+// per-diem proxy roster independently from single-entry expenses. Pairs with
+// PROXY_ENTRY_ROLES.SMER + VALID_OWNER_ROLES.SMER + the EXPENSES__SMER_PROXY
+// sub-permission — all admin-editable via Control Center.
+//
+// Unblocks the BDMs→CRM-only / eBDMs→ERP-proxy policy locked Apr 23 2026.
+// Field BDMs keep `expenses` module access (read SMER, log overrides on own
+// SMER) — only the proxy WRITE path requires the new sub-perm.
+const SMER_PROXY_OPTS = { subKey: 'smer_proxy', lookupCode: 'SMER' };
+
+// Phase G4.5f — courtesy receipt to the SMER owner when a proxy posts on
+// their behalf or when an override decision is taken on a proxied request.
+// Lazy-required so the cross-package import (CRM-root MessageInbox) doesn't
+// add startup cost when SMER is idle. Failures are logged but never block
+// the underlying write — receipts are notification, not a system of record.
+//
+// recipientRole is resolved from the TARGET user's actual role (contractor OR
+// legacy employee) because getInboxList filters on recipientRole=user.role —
+// hardcoding 'contractor' would hide the message from legacy employee-role BDMs.
+async function writeProxyReceipt({ entityId, recipientUserId, senderUser, category, title, body }) {
+  if (!recipientUserId) return;
+  try {
+    const MessageInbox = require('../../models/MessageInbox');
+    const User = require('../../models/User');
+    const target = await User.findById(recipientUserId).select('role').lean();
+    // Fall back to 'contractor' only when the target cannot be loaded. That
+    // matches the modern default so a receipt still lands for new users even
+    // when the User lookup fails transiently.
+    const recipientRole = target?.role || 'contractor';
+    await MessageInbox.create({
+      entity_id: entityId,
+      recipientRole,
+      recipientUserId,
+      senderUserId: senderUser?._id,
+      senderName: senderUser?.name || senderUser?.email || 'System',
+      senderRole: senderUser?.role || 'system',
+      title,
+      body,
+      category,                      // PERDIEM_SUMMARY | PERDIEM_OVERRIDE_DECISION
+      priority: 'normal',
+      must_acknowledge: false,        // explicit — overrides the lookup-driven default hook
+      requires_action: false,
+      folder: 'INBOX',
+    });
+  } catch (err) {
+    console.error('[writeProxyReceipt] inbox write failed (non-critical):', err.message);
+  }
+}
+
 const createSmer = catchAsync(async (req, res) => {
+  // Phase G4.5f — proxy resolver. Self-filers → owner = self; eligible proxy
+  // (admin/finance/eBDM contractor with expenses.smer_proxy ticked) +
+  // body.assigned_to → owner = target BDM, proxiedBy = caller. Throws 400 if
+  // a non-BDM caller omits assigned_to (Rule #21 — no silent self-fill).
+  let owner;
+  try {
+    owner = await resolveOwnerForWrite(req, 'expenses', SMER_PROXY_OPTS);
+  } catch (err) {
+    if (err.statusCode === 400 || err.statusCode === 403) {
+      return res.status(err.statusCode).json({ success: false, message: err.message });
+    }
+    throw err;
+  }
+
+  // Proxy-create requires a non-empty bdm_phone_instruction (authorization
+  // tag). User decision Apr 23 2026: short tags are fine, no min-length.
+  if (owner.isOnBehalf) {
+    const tag = String(req.body?.bdm_phone_instruction || '').trim();
+    if (!tag) {
+      return res.status(400).json({
+        success: false,
+        message: 'bdm_phone_instruction is required when filing SMER on behalf of another BDM (short tag like "ok with boss" is fine).'
+      });
+    }
+  }
+
   // Pre-check for an existing SMER on (entity, bdm, period, cycle). Two cases:
   //   (1) non-reversed dupe → return a clean 409 (not a raw E11000) so the UI
   //       can redirect her to the existing draft.
@@ -87,7 +167,7 @@ const createSmer = catchAsync(async (req, res) => {
   if (req.body.period && req.body.cycle) {
     const dupes = await SmerEntry.find({
       entity_id: req.entityId,
-      bdm_id: req.bdmId,
+      bdm_id: owner.ownerId,
       period: req.body.period,
       cycle: req.body.cycle,
     }).select('_id status period cycle deletion_event_id').lean();
@@ -117,8 +197,12 @@ const createSmer = catchAsync(async (req, res) => {
   const perdiemConfig = await resolvePerdiemConfig({ entityId: req.entityId, role: 'BDM' });
   const perdiemRate = req.body.perdiem_rate || perdiemConfig.rate_php;
 
-  // Load CompProfile once — used for both revolving fund and per diem thresholds
-  const compProfile = await loadBdmCompProfile(req.bdmId, req.entityId);
+  // Load CompProfile once — used for both revolving fund and per diem thresholds.
+  // Phase G4.5f — for proxy-create, the CompProfile must be the TARGET BDM's
+  // (owner.ownerId), not the caller's. A non-BDM caller has no per-person row;
+  // her revolving fund + thresholds would silently fall back to Settings global,
+  // overpaying or underpaying the actual owner.
+  const compProfile = await loadBdmCompProfile(owner.ownerId, req.entityId);
 
   // Auto-resolve travel advance from CompProfile → Settings fallback (0 or missing = use default)
   let travelAdvance = req.body.travel_advance;
@@ -151,23 +235,65 @@ const createSmer = catchAsync(async (req, res) => {
     return cleaned;
   });
 
+  // Strip ownership fields from body so a crafted payload cannot bypass the
+  // proxy gate. Owner / proxy stamps come from the resolver above only.
+  const {
+    assigned_to: _dAssigned,
+    bdm_id: _dBdm,
+    recorded_on_behalf_of: _dProxy,
+    ...safeBody
+  } = req.body || {};
+
+  const phoneInstruction = owner.isOnBehalf
+    ? String(req.body?.bdm_phone_instruction || '').trim()
+    : '';
+
   const smer = await SmerEntry.create({
-    ...req.body,
+    ...safeBody,
     travel_advance: travelAdvance,
     daily_entries: dailyEntries,
     perdiem_rate: perdiemRate,
     entity_id: req.entityId,
-    bdm_id: req.bdmId,
+    bdm_id: owner.ownerId,
+    recorded_on_behalf_of: owner.proxiedBy,
+    bdm_phone_instruction: phoneInstruction,
     created_by: req.user._id,
     status: 'DRAFT'
   });
+
+  if (owner.isOnBehalf) {
+    await ErpAuditLog.logChange({
+      entity_id: req.entityId,
+      bdm_id: owner.ownerId,
+      log_type: 'PROXY_CREATE',
+      target_ref: smer._id.toString(),
+      target_model: 'SmerEntry',
+      changed_by: req.user._id,
+      note: `Proxy create: SMER ${smer.period} ${smer.cycle} keyed by ${req.user.name || req.user._id} (${req.user.role}) on behalf of BDM ${owner.ownerId} — instruction: ${phoneInstruction}`
+    }).catch(err => console.error('[createSmer] PROXY_CREATE audit failed (non-critical):', err.message));
+  }
+
   res.status(201).json({ success: true, data: smer });
 });
 
 const updateSmer = catchAsync(async (req, res) => {
   const editable = await getEditableStatuses(req.entityId, 'SMER');
-  const smer = await SmerEntry.findOne({ _id: req.params.id, ...req.tenantFilter, status: { $in: editable } });
+  // Phase G4.5f — widen so eligible proxies can edit on behalf.
+  const scope = await widenFilterForProxy(req, 'expenses', SMER_PROXY_OPTS);
+  const smer = await SmerEntry.findOne({ _id: req.params.id, ...scope, status: { $in: editable } });
   if (!smer) return res.status(404).json({ success: false, message: 'Draft SMER not found' });
+
+  // Strip ownership fields — proxy cannot reassign after create; ownership is
+  // stamped at create time only. Edit history lives in audit log.
+  const {
+    assigned_to: _dAssigned,
+    bdm_id: _dBdm,
+    recorded_on_behalf_of: _dProxy,
+    ...safeBody
+  } = req.body || {};
+  // Reattach safeBody so the rest of the function works against it (preserves
+  // the per-day recompute below without expanding the diff).
+  req.body = safeBody;
 
   const settings = await Settings.getSettings();
   const perdiemRate = req.body.perdiem_rate || smer.perdiem_rate;
@@ -206,11 +332,31 @@ const updateSmer = catchAsync(async (req, res) => {
   Object.assign(smer, req.body);
   if (req.body.perdiem_rate) smer.perdiem_rate = perdiemRate;
   await smer.save();
+
+  // Phase G4.5f — audit when the editor is not the owner (proxy update).
+  const isProxyEdit = String(smer.bdm_id) !== String(req.user._id);
+  if (isProxyEdit) {
+    await ErpAuditLog.logChange({
+      entity_id: smer.entity_id,
+      bdm_id: smer.bdm_id,
+      log_type: 'PROXY_UPDATE',
+      target_ref: smer._id.toString(),
+      target_model: 'SmerEntry',
+      changed_by: req.user._id,
+      note: `Proxy update: SMER ${smer.period} ${smer.cycle} edited by ${req.user.name || req.user._id} (${req.user.role}) on behalf of BDM ${smer.bdm_id}`
+    }).catch(err => console.error('[updateSmer] PROXY_UPDATE audit failed (non-critical):', err.message));
+  }
+
   res.json({ success: true, data: smer });
 });
 
 const getSmerList = catchAsync(async (req, res) => {
-  const filter = { ...req.tenantFilter };
+  // Phase G4.5f — widen so eligible proxies see the BDMs they file on behalf of.
+  // Admin/finance/president already have tenantFilter without bdm_id (no-op for
+  // them); contractors with expenses.smer_proxy ticked get bdm_id stripped.
+  const scope = await widenFilterForProxy(req, 'expenses', SMER_PROXY_OPTS);
+  const scopeIsWidened = !('bdm_id' in scope);
+  const filter = { ...scope };
   if (req.query.status) filter.status = req.query.status;
   if (req.query.period) filter.period = req.query.period;
   if (req.query.cycle) filter.cycle = req.query.cycle;
@@ -223,9 +369,12 @@ const getSmerList = catchAsync(async (req, res) => {
     filter.deletion_event_id = { $exists: false };
   }
 
-  // Rule #21: privileged users may scope by bdm_id; absence = no BDM filter.
-  const privileged = req.isPresident || req.isAdmin || req.isFinance;
-  if (privileged && req.query.bdm_id) filter.bdm_id = req.query.bdm_id;
+  // Rule #21: privileged (or proxy) callers may narrow by ?bdm_id=. A plain
+  // self-scoped BDM must NOT be able to override scope.bdm_id via query
+  // string (would allow impersonation). Gate the override on scopeIsWidened
+  // — true only when tenantFilter had no bdm_id (admin/finance) or
+  // widenFilterForProxy stripped it (proxy contractor).
+  if (req.query.bdm_id && scopeIsWidened) filter.bdm_id = req.query.bdm_id;
 
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 20;
@@ -233,6 +382,7 @@ const getSmerList = catchAsync(async (req, res) => {
   const [docs, total] = await Promise.all([
     SmerEntry.find(filter)
       .populate('bdm_id', 'name')
+      .populate('recorded_on_behalf_of', 'name')
       .sort({ period: -1, cycle: -1 })
       .skip((page - 1) * limit).limit(limit).lean(),
     SmerEntry.countDocuments(filter)
@@ -242,21 +392,58 @@ const getSmerList = catchAsync(async (req, res) => {
 });
 
 const getSmerById = catchAsync(async (req, res) => {
-  const smer = await SmerEntry.findOne({ _id: req.params.id, ...req.tenantFilter })
-    .populate('bdm_id', 'name').lean();
+  // Phase G4.5f — widen for proxy reads. Privileged optional ?bdm_id= narrowing.
+  // scopeIsWidened gate prevents a plain BDM from overriding scope.bdm_id via
+  // a crafted query (Rule #21 impersonation guard).
+  const scope = await widenFilterForProxy(req, 'expenses', SMER_PROXY_OPTS);
+  const scopeIsWidened = !('bdm_id' in scope);
+  const docFilter = { _id: req.params.id, ...scope };
+  if (req.query.bdm_id && scopeIsWidened) docFilter.bdm_id = req.query.bdm_id;
+  const smer = await SmerEntry.findOne(docFilter)
+    .populate('bdm_id', 'name')
+    .populate('recorded_on_behalf_of', 'name')
+    .lean();
   if (!smer) return res.status(404).json({ success: false, message: 'SMER not found' });
   res.json({ success: true, data: smer });
 });
 
 const deleteDraftSmer = catchAsync(async (req, res) => {
-  const result = await SmerEntry.findOneAndDelete({ _id: req.params.id, ...req.tenantFilter, status: 'DRAFT' });
+  // Phase G4.5f — proxy can delete DRAFT of BDMs they file on behalf of.
+  const scope = await widenFilterForProxy(req, 'expenses', SMER_PROXY_OPTS);
+  const result = await SmerEntry.findOneAndDelete({ _id: req.params.id, ...scope, status: 'DRAFT' });
   if (!result) return res.status(404).json({ success: false, message: 'Draft SMER not found' });
   res.json({ success: true, message: 'Draft SMER deleted' });
 });
 
 const validateSmer = catchAsync(async (req, res) => {
   const editable = await getEditableStatuses(req.entityId, 'SMER');
-  const smers = await SmerEntry.find({ ...req.tenantFilter, status: { $in: editable } });
+  // Phase G4.5f — Integrity Point A. validateSmer loops every matching SMER in
+  // scope. For self-filers tenantFilter scopes to the caller's own SMERs (safe).
+  // For privileged or proxy callers, widenFilterForProxy strips bdm_id —
+  // unscoped, the loop would validate every BDM's VALID SMERs at once. Require
+  // an explicit bdm_id (and optionally period+cycle) on widened paths.
+  //
+  // scopeIsWidened is the authoritative gate: true iff caller is privileged or
+  // proxy-eligible. Plain BDMs keep scope.bdm_id = self — any ?bdm_id=other
+  // override attempt is ignored (Rule #21 impersonation guard).
+  const scope = await widenFilterForProxy(req, 'expenses', SMER_PROXY_OPTS);
+  const scopeIsWidened = !('bdm_id' in scope);
+  const rawBdm = (req.query && req.query.bdm_id) || (req.body && req.body.bdm_id) || null;
+  if (scopeIsWidened && !rawBdm) {
+    return res.status(400).json({
+      success: false,
+      message: 'bdm_id is required — privileged/proxy users must specify which BDM to validate'
+    });
+  }
+  const filter = { ...scope, status: { $in: editable } };
+  if (scopeIsWidened && rawBdm) filter.bdm_id = rawBdm;
+  // Scope to a specific period+cycle when provided so validate runs against
+  // the active SMER, not every open draft across all months.
+  const period = req.body?.period || req.query?.period;
+  const cycle = req.body?.cycle || req.query?.cycle;
+  if (period) filter.period = period;
+  if (cycle) filter.cycle = cycle;
+  const smers = await SmerEntry.find(filter);
 
   for (const smer of smers) {
     const errors = [];
@@ -297,8 +484,57 @@ const validateSmer = catchAsync(async (req, res) => {
 });
 
 const submitSmer = catchAsync(async (req, res) => {
-  const smers = await SmerEntry.find({ ...req.tenantFilter, status: 'VALID' });
+  // Phase G4.5f — Integrity Point A. submitSmer loops every matching VALID
+  // SMER in scope. Self-filers narrow via tenantFilter (own bdm_id only).
+  // Privileged/proxy callers MUST pass an explicit bdm_id so the loop binds
+  // to one BDM's submission — otherwise a single click would post every
+  // proxy-targetable BDM's VALID SMER at once.
+  //
+  // scopeIsWidened: authoritative guard. Plain BDM scope keeps bdm_id=self;
+  // any ?bdm_id=other or body.bdm_id=other override is ignored here (Rule #21
+  // impersonation guard — the frontend may send body.bdm_id as a convenience
+  // for proxy callers, but we never honor it from a self-scoped contractor).
+  const scope = await widenFilterForProxy(req, 'expenses', SMER_PROXY_OPTS);
+  const scopeIsWidened = !('bdm_id' in scope);
+  const rawBdm = (req.query && req.query.bdm_id) || (req.body && req.body.bdm_id) || null;
+  if (scopeIsWidened && !rawBdm) {
+    return res.status(400).json({
+      success: false,
+      message: 'bdm_id is required — privileged/proxy users must specify which BDM to submit SMER for'
+    });
+  }
+  const filter = { ...scope, status: 'VALID' };
+  if (scopeIsWidened && rawBdm) filter.bdm_id = rawBdm;
+  // Period/cycle scope — frontend always sends them. Without these the loop
+  // could post a stale VALID SMER from an earlier month.
+  const period = req.body?.period || req.query?.period;
+  const cycle = req.body?.cycle || req.query?.cycle;
+  if (period) filter.period = period;
+  if (cycle) filter.cycle = cycle;
+
+  const smers = await SmerEntry.find(filter);
   if (!smers.length) return res.status(400).json({ success: false, message: 'No VALID SMERs to submit' });
+
+  // Phase G4.5f — proxy submit requires bdm_phone_instruction (cycle-level
+  // authorization tag). Required and non-empty after trim. Persist to the
+  // SMER so audit shows what the proxy was told.
+  const hasProxiedSmer = smers.some(s => !!s.recorded_on_behalf_of);
+  const callerIsOwner = smers.every(s => String(s.bdm_id) === String(req.user._id));
+  const isProxySubmit = hasProxiedSmer || !callerIsOwner;
+  if (isProxySubmit) {
+    const tag = String(req.body?.bdm_phone_instruction || '').trim();
+    if (!tag) {
+      return res.status(400).json({
+        success: false,
+        message: 'bdm_phone_instruction is required when submitting SMER on behalf of another BDM (short tag like "ok with boss" is fine).'
+      });
+    }
+    // Stamp the cycle-level tag on every submitted SMER so the audit shows
+    // what authorization the proxy claimed at submit time.
+    for (const s of smers) {
+      if (!s.bdm_phone_instruction) s.bdm_phone_instruction = tag;
+    }
+  }
 
   // Defensive re-check: validation already rejects SMERs with pending per diem
   // overrides, but guard submit too in case the state changed between validate
@@ -314,8 +550,17 @@ const submitSmer = catchAsync(async (req, res) => {
   }
 
   // Authority matrix gate
+  // Phase G4.5f — force hub routing whenever any SMER in the batch was created
+  // on behalf of another BDM (Rule #20 four-eyes: proxy submits, never
+  // self-approves). Owner-bdm chain: if the loop is single-BDM scoped (which
+  // it always is on the proxy-narrowed path), pass that bdm_id so the Hub
+  // hydrates the card with owner = target BDM, not the caller.
   const { gateApproval } = require('../services/approvalService');
   const smerTotalAmount = smers.reduce((sum, s) => sum + (s.total_reimbursable || 0), 0);
+  // ownerBdmId — for the Hub card. On the widened path we have rawBdm (explicit);
+  // on the self-scoped path every SMER in the loop has the same bdm_id by
+  // construction (scope pins bdm_id=self), so smers[0].bdm_id is authoritative.
+  const ownerBdmId = (scopeIsWidened && rawBdm) || smers[0].bdm_id;
   const gated = await gateApproval({
     entityId: req.entityId,
     module: 'EXPENSES',
@@ -326,8 +571,19 @@ const submitSmer = catchAsync(async (req, res) => {
     description: `Submit ${smers.length} SMER(s) (total ₱${smerTotalAmount.toLocaleString()})`,
     requesterId: req.user._id,
     requesterName: req.user.name || req.user.email,
+    forceApproval: isProxySubmit,
+    ownerBdmId,
   }, res);
-  if (gated) return;
+  if (gated) {
+    // Save the cycle-level tag stamping that happened during the proxy check
+    // above — otherwise a held-for-approval SMER loses the authorization tag.
+    if (isProxySubmit) {
+      for (const s of smers) {
+        if (s.isModified && s.isModified('bdm_phone_instruction')) await s.save();
+      }
+    }
+    return;
+  }
 
   // Period lock check
   const { checkPeriodOpen } = require('../utils/periodLock');
@@ -402,12 +658,33 @@ const submitSmer = catchAsync(async (req, res) => {
     }
   }
 
+  // Phase G4.5f — courtesy receipt to the BDM whose SMER was posted on their
+  // behalf. Best-effort, non-blocking. Sent to every proxied SMER in the batch
+  // (rare to be more than one in a single submit, but loop covers it).
+  for (const smer of smers) {
+    if (!smer.recorded_on_behalf_of) continue;
+    await writeProxyReceipt({
+      entityId: smer.entity_id,
+      recipientUserId: smer.bdm_id,
+      senderUser: req.user,
+      category: 'PERDIEM_SUMMARY',
+      title: `SMER ${smer.period} ${smer.cycle} posted on your behalf`,
+      body: `Your SMER for ${smer.period} ${smer.cycle} was posted on your behalf by ${req.user.name || req.user.email}. ` +
+        `Total reimbursable: ₱${(smer.total_reimbursable || 0).toLocaleString()} ` +
+        `(per diem ₱${(smer.total_perdiem || 0).toLocaleString()}, transport ₱${((smer.total_transpo || 0) + (smer.total_special_cases || 0)).toLocaleString()}). ` +
+        `Authorization on file: "${smer.bdm_phone_instruction || '(not recorded)'}". ` +
+        `If anything looks off, contact your operations lead.`,
+    });
+  }
+
   res.json({ success: true, message: `Posted ${smers.length} SMER(s)` });
 });
 
 const reopenSmer = catchAsync(async (req, res) => {
   const { smer_ids } = req.body;
-  const smers = await SmerEntry.find({ _id: { $in: smer_ids }, ...req.tenantFilter, status: 'POSTED' });
+  // Phase G4.5f — widen so eligible proxies can reopen on behalf.
+  const scope = await widenFilterForProxy(req, 'expenses', SMER_PROXY_OPTS);
+  const smers = await SmerEntry.find({ _id: { $in: smer_ids }, ...scope, status: 'POSTED' });
   if (!smers.length) return res.status(400).json({ success: false, message: 'No POSTED SMERs to reopen' });
 
   const reopened = [];
@@ -464,15 +741,32 @@ const overridePerdiemDay = catchAsync(async (req, res) => {
   if (!entry_id) return res.status(400).json({ success: false, message: 'entry_id is required' });
 
   const editable = await getEditableStatuses(req.entityId, 'SMER');
+  // Phase G4.5f — widen so eligible proxies can request overrides on behalf.
+  const scope = await widenFilterForProxy(req, 'expenses', SMER_PROXY_OPTS);
   const smer = await SmerEntry.findOne({
     _id: req.params.id,
-    ...req.tenantFilter,
+    ...scope,
     status: { $in: editable }
   });
   if (!smer) return res.status(404).json({ success: false, message: 'SMER not found or not editable' });
 
   const entry = smer.daily_entries.id(entry_id);
   if (!entry) return res.status(404).json({ success: false, message: 'Daily entry not found' });
+
+  // Phase G4.5f — proxy detection. The caller is acting on behalf when the
+  // SMER's owner is not the caller. recorded_on_behalf_of on the SMER itself
+  // covers cycle-level proxy creates; the caller-vs-owner check covers a
+  // direct admin/finance action on a self-filed BDM SMER (also proxy).
+  const isOnBehalf = String(smer.bdm_id) !== String(req.user._id);
+  const phoneInstruction = isOnBehalf
+    ? String(req.body?.bdm_phone_instruction || '').trim()
+    : '';
+  if (isOnBehalf && !remove_override && !phoneInstruction) {
+    return res.status(400).json({
+      success: false,
+      message: 'bdm_phone_instruction is required when requesting a per-diem override on behalf of another BDM (short tag like "ok with boss" is fine).'
+    });
+  }
 
   // Block overrides on "No Work" entries
   if (entry.activity_type === 'NO_WORK') {
@@ -541,8 +835,16 @@ const overridePerdiemDay = catchAsync(async (req, res) => {
 
   const isManagement = [ROLES.PRESIDENT, ROLES.CEO, ROLES.ADMIN, ROLES.FINANCE].includes(req.user.role);
 
-  if (!isManagement) {
-    // BDMs/contractors: always create approval request — president must approve
+  // Phase G4.5f — proxy submits ALWAYS route through approval (Rule #20
+  // four-eyes), even when the caller is management. Without this, an admin
+  // proxy could self-apply an override on a BDM's per diem without the
+  // President or another approver checking the call.
+  const mustApprove = !isManagement || isOnBehalf;
+
+  if (mustApprove) {
+    // BDMs/contractors AND proxy submits: route through approval hub.
+    // Proxy metadata flows into the ApprovalRequest so the Hub card hydrates
+    // with owner = target BDM and the authorization tag is visible to approvers.
     const approvalReq = await ApprovalRequest.create({
       entity_id: smer.entity_id,
       module: 'PERDIEM_OVERRIDE',
@@ -551,17 +853,33 @@ const overridePerdiemDay = catchAsync(async (req, res) => {
       doc_ref: docRef,
       amount: overrideAmount,
       description: `Per diem override Day ${entry.day}: ${entry.perdiem_tier} → ${override_tier} (${override_reason}). Entry ID: ${entry_id}`,
-      metadata: { entry_id, override_tier, override_reason },
+      metadata: {
+        entry_id, override_tier, override_reason,
+        // Phase G4.5f — proxy chain so universalApprovalController.perdiem_override
+        // can route the post-decision receipt back to the SMER owner. The fields
+        // are read on apply but not required by any decision logic — keeping the
+        // handler compatible with non-proxy requests (metadata fields just absent).
+        recorded_on_behalf_of: isOnBehalf ? req.user._id : undefined,
+        bdm_phone_instruction: isOnBehalf ? phoneInstruction : undefined,
+        owner_bdm_id: smer.bdm_id,
+      },
       requested_by: req.user._id,
       requested_at: new Date(),
       status: 'PENDING',
     });
 
-    // Save pending state on the daily entry so frontend can show status
+    // Save pending state on the daily entry so frontend can show status.
+    // Stamp proxy fields at the entry level so they survive the universal
+    // approval handler (which mutates a few entry fields but does NOT touch
+    // recorded_on_behalf_of / bdm_phone_instruction).
     entry.override_status = 'PENDING';
     entry.requested_override_tier = override_tier;
     entry.override_reason = override_reason;
     entry.approval_request_id = approvalReq._id;
+    if (isOnBehalf) {
+      entry.recorded_on_behalf_of = req.user._id;
+      entry.bdm_phone_instruction = phoneInstruction;
+    }
     await smer.save();
 
     return res.status(202).json({
@@ -573,7 +891,9 @@ const overridePerdiemDay = catchAsync(async (req, res) => {
     });
   }
 
-  // Management: apply override directly (self-approve)
+  // Management self-apply (caller is acting on their own SMER — rare for non-BDM
+  // roles since they don't own SMERs, but covers self-filing BDMs who happen to
+  // be admins of nothing or single-user instances).
   const oldTier = entry.perdiem_tier;
   entry.perdiem_override = true;
   entry.override_tier = override_tier;
@@ -619,9 +939,14 @@ const applyPerdiemOverride = catchAsync(async (req, res) => {
   }
 
   const editable = await getEditableStatuses(req.entityId, 'SMER');
+  // Phase G4.5f — Integrity Point B. Without widening, a proxy that requested
+  // an override (and is not the SMER owner) would 404 here when calling apply
+  // after Hub approval. tenantFilter scopes by bdm_id; widenFilterForProxy
+  // strips it for eligible proxy callers.
+  const scope = await widenFilterForProxy(req, 'expenses', SMER_PROXY_OPTS);
   const smer = await SmerEntry.findOne({
     _id: req.params.id,
-    ...req.tenantFilter,
+    ...scope,
     status: { $in: editable }
   });
   if (!smer) return res.status(404).json({ success: false, message: 'SMER not found or not editable' });
@@ -631,6 +956,8 @@ const applyPerdiemOverride = catchAsync(async (req, res) => {
 
   // Parse override details from the approval description
   // Description format: "Per diem override Day N: OLD → NEW (reason). Entry ID: xxx"
+  // Phase 34-P (Apr 21 2026) — DO NOT modify this regex. It's the silent-skip
+  // fix that ensures override_tier survives the metadata→description fallback.
   const descMatch = approvalReq.description?.match(/→ (FULL|HALF) \((.+?)\)\./);
   const override_tier = descMatch?.[1];
   const override_reason = descMatch?.[2] || 'Approved override';
@@ -671,6 +998,25 @@ const applyPerdiemOverride = catchAsync(async (req, res) => {
   });
 
   await smer.save();
+
+  // Phase G4.5f — courtesy receipt to the SMER owner when the apply path is
+  // hit on a proxied entry. (universalApprovalController also writes a receipt
+  // on hub-direct decisions; this covers the legacy explicit-apply path that
+  // some clients may still poll.)
+  if (entry.recorded_on_behalf_of && String(smer.bdm_id) !== String(req.user._id)) {
+    await writeProxyReceipt({
+      entityId: smer.entity_id,
+      recipientUserId: smer.bdm_id,
+      senderUser: req.user,
+      category: 'PERDIEM_OVERRIDE_DECISION',
+      title: `Per-diem override APPROVED — ${smer.period} ${smer.cycle} Day ${entry.day}`,
+      body: `Your per-diem override for ${smer.period} ${smer.cycle} Day ${entry.day} was APPROVED. ` +
+        `New tier: ${override_tier} (₱${(amount || 0).toLocaleString()}). ` +
+        `Original request keyed by ${req.user.name || req.user.email} — authorization on file: ` +
+        `"${entry.bdm_phone_instruction || '(not recorded)'}".`,
+    });
+  }
+
   res.json({ success: true, data: smer, message: 'Approved override applied successfully' });
 });
 

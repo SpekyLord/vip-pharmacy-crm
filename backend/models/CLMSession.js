@@ -65,6 +65,16 @@ const clmSessionSchema = new mongoose.Schema(
       required: [true, 'Doctor (VIP Client) is required'],
     },
 
+    // Multi-entity scoping. Sparse + non-required in this PR to survive the
+    // backfill window; flip to required in a follow-up after backfillClmEntityId
+    // --apply has been run on prod. First CRM-side model with entity scoping —
+    // sets the precedent for Doctor/Visit/CommLog/MessageInbox retrofits.
+    entity_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Entity',
+      index: true,
+    },
+
     // ── Products presented (scalable — pulled from CRM) ─────────────
     productsPresented: [productPresentedSchema],
 
@@ -137,6 +147,7 @@ clmSessionSchema.index({ doctor: 1, createdAt: -1 });
 clmSessionSchema.index({ status: 1 });
 clmSessionSchema.index({ qrScanned: 1 });
 clmSessionSchema.index({ 'productsPresented.product': 1 });
+clmSessionSchema.index({ entity_id: 1, user: 1, createdAt: -1 });
 // Sparse unique index on idempotencyKey — prevents duplicate offline syncs
 // Only applies to sessions created offline (key is null for online sessions)
 clmSessionSchema.index({ idempotencyKey: 1 }, { unique: true, sparse: true });
