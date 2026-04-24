@@ -1,6 +1,12 @@
 /**
  * Customer Controller — CRUD + BDM tagging for non-hospital customers
- * Phase 18 — mirrors hospitalController pattern but entity-scoped
+ *
+ * Phase 18 — originally entity-scoped, mirrored hospitalController.
+ * Phase G5 (Apr 2026) — customers are now globally shared (mirror Hospital). The
+ * entity_id on Customer is a "home entity" label only, set on create; reads no
+ * longer filter by it. Visibility continues to flow through `tagged_bdms`, and
+ * AR posting entity is sourced from Sale.entity_id (the selling entity), not
+ * Customer.entity_id. See Customer.js model header for the full rationale.
  */
 const Customer = require('../models/Customer');
 const { catchAsync } = require('../../middleware/errorHandler');
@@ -9,7 +15,9 @@ const XLSX = require('xlsx');
 const { safeXlsxRead } = require('../../utils/safeXlsxRead');
 
 const getAll = catchAsync(async (req, res) => {
-  const filter = { entity_id: req.entityId };
+  // Customers are globally shared (Phase G5) — no entity_id filter. BDM visibility
+  // flows through tagged_bdms; admin/president/finance/ceo see all.
+  const filter = {};
   if (req.query.status) filter.status = req.query.status;
   if (req.query.customer_type) filter.customer_type = req.query.customer_type;
   if (req.query.q) {
@@ -44,19 +52,22 @@ const getAll = catchAsync(async (req, res) => {
 });
 
 const getById = catchAsync(async (req, res) => {
-  const customer = await Customer.findOne({ _id: req.params.id, entity_id: req.entityId }).lean();
+  const customer = await Customer.findById(req.params.id).lean();
   if (!customer) return res.status(404).json({ success: false, message: 'Customer not found' });
   res.json({ success: true, data: customer });
 });
 
 const create = catchAsync(async (req, res) => {
-  const customer = await Customer.create({ ...req.body, entity_id: req.entityId });
+  // entity_id is a home-entity label (Phase G5). Creator's working entity is the default
+  // but may be overridden via req.body.entity_id so admins can create on behalf of a sub.
+  const entity_id = req.body.entity_id || req.entityId;
+  const customer = await Customer.create({ ...req.body, entity_id });
   res.status(201).json({ success: true, data: customer });
 });
 
 const update = catchAsync(async (req, res) => {
-  const customer = await Customer.findOneAndUpdate(
-    { _id: req.params.id, entity_id: req.entityId },
+  const customer = await Customer.findByIdAndUpdate(
+    req.params.id,
     { $set: req.body },
     { new: true, runValidators: true }
   );
@@ -65,8 +76,8 @@ const update = catchAsync(async (req, res) => {
 });
 
 const deactivate = catchAsync(async (req, res) => {
-  const customer = await Customer.findOneAndUpdate(
-    { _id: req.params.id, entity_id: req.entityId },
+  const customer = await Customer.findByIdAndUpdate(
+    req.params.id,
     { $set: { status: 'INACTIVE' } },
     { new: true }
   );
@@ -78,8 +89,8 @@ const tagBdm = catchAsync(async (req, res) => {
   const { bdm_id } = req.body;
   if (!bdm_id) return res.status(400).json({ success: false, message: 'bdm_id is required' });
 
-  const customer = await Customer.findOneAndUpdate(
-    { _id: req.params.id, entity_id: req.entityId },
+  const customer = await Customer.findByIdAndUpdate(
+    req.params.id,
     {
       $addToSet: {
         tagged_bdms: { bdm_id, tagged_by: req.user._id, tagged_at: new Date(), is_active: true }
@@ -95,8 +106,8 @@ const untagBdm = catchAsync(async (req, res) => {
   const { bdm_id } = req.body;
   if (!bdm_id) return res.status(400).json({ success: false, message: 'bdm_id is required' });
 
-  const customer = await Customer.findOneAndUpdate(
-    { _id: req.params.id, entity_id: req.entityId },
+  const customer = await Customer.findByIdAndUpdate(
+    req.params.id,
     { $pull: { tagged_bdms: { bdm_id } } },
     { new: true }
   );
@@ -106,7 +117,13 @@ const untagBdm = catchAsync(async (req, res) => {
 
 // ═══ Export Customers (Excel) ═══
 const exportCustomers = catchAsync(async (req, res) => {
-  const customers = await Customer.find({ entity_id: req.entityId }).sort({ customer_name: 1 })
+  // Customers are global (Phase G5). Export everything the caller can see —
+  // admins get all; BDMs get tagged-only (same rule as getAll).
+  const filter = {};
+  if (!isAdminLike(req.user?.role)) {
+    filter.tagged_bdms = { $elemMatch: { bdm_id: req.user._id, is_active: { $ne: false } } };
+  }
+  const customers = await Customer.find(filter).sort({ customer_name: 1 })
     .select('-__v -tagged_bdms -customer_name_clean -createdAt -updatedAt')
     .lean();
 
@@ -174,9 +191,14 @@ const importCustomers = catchAsync(async (req, res) => {
     try {
       const { cleanName } = require('../utils/nameClean');
       const nameClean = cleanName(customer_name);
+      // Customers are globally unique by customer_name_clean (Phase G5). Upsert
+      // matches by name only; entity_id is stamped on insert (home-entity label).
       const result = await Customer.findOneAndUpdate(
-        { entity_id: req.entityId, customer_name_clean: nameClean },
-        { $set: { ...data, entity_id: req.entityId, customer_name_clean: nameClean } },
+        { customer_name_clean: nameClean },
+        {
+          $set: { ...data, customer_name_clean: nameClean },
+          $setOnInsert: { entity_id: req.entityId },
+        },
         { upsert: true, new: true }
       );
       if (result.createdAt && result.updatedAt && result.createdAt.getTime() === result.updatedAt.getTime()) created++;

@@ -46,6 +46,21 @@ const dailyEntrySchema = new mongoose.Schema({
   override_status: { type: String, enum: ['PENDING', 'APPROVED', 'REJECTED'] },  // null = no request
   approval_request_id: { type: mongoose.Schema.Types.ObjectId, ref: 'ApprovalRequest' },
   requested_override_tier: { type: String },  // stores what tier was requested while PENDING
+
+  // ── Phase G4.5f — Per-day proxy audit (Apr 23, 2026) ────────────────
+  // recorded_on_behalf_of: stamped on a daily entry when an eligible proxy
+  // (admin/finance/eBDM with expenses.smer_proxy ticked) requests a per-diem
+  // override on behalf of the SMER owner. Survives both APPROVED and REJECTED
+  // hub branches (the override handler does not clobber it). Distinct from the
+  // top-level smerEntrySchema.recorded_on_behalf_of which marks the SMER cycle
+  // as proxy-created at SMER level.
+  recorded_on_behalf_of: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: undefined },
+  // bdm_phone_instruction: short authorization tag captured when a proxy
+  // requests an override ("ok with boss", "in the office", "with client").
+  // Required and non-empty when recorded_on_behalf_of is set on the daily
+  // entry; controller validates after trim. Lookup-driven length is intentional
+  // — the field is an authorization trail, not a narrative essay.
+  bdm_phone_instruction: { type: String, trim: true, default: '' },
 }, { _id: true });
 
 const smerEntrySchema = new mongoose.Schema({
@@ -75,6 +90,18 @@ const smerEntrySchema = new mongoose.Schema({
   total_reimbursable: { type: Number, default: 0 },
   balance_on_hand: { type: Number, default: 0 },
   working_days: { type: Number, default: 0 },
+
+  // ── Phase G4.5f — SMER-level proxy audit (Apr 23, 2026) ─────────────
+  // recorded_on_behalf_of: stamped on createSmer when an eligible proxy
+  // (admin/finance/eBDM with expenses.smer_proxy ticked) creates a SMER cycle
+  // on behalf of another BDM. Forces submitSmer to route through the Approval
+  // Hub (Rule #20 four-eyes). Distinct from the daily-entry-level field above
+  // which is per-day-override granular.
+  recorded_on_behalf_of: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: undefined },
+  // Optional cycle-level authorization tag — short text captured when a proxy
+  // submits a SMER on behalf ("ok with boss", "with client"). Required and
+  // non-empty on proxy submit; empty on self-file paths.
+  bdm_phone_instruction: { type: String, trim: true, default: '' },
 
   // Lifecycle
   status: {

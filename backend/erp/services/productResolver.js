@@ -287,12 +287,14 @@ const resolveVendor = async (ocrText, entityId) => {
 };
 
 /**
- * Resolve customer name from OCR text — Phase 18
- * Same cascade pattern as resolveHospital but searches Customer model (entity-scoped).
+ * Resolve customer name from OCR text — Phase 18 (globalized Phase G5).
+ * Same cascade pattern as resolveHospital. Customer model is now globally shared
+ * (Phase G5 — mirror Hospital), so entity_id is no longer a read-filter. The
+ * entityId arg is retained for API compatibility but is unused here.
  * Falls back to resolveHospital if no Customer match found (unified search).
  *
  * @param {string} ocrText - Raw customer/hospital name from OCR
- * @param {ObjectId|string} entityId - Tenant entity
+ * @param {ObjectId|string} entityId - Tenant entity (unused — kept for signature stability)
  * @returns {{ customer, customer_type: 'customer'|'hospital', confidence, match_method } | null}
  */
 const resolveCustomer = async (ocrText, entityId) => {
@@ -301,52 +303,47 @@ const resolveCustomer = async (ocrText, entityId) => {
   const cleaned = cleanName(ocrText);
   if (!cleaned) return null;
 
-  // Step 1: Try Customer model first (entity-scoped)
-  if (entityId) {
-    // EXACT match
-    let customer = await Customer.findOne({
-      entity_id: entityId,
-      customer_name_clean: cleaned,
-      status: 'ACTIVE'
-    }).lean();
-    if (customer) {
-      return { customer, customer_type: 'customer', confidence: 'HIGH', match_method: 'EXACT' };
-    }
-
-    // ALIAS match
-    const aliasRegex = new RegExp(escapeRegex(cleaned), 'i');
-    customer = await Customer.findOne({
-      entity_id: entityId,
-      customer_aliases: aliasRegex,
-      status: 'ACTIVE'
-    }).lean();
-    if (customer) {
-      return { customer, customer_type: 'customer', confidence: 'MEDIUM', match_method: 'ALIAS' };
-    }
-
-    // PARTIAL match (starts with)
-    const partialRegex = new RegExp(`^${escapeRegex(cleaned.substring(0, Math.min(cleaned.length, 20)))}`, 'i');
-    customer = await Customer.findOne({
-      entity_id: entityId,
-      customer_name_clean: partialRegex,
-      status: 'ACTIVE'
-    }).lean();
-    if (customer) {
-      return { customer, customer_type: 'customer', confidence: 'LOW', match_method: 'PARTIAL' };
-    }
-
-    // TEXT SEARCH
-    try {
-      const textResults = await Customer.find(
-        { entity_id: entityId, status: 'ACTIVE', $text: { $search: ocrText } },
-        { score: { $meta: 'textScore' } }
-      ).sort({ score: { $meta: 'textScore' } }).limit(1).lean();
-
-      if (textResults.length && textResults[0].score > 1.5) {
-        return { customer: textResults[0], customer_type: 'customer', confidence: 'LOW', match_method: 'TEXT_SEARCH' };
-      }
-    } catch (_) { /* text index may not exist */ }
+  // Step 1: Try Customer model (global — Phase G5).
+  // EXACT match
+  let customer = await Customer.findOne({
+    customer_name_clean: cleaned,
+    status: 'ACTIVE'
+  }).lean();
+  if (customer) {
+    return { customer, customer_type: 'customer', confidence: 'HIGH', match_method: 'EXACT' };
   }
+
+  // ALIAS match
+  const aliasRegex = new RegExp(escapeRegex(cleaned), 'i');
+  customer = await Customer.findOne({
+    customer_aliases: aliasRegex,
+    status: 'ACTIVE'
+  }).lean();
+  if (customer) {
+    return { customer, customer_type: 'customer', confidence: 'MEDIUM', match_method: 'ALIAS' };
+  }
+
+  // PARTIAL match (starts with)
+  const partialRegex = new RegExp(`^${escapeRegex(cleaned.substring(0, Math.min(cleaned.length, 20)))}`, 'i');
+  customer = await Customer.findOne({
+    customer_name_clean: partialRegex,
+    status: 'ACTIVE'
+  }).lean();
+  if (customer) {
+    return { customer, customer_type: 'customer', confidence: 'LOW', match_method: 'PARTIAL' };
+  }
+
+  // TEXT SEARCH
+  try {
+    const textResults = await Customer.find(
+      { status: 'ACTIVE', $text: { $search: ocrText } },
+      { score: { $meta: 'textScore' } }
+    ).sort({ score: { $meta: 'textScore' } }).limit(1).lean();
+
+    if (textResults.length && textResults[0].score > 1.5) {
+      return { customer: textResults[0], customer_type: 'customer', confidence: 'LOW', match_method: 'TEXT_SEARCH' };
+    }
+  } catch (_) { /* text index may not exist */ }
 
   // Step 2: Fall back to Hospital resolution (global)
   const hospitalResult = await resolveHospital(ocrText, entityId);

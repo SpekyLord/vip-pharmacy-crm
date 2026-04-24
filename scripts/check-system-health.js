@@ -304,9 +304,9 @@ function checkAgentEnums() {
   if (issues === startIssues) console.log(`  ✓ All ${allKeys.size} agent keys consistent across 5 sources`);
 }
 
-// ═══ 5. Proxy Entry wiring (Phases G4.5a + G4.5b + G4.5c.1 + G4.5e) ═══
+// ═══ 5. Proxy Entry wiring (Phases G4.5a + G4.5b + G4.5c.1 + G4.5e + G4.5f) ═══
 function checkProxyEntryWiring() {
-  console.log('\n5. Proxy Entry Wiring (Phase G4.5a + G4.5b + G4.5c.1 + G4.5e)');
+  console.log('\n5. Proxy Entry Wiring (Phase G4.5a + G4.5b + G4.5c.1 + G4.5e + G4.5f)');
   console.log('─'.repeat(40));
   const startIssues = issues;
 
@@ -340,6 +340,7 @@ function checkProxyEntryWiring() {
   // G4.5b adds COLLECTIONS__PROXY_ENTRY + INVENTORY__GRN_PROXY_ENTRY.
   // G4.5c.1 adds EXPENSES__PROXY_ENTRY.
   // G4.5e adds EXPENSES__CAR_LOGBOOK_PROXY + EXPENSES__PRF_CALF_PROXY + INVENTORY__UNDERTAKING_PROXY.
+  // G4.5f adds EXPENSES__SMER_PROXY.
   const lookupSeed = fs.readFileSync(path.join(ERP_CONTROLLERS, 'lookupGenericController.js'), 'utf-8');
   for (const key of [
     'PROXY_ENTRY_ROLES:',
@@ -349,21 +350,32 @@ function checkProxyEntryWiring() {
     'EXPENSES__PROXY_ENTRY',
     // Phase G4.5e — Car Logbook / PRF-CALF / Undertaking proxy sub-perms.
     'EXPENSES__CAR_LOGBOOK_PROXY', 'EXPENSES__PRF_CALF_PROXY', 'INVENTORY__UNDERTAKING_PROXY',
+    // Phase G4.5f — SMER + per-diem override proxy sub-perm.
+    'EXPENSES__SMER_PROXY',
   ]) {
     if (!lookupSeed.includes(key)) warn('PROXY', `SEED_DEFAULTS missing ${key}`);
   }
-  // PROXY_ENTRY_ROLES + VALID_OWNER_ROLES must each enumerate all 8 modules
-  // (G4.5a/b/c.1: 5 + G4.5e: 3) so OwnerPicker + resolveOwnerForWrite can
-  // resolve them without falling back to their respective defaults.
+  // PROXY_ENTRY_ROLES + VALID_OWNER_ROLES must each enumerate all 9 modules
+  // (G4.5a/b/c.1: 5 + G4.5e: 3 + G4.5f: 1) so OwnerPicker + resolveOwnerForWrite
+  // can resolve them without falling back to their respective defaults.
   for (const moduleCode of [
     "code: 'SALES'", "code: 'OPENING_AR'", "code: 'COLLECTIONS'", "code: 'EXPENSES'", "code: 'GRN'",
     // Phase G4.5e — new module codes in both PROXY_ENTRY_ROLES + VALID_OWNER_ROLES.
     "code: 'CAR_LOGBOOK'", "code: 'PRF_CALF'", "code: 'UNDERTAKING'",
+    // Phase G4.5f — SMER in both PROXY_ENTRY_ROLES + VALID_OWNER_ROLES.
+    "code: 'SMER'",
   ]) {
     const occurrences = (lookupSeed.match(new RegExp(moduleCode.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
     if (occurrences < 2) {
       warn('PROXY', `PROXY_ENTRY_ROLES or VALID_OWNER_ROLES seed missing module entry ${moduleCode} (found ${occurrences} occurrences, expected ≥2)`);
     }
+  }
+  // Phase G4.5f — MESSAGE_CATEGORY must include the two proxy-receipt codes
+  // (PERDIEM_SUMMARY + PERDIEM_OVERRIDE_DECISION). Without them, the pre-save
+  // hook in MessageInbox may default the courtesy receipts to must_acknowledge
+  // via unknown-category fallthrough on some lookup routes.
+  for (const cat of ['PERDIEM_SUMMARY', 'PERDIEM_OVERRIDE_DECISION']) {
+    if (!lookupSeed.includes(cat)) warn('PROXY', `MESSAGE_CATEGORY seed missing ${cat} (Phase G4.5f proxy receipt)`);
   }
   // Cache invalidation wired for both lookup categories
   if (!lookupSeed.includes('invalidateProxyRolesCache')) {
@@ -418,6 +430,35 @@ function checkProxyEntryWiring() {
   }
   if (!/lookupCode:\s*'PRF_CALF'/.test(expCtrl)) {
     warn('PROXY', "expenseController.js does not pass lookupCode: 'PRF_CALF' — PROXY_ENTRY_ROLES.PRF_CALF lookup unreachable");
+  }
+  // Phase G4.5f — SMER uses smer_proxy + SMER lookup code.
+  if (!/smer_proxy/.test(expCtrl)) {
+    warn('PROXY', "expenseController.js does not reference sub-perm key 'smer_proxy' (Phase G4.5f SMER port)");
+  }
+  if (!/lookupCode:\s*'SMER'/.test(expCtrl)) {
+    warn('PROXY', "expenseController.js does not pass lookupCode: 'SMER' — PROXY_ENTRY_ROLES.SMER lookup unreachable");
+  }
+  // Phase G4.5f Integrity Point A — submitSmer/validateSmer must require an
+  // explicit bdm_id on the widened (privileged/proxy) path. Without this
+  // guard, a single click would submit every BDM's VALID SMER at once.
+  if (!/bdm_id is required[\s\S]*SMER|submit SMER for/.test(expCtrl)) {
+    warn('PROXY', 'expenseController.submitSmer missing bdm_id-required guard on widened path (Phase G4.5f Integrity Point A)');
+  }
+  // Phase G4.5f Integrity Point B — applyPerdiemOverride must use widenFilter
+  // so a proxy caller can apply the override they requested (otherwise 404).
+  // Cheap heuristic: the string 'applyPerdiemOverride' must appear near a
+  // widenFilterForProxy call site with SMER_PROXY_OPTS.
+  if (!/applyPerdiemOverride[\s\S]{0,800}SMER_PROXY_OPTS|SMER_PROXY_OPTS[\s\S]{0,800}applyPerdiemOverride/.test(expCtrl)) {
+    // Loose form: at minimum both tokens must coexist somewhere in the file.
+    if (!/SMER_PROXY_OPTS/.test(expCtrl)) {
+      warn('PROXY', "expenseController.js missing SMER_PROXY_OPTS constant (Phase G4.5f)");
+    }
+  }
+  // Phase G4.5f — MessageInbox receipt helper must exist so proxy submits /
+  // apply paths can notify the SMER owner. Failure here means the notification
+  // side of the proxy contract is broken (but the proxy writes still work).
+  if (!/writeProxyReceipt/.test(expCtrl)) {
+    warn('PROXY', 'expenseController.js missing writeProxyReceipt helper (Phase G4.5f MessageInbox receipts)');
   }
   // Phase G4.5e — legacy resolveCarLogbookScope must be deleted (replaced by resolveOwnerForWrite).
   if (/function\s+resolveCarLogbookScope\s*\(/.test(expCtrl)) {
@@ -486,7 +527,7 @@ function checkProxyEntryWiring() {
 
   // Models: recorded_on_behalf_of on SalesLine (G4.5a) + Collection, GrnEntry,
   // Undertaking (G4.5b) + ExpenseEntry (G4.5c.1) + CarLogbookEntry, CarLogbookCycle,
-  // PrfCalf (G4.5e)
+  // PrfCalf (G4.5e) + SmerEntry (G4.5f)
   for (const { file, label } of [
     { file: 'SalesLine.js', label: 'SalesLine' },
     { file: 'Collection.js', label: 'Collection' },
@@ -497,6 +538,10 @@ function checkProxyEntryWiring() {
     { file: 'CarLogbookEntry.js', label: 'CarLogbookEntry' },
     { file: 'CarLogbookCycle.js', label: 'CarLogbookCycle' },
     { file: 'PrfCalf.js', label: 'PrfCalf' },
+    // Phase G4.5f — SmerEntry carries the field at both cycle level (top) and
+    // per-day level (daily_entries[].recorded_on_behalf_of). One occurrence in
+    // source is enough to pass the substring check.
+    { file: 'SmerEntry.js', label: 'SmerEntry' },
   ]) {
     const modelPath = path.join(ERP_MODELS, file);
     if (!fs.existsSync(modelPath)) {
@@ -517,6 +562,36 @@ function checkProxyEntryWiring() {
     const utSvc = fs.readFileSync(utSvcPath, 'utf-8');
     if (!/recorded_on_behalf_of/.test(utSvc)) {
       warn('PROXY', 'undertakingService.autoUndertakingForGrn does not propagate recorded_on_behalf_of from GRN to UT');
+    }
+  }
+
+  // Phase G4.5f — SmerEntry model must also expose bdm_phone_instruction at
+  // the cycle + daily-entry level so the proxy authorization tag persists.
+  const smerModelPath = path.join(ERP_MODELS, 'SmerEntry.js');
+  if (fs.existsSync(smerModelPath)) {
+    const smerModel = fs.readFileSync(smerModelPath, 'utf-8');
+    if (!/bdm_phone_instruction/.test(smerModel)) {
+      warn('PROXY', 'SmerEntry model missing bdm_phone_instruction field (Phase G4.5f authorization tag)');
+    }
+    // The field should appear at BOTH levels (cycle + daily). Two occurrences expected.
+    const occ = (smerModel.match(/bdm_phone_instruction/g) || []).length;
+    if (occ < 2) {
+      warn('PROXY', `SmerEntry model declares bdm_phone_instruction ${occ} time(s) — expected ≥2 (cycle + daily_entries)`);
+    }
+  }
+
+  // Phase G4.5f — universalApprovalController.perdiem_override must emit a
+  // PERDIEM_OVERRIDE_DECISION MessageInbox row when the entry was proxied.
+  // Without this, approvers' Hub decisions on proxied overrides leave the
+  // SMER owner in the dark about outcomes. Local read because `universal`
+  // below is declared later in this function body.
+  {
+    const _universalPath = path.join(ERP_CONTROLLERS, 'universalApprovalController.js');
+    if (fs.existsSync(_universalPath)) {
+      const _universal = fs.readFileSync(_universalPath, 'utf-8');
+      if (!/PERDIEM_OVERRIDE_DECISION/.test(_universal)) {
+        warn('PROXY', 'universalApprovalController.perdiem_override does not emit PERDIEM_OVERRIDE_DECISION receipt (Phase G4.5f)');
+      }
     }
   }
 
@@ -559,7 +634,8 @@ function checkProxyEntryWiring() {
   }
   // List pages render Proxied pill (reads recorded_on_behalf_of)
   // Phase G4.5e adds PrfCalf.jsx and UndertakingDetail.jsx to the check.
-  for (const page of ['SalesList.jsx', 'OpeningArList.jsx', 'Collections.jsx', 'GrnEntry.jsx', 'Expenses.jsx', 'PrfCalf.jsx', 'UndertakingDetail.jsx']) {
+  // Phase G4.5f adds Smer.jsx (row-level + per-day pill both read the field).
+  for (const page of ['SalesList.jsx', 'OpeningArList.jsx', 'Collections.jsx', 'GrnEntry.jsx', 'Expenses.jsx', 'PrfCalf.jsx', 'UndertakingDetail.jsx', 'Smer.jsx']) {
     const p = path.join(PAGES_DIR, page);
     if (!fs.existsSync(p)) continue;
     const src = fs.readFileSync(p, 'utf-8');
@@ -571,15 +647,30 @@ function checkProxyEntryWiring() {
   // equivalent sub-perm gate) + send assigned_to on create. CarLogbook.jsx
   // uses the existing BDM picker rather than OwnerPicker because the page
   // was already built around a per-person picker; the gate is canProxyCarLogbook.
+  // Phase G4.5f — Smer.jsx follows the CarLogbook pattern (BDM picker + sub-perm
+  // check via canProxySmer, not OwnerPicker) because SMER is per-person per-cycle.
   for (const { page, needle } of [
     { page: 'PrfCalf.jsx', needle: 'OwnerPicker' },
     { page: 'CarLogbook.jsx', needle: 'car_logbook_proxy' },
+    { page: 'Smer.jsx', needle: 'smer_proxy' },
   ]) {
     const p = path.join(PAGES_DIR, page);
     if (!fs.existsSync(p)) continue;
     const src = fs.readFileSync(p, 'utf-8');
     if (!src.includes(needle)) warn('PROXY', `${page} missing proxy-write wiring (looking for "${needle}")`);
-    if (!src.includes('assigned_to')) warn('PROXY', `${page} payload missing assigned_to field (Phase G4.5e)`);
+    if (!src.includes('assigned_to')) warn('PROXY', `${page} payload missing assigned_to field (Phase G4.5e/G4.5f)`);
+  }
+  // Phase G4.5f — Smer.jsx proxy-write surfaces must also send the
+  // bdm_phone_instruction tag on create / submit / override payloads. Backend
+  // 400s on the proxy path if the tag is missing.
+  {
+    const smerPagePath = path.join(PAGES_DIR, 'Smer.jsx');
+    if (fs.existsSync(smerPagePath)) {
+      const src = fs.readFileSync(smerPagePath, 'utf-8');
+      if (!/bdm_phone_instruction/.test(src)) {
+        warn('PROXY', 'Smer.jsx missing bdm_phone_instruction on proxy payloads (Phase G4.5f authorization tag)');
+      }
+    }
   }
   // Phase G4.5e — UndertakingDetail.jsx reveals the submit button when the
   // user has inventory.undertaking_proxy. Without this gate, eBDMs can't submit
@@ -613,7 +704,7 @@ function checkProxyEntryWiring() {
     }
   }
 
-  if (issues === startIssues) console.log('  \u2713 Proxy entry wiring intact (G4.5a + G4.5b + G4.5b-ext + G4.5c.1 + G4.5e)');
+  if (issues === startIssues) console.log('  \u2713 Proxy entry wiring intact (G4.5a + G4.5b + G4.5b-ext + G4.5c.1 + G4.5e + G4.5f)');
 }
 
 // ═══ Phase FRA-A — FRA dual-write to User.entity_ids ═══

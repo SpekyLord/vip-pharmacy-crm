@@ -7,12 +7,18 @@ import { ROLES, ROLE_SETS } from '../../constants/roles';
 import useExpenses from '../hooks/useExpenses';
 import useSettings from '../hooks/useSettings';
 import useHospitals from '../hooks/useHospitals';
+import useTransfers from '../hooks/useTransfers';
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
 import { useRejectionConfig } from '../hooks/useRejectionConfig';
 import WorkflowGuide from '../components/WorkflowGuide';
 import RejectionBanner from '../components/RejectionBanner';
 import { showError, showApprovalPending } from '../utils/errorToast';
+// Phase G4.5f — proxy eligibility detection. When the user has
+// expenses.smer_proxy ticked AND their role is in PROXY_ENTRY_ROLES.SMER,
+// they can write to the currently selected BDM's SMER via body.assigned_to
+// on save. Lookup-driven per Rule #3.
+import useErpSubAccess from '../hooks/useErpSubAccess';
 
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
@@ -131,6 +137,18 @@ function displayDate(isoDate) {
 
 export default function Smer() {
   const { user } = useAuth();
+  const isPrivileged = ROLE_SETS.MANAGEMENT.includes(user?.role); // president/admin/finance
+  const isBdm = user?.role === ROLES.CONTRACTOR;
+  const { getBdmsByEntity } = useTransfers();
+  // Phase G4.5f — proxy-eligible callers (admin/finance with expenses.smer_proxy
+  // ticked, OR a contractor eBDM with the same sub-perm) can WRITE to the
+  // selected BDM's SMER. President always eligible. Lookup-driven proxy-role
+  // gate is evaluated on the backend; the frontend only needs the sub-perm
+  // check to surface the UI.
+  const { hasSubPermission } = useErpSubAccess();
+  const canProxySmer = user?.role === ROLES.PRESIDENT
+    || (isPrivileged && hasSubPermission('expenses', 'smer_proxy'))
+    || (isBdm && hasSubPermission('expenses', 'smer_proxy'));
   const { getSmerList, getSmerById, createSmer, updateSmer, deleteDraftSmer, validateSmer, submitSmer, reopenSmer, getSmerCrmMdCounts, getRevolvingFundAmount, getPerdiemConfig, overridePerdiemDay, loading } = useExpenses();
   const { settings } = useSettings();
   const { options: activityTypeOpts } = useLookupOptions('ACTIVITY_TYPE');
@@ -151,6 +169,29 @@ export default function Smer() {
   });
   const [cycle, setCycle] = useState('C1');
   const [listTab, setListTab] = useState('working');
+
+  // ── Phase G4.5f — BDM picker for privileged + proxy callers ───────────
+  // BDM selector — privileged viewers + proxy-eligible eBDMs. Plain BDMs are
+  // self-scoped by backend tenantFilter and do not see this control. Rule #21:
+  // no silent self-fallback; privileged starts empty until they explicitly pick.
+  const [bdmOptions, setBdmOptions] = useState([]);
+  const [selectedBdmId, setSelectedBdmId] = useState(() => (isBdm ? (user?._id || '') : ''));
+  // Cycle-level authorization tag captured when proxy posts on behalf. Required
+  // and non-empty after trim on the proxy submit path; ignored on self-file.
+  const [bdmPhoneInstruction, setBdmPhoneInstruction] = useState('');
+  // Viewing own SMER → writes allowed. Viewing someone else's (or no BDM picked
+  // on a privileged account) → read-only unless proxy-eligible. Rule #21:
+  // privileged without a selected BDM cannot submit (backend would 400 on
+  // missing bdm_id under the new G4.5f scoping).
+  const viewingSelf = !!selectedBdmId && selectedBdmId === user?._id;
+  // Phase G4.5f — proxy write: eligible caller + a BDM selected (not self).
+  // When true, writes send body.assigned_to = selectedBdmId so the backend
+  // stamps bdm_id = target and records the proxy audit. Self-edits omit
+  // assigned_to (self-file path). Admin/finance/president always need a BDM
+  // selected because their role is not a valid SMER owner.
+  const viewingOther = !!selectedBdmId && selectedBdmId !== user?._id;
+  const canWriteOnBehalf = canProxySmer && viewingOther;
+  const canWrite = viewingSelf || canWriteOnBehalf;
 
   // Form state
   const [dailyEntries, setDailyEntries] = useState([]);
@@ -179,13 +220,40 @@ export default function Smer() {
   }, []);
 
   const loadSmers = useCallback(async () => {
+    // Privileged viewer with no BDM selected → show empty list (Rule #21:
+    // no silent self-filter; the picker must be used to scope).
+    if (isPrivileged && !selectedBdmId) { setSmers([]); return; }
     try {
-      const res = await getSmerList({ period, cycle });
+      // Phase G4.5f — pass selectedBdmId so privileged + proxy callers scope to
+      // one BDM. Self-filers omit it; backend self-scopes via tenantFilter AND
+      // ignores any query override when scope is self-pinned (impersonation guard).
+      const params = { period, cycle };
+      if (selectedBdmId) params.bdm_id = selectedBdmId;
+      const res = await getSmerList(params);
       setSmers(res?.data || []);
     } catch (err) { console.error('[SMER]', err.message); showError(err, 'Could not load SMER list'); }
-  }, [period, cycle]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [period, cycle, selectedBdmId, isPrivileged]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadSmers(); }, [loadSmers]);
+
+  // Phase G4.5f — load BDM options for privileged viewers AND proxy-eligible
+  // eBDMs. Plain BDMs without proxy still self-scope and skip this fetch.
+  useEffect(() => {
+    if (!isPrivileged && !canProxySmer) return;
+    const eid = user?.entity_id || user?.entity_ids?.[0];
+    if (!eid) return;
+    (async () => {
+      try {
+        const r = await getBdmsByEntity(eid);
+        setBdmOptions(r?.data || []);
+      } catch (err) { console.error('[SMER] load BDMs:', err.message); }
+    })();
+  }, [isPrivileged, canProxySmer, user?.entity_id, user?.entity_ids]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Phase G4.5f — clear the cycle-level instruction tag whenever the proxy
+  // target changes. Avoids carrying the tag from one BDM's submit into another
+  // BDM's session by accident.
+  useEffect(() => { setBdmPhoneInstruction(''); }, [selectedBdmId, period, cycle]);
 
   useEffect(() => {
     if (settings) {
@@ -310,6 +378,7 @@ export default function Smer() {
 
   const handleSave = async () => {
     if (savingRef.current || loading) return; // prevent double-submit on slow mobile
+    if (!canWrite) { showError(null, 'Read-only: pick your own BDM or get expenses.smer_proxy ticked to file on behalf.'); return; }
     // Frontend validation
     const issues = [];
     dailyEntries.forEach(e => {
@@ -317,6 +386,14 @@ export default function Smer() {
       if (e.md_count > 0 && !e.activity_type) issues.push(`${e.day_of_week} ${e.entry_date?.split('T')[0] || ''}: Activity type required when MDs > 0`);
     });
     if (issues.length) { showError(null, issues.join('. ')); return; }
+    // Phase G4.5f — on proxy create, the cycle-level instruction tag is required.
+    // (The same tag is also required at submit time; collecting it here saves a
+    // round-trip and surfaces the warning earlier in the workflow.)
+    const tag = String(bdmPhoneInstruction || '').trim();
+    if (canWriteOnBehalf && !editingSmer && !tag) {
+      setSaveError('Note about this submit (short tag like "ok with boss") is required when filing SMER on behalf of another BDM.');
+      return;
+    }
 
     const data = {
       period, cycle,
@@ -324,6 +401,14 @@ export default function Smer() {
       travel_advance: travelAdvance,
       daily_entries: dailyEntries
     };
+    // Phase G4.5f — on create, send body.assigned_to when filing on behalf
+    // (proxy eligible + viewing another BDM). The backend's resolveOwnerForWrite
+    // stamps bdm_id = target + recorded_on_behalf_of = caller. On update,
+    // ownership is locked — assigned_to is stripped server-side.
+    if (canWriteOnBehalf && !editingSmer) {
+      data.assigned_to = selectedBdmId;
+      data.bdm_phone_instruction = tag;
+    }
     setSaveError(null);
     savingRef.current = true;
     try {
@@ -373,10 +458,32 @@ export default function Smer() {
     }
   };
 
-  const handleValidate = async () => { try { await validateSmer(); loadSmers(); } catch (err) { showError(err, 'Could not validate SMER'); } };
+  // Phase G4.5f — build the proxy/scope body for cycle-level mutating endpoints
+  // (validate / submit / reopen). Privileged + proxy callers must always send
+  // bdm_id under the new G4.5f scoping; self-filers may omit it (backend
+  // self-scopes via tenantFilter).
+  const buildScopeBody = (extra) => {
+    const body = { period, cycle, ...(extra || {}) };
+    if (selectedBdmId) body.bdm_id = selectedBdmId;
+    return body;
+  };
+  const handleValidate = async () => {
+    if (!canWrite) { showError(null, 'Read-only: pick your own BDM or get expenses.smer_proxy ticked to file on behalf.'); return; }
+    try { await validateSmer(buildScopeBody()); loadSmers(); } catch (err) { showError(err, 'Could not validate SMER'); }
+  };
   const handleSubmit = async () => {
+    if (!canWrite) { showError(null, 'Read-only: pick your own BDM or get expenses.smer_proxy ticked to file on behalf.'); return; }
+    // Phase G4.5f — proxy submit requires the cycle-level bdm_phone_instruction
+    // tag. Required and non-empty after trim.
+    const tag = String(bdmPhoneInstruction || '').trim();
+    if (canWriteOnBehalf && !tag) {
+      showError(null, 'Note about this submit (short tag like "ok with boss") is required when posting SMER on behalf of another BDM.');
+      return;
+    }
+    const body = buildScopeBody();
+    if (canWriteOnBehalf) body.bdm_phone_instruction = tag;
     try {
-      const res = await submitSmer();
+      const res = await submitSmer(body);
       if (res?.approval_pending) { showApprovalPending(res.message); }
       loadSmers();
     } catch (err) {
@@ -384,14 +491,23 @@ export default function Smer() {
       else showError(err, 'Could not submit SMER');
     }
   };
-  const handleReopen = async (id) => { try { await reopenSmer([id]); loadSmers(); } catch (err) { showError(err, 'Could not reopen SMER'); } };
-  const handleDelete = async (id) => { try { await deleteDraftSmer(id); loadSmers(); } catch (err) { showError(err, 'Could not delete SMER'); } };
+  const handleReopen = async (id) => {
+    if (!canWrite) { showError(null, 'Read-only: pick your own BDM or get expenses.smer_proxy ticked to file on behalf.'); return; }
+    try { await reopenSmer([id], selectedBdmId ? { bdm_id: selectedBdmId } : undefined); loadSmers(); }
+    catch (err) { showError(err, 'Could not reopen SMER'); }
+  };
+  const handleDelete = async (id) => {
+    if (!canWrite) { showError(null, 'Read-only: pick your own BDM or get expenses.smer_proxy ticked to file on behalf.'); return; }
+    try { await deleteDraftSmer(id); loadSmers(); } catch (err) { showError(err, 'Could not delete SMER'); }
+  };
 
   const isManagement = ROLE_SETS.MANAGEMENT.includes(user?.role);
 
   // Override Request Modal state
   const [overrideModal, setOverrideModal] = useState(null); // { index, entry }
-  const [overrideForm, setOverrideForm] = useState({ tier: 'FULL', reason: '' });
+  // Phase G4.5f — overrideForm now also captures bdm_phone_instruction for the
+  // proxy path. Required and non-empty after trim when canWriteOnBehalf is true.
+  const [overrideForm, setOverrideForm] = useState({ tier: 'FULL', reason: '', bdm_phone_instruction: '' });
   const [overrideSubmitting, setOverrideSubmitting] = useState(false);
 
   const handleOverride = (index) => {
@@ -400,7 +516,7 @@ export default function Smer() {
       showError(null, 'Save the SMER first before requesting an override.');
       return;
     }
-    setOverrideForm({ tier: 'FULL', reason: '' });
+    setOverrideForm({ tier: 'FULL', reason: '', bdm_phone_instruction: '' });
     setOverrideModal({ index, entry });
   };
 
@@ -410,13 +526,22 @@ export default function Smer() {
     const { tier, reason } = overrideForm;
     if (!reason.trim()) { showError(null, 'Please enter a reason for the override.'); return; }
 
+    // Phase G4.5f — proxy path requires the per-day authorization tag.
+    const tag = String(overrideForm.bdm_phone_instruction || '').trim();
+    if (canWriteOnBehalf && !tag) {
+      showError(null, 'Note about this submit (short tag like "ok with boss") is required when requesting an override on behalf of another BDM.');
+      return;
+    }
+
     setOverrideSubmitting(true);
     try {
-      const res = await overridePerdiemDay(editingSmer._id, {
+      const payload = {
         entry_id: entry._id,
         override_tier: tier,
         override_reason: reason.trim(),
-      });
+      };
+      if (canWriteOnBehalf) payload.bdm_phone_instruction = tag;
+      const res = await overridePerdiemDay(editingSmer._id, payload);
       if (res?.approval_pending) {
         // Approval required — update local entry with pending state
         const smerData = res?.data;
@@ -622,10 +747,67 @@ export default function Smer() {
               <option value="C2">Cycle 2 (16th-end)</option>
               <option value="MONTHLY">Monthly</option>
             </SelectField>
-            <button onClick={handleNewSmer} style={{ padding: '6px 16px', borderRadius: 6, background: 'var(--erp-accent, #1e5eff)', color: '#fff', border: 'none', cursor: 'pointer' }}>+ New SMER</button>
-            <button onClick={handleValidate} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#22c55e', color: '#fff', border: 'none', cursor: 'pointer' }}>Validate</button>
-            <button onClick={handleSubmit} disabled={loading} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: 'pointer' }}>Submit</button>
+            {/* Phase G4.5f — BDM picker shows for admin/finance/president (view audit)
+                AND for proxy-eligible eBDMs with expenses.smer_proxy ticked.
+                Plain BDMs without proxy still self-scope via tenantFilter. */}
+            {(isPrivileged || canProxySmer) && (
+              <select
+                value={selectedBdmId}
+                onChange={e => setSelectedBdmId(e.target.value)}
+                title={canProxySmer ? 'Choose whose SMER to file on behalf of — required' : 'Choose which BDM\'s SMER to view — required for privileged roles'}
+                style={{ padding: '6px 12px', borderRadius: 6, border: `1px solid ${canWriteOnBehalf ? '#a78bfa' : 'var(--erp-border, #dbe4f0)'}`, minWidth: 180 }}
+              >
+                <option value="">{canProxySmer ? 'Select a BDM to file on behalf…' : 'Select a BDM…'}</option>
+                {bdmOptions.map(b => (
+                  <option key={b._id} value={b._id}>{b.name}</option>
+                ))}
+              </select>
+            )}
+            <button onClick={handleNewSmer} disabled={!canWrite} title={!canWrite ? 'Read-only: pick your own BDM or get expenses.smer_proxy ticked' : undefined} style={{ padding: '6px 16px', borderRadius: 6, background: 'var(--erp-accent, #1e5eff)', color: '#fff', border: 'none', cursor: canWrite ? 'pointer' : 'default', opacity: canWrite ? 1 : 0.5 }}>+ New SMER</button>
+            <button onClick={handleValidate} disabled={loading || !canWrite} title={!canWrite ? 'Read-only: pick your own BDM or get expenses.smer_proxy ticked' : undefined} style={{ padding: '6px 16px', borderRadius: 6, background: '#22c55e', color: '#fff', border: 'none', cursor: (loading || !canWrite) ? 'default' : 'pointer', opacity: canWrite ? 1 : 0.5 }}>Validate</button>
+            <button onClick={handleSubmit} disabled={loading || !canWrite} title={!canWrite ? 'Read-only: pick your own BDM or get expenses.smer_proxy ticked' : undefined} style={{ padding: '6px 16px', borderRadius: 6, background: '#2563eb', color: '#fff', border: 'none', cursor: (loading || !canWrite) ? 'default' : 'pointer', opacity: canWrite ? 1 : 0.5 }}>Submit</button>
           </div>
+
+          {/* Phase G4.5f — banner varies by proxy eligibility.
+              canWriteOnBehalf → proxy write mode; viewingOther without proxy → read-only audit. */}
+          {viewingOther && canWriteOnBehalf && (
+            <div style={{ padding: 10, marginBottom: 12, borderRadius: 8, background: '#f5f3ff', border: '1px solid #c4b5fd', fontSize: 13, color: '#6d28d9' }}>
+              <strong>Proxy write mode</strong> — recording on behalf of <strong>{bdmOptions.find(b => b._id === selectedBdmId)?.name || 'BDM'}</strong>. Saves stamp <code>bdm_id</code> = target BDM and audit <code>recorded_on_behalf_of</code> = you. Submit force-routes through the Approval Hub (Rule #20 four-eyes). A short authorization tag is required at submit time.
+            </div>
+          )}
+          {viewingOther && !canWriteOnBehalf && (
+            <div style={{ padding: 10, marginBottom: 12, borderRadius: 8, background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: 13, color: '#1e40af' }}>
+              Viewing <strong>{bdmOptions.find(b => b._id === selectedBdmId)?.name || 'BDM'}</strong>&apos;s SMER — read-only. (Proxy write requires <code>expenses.smer_proxy</code> ticked on your Access Template.)
+            </div>
+          )}
+          {isPrivileged && !selectedBdmId && (
+            <div style={{ padding: 10, marginBottom: 12, borderRadius: 8, background: '#fffbeb', border: '1px solid #fde68a', fontSize: 13, color: '#92400e' }}>
+              Select a BDM above to view their SMER. SMER is a per-person per-cycle document; pick whose SMER to inspect.
+            </div>
+          )}
+
+          {/* Phase G4.5f — cycle-level authorization tag (proxy write mode only).
+              Single textbox kept above the list so the value is visible across
+              New / Validate / Submit. Required on proxy submit (controller 400s
+              if empty after trim). */}
+          {viewingOther && canWriteOnBehalf && (
+            <div style={{ padding: 10, marginBottom: 12, borderRadius: 8, background: '#fff', border: '1px solid #c4b5fd' }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4, color: '#6d28d9' }}>
+                Note about this submit (required for proxy)
+              </label>
+              <input
+                type="text"
+                placeholder='e.g. "ok with boss", "in the office", "with client", "confirmed over phone"'
+                value={bdmPhoneInstruction}
+                onChange={e => setBdmPhoneInstruction(e.target.value)}
+                maxLength={200}
+                style={{ width: '100%', padding: '6px 10px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 13, boxSizing: 'border-box' }}
+              />
+              <div style={{ marginTop: 4, fontSize: 11, color: 'var(--erp-muted, #5f7188)' }}>
+                Short tag is fine. This is an authorization trail, not a narrative — it appears in the Approval Hub card and the BDM&apos;s receipt inbox.
+              </div>
+            </div>
+          )}
 
           {/* Working vs Posted tabs — separates actionable SMERs from archive */}
           {!showForm && (
@@ -667,7 +849,14 @@ export default function Smer() {
                   {visibleSmers.map(s => (
                     <React.Fragment key={s._id}>
                     <tr style={{ borderBottom: s.status === 'ERROR' ? 'none' : '1px solid var(--erp-border, #dbe4f0)' }}>
-                      <td style={{ padding: 8 }}>{s.bdm_id?.name || '—'}</td>
+                      <td style={{ padding: 8 }}>
+                        {s.bdm_id?.name || '—'}
+                        {/* Phase G4.5f — Proxied pill (row-level). Visible whenever
+                            the SMER cycle was created or submitted on behalf. */}
+                        {s.recorded_on_behalf_of && (
+                          <span title={`Recorded on behalf by ${s.recorded_on_behalf_of?.name || 'a proxy'}${s.bdm_phone_instruction ? ` — "${s.bdm_phone_instruction}"` : ''}`} style={{ marginLeft: 6, padding: '1px 6px', borderRadius: 8, background: '#f5f3ff', border: '1px solid #c4b5fd', fontSize: 10, color: '#6d28d9', fontWeight: 600 }}>Proxied</span>
+                        )}
+                      </td>
                       <td style={{ padding: 8 }}>{s.period}</td>
                       <td style={{ padding: 8 }}>{s.cycle}</td>
                       <td style={{ padding: 8, textAlign: 'right' }}>{s.working_days}</td>
@@ -799,7 +988,14 @@ export default function Smer() {
                   <tbody>
                     {dailyEntries.map((entry, idx) => (
                       <tr key={idx} style={{ borderBottom: '1px solid var(--erp-border, #dbe4f0)', background: entry.perdiem_override ? '#faf5ff' : entry.override_status === 'PENDING' ? '#fffbeb' : entry.override_status === 'REJECTED' ? '#fef2f2' : undefined }}>
-                        <td style={{ padding: 3, textAlign: 'center', fontSize: 11 }}>{displayDate(entry.entry_date).slice(0, 5)}</td>
+                        <td style={{ padding: 3, textAlign: 'center', fontSize: 11 }}>
+                          {displayDate(entry.entry_date).slice(0, 5)}
+                          {/* Phase G4.5f — per-day proxy badge (purple dot beside date).
+                              Marks days where a per-diem override was requested by a proxy. */}
+                          {entry.recorded_on_behalf_of && (
+                            <span title={`Override requested by proxy${entry.bdm_phone_instruction ? ` — "${entry.bdm_phone_instruction}"` : ''}`} style={{ marginLeft: 3, color: '#7c3aed', fontSize: 9 }}>●</span>
+                          )}
+                        </td>
                         <td style={{ padding: 3, textAlign: 'center', fontSize: 10, color: 'var(--erp-muted, #5f7188)' }}>{entry.day_of_week}</td>
                         <td style={{ padding: 3 }}>
                           <SelectField value={entry.activity_type || entry.hospital_covered || ''} onChange={e => handleEntryChange(idx, 'activity_type', e.target.value)} style={{ width: '100%', padding: '2px 4px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 11 }}>
@@ -951,9 +1147,16 @@ export default function Smer() {
             </p>
 
             {/* Info banner for non-management */}
-            {!isManagement && (
+            {!isManagement && !canWriteOnBehalf && (
               <div style={{ padding: '8px 12px', marginBottom: 12, borderRadius: 6, background: '#eff6ff', border: '1px solid #bfdbfe', color: '#1e40af', fontSize: 12 }}>
                 This override requires approval from your admin/president. You will be notified once a decision is made.
+              </div>
+            )}
+            {/* Phase G4.5f — proxy info banner. Always force-routes to Approval
+                Hub even when caller is management (Rule #20 four-eyes). */}
+            {canWriteOnBehalf && (
+              <div style={{ padding: '8px 12px', marginBottom: 12, borderRadius: 6, background: '#f5f3ff', border: '1px solid #c4b5fd', color: '#6d28d9', fontSize: 12 }}>
+                Proxy override on behalf of <strong>{bdmOptions.find(b => b._id === selectedBdmId)?.name || 'BDM'}</strong>. The request always routes through the Approval Hub (Rule #20 four-eyes), even when you have approve rights. The BDM receives a courtesy receipt when a decision is made.
               </div>
             )}
 
@@ -973,15 +1176,37 @@ export default function Smer() {
             <textarea rows={3} placeholder='e.g. "Meeting with President", "Training day"' value={overrideForm.reason} onChange={e => setOverrideForm(f => ({ ...f, reason: e.target.value }))}
               style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 13, resize: 'vertical', boxSizing: 'border-box' }} />
 
+            {/* Phase G4.5f — proxy-only authorization tag. Required and non-empty
+                after trim when canWriteOnBehalf. Persists on the daily entry +
+                travels through ApprovalRequest.metadata so the Hub card shows
+                what authorization the proxy claimed. */}
+            {canWriteOnBehalf && (
+              <>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginTop: 12, marginBottom: 4, color: '#6d28d9' }}>
+                  Note about this submit (required for proxy)
+                </label>
+                <input type="text"
+                  placeholder='e.g. "ok with boss", "in the office", "with client"'
+                  value={overrideForm.bdm_phone_instruction}
+                  maxLength={200}
+                  onChange={e => setOverrideForm(f => ({ ...f, bdm_phone_instruction: e.target.value }))}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #c4b5fd', fontSize: 13, boxSizing: 'border-box', background: '#faf5ff' }} />
+                <div style={{ marginTop: 4, fontSize: 11, color: 'var(--erp-muted, #5f7188)' }}>
+                  Short tag is fine. Visible to approvers in the Hub and to the BDM in their inbox receipt.
+                </div>
+              </>
+            )}
+
             {/* Actions */}
             <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => setOverrideModal(null)} disabled={overrideSubmitting}
                 style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', color: 'var(--erp-muted)', cursor: 'pointer', fontSize: 13 }}>
                 Cancel
               </button>
-              <button type="button" onClick={handleOverrideSubmit} disabled={overrideSubmitting || !overrideForm.reason.trim()}
-                style={{ padding: '8px 20px', borderRadius: 6, border: 'none', background: isManagement ? '#7c3aed' : '#2563eb', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: 13, opacity: overrideSubmitting || !overrideForm.reason.trim() ? 0.5 : 1 }}>
-                {overrideSubmitting ? 'Submitting...' : isManagement ? 'Apply Override' : 'Request Override'}
+              <button type="button" onClick={handleOverrideSubmit}
+                disabled={overrideSubmitting || !overrideForm.reason.trim() || (canWriteOnBehalf && !overrideForm.bdm_phone_instruction.trim())}
+                style={{ padding: '8px 20px', borderRadius: 6, border: 'none', background: (isManagement && !canWriteOnBehalf) ? '#7c3aed' : '#2563eb', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: 13, opacity: (overrideSubmitting || !overrideForm.reason.trim() || (canWriteOnBehalf && !overrideForm.bdm_phone_instruction.trim())) ? 0.5 : 1 }}>
+                {overrideSubmitting ? 'Submitting...' : (isManagement && !canWriteOnBehalf) ? 'Apply Override' : 'Request Override'}
               </button>
             </div>
           </div>

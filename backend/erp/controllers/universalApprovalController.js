@@ -212,6 +212,50 @@ const approvalHandlers = {
     }
     await smer.save();
 
+    // Phase G4.5f — courtesy receipt to the SMER owner when the override was
+    // requested on their behalf by a proxy. Best-effort, non-blocking; failures
+    // are logged but never roll back the approval decision (which has already
+    // mutated the SMER above). Decoupled from the SMER controller's own
+    // submitSmer/applyPerdiemOverride receipts so a hub-direct decision still
+    // routes a notification — even if no one ever calls applyPerdiemOverride.
+    if (entry.recorded_on_behalf_of && String(smer.bdm_id) !== String(entry.recorded_on_behalf_of)) {
+      try {
+        const MessageInbox = require('../../models/MessageInbox');
+        const User = require('../../models/User');
+        // Resolve BOTH the proxy's display label AND the target BDM's role
+        // (recipient filter hinges on recipientRole=user.role — hardcoded
+        // 'contractor' would hide the message from legacy employee-role BDMs).
+        const [proxyUser, ownerUser] = await Promise.all([
+          User.findById(entry.recorded_on_behalf_of).select('name email').lean(),
+          User.findById(smer.bdm_id).select('role').lean(),
+        ]);
+        const proxyLabel = proxyUser?.name || proxyUser?.email || 'an authorized user';
+        const recipientRole = ownerUser?.role || 'contractor';
+        const decisionLabel = action === 'approve' ? 'APPROVED' : 'REJECTED';
+        const tierLabel = action === 'approve' ? `New tier: ${entry.perdiem_tier} (₱${(entry.perdiem_amount || 0).toLocaleString()}). ` : '';
+        await MessageInbox.create({
+          entity_id: smer.entity_id,
+          recipientRole,
+          recipientUserId: smer.bdm_id,
+          senderUserId: userId,
+          senderName: 'Approval Hub',
+          senderRole: 'system',
+          title: `Per-diem override ${decisionLabel} — ${smer.period} ${smer.cycle} Day ${entry.day}`,
+          body: `Your per-diem override request for ${smer.period} ${smer.cycle} Day ${entry.day} was ${decisionLabel}. ` +
+            `${tierLabel}` +
+            `Original request keyed by ${proxyLabel} — authorization on file: "${entry.bdm_phone_instruction || '(not recorded)'}". ` +
+            (reason ? `Approver note: ${reason}.` : ''),
+          category: 'PERDIEM_OVERRIDE_DECISION',
+          priority: 'normal',
+          must_acknowledge: false,
+          requires_action: false,
+          folder: 'INBOX',
+        });
+      } catch (notifyErr) {
+        console.error('[perdiem_override] proxy decision receipt failed (non-critical):', notifyErr.message);
+      }
+    }
+
     // SMER write succeeded — record the decision on the ApprovalRequest.
     const { processDecision } = require('../services/approvalService');
     return await processDecision(id, action === 'approve' ? 'APPROVED' : 'REJECTED', userId, reason);
