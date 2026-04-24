@@ -53,6 +53,13 @@ const LEGACY_USER_ROLES = ['employee', 'contractor'];
 // the new User.role after migration.
 const LEGACY_LOOKUP_ROLES = ['employee', 'contractor', 'bdm'];
 const TARGET_ROLE = 'staff';
+// Lookup documents live in different collections depending on which Mongoose
+// model wrote them. ERP's Lookup model declares `collection: 'erp_lookups'`
+// (see backend/erp/models/Lookup.js). CRM-side lookups, if/when added, would
+// default to 'lookups'. Scan BOTH so a single --apply catches every
+// role-bearing row regardless of origin. Skipping one here silently no-ops
+// Phase 2 against that environment — the exact bug this comment prevents.
+const LOOKUP_COLLECTION_NAMES = ['lookups', 'erp_lookups'];
 
 async function migrate() {
   await connectDB();
@@ -120,39 +127,52 @@ async function migrate() {
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  // PHASE 2 AUDIT — lookup collection (role-bearing metadata arrays)
+  // PHASE 2 AUDIT — lookup collections (role-bearing metadata arrays)
+  // Scans BOTH 'lookups' and 'erp_lookups'. Missing collections yield 0
+  // matches with no error, so this is safe in every environment.
   // ══════════════════════════════════════════════════════════════════════
-  console.log('\n═══ Phase 2: lookups collection ═══');
-  const lookupsCol = db.collection('lookups');
+  console.log('\n═══ Phase 2: lookup collections ═══');
 
   // Scan for ANY lookup row whose metadata contains a legacy role string in
   // an array-valued field (metadata.roles, metadata.allowed_roles, etc.).
   // Works for the known categories (PROXY_ENTRY_ROLES, VALID_OWNER_ROLES,
-  // MODULE_DEFAULT_ROLES, AGENT_CONFIG) and any future role-bearing lookup
-  // category added later — no hardcoded category list needed.
-  const lookupMatches = await lookupsCol.aggregate([
-    {
-      $match: {
-        $or: [
-          { 'metadata.roles': { $elemMatch: { $in: LEGACY_LOOKUP_ROLES } } },
-          { 'metadata.allowed_roles': { $elemMatch: { $in: LEGACY_LOOKUP_ROLES } } },
-        ],
+  // MODULE_DEFAULT_ROLES, AGENT_CONFIG, COPILOT_TOOLS, AI_COWORK_FEATURES)
+  // and any future role-bearing lookup category added later — no hardcoded
+  // category list needed.
+  const lookupMatches = [];
+  const matchesByCollection = {};
+  for (const colName of LOOKUP_COLLECTION_NAMES) {
+    const col = db.collection(colName);
+    const rows = await col.aggregate([
+      {
+        $match: {
+          $or: [
+            { 'metadata.roles': { $elemMatch: { $in: LEGACY_LOOKUP_ROLES } } },
+            { 'metadata.allowed_roles': { $elemMatch: { $in: LEGACY_LOOKUP_ROLES } } },
+          ],
+        },
       },
-    },
-    {
-      $project: {
-        category: 1,
-        code: 1,
-        entity_id: 1,
-        roles: '$metadata.roles',
-        allowed_roles: '$metadata.allowed_roles',
+      {
+        $project: {
+          category: 1,
+          code: 1,
+          entity_id: 1,
+          roles: '$metadata.roles',
+          allowed_roles: '$metadata.allowed_roles',
+        },
       },
-    },
-    { $sort: { category: 1, code: 1 } },
-  ]).toArray();
+      { $sort: { category: 1, code: 1 } },
+    ]).toArray();
+    matchesByCollection[colName] = rows.length;
+    for (const r of rows) { r._collection = colName; lookupMatches.push(r); }
+  }
 
   console.log(`─── Lookup rows with legacy role strings in metadata ───`);
   console.log(`  Total matching rows: ${lookupMatches.length}`);
+  console.log('\n─── By collection ───');
+  for (const colName of LOOKUP_COLLECTION_NAMES) {
+    console.log(`  ${colName}: ${matchesByCollection[colName]}`);
+  }
   if (lookupMatches.length > 0) {
     // Group by category for a tight summary
     const byCategory = {};
@@ -169,7 +189,7 @@ async function migrate() {
       const ent = row.entity_id ? row.entity_id.toString().slice(-6) : '(no entity)';
       const rolesStr = row.roles ? `roles=${JSON.stringify(row.roles)}` : '';
       const allowedStr = row.allowed_roles ? `allowed_roles=${JSON.stringify(row.allowed_roles)}` : '';
-      console.log(`  [${row.category}] ${row.code}  ent=${ent}  ${rolesStr}${allowedStr}`);
+      console.log(`  [${row._collection}] [${row.category}] ${row.code}  ent=${ent}  ${rolesStr}${allowedStr}`);
     }
   }
 
@@ -215,18 +235,26 @@ async function migrate() {
   const contractor_ids = toMigrateUsers.filter(u => u.role === 'contractor').map(u => u._id);
 
   // Phase 2 backup data — snapshot each matching lookup row's current metadata
-  // so we can restore the exact original arrays on revert.
-  const toMigrateLookups = await lookupsCol
-    .find(
-      {
-        $or: [
-          { 'metadata.roles': { $elemMatch: { $in: LEGACY_LOOKUP_ROLES } } },
-          { 'metadata.allowed_roles': { $elemMatch: { $in: LEGACY_LOOKUP_ROLES } } },
-        ],
-      },
-      { projection: { category: 1, code: 1, entity_id: 1, metadata: 1 } }
-    )
-    .toArray();
+  // so we can restore the exact original arrays on revert. Pulls from every
+  // collection in LOOKUP_COLLECTION_NAMES and stamps `_collection` on each
+  // row so the apply loop (and any manual revert) knows which collection the
+  // row belongs to.
+  const toMigrateLookups = [];
+  for (const colName of LOOKUP_COLLECTION_NAMES) {
+    const col = db.collection(colName);
+    const rows = await col
+      .find(
+        {
+          $or: [
+            { 'metadata.roles': { $elemMatch: { $in: LEGACY_LOOKUP_ROLES } } },
+            { 'metadata.allowed_roles': { $elemMatch: { $in: LEGACY_LOOKUP_ROLES } } },
+          ],
+        },
+        { projection: { category: 1, code: 1, entity_id: 1, metadata: 1 } }
+      )
+      .toArray();
+    for (const r of rows) { r._collection = colName; toMigrateLookups.push(r); }
+  }
 
   fs.writeFileSync(backupFile, JSON.stringify({
     timestamp: new Date().toISOString(),
@@ -243,8 +271,9 @@ async function migrate() {
     },
     phase2_lookups: {
       count: toMigrateLookups.length,
+      collections_scanned: LOOKUP_COLLECTION_NAMES,
       rows: toMigrateLookups,
-      revert_hint: 'Per-row restore: for each entry above, set metadata.roles (or metadata.allowed_roles) back to the snapshot value shown.',
+      revert_hint: 'Per-row restore: for each entry above, write metadata.roles (or metadata.allowed_roles) back to the snapshot value shown, against the collection named in row._collection.',
     },
   }, null, 2));
   console.log(`  Backup written: ${backupFile}`);
@@ -268,8 +297,11 @@ async function migrate() {
   //    Per-row update required because $set on an array element needs the
   //    new full array, not a conditional $ operator (which doesn't exist
   //    for "replace matching elements"). Fastest: recompute the array in
-  //    node, then $set the whole array back.
+  //    node, then $set the whole array back. Writes land in the same
+  //    collection the row was read from (tracked on row._collection).
   let lookupsModified = 0;
+  const lookupsModifiedByCollection = {};
+  for (const colName of LOOKUP_COLLECTION_NAMES) lookupsModifiedByCollection[colName] = 0;
   for (const row of toMigrateLookups) {
     const updates = {};
     if (Array.isArray(row.metadata?.roles)) {
@@ -285,11 +317,15 @@ async function migrate() {
       }
     }
     if (Object.keys(updates).length > 0) {
-      await lookupsCol.updateOne({ _id: row._id }, { $set: updates });
+      await db.collection(row._collection).updateOne({ _id: row._id }, { $set: updates });
       lookupsModified += 1;
+      lookupsModifiedByCollection[row._collection] += 1;
     }
   }
   console.log(`  Phase 2: ${lookupsModified} lookup row(s) normalized`);
+  for (const colName of LOOKUP_COLLECTION_NAMES) {
+    console.log(`    ${colName}: ${lookupsModifiedByCollection[colName]}`);
+  }
 
   // 4) Verify both phases
   const remainingEmployee = await usersCol.countDocuments({ role: 'employee' });
@@ -300,14 +336,19 @@ async function migrate() {
   console.log(`  Remaining role='contractor': ${remainingContractor}  (expect 0)`);
   console.log(`  Total role='${TARGET_ROLE}':       ${newStaffTotal}`);
 
-  const remainingLookupLegacy = await lookupsCol.countDocuments({
-    $or: [
-      { 'metadata.roles': { $elemMatch: { $in: LEGACY_LOOKUP_ROLES } } },
-      { 'metadata.allowed_roles': { $elemMatch: { $in: LEGACY_LOOKUP_ROLES } } },
-    ],
-  });
+  let remainingLookupLegacy = 0;
   console.log('\n─── Phase 2 verification ───');
-  console.log(`  Remaining lookups with legacy role strings: ${remainingLookupLegacy}  (expect 0)`);
+  for (const colName of LOOKUP_COLLECTION_NAMES) {
+    const n = await db.collection(colName).countDocuments({
+      $or: [
+        { 'metadata.roles': { $elemMatch: { $in: LEGACY_LOOKUP_ROLES } } },
+        { 'metadata.allowed_roles': { $elemMatch: { $in: LEGACY_LOOKUP_ROLES } } },
+      ],
+    });
+    remainingLookupLegacy += n;
+    console.log(`  ${colName}: ${n}  (expect 0)`);
+  }
+  console.log(`  Total remaining lookups with legacy role strings: ${remainingLookupLegacy}  (expect 0)`);
 
   if (remainingEmployee !== 0 || remainingContractor !== 0 || remainingLookupLegacy !== 0) {
     console.warn('\n  WARNING: some rows were not migrated. Investigate before code-sweep step.');
