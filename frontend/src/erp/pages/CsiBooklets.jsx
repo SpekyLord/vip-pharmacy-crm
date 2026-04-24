@@ -355,7 +355,7 @@ export default function CsiBooklets() {
             {draftsLoading && <div className="loading">Loading drafts…</div>}
             {!draftsLoading && drafts.length === 0 && (
               <div className="empty-state">
-                <p>No sales waiting for CSI overlay. You're all caught up.</p>
+                <p>No sales waiting for CSI overlay. You&apos;re all caught up.</p>
               </div>
             )}
             {!draftsLoading && drafts.length > 0 && (
@@ -411,8 +411,8 @@ export default function CsiBooklets() {
                 <h3>🖨 Printer Calibration</h3>
                 <p>
                   Align the overlay with your printer once. Print the calibration grid onto a
-                  <strong> blank booklet page</strong>, measure mm delta between the booklet's
-                  "Registered Name" / "Charged to" line and the grid's red NAME crosshair. Enter
+                  <strong> blank booklet page</strong>, measure mm delta between the booklet&apos;s
+                  &quot;Registered Name&quot; / &quot;Charged to&quot; line and the grid&apos;s red NAME crosshair. Enter
                   the delta here. Repeat if you change printers.
                 </p>
               </div>
