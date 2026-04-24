@@ -28,11 +28,13 @@ import {
   Shield,
 } from 'lucide-react';
 import { resolveClmConfig } from '../../config/clmDefaults';
+import ProductImage from '../common/ProductImage';
 
 // Logos come from per-entity branding; absent logos render a neutral Building2
-// placeholder via LogoImg. Product images are per-product (CrmProduct.image,
-// typically S3); broken loads fall back to a Pill placeholder via ProductImage.
-// Nothing in this file references a specific product or brand — Rule #3 / #19.
+// placeholder via LogoImg. Product images reuse the shared ProductImage from
+// common/ — it handles IndexedDB offline fallback + Pill placeholder for
+// missing / broken images (SEC-007 signed-URL expiry). Nothing in this file
+// references a specific product or brand — Rule #3 / #19.
 
 // Logo with graceful fallback: shows the signed S3 URL, falls back to the
 // provided placeholder node on load error (e.g. signed URL expired mid-pitch).
@@ -43,18 +45,6 @@ export const LogoImg = ({ url, alt, className, placeholder }) => {
   const [failed, setFailed] = useState(false);
   if (!url || failed) return placeholder;
   return <img src={url} alt={alt || ''} className={className} onError={() => setFailed(true)} />;
-};
-
-// Product card image with graceful fallback to a Pill placeholder. Previously
-// broken images were hidden via `style.display = 'none'`, leaving a visual gap;
-// swapping to the same placeholder used for missing p.image keeps the card
-// visually complete and matches the pattern used by LogoImg above.
-const ProductImage = ({ url, alt }) => {
-  const [failed, setFailed] = useState(false);
-  if (!url || failed) {
-    return <div className="product-img-placeholder"><Pill size={32} /></div>;
-  }
-  return <img src={url} alt={alt || ''} className="product-img" onError={() => setFailed(true)} />;
 };
 
 const buildSlides = (companyName) => [
@@ -263,7 +253,13 @@ const SlideContent = ({ slide, doctorName, products, config }) => {
             {hasProducts ? (
               products.map((p) => (
                 <div key={p._id} className="product-card">
-                  <ProductImage url={p.image} alt={p.name} />
+                  <ProductImage
+                    productId={p._id}
+                    imageUrl={p.image}
+                    alt={p.name}
+                    className="product-img"
+                    placeholderClassName="product-img-placeholder"
+                  />
                   <div className="product-info">
                     <h3>{p.name}</h3>
                     {p.genericName && <p className="product-generic">{p.genericName}</p>}
