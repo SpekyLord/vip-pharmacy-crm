@@ -29,11 +29,10 @@ import {
 } from 'lucide-react';
 import { resolveClmConfig } from '../../config/clmDefaults';
 
-// Product-slide fallback images bundled in public/clm/ for offline availability.
-// Logo paths come from per-entity branding; absent logos render a neutral
-// Building2 placeholder via the LogoImg component (no hardcoded branding URL).
-const VIPRAZOLE_IMG = '/clm/viprazole.jpg';
-const VIPTRIAXONE_IMG = '/clm/viptriaxone.jpg';
+// Logos come from per-entity branding; absent logos render a neutral Building2
+// placeholder via LogoImg. Product images are per-product (CrmProduct.image,
+// typically S3); broken loads fall back to a Pill placeholder via ProductImage.
+// Nothing in this file references a specific product or brand — Rule #3 / #19.
 
 // Logo with graceful fallback: shows the signed S3 URL, falls back to the
 // provided placeholder node on load error (e.g. signed URL expired mid-pitch).
@@ -44,6 +43,18 @@ export const LogoImg = ({ url, alt, className, placeholder }) => {
   const [failed, setFailed] = useState(false);
   if (!url || failed) return placeholder;
   return <img src={url} alt={alt || ''} className={className} onError={() => setFailed(true)} />;
+};
+
+// Product card image with graceful fallback to a Pill placeholder. Previously
+// broken images were hidden via `style.display = 'none'`, leaving a visual gap;
+// swapping to the same placeholder used for missing p.image keeps the card
+// visually complete and matches the pattern used by LogoImg above.
+const ProductImage = ({ url, alt }) => {
+  const [failed, setFailed] = useState(false);
+  if (!url || failed) {
+    return <div className="product-img-placeholder"><Pill size={32} /></div>;
+  }
+  return <img src={url} alt={alt || ''} className="product-img" onError={() => setFailed(true)} />;
 };
 
 const buildSlides = (companyName) => [
@@ -231,17 +242,28 @@ const SlideContent = ({ slide, doctorName, products, config }) => {
           </div>
         </div>
       );
-    case 'products':
+    case 'products': {
+      // Products slide renders two non-branded states so any subscriber can
+      // pitch with this deck out of the box (Rule #3 / #19):
+      //   products.length > 0  → BDM-curated list from PartnershipCLM
+      //   products.length === 0 → Neutral empty-state card (BDM pressed
+      //                           "Skip — Present without products", or the
+      //                           subscriber has no CRM products yet)
+      const hasProducts = products.length > 0;
       return (
         <div className="clm-slide slide-products">
           <div className="slide-icon-badge"><Package size={28} /></div>
           <h2>Our Products</h2>
-          <p className="slide-lead">{products.length > 0 ? `${products.length} product${products.length !== 1 ? 's' : ''} selected for this presentation` : `${config.companyName}'s own branded products — plus all pharma products you support`}</p>
-          <div className="products-grid">
-            {products.length > 0 ? (
+          <p className="slide-lead">
+            {hasProducts
+              ? `${products.length} product${products.length !== 1 ? 's' : ''} selected for this presentation`
+              : 'General partnership pitch — no specific products selected for this session'}
+          </p>
+          <div className={`products-grid ${hasProducts ? '' : 'products-grid-empty'}`}>
+            {hasProducts ? (
               products.map((p) => (
                 <div key={p._id} className="product-card">
-                  {p.image ? (<img src={p.image} alt={p.name} className="product-img" onError={(e) => { e.target.style.display = 'none'; }} />) : (<div className="product-img-placeholder"><Pill size={32} /></div>)}
+                  <ProductImage url={p.image} alt={p.name} />
                   <div className="product-info">
                     <h3>{p.name}</h3>
                     {p.genericName && <p className="product-generic">{p.genericName}</p>}
@@ -252,21 +274,19 @@ const SlideContent = ({ slide, doctorName, products, config }) => {
                 </div>
               ))
             ) : (
-              <>
-                <div className="product-card">
-                  <img src={VIPRAZOLE_IMG} alt="VIPRAZOLE" className="product-img" />
-                  <div className="product-info"><h3>VIPRAZOLE</h3><p className="product-generic">Omeprazole</p><p className="product-dosage">40mg Lyophilized Powder for Injection (IV Infusion)</p><span className="product-cat">Proton Pump Inhibitor</span></div>
+              <div className="product-empty-state">
+                <div className="product-empty-icon" style={{ color: config.primaryColor }}>
+                  <Pill size={48} />
                 </div>
-                <div className="product-card">
-                  <img src={VIPTRIAXONE_IMG} alt="VIPTRIAXONE" className="product-img" />
-                  <div className="product-info"><h3>VIPTRIAXONE</h3><p className="product-generic">Ceftriaxone</p><p className="product-dosage">1 gram Powder for Injection (I.M./I.V.)</p><span className="product-cat">Anti-Bacterial (3rd Gen Cephalosporin)</span></div>
-                </div>
-              </>
+                <h3>No products selected for this pitch</h3>
+                <p>Next time, pick the products you want to feature on the previous screen so this slide shows tailored recommendations to your VIP Client.</p>
+              </div>
             )}
           </div>
           <p className="products-footer">{s.products.footer}</p>
         </div>
       );
+    }
     case 'connect':
       return (
         <div className="clm-slide slide-connect">
@@ -341,6 +361,11 @@ const presenterStyles = `
   .integrity-card p { font-size: 14px; color: #4B5563; line-height: 1.5; }
   .slide-products { max-width: 960px; }
   .products-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; margin-bottom: 16px; max-height: 420px; overflow-y: auto; padding-right: 4px; }
+  .products-grid-empty { grid-template-columns: 1fr; max-height: none; }
+  .product-empty-state { background: #FAFAFA; border: 1px dashed #E5E7EB; border-radius: 14px; padding: 36px 24px; text-align: center; max-width: 480px; margin: 0 auto; }
+  .product-empty-icon { display: inline-flex; width: 80px; height: 80px; border-radius: 50%; background: rgba(107, 114, 128, 0.08); align-items: center; justify-content: center; margin-bottom: 16px; }
+  .product-empty-state h3 { font-size: 17px; font-weight: 700; color: #1f2937; margin-bottom: 8px; }
+  .product-empty-state p { font-size: 14px; color: #6b7280; line-height: 1.5; margin: 0; }
   .product-card { background: #FAFAFA; border: 1px solid #E5E7EB; border-radius: 14px; overflow: hidden; transition: all 0.2s; }
   .product-card:hover { border-color: var(--clm-primary); box-shadow: 0 2px 12px rgba(212,160,23,0.12); }
   .product-img { width: 100%; height: 160px; object-fit: contain; background: #fff; padding: 8px; }

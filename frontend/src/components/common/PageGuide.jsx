@@ -448,7 +448,7 @@ const PAGE_GUIDES = {
       { label: 'My Visits', path: '/bdm/visits' },
       { label: 'Dashboard', path: '/bdm' },
     ],
-    tip: 'Each product you select shows on slide 5. Mark which ones the VIP Client was interested in before ending the session. If offline, your drafts sync automatically when connectivity returns.',
+    tip: 'Each product you select shows on slide 5. Mark which ones the VIP Client was interested in before ending the session. Skipping products is allowed — slide 5 will show a neutral empty-state card instead of specific products. If offline, your drafts sync automatically when connectivity returns.',
   },
   'clm-sessions-admin': {
     title: 'CLM Sessions Overview',
