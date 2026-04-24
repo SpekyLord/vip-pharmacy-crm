@@ -27,20 +27,24 @@ import {
   Package,
   Shield,
 } from 'lucide-react';
-import { resolveClmConfig, CLM_DEFAULTS } from '../../config/clmDefaults';
-
-// Swap img src to the hardcoded default on load failure. Protects the deck if
-// a signed S3 URL expires mid-session or the upload path ever drifts again.
-const fallbackLogo = (e, defaultUrl) => {
-  if (e.target.src !== window.location.origin + defaultUrl && !e.target.src.endsWith(defaultUrl)) {
-    e.target.src = defaultUrl;
-  }
-};
+import { resolveClmConfig } from '../../config/clmDefaults';
 
 // Product-slide fallback images bundled in public/clm/ for offline availability.
-// Logo paths come from config (per-entity branding or CLM_DEFAULTS fallback).
+// Logo paths come from per-entity branding; absent logos render a neutral
+// Building2 placeholder via the LogoImg component (no hardcoded branding URL).
 const VIPRAZOLE_IMG = '/clm/viprazole.jpg';
 const VIPTRIAXONE_IMG = '/clm/viptriaxone.jpg';
+
+// Logo with graceful fallback: shows the signed S3 URL, falls back to the
+// provided placeholder node on load error (e.g. signed URL expired mid-pitch).
+// State is local so multiple instances don't interfere; callers should set
+// key={url} on the parent to reset the failure flag when the URL changes.
+// Exported so the admin LogoCard can reuse the same degradation path.
+export const LogoImg = ({ url, alt, className, placeholder }) => {
+  const [failed, setFailed] = useState(false);
+  if (!url || failed) return placeholder;
+  return <img src={url} alt={alt || ''} className={className} onError={() => setFailed(true)} />;
+};
 
 const buildSlides = (companyName) => [
   { id: 'hero', title: companyName, subtitle: 'Online Pharmacy Partnership', icon: Building2, type: 'hero' },
@@ -123,7 +127,13 @@ const CLMPresenter = ({ session, doctor, products = [], branding, previewMode = 
       <style>{presenterStyles}</style>
       <div className="clm-topbar">
         <div className="clm-topbar-left">
-          <img src={config.logoTrademarkUrl} alt={config.companyName} className="clm-topbar-logo" onError={(e) => fallbackLogo(e, CLM_DEFAULTS.logoTrademarkUrl)} />
+          <LogoImg
+            key={`trademark-${config.logoTrademarkUrl || 'empty'}`}
+            url={config.logoTrademarkUrl}
+            alt={config.companyName}
+            className="clm-topbar-logo"
+            placeholder={null}
+          />
           <span className="clm-slide-counter">{currentSlide + 1} / {totalSlides}</span>
           <span className="clm-doctor-name">{doctorName}</span>
         </div>
@@ -154,7 +164,17 @@ const SlideContent = ({ slide, doctorName, products, config }) => {
     case 'hero':
       return (
         <div className="clm-slide slide-hero">
-          <img src={config.logoCircleUrl} alt={config.companyName} className="hero-logo" onError={(e) => fallbackLogo(e, CLM_DEFAULTS.logoCircleUrl)} />
+          <LogoImg
+            key={`hero-${config.logoCircleUrl || 'empty'}`}
+            url={config.logoCircleUrl}
+            alt={config.companyName}
+            className="hero-logo"
+            placeholder={
+              <div className="hero-logo hero-logo-placeholder" style={{ borderColor: config.primaryColor }}>
+                <Building2 size={56} color={config.primaryColor} />
+              </div>
+            }
+          />
           <div className="hero-badge">{s.hero.badge}</div>
           <h1 className="hero-title">{config.companyName} <span className="text-gold">{s.hero.titleAccent}</span></h1>
           <p className="hero-subtitle">{s.hero.subtitle}</p>
@@ -250,7 +270,17 @@ const SlideContent = ({ slide, doctorName, products, config }) => {
     case 'connect':
       return (
         <div className="clm-slide slide-connect">
-          <img src={config.logoCircleUrl} alt={config.companyName} className="connect-logo" onError={(e) => fallbackLogo(e, CLM_DEFAULTS.logoCircleUrl)} />
+          <LogoImg
+            key={`connect-${config.logoCircleUrl || 'empty'}`}
+            url={config.logoCircleUrl}
+            alt={config.companyName}
+            className="connect-logo"
+            placeholder={
+              <div className="connect-logo connect-logo-placeholder" style={{ borderColor: config.primaryColor }}>
+                <Building2 size={48} color={config.primaryColor} />
+              </div>
+            }
+          />
           <h2>{s.connect.title}</h2>
           <p className="connect-subtitle">{s.connect.subtitle}</p>
           <div className="connect-cta">
@@ -289,6 +319,7 @@ const presenterStyles = `
   .integrity-badge { background: #ECFDF5; color: #059669; }
   .slide-hero { text-align: center; padding: 20px 0; }
   .hero-logo { width: 120px; height: 120px; object-fit: contain; margin: 0 auto 20px; display: block; }
+  .hero-logo-placeholder { border-radius: 50%; border: 2px solid currentColor; background: rgba(107, 114, 128, 0.08); display: flex !important; align-items: center; justify-content: center; }
   .hero-badge { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: 2px; color: var(--clm-primary); background: #FFF8E1; padding: 6px 16px; border-radius: 20px; margin-bottom: 16px; }
   .hero-title { font-size: 44px; font-weight: 800; color: #1f2937; line-height: 1.1; margin-bottom: 12px; }
   .text-gold { color: var(--clm-primary); }
@@ -323,6 +354,7 @@ const presenterStyles = `
   .products-footer { font-size: 14px; color: #9ca3af; text-align: center; font-style: italic; }
   .slide-connect { text-align: center; padding: 20px 0; }
   .connect-logo { width: 80px; height: 80px; object-fit: contain; margin: 0 auto 16px; display: block; }
+  .connect-logo-placeholder { border-radius: 50%; border: 2px solid currentColor; background: rgba(107, 114, 128, 0.08); display: flex !important; align-items: center; justify-content: center; }
   .connect-subtitle { font-size: 17px; color: #6b7280; margin-bottom: 28px; }
   .connect-cta { display: flex; flex-direction: column; gap: 20px; align-items: center; margin-bottom: 28px; }
   .connect-messenger { display: flex; align-items: center; gap: 14px; padding: 20px 32px; background: #FFF8E1; border: 2px solid var(--clm-primary); border-radius: 14px; color: var(--clm-primary); max-width: 400px; width: 100%; }

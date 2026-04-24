@@ -477,7 +477,7 @@ const PAGE_GUIDES = {
       { label: 'CLM Sessions', path: '/admin/clm-sessions' },
       { label: 'Entity Settings', path: '/admin/control-center' },
     ],
-    tip: 'Leave any field blank to fall back to the system default (VIP branding + pitch). Each entity has its own branding — subsidiaries and subscribers get independent identities without a code deploy.',
+    tip: 'Leave any field blank to fall back to a neutral placeholder. Each entity has its own branding — subsidiaries and subscribers configure their own identity without a code deploy. Upload both logos before your first BDM pitch to avoid blank placeholders on the deck.',
   },
 };
 

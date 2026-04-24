@@ -24,9 +24,10 @@ const SHELL_ASSETS = [
   '/manifest.json',
 ];
 
+// Product-slide sample images stay as pre-cached shell assets for offline
+// BDM pitches. Branding logos are entity-specific (served from S3) — not
+// pre-cached here; CLMPresenter falls back to a Lucide icon when absent.
 const CLM_ASSETS = [
-  '/clm/vip-trademark.png',
-  '/clm/vip-logo-circle.svg',
   '/clm/viprazole.jpg',
   '/clm/viptriaxone.jpg',
 ];
