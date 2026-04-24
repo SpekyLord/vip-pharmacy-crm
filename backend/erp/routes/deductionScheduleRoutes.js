@@ -1,7 +1,7 @@
 /**
  * Deduction Schedule Routes — Recurring & Non-Recurring Deduction Plans
  *
- * BDM (contractor) creates schedules. Finance/Admin approves and manages.
+ * BDM (staff) creates schedules. Finance/Admin approves and manages.
  * NOTE: GET /my must come BEFORE GET /:id to avoid "my" matching as an id param.
  */
 const express = require('express');
@@ -24,11 +24,11 @@ const {
 
 const router = express.Router();
 
-// ═══ BDM (contractor) ═══
-router.post('/', roleCheck('contractor'), periodLockCheck('DEDUCTION'), createSchedule);
-router.get('/my', roleCheck('contractor'), getMySchedules);
-router.post('/:id/withdraw', roleCheck('contractor'), withdrawSchedule);
-router.put('/:id', roleCheck('contractor'), periodLockCheck('DEDUCTION'), editPendingSchedule);
+// ═══ BDM (staff) ═══
+router.post('/', roleCheck('staff'), periodLockCheck('DEDUCTION'), createSchedule);
+router.get('/my', roleCheck('staff'), getMySchedules);
+router.post('/:id/withdraw', roleCheck('staff'), withdrawSchedule);
+router.put('/:id', roleCheck('staff'), periodLockCheck('DEDUCTION'), editPendingSchedule);
 
 // ═══ Finance/Admin ═══
 router.post('/finance-create', roleCheck('admin', 'finance', 'president'), periodLockCheck('DEDUCTION'), financeCreateSchedule);

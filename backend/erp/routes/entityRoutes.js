@@ -7,9 +7,9 @@ const entityController = require('../controllers/entityController');
 const presidentAdmin = roleCheck('president', 'admin');
 const financeReadable = roleCheck('admin', 'finance', 'president');
 
-// CLM branding admin page needs employee read access too so BDMs can fetch
+// CLM branding admin page needs staff read access too so BDMs can fetch
 // their entity's deck config on CLMPresenter mount. Writes stay admin-only.
-const clmBrandingReadable = roleCheck('admin', 'finance', 'president', 'contractor');
+const clmBrandingReadable = roleCheck('admin', 'finance', 'president', 'staff');
 
 // Multer `upload.fields` accepts the two optional logo files by name; the
 // text fields (slides JSON, color, etc.) come in on req.body alongside them.

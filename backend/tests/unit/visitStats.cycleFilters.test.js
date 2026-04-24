@@ -89,7 +89,7 @@ describe('visit stats cycle filters', () => {
   test('employee scope remains restricted to own user ID', async () => {
     const req = {
       query: { cycleNumber: '1' },
-      user: { role: 'contractor', _id: 'employee-1' },
+      user: { role: 'staff', _id: 'employee-1' },
     };
     const res = buildRes();
     const next = jest.fn();

@@ -47,7 +47,7 @@ async function computeEngagements(bdmId, start, end) {
 
     // Count accessible hospitals for this BDM (warehouse-driven + legacy tagged_bdms)
     const { buildHospitalAccessFilter } = require('../utils/hospitalAccess');
-    const accessFilter = await buildHospitalAccessFilter({ _id: bdmObjectId, role: 'contractor' });
+    const accessFilter = await buildHospitalAccessFilter({ _id: bdmObjectId, role: 'staff' });
     const hospitalCount = await Hospital.countDocuments({
       status: 'ACTIVE',
       ...accessFilter

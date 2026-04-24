@@ -132,13 +132,8 @@ const ACCESS_ROLES_DEFAULTS = [
     metadata: { can_dm_roles: ['*'], can_broadcast: false, can_cross_entity: false },
   },
   {
-    code: 'contractor', label: 'Contractor / BDM',
+    code: 'staff', label: 'Staff / BDM',
     sort_order: 5,
-    metadata: { can_dm_roles: ['admin', 'finance', 'president', 'ceo'], can_broadcast: false, can_cross_entity: false, can_dm_direct_reports: true },
-  },
-  {
-    code: 'employee', label: 'Employee (legacy)',
-    sort_order: 6,
     metadata: { can_dm_roles: ['admin', 'finance', 'president', 'ceo'], can_broadcast: false, can_cross_entity: false, can_dm_direct_reports: true },
   },
 ];

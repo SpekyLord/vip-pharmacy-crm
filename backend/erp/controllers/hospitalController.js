@@ -18,7 +18,7 @@ const getAll = catchAsync(async (req, res) => {
   // Scalable: warehouse_ids is the primary mechanism; tagged_bdms is legacy fallback
   // ?my=true forces BDM filter even for admin-like roles
   const forceMyFilter = req.query.my === 'true';
-  const effectiveUser = forceMyFilter ? { ...req.user, role: 'contractor' } : req.user;
+  const effectiveUser = forceMyFilter ? { ...req.user, role: 'staff' } : req.user;
   Object.assign(filter, await buildHospitalAccessFilter(effectiveUser));
 
   const page = parseInt(req.query.page) || 1;

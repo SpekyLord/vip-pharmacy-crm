@@ -81,7 +81,7 @@ describe('client visit stats cycle filters', () => {
   test('employee role remains scoped to own user ID', async () => {
     const req = {
       query: { cycleNumber: '0' },
-      user: { role: 'contractor', _id: 'employee-1' },
+      user: { role: 'staff', _id: 'employee-1' },
     };
     const res = buildRes();
     const next = jest.fn();

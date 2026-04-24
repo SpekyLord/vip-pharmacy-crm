@@ -62,7 +62,7 @@ describe('doctorController getAllDoctors access filter', () => {
 
   test('employee is restricted to own assigned doctors', async () => {
     const req = {
-      user: { _id: 'employee-1', role: 'contractor' },
+      user: { _id: 'employee-1', role: 'staff' },
       query: { limit: '0' },
     };
     const res = buildRes();

@@ -238,7 +238,7 @@ const CommLogsPage = () => {
   useEffect(() => {
     const fetchBdms = async () => {
       try {
-        const result = await userService.getAll({ role: 'contractor', limit: 100 });
+        const result = await userService.getAll({ role: 'staff', limit: 100 });
         setBdms(result.data || []);
       } catch {
         // Ignore

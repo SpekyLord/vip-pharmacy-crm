@@ -11,11 +11,13 @@ This file provides essential context for AI assistants working on this project. 
 ## Terminology Mapping (Business Terms vs Code)
 
 > **Important**: Documentation uses business terminology (BDM, VIP Client). The code was renamed but the business still uses the original terms.
+>
+> **Phase S2 (Apr 2026)**: the auth-tier role string for non-management users was renamed from `employee` / `contractor` to `staff`. Rationale: the VIP business is hiring actual W-2 employees who do BDM-style work (and get promoted to BDM if they perform), so `contractor` on a W-2 employee's profile was misleading. Employment nature (contractor vs. employee) now lives on `PeopleMaster.employment_type` (`REGULAR` / `PROBATIONARY` / `CONTRACTUAL` / `CONSULTANT` / `PARTNERSHIP`). `User.role` is purely the auth tier.
 
 | Business Term | Code Term | Key File |
 |---|---|---|
 | **VIP Client** | Doctor | `backend/models/Doctor.js` |
-| **BDM** (Business Development Manager) | employee (role) | `backend/models/User.js` role enum |
+| **BDM** (Business Development Manager) | staff (role) — was `employee` / `contractor` pre-Phase S2 | `backend/models/User.js` role enum |
 | VIP Client list | DoctorList | `frontend/src/components/employee/DoctorList.jsx` |
 | BDM Dashboard | EmployeeDashboard | `frontend/src/pages/employee/EmployeeDashboard.jsx` |
 | VIP Client service | doctorService | `frontend/src/services/doctorService.js` |
@@ -24,7 +26,7 @@ This file provides essential context for AI assistants working on this project. 
 | BDM Management | EmployeeManagement | `frontend/src/components/admin/EmployeeManagement.jsx` |
 | BDM Visit Report | EmployeeVisitReport | `frontend/src/components/admin/EmployeeVisitReport.jsx` |
 
-When writing code, use the **code terms** (Doctor, employee). When writing UI labels and documentation, use the **business terms** (VIP Client, BDM).
+When writing code, use the **code terms** (Doctor, `ROLES.STAFF`). When writing UI labels and documentation, use the **business terms** (VIP Client, BDM). The directory and file names (`frontend/src/components/employee/*`, `EmployeeManagement.jsx`) pre-date the rename and were left untouched — they reference the legacy role name but the runtime role string is now `staff`.
 
 ---
 

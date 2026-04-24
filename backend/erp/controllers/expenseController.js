@@ -97,19 +97,20 @@ const SMER_PROXY_OPTS = { subKey: 'smer_proxy', lookupCode: 'SMER' };
 // add startup cost when SMER is idle. Failures are logged but never block
 // the underlying write — receipts are notification, not a system of record.
 //
-// recipientRole is resolved from the TARGET user's actual role (contractor OR
-// legacy employee) because getInboxList filters on recipientRole=user.role —
-// hardcoding 'contractor' would hide the message from legacy employee-role BDMs.
+// recipientRole is resolved from the TARGET user's actual role (post-Phase S2
+// this is 'staff'; pre-migration docs used 'contractor' / 'employee'). The
+// filter in getInboxList uses recipientRole=user.role, so resolving dynamically
+// keeps receipts visible across the migration boundary.
 async function writeProxyReceipt({ entityId, recipientUserId, senderUser, category, title, body }) {
   if (!recipientUserId) return;
   try {
     const MessageInbox = require('../../models/MessageInbox');
     const User = require('../../models/User');
     const target = await User.findById(recipientUserId).select('role').lean();
-    // Fall back to 'contractor' only when the target cannot be loaded. That
-    // matches the modern default so a receipt still lands for new users even
-    // when the User lookup fails transiently.
-    const recipientRole = target?.role || 'contractor';
+    // Fall back to 'staff' (Phase S2 target) when the target cannot be loaded
+    // so a receipt still lands for new users even when the User lookup fails
+    // transiently.
+    const recipientRole = target?.role || 'staff';
     await MessageInbox.create({
       entity_id: entityId,
       recipientRole,

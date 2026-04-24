@@ -15,8 +15,8 @@ const buildRes = () => {
 };
 
 describe('role middleware', () => {
-  test('adminOnly denies employee role', () => {
-    const req = { user: { role: 'employee' } };
+  test('adminOnly denies staff role', () => {
+    const req = { user: { role: 'staff' } };
     const res = buildRes();
     const next = jest.fn();
 

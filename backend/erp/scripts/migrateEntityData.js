@@ -198,7 +198,7 @@ async function run() {
   if (fakeIds.length > 0) {
     const mgBdmUsers = await User.find({
       entity_id: mgEntity._id,
-      role: 'employee'
+      role: { $in: ['staff', 'employee', 'contractor'] }  // Phase S2 (Apr 2026): accept both old + new role names for idempotency
     }).select('_id').lean();
     const mgBdmIdSet = new Set(mgBdmUsers.map(u => u._id.toString()));
 
@@ -225,7 +225,7 @@ async function run() {
 
   // ─── Step 6: Migrate SalesLine ───
   if (fakeIds.length > 0) {
-    const mgBdmUsers = await User.find({ entity_id: mgEntity._id, role: 'employee' }).select('_id').lean();
+    const mgBdmUsers = await User.find({ entity_id: mgEntity._id, role: { $in: ['staff', 'employee', 'contractor'] } }).select('_id').lean();
     const mgBdmIdSet = new Set(mgBdmUsers.map(u => u._id.toString()));
 
     const fakeSales = await SalesLine.find({ entity_id: { $in: fakeIds } }).select('_id bdm_id').lean();
@@ -243,7 +243,7 @@ async function run() {
 
   // ─── Step 7: Migrate TransactionEvent ───
   if (fakeIds.length > 0) {
-    const mgBdmUsers = await User.find({ entity_id: mgEntity._id, role: 'employee' }).select('_id').lean();
+    const mgBdmUsers = await User.find({ entity_id: mgEntity._id, role: { $in: ['staff', 'employee', 'contractor'] } }).select('_id').lean();
     const mgBdmIdSet = new Set(mgBdmUsers.map(u => u._id.toString()));
 
     // TransactionEvent is immutable, use direct collection update
@@ -347,8 +347,8 @@ async function run() {
   const remainingEntities = await Entity.find().lean();
   console.log(`Entities: ${remainingEntities.map(e => `${e.entity_name} (${e._id})`).join(', ')}`);
 
-  const vipUsers = await User.countDocuments({ entity_id: vipEntity._id, role: 'employee' });
-  const mgUsers = await User.countDocuments({ entity_id: mgEntity._id, role: 'employee' });
+  const vipUsers = await User.countDocuments({ entity_id: vipEntity._id, role: { $in: ['staff', 'employee', 'contractor'] } });
+  const mgUsers = await User.countDocuments({ entity_id: mgEntity._id, role: { $in: ['staff', 'employee', 'contractor'] } });
   console.log(`VIP BDMs: ${vipUsers}, MG BDMs: ${mgUsers}`);
 
   const vipProducts = await ProductMaster.countDocuments({ entity_id: vipEntity._id });

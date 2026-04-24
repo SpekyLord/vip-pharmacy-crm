@@ -4,7 +4,7 @@
  * All routes require authentication via protect middleware (applied at router level in index.js)
  * Finance/Admin operations are role-gated via roleCheck.
  *
- * BDM deduction line endpoints gated to 'contractor' role only.
+ * BDM deduction line endpoints gated to 'staff' role only.
  * Finance deduction verification endpoints gated to admin/finance/president.
  */
 const express = require('express');
@@ -36,7 +36,7 @@ const router = express.Router();
 
 // ═══ Income Reports ═══
 router.get('/income/projection', getIncomeProjection);  // Read-only projection (BDMs see own, admin sees any)
-router.post('/income/request-generation', roleCheck('contractor'), requestIncomeGeneration);  // BDM self-service (repeatable)
+router.post('/income/request-generation', roleCheck('staff'), requestIncomeGeneration);  // BDM self-service (repeatable)
 router.post('/income/generate', roleCheck('admin', 'finance', 'president'), generateIncome);
 router.get('/income', getIncomeList);
 router.get('/income/:id/breakdown', getIncomeBreakdown);  // Transparent payslip — source data drill-down (must be before :id)
@@ -47,9 +47,9 @@ router.post('/income/:id/return', roleCheck('admin', 'finance', 'president'), re
 router.post('/income/:id/confirm', periodLockCheck('INCOME'), confirmIncome);  // BDM self-confirm
 router.post('/income/:id/credit', roleCheck('admin', 'finance', 'president'), periodLockCheck('INCOME'), creditIncome);
 
-// ═══ BDM Deduction Lines (contractor only — not employees) ═══
-router.post('/income/:id/deductions', roleCheck('contractor'), addDeductionLine);
-router.delete('/income/:id/deductions/:lineId', roleCheck('contractor'), removeDeductionLine);
+// ═══ BDM Deduction Lines (staff only — non-management workers) ═══
+router.post('/income/:id/deductions', roleCheck('staff'), addDeductionLine);
+router.delete('/income/:id/deductions/:lineId', roleCheck('staff'), removeDeductionLine);
 
 // ═══ Finance Deduction Verification ═══
 router.post('/income/:id/deductions/:lineId/verify', roleCheck('admin', 'finance', 'president'), verifyDeductionLine);

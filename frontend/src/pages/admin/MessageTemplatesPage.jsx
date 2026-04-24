@@ -119,7 +119,7 @@ const MessageTemplatesPage = () => {
 
   const loadBdms = async () => {
     try {
-      const result = await userService.getAll({ role: 'contractor', limit: 200 });
+      const result = await userService.getAll({ role: 'staff', limit: 200 });
       setBdms(result.data || []);
     } catch { /* ignore */ }
   };

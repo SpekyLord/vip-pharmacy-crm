@@ -106,7 +106,8 @@ const MODULES = [
   },
 ];
 
-const DEFAULT_VALID_OWNER_ROLES = ['contractor', 'employee'];
+// Phase S2 (Apr 2026): was ['contractor', 'employee'] — both renamed to 'staff'.
+const DEFAULT_VALID_OWNER_ROLES = ['staff'];
 
 async function getValidOwnerRoles(Lookup, entityId, moduleCode) {
   try {

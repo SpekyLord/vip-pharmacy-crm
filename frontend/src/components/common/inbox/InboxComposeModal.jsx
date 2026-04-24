@@ -54,7 +54,7 @@ const ROLE_OPTIONS = [
   { code: 'finance', label: 'Finance' },
   { code: 'president', label: 'Presidents' },
   { code: 'ceo', label: 'CEOs' },
-  { code: 'contractor', label: 'Contractors / BDMs' },
+  { code: 'staff', label: 'Staff / BDMs' },
 ];
 
 export default function InboxComposeModal({ open, onClose, onSent }) {

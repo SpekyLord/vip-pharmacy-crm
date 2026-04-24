@@ -327,7 +327,7 @@ export function LookupManagerContent() {
                   onChange={e => setForm({ ...form, metadata: e.target.value })}
                   rows={5}
                   style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--erp-border)', fontFamily: 'monospace', fontSize: 12, boxSizing: 'border-box', resize: 'vertical' }}
-                  placeholder='{ "roles": ["admin", "finance", "president", "contractor"] }'
+                  placeholder='{ "roles": ["admin", "finance", "president", "staff"] }'
                 />
               </div>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>

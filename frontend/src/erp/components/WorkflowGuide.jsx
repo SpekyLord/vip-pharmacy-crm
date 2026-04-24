@@ -893,10 +893,10 @@ const WORKFLOW_GUIDES = {
       'Use the Active / Archive tabs to switch between current and separated employees',
       'Use search and filters to find people by name, type, role, or status',
       'The table shows system role, login status, employment type, BDM code, stage, and territory at a glance',
-      'Use the Role filter to quickly find all admins, contractors, or people with no login',
+      'Use the Role filter to quickly find all admins, staff, or people with no login',
       'Click any row to view full person details and change role or access',
       'In the Archive tab, click "Reactivate" to restore a separated employee to active status',
-      'If a legacy role banner appears (e.g. medrep, employee), click "Migrate" to bulk-convert users to the current "contractor" role',
+      'If a legacy role banner appears (e.g. medrep, contractor, employee), click "Migrate" to bulk-convert users to the current "staff" role',
     ],
     next: [
       { label: 'Org Chart', path: '/erp/org-chart' },

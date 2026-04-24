@@ -149,7 +149,7 @@ async function setup() {
     name: `${PREFIX}_Juan Dela Cruz`,
     email: `${PREFIX}_juan@smoke.test`,
     password: 'SmokeTest123!@#',
-    role: 'employee',
+    role: 'staff',
     isActive: true,
   });
 

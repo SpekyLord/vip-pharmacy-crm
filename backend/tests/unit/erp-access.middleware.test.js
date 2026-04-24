@@ -19,7 +19,7 @@ describe('erpAccessCheck middleware', () => {
     const middleware = erpAccessCheck('sales', 'FULL');
     const req = {
       user: {
-        role: 'employee',
+        role: 'staff',
         erp_access: {
           enabled: true,
           modules: { sales: 'VIEW' },
@@ -39,7 +39,7 @@ describe('erpAccessCheck middleware', () => {
     const middleware = erpAccessCheck('sales', 'FULL');
     const req = {
       user: {
-        role: 'employee',
+        role: 'staff',
         erp_access: {
           enabled: true,
           modules: { sales: 'FULL' },
