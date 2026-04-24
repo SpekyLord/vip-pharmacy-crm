@@ -42,7 +42,7 @@ function currentPeriod() {
 // SG-Q2 W1 — Auto-enrollment of active BDMs on plan activation.
 // Reads SALES_GOAL_ELIGIBLE_ROLES (lookup-driven, subscription-ready) to decide
 // which person_types enroll automatically. Zero code change when subscribers
-// add new sales-facing roles (SALES_REP, SALES_MANAGER, etc.) via Control Center.
+// add new sales-facing roles (SALES_MANAGER, TERRITORY_MANAGER, etc.) via Control Center.
 //
 // Idempotent — skips persons who already have a BDM target under this plan.
 // Caller is responsible for transaction session management; pass `session` so

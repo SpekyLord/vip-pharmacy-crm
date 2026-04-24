@@ -1144,9 +1144,9 @@ const SEED_DEFAULTS = {
   // On plan activation, the system enumerates PeopleMaster where `person_type ∈ codes`
   // AND `is_active = true` AND `entity_id = plan.entity_id`, then upserts BDM targets
   // using GOAL_CONFIG.DEFAULT_TARGET_REVENUE / DEFAULT_COLLECTION_TARGET_PCT.
-  // Default (seeded): only BDM. Subscribers add ECOMMERCE_BDM, SALES_REP,
-  // Sales Manager, Territory Manager, etc. via Control Center → Lookup Tables —
-  // zero code change required. Codes MUST exactly match PERSON_TYPE lookup codes.
+  // Default (seeded): only BDM. Subscribers add ECOMMERCE_BDM, SALES_MANAGER,
+  // TERRITORY_MANAGER, etc. via Control Center → Lookup Tables — zero code change
+  // required. Codes MUST exactly match PERSON_TYPE lookup codes.
   SALES_GOAL_ELIGIBLE_ROLES: [
     { code: 'BDM', label: 'BDM (Business Development Manager)', metadata: { description: 'Primary field sales role. Seeded as default enrollment target.' } },
   ],
