@@ -7667,3 +7667,48 @@ docs/PHASETASK-ERP.md
 - Plain BDMs keep `expenses` module access by default. Business decision whether to revoke entirely — recommendation: leave on so field BDMs can still read their own SMER in emergencies and edit when the eBDM is unavailable.
 - The proxy write mode's cycle-level `bdm_phone_instruction` input is a single text field (not a textarea) to reinforce "short tag, not narrative." If subscribers request longer free-form reasoning, consider surfacing a separate optional long-form note.
 
+---
+
+## Phase G4.5g — UT Approval Row UX + Waybill Defense-in-Depth (April 24, 2026) ✅ SHIPPED
+
+### Context — the incident
+President approved the wrong Undertaking from the Approval Hub. The UT that got acknowledged was bound to a different BDM than the one the president intended, so `InventoryLedger` posted stock under the wrong `bdm_id`. Symptom surfaced as a BDM complaint: "My Stocks is not updating." The stock was updating — just for someone else.
+
+Root cause was a UI gap, not a logic bug:
+- Every UNDERTAKING row in the Hub rendered the same way (module badge + doc_ref + description + submitted_by + amount). Nothing in the row told the approver which BDM the UT belonged to or which physical waybill it was paired with.
+- The waybill photo was visible only after clicking **Details** to open the `DocumentDetailPanel`. Approve-from-list was one click with no visual cross-check.
+- The linked GRN is immutable after create (no `updateGrn` endpoint), so the waybill cannot drift between UT submit and UT acknowledge — but a corrupted/missing `waybill_photo_url` on the GRN would still post stock silently because `approveGrnCore` didn't re-check.
+
+### Scope
+- **Frontend (1 file)** — add a UNDERTAKING-only summary strip to every Hub row showing BDM owner name, linked GRN number, vendor, and a clickable waybill thumbnail. Missing waybill renders as a red ⚠ box with an inline warning "approval will be blocked."
+- **Backend (1 file)** — `approveGrnCore` refuses to post when `GRN_SETTINGS.WAYBILL_REQUIRED=1` and `grn.waybill_photo_url` is falsy. Defense-in-depth: the create-time gate at `createGrn` line 485 is still the primary enforcement; this second check covers the edge where the waybill URL was corrupted, the S3 object was deleted, or a subscriber flipped the setting from 0 → 1 mid-cycle.
+- **No model changes, no lookup changes, no migration.** `Undertaking.linked_grn_id` → `GrnEntry.waybill_photo_url` is already populated by `documentDetailHydrator.UNDERTAKING` (Phase 32 wiring).
+
+### Integrity highlights
+- **Row-level cross-check is the primary fix.** The approver now sees BDM name + GRN number + waybill thumbnail before clicking Approve. Clicking the thumbnail opens full-screen preview via the existing `setPreviewImage` handler (no new component).
+- **Backend guard fires on BOTH paths.** Direct `POST /inventory/grn/:id/approve` and the UT→GRN cascade inside `postSingleUndertaking` both flow through `approveGrnCore`, so one insertion covers both.
+- **Lookup-driven subscription-ready.** Guard respects `GRN_SETTINGS.WAYBILL_REQUIRED` per entity (default 1). Non-pharmacy subscribers that don't use waybills flip to 0; guard auto-disables.
+- **No Phase 32R design changes.** Waybill stays as a GRN field (not duplicated on UT). UT still displays waybill via populated `linked_grn_id`. Acknowledge cascade still uses one session.
+- **Zero impact on historic data.** Guard is additive at approval time; already-posted GRNs are untouched. Reversal path unchanged.
+
+### Files touched (2)
+```
+frontend/src/erp/pages/ApprovalManager.jsx
+backend/erp/controllers/inventoryController.js
+```
+
+### Verification
+- `node -c` on `inventoryController.js`: clean.
+- `npx vite build`: clean in 10.26s.
+- Manual: open Approval Hub with a pending UNDERTAKING → row shows BDM + GRN + waybill thumbnail; click thumbnail opens preview; approve with waybill-missing GRN returns HTTP 400 with "Cannot approve GRN without waybill photo."
+
+### Post-ship operational steps
+1. Commit only these 2 files — do NOT `git add .` (session tree still has intermingled G4.5f + CLM + non-pharmacy WIP).
+2. Reverse the mis-approved UT from today's incident via `POST /api/erp/undertaking/:id/president-reverse` — cascades GRN storno + `InventoryLedger` reversal for the wrong BDM. Re-capture as a fresh GRN with the correct `bdm_id`.
+3. Audit `InventoryLedger` for any other ledger rows posted by the same mis-approved UT in the last 24h — grep by `event_id` from the reversed `TransactionEvent`.
+
+### Follow-ups (not in this phase)
+- Consider adding `d.linked_grn_id.waybill_photo_url` display to the GRN approval row too (direct `approveGrn` endpoint case), not just UT. Low priority — Phase 32R design routes most approvals through UT, and direct GRN approve is admin-only.
+- If subscribers report the row strip is too busy, collapse the thumbnail into a hover-peek. Not needed for VIP (Approval Hub usage is concentrated president-only).
+- If future Phase adds per-row approver override for "approve without waybill" (e.g., emergency bypass), plumb it through `GRN_SETTINGS.WAYBILL_OVERRIDE_ROLES` lookup and require a justification note stored on `grn.waybill_override_reason`. Not in scope today — the current gate is correct per policy.
+
