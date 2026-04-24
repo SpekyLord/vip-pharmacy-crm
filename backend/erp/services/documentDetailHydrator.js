@@ -113,12 +113,15 @@ const POPULATED_LOADERS = {
   },
 
   GRN: async (id, filter) => {
+    // Phase 32R lifecycle is DRAFT → PENDING → APPROVED (no POSTED state);
+    // `reviewed_by` is the only actor field on GrnEntry. The legacy
+    // `.populate('posted_by', 'name')` call threw strictPopulate under Mongoose 7+
+    // and broke the Reversal Console detail panel for every approved GRN.
     return GrnEntry.findOne({ _id: id, ...filter })
       .populate('warehouse_id', 'warehouse_name warehouse_code')
       .populate('vendor_id', 'vendor_name')
       .populate('bdm_id', 'name email')
       .populate('reviewed_by', 'name')
-      .populate('posted_by', 'name')
       .lean();
   },
 

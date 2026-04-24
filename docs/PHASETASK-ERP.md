@@ -7691,11 +7691,18 @@ Root cause was a UI gap, not a logic bug:
 - **No Phase 32R design changes.** Waybill stays as a GRN field (not duplicated on UT). UT still displays waybill via populated `linked_grn_id`. Acknowledge cascade still uses one session.
 - **Zero impact on historic data.** Guard is additive at approval time; already-posted GRNs are untouched. Reversal path unchanged.
 
-### Files touched (2)
+### Files touched (3)
 ```
 frontend/src/erp/pages/ApprovalManager.jsx
 backend/erp/controllers/inventoryController.js
+backend/erp/services/documentDetailHydrator.js
 ```
+
+### Tag-along fix — GRN hydrator strictPopulate bomb
+While walking the Reversal Console for the mis-approved GRN, the detail panel threw:
+> `Cannot populate path 'posted_by' because it is not in your schema.`
+
+`documentDetailHydrator.GRN` was calling `.populate('posted_by', 'name')` on `GrnEntry`, but Phase 32R stops GRN at APPROVED (no POSTED state) and the only actor field on the schema is `reviewed_by`. Mongoose 7+ strictPopulate throws rather than silently no-op'ing. Latent since Phase 32R ship. Cross-checked the other 11 hydrators that call `posted_by` — all 11 target models (SalesLine / Collection / ExpenseEntry / PrfCalf / SmerEntry / CarLogbookEntry / JournalEntry / CreditNote / IcSettlement / PettyCashTransaction / InterCompanyTransfer) do carry the field, so no sweep needed; GRN was the lone outlier.
 
 ### Verification
 - `node -c` on `inventoryController.js`: clean.
