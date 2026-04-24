@@ -64,7 +64,7 @@ const LOOKUP_CATEGORIES = [
   'PERSON_TYPE', 'EMPLOYMENT_TYPE', 'VEHICLE_TYPE', 'BDM_STAGE', 'ROLE_MAPPING', 'SYSTEM_ROLE',
   'CIVIL_STATUS', 'PERSON_STATUS', 'SALARY_TYPE', 'TAX_STATUS', 'INCENTIVE_TYPE',
   'INSURANCE_TYPE', 'INSURANCE_FREQUENCY', 'INSURANCE_STATUS',
-  'POSITION', 'DEPARTMENT',
+  'POSITION', 'DEPARTMENT', 'PROFESSIONAL_FEE_FREQUENCY',
 ];
 
 const fmt = (n) => n != null ? `₱${Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2 })}` : '—';
@@ -121,6 +121,7 @@ export default function PersonDetail() {
   const INS_STATUS = codes('INSURANCE_STATUS');
   const POSITIONS = codes('POSITION');
   const DEPARTMENTS = codes('DEPARTMENT');
+  const PROF_FEE_FREQUENCIES = codes('PROFESSIONAL_FEE_FREQUENCY');
 
   const canEdit = ROLE_SETS.MANAGEMENT.includes(user?.role);
   // Phase 3c — danger-baseline gates for destructive people/login operations.
@@ -195,6 +196,8 @@ export default function PersonDetail() {
           perdiem_engagement_threshold_half: c.perdiem_engagement_threshold_half ?? 3,
           vehicle_type: c.vehicle_type || 'NONE', tax_status: c.tax_status || 'S',
           profit_share_eligible: !!c.profit_share_eligible, commission_rate: c.commission_rate || 0,
+          consultation_fee_amount: c.consultation_fee_amount || 0,
+          consultation_fee_frequency: c.consultation_fee_frequency || 'MONTHLY',
           reason: '',
         });
       }
@@ -576,6 +579,19 @@ export default function PersonDetail() {
                   <F lbl="Tax Status" name="tax_status" val={comp?.tax_status} editing={editComp} form={compForm} onChange={handleCompChange} options={TAX_STATUSES} />
                   <F lbl="Monthly Gross" val={fmt(comp?.monthly_gross)} editing={false} form={{}} onChange={() => {}} />
                 </div>
+                {(editComp ? compForm.salary_type : comp?.salary_type) === 'PROFESSIONAL_FEE' && (
+                  <>
+                    <hr className="pd-sep" />
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--erp-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.04em' }}>Consultation / Professional Fee</div>
+                    <div className="pd-grid">
+                      <F lbl="Fee Amount" name="consultation_fee_amount" type="number" val={fmt(comp?.consultation_fee_amount)} editing={editComp} form={compForm} onChange={handleCompChange} />
+                      <F lbl="Fee Frequency" name="consultation_fee_frequency" val={comp?.consultation_fee_frequency?.replace(/_/g, ' ')} editing={editComp} form={compForm} onChange={handleCompChange} options={PROF_FEE_FREQUENCIES} />
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--erp-muted)', marginTop: 6 }}>
+                      No statutory deductions (SSS / PhilHealth / Pag-IBIG / WT on comp). EWT or other deductions can be added per-line by Finance. On cycle mismatch: MONTHLY fee on SEMI_MONTHLY run splits 50/50; SEMI_MONTHLY fee on MONTHLY run sums both halves; ONE_TIME pays once then skips future runs.
+                    </div>
+                  </>
+                )}
                 <hr className="pd-sep" />
                 <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--erp-muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.04em' }}>Salary & Allowances</div>
                 <div className="pd-grid3">

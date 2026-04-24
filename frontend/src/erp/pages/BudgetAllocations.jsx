@@ -348,7 +348,7 @@ export default function BudgetAllocations() {
                       <option value="">Select...</option>
                       {people
                         .filter(p => form.target_type === 'BDM'
-                          ? ['BDM', 'ECOMMERCE_BDM', 'SALES_REP'].includes(p.person_type)
+                          ? ['BDM', 'ECOMMERCE_BDM'].includes(p.person_type)
                           : true)
                         .map(p => (
                           <option key={p._id} value={p._id}>{p.full_name} ({p.person_type})</option>

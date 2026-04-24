@@ -325,7 +325,14 @@ const LogoCard = ({ kind, label, helper, currentUrl, isDefault, onSelect }) => {
         {isDefault && <span className="clm-br-badge-default">Using default</span>}
       </div>
       <div className="clm-br-logo-preview">
-        <img src={currentUrl} alt={label} onError={(e) => { e.target.style.display = 'none'; }} />
+        <img
+          src={currentUrl}
+          alt={label}
+          onError={(e) => {
+            const defaultUrl = kind === 'logoTrademark' ? CLM_DEFAULTS.logoTrademarkUrl : CLM_DEFAULTS.logoCircleUrl;
+            if (!e.target.src.endsWith(defaultUrl)) e.target.src = defaultUrl;
+          }}
+        />
       </div>
       <p className="clm-br-helper">{helper}</p>
       <input

@@ -261,6 +261,26 @@ const signCommPhotos = async (log) => {
   return logObj;
 };
 
+/**
+ * Sign CLM branding logo URLs. Bucket is private — stored public-format URLs
+ * 403 when the browser fetches them anonymously. Mirrors signVisitPhotos.
+ * @param {Object} branding - Entity.clmBranding plain object
+ * @returns {Promise<Object>} branding with logoCircleUrl + logoTrademarkUrl signed
+ */
+const signClmBranding = async (branding) => {
+  if (!branding) return branding;
+  const out = { ...branding };
+  if (out.logoCircleUrl) {
+    const key = extractKeyFromUrl(out.logoCircleUrl);
+    out.logoCircleUrl = await getSignedDownloadUrl(key, 3600);
+  }
+  if (out.logoTrademarkUrl) {
+    const key = extractKeyFromUrl(out.logoTrademarkUrl);
+    out.logoTrademarkUrl = await getSignedDownloadUrl(key, 3600);
+  }
+  return out;
+};
+
 module.exports = {
   s3Client,
   bucketName,
@@ -278,4 +298,5 @@ module.exports = {
   isConfigured,
   signVisitPhotos,
   signCommPhotos,
+  signClmBranding,
 };

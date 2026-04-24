@@ -27,7 +27,15 @@ import {
   Package,
   Shield,
 } from 'lucide-react';
-import { resolveClmConfig } from '../../config/clmDefaults';
+import { resolveClmConfig, CLM_DEFAULTS } from '../../config/clmDefaults';
+
+// Swap img src to the hardcoded default on load failure. Protects the deck if
+// a signed S3 URL expires mid-session or the upload path ever drifts again.
+const fallbackLogo = (e, defaultUrl) => {
+  if (e.target.src !== window.location.origin + defaultUrl && !e.target.src.endsWith(defaultUrl)) {
+    e.target.src = defaultUrl;
+  }
+};
 
 // Product-slide fallback images bundled in public/clm/ for offline availability.
 // Logo paths come from config (per-entity branding or CLM_DEFAULTS fallback).
@@ -115,7 +123,7 @@ const CLMPresenter = ({ session, doctor, products = [], branding, previewMode = 
       <style>{presenterStyles}</style>
       <div className="clm-topbar">
         <div className="clm-topbar-left">
-          <img src={config.logoTrademarkUrl} alt={config.companyName} className="clm-topbar-logo" />
+          <img src={config.logoTrademarkUrl} alt={config.companyName} className="clm-topbar-logo" onError={(e) => fallbackLogo(e, CLM_DEFAULTS.logoTrademarkUrl)} />
           <span className="clm-slide-counter">{currentSlide + 1} / {totalSlides}</span>
           <span className="clm-doctor-name">{doctorName}</span>
         </div>
@@ -146,7 +154,7 @@ const SlideContent = ({ slide, doctorName, products, config }) => {
     case 'hero':
       return (
         <div className="clm-slide slide-hero">
-          <img src={config.logoCircleUrl} alt={config.companyName} className="hero-logo" />
+          <img src={config.logoCircleUrl} alt={config.companyName} className="hero-logo" onError={(e) => fallbackLogo(e, CLM_DEFAULTS.logoCircleUrl)} />
           <div className="hero-badge">{s.hero.badge}</div>
           <h1 className="hero-title">{config.companyName} <span className="text-gold">{s.hero.titleAccent}</span></h1>
           <p className="hero-subtitle">{s.hero.subtitle}</p>
@@ -242,7 +250,7 @@ const SlideContent = ({ slide, doctorName, products, config }) => {
     case 'connect':
       return (
         <div className="clm-slide slide-connect">
-          <img src={config.logoCircleUrl} alt={config.companyName} className="connect-logo" />
+          <img src={config.logoCircleUrl} alt={config.companyName} className="connect-logo" onError={(e) => fallbackLogo(e, CLM_DEFAULTS.logoCircleUrl)} />
           <h2>{s.connect.title}</h2>
           <p className="connect-subtitle">{s.connect.subtitle}</p>
           <div className="connect-cta">

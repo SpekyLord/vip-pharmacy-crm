@@ -39,7 +39,6 @@ const TYPE_COLORS = {
   BDM: { bg: '#dbeafe', text: '#1e40af' },
   ECOMMERCE_BDM: { bg: '#e0e7ff', text: '#3730a3' },
   EMPLOYEE: { bg: '#dcfce7', text: '#166534' },
-  SALES_REP: { bg: '#fef3c7', text: '#92400e' },
   CONSULTANT: { bg: '#f3e8ff', text: '#6b21a8' },
   DIRECTOR: { bg: '#fce7f3', text: '#9d174d' },
 };

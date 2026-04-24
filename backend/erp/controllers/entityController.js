@@ -2,7 +2,7 @@ const Entity = require('../models/Entity');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { invalidateEntityCodeCache } = require('../services/docNumbering');
 const { compressImage } = require('../../middleware/upload');
-const { uploadClmBranding } = require('../../config/s3');
+const { uploadClmBranding, signClmBranding } = require('../../config/s3');
 
 /**
  * Entity CRUD Controller — Phase 24
@@ -64,7 +64,8 @@ exports.update = catchAsync(async (req, res) => {
 exports.getClmBranding = catchAsync(async (req, res) => {
   const entity = await Entity.findById(req.params.id).select('clmBranding').lean();
   if (!entity) return res.status(404).json({ success: false, message: 'Entity not found' });
-  res.json({ success: true, data: entity.clmBranding || {} });
+  const signed = await signClmBranding(entity.clmBranding || {});
+  res.json({ success: true, data: signed });
 });
 
 exports.updateClmBranding = catchAsync(async (req, res) => {
@@ -111,5 +112,6 @@ exports.updateClmBranding = catchAsync(async (req, res) => {
   }
 
   await entity.save();
-  res.json({ success: true, data: entity.clmBranding });
+  const signed = await signClmBranding(entity.clmBranding?.toObject ? entity.clmBranding.toObject() : entity.clmBranding);
+  res.json({ success: true, data: signed });
 });

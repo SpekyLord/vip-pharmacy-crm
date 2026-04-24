@@ -18,7 +18,7 @@ async function getCycleStatus(entityId, period) {
   const people = await PeopleMaster.find({
     entity_id: eId,
     is_active: true,
-    person_type: { $in: ['BDM', 'ECOMMERCE_BDM', 'EMPLOYEE', 'SALES_REP'] }
+    person_type: { $in: ['BDM', 'ECOMMERCE_BDM', 'EMPLOYEE'] }
   }).select('_id user_id full_name person_type').lean();
 
   // Get payslips for period

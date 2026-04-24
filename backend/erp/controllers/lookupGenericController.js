@@ -86,7 +86,7 @@ const SEED_DEFAULTS = {
     { code: 'IT_SOFTWARE', label: 'IT/Software', metadata: { coa_code: '6820' } },
     { code: 'MISCELLANEOUS', label: 'Miscellaneous', metadata: { coa_code: '6900' } },
   ],
-  PERSON_TYPE: ['BDM', 'ECOMMERCE_BDM', 'EMPLOYEE', 'SALES_REP', 'CONSULTANT', 'DIRECTOR'],
+  PERSON_TYPE: ['BDM', 'ECOMMERCE_BDM', 'EMPLOYEE', 'CONSULTANT', 'DIRECTOR'],
   EMPLOYMENT_TYPE: ['REGULAR', 'PROBATIONARY', 'CONTRACTUAL', 'CONSULTANT', 'PARTNERSHIP'],
   CARD_TYPE: ['CREDIT_CARD', 'FLEET_CARD', 'DEBIT_CARD'],
   CARD_BRAND: ['VISA', 'MASTERCARD', 'JCB', 'AMEX', 'FLEET'],
@@ -101,7 +101,7 @@ const SEED_DEFAULTS = {
   STOCK_TYPE: ['PHARMA', 'FNB', 'OFFICE'],
   FNB_CATEGORY: ['FOOD', 'BEVERAGE', 'DESSERT', 'SNACK', 'INGREDIENT', 'PACKAGING', 'OTHER'],
   DEPARTMENT: ['SALES', 'ADMIN', 'FINANCE', 'OPERATIONS', 'LOGISTICS', 'MARKETING', 'EXECUTIVE'],
-  POSITION: ['BDM', 'eBDM', 'Sales Manager', 'Admin Staff', 'Finance Staff', 'President', 'Operations Head'],
+  POSITION: ['BDM', 'eBDM', 'Sales Rep', 'Sales Manager', 'Admin Staff', 'Finance Staff', 'President', 'Operations Head'],
   // Phase 24B — new categories
   ENGAGEMENT_TYPE: [
     { code: 'TXT_PROMATS', label: 'TXT/PROMATS' },
@@ -444,7 +444,17 @@ const SEED_DEFAULTS = {
   // Phase 30 — PersonDetail dropdowns (migrated from hardcoded arrays)
   CIVIL_STATUS: ['SINGLE', 'MARRIED', 'WIDOWED', 'SEPARATED'],
   PERSON_STATUS: ['ACTIVE', 'ON_LEAVE', 'SUSPENDED', 'SEPARATED'],
-  SALARY_TYPE: ['FIXED_SALARY', 'COMMISSION_BASED', 'HYBRID'],
+  SALARY_TYPE: [
+    { code: 'FIXED_SALARY', label: 'Fixed Salary' },
+    { code: 'COMMISSION_BASED', label: 'Commission Based' },
+    { code: 'HYBRID', label: 'Hybrid (Fixed + Commission)' },
+    { code: 'PROFESSIONAL_FEE', label: 'Consultation / Professional Fee', metadata: { description: 'Flat fee with no statutory deductions; pair with consultation_fee_amount + consultation_fee_frequency on CompProfile.' } },
+  ],
+  PROFESSIONAL_FEE_FREQUENCY: [
+    { code: 'ONE_TIME', label: 'One-Time', metadata: { description: 'Pays full fee_amount once; subsequent payroll runs skip this person.' } },
+    { code: 'MONTHLY', label: 'Monthly', metadata: { description: 'fee_amount per month. On SEMI_MONTHLY payroll cycle, split 50/50 across both slips.' } },
+    { code: 'SEMI_MONTHLY', label: 'Semi-Monthly', metadata: { description: 'fee_amount per half-month. On MONTHLY payroll cycle, sums both halves into one slip.' } },
+  ],
   TAX_STATUS: ['S', 'S1', 'S2', 'ME', 'ME1', 'ME2', 'ME3', 'ME4'],
   INCENTIVE_TYPE: ['CASH', 'IN_KIND', 'COMMISSION', 'NONE'],
   INSURANCE_TYPE: ['LIFE', 'KEYMAN', 'INCOME_LOSS', 'ACCIDENT', 'VEHICLE_COMPREHENSIVE', 'VEHICLE_CTPL'],
@@ -461,7 +471,6 @@ const SEED_DEFAULTS = {
   ROLE_MAPPING: [
     { code: 'BDM', label: 'BDM → Staff', metadata: { person_type: 'BDM', system_role: ROLES.STAFF } },
     { code: 'ECOMMERCE_BDM', label: 'eBDM → Staff', metadata: { person_type: 'ECOMMERCE_BDM', system_role: ROLES.STAFF } },
-    { code: 'SALES_REP', label: 'Sales Rep → Staff', metadata: { person_type: 'SALES_REP', system_role: ROLES.STAFF } },
     { code: 'CONSULTANT', label: 'Consultant → Staff', metadata: { person_type: 'CONSULTANT', system_role: ROLES.STAFF } },
     { code: 'EMPLOYEE', label: 'Employee → Staff', metadata: { person_type: 'EMPLOYEE', system_role: ROLES.STAFF } },
     { code: 'DIRECTOR', label: 'Director → President', metadata: { person_type: 'DIRECTOR', system_role: ROLES.PRESIDENT } },

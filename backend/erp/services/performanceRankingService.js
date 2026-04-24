@@ -89,7 +89,7 @@ async function getNetCashRanking(entityId, period) {
     aggregateByBdm(SalesLine, entityId, 'csi_date', 'invoice_total', start, end),
     aggregateByBdm(Collection, entityId, 'cr_date', 'cr_amount', start, end),
     aggregateExpenses(entityId, start),
-    PeopleMaster.find({ entity_id: eId, is_active: true, person_type: { $in: ['BDM', 'ECOMMERCE_BDM', 'SALES_REP'] } })
+    PeopleMaster.find({ entity_id: eId, is_active: true, person_type: { $in: ['BDM', 'ECOMMERCE_BDM'] } })
       .select('user_id full_name person_type position').lean()
   ]);
 
