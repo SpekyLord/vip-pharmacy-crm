@@ -60,6 +60,19 @@ const TARGET_ROLE = 'staff';
 // role-bearing row regardless of origin. Skipping one here silently no-ops
 // Phase 2 against that environment — the exact bug this comment prevents.
 const LOOKUP_COLLECTION_NAMES = ['lookups', 'erp_lookups'];
+// Phase S2 incident gap (Apr 24 2026): array-only scan missed ROLE_MAPPING rows
+// that carry the role on a SCALAR field (`metadata.system_role: 'contractor'`).
+// PersonDetail's role-mismatch warning (`⚠ Expected "contractor" for ECOMMERCE_BDM`)
+// reads `metadata.system_role` directly. Add every scalar role-bearing field that
+// appears in current SEED_DEFAULTS or any historical seed. Adding a new variant
+// later? Append it here — the audit/backup/apply/verify loops all iterate this list.
+const SCALAR_ROLE_FIELDS = [
+  'metadata.role',
+  'metadata.system_role',
+  'metadata.target_role',
+  'metadata.default_role',
+  'metadata.expected_role',
+];
 
 async function migrate() {
   await connectDB();
@@ -68,7 +81,8 @@ async function migrate() {
 
   console.log(`\nMode: ${APPLY ? 'APPLY (writes will be made)' : 'DRY-RUN (read-only)'}`);
   console.log(`Phase 1 — users.role: ${LEGACY_USER_ROLES.map(r => `'${r}'`).join(' + ')} → '${TARGET_ROLE}'`);
-  console.log(`Phase 2 — lookups.metadata.roles[]: ${LEGACY_LOOKUP_ROLES.map(r => `'${r}'`).join(' + ')} → '${TARGET_ROLE}'\n`);
+  console.log(`Phase 2 — lookups.metadata role fields (arrays + scalars): ${LEGACY_LOOKUP_ROLES.map(r => `'${r}'`).join(' + ')} → '${TARGET_ROLE}'`);
+  console.log(`  Scanned scalar fields: ${SCALAR_ROLE_FIELDS.join(', ')}\n`);
 
   // ══════════════════════════════════════════════════════════════════════
   // PHASE 1 AUDIT — users collection
@@ -134,31 +148,30 @@ async function migrate() {
   console.log('\n═══ Phase 2: lookup collections ═══');
 
   // Scan for ANY lookup row whose metadata contains a legacy role string in
-  // an array-valued field (metadata.roles, metadata.allowed_roles, etc.).
+  // either an array-valued field (metadata.roles, metadata.allowed_roles)
+  // OR a scalar role field (metadata.system_role, metadata.role, etc.).
   // Works for the known categories (PROXY_ENTRY_ROLES, VALID_OWNER_ROLES,
-  // MODULE_DEFAULT_ROLES, AGENT_CONFIG, COPILOT_TOOLS, AI_COWORK_FEATURES)
-  // and any future role-bearing lookup category added later — no hardcoded
-  // category list needed.
+  // MODULE_DEFAULT_ROLES, AGENT_CONFIG, COPILOT_TOOLS, AI_COWORK_FEATURES,
+  // ROLE_MAPPING) and any future role-bearing lookup category added later —
+  // no hardcoded category list needed. Scalar field list lives in
+  // SCALAR_ROLE_FIELDS at top of file; add new variants there.
+  const lookupMatchClauses = [
+    { 'metadata.roles': { $elemMatch: { $in: LEGACY_LOOKUP_ROLES } } },
+    { 'metadata.allowed_roles': { $elemMatch: { $in: LEGACY_LOOKUP_ROLES } } },
+    ...SCALAR_ROLE_FIELDS.map((field) => ({ [field]: { $in: LEGACY_LOOKUP_ROLES } })),
+  ];
   const lookupMatches = [];
   const matchesByCollection = {};
   for (const colName of LOOKUP_COLLECTION_NAMES) {
     const col = db.collection(colName);
     const rows = await col.aggregate([
-      {
-        $match: {
-          $or: [
-            { 'metadata.roles': { $elemMatch: { $in: LEGACY_LOOKUP_ROLES } } },
-            { 'metadata.allowed_roles': { $elemMatch: { $in: LEGACY_LOOKUP_ROLES } } },
-          ],
-        },
-      },
+      { $match: { $or: lookupMatchClauses } },
       {
         $project: {
           category: 1,
           code: 1,
           entity_id: 1,
-          roles: '$metadata.roles',
-          allowed_roles: '$metadata.allowed_roles',
+          metadata: 1,
         },
       },
       { $sort: { category: 1, code: 1 } },
@@ -183,13 +196,22 @@ async function migrate() {
     for (const [cat, count] of Object.entries(byCategory)) {
       console.log(`  ${cat}: ${count}`);
     }
-    // Sample up to 8 rows, show the actual role arrays so admin can spot anomalies
+    // Sample up to 8 rows. Show whichever role-bearing fields are populated
+    // (arrays or scalars) so admin can spot anomalies before --apply.
     console.log('\n─── Sample (first 8) ───');
     for (const row of lookupMatches.slice(0, 8)) {
       const ent = row.entity_id ? row.entity_id.toString().slice(-6) : '(no entity)';
-      const rolesStr = row.roles ? `roles=${JSON.stringify(row.roles)}` : '';
-      const allowedStr = row.allowed_roles ? `allowed_roles=${JSON.stringify(row.allowed_roles)}` : '';
-      console.log(`  [${row._collection}] [${row.category}] ${row.code}  ent=${ent}  ${rolesStr}${allowedStr}`);
+      const md = row.metadata || {};
+      const bits = [];
+      if (Array.isArray(md.roles)) bits.push(`roles=${JSON.stringify(md.roles)}`);
+      if (Array.isArray(md.allowed_roles)) bits.push(`allowed_roles=${JSON.stringify(md.allowed_roles)}`);
+      for (const fieldPath of SCALAR_ROLE_FIELDS) {
+        const v = readDottedPath(row, fieldPath);
+        if (typeof v === 'string' && LEGACY_LOOKUP_ROLES.includes(v)) {
+          bits.push(`${fieldPath}='${v}'`);
+        }
+      }
+      console.log(`  [${row._collection}] [${row.category}] ${row.code}  ent=${ent}  ${bits.join(' ')}`);
     }
   }
 
@@ -235,21 +257,17 @@ async function migrate() {
   const contractor_ids = toMigrateUsers.filter(u => u.role === 'contractor').map(u => u._id);
 
   // Phase 2 backup data — snapshot each matching lookup row's current metadata
-  // so we can restore the exact original arrays on revert. Pulls from every
-  // collection in LOOKUP_COLLECTION_NAMES and stamps `_collection` on each
-  // row so the apply loop (and any manual revert) knows which collection the
-  // row belongs to.
+  // so we can restore the exact original arrays/scalars on revert. Pulls from
+  // every collection in LOOKUP_COLLECTION_NAMES and stamps `_collection` on
+  // each row so the apply loop (and any manual revert) knows which collection
+  // the row belongs to. Same union-of-clauses as the audit query so backup
+  // coverage matches scan coverage exactly.
   const toMigrateLookups = [];
   for (const colName of LOOKUP_COLLECTION_NAMES) {
     const col = db.collection(colName);
     const rows = await col
       .find(
-        {
-          $or: [
-            { 'metadata.roles': { $elemMatch: { $in: LEGACY_LOOKUP_ROLES } } },
-            { 'metadata.allowed_roles': { $elemMatch: { $in: LEGACY_LOOKUP_ROLES } } },
-          ],
-        },
+        { $or: lookupMatchClauses },
         { projection: { category: 1, code: 1, entity_id: 1, metadata: 1 } }
       )
       .toArray();
@@ -293,12 +311,14 @@ async function migrate() {
     console.log(`  Phase 1: no-op (no legacy User.role values)`);
   }
 
-  // 3) Phase 2 — normalize Lookup.metadata.roles arrays.
+  // 3) Phase 2 — normalize Lookup.metadata.{roles[],allowed_roles[]} arrays
+  //    AND scalar role fields (metadata.system_role, metadata.role, etc.).
   //    Per-row update required because $set on an array element needs the
   //    new full array, not a conditional $ operator (which doesn't exist
   //    for "replace matching elements"). Fastest: recompute the array in
-  //    node, then $set the whole array back. Writes land in the same
-  //    collection the row was read from (tracked on row._collection).
+  //    node, then $set the whole array back. Scalars are a simple swap.
+  //    Writes land in the same collection the row was read from (tracked
+  //    on row._collection).
   let lookupsModified = 0;
   const lookupsModifiedByCollection = {};
   for (const colName of LOOKUP_COLLECTION_NAMES) lookupsModifiedByCollection[colName] = 0;
@@ -314,6 +334,15 @@ async function migrate() {
       const next = normalizeRoleArray(row.metadata.allowed_roles);
       if (!arraysEqual(next, row.metadata.allowed_roles)) {
         updates['metadata.allowed_roles'] = next;
+      }
+    }
+    // Scalar role-bearing fields — rewrite legacy → target. Read via dotted
+    // path (metadata.system_role etc.) using the same SCALAR_ROLE_FIELDS
+    // list the audit/scan uses, so coverage is identical.
+    for (const fieldPath of SCALAR_ROLE_FIELDS) {
+      const current = readDottedPath(row, fieldPath);
+      if (typeof current === 'string' && LEGACY_LOOKUP_ROLES.includes(current)) {
+        updates[fieldPath] = TARGET_ROLE;
       }
     }
     if (Object.keys(updates).length > 0) {
@@ -339,12 +368,7 @@ async function migrate() {
   let remainingLookupLegacy = 0;
   console.log('\n─── Phase 2 verification ───');
   for (const colName of LOOKUP_COLLECTION_NAMES) {
-    const n = await db.collection(colName).countDocuments({
-      $or: [
-        { 'metadata.roles': { $elemMatch: { $in: LEGACY_LOOKUP_ROLES } } },
-        { 'metadata.allowed_roles': { $elemMatch: { $in: LEGACY_LOOKUP_ROLES } } },
-      ],
-    });
+    const n = await db.collection(colName).countDocuments({ $or: lookupMatchClauses });
     remainingLookupLegacy += n;
     console.log(`  ${colName}: ${n}  (expect 0)`);
   }
@@ -383,6 +407,19 @@ function arraysEqual(a, b) {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
   return true;
+}
+
+// Read a dotted path (e.g. "metadata.system_role") from a plain object.
+// Returns undefined for any missing intermediate. Used to resolve scalar role
+// fields without hardcoding SCALAR_ROLE_FIELDS branch by branch.
+function readDottedPath(obj, dottedPath) {
+  const parts = dottedPath.split('.');
+  let cur = obj;
+  for (const p of parts) {
+    if (cur == null) return undefined;
+    cur = cur[p];
+  }
+  return cur;
 }
 
 migrate().catch((err) => {
