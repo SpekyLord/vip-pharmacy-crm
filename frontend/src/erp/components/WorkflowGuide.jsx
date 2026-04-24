@@ -1618,7 +1618,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Access Templates', path: '/erp/control-center?section=access-templates' },
       { label: 'Approval Hub', path: '/erp/approvals' },
     ],
-    tip: 'To extend auto-enrollment to new sales roles (SALES_REP, SALES_MANAGER, TERRITORY_MANAGER, etc.) add the person_type code to the SALES_GOAL_ELIGIBLE_ROLES lookup — zero code change. Re-activating an existing plan is idempotent (only missing BDMs are added).',
+    tip: 'To extend auto-enrollment to new sales roles (SALES_MANAGER, TERRITORY_MANAGER, etc.) add the person_type code to the SALES_GOAL_ELIGIBLE_ROLES lookup — zero code change. Re-activating an existing plan is idempotent (only missing BDMs are added).',
   },
 
   salesGoalBdmView: {

@@ -1,9 +1,10 @@
 const PeopleMaster = require('../models/PeopleMaster');
 const Payslip = require('../models/Payslip');
+const CompProfile = require('../models/CompProfile');
 const { catchAsync } = require('../../middleware/errorHandler');
 const {
   generateEmployeePayslip,
-  generateSalesRepPayslip,
+  generateProfessionalFeePayslip,
   computeThirteenthMonth: compute13th,
   transitionPayslipStatus,
   getPayslipBreakdown: fetchPayslipBreakdown,
@@ -20,7 +21,6 @@ const { notifyPayrollPosted } = require('../services/erpNotificationService');
 // BDMs use Income Reports, not payroll — excluded from GENERATOR_MAP
 const GENERATOR_MAP = {
   EMPLOYEE: generateEmployeePayslip,
-  SALES_REP: generateSalesRepPayslip,
   CONSULTANT: generateEmployeePayslip,
   DIRECTOR: generateEmployeePayslip,
 };
@@ -34,7 +34,7 @@ const computePayroll = catchAsync(async (req, res) => {
 
   const entityId = req.entityId;
   // Only include payroll-eligible person types — BDMs use Income Reports, not payroll
-  const PAYROLL_PERSON_TYPES = ['EMPLOYEE', 'SALES_REP', 'CONSULTANT', 'DIRECTOR'];
+  const PAYROLL_PERSON_TYPES = ['EMPLOYEE', 'CONSULTANT', 'DIRECTOR'];
   const people = await PeopleMaster.find({
     entity_id: entityId,
     is_active: true,
@@ -45,10 +45,16 @@ const computePayroll = catchAsync(async (req, res) => {
   const results = [];
   const errors = [];
 
+  // salary_type=PROFESSIONAL_FEE takes precedence over person_type for generator
+  // selection — a CONSULTANT on a flat fee uses the professional-fee generator,
+  // while a CONSULTANT on FIXED_SALARY still goes through the employee path.
   for (const person of people) {
     try {
-      const generator = GENERATOR_MAP[person.person_type] || generateEmployeePayslip;
-      const payslip = await generator(entityId, person._id, period, cycle, req.user._id);
+      const comp = await CompProfile.getActiveProfile(person._id);
+      const generator = (comp && comp.salary_type === 'PROFESSIONAL_FEE')
+        ? generateProfessionalFeePayslip
+        : (GENERATOR_MAP[person.person_type] || generateEmployeePayslip);
+      await generator(entityId, person._id, period, cycle, req.user._id);
       results.push({ person_id: person._id, name: person.full_name, status: 'ok' });
     } catch (err) {
       errors.push({ person_id: person._id, name: person.full_name, error: err.message });

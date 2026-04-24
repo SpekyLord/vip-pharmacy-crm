@@ -23,6 +23,15 @@ const compProfileSchema = new mongoose.Schema(
       required: [true, 'Salary type is required'],
     }, // Lookup: SALARY_TYPE
 
+    // ═══ Professional / Consultation Fee (salary_type = PROFESSIONAL_FEE) ═══
+    // Flat fee, no statutory deductions. Frequency drives how the fee is
+    // reconciled with the payroll run cycle (see payslipCalc.generateProfessionalFeePayslip).
+    consultation_fee_amount: { type: Number, default: 0 },
+    consultation_fee_frequency: {
+      type: String,
+      default: 'MONTHLY',
+    }, // Lookup: PROFESSIONAL_FEE_FREQUENCY — ONE_TIME / MONTHLY / SEMI_MONTHLY
+
     // ═══ Fixed Salary Components ═══
     basic_salary: { type: Number, default: 0 },
     rice_allowance: { type: Number, default: 0 },

@@ -237,6 +237,7 @@ const updateCompProfile = catchAsync(async (req, res) => {
     'perdiem_engagement_threshold_full', 'perdiem_engagement_threshold_half',
     'logbook_eligible', 'vehicle_type', 'ore_eligible', 'access_eligible', 'crm_linked',
     'profit_share_eligible', 'commission_rate',
+    'consultation_fee_amount', 'consultation_fee_frequency',
     'tax_status', 'reason',
   ];
 
@@ -267,7 +268,7 @@ const syncFromCrm = catchAsync(async (req, res) => {
   );
 
   let created = 0, updated = 0, skipped = 0;
-  const typeMap = { [ROLES.ADMIN]: 'EMPLOYEE', [ROLES.PRESIDENT]: 'DIRECTOR', [ROLES.CONTRACTOR]: 'BDM', [ROLES.MEDREP]: 'SALES_REP', [ROLES.FINANCE]: 'EMPLOYEE' };
+  const typeMap = { [ROLES.ADMIN]: 'EMPLOYEE', [ROLES.PRESIDENT]: 'DIRECTOR', [ROLES.CONTRACTOR]: 'BDM', [ROLES.MEDREP]: 'EMPLOYEE', [ROLES.FINANCE]: 'EMPLOYEE' };
 
   for (const u of crmUsers) {
     const existingPerson = existingByUserId.get(u._id.toString());

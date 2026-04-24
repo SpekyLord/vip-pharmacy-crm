@@ -1,5 +1,5 @@
 /**
- * Payslip Calculation Service — Employee / Sales Rep / Consultant / Director
+ * Payslip Calculation Service — Employee / Consultant / Director
  *
  * Phase G1.3 — transparency parity with contractor IncomeReport:
  *   Deductions render as a deduction_lines[] array (label + amount + kind
@@ -487,10 +487,150 @@ async function generateBdmPayslip(entityId, personId, period, cycle, userId) {
 }
 
 /**
- * Generate a sales rep payslip — hybrid (basic + incentive).
+ * Generate a professional / consultation fee payslip.
+ *
+ * salary_type=PROFESSIONAL_FEE carries a flat `consultation_fee_amount` paid at
+ * `consultation_fee_frequency` (ONE_TIME / MONTHLY / SEMI_MONTHLY). No statutory
+ * contributions (SSS / PhilHealth / Pag-IBIG / withholding tax on comp), no
+ * allowances, no Personal Gas. EWT/other deductions can be added manually via
+ * Finance per-line UI if the consultant is BIR-subject.
+ *
+ * Amount reconciliation between fee frequency and payroll run cycle:
+ *   - ONE_TIME × any cycle       → full fee once; refuse if a prior slip exists
+ *     for this person in a different (period, cycle) pair.
+ *   - MONTHLY  × MONTHLY         → full fee per slip.
+ *   - MONTHLY  × SEMI_MONTHLY    → 50/50 split (half per slip).
+ *   - SEMI_MONTHLY × MONTHLY     → both halves summed (2 × fee per slip).
+ *   - SEMI_MONTHLY × SEMI_MONTHLY → full fee per slip.
  */
-async function generateSalesRepPayslip(entityId, personId, period, cycle, userId) {
-  return generateEmployeePayslip(entityId, personId, period, cycle, userId);
+async function generateProfessionalFeePayslip(entityId, personId, period, cycle, userId) {
+  const person = await PeopleMaster.findById(personId).lean();
+  if (!person) throw new Error('Person not found');
+
+  const comp = await CompProfile.getActiveProfile(personId);
+  if (!comp) throw new Error(`No active compensation profile for ${person.full_name}`);
+  if (comp.salary_type !== 'PROFESSIONAL_FEE') {
+    throw new Error(`generateProfessionalFeePayslip requires salary_type=PROFESSIONAL_FEE (got ${comp.salary_type})`);
+  }
+
+  const fee = Number(comp.consultation_fee_amount) || 0;
+  const freq = comp.consultation_fee_frequency || 'MONTHLY';
+
+  // One-time fee: refuse if this person already has a payslip in a DIFFERENT
+  // period/cycle pair. Re-computing the same slip is fine (idempotent).
+  if (freq === 'ONE_TIME') {
+    const otherSlip = await Payslip.findOne({
+      entity_id: entityId,
+      person_id: personId,
+      $or: [{ period: { $ne: period } }, { cycle: { $ne: cycle } }],
+      deletion_event_id: { $exists: false },
+    }).select('period cycle').lean();
+    if (otherSlip) {
+      throw new Error(`One-time professional fee already paid on ${otherSlip.period} (${otherSlip.cycle}). Switch consultation_fee_frequency to MONTHLY or SEMI_MONTHLY for recurring fees.`);
+    }
+  }
+
+  let feeForThisSlip = 0;
+  if (freq === 'ONE_TIME') feeForThisSlip = fee;
+  else if (freq === 'MONTHLY' && cycle === 'MONTHLY') feeForThisSlip = fee;
+  else if (freq === 'MONTHLY' && cycle === 'SEMI_MONTHLY') feeForThisSlip = fee / 2;
+  else if (freq === 'SEMI_MONTHLY' && cycle === 'MONTHLY') feeForThisSlip = fee * 2;
+  else if (freq === 'SEMI_MONTHLY' && cycle === 'SEMI_MONTHLY') feeForThisSlip = fee;
+  else throw new Error(`Unknown consultation_fee_frequency '${freq}' for ${person.full_name}`);
+
+  feeForThisSlip = Math.round(feeForThisSlip * 100) / 100;
+
+  const earnings = {
+    basic_salary: feeForThisSlip,
+    rice_allowance: 0,
+    clothing_allowance: 0,
+    medical_allowance: 0,
+    laundry_allowance: 0,
+    transport_allowance: 0,
+  };
+
+  const existing = await Payslip.findOne({ entity_id: entityId, person_id: personId, period, cycle });
+
+  // Preserve manual earnings (bonus, reimbursements) + manual deduction lines
+  // (Finance may have added EWT or other per-line deductions via Phase G1.4 UI).
+  const preservedManual = existing ? {
+    bonus: existing.earnings?.bonus || 0,
+    reimbursements: existing.earnings?.reimbursements || 0,
+    other_earnings: existing.earnings?.other_earnings || 0,
+    overtime: existing.earnings?.overtime || 0,
+    holiday_pay: existing.earnings?.holiday_pay || 0,
+    night_diff: existing.earnings?.night_diff || 0,
+    flat_cash_advance: existing.deductions?.cash_advance || 0,
+    flat_loan_payments: existing.deductions?.loan_payments || 0,
+    flat_other_deductions: existing.deductions?.other_deductions || 0,
+  } : {
+    bonus: 0, reimbursements: 0, other_earnings: 0,
+    overtime: 0, holiday_pay: 0, night_diff: 0,
+    flat_cash_advance: 0, flat_loan_payments: 0, flat_other_deductions: 0,
+  };
+
+  earnings.bonus = preservedManual.bonus;
+  earnings.reimbursements = preservedManual.reimbursements;
+  earnings.other_earnings = preservedManual.other_earnings;
+  earnings.overtime = preservedManual.overtime;
+  earnings.holiday_pay = preservedManual.holiday_pay;
+  earnings.night_diff = preservedManual.night_diff;
+
+  // No statutory lines. Reconstruct only the manual-flat lines + preserve any
+  // freeform Finance-entered lines (e.g. EWT).
+  const manualLines = buildManualLinesFromFlat({
+    flat: {
+      cash_advance: preservedManual.flat_cash_advance,
+      loan_payments: preservedManual.flat_loan_payments,
+      other_deductions: preservedManual.flat_other_deductions,
+    },
+    userId,
+  });
+  const preservedFreeformLines = (existing?.deduction_lines || []).filter(l =>
+    !l.auto_source &&
+    !['CASH_ADVANCE', 'LOAN', 'OTHER'].includes(l.deduction_type)
+  );
+
+  const deduction_lines = [...manualLines, ...preservedFreeformLines];
+  const deductions = deriveFlatFromLines(deduction_lines);
+
+  const employer_contributions = {
+    sss_employer: 0, philhealth_employer: 0, pagibig_employer: 0, ec_employer: 0,
+  };
+
+  if (existing) {
+    existing.earnings = earnings;
+    existing.deduction_lines = deduction_lines;
+    existing.deductions = deductions;
+    existing.employer_contributions = employer_contributions;
+    existing.person_type = person.person_type;
+    existing.comp_profile_snapshot = comp;
+    existing.status = 'COMPUTED';
+    existing.computed_at = new Date();
+    existing.markModified('earnings');
+    existing.markModified('deduction_lines');
+    existing.markModified('deductions');
+    existing.markModified('employer_contributions');
+    existing.markModified('comp_profile_snapshot');
+    await existing.save();
+    return existing;
+  }
+
+  return Payslip.create({
+    entity_id: entityId,
+    person_id: personId,
+    person_type: person.person_type,
+    period,
+    cycle,
+    earnings,
+    deduction_lines,
+    deductions,
+    employer_contributions,
+    comp_profile_snapshot: comp,
+    status: 'COMPUTED',
+    computed_at: new Date(),
+    created_by: userId,
+  });
 }
 
 /**
@@ -744,7 +884,7 @@ async function transitionPayslipStatus(payslipId, action, userId) {
 module.exports = {
   generateEmployeePayslip,
   generateBdmPayslip,
-  generateSalesRepPayslip,
+  generateProfessionalFeePayslip,
   computeThirteenthMonth,
   transitionPayslipStatus,
   // Phase G1.3 — transparent payslip breakdown + lazy backfill helper
