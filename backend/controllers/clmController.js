@@ -10,9 +10,61 @@
  */
 const CLMSession = require('../models/CLMSession');
 const CrmProduct = require('../models/CrmProduct');
+const { isAdminLike, isPresidentLike } = require('../constants/roles');
 
 // ── Helpers ─────────────────────────────────────────────────────────
 const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
+
+// Ownership gate. Admin-like roles (admin/finance/president/ceo) see every
+// session; contractors see only their own. Caller sends the 403 so each
+// handler can early-return cleanly.
+// Handles both raw ObjectId (plain find) and populated user sub-doc
+// (getSessionById populates name fields) by reading `._id || self`.
+const ownsOrAdmin = (session, req) => {
+  if (!session || !req.user) return false;
+  if (isAdminLike(req.user.role)) return true;
+  const ownerId = session.user && session.user._id ? session.user._id : session.user;
+  if (!ownerId) return false;
+  return ownerId.toString() === req.user._id.toString();
+};
+
+// Resolve the entity filter for a CLM read/write.
+//
+// Rule #21 alignment — privileged users (president/CEO) must NOT be silently
+// filtered to their own working entity; that's the same anti-pattern that
+// produced the "admin sees empty list" bug G4.5d plugged. Instead:
+//   - president / ceo → cross-entity by default (null = no filter).
+//                       Honor explicit ?entity_id=<X> when they want to scope.
+//   - admin / finance → working entity by default.
+//                       Honor explicit ?entity_id=<X> to override to another entity.
+//   - contractor + everyone else → working entity, no override (they can't
+//                                  cross-entity no matter what query param they pass).
+//
+// Role groupings come from backend/constants/roles.js (ROLE_SETS). A future PR
+// can promote those constants to a CROSS_ENTITY_VIEW_ROLES lookup when more
+// CRM models get entity-scoped — one lookup covering all models is cheaper
+// than a bespoke one per model.
+const resolveEntityId = (req) => {
+  const role = req.user?.role;
+  const queryOverride = typeof req.query?.entity_id === 'string' && req.query.entity_id.trim()
+    ? req.query.entity_id.trim()
+    : null;
+
+  // President / CEO — cross-entity by default. Explicit query param narrows.
+  if (isPresidentLike(role)) {
+    return queryOverride;
+  }
+
+  // Admin / finance — working entity by default, can override to another entity.
+  if (isAdminLike(role) && queryOverride) {
+    return queryOverride;
+  }
+
+  // Contractors + default admin/finance — working entity, no cross-entity view.
+  return req.user?.entity_id
+    || (Array.isArray(req.user?.entity_ids) && req.user.entity_ids[0])
+    || null;
+};
 
 // ── Start a new CLM session ───────────────────────────────────────
 const startSession = asyncHandler(async (req, res) => {
@@ -61,11 +113,13 @@ const startSession = asyncHandler(async (req, res) => {
   // sparse unique index on idempotencyKey guarantees only one wins (the other
   // hits E11000). Convert that duplicate-key error into a clean 409 — same
   // shape as the pre-check path — instead of surfacing a 500.
+  const entityId = resolveEntityId(req);
   let session;
   try {
     session = await CLMSession.create({
       user: req.user._id,
       doctor: doctorId,
+      ...(entityId ? { entity_id: entityId } : {}),
       startedAt: new Date(),
       location: location || {},
       productsPresented,
@@ -107,6 +161,9 @@ const endSession = asyncHandler(async (req, res) => {
   if (!session) {
     return res.status(404).json({ success: false, message: 'Session not found' });
   }
+  if (!ownsOrAdmin(session, req)) {
+    return res.status(403).json({ success: false, message: 'Access denied. This session belongs to another BDM.' });
+  }
 
   session.endedAt = new Date();
   session.totalDurationMs = session.endedAt - session.startedAt;
@@ -141,6 +198,9 @@ const addProducts = asyncHandler(async (req, res) => {
   const session = await CLMSession.findById(req.params.id);
   if (!session) {
     return res.status(404).json({ success: false, message: 'Session not found' });
+  }
+  if (!ownsOrAdmin(session, req)) {
+    return res.status(403).json({ success: false, message: 'Access denied. This session belongs to another BDM.' });
   }
 
   const { productIds } = req.body;
@@ -182,6 +242,9 @@ const updateProductInterest = asyncHandler(async (req, res) => {
   if (!session) {
     return res.status(404).json({ success: false, message: 'Session not found' });
   }
+  if (!ownsOrAdmin(session, req)) {
+    return res.status(403).json({ success: false, message: 'Access denied. This session belongs to another BDM.' });
+  }
 
   const { productId, interestShown, timeSpentMs, notes } = req.body;
   if (!productId) {
@@ -213,6 +276,9 @@ const recordSlideEvents = asyncHandler(async (req, res) => {
   if (!session) {
     return res.status(404).json({ success: false, message: 'Session not found' });
   }
+  if (!ownsOrAdmin(session, req)) {
+    return res.status(403).json({ success: false, message: 'Access denied. This session belongs to another BDM.' });
+  }
 
   if (Array.isArray(slideEvents)) {
     session.slideEvents.push(...slideEvents);
@@ -232,6 +298,9 @@ const markQrDisplayed = asyncHandler(async (req, res) => {
   if (!session) {
     return res.status(404).json({ success: false, message: 'Session not found' });
   }
+  if (!ownsOrAdmin(session, req)) {
+    return res.status(403).json({ success: false, message: 'Access denied. This session belongs to another BDM.' });
+  }
   session.qrDisplayedAt = new Date();
   await session.save();
   res.json({ success: true, data: session });
@@ -250,6 +319,9 @@ const markQrScanned = asyncHandler(async (req, res) => {
 
   if (!session) {
     return res.status(404).json({ success: false, message: 'Session not found' });
+  }
+  if (!ownsOrAdmin(session, req)) {
+    return res.status(403).json({ success: false, message: 'Access denied. This session belongs to another BDM.' });
   }
 
   session.qrScanned = true;
@@ -278,6 +350,8 @@ const markClmSessionConverted = async (messengerRef) => {
 const getMySessions = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20, status, doctorId } = req.query;
   const filter = { user: req.user._id };
+  const entityId = resolveEntityId(req);
+  if (entityId) filter.entity_id = entityId;
   if (status) filter.status = status;
   if (doctorId) filter.doctor = doctorId;
 
@@ -300,6 +374,8 @@ const getMySessions = asyncHandler(async (req, res) => {
 const getAllSessions = asyncHandler(async (req, res) => {
   const { page = 1, limit = 20, status, userId, doctorId } = req.query;
   const filter = {};
+  const entityId = resolveEntityId(req);
+  if (entityId) filter.entity_id = entityId;
   if (status) filter.status = status;
   if (userId) filter.user = userId;
   if (doctorId) filter.doctor = doctorId;
@@ -322,13 +398,18 @@ const getAllSessions = asyncHandler(async (req, res) => {
 
 // ── Get single session detail ───────────────────────────────────────
 const getSessionById = asyncHandler(async (req, res) => {
-  const session = await CLMSession.findById(req.params.id)
+  const entityId = resolveEntityId(req);
+  const lookupFilter = { _id: req.params.id, ...(entityId ? { entity_id: entityId } : {}) };
+  const session = await CLMSession.findOne(lookupFilter)
     .populate('user', 'firstName lastName')
     .populate('doctor', 'firstName lastName specialization clinicOfficeAddress')
     .populate('productsPresented.product', 'name genericName dosage category image');
 
   if (!session) {
     return res.status(404).json({ success: false, message: 'Session not found' });
+  }
+  if (!ownsOrAdmin(session, req)) {
+    return res.status(403).json({ success: false, message: 'Access denied. This session belongs to another BDM.' });
   }
   res.json({ success: true, data: session });
 });
@@ -337,6 +418,8 @@ const getSessionById = asyncHandler(async (req, res) => {
 const getAnalytics = asyncHandler(async (req, res) => {
   const { startDate, endDate, userId } = req.query;
   const match = { status: 'completed' };
+  const entityId = resolveEntityId(req);
+  if (entityId) match.entity_id = new (require('mongoose').Types.ObjectId)(entityId);
   if (startDate || endDate) {
     match.createdAt = {};
     if (startDate) match.createdAt.$gte = new Date(startDate);

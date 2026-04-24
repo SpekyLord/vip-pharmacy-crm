@@ -106,6 +106,23 @@ const uploadAvatar = async (buffer, originalName, contentType) => {
 };
 
 /**
+ * Upload a CLM branding asset (logo). Per-entity folder so cleanup + audit
+ * are straightforward. Kind is 'logoCircle' or 'logoTrademark'.
+ * @param {Buffer} buffer - Image buffer
+ * @param {string} entityId - Entity ObjectId (stringifiable)
+ * @param {string} kind - 'logoCircle' | 'logoTrademark'
+ * @param {string} contentType - MIME type
+ * @returns {Promise<{url: string, key: string}>}
+ */
+const uploadClmBranding = async (buffer, entityId, kind, contentType) => {
+  const safeKind = kind === 'logoTrademark' ? 'logoTrademark' : 'logoCircle';
+  const folder = `clm-branding/${entityId}`;
+  const key = generateS3Key(`${safeKind}.jpg`, folder);
+  const url = await uploadToS3(buffer, key, contentType);
+  return { url, key };
+};
+
+/**
  * Delete a file from S3
  * @param {string} key - S3 object key
  * @returns {Promise<void>}
@@ -253,6 +270,7 @@ module.exports = {
   uploadCommScreenshot,
   uploadProductImage,
   uploadAvatar,
+  uploadClmBranding,
   deleteFromS3,
   deleteByUrl,
   getSignedDownloadUrl,

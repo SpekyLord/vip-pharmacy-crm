@@ -1053,6 +1053,7 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
               { path: '/admin/invites', label: 'Invite Triage', icon: MessageSquare },
               { path: '/admin/message-templates', label: 'Msg Templates', icon: MessageSquare },
               { path: '/admin/clm-sessions', label: 'CLM Sessions', icon: Presentation },
+              { path: '/admin/clm-branding', label: 'CLM Branding', icon: Presentation },
               { path: '/admin/settings', label: 'Programs', icon: Settings },
             ],
           },

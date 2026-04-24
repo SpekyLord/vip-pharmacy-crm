@@ -69,6 +69,7 @@ const CommLogsPage = lazyRetry(() => import('./pages/admin/CommLogsPage'));
 const MessageTemplatesPage = lazyRetry(() => import('./pages/admin/MessageTemplatesPage'));
 const InvitesPage = lazyRetry(() => import('./pages/admin/InvitesPage'));
 const CLMSessionsPage = lazyRetry(() => import('./pages/admin/CLMSessionsPage'));
+const ClmBrandingPage = lazyRetry(() => import('./pages/admin/ClmBrandingPage'));
 
 // ERP pages
 const ErpDashboard = lazyRetry(() => import('./erp/pages/ErpDashboard'));
@@ -421,6 +422,15 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_ONLY}>
                 <CLMSessionsPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* CLM Branding — Per-entity deck identity + slide content editor */}
+          <Route
+            path="/admin/clm-branding"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_ONLY}>
+                <ClmBrandingPage />
               </ProtectedRoute>
             }
           />

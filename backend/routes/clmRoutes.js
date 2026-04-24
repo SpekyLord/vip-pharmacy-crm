@@ -12,8 +12,11 @@
  * PUT    /api/clm/sessions/:id/products          - Add products to an in-progress session
  * PUT    /api/clm/sessions/:id/product-interest  - Update product interest for a session
  * PUT    /api/clm/sessions/:id/qr-shown          - Mark QR as displayed
- * PUT    /api/clm/sessions/:id/qr-scan           - Mark QR as scanned (manual)
- * POST   /api/clm/webhook/messenger              - Messenger webhook (QR scan callback)
+ * PUT    /api/clm/sessions/:id/qr-scan           - Mark QR as scanned (manual fallback)
+ *
+ * Meta/Messenger webhook conversion runs through /api/webhooks/messenger
+ * (signature-verified at webhookRoutes.js). This file no longer hosts a
+ * CLM-specific webhook endpoint.
  */
 const express = require('express');
 const router = express.Router();
@@ -33,27 +36,22 @@ const {
   getAnalytics,
 } = require('../controllers/clmController');
 
-// All routes require authentication (except webhook)
+// Every route requires a decoded JWT for req.user; role gates layer on top.
 router.use(protect);
 
-// ── BDM routes ──────────────────────────────────────────────────────
-router.post('/sessions', startSession);
-router.get('/sessions/my', getMySessions);
-router.get('/sessions/:id', getSessionById);
-router.put('/sessions/:id/end', endSession);
-router.put('/sessions/:id/slides', recordSlideEvents);
-router.put('/sessions/:id/products', addProducts);
-router.put('/sessions/:id/product-interest', updateProductInterest);
-router.put('/sessions/:id/qr-shown', markQrDisplayed);
-router.put('/sessions/:id/qr-scan', markQrScanned);
-
-// ── Admin routes ────────────────────────────────────────────────────
+// ── Admin routes (specific paths FIRST — before the /:id generic) ───
 router.get('/sessions/all', adminOnly, getAllSessions);
 router.get('/sessions/analytics', adminOnly, getAnalytics);
 
-// ── Messenger webhook (public — called by Facebook) ─────────────────
-// Note: In production, this should verify the Facebook webhook signature.
-// For now, it accepts a messengerRef and marks the session as converted.
-router.post('/webhook/messenger', markQrScanned);
+// ── BDM + Admin routes ──────────────────────────────────────────────
+router.get('/sessions/my', adminOrEmployee, getMySessions);
+router.post('/sessions', adminOrEmployee, startSession);
+router.get('/sessions/:id', adminOrEmployee, getSessionById);
+router.put('/sessions/:id/end', adminOrEmployee, endSession);
+router.put('/sessions/:id/slides', adminOrEmployee, recordSlideEvents);
+router.put('/sessions/:id/products', adminOrEmployee, addProducts);
+router.put('/sessions/:id/product-interest', adminOrEmployee, updateProductInterest);
+router.put('/sessions/:id/qr-shown', adminOrEmployee, markQrDisplayed);
+router.put('/sessions/:id/qr-scan', adminOrEmployee, markQrScanned);
 
 module.exports = router;

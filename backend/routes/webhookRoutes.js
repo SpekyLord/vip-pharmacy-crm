@@ -21,6 +21,7 @@ const { handleFacebookDataDeletion } = require('../services/dataDeletionService'
 const { tryAutoReply } = require('../utils/autoReply');
 const { fetchSenderInfo, matchSenderToDoctor } = require('../utils/aiMatcher');
 const { handleInboundOptOut } = require('../utils/optOut');
+const { markClmSessionConverted } = require('../controllers/clmController');
 
 /**
  * Phase M1 — Bind an external messaging ID to a Doctor/Client via invite referral.
@@ -361,8 +362,15 @@ router.post('/messenger', rawJson, verifyMetaSignature, async (req, res) => {
         // Phase M1 — Referral from m.me/<page>?ref=doc_<id> click-through.
         // Fires as a standalone postback the first time the user opens the chat via the link.
         // We record the opened state; the actual binding happens when they send the first message.
+        //
+        // CLM conversion (this PR) — refs shaped `CLM_<sessionId>_<doctorId>_<userId>`
+        // short-circuit to the CLM helper; they never match an InviteLink row anyway.
         if (event.referral?.ref || event.postback?.referral?.ref) {
           const ref = event.referral?.ref || event.postback?.referral?.ref;
+          if (typeof ref === 'string' && ref.startsWith('CLM_')) {
+            await markClmSessionConverted(ref);
+            continue;
+          }
           await InviteLink.findOneAndUpdate(
             { ref, channel: 'MESSENGER', status: 'sent' },
             { status: 'opened', openedAt: new Date() },
@@ -390,8 +398,16 @@ router.post('/messenger', rawJson, verifyMetaSignature, async (req, res) => {
             // Phase M1 — If this message carries a referral `ref`, bind the PSID to
             // the Doctor/Client named in the ref and stamp consent. This takes
             // precedence over `messengerId` lookup and AI-match.
+            //
+            // CLM conversion short-circuits first — a VIP Client who scans the
+            // slide-6 QR arrives here with `CLM_<sessionId>_<doctorId>_<userId>`.
+            // Record the conversion and skip the bind/AI-match pipeline.
             const inviteRef = event.message.referral?.ref || event.referral?.ref;
             if (inviteRef) {
+              if (typeof inviteRef === 'string' && inviteRef.startsWith('CLM_')) {
+                await markClmSessionConverted(inviteRef);
+                continue;
+              }
               const bound = await bindFromInviteRef({
                 ref: inviteRef,
                 channel: 'MESSENGER',
