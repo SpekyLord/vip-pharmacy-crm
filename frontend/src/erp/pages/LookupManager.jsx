@@ -135,9 +135,12 @@ export function LookupManagerContent() {
     }
   };
 
-  // Categories that use metadata for configuration values
-  const METADATA_CATEGORIES = ['GOAL_CONFIG', 'KPI_CODE', 'INCENTIVE_TIER', 'INCENTIVE_PROGRAM'];
-  const hasMetadata = METADATA_CATEGORIES.includes(activeCat);
+  // Show metadata column/editor for any category whose rows already carry
+  // metadata. The column collapses on truly metadata-less categories so the
+  // table stays narrow, but the modal editor always exposes metadata so admins
+  // can configure new role/threshold/option values without a code change.
+  // (Rule #3 — no hardcoded category allowlists.)
+  const hasMetadata = items.some(i => i.metadata && Object.keys(i.metadata).length > 0);
 
   const openCreate = () => {
     setEditItem(null);
@@ -317,18 +320,16 @@ export function LookupManagerContent() {
                 <label>Sort Order</label>
                 <input type="number" value={form.sort_order} onChange={e => setForm({ ...form, sort_order: e.target.value })} />
               </div>
-              {hasMetadata && (
-                <div className="form-group">
-                  <label>Metadata (JSON) — config values like budget, thresholds, etc.</label>
-                  <textarea
-                    value={form.metadata}
-                    onChange={e => setForm({ ...form, metadata: e.target.value })}
-                    rows={5}
-                    style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--erp-border)', fontFamily: 'monospace', fontSize: 12, boxSizing: 'border-box', resize: 'vertical' }}
-                    placeholder='{ "value": 90 }'
-                  />
-                </div>
-              )}
+              <div className="form-group">
+                <label>Metadata (JSON) — role lists, thresholds, budgets, flags. Leave as <code>{'{}'}</code> if not used.</label>
+                <textarea
+                  value={form.metadata}
+                  onChange={e => setForm({ ...form, metadata: e.target.value })}
+                  rows={5}
+                  style={{ width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid var(--erp-border)', fontFamily: 'monospace', fontSize: 12, boxSizing: 'border-box', resize: 'vertical' }}
+                  placeholder='{ "roles": ["admin", "finance", "president", "contractor"] }'
+                />
+              </div>
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
                 <button className="btn btn-outline" onClick={() => setShowModal(false)}>Cancel</button>
                 <button className="btn btn-primary" onClick={handleSave} disabled={!form.label.trim() || (!editItem && !form.code.trim())}>
