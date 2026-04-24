@@ -20,13 +20,23 @@
  *
  * What this script does:
  *   1. DRY-RUN (default): reports counts + entity breakdown + sample names for
- *      both legacy populations. No writes. Safe to run anytime, on prod.
- *   2. APPLY (--apply): writes a backup file listing every user _id to be
- *      modified (with their CURRENT role so a revert is exact), THEN runs
- *      updateMany.
+ *      every legacy population. No writes. Safe to run anytime, on prod.
+ *   2. APPLY (--apply): writes a backup file, THEN runs all four phases.
  *
- * Idempotent: safe to run multiple times. Once no employee/contractor users
- * remain, both modes become no-ops.
+ * Four phases (all run in both modes; each no-ops if nothing to migrate):
+ *   Phase 1 — users.role: 'employee' | 'contractor' → 'staff'
+ *   Phase 2 — erp_lookups.metadata role fields (arrays + scalars):
+ *             'employee' | 'contractor' | 'bdm' → 'staff'
+ *   Phase 3 — erp_lookups row where category='SYSTEM_ROLE' AND code='CONTRACTOR':
+ *             rename code → 'STAFF' (or deactivate if a STAFF row already
+ *             exists for that entity; unique index is [entity,category,code]).
+ *             Fixes Phase S2 Incident Gap 2 — stale dropdown code.
+ *   Phase 4 — erp_lookups row where category='ROLE_MAPPING' AND label contains
+ *             '→ Contractor': cosmetic label swap to '→ Staff' so the Role
+ *             Mapping page reads consistently with the normalized metadata.
+ *
+ * Idempotent: safe to run multiple times. Once all legacy values are gone,
+ * every phase becomes a no-op.
  *
  * Revert (one-liner from backup file):
  *   db.users.updateMany({_id:{$in:<contractor_ids>}}, {$set:{role:'contractor'}})
@@ -82,7 +92,9 @@ async function migrate() {
   console.log(`\nMode: ${APPLY ? 'APPLY (writes will be made)' : 'DRY-RUN (read-only)'}`);
   console.log(`Phase 1 — users.role: ${LEGACY_USER_ROLES.map(r => `'${r}'`).join(' + ')} → '${TARGET_ROLE}'`);
   console.log(`Phase 2 — lookups.metadata role fields (arrays + scalars): ${LEGACY_LOOKUP_ROLES.map(r => `'${r}'`).join(' + ')} → '${TARGET_ROLE}'`);
-  console.log(`  Scanned scalar fields: ${SCALAR_ROLE_FIELDS.join(', ')}\n`);
+  console.log(`  Scanned scalar fields: ${SCALAR_ROLE_FIELDS.join(', ')}`);
+  console.log(`Phase 3 — erp_lookups SYSTEM_ROLE row: code='CONTRACTOR' → 'STAFF'  (or deactivate if STAFF row exists in same entity)`);
+  console.log(`Phase 4 — erp_lookups ROLE_MAPPING rows: label '→ Contractor' → '→ Staff'  (cosmetic)\n`);
 
   // ══════════════════════════════════════════════════════════════════════
   // PHASE 1 AUDIT — users collection
@@ -216,13 +228,80 @@ async function migrate() {
   }
 
   // ══════════════════════════════════════════════════════════════════════
+  // PHASE 3 AUDIT — erp_lookups SYSTEM_ROLE rows with stale code='CONTRACTOR'
+  // Fixes Phase S2 Incident Gap 2. Unique index is (entity_id, category, code),
+  // so a rename CONTRACTOR → STAFF collides if a STAFF row already exists for
+  // the same entity. Detect both cases here; apply phase resolves them safely.
+  // ══════════════════════════════════════════════════════════════════════
+  console.log('\n═══ Phase 3: SYSTEM_ROLE.code=\'CONTRACTOR\' stale dropdown row ═══');
+  const erpLookupsCol = db.collection('erp_lookups');
+  const staleSystemRoleRows = await erpLookupsCol
+    .find({ category: 'SYSTEM_ROLE', code: 'CONTRACTOR' })
+    .project({ _id: 1, entity_id: 1, code: 1, label: 1, is_active: 1 })
+    .toArray();
+  const phase3Renames = [];
+  const phase3Deactivates = [];
+  for (const row of staleSystemRoleRows) {
+    const collidingStaff = await erpLookupsCol.findOne({
+      entity_id: row.entity_id,
+      category: 'SYSTEM_ROLE',
+      code: 'STAFF',
+    });
+    if (collidingStaff) {
+      phase3Deactivates.push({ row, collidingStaff });
+    } else {
+      phase3Renames.push(row);
+    }
+  }
+  console.log(`  Total stale SYSTEM_ROLE.code='CONTRACTOR' rows: ${staleSystemRoleRows.length}`);
+  console.log(`    would rename (no STAFF row in entity): ${phase3Renames.length}`);
+  console.log(`    would deactivate (STAFF already exists): ${phase3Deactivates.length}`);
+  if (staleSystemRoleRows.length > 0) {
+    console.log('\n  ─── Sample (first 8) ───');
+    for (const row of staleSystemRoleRows.slice(0, 8)) {
+      const ent = row.entity_id ? row.entity_id.toString().slice(-6) : '(no entity)';
+      const action = phase3Renames.includes(row) ? 'RENAME→STAFF' : 'DEACTIVATE';
+      console.log(`    ent=${ent}  label='${row.label}'  active=${row.is_active}  action=${action}`);
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // PHASE 4 AUDIT — erp_lookups ROLE_MAPPING rows with stale '→ Contractor'
+  // label. Pure cosmetic: functionally the metadata.system_role normalization
+  // in Phase 2 is what drives behavior. Without this phase, the Role Mapping
+  // admin page reads "BDM → Contractor" while the metadata says system_role:
+  // staff — confusing, not wrong. Bounded string replace on the specific
+  // '→ Contractor' substring avoids touching labels that mention 'Contractor'
+  // in other legitimate contexts.
+  // ══════════════════════════════════════════════════════════════════════
+  console.log('\n═══ Phase 4: ROLE_MAPPING label cosmetic cleanup ═══');
+  const staleRoleMappingRows = await erpLookupsCol
+    .find({ category: 'ROLE_MAPPING', label: /→\s*Contractor\b/ })
+    .project({ _id: 1, entity_id: 1, code: 1, label: 1 })
+    .toArray();
+  console.log(`  Rows with label containing '→ Contractor': ${staleRoleMappingRows.length}`);
+  if (staleRoleMappingRows.length > 0) {
+    console.log('\n  ─── Sample (first 8) ───');
+    for (const row of staleRoleMappingRows.slice(0, 8)) {
+      const ent = row.entity_id ? row.entity_id.toString().slice(-6) : '(no entity)';
+      const nextLabel = row.label.replace(/→\s*Contractor\b/, '→ Staff');
+      console.log(`    ent=${ent}  code=${row.code}  '${row.label}' → '${nextLabel}'`);
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
   // Dry-run exit
   // ══════════════════════════════════════════════════════════════════════
+  const totalPhase3 = staleSystemRoleRows.length;
+  const totalPhase4 = staleRoleMappingRows.length;
+  const totalAnything = totalToMigrate + lookupMatches.length + totalPhase3 + totalPhase4;
   if (!APPLY) {
     console.log('\n═══ Dry-run complete ═══');
-    console.log(`  Phase 1 would rename: ${totalToMigrate} user(s)`);
-    console.log(`  Phase 2 would update: ${lookupMatches.length} lookup row(s)`);
-    if (totalToMigrate === 0 && lookupMatches.length === 0) {
+    console.log(`  Phase 1 would rename:     ${totalToMigrate} user(s)`);
+    console.log(`  Phase 2 would update:     ${lookupMatches.length} lookup row(s)`);
+    console.log(`  Phase 3 would rename:     ${phase3Renames.length} SYSTEM_ROLE row(s), deactivate: ${phase3Deactivates.length}`);
+    console.log(`  Phase 4 would rewrite:    ${totalPhase4} ROLE_MAPPING label(s)`);
+    if (totalAnything === 0) {
       console.log('\n  Nothing to migrate. All populations already on target.');
       process.exit(0);
     }
@@ -230,7 +309,7 @@ async function migrate() {
     process.exit(0);
   }
 
-  if (totalToMigrate === 0 && lookupMatches.length === 0) {
+  if (totalAnything === 0) {
     console.log('\nNothing to migrate. Exiting.');
     process.exit(0);
   }
@@ -293,10 +372,23 @@ async function migrate() {
       rows: toMigrateLookups,
       revert_hint: 'Per-row restore: for each entry above, write metadata.roles (or metadata.allowed_roles) back to the snapshot value shown, against the collection named in row._collection.',
     },
+    phase3_system_role_rows: {
+      count: staleSystemRoleRows.length,
+      renames: phase3Renames.map(r => ({ _id: r._id, entity_id: r.entity_id, label: r.label, was_active: r.is_active })),
+      deactivations: phase3Deactivates.map(d => ({ _id: d.row._id, entity_id: d.row.entity_id, label: d.row.label, collidesWith: d.collidingStaff._id })),
+      revert_hint: 'Per-row restore: for each entry in renames, set code back to "CONTRACTOR". For deactivations, set is_active back to the was_active value (usually true).',
+    },
+    phase4_role_mapping_labels: {
+      count: staleRoleMappingRows.length,
+      rows: staleRoleMappingRows.map(r => ({ _id: r._id, entity_id: r.entity_id, code: r.code, old_label: r.label })),
+      revert_hint: 'Per-row restore: set label back to old_label for each entry.',
+    },
   }, null, 2));
   console.log(`  Backup written: ${backupFile}`);
-  console.log(`    Phase 1 (users): ${toMigrateUsers.length} rows`);
-  console.log(`    Phase 2 (lookups): ${toMigrateLookups.length} rows`);
+  console.log(`    Phase 1 (users):                  ${toMigrateUsers.length} rows`);
+  console.log(`    Phase 2 (lookup metadata):        ${toMigrateLookups.length} rows`);
+  console.log(`    Phase 3 (SYSTEM_ROLE rows):       ${staleSystemRoleRows.length} rows  (${phase3Renames.length} rename, ${phase3Deactivates.length} deactivate)`);
+  console.log(`    Phase 4 (ROLE_MAPPING labels):    ${staleRoleMappingRows.length} rows`);
 
   // 2) Phase 1 — rename User.role
   let usersModified = 0;
@@ -356,7 +448,40 @@ async function migrate() {
     console.log(`    ${colName}: ${lookupsModifiedByCollection[colName]}`);
   }
 
-  // 4) Verify both phases
+  // 4) Phase 3 — SYSTEM_ROLE row rename (or deactivate on unique-index collision)
+  let phase3Renamed = 0;
+  let phase3Deactivated = 0;
+  for (const row of phase3Renames) {
+    await erpLookupsCol.updateOne(
+      { _id: row._id },
+      { $set: { code: 'STAFF', label: 'Staff' } }
+    );
+    phase3Renamed += 1;
+  }
+  for (const { row } of phase3Deactivates) {
+    await erpLookupsCol.updateOne(
+      { _id: row._id },
+      { $set: { is_active: false } }
+    );
+    phase3Deactivated += 1;
+  }
+  console.log(`  Phase 3: ${phase3Renamed} SYSTEM_ROLE row(s) renamed to STAFF, ${phase3Deactivated} deactivated (duplicate)`);
+
+  // 5) Phase 4 — ROLE_MAPPING cosmetic label fix
+  let phase4Modified = 0;
+  for (const row of staleRoleMappingRows) {
+    const nextLabel = row.label.replace(/→\s*Contractor\b/, '→ Staff');
+    if (nextLabel !== row.label) {
+      await erpLookupsCol.updateOne(
+        { _id: row._id },
+        { $set: { label: nextLabel } }
+      );
+      phase4Modified += 1;
+    }
+  }
+  console.log(`  Phase 4: ${phase4Modified} ROLE_MAPPING label(s) rewritten`);
+
+  // 6) Verify every phase
   const remainingEmployee = await usersCol.countDocuments({ role: 'employee' });
   const remainingContractor = await usersCol.countDocuments({ role: 'contractor' });
   const newStaffTotal = await usersCol.countDocuments({ role: TARGET_ROLE });
@@ -374,7 +499,25 @@ async function migrate() {
   }
   console.log(`  Total remaining lookups with legacy role strings: ${remainingLookupLegacy}  (expect 0)`);
 
-  if (remainingEmployee !== 0 || remainingContractor !== 0 || remainingLookupLegacy !== 0) {
+  // Phase 3 verification — no active SYSTEM_ROLE.code='CONTRACTOR' rows
+  const remainingStaleSystemRole = await erpLookupsCol.countDocuments({
+    category: 'SYSTEM_ROLE', code: 'CONTRACTOR', is_active: true,
+  });
+  console.log('\n─── Phase 3 verification ───');
+  console.log(`  Remaining active SYSTEM_ROLE.code='CONTRACTOR' rows: ${remainingStaleSystemRole}  (expect 0)`);
+
+  // Phase 4 verification — no ROLE_MAPPING labels with '→ Contractor'
+  const remainingStaleLabels = await erpLookupsCol.countDocuments({
+    category: 'ROLE_MAPPING', label: /→\s*Contractor\b/,
+  });
+  console.log('\n─── Phase 4 verification ───');
+  console.log(`  Remaining ROLE_MAPPING labels with '→ Contractor': ${remainingStaleLabels}  (expect 0)`);
+
+  if (
+    remainingEmployee !== 0 || remainingContractor !== 0 ||
+    remainingLookupLegacy !== 0 || remainingStaleSystemRole !== 0 ||
+    remainingStaleLabels !== 0
+  ) {
     console.warn('\n  WARNING: some rows were not migrated. Investigate before code-sweep step.');
     process.exit(2);
   }

@@ -1,0 +1,767 @@
+{
+  "timestamp": "2026-04-24T17:15:37.946Z",
+  "target_role": "staff",
+  "phase1_users": {
+    "count": 11,
+    "employee_ids": [],
+    "contractor_ids": [
+      "69b394ca0aee4ab455785c59",
+      "69b3944f0aee4ab455785c50",
+      "69b2d68c7dc0bbcbb31fb89a",
+      "69b393be0aee4ab455785c4a",
+      "69b394760aee4ab455785c53",
+      "69b394f00aee4ab455785c5c",
+      "69ce15c6a5099e3c25195c85",
+      "69b394a70aee4ab455785c56",
+      "69b394260aee4ab455785c4d",
+      "69ce15c6a5099e3c25195c82",
+      "69d6002d6ef9691fe9ec600b"
+    ],
+    "users": [
+      {
+        "_id": "69b394ca0aee4ab455785c59",
+        "name": "Menivie Daniela",
+        "email": "s4.vippharmacy@gmail.com",
+        "role": "contractor",
+        "isActive": true,
+        "entity_id": "69cd76ec7f6beb5888bd1a53"
+      },
+      {
+        "_id": "69b3944f0aee4ab455785c50",
+        "name": "Mae Navarro",
+        "email": "s3.vippharmacy@gmail.com",
+        "role": "contractor",
+        "isActive": true,
+        "entity_id": "69cd76ec7f6beb5888bd1a53"
+      },
+      {
+        "_id": "69b2d68c7dc0bbcbb31fb89a",
+        "name": "TEST ACCOUNT BDM",
+        "email": "austriafrancisgabriel@gmail.com",
+        "role": "contractor",
+        "isActive": true,
+        "entity_id": "69cd76ec7f6beb5888bd1a53"
+      },
+      {
+        "_id": "69b393be0aee4ab455785c4a",
+        "name": "Jake Montero",
+        "email": "s19.vippharmacy@gmail.com",
+        "role": "contractor",
+        "isActive": true,
+        "entity_id": "69cd76ec7f6beb5888bd1a56"
+      },
+      {
+        "_id": "69b394760aee4ab455785c53",
+        "name": "Edcel Mae Arespacochaga",
+        "email": "s21.vippharmacy@gmail.com",
+        "role": "contractor",
+        "isActive": true,
+        "entity_id": "69cd76ec7f6beb5888bd1a53"
+      },
+      {
+        "_id": "69b394f00aee4ab455785c5c",
+        "name": "Cristina Salila",
+        "email": "s8.vippharmacy@gmail.com",
+        "role": "contractor",
+        "isActive": true,
+        "entity_id": "69cd76ec7f6beb5888bd1a53"
+      },
+      {
+        "_id": "69ce15c6a5099e3c25195c85",
+        "name": "Judy Mae Patrocinio",
+        "email": "s25.vippharmacy@gmail.com",
+        "role": "contractor",
+        "isActive": true,
+        "entity_id": "69cd76ec7f6beb5888bd1a53"
+      },
+      {
+        "_id": "69b394a70aee4ab455785c56",
+        "name": "Roman Mabanag",
+        "email": "s12.vippharmacy@gmail.com",
+        "role": "contractor",
+        "isActive": true,
+        "entity_id": "69cd76ec7f6beb5888bd1a53"
+      },
+      {
+        "_id": "69b394260aee4ab455785c4d",
+        "name": "Romela Shen Herrera",
+        "email": "s18.vippharmacy@gmail.com",
+        "role": "contractor",
+        "isActive": true,
+        "entity_id": "69cd76ec7f6beb5888bd1a53"
+      },
+      {
+        "_id": "69ce15c6a5099e3c25195c82",
+        "name": "Jenny Rose Jacosalem",
+        "email": "s26.vippharmacy@gmail.com",
+        "role": "contractor",
+        "isActive": true,
+        "entity_id": "69cd76ec7f6beb5888bd1a53"
+      },
+      {
+        "_id": "69d6002d6ef9691fe9ec600b",
+        "name": "Jay Ann Protacio",
+        "email": "s22.vippharmacy@gmail.com",
+        "role": "contractor",
+        "isActive": true,
+        "entity_id": "69cd76ec7f6beb5888bd1a53"
+      }
+    ],
+    "revert_hint": {
+      "employees": "db.users.updateMany({_id:{$in: <employee_ids>}}, {$set:{role:'employee'}})",
+      "contractors": "db.users.updateMany({_id:{$in: <contractor_ids>}}, {$set:{role:'contractor'}})"
+    }
+  },
+  "phase2_lookups": {
+    "count": 31,
+    "collections_scanned": [
+      "lookups",
+      "erp_lookups"
+    ],
+    "rows": [
+      {
+        "_id": "69d730cd3d557c62b25ae2c1",
+        "category": "ROLE_MAPPING",
+        "code": "ECOMMERCE_BDM",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "metadata": {
+          "person_type": "ECOMMERCE_BDM",
+          "system_role": "contractor"
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69d730cd3d557c62b25ae2c3",
+        "category": "ROLE_MAPPING",
+        "code": "CONSULTANT",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "metadata": {
+          "person_type": "CONSULTANT",
+          "system_role": "contractor"
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69d754303d557c62b25ae352",
+        "category": "ROLE_MAPPING",
+        "entity_id": "69cd76ec7f6beb5888bd1a56",
+        "code": "SALES_REP",
+        "metadata": {
+          "person_type": "SALES_REP",
+          "system_role": "contractor"
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69d754303d557c62b25ae353",
+        "category": "ROLE_MAPPING",
+        "entity_id": "69cd76ec7f6beb5888bd1a56",
+        "code": "CONSULTANT",
+        "metadata": {
+          "person_type": "CONSULTANT",
+          "system_role": "contractor"
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69d730cd3d557c62b25ae2c4",
+        "category": "ROLE_MAPPING",
+        "code": "EMPLOYEE",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "metadata": {
+          "person_type": "EMPLOYEE",
+          "system_role": "contractor"
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69d754303d557c62b25ae350",
+        "category": "ROLE_MAPPING",
+        "entity_id": "69cd76ec7f6beb5888bd1a56",
+        "code": "BDM",
+        "metadata": {
+          "person_type": "BDM",
+          "system_role": "contractor"
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69d754303d557c62b25ae351",
+        "category": "ROLE_MAPPING",
+        "entity_id": "69cd76ec7f6beb5888bd1a56",
+        "code": "ECOMMERCE_BDM",
+        "metadata": {
+          "person_type": "ECOMMERCE_BDM",
+          "system_role": "contractor"
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69d730cd3d557c62b25ae2c0",
+        "category": "ROLE_MAPPING",
+        "code": "BDM",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "metadata": {
+          "person_type": "BDM",
+          "system_role": "contractor"
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69d754303d557c62b25ae354",
+        "category": "ROLE_MAPPING",
+        "entity_id": "69cd76ec7f6beb5888bd1a56",
+        "code": "EMPLOYEE",
+        "metadata": {
+          "person_type": "EMPLOYEE",
+          "system_role": "contractor"
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69d730cd3d557c62b25ae2c2",
+        "category": "ROLE_MAPPING",
+        "code": "SALES_REP",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "metadata": {
+          "person_type": "SALES_REP",
+          "system_role": "contractor"
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69e30bc45997cc3b458c511f",
+        "category": "ROLE_MAPPING",
+        "code": "BDM",
+        "entity_id": "69cf96bc68d6b3cf4fe153b9",
+        "metadata": {
+          "person_type": "BDM",
+          "system_role": "contractor"
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69e30bc45997cc3b458c5120",
+        "category": "ROLE_MAPPING",
+        "code": "ECOMMERCE_BDM",
+        "entity_id": "69cf96bc68d6b3cf4fe153b9",
+        "metadata": {
+          "person_type": "ECOMMERCE_BDM",
+          "system_role": "contractor"
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69e30bc45997cc3b458c5123",
+        "category": "ROLE_MAPPING",
+        "code": "EMPLOYEE",
+        "entity_id": "69cf96bc68d6b3cf4fe153b9",
+        "metadata": {
+          "person_type": "EMPLOYEE",
+          "system_role": "contractor"
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69e30bc45997cc3b458c5121",
+        "category": "ROLE_MAPPING",
+        "code": "SALES_REP",
+        "entity_id": "69cf96bc68d6b3cf4fe153b9",
+        "metadata": {
+          "person_type": "SALES_REP",
+          "system_role": "contractor"
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69e30bc45997cc3b458c5122",
+        "category": "ROLE_MAPPING",
+        "code": "CONSULTANT",
+        "entity_id": "69cf96bc68d6b3cf4fe153b9",
+        "metadata": {
+          "person_type": "CONSULTANT",
+          "system_role": "contractor"
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69e496e1f0598857d18044ca",
+        "category": "AI_COWORK_FEATURES",
+        "code": "APPROVAL_FIX_HELPER",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "metadata": {
+          "allowed_roles": [
+            "employee",
+            "contractor",
+            "bdm",
+            "admin",
+            "finance",
+            "president"
+          ],
+          "button_label": "🤝 Help Me Fix",
+          "description": "In RejectionBanner, explains the rejection in plain language with concrete edit suggestions.",
+          "endpoint_key": "approval-fix-helper",
+          "fallback_behavior": "hide_button",
+          "max_tokens": 600,
+          "model": "claude-sonnet-4-6",
+          "rate_limit_per_min": 6,
+          "surface": "contractor",
+          "system_prompt": "You are an ERP submission assistant. Given a rejected document and the approver's reason, explain in 1-2 short sentences what needs to change, then list the specific edits as bullet points. Be concrete — reference actual fields. End with a one-line summary of the resubmit checklist.",
+          "temperature": 0.3,
+          "user_template": "Module: {{module}}\nDoc: {{doc_ref}}\nRejection reason: {{reason}}\nDoc summary: {{summary}}\n\nExplain what to fix and how."
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69e496e1f0598857d18044cb",
+        "category": "AI_COWORK_FEATURES",
+        "code": "APPROVAL_FIX_CHECK",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "metadata": {
+          "allowed_roles": [
+            "employee",
+            "contractor",
+            "bdm",
+            "admin",
+            "finance",
+            "president"
+          ],
+          "button_label": "🔎 Check My Fix",
+          "description": "In RejectionBanner before Resubmit, verifies edits address the original reason.",
+          "endpoint_key": "approval-fix-check",
+          "fallback_behavior": "hide_button",
+          "max_tokens": 300,
+          "model": "claude-sonnet-4-6",
+          "rate_limit_per_min": 6,
+          "surface": "contractor",
+          "system_prompt": "You are an ERP pre-submit reviewer. Compare the original rejection reason against the document's current state. Reply with: PASS or FAIL on the first line, then 1-2 sentences explaining what still needs work (or confirming the fix addresses the original feedback).",
+          "temperature": 0.2,
+          "user_template": "Module: {{module}}\nDoc: {{doc_ref}}\nOriginal rejection reason: {{reason}}\nCurrent doc state: {{summary}}\n\nDoes the fix address the rejection?"
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69e4e4d0f0598857d180475b",
+        "code": "LIST_OVERDUE_ITEMS",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "category": "COPILOT_TOOLS",
+        "metadata": {
+          "allowed_roles": [
+            "president",
+            "ceo",
+            "admin",
+            "finance",
+            "contractor"
+          ],
+          "confirmation_template": "",
+          "description_for_claude": "Use when the user asks \"what's overdue\", \"what's late\", \"what's on my plate\". Aggregates overdue tasks + overdue approval requests.",
+          "entity_scoped": true,
+          "handler_key": "listOverdueItems",
+          "json_schema": {
+            "name": "list_overdue_items",
+            "description": "Returns overdue tasks AND overdue approval requests for the current user (or all, if privileged). Sorted by how late they are.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "scope": {
+                  "type": "string",
+                  "description": "tasks | approvals | both (default both)"
+                },
+                "assignee": {
+                  "type": "string",
+                  "description": "me (default) | all (privileged only)"
+                },
+                "limit": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "rate_limit_per_min": 30,
+          "tool_type": "read"
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69e4e4d0f0598857d180475a",
+        "code": "CREATE_TASK",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "category": "COPILOT_TOOLS",
+        "metadata": {
+          "allowed_roles": [
+            "president",
+            "ceo",
+            "admin",
+            "finance",
+            "contractor"
+          ],
+          "confirmation_template": "Create task \"{{title}}\" due {{due_date}} for {{assignee_name}}?",
+          "description_for_claude": "Use when the user says \"remind me to\", \"add a task\", \"create a task to\". Always returns a draft — user confirms before the task is saved.",
+          "entity_scoped": true,
+          "handler_key": "createTask",
+          "json_schema": {
+            "name": "create_task",
+            "description": "Creates a task in the Task collection for the current user or an assignee. Returns a draft first; user confirms before save.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "description": "Short task title (≤200 chars)."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Optional longer description."
+                },
+                "assignee_user_id": {
+                  "type": "string",
+                  "description": "Optional user id to assign to. Omit = assign to self."
+                },
+                "due_date": {
+                  "type": "string",
+                  "description": "Optional ISO date (YYYY-MM-DD) or \"friday\" / \"next week\" — the handler normalises relative dates."
+                },
+                "priority": {
+                  "type": "string",
+                  "description": "low | normal | high | urgent. Default normal."
+                }
+              },
+              "required": [
+                "title"
+              ]
+            }
+          },
+          "rate_limit_per_min": 20,
+          "tool_type": "write_confirm"
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69e50fb4f0598857d180488a",
+        "code": "MESSAGING",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "category": "MODULE_DEFAULT_ROLES",
+        "metadata": {
+          "roles": [
+            "president",
+            "ceo",
+            "admin",
+            "finance",
+            "contractor",
+            "employee"
+          ],
+          "description": "Allow this role to use the unified Inbox. Per-role DM matrix lives in MESSAGE_ACCESS_ROLES; sub-perm grants in ERP_SUB_PERMISSION (messaging.*)."
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69e61c0bf0598857d180a895",
+        "category": "MODULE_DEFAULT_ROLES",
+        "code": "UNDERTAKING",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "metadata": {
+          "roles": [
+            "admin",
+            "finance",
+            "bdm",
+            "president"
+          ],
+          "description": "Acknowledge goods receipt. Acknowledge auto-approves the linked GRN and writes InventoryLedger."
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69e61c36f0598857d180a8ae",
+        "code": "DRAFT_REPLY_TO_MESSAGE",
+        "category": "COPILOT_TOOLS",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "metadata": {
+          "allowed_roles": [
+            "president",
+            "ceo",
+            "admin",
+            "finance",
+            "contractor"
+          ],
+          "confirmation_template": "Send reply to \"{{parent_title}}\"?",
+          "description_for_claude": "Use when the user asks Claude to reply to a notification or message they already received. The Copilot will offer the draft for confirmation; the user clicks Execute to send.",
+          "entity_scoped": true,
+          "handler_key": "draftReplyToMessage",
+          "json_schema": {
+            "name": "draft_reply_to_message",
+            "description": "Drafts a reply to an existing MessageInbox row. Returns the draft for confirmation; on execute, posts via the canonical /messages/:id/reply endpoint so the reply is threaded with the parent.",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "message_id": {
+                  "type": "string",
+                  "description": "Parent MessageInbox _id to reply to."
+                },
+                "body": {
+                  "type": "string",
+                  "description": "Reply text (max 5000 chars)."
+                }
+              },
+              "required": [
+                "message_id",
+                "body"
+              ]
+            }
+          },
+          "rate_limit_per_min": 10,
+          "tool_type": "write_confirm"
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69e9b959f0598857d1816dc6",
+        "code": "SALES",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "category": "VALID_OWNER_ROLES",
+        "metadata": {
+          "roles": [
+            "contractor",
+            "employee"
+          ],
+          "sort_order": 1
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69e9b959f0598857d1816dc7",
+        "code": "OPENING_AR",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "category": "VALID_OWNER_ROLES",
+        "metadata": {
+          "roles": [
+            "contractor",
+            "employee"
+          ],
+          "sort_order": 2
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69e9b959f0598857d1816dc8",
+        "code": "COLLECTIONS",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "category": "VALID_OWNER_ROLES",
+        "metadata": {
+          "roles": [
+            "contractor",
+            "employee"
+          ],
+          "sort_order": 3
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69e9b959f0598857d1816dca",
+        "code": "GRN",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "category": "VALID_OWNER_ROLES",
+        "metadata": {
+          "roles": [
+            "contractor",
+            "employee"
+          ],
+          "sort_order": 5
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69e9b959f0598857d1816dc9",
+        "code": "EXPENSES",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "category": "VALID_OWNER_ROLES",
+        "metadata": {
+          "roles": [
+            "contractor",
+            "employee"
+          ],
+          "sort_order": 4
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69eb66d1d12cab6e55335e75",
+        "code": "CAR_LOGBOOK",
+        "category": "VALID_OWNER_ROLES",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "metadata": {
+          "roles": [
+            "contractor",
+            "employee"
+          ],
+          "sort_order": 6
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69eb66d1d12cab6e55335e76",
+        "code": "PRF_CALF",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "category": "VALID_OWNER_ROLES",
+        "metadata": {
+          "roles": [
+            "contractor",
+            "employee"
+          ],
+          "sort_order": 7
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69eb66d1d12cab6e55335e77",
+        "code": "UNDERTAKING",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "category": "VALID_OWNER_ROLES",
+        "metadata": {
+          "roles": [
+            "contractor",
+            "employee"
+          ],
+          "sort_order": 8
+        },
+        "_collection": "erp_lookups"
+      },
+      {
+        "_id": "69eb66d1d12cab6e55335e78",
+        "code": "SMER",
+        "category": "VALID_OWNER_ROLES",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "metadata": {
+          "roles": [
+            "contractor",
+            "employee"
+          ],
+          "sort_order": 9
+        },
+        "_collection": "erp_lookups"
+      }
+    ],
+    "revert_hint": "Per-row restore: for each entry above, write metadata.roles (or metadata.allowed_roles) back to the snapshot value shown, against the collection named in row._collection."
+  },
+  "phase3_system_role_rows": {
+    "count": 3,
+    "renames": [
+      {
+        "_id": "69e30bb75997cc3b458c4ea8",
+        "entity_id": "69cd76ec7f6beb5888bd1a56",
+        "label": "Contractor",
+        "was_active": true
+      },
+      {
+        "_id": "69e30bc45997cc3b458c5126",
+        "entity_id": "69cf96bc68d6b3cf4fe153b9",
+        "label": "Contractor",
+        "was_active": true
+      }
+    ],
+    "deactivations": [
+      {
+        "_id": "69d730cd3d557c62b25ae2c7",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "label": "Contractor",
+        "collidesWith": "69eba4edd12cab6e5533602b"
+      }
+    ],
+    "revert_hint": "Per-row restore: for each entry in renames, set code back to \"CONTRACTOR\". For deactivations, set is_active back to the was_active value (usually true)."
+  },
+  "phase4_role_mapping_labels": {
+    "count": 15,
+    "rows": [
+      {
+        "_id": "69d730cd3d557c62b25ae2c1",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "code": "ECOMMERCE_BDM",
+        "old_label": "eBDM → Contractor"
+      },
+      {
+        "_id": "69d730cd3d557c62b25ae2c3",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "code": "CONSULTANT",
+        "old_label": "Consultant → Contractor"
+      },
+      {
+        "_id": "69d754303d557c62b25ae352",
+        "entity_id": "69cd76ec7f6beb5888bd1a56",
+        "code": "SALES_REP",
+        "old_label": "Sales Rep → Contractor"
+      },
+      {
+        "_id": "69d754303d557c62b25ae353",
+        "entity_id": "69cd76ec7f6beb5888bd1a56",
+        "code": "CONSULTANT",
+        "old_label": "Consultant → Contractor"
+      },
+      {
+        "_id": "69d730cd3d557c62b25ae2c4",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "code": "EMPLOYEE",
+        "old_label": "Employee → Contractor"
+      },
+      {
+        "_id": "69d754303d557c62b25ae350",
+        "entity_id": "69cd76ec7f6beb5888bd1a56",
+        "code": "BDM",
+        "old_label": "BDM → Contractor"
+      },
+      {
+        "_id": "69d754303d557c62b25ae351",
+        "entity_id": "69cd76ec7f6beb5888bd1a56",
+        "code": "ECOMMERCE_BDM",
+        "old_label": "eBDM → Contractor"
+      },
+      {
+        "_id": "69d730cd3d557c62b25ae2c0",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "code": "BDM",
+        "old_label": "BDM → Contractor"
+      },
+      {
+        "_id": "69d754303d557c62b25ae354",
+        "entity_id": "69cd76ec7f6beb5888bd1a56",
+        "code": "EMPLOYEE",
+        "old_label": "Employee → Contractor"
+      },
+      {
+        "_id": "69d730cd3d557c62b25ae2c2",
+        "entity_id": "69cd76ec7f6beb5888bd1a53",
+        "code": "SALES_REP",
+        "old_label": "Sales Rep → Contractor"
+      },
+      {
+        "_id": "69e30bc45997cc3b458c511f",
+        "entity_id": "69cf96bc68d6b3cf4fe153b9",
+        "code": "BDM",
+        "old_label": "BDM → Contractor"
+      },
+      {
+        "_id": "69e30bc45997cc3b458c5120",
+        "entity_id": "69cf96bc68d6b3cf4fe153b9",
+        "code": "ECOMMERCE_BDM",
+        "old_label": "eBDM → Contractor"
+      },
+      {
+        "_id": "69e30bc45997cc3b458c5123",
+        "entity_id": "69cf96bc68d6b3cf4fe153b9",
+        "code": "EMPLOYEE",
+        "old_label": "Employee → Contractor"
+      },
+      {
+        "_id": "69e30bc45997cc3b458c5121",
+        "entity_id": "69cf96bc68d6b3cf4fe153b9",
+        "code": "SALES_REP",
+        "old_label": "Sales Rep → Contractor"
+      },
+      {
+        "_id": "69e30bc45997cc3b458c5122",
+        "entity_id": "69cf96bc68d6b3cf4fe153b9",
+        "code": "CONSULTANT",
+        "old_label": "Consultant → Contractor"
+      }
+    ],
+    "revert_hint": "Per-row restore: set label back to old_label for each entry."
+  }
+}
