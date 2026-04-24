@@ -109,7 +109,7 @@ export default function PersonDetail() {
   // Derive role from person_type via ROLE_MAPPING lookup
   const getMappedRole = useCallback((personType) => {
     const mapping = roleMappingOpts.find(m => m.metadata?.person_type === personType);
-    return mapping?.metadata?.system_role || 'contractor';
+    return mapping?.metadata?.system_role || 'staff';
   }, [roleMappingOpts]);
   const CIVIL_STATUSES = codes('CIVIL_STATUS');
   const PERSON_STATUSES = codes('PERSON_STATUS');
@@ -810,7 +810,7 @@ export default function PersonDetail() {
                       {systemRoleOpts.length > 0 ? systemRoleOpts.map(r => (
                         <option key={r.code} value={r.code.toLowerCase()}>{r.label} ({r.code.toLowerCase()})</option>
                       )) : (
-                        <option value="contractor">Contractor</option>
+                        <option value="staff">Staff</option>
                       )}
                     </select>
                     {person.person_type && (

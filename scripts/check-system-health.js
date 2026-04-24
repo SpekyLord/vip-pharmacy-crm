@@ -619,8 +619,14 @@ function checkProxyEntryWiring() {
   } else {
     const picker = fs.readFileSync(pickerPath, 'utf-8');
     if (!picker.includes('PROXY_ENTRY_ROLES')) warn('PROXY', 'OwnerPicker.jsx does not read PROXY_ENTRY_ROLES lookup');
-    if (!/===\s*['"]contractor['"]/.test(picker)) {
-      warn('PROXY', "OwnerPicker.jsx does not filter target roles to contractor/employee — admins/finance may appear as invalid proxy targets");
+    // Phase S2 (Apr 2026): proxy-target filter became lookup-driven via
+    // VALID_OWNER_ROLES. Health check verifies either the new lookup-based
+    // filter OR the legacy hardcoded 'contractor'/'employee' strings (which
+    // would indicate the sweep missed this file).
+    const usesLookupFilter = /validOwnerRoles\.includes/.test(picker);
+    const usesLegacyFilter = /===\s*['"](contractor|employee|staff)['"]/.test(picker);
+    if (!usesLookupFilter && !usesLegacyFilter) {
+      warn('PROXY', 'OwnerPicker.jsx does not filter target roles — admins/finance may appear as invalid proxy targets');
     }
   }
   // Entry pages mount OwnerPicker + send assigned_to in payload

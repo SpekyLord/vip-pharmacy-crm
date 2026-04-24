@@ -89,7 +89,7 @@ const AdminSentMessageBox = ({
   const [draftBody, setDraftBody] = useState(message?.body ?? message?.message ?? "");
   const [draftCategory, setDraftCategory] = useState(message?.category ?? "system");
   const [draftPriority, setDraftPriority] = useState(message?.priority ?? "normal");
-  const [draftRecipientRole, setDraftRecipientRole] = useState(message?.recipientRole ?? "employee");
+  const [draftRecipientRole, setDraftRecipientRole] = useState(message?.recipientRole ?? "staff");
 
   // when switching messages or edit mode, reset draft + reset local composer
   useEffect(() => {
@@ -97,7 +97,7 @@ const AdminSentMessageBox = ({
     setDraftBody(message?.body ?? message?.message ?? "");
     setDraftCategory(message?.category ?? "system");
     setDraftPriority(message?.priority ?? "normal");
-    setDraftRecipientRole(message?.recipientRole ?? "employee");
+    setDraftRecipientRole(message?.recipientRole ?? "staff");
 
     // ✅ mimic inbox: switching message closes reply box
     setMessageOpen(false);
@@ -278,7 +278,7 @@ const AdminSentMessageBox = ({
                   value={draftRecipientRole}
                   onChange={(e) => setDraftRecipientRole(e.target.value)}
                 >
-                  <option value="employee">BDM</option>
+                  <option value="staff">BDM</option>
                   <option value="admin">Admin</option>
                 </SelectField>
               </div>

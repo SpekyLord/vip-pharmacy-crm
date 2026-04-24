@@ -58,7 +58,7 @@ const ProtectedRoute = ({ children, allowedRoles = [], requiredErpModule = null 
         [ROLES.PRESIDENT]: '/admin',
         [ROLES.CEO]: '/admin',
         [ROLES.FINANCE]: '/admin',
-        [ROLES.CONTRACTOR]: '/bdm',
+        [ROLES.STAFF]: '/bdm',
       };
       const redirectTo = roleRedirects[user?.role] || '/login';
       return <Navigate to={redirectTo} replace />;

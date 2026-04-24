@@ -48,22 +48,25 @@ const roleCheck = (...allowedRoles) => {
 const adminOnly = roleCheck(...ROLE_SETS.ADMIN_LIKE);
 
 /**
- * Contractor only middleware (BDMs, field staff)
- * Shortcut for roleCheck('contractor')
+ * Staff only middleware (BDMs, field staff, non-management workers).
+ * Back-compat aliased as `employeeOnly` because many route files import
+ * that name; the function body keys off ROLES.STAFF.
  */
-const employeeOnly = roleCheck(ROLES.CONTRACTOR);
+const staffOnly = roleCheck(ROLES.STAFF);
+const employeeOnly = staffOnly;
 
 /**
- * Admin or Contractor middleware
- * For routes accessible by both admin and contractors
+ * Admin or Staff middleware
+ * For routes accessible by both admin and non-management workers
  */
-const adminOrEmployee = roleCheck(...ROLE_SETS.ADMIN_LIKE, ROLES.CONTRACTOR);
+const adminOrStaff = roleCheck(...ROLE_SETS.ADMIN_LIKE, ROLES.STAFF);
+const adminOrEmployee = adminOrStaff; // legacy alias
 
 /**
  * All authenticated users middleware
  * For routes accessible by any authenticated user
  */
-const anyRole = roleCheck(...ROLE_SETS.ADMIN_LIKE, ROLES.CONTRACTOR);
+const anyRole = roleCheck(...ROLE_SETS.ADMIN_LIKE, ROLES.STAFF);
 
 /**
  * Check if user owns the resource (for user profile updates)
@@ -101,8 +104,9 @@ const isOwnerOrAdmin = (userIdParam = 'id') => {
 };
 
 /**
- * Validate that the current user is the assigned contractor for a doctor
- * Use for visit creation to ensure contractors only visit doctors assigned to them
+ * Validate that the current user is the assigned staff member for a doctor.
+ * Use for visit creation to ensure non-management users only visit doctors
+ * assigned to them.
  */
 const isAssignedToDoctor = async (req, res, next) => {
   // Check if user is authenticated
@@ -139,8 +143,8 @@ const isAssignedToDoctor = async (req, res, next) => {
       });
     }
 
-    // Check if doctor is assigned to this contractor/BDM
-    if (req.user.role === ROLES.CONTRACTOR) {
+    // Check if doctor is assigned to this staff member
+    if (req.user.role === ROLES.STAFF) {
       const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
       if (!assignedToId || assignedToId.toString() !== req.user._id.toString()) {
         return res.status(403).json({
@@ -165,8 +169,10 @@ const isAssignedToDoctor = async (req, res, next) => {
 module.exports = {
   roleCheck,
   adminOnly,
-  employeeOnly,
-  adminOrEmployee,
+  staffOnly,
+  employeeOnly,       // legacy alias → staffOnly
+  adminOrStaff,
+  adminOrEmployee,    // legacy alias → adminOrStaff
   anyRole,
   isOwnerOrAdmin,
   isAssignedToDoctor,

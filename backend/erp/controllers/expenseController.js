@@ -26,7 +26,7 @@ const { getEditableStatuses } = require('../services/approvalService');
 // Phase G4.5c.1 (April 22, 2026) — shared proxy-entry resolver. Replaces the
 // inline `assigned_to` handling that lived only in batch upload. Unifies
 // audit codes with Sales / Collections / GRN (PROXY_CREATE / PROXY_UPDATE).
-const { resolveOwnerForWrite, widenFilterForProxy } = require('../utils/resolveOwnerScope');
+const { resolveOwnerForWrite, widenFilterForProxy, canProxyEntry } = require('../utils/resolveOwnerScope');
 
 const { ROLES } = require('../../constants/roles');
 const { detectText } = require('../ocr/visionClient');
@@ -97,19 +97,20 @@ const SMER_PROXY_OPTS = { subKey: 'smer_proxy', lookupCode: 'SMER' };
 // add startup cost when SMER is idle. Failures are logged but never block
 // the underlying write — receipts are notification, not a system of record.
 //
-// recipientRole is resolved from the TARGET user's actual role (contractor OR
-// legacy employee) because getInboxList filters on recipientRole=user.role —
-// hardcoding 'contractor' would hide the message from legacy employee-role BDMs.
+// recipientRole is resolved from the TARGET user's actual role (post-Phase S2
+// this is 'staff'; pre-migration docs used 'contractor' / 'employee'). The
+// filter in getInboxList uses recipientRole=user.role, so resolving dynamically
+// keeps receipts visible across the migration boundary.
 async function writeProxyReceipt({ entityId, recipientUserId, senderUser, category, title, body }) {
   if (!recipientUserId) return;
   try {
     const MessageInbox = require('../../models/MessageInbox');
     const User = require('../../models/User');
     const target = await User.findById(recipientUserId).select('role').lean();
-    // Fall back to 'contractor' only when the target cannot be loaded. That
-    // matches the modern default so a receipt still lands for new users even
-    // when the User lookup fails transiently.
-    const recipientRole = target?.role || 'contractor';
+    // Fall back to 'staff' (Phase S2 target) when the target cannot be loaded
+    // so a receipt still lands for new users even when the User lookup fails
+    // transiently.
+    const recipientRole = target?.role || 'staff';
     await MessageInbox.create({
       entity_id: entityId,
       recipientRole,
@@ -2944,25 +2945,68 @@ const getExpenseSummary = catchAsync(async (req, res) => {
 // ═══════════════════════════════════════════
 
 /**
- * GET /expenses/smer/crm-md-counts?period=2026-04&cycle=C1
+ * Resolve which BDM's CRM visits to pull, given an HTTP request. Centralized
+ * so both the count endpoint and the drill-down endpoint use the same rules.
+ *
+ * Rule #21 + Phase G4.5f alignment:
+ *   - privileged caller (admin/finance/president): MUST pass ?bdm_id=. No
+ *     implicit self-fallback — these roles have no Visit rows, so req.bdmId
+ *     would silently resolve to an empty result.
+ *   - CONTRACTOR self-file (no bdm_id, or bdm_id matches own _id): falls back
+ *     to req.bdmId. Pre-G4.5f behavior preserved.
+ *   - CONTRACTOR proxy (bdm_id ≠ own _id): must hold expenses.smer_proxy and
+ *     pass PROXY_ENTRY_ROLES.SMER. Otherwise 403. Without this gate, an eBDM
+ *     would silently pull their own CRM visits into the target BDM's SMER.
+ *   - any other role: 403.
+ *
+ * Throws an Error with .statusCode set; catchAsync surfaces it to the client.
+ */
+async function resolveBdmForCrmPull(req) {
+  const requestedBdmId = req.query.bdm_id || null;
+  const privileged = req.isPresident || req.isAdmin || req.isFinance;
+
+  if (privileged) {
+    if (!requestedBdmId) {
+      const err = new Error('bdm_id is required for admin/finance/president pulls');
+      err.statusCode = 400;
+      throw err;
+    }
+    return requestedBdmId;
+  }
+
+  if (req.user.role !== ROLES.CONTRACTOR) {
+    const err = new Error('CRM bridge is for BDM users. Admins must pass ?bdm_id=.');
+    err.statusCode = 403;
+    throw err;
+  }
+
+  // Self-file: backend self-scopes via req.bdmId.
+  if (!requestedBdmId || String(requestedBdmId) === String(req.user._id)) {
+    return req.bdmId || req.user._id;
+  }
+
+  // Proxy CONTRACTOR: gate via expenses.smer_proxy + PROXY_ENTRY_ROLES.SMER
+  // (same gate the SMER write/submit/reopen paths enforce in Phase G4.5f).
+  const { canProxy } = await canProxyEntry(req, 'expenses', SMER_PROXY_OPTS);
+  if (!canProxy) {
+    const err = new Error('Proxy pull denied. Your Access Template does not grant expenses.smer_proxy.');
+    err.statusCode = 403;
+    throw err;
+  }
+  return requestedBdmId;
+}
+
+/**
+ * GET /expenses/smer/crm-md-counts?period=2026-04&cycle=C1[&bdm_id=...]
  * Returns daily MD counts pulled from CRM visit logs for the BDM's period/cycle.
  * Used to auto-populate SMER daily entries instead of manual MD count entry.
  */
 const getSmerCrmMdCounts = catchAsync(async (req, res) => {
-  // Rule #21: privileged users may scope by ?bdm_id=; absence = no implicit
-  // self-fallback (admins are not BDMs on Visit records, so req.bdmId would
-  // silently resolve to an empty result). BDMs always scope to themselves.
-  const privileged = req.isPresident || req.isAdmin || req.isFinance;
   let bdmUserId;
-  if (privileged) {
-    if (!req.query.bdm_id) {
-      return res.status(400).json({ success: false, message: 'bdm_id is required for admin/finance/president pulls' });
-    }
-    bdmUserId = req.query.bdm_id;
-  } else if (req.user.role === ROLES.CONTRACTOR) {
-    bdmUserId = req.bdmId || req.user._id;
-  } else {
-    return res.status(403).json({ success: false, message: 'CRM bridge is for BDM users. Admins must pass ?bdm_id=.' });
+  try {
+    bdmUserId = await resolveBdmForCrmPull(req);
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message });
   }
 
   const { period, cycle } = req.query;
@@ -3055,19 +3099,13 @@ const getSmerCrmVisitDetail = catchAsync(async (req, res) => {
   const { date } = req.params;
   if (!date) return res.status(400).json({ success: false, message: 'date is required' });
 
-  // Rule #21: same privilege pattern as getSmerCrmMdCounts — admins must pass
-  // ?bdm_id=; no implicit self-fallback (admin is not a BDM on Visit records).
-  const privileged = req.isPresident || req.isAdmin || req.isFinance;
+  // Same resolver as getSmerCrmMdCounts — privileged must pass bdm_id;
+  // CONTRACTOR proxy must hold expenses.smer_proxy.
   let bdmUserId;
-  if (privileged) {
-    if (!req.query.bdm_id) {
-      return res.status(400).json({ success: false, message: 'bdm_id is required for admin/finance/president pulls' });
-    }
-    bdmUserId = req.query.bdm_id;
-  } else if (req.user.role === ROLES.CONTRACTOR) {
-    bdmUserId = req.bdmId || req.user._id;
-  } else {
-    return res.status(403).json({ success: false, message: 'CRM bridge is for BDM users. Admins must pass ?bdm_id=.' });
+  try {
+    bdmUserId = await resolveBdmForCrmPull(req);
+  } catch (err) {
+    return res.status(err.statusCode || 500).json({ success: false, message: err.message });
   }
 
   // Phase G1.6 — resolve source so drill-down reads from the correct backing store

@@ -7884,3 +7884,48 @@ CLAUDE-ERP.md                                       (Rule #20 note)
 - Foundation Health dashboard card for CSI_TEMPLATE coverage — seed script dry-run fills the same role.
 - Custom font shipping — Helvetica-Bold 10pt from pdfkit built-ins; if subscribers want typewriter-style we'd need to ship a .ttf.
 
+
+---
+
+## PHASE S2 — `staff` Role Rename (April 24, 2026) ✅ COMPLETE
+
+**Context.** Three legacy `User.role` strings coexisted: `'employee'` (0 users), `'contractor'` (11 users on prod), `'bdm'` (0 users — dead string in some metadata arrays). The business is hiring W-2 employees to do BDM work and promoting good ones to BDM. `'contractor'` on a W-2 employee's profile is misleading; `'staff'` is neutral and scales to mixed workforces for the Year-2 Vios SaaS spin-out. Employment nature continues to live on `PeopleMaster.employment_type` (REGULAR / PROBATIONARY / CONTRACTUAL / CONSULTANT / PARTNERSHIP).
+
+### Deliverables — all complete
+
+- [x] Migration script `backend/scripts/migrateEmployeeToContractor.js` — two-phase atomic:
+  - Phase 1: `users.role: {$in:['employee','contractor']} → 'staff'` via updateMany.
+  - Phase 2: `lookups.metadata.roles[]` + `lookups.metadata.allowed_roles[]` normalized (any array containing `employee`/`contractor`/`bdm` gets those elements replaced with `staff`, preserving order + de-duplicating). Covers PROXY_ENTRY_ROLES, VALID_OWNER_ROLES, MODULE_DEFAULT_ROLES, AGENT_CONFIG — no hardcoded category allowlist.
+  - Backup file at `backend/scripts/backups/staff-rename-<timestamp>.json` with per-user + per-lookup snapshots + revert hints. Idempotent — re-runs become no-ops.
+- [x] Core auth constants — `ROLES.STAFF = 'staff'` added. `ROLES.CONTRACTOR` kept as a deprecated alias that returns `'staff'` (transition safety — 29 legacy call sites keep working without a big-bang rewrite). `ALL_ROLES` no longer accepts `'employee'`.
+- [x] User model — `default: ROLES.STAFF`. Mongoose enum rejects future `'employee'`/`'contractor'`/`'bdm'` inserts.
+- [x] `roleCheck` middleware — `staffOnly` / `adminOrStaff` added; `employeeOnly` / `adminOrEmployee` kept as aliases to avoid mass edits in route files.
+- [x] SEED_DEFAULTS — `VALID_OWNER_ROLES` (9 rows), `MODULE_DEFAULT_ROLES.MESSAGING` + `MODULE_DEFAULT_ROLES.UNDERTAKING`, `AGENT_CONFIG.allowed_roles` (3 rows) all normalized to `'staff'`. AI cowork `surface: 'contractor'` also renamed → `'staff'`.
+- [x] `resolveOwnerScope.DEFAULT_VALID_OWNER_ROLES` flipped from `[CONTRACTOR, 'employee']` → `[STAFF]`.
+- [x] Backend string-literal sweep — `customerController`, `hospitalController`, `dashboardService`, `salesGoalService`, `findOrphanedOwnerRecords.js`. Synthetic-user access-filter objects all use `role: 'staff'` now.
+- [x] Frontend `OwnerPicker.jsx` — `validOwnerRoles` default flipped to `['staff']`. **Filter is now lookup-driven** (`validOwnerRoles.includes(r)` replaces the hardcoded `r === 'contractor' || r === 'employee'`) — Rule #3 compliance, subscribers can add new BDM-shaped roles without a frontend change.
+- [x] Frontend sweep — `PersonDetail.jsx` default mapping, `CommLogsPage.jsx` + `MessageTemplatesPage.jsx` user-service filter (`role: 'contractor'` → `'staff'`).
+- [x] Tests — 5 unit test files updated (`clientVisitStats`, `doctorController.access`, `doctorController.products`, `roleCheck.adminLike`, `visitStats.cycleFilters`). `roleHelpers.test.js` retained `contractor` / `bdm` legacy cases (expect `isAdminLike=false`) and added `'staff'` to the negative cohort.
+- [x] Health check — `scripts/check-system-health.js` OwnerPicker filter check accepts either new lookup-driven filter or legacy hardcoded pattern (backward compat during transition).
+- [x] Build verified — frontend `vite build` 20.20s clean, all modified backend files pass `node -c`.
+- [x] CLAUDE.md (CRM) terminology table updated. CLAUDE-ERP.md has full Phase S2 entry.
+
+### Deploy order
+
+1. Merge branch to `main`, deploy code (frontend build + pm2 restart backend on prod).
+2. On prod: `node backend/scripts/migrateEmployeeToContractor.js` — audit (read-only).
+3. On prod: `node backend/scripts/migrateEmployeeToContractor.js --apply` — atomic Phase 1 + Phase 2.
+4. Users re-login — existing JWTs carry old role string; they'll fail auth gate on next call, redirect to login, new JWT carries `role: 'staff'`.
+
+### Smoke paths
+
+- Audit on prod reports `role='contractor': 11 role='employee': 0 role='staff': 0` (pre-apply state).
+- `--apply` renames 11 users + N lookup rows (number depends on how many PROXY_ENTRY_ROLES / VALID_OWNER_ROLES / MODULE_DEFAULT_ROLES rows admin previously edited to include contractor/employee).
+- Post-apply: Judy Mae (now `role: 'staff'`) logs in → OwnerPicker on Sales / Expenses / SMER renders + populates with other staff BDMs → submit proxied document → routes through Approval Hub (forceApproval retained via Phase G4.5a Option B).
+- `node scripts/check-system-health.js` — section 5 (PROXY) green.
+
+### Out of scope (follow-ups)
+
+- Drop the `ROLES.CONTRACTOR` alias + legacy `employeeOnly` / `adminOrEmployee` names once call sites are swept to STAFF everywhere.
+- Rename `frontend/src/components/employee/*` directory → `.../staff/*` (cosmetic; file contents already use role: staff at runtime).
+- Seed a `SYSTEM_ROLES` lookup in preparation for Phase S3 (schema-aware MetadataEditor with role multi-select UI).

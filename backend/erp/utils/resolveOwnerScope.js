@@ -23,12 +23,12 @@ const { ROLES } = require('../../constants/roles');
 // Default proxy-target ("owner") roles when VALID_OWNER_ROLES lookup is not
 // yet seeded for an entity. Proxies file under a BDM-shaped owner; admin /
 // finance / president / ceo never own per-BDM transactional records (KPIs,
-// commission accruals, per-BDM reports would break). 'employee' is legacy
-// code for 'contractor' still present in DB rows — kept in the default for
-// back-compat. Subscribers with different org models (director who also
-// sells, branch manager carrying a territory) extend the list per-module
-// via Control Center → Lookup Tables → VALID_OWNER_ROLES.
-const DEFAULT_VALID_OWNER_ROLES = [ROLES.CONTRACTOR, 'employee'];
+// commission accruals, per-BDM reports would break). Subscribers with
+// different org models (director who also sells, branch manager carrying
+// a territory) extend the list per-module via Control Center → Lookup
+// Tables → VALID_OWNER_ROLES.
+// Phase S2 (Apr 2026): renamed from [CONTRACTOR, 'employee'] → [STAFF].
+const DEFAULT_VALID_OWNER_ROLES = [ROLES.STAFF];
 
 const CACHE_TTL_MS = 60_000;
 const _proxyRolesCache = new Map();

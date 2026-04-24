@@ -107,7 +107,7 @@ describe('doctorController getDoctorProducts', () => {
   });
 
   test('returns 403 when contractor requests products for unassigned doctor', async () => {
-    const req = { params: { id: '507f1f77bcf86cd799439012' }, user: { _id: 'u1', role: 'contractor' } };
+    const req = { params: { id: '507f1f77bcf86cd799439012' }, user: { _id: 'u1', role: 'staff' } };
     const res = buildRes();
     const next = jest.fn();
     const doctor = {
@@ -133,7 +133,7 @@ describe('doctorController getDoctorProducts', () => {
   });
 
   test('returns 200 when contractor requests products for their assigned doctor', async () => {
-    const req = { params: { id: '507f1f77bcf86cd799439012' }, user: { _id: 'u1', role: 'contractor' } };
+    const req = { params: { id: '507f1f77bcf86cd799439012' }, user: { _id: 'u1', role: 'staff' } };
     const res = buildRes();
     const next = jest.fn();
     const doctor = {

@@ -35,14 +35,14 @@ router.get('/reassign', gate, ic.getReassignments);
 router.post('/reassign/:id/approve', gate, ic.approveReassignment);
 
 // ═══ Transfer CRUD — parameterized routes last ═══
-router.post('/', gate, roleCheck('president', 'admin', 'contractor'), ic.createTransfer);
+router.post('/', gate, roleCheck('president', 'admin', 'staff'), ic.createTransfer);
 router.get('/', gate, ic.getTransfers);
 router.get('/:id', gate, ic.getTransferById);
 router.patch('/:id/approve', gate, roleCheck('president', 'admin'), ic.approveTransfer);
-router.patch('/:id/ship', gate, roleCheck('president', 'admin', 'contractor'), ic.shipTransfer);
+router.patch('/:id/ship', gate, roleCheck('president', 'admin', 'staff'), ic.shipTransfer);
 router.patch('/:id/receive', gate, ic.receiveTransfer); // Target BDM or admin
 router.patch('/:id/post', gate, roleCheck('president', 'admin'), ic.postTransfer);
-router.patch('/:id/cancel', gate, roleCheck('president', 'admin', 'contractor'), ic.cancelTransfer);
+router.patch('/:id/cancel', gate, roleCheck('president', 'admin', 'staff'), ic.cancelTransfer);
 
 // Phase 31 — President SAP Storno reversal of an SHIPPED/RECEIVED/POSTED IC Transfer.
 // Dual-side reversal (source + target). DRAFT/APPROVED/CANCELLED hard-deleted.

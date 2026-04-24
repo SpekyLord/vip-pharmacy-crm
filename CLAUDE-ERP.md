@@ -176,6 +176,82 @@ When the consultant delivers the gap list, the concrete work gets its own Phase 
 | G1.2 | Payslip Transparency & SMER-ORE Retirement Hardening — pre-save guard + always-show Personal Gas + ONE-STOP / INSTALLMENT N/M kind badge + installment expandable | ✅ |
 | G1.3 | Employee Payslip `deduction_lines[]` Parity — shared sub-schema + Personal Gas for logbook-eligible employees + `/payroll/:id/breakdown` + lazy backfill for historical payslips | ✅ |
 | G1.4 | Employee DeductionSchedule wiring (INSTALLMENT N/M on Payslip) + Finance per-line add/verify/correct/reject UI + IncomeReport shared-schema convergence | ✅ |
+| S2 | Staff role rename: `employee`/`contractor`/`bdm` → `staff` (User.role + Lookup.metadata.roles). Migration script two-phase atomic. OwnerPicker filter made lookup-driven (Rule #3). ROLES.CONTRACTOR kept as deprecated alias during transition. | ✅ |
+
+---
+
+## Phase S2 — `staff` Role Rename + Lookup Normalization (April 24, 2026)
+
+### Problem
+
+Three legacy role strings coexisted across the codebase and Lookup data:
+
+- `'employee'` — the original role string before 2026 rename. 0 users had it as of Apr 24 but it lingered in `ALL_ROLES`, seed defaults, and several `metadata.roles` arrays.
+- `'contractor'` — the canonical role string 2026–Apr 24. Used by all 11 non-management users on prod.
+- `'bdm'` — dead string. No `User.role` could ever take it (not in `ALL_ROLES`), but it appeared in `MODULE_DEFAULT_ROLES.UNDERTAKING.metadata.roles` and `AGENT_CONFIG.allowed_roles` with "means BDM" intent that never actually matched a real user.
+
+The business expansion trigger: VIP is hiring actual W-2 employees who do BDM-style work and get promoted to BDM if they perform. The name `contractor` on a W-2 employee's profile is misleading. For Year-2 Vios SaaS subscribers with mixed contractor/employee workforces, the naming scales worse.
+
+### Decision (Path B)
+
+Rename all three legacy strings → `'staff'`. Auth tier is now semantically neutral; employment nature lives separately on `PeopleMaster.employment_type` (`REGULAR` / `PROBATIONARY` / `CONTRACTUAL` / `CONSULTANT` / `PARTNERSHIP`) where it always should have.
+
+### What shipped
+
+1. **Core constants** (`backend/constants/roles.js`) — added `ROLES.STAFF = 'staff'`. Kept `ROLES.CONTRACTOR` as a deprecated alias mapping to `'staff'` so the 29+ legacy call sites (`ROLES.CONTRACTOR` in controllers, agents, services) keep working without a big-bang rewrite. The alias can be removed in a follow-up commit. `ALL_ROLES` no longer accepts `'employee'`.
+2. **User model** — `default: ROLES.STAFF` (was `CONTRACTOR`). Mongoose enum rejects future `'employee'` / `'contractor'` / `'bdm'` inserts.
+3. **roleCheck middleware** — added `staffOnly` + `adminOrStaff`; legacy `employeeOnly` / `adminOrEmployee` names kept as aliases so route files don't need mass edits.
+4. **SEED_DEFAULTS normalization** — `VALID_OWNER_ROLES.metadata.roles` (9 rows), `MODULE_DEFAULT_ROLES.MESSAGING.metadata.roles` + `MODULE_DEFAULT_ROLES.UNDERTAKING.metadata.roles`, `AGENT_CONFIG.allowed_roles` (3 rows). All legacy strings replaced with `'staff'`.
+5. **resolveOwnerScope.js** — `DEFAULT_VALID_OWNER_ROLES` default flipped `[CONTRACTOR, 'employee']` → `[STAFF]`.
+6. **Backend sweep** — string-literal role refs in `customerController`, `hospitalController`, `dashboardService`, `salesGoalService` (`role: 'contractor'` → `'staff'` for synthetic-user access-filter hack), plus `findOrphanedOwnerRecords.js` default.
+7. **Frontend OwnerPicker hardening** — `validOwnerRoles` default flipped to `['staff']`, and the row-filter is now **lookup-driven** (`validOwnerRoles.includes(r)`) instead of the hardcoded `r === 'contractor' || r === 'employee'`. This is Rule #3 alignment — a subscriber who adds a branch-manager role to `VALID_OWNER_ROLES.<MODULE>.metadata.roles` now sees that role as a valid proxy target without any frontend change.
+8. **Other frontend** — `PersonDetail.jsx` default mapping, `CommLogsPage.jsx` + `MessageTemplatesPage.jsx` BDM-list queries (`role: 'contractor'` → `'staff'` in the user-service filter).
+9. **Tests** — 5 unit-test files updated (`clientVisitStats.cycleFilters`, `doctorController.access`, `doctorController.products`, `roleCheck.adminLike`, `visitStats.cycleFilters`, plus `roleHelpers.test.js` which now exercises both the legacy strings (expect false) AND the new `'staff'` string.
+10. **Health check** — `scripts/check-system-health.js` OwnerPicker filter check updated to accept either the new lookup-driven filter OR the legacy hardcoded pattern (so the check doesn't warn falsely post-Phase S2, and still catches regression if someone removes both).
+
+### Migration
+
+`backend/scripts/migrateEmployeeToContractor.js` (filename preserved for git-history continuity) now runs two phases under `--apply`:
+
+- **Phase 1** — `users.role: { $in: ['employee', 'contractor'] }` → `'staff'` via `updateMany`.
+- **Phase 2** — `lookups.metadata.roles[]` and `lookups.metadata.allowed_roles[]` — per-row scan and normalize any array containing `'employee'` / `'contractor'` / `'bdm'` to `'staff'` (preserving order, de-duplicating). Covers `PROXY_ENTRY_ROLES`, `VALID_OWNER_ROLES`, `MODULE_DEFAULT_ROLES`, `AGENT_CONFIG`, and any future role-bearing lookup (no hardcoded category allowlist).
+
+Backup file at `backend/scripts/backups/staff-rename-<timestamp>.json` captures:
+- `phase1_users`: every modified user's `_id` / `name` / `email` / old role (split into `employee_ids[]` + `contractor_ids[]` for exact revert).
+- `phase2_lookups`: every modified lookup row's `category` / `code` / `entity_id` / full pre-migration `metadata`.
+- Revert hints inline.
+
+Idempotent — re-runs become no-ops once both populations hit 0.
+
+### Wiring integrity
+
+- OwnerPicker dropdown renders for `staff` users (Gate A — role in `PROXY_ENTRY_ROLES.metadata.roles`) when admin has added `'staff'` to the list. ✅
+- OwnerPicker BDM list populates with `staff`-role people (Gate B — frontend filter now `validOwnerRoles.includes(r)`, lookup-driven). ✅
+- Backend `resolveOwnerScope` validates proxied `assigned_to` user has a role in `VALID_OWNER_ROLES.metadata.roles` (default `['staff']`). ✅
+- `MODULE_DEFAULT_ROLES.UNDERTAKING` gate now lets `staff`-role BDMs acknowledge their own GRN without routing through Approval Hub (was broken before — `'bdm'` was dead, so only admin/finance/president could acknowledge and BDMs always routed to 202). ✅
+- `MODULE_DEFAULT_ROLES.MESSAGING` gate lets `staff`-role users access the Inbox (was `['...,'contractor','employee']` — both legacy strings, same user population). ✅
+- AI Cowork features (`APPROVAL_FIX_HELPER`, `APPROVAL_FIX_CHECK`) `allowed_roles` now includes `'staff'` instead of the legacy triplet. ✅
+
+### Deploy sequence (matters)
+
+1. Merge PR to `main` + deploy code (frontend build + pm2 restart backend).
+2. On prod: `node backend/scripts/migrateEmployeeToContractor.js` (audit — read-only).
+3. On prod: `node backend/scripts/migrateEmployeeToContractor.js --apply` (Phases 1+2 atomic).
+4. Users re-login (existing JWTs still carry old role — invalid on next API call, redirect to login, new JWT has `role: 'staff'`).
+
+**Critical**: deploy code BEFORE migration. Reverse order would not break anything (Mongoose enum rejects — but new inserts would fail even under old code; updateMany by the migration bypasses validators). Still, code-first is cleaner.
+
+### Scalability + subscription-readiness
+
+- Rule #3 alignment: frontend OwnerPicker filter is now fully lookup-driven. Subscribers extend `VALID_OWNER_ROLES.<MODULE>.metadata.roles` to add their own BDM-shaped roles (branch manager, territory supervisor) without any frontend edit.
+- Employment type vs auth tier cleanly separated: a SaaS subscriber with mixed contractor/employee workforce sets `PeopleMaster.employment_type` per person and `User.role: 'staff'` uniformly. No role-string gymnastics.
+- `CONTRACTOR` alias + legacy `employeeOnly` / `adminOrEmployee` function names buy time for the 29-file code sweep to happen incrementally, reducing risk of the rename itself breaking something in a forgotten corner.
+
+### Out of scope (follow-ups)
+
+- Drop the `ROLES.CONTRACTOR` alias + `employeeOnly` / `adminOrEmployee` aliases once every call site has been swept to use `ROLES.STAFF` / `staffOnly` / `adminOrStaff`. Low-risk, high-effort.
+- Rename directory / file names like `frontend/src/components/employee/*` to `.../staff/*` — cosmetic, defer.
+- Pre-seed `SYSTEM_ROLES` lookup to feed the future schema-aware MetadataEditor (Phase S3) — pair with S3 work.
 
 ---
 

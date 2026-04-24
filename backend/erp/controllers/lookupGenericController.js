@@ -26,7 +26,7 @@ const PROXY_ENTRY_ROLES_CATEGORIES = new Set(['PROXY_ENTRY_ROLES']);
 
 // Phase G4.5a follow-up — Rule #3 alignment for the proxy-target role guard.
 // VALID_OWNER_ROLES per module controls which roles may be assigned as the
-// owner of a proxied record (default ['contractor','employee'] — BDM-shaped).
+// owner of a proxied record (default ['staff'] — BDM-shaped; was ['contractor','employee'] before Phase S2).
 // Subscribers with different org models (director who also sells, branch
 // manager carrying a territory) extend the list via Control Center without
 // a code change. Matching invalidator in resolveOwnerScope.js (60s TTL).
@@ -1030,7 +1030,7 @@ const SEED_DEFAULTS = {
     // (which auto-approves the linked GRN). Non-authorized submitters route to the
     // Approval Hub. BDM is included by default because receipt confirmation is a
     // BDM-first workflow; subscribers can tighten by removing 'bdm' from roles.
-    { code: 'UNDERTAKING', label: 'Undertaking (Receipt Confirmation)', metadata: { roles: ['admin', 'finance', 'bdm', 'president'], description: 'Acknowledge goods receipt. Acknowledge auto-approves the linked GRN and writes InventoryLedger.' } },
+    { code: 'UNDERTAKING', label: 'Undertaking (Receipt Confirmation)', metadata: { roles: ['admin', 'finance', 'staff', 'president'], description: 'Acknowledge goods receipt. Acknowledge auto-approves the linked GRN and writes InventoryLedger. `staff` here means the BDM who receives the stock (Phase S2 renamed contractor/bdm → staff).' } },
     { code: 'EXPENSES', label: 'Expenses (ORE/ACCESS)', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated expense entries' } },
     { code: 'PRF_CALF', label: 'PRF / CALF', metadata: { roles: ['admin', 'finance', 'president'], description: 'Post validated PRF/CALF documents' } },
     { code: 'PERDIEM_OVERRIDE', label: 'Per Diem Override', metadata: { roles: ['admin', 'finance', 'president'], description: 'Approve BDM per diem override requests' } },
@@ -1065,7 +1065,7 @@ const SEED_DEFAULTS = {
     // allowing DM/broadcast. Set metadata.roles = null to open-message
     // (anyone can DM anyone). Combine with MESSAGE_ACCESS_ROLES lookup for
     // per-role can_dm_roles / can_broadcast / can_cross_entity rules.
-    { code: 'MESSAGING', label: 'Messaging / Inbox', metadata: { roles: ['president', 'ceo', 'admin', 'finance', 'contractor', 'employee'], description: 'Allow this role to use the unified Inbox. Per-role DM matrix lives in MESSAGE_ACCESS_ROLES; sub-perm grants in ERP_SUB_PERMISSION (messaging.*).' } },
+    { code: 'MESSAGING', label: 'Messaging / Inbox', metadata: { roles: ['president', 'ceo', 'admin', 'finance', 'staff'], description: 'Allow this role to use the unified Inbox. Per-role DM matrix lives in MESSAGE_ACCESS_ROLES; sub-perm grants in ERP_SUB_PERMISSION (messaging.*).' } },
   ],
   // Phase 32R (Apr 2026) — GRN capture thresholds. Per-entity configurable via
   // Control Center → Lookup Tables → GRN_SETTINGS. The service reads
@@ -1366,7 +1366,7 @@ const SEED_DEFAULTS = {
   // (`approvalAiService`) reads metadata at request time — Rule #3 compliant.
   //
   // metadata schema:
-  //   surface: 'approver' | 'contractor'   — which side renders the button
+  //   surface: 'approver' | 'staff'        — which side renders the button
   //   endpoint_key: string                 — reserved for future routing variations
   //   system_prompt: string                — full Claude system prompt (editable)
   //   user_template: string                — Mustache-style {{var}} placeholders
@@ -1405,14 +1405,14 @@ const SEED_DEFAULTS = {
       code: 'APPROVAL_FIX_HELPER',
       label: 'AI: Help Me Fix This',
       metadata: {
-        surface: 'contractor',
+        surface: 'staff',
         endpoint_key: 'approval-fix-helper',
         system_prompt: 'You are an ERP submission assistant. Given a rejected document and the approver\'s reason, explain in 1-2 short sentences what needs to change, then list the specific edits as bullet points. Be concrete — reference actual fields. End with a one-line summary of the resubmit checklist.',
         user_template: 'Module: {{module}}\nDoc: {{doc_ref}}\nRejection reason: {{reason}}\nDoc summary: {{summary}}\n\nExplain what to fix and how.',
         model: 'claude-sonnet-4-6',
         max_tokens: 600,
         temperature: 0.3,
-        allowed_roles: ['employee', 'contractor', 'bdm', 'admin', 'finance', 'president'],
+        allowed_roles: ['staff', 'admin', 'finance', 'president'],
         rate_limit_per_min: 6,
         button_label: '🤝 Help Me Fix',
         fallback_behavior: 'hide_button',
@@ -1423,14 +1423,14 @@ const SEED_DEFAULTS = {
       code: 'APPROVAL_FIX_CHECK',
       label: 'AI: Check My Fix Before Resubmit',
       metadata: {
-        surface: 'contractor',
+        surface: 'staff',
         endpoint_key: 'approval-fix-check',
         system_prompt: 'You are an ERP pre-submit reviewer. Compare the original rejection reason against the document\'s current state. Reply with: PASS or FAIL on the first line, then 1-2 sentences explaining what still needs work (or confirming the fix addresses the original feedback).',
         user_template: 'Module: {{module}}\nDoc: {{doc_ref}}\nOriginal rejection reason: {{reason}}\nCurrent doc state: {{summary}}\n\nDoes the fix address the rejection?',
         model: 'claude-sonnet-4-6',
         max_tokens: 300,
         temperature: 0.2,
-        allowed_roles: ['employee', 'contractor', 'bdm', 'admin', 'finance', 'president'],
+        allowed_roles: ['staff', 'admin', 'finance', 'president'],
         rate_limit_per_min: 6,
         button_label: '🔎 Check My Fix',
         fallback_behavior: 'hide_button',
@@ -1756,7 +1756,7 @@ const SEED_DEFAULTS = {
             required: ['message_id', 'body'],
           },
         },
-        allowed_roles: ['president', 'ceo', 'admin', 'finance', 'contractor'],
+        allowed_roles: ['president', 'ceo', 'admin', 'finance', 'staff'],
         description_for_claude: 'Use when the user asks Claude to reply to a notification or message they already received. The Copilot will offer the draft for confirmation; the user clicks Execute to send.',
         confirmation_template: 'Send reply to "{{parent_title}}"?',
         entity_scoped: true,
@@ -1821,7 +1821,7 @@ const SEED_DEFAULTS = {
             required: ['title'],
           },
         },
-        allowed_roles: ['president', 'ceo', 'admin', 'finance', 'contractor'],
+        allowed_roles: ['president', 'ceo', 'admin', 'finance', 'staff'],
         description_for_claude: 'Use when the user says "remind me to", "add a task", "create a task to". Always returns a draft — user confirms before the task is saved.',
         confirmation_template: 'Create task "{{title}}" due {{due_date}} for {{assignee_name}}?',
         entity_scoped: true,
@@ -1846,7 +1846,7 @@ const SEED_DEFAULTS = {
             },
           },
         },
-        allowed_roles: ['president', 'ceo', 'admin', 'finance', 'contractor'],
+        allowed_roles: ['president', 'ceo', 'admin', 'finance', 'staff'],
         description_for_claude: 'Use when the user asks "what\'s overdue", "what\'s late", "what\'s on my plate". Aggregates overdue tasks + overdue approval requests.',
         confirmation_template: '',
         entity_scoped: true,
@@ -2463,7 +2463,7 @@ const SEED_DEFAULTS = {
   // Subscribers add/remove role codes from metadata.roles to delegate proxy entry
   // without code changes (Rule #3). Tick accompanies `<module>.proxy_entry` sub-perm
   // on the Access Template. Admin/finance/president are the pragmatic default.
-  // Add 'contractor' to allow a back-office clerk (contractor role) to proxy.
+  // Add 'staff' to allow a back-office clerk (staff role) to proxy.
   // CEO is always denied regardless of this list — view-only role.
   // Cache: 60s TTL in resolveOwnerScope.js; bust on lookup write.
   // `insert_only_metadata: true` is load-bearing — without it, buildSeedOps
@@ -2484,12 +2484,12 @@ const SEED_DEFAULTS = {
     { code: 'PRF_CALF', label: 'PRF (partner rebate) / CALF (company advance liquidation)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 7 } },
     { code: 'UNDERTAKING', label: 'Undertaking (GRN receipt confirmation)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 8 } },
     // Phase G4.5f (Apr 23, 2026) — SMER cycle + per-diem override. Append
-    // 'contractor' to metadata.roles in Control Center so eBDMs (Judy / Jay
+    // 'staff' to metadata.roles in Control Center so eBDMs (Judy / Jay
     // Ann) with the EXPENSES__SMER_PROXY sub-perm can proxy.
     { code: 'SMER', label: 'SMER (per-diem cycle + per-day override)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 9 } },
   ],
   // Phase G4.5a follow-up — which roles are valid OWNERS of a proxied record
-  // per module. Defaults to BDM-shaped roles ('contractor','employee'); admin/
+  // per module. Defaults to BDM-shaped roles (['staff']); admin/
   // finance/president/ceo are never per-BDM record owners (reports would break).
   // Subscribers with different org models extend via Control Center. Matches
   // the VALID_OWNER_ROLES cache in resolveOwnerScope.js.
@@ -2497,22 +2497,22 @@ const SEED_DEFAULTS = {
   // revert-on-page-load bug applies here: without the flag, admin edits to
   // metadata.roles are clobbered every time getByCategory auto-seeds.
   VALID_OWNER_ROLES: [
-    { code: 'SALES', label: 'Valid proxy targets — Sales', insert_only_metadata: true, metadata: { roles: ['contractor', 'employee'], sort_order: 1 } },
-    { code: 'OPENING_AR', label: 'Valid proxy targets — Opening AR', insert_only_metadata: true, metadata: { roles: ['contractor', 'employee'], sort_order: 2 } },
-    { code: 'COLLECTIONS', label: 'Valid proxy targets — Collections', insert_only_metadata: true, metadata: { roles: ['contractor', 'employee'], sort_order: 3 } },
-    { code: 'EXPENSES', label: 'Valid proxy targets — Expenses', insert_only_metadata: true, metadata: { roles: ['contractor', 'employee'], sort_order: 4 } },
-    { code: 'GRN', label: 'Valid proxy targets — GRN', insert_only_metadata: true, metadata: { roles: ['contractor', 'employee'], sort_order: 5 } },
+    { code: 'SALES', label: 'Valid proxy targets — Sales', insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 1 } },
+    { code: 'OPENING_AR', label: 'Valid proxy targets — Opening AR', insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 2 } },
+    { code: 'COLLECTIONS', label: 'Valid proxy targets — Collections', insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 3 } },
+    { code: 'EXPENSES', label: 'Valid proxy targets — Expenses', insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 4 } },
+    { code: 'GRN', label: 'Valid proxy targets — GRN', insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 5 } },
     // Phase G4.5e — matching owner-role allowlists for the three new proxy
     // modules. Defaults to BDM-shaped roles; subscribers extend via Control
     // Center (e.g. to add a supervisor/branch-manager role that also owns
     // per-territory Car Logbook records).
-    { code: 'CAR_LOGBOOK', label: 'Valid proxy targets — Car Logbook', insert_only_metadata: true, metadata: { roles: ['contractor', 'employee'], sort_order: 6 } },
-    { code: 'PRF_CALF', label: 'Valid proxy targets — PRF / CALF', insert_only_metadata: true, metadata: { roles: ['contractor', 'employee'], sort_order: 7 } },
-    { code: 'UNDERTAKING', label: 'Valid proxy targets — Undertaking', insert_only_metadata: true, metadata: { roles: ['contractor', 'employee'], sort_order: 8 } },
+    { code: 'CAR_LOGBOOK', label: 'Valid proxy targets — Car Logbook', insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 6 } },
+    { code: 'PRF_CALF', label: 'Valid proxy targets — PRF / CALF', insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 7 } },
+    { code: 'UNDERTAKING', label: 'Valid proxy targets — Undertaking', insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 8 } },
     // Phase G4.5f — SMER ownership stays BDM-shaped. Per-BDM per-diem reports,
     // CompProfile thresholds, and revolving-fund draws all key on bdm_id —
     // letting an admin or finance be a SMER owner would corrupt these.
-    { code: 'SMER', label: 'Valid proxy targets — SMER', insert_only_metadata: true, metadata: { roles: ['contractor', 'employee'], sort_order: 9 } },
+    { code: 'SMER', label: 'Valid proxy targets — SMER', insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 9 } },
   ],
   // Phase P1 — Proxy SLA thresholds. Lookup-driven so subscribers can tune
   // without code changes. pending_alert_hours = when to alert office lead;

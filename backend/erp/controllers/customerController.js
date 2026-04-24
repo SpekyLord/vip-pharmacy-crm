@@ -27,7 +27,7 @@ const getAll = catchAsync(async (req, res) => {
   // BDM sees only their tagged customers; admin/president/finance/ceo see all.
   // ?my=true forces BDM filter even for admin-like roles (parity with hospitalController).
   const forceMyFilter = req.query.my === 'true';
-  const effectiveUser = forceMyFilter ? { ...req.user, role: 'contractor' } : req.user;
+  const effectiveUser = forceMyFilter ? { ...req.user, role: 'staff' } : req.user;
   Object.assign(filter, await buildCustomerAccessFilter(effectiveUser));
 
   const page = parseInt(req.query.page) || 1;

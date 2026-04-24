@@ -1,14 +1,19 @@
 /**
  * User Model
  *
- * This model represents system users (admins, contractors/BDMs, finance, president, CEO)
+ * This model represents system users (admins, staff/BDMs/employees, finance, president, CEO).
  *
- * Roles:
- * - admin: Full system access, manage all users
- * - contractor: Independent contractors (BDMs, IT, cleaners, pharmacists, consultants)
- * - finance: Finance/accounting manager
+ * Roles (auth tier — what ERP/CRM features the user can access):
+ * - admin:     Full system access, manage all users
+ * - staff:     Non-management workers (BDMs, IT, cleaners, pharmacists, consultants,
+ *              actual W-2 employees). Employment type (contractor vs. employee vs.
+ *              probationary) lives on PeopleMaster.employment_type — distinct from role.
+ * - finance:   Finance/accounting manager
  * - president: Company president — full cross-entity access
- * - ceo: Chief Executive — view-only on ERP
+ * - ceo:       Chief Executive — view-only on ERP
+ *
+ * Note: legacy 'contractor' + 'employee' strings were renamed to 'staff' in Phase S2
+ * (Apr 2026). See backend/scripts/migrateEmployeeToContractor.js for the migration.
  */
 
 const mongoose = require('mongoose');
@@ -51,7 +56,7 @@ const userSchema = new mongoose.Schema(
         values: ALL_ROLES,
         message: `Role must be one of: ${ALL_ROLES.join(', ')}`,
       },
-      default: ROLES.CONTRACTOR,
+      default: ROLES.STAFF,
     },
     phone: {
       type: String,

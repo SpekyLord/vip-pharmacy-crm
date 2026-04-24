@@ -199,15 +199,21 @@ export function PeopleListContent() {
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
             {legacyCounts.medrep > 0 && (
-              <button disabled={migrating} onClick={() => handleBulkMigrate('medrep', 'contractor')}
+              <button disabled={migrating} onClick={() => handleBulkMigrate('medrep', 'staff')}
                 style={{ padding: '5px 12px', borderRadius: 6, border: 'none', background: '#f59e0b', color: '#fff', fontWeight: 600, fontSize: 12, cursor: migrating ? 'not-allowed' : 'pointer', opacity: migrating ? 0.6 : 1 }}>
-                {migrating ? 'Migrating...' : `Migrate medrep → contractor`}
+                {migrating ? 'Migrating...' : `Migrate medrep → staff`}
               </button>
             )}
             {legacyCounts.employee > 0 && (
-              <button disabled={migrating} onClick={() => handleBulkMigrate('employee', 'contractor')}
+              <button disabled={migrating} onClick={() => handleBulkMigrate('employee', 'staff')}
                 style={{ padding: '5px 12px', borderRadius: 6, border: 'none', background: '#f59e0b', color: '#fff', fontWeight: 600, fontSize: 12, cursor: migrating ? 'not-allowed' : 'pointer', opacity: migrating ? 0.6 : 1 }}>
-                {migrating ? 'Migrating...' : `Migrate employee → contractor`}
+                {migrating ? 'Migrating...' : `Migrate employee → staff`}
+              </button>
+            )}
+            {legacyCounts.contractor > 0 && (
+              <button disabled={migrating} onClick={() => handleBulkMigrate('contractor', 'staff')}
+                style={{ padding: '5px 12px', borderRadius: 6, border: 'none', background: '#f59e0b', color: '#fff', fontWeight: 600, fontSize: 12, cursor: migrating ? 'not-allowed' : 'pointer', opacity: migrating ? 0.6 : 1 }}>
+                {migrating ? 'Migrating...' : `Migrate contractor → staff`}
               </button>
             )}
           </div>

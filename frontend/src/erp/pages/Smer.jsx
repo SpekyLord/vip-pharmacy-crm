@@ -426,8 +426,14 @@ export default function Smer() {
     } finally { savingRef.current = false; }
   };
 
-  // CRM pull — only for field BDMs with CRM visit data
-  const isCrmLinked = user?.role === ROLES.CONTRACTOR; // field BDMs have CRM visits
+  // CRM pull — render whenever a target BDM is picked. Covers (a) field BDMs
+  // self-filing (selectedBdmId defaults to own _id), (b) admin/president/finance
+  // viewing a BDM (Phase G4.5f scope), and (c) eBDM proxies filing for another
+  // BDM. The backend resolver enforces proxy-perm + privilege rules, so the
+  // render gate just needs to know "is there a target?". Previously gated on
+  // `user.role === CONTRACTOR`, which hid the button from the privileged users
+  // who needed it most after the Phase G4.5f bdm_id wiring.
+  const canPullFromCrm = !!selectedBdmId;
   const handlePullFromCrm = async () => {
     try {
       // Phase G4.5f follow-up — forward selectedBdmId so privileged + proxy
@@ -965,7 +971,7 @@ export default function Smer() {
                   </button>
                   {travelAdvanceSource && !travelAdvanceOverride && <span style={{ fontSize: 10, color: '#6b7280', marginLeft: 2 }}>{travelAdvanceSource === 'COMP_PROFILE' ? 'CompProfile' : 'Default'}</span>}
                 </span>
-                {isCrmLinked && (() => {
+                {canPullFromCrm && (() => {
                   // Phase G1.5 follow-up — label tracks the resolved data source
                   // so non-pharma subscribers (logbook source) and manual-entry
                   // subscribers don't see a misleading "Pull from CRM" button.
@@ -981,7 +987,7 @@ export default function Smer() {
                   {perdiemThresholds.source === 'COMP_PROFILE' && <span style={{ marginLeft: 4, color: '#2563eb', fontWeight: 600 }}>(per-person)</span>}
                 </span>
               </div>
-              {isCrmLinked && (() => {
+              {canPullFromCrm && (() => {
                 // Banner copy mirrors button label so a logbook-sourced subscriber
                 // doesn't read "from your logged visits" when the data actually
                 // comes from CarLogbookEntry. Engagement-types intentionally

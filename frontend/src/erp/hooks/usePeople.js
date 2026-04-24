@@ -1,29 +1,38 @@
+import { useCallback } from 'react';
 import useErpApi from './useErpApi';
 
 export default function usePeople() {
   const api = useErpApi();
+  // Destructure the stable method refs from useErpApi's memoized methods object.
+  // Consumers use these callbacks as useEffect deps (e.g. OwnerPicker); depending
+  // on a fresh reference every render would cause effect re-fire storms —
+  // infinite /erp/people requests that saturate the browser's concurrent-request
+  // cap and stack up 30s axios timeouts. Destructuring (vs api.get in the dep
+  // array) also satisfies react-hooks/exhaustive-deps, which can't see through
+  // member-expression deps.
+  const { get, post, put, del } = api;
 
-  const getPeopleList = (params) => api.get('/people', { params });
-  const getAsUsers = (params) => api.get('/people/as-users', { params });  // CRM-compatible { _id, name, role }
-  const getPersonById = (id) => api.get(`/people/${id}`);
-  const createPerson = (data) => api.post('/people', data);
-  const createPersonUnified = (data) => api.post('/people/create-with-login', data);
-  const createLoginForPerson = (personId, data) => api.post(`/people/${personId}/create-login`, data);
-  const disableLogin = (personId) => api.post(`/people/${personId}/disable-login`);
-  const enableLogin = (personId) => api.post(`/people/${personId}/enable-login`);
-  const unlinkLogin = (personId) => api.post(`/people/${personId}/unlink-login`);
-  const changeSystemRole = (personId, role) => api.post(`/people/${personId}/change-role`, { role });
-  const getLegacyRoleCounts = () => api.get('/people/legacy-role-counts');
-  const bulkChangeRole = (from_role, to_role) => api.post('/people/bulk-change-role', { from_role, to_role });
-  const updatePerson = (id, data) => api.put(`/people/${id}`, data);
-  const deactivatePerson = (id) => api.del(`/people/${id}`);
-  const separatePerson = (id) => api.post(`/people/${id}/separate`);
-  const reactivatePerson = (id) => api.post(`/people/${id}/reactivate`);
+  const getPeopleList = useCallback((params) => get('/people', { params }), [get]);
+  const getAsUsers = useCallback((params) => get('/people/as-users', { params }), [get]);
+  const getPersonById = useCallback((id) => get(`/people/${id}`), [get]);
+  const createPerson = useCallback((data) => post('/people', data), [post]);
+  const createPersonUnified = useCallback((data) => post('/people/create-with-login', data), [post]);
+  const createLoginForPerson = useCallback((personId, data) => post(`/people/${personId}/create-login`, data), [post]);
+  const disableLogin = useCallback((personId) => post(`/people/${personId}/disable-login`), [post]);
+  const enableLogin = useCallback((personId) => post(`/people/${personId}/enable-login`), [post]);
+  const unlinkLogin = useCallback((personId) => post(`/people/${personId}/unlink-login`), [post]);
+  const changeSystemRole = useCallback((personId, role) => post(`/people/${personId}/change-role`, { role }), [post]);
+  const getLegacyRoleCounts = useCallback(() => get('/people/legacy-role-counts'), [get]);
+  const bulkChangeRole = useCallback((from_role, to_role) => post('/people/bulk-change-role', { from_role, to_role }), [post]);
+  const updatePerson = useCallback((id, data) => put(`/people/${id}`, data), [put]);
+  const deactivatePerson = useCallback((id) => del(`/people/${id}`), [del]);
+  const separatePerson = useCallback((id) => post(`/people/${id}/separate`), [post]);
+  const reactivatePerson = useCallback((id) => post(`/people/${id}/reactivate`), [post]);
 
   // Compensation profiles
-  const getCompProfile = (personId) => api.get(`/people/${personId}/comp`);
-  const createCompProfile = (personId, data) => api.post(`/people/${personId}/comp`, data);
-  const updateCompProfile = (personId, profileId, data) => api.put(`/people/${personId}/comp/${profileId}`, data);
+  const getCompProfile = useCallback((personId) => get(`/people/${personId}/comp`), [get]);
+  const createCompProfile = useCallback((personId, data) => post(`/people/${personId}/comp`, data), [post]);
+  const updateCompProfile = useCallback((personId, profileId, data) => put(`/people/${personId}/comp/${profileId}`, data), [put]);
 
   return {
     ...api,

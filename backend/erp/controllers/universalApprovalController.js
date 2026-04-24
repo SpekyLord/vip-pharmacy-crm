@@ -223,14 +223,15 @@ const approvalHandlers = {
         const MessageInbox = require('../../models/MessageInbox');
         const User = require('../../models/User');
         // Resolve BOTH the proxy's display label AND the target BDM's role
-        // (recipient filter hinges on recipientRole=user.role — hardcoded
-        // 'contractor' would hide the message from legacy employee-role BDMs).
+        // (recipient filter hinges on recipientRole=user.role — post-Phase S2
+        // the value is 'staff'; legacy docs may still carry 'contractor' /
+        // 'employee' until migration runs).
         const [proxyUser, ownerUser] = await Promise.all([
           User.findById(entry.recorded_on_behalf_of).select('name email').lean(),
           User.findById(smer.bdm_id).select('role').lean(),
         ]);
         const proxyLabel = proxyUser?.name || proxyUser?.email || 'an authorized user';
-        const recipientRole = ownerUser?.role || 'contractor';
+        const recipientRole = ownerUser?.role || 'staff';
         const decisionLabel = action === 'approve' ? 'APPROVED' : 'REJECTED';
         const tierLabel = action === 'approve' ? `New tier: ${entry.perdiem_tier} (₱${(entry.perdiem_amount || 0).toLocaleString()}). ` : '';
         await MessageInbox.create({

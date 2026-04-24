@@ -54,11 +54,12 @@ export default function OwnerPicker({
     : ['admin', 'finance', 'president'];
 
   // VALID_OWNER_ROLES — who can be the owner of a per-BDM record in this module.
-  // Backend default matches resolveOwnerScope.js (contractor + legacy 'employee').
+  // Backend default matches resolveOwnerScope.js (['staff']).
+  // Phase S2 (Apr 2026): was ['contractor', 'employee'] — both renamed to 'staff'.
   const validOwnerRow = validOwnerOpts.find(o => o.code === lookupCode);
   const validOwnerRoles = Array.isArray(validOwnerRow?.metadata?.roles) && validOwnerRow.metadata.roles.length
     ? validOwnerRow.metadata.roles
-    : ['contractor', 'employee'];
+    : ['staff'];
 
   const role = user?.role;
   const isPresident = role === 'president';
@@ -125,11 +126,15 @@ export default function OwnerPicker({
         {people
           // Only show BDM-shaped roles as valid proxy targets. admin/finance/
           // president/ceo are NOT owners of per-BDM transactional records, so
-          // assigning a sale to them would create orphaned data. 'employee' is
-          // the legacy code for 'contractor' kept in ALL_ROLES for backward compat.
+          // assigning a sale to them would create orphaned data.
+          //
+          // Phase S2 (Apr 2026): filter is now lookup-driven via validOwnerRoles
+          // (was hardcoded ['contractor', 'employee']). Subscribers can add a
+          // branch-manager or senior role to VALID_OWNER_ROLES metadata.roles
+          // without a frontend code change — Rule #3 alignment.
           .filter(p => {
             const r = p.user_id?.role;
-            return p.user_id && (r === 'contractor' || r === 'employee');
+            return p.user_id && validOwnerRoles.includes(r);
           })
           .map(p => {
             const uid = p.user_id?._id || p.user_id;
