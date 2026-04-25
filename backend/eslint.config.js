@@ -6,16 +6,17 @@
  * is to ship the static tenant-leak guard without picking a fight with
  * 100+ controllers' worth of legacy code-style choices.
  *
- * Severity defaults to `warn` so a fresh run produces a violation count
- * without breaking exit code. To take the strict baseline (matches
- * Day-5 §1's "Run on full codebase" step), override at the CLI:
+ * Severity is `error` as of 2026-04-25 — the 647-warning baseline has been
+ * fully triaged (real leaks fixed; cross-entity-by-design call sites
+ * annotated with `// eslint-disable-next-line vip-tenant/require-entity-filter
+ * -- <reason>`). Any new query that touches a `strict_entity` /
+ * `strict_entity_and_bdm` model without a literal `entity_id` filter will
+ * now fail this lint pass — wire it as a CI gate to keep the baseline at
+ * zero. Runtime entityGuard (Day-4) remains the dynamic safety net for
+ * anything the static rule can't trace through.
  *
- *   npx eslint --config backend/eslint.config.js \
- *     --rule '{"vip-tenant/require-entity-filter":"error"}' backend/
- *
- * To wire CI as a blocker (post-triage, see docs/ENTITY_SCOPED_MODELS.md):
- * flip the severity in this file to "error" instead of relying on the
- * --rule override.
+ * To regress severity to `warn` for an emergency triage cycle, the
+ * `npm run lint:entity-filter` script overrides via `--rule` at the CLI.
  */
 
 const requireEntityFilter = require('./eslint-rules/require-entity-filter');
@@ -64,7 +65,7 @@ module.exports = [
       },
     },
     rules: {
-      'vip-tenant/require-entity-filter': 'warn',
+      'vip-tenant/require-entity-filter': 'error',
     },
   },
 ];
