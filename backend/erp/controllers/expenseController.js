@@ -183,6 +183,7 @@ const createSmer = catchAsync(async (req, res) => {
     }
 
     for (const d of dupes.filter(d => d.deletion_event_id)) {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- _id from same-entity dupe scan above (line 168 scoped by entity_id+bdm_id)
       await SmerEntry.updateOne(
         { _id: d._id },
         { $set: { period: `${d.period}::REV::${d._id}` } }
@@ -616,6 +617,7 @@ const submitSmer = catchAsync(async (req, res) => {
   // Phase 9.1b: Link DocumentAttachments to events (non-blocking)
   for (const smer of smers) {
     if (smer.event_id) {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- source_id is unique; smer fetched with entity scope upstream
       await DocumentAttachment.updateMany(
         { source_model: 'SmerEntry', source_id: smer._id },
         { $set: { event_id: smer.event_id } }
@@ -695,6 +697,7 @@ const reopenSmer = catchAsync(async (req, res) => {
     // Reverse journal entries
     if (smer.event_id) {
       try {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- source_event_id is unique; smer fetched via entity-scoped widenFilterForProxy
         const jes = await JournalEntry.find({ source_event_id: smer.event_id, status: 'POSTED', is_reversal: { $ne: true } });
         for (const je of jes) { await reverseJournal(je._id, 'Auto-reversal: SMER reopen', req.user._id); }
       } catch (jeErr) {
@@ -932,6 +935,7 @@ const applyPerdiemOverride = catchAsync(async (req, res) => {
   const ApprovalRequest = require('../models/ApprovalRequest');
   const approvalReq = await ApprovalRequest.findOne({
     _id: approval_request_id,
+    entity_id: req.entityId,
     module: 'PERDIEM_OVERRIDE',
     status: 'APPROVED',
   }).lean();
@@ -1330,6 +1334,7 @@ const validateCarLogbook = catchAsync(async (req, res) => {
         if (!fuel.calf_id) {
           errors.push(`Fuel ${j + 1}: CALF required for ${fuel.payment_mode} fuel (${fuel.station_name || 'unknown station'})`);
         } else {
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- calf_id stored on entry by createPrfCalf back-link (line 2421+, same-entity enforced)
           const linkedCalf = await PrfCalf.findById(fuel.calf_id).select('status').lean();
           if (!linkedCalf) {
             errors.push(`Fuel ${j + 1}: linked CALF not found`);
@@ -1529,6 +1534,7 @@ const submitCarLogbook = catchAsync(async (req, res) => {
         });
       }
       if (fuel.calf_required && fuel.calf_id && req.user.role !== ROLES.PRESIDENT) {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- calf_id stored on entry by createPrfCalf back-link (same-entity enforced)
         const calf = await PrfCalf.findById(fuel.calf_id).select('status').lean();
         if (!calf || calf.status !== 'POSTED') {
           return res.status(400).json({
@@ -1581,10 +1587,12 @@ const submitCarLogbook = catchAsync(async (req, res) => {
 
   // Non-blocking DocumentAttachment event linkage (both per-day + cycle)
   if (cycleDoc.event_id) {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- source_id is unique; entries fetched with entity scope upstream
     await DocumentAttachment.updateMany(
       { source_model: 'CarLogbookEntry', source_id: { $in: entries.map(e => e._id) } },
       { $set: { event_id: cycleDoc.event_id } }
     ).catch(() => {});
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- source_id is unique; cycleDoc fetched with entity scope upstream
     await DocumentAttachment.updateMany(
       { source_model: 'CarLogbookCycle', source_id: cycleDoc._id },
       { $set: { event_id: cycleDoc.event_id } }
@@ -1664,6 +1672,7 @@ const reopenCarLogbook = catchAsync(async (req, res) => {
     for (const cycleDoc of cycles) {
       if (cycleDoc.event_id) {
         try {
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- source_event_id is unique; cycleDoc fetched via entity-scoped widenFilterForProxy
           const jes = await JournalEntry.find({ source_event_id: cycleDoc.event_id, status: 'POSTED', is_reversal: { $ne: true } });
           for (const je of jes) { await reverseJournal(je._id, 'Auto-reversal: CarLogbook cycle reopen', req.user._id); }
         } catch (jeErr) {
@@ -1679,6 +1688,7 @@ const reopenCarLogbook = catchAsync(async (req, res) => {
       cycleDoc.posted_by = undefined;
       await cycleDoc.save();
 
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- cycle_id is unique; cycleDoc fetched via entity-scoped widenFilterForProxy
       await CarLogbookEntry.updateMany(
         { cycle_id: cycleDoc._id, status: 'POSTED' },
         { $set: { status: 'DRAFT' }, $unset: { posted_at: 1, posted_by: 1 }, $inc: { reopen_count: 1 } }
@@ -1710,6 +1720,7 @@ const reopenCarLogbook = catchAsync(async (req, res) => {
   for (const entry of entries) {
     if (entry.event_id) {
       try {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- source_event_id is unique; entry fetched via entity-scoped widenFilterForProxy
         const jes = await JournalEntry.find({ source_event_id: entry.event_id, status: 'POSTED', is_reversal: { $ne: true } });
         for (const je of jes) { await reverseJournal(je._id, 'Auto-reversal: CarLogbook reopen', req.user._id); }
       } catch (jeErr) {
@@ -1739,6 +1750,7 @@ const reopenCarLogbook = catchAsync(async (req, res) => {
 
   // Sync parent cycle wrappers back to DRAFT when any of their days reverted
   for (const cid of cyclesTouched) {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- cid from entity-scoped per-day entry above (entries fetched via widenFilterForProxy)
     const cycleDoc = await CarLogbookCycle.findById(cid);
     if (cycleDoc && cycleDoc.status === 'POSTED') {
       cycleDoc.status = 'DRAFT';
@@ -1858,7 +1870,7 @@ async function autoClassifyLines(lines, entityId) {
       if (line.expense_category && (!line.coa_code || line.coa_code === '6900')) {
         if (!catLookups) {
           try {
-            catLookups = await Lookup.find({ category: 'EXPENSE_CATEGORY', is_active: true }).lean();
+            catLookups = await Lookup.find({ entity_id: entityId, category: 'EXPENSE_CATEGORY', is_active: true }).lean();
           } catch { catLookups = []; }
         }
         const catMatch = catLookups.find(l => l.label === line.expense_category || l.code === line.expense_category);
@@ -2090,6 +2102,7 @@ const validateExpenses = catchAsync(async (req, res) => {
           errors.push(`Line ${i + 1}: CALF required for non-cash ACCESS expense`);
         } else {
           // Verify linked CALF is POSTED (not just linked)
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- calf_id stored on entry by createPrfCalf back-link (same-entity enforced)
           const linkedCalf = await PrfCalf.findById(line.calf_id).select('status').lean();
           if (!linkedCalf) {
             errors.push(`Line ${i + 1}: linked CALF not found`);
@@ -2166,6 +2179,7 @@ const submitExpenses = catchAsync(async (req, res) => {
   for (const entry of entries) {
     const calfLine = (entry.lines || []).find(l => l.calf_required && l.calf_id);
     if (!calfLine) continue;
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- calf_id stored on entry by createPrfCalf back-link (same-entity enforced); entry fetched via widenFilterForProxy
     const calf = await PrfCalf.findById(calfLine.calf_id).select('status calf_number').lean();
     if (calf && calf.status !== 'POSTED') {
       return res.status(400).json({
@@ -2202,6 +2216,7 @@ const submitExpenses = catchAsync(async (req, res) => {
   // Phase 9.1b: Link DocumentAttachments to events (non-blocking)
   for (const entry of entries) {
     if (entry.event_id) {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- source_id is unique; entries fetched with entity scope upstream
       await DocumentAttachment.updateMany(
         { source_model: 'ExpenseEntry', source_id: entry._id },
         { $set: { event_id: entry.event_id } }
@@ -2283,6 +2298,7 @@ const reopenExpenses = catchAsync(async (req, res) => {
     // Reverse journal entries — if reversal fails, skip this entry (keep POSTED, ledger stays balanced)
     if (entry.event_id) {
       try {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- source_event_id is unique; entry fetched via entity-scoped widenFilterForProxy
         const jes = await JournalEntry.find({ source_event_id: entry.event_id, status: 'POSTED', is_reversal: { $ne: true } });
         for (const je of jes) { await reverseJournal(je._id, 'Auto-reversal: Expense reopen', req.user._id); }
       } catch (jeErr) {
@@ -2340,7 +2356,7 @@ const createPrfCalf = catchAsync(async (req, res) => {
 
   // #13 Hardening: Validate linked_expense_line_ids actually belong to the linked expense/logbook
   if (req.body.doc_type === 'CALF' && req.body.linked_expense_id && req.body.linked_expense_line_ids?.length) {
-    const expense = await ExpenseEntry.findById(req.body.linked_expense_id).lean();
+    const expense = await ExpenseEntry.findOne({ _id: req.body.linked_expense_id, entity_id: req.entityId }).lean();
     if (expense) {
       const validLineIds = new Set(expense.lines.map(l => l._id.toString()));
       const invalid = req.body.linked_expense_line_ids.filter(lid => !validLineIds.has(lid.toString()));
@@ -2351,7 +2367,7 @@ const createPrfCalf = catchAsync(async (req, res) => {
         });
       }
     } else {
-      const logbook = await CarLogbookEntry.findById(req.body.linked_expense_id).lean();
+      const logbook = await CarLogbookEntry.findOne({ _id: req.body.linked_expense_id, entity_id: req.entityId }).lean();
       if (logbook) {
         const validFuelIds = new Set((logbook.fuel_entries || []).map(f => f._id.toString()));
         const invalid = req.body.linked_expense_line_ids.filter(lid => !validFuelIds.has(lid.toString()));
@@ -2413,6 +2429,7 @@ const createPrfCalf = catchAsync(async (req, res) => {
     const collectedPhotos = [];
 
     // Try ExpenseEntry first (ACCESS lines) — enforce same entity
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- post-fetch entity_id check at +1 line returns 403 on mismatch
     const expense = await ExpenseEntry.findById(doc.linked_expense_id);
     if (expense && expense.entity_id.toString() !== doc.entity_id.toString()) {
       return res.status(403).json({ success: false, message: 'Cannot link CALF to expense from a different entity' });
@@ -2427,6 +2444,7 @@ const createPrfCalf = catchAsync(async (req, res) => {
       await expense.save();
     } else {
       // Try CarLogbookEntry (fuel entries) — enforce same entity
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- post-fetch entity_id check at +1 line returns 403 on mismatch
       const logbook = await CarLogbookEntry.findById(doc.linked_expense_id);
       if (logbook && logbook.entity_id.toString() !== doc.entity_id.toString()) {
         return res.status(403).json({ success: false, message: 'Cannot link CALF to logbook from a different entity' });
@@ -2495,9 +2513,11 @@ const updatePrfCalf = catchAsync(async (req, res) => {
           }
         }
       };
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- oldLinkedId from prior entity-scoped doc.linked_expense_id (CALF→source link verified at link time)
       const oldExp = await ExpenseEntry.findById(oldLinkedId);
       if (oldExp) { clearCalfId(oldExp.lines, oldLineIds); await oldExp.save(); }
       else {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- oldLinkedId from prior entity-scoped doc.linked_expense_id
         const oldLb = await CarLogbookEntry.findById(oldLinkedId);
         if (oldLb) { clearCalfId(oldLb.fuel_entries, oldLineIds); await oldLb.save(); }
       }
@@ -2506,6 +2526,7 @@ const updatePrfCalf = catchAsync(async (req, res) => {
     // Set new back-links (same logic as createPrfCalf) — enforce same entity
     if (newLinkedId && newLineIds.length) {
       const collectedPhotos = [];
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- post-fetch entity_id check at +1 line returns 403 on mismatch
       const expense = await ExpenseEntry.findById(newLinkedId);
       if (expense && expense.entity_id.toString() !== doc.entity_id.toString()) {
         return res.status(403).json({ success: false, message: 'Cannot link CALF to expense from a different entity' });
@@ -2519,6 +2540,7 @@ const updatePrfCalf = catchAsync(async (req, res) => {
         }
         await expense.save();
       } else {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- post-fetch entity_id check at +1 line returns 403 on mismatch
         const logbook = await CarLogbookEntry.findById(newLinkedId);
         if (logbook && logbook.entity_id.toString() !== doc.entity_id.toString()) {
           return res.status(403).json({ success: false, message: 'Cannot link CALF to logbook from a different entity' });
@@ -2673,6 +2695,7 @@ const deleteDraftPrfCalf = catchAsync(async (req, res) => {
 
   // Clean up calf_id references on linked expense/logbook lines (prevent orphaned refs)
   if (result.doc_type === 'CALF' && result.linked_expense_id && result.linked_expense_line_ids?.length) {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- linked_expense_id from entity-scoped result (deleteDraft scope above)
     const expense = await ExpenseEntry.findById(result.linked_expense_id);
     if (expense) {
       for (const line of expense.lines) {
@@ -2680,6 +2703,7 @@ const deleteDraftPrfCalf = catchAsync(async (req, res) => {
       }
       await expense.save();
     } else {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- linked_expense_id from entity-scoped result
       const logbook = await CarLogbookEntry.findById(result.linked_expense_id);
       if (logbook) {
         for (const fuel of logbook.fuel_entries) {
@@ -2712,6 +2736,7 @@ const validatePrfCalf = catchAsync(async (req, res) => {
     }
     if (doc.doc_type === 'CALF' && !doc.photo_urls?.length && doc.linked_expense_id) {
       // Auto-inherit OR photos from linked expense lines
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- linked_expense_id from entity-scoped doc (validatePrfCalf scope above)
       const linkedExp = await ExpenseEntry.findById(doc.linked_expense_id).lean();
       const linkedPhotos = (linkedExp?.lines || [])
         .filter(l => (doc.linked_expense_line_ids || []).some(lid => lid.toString() === l._id.toString()))
@@ -2746,12 +2771,14 @@ const validatePrfCalf = catchAsync(async (req, res) => {
 
       // #13 Hardening: Validate linked_expense_line_ids belong to the linked expense/logbook
       if (doc.linked_expense_id && doc.linked_expense_line_ids?.length) {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- linked_expense_id from entity-scoped doc (validatePrfCalf scope)
         const srcExpense = await ExpenseEntry.findById(doc.linked_expense_id).lean();
         if (srcExpense) {
           const validIds = new Set(srcExpense.lines.map(l => l._id.toString()));
           const orphaned = doc.linked_expense_line_ids.filter(lid => !validIds.has(lid.toString()));
           if (orphaned.length) errors.push(`${orphaned.length} linked line(s) do not belong to the linked expense entry`);
         } else {
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- linked_expense_id from entity-scoped doc
           const srcLogbook = await CarLogbookEntry.findById(doc.linked_expense_id).lean();
           if (srcLogbook) {
             const validIds = new Set((srcLogbook.fuel_entries || []).map(f => f._id.toString()));
@@ -2849,6 +2876,7 @@ const reopenPrfCalf = catchAsync(async (req, res) => {
     // Reverse journal entries — if reversal fails, skip (keep POSTED, ledger stays balanced)
     if (doc.event_id) {
       try {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- source_event_id is unique; doc fetched via entity-scoped widenFilterForProxy
         const jes = await JournalEntry.find({ source_event_id: doc.event_id, status: 'POSTED', is_reversal: { $ne: true } });
         for (const je of jes) { await reverseJournal(je._id, `Auto-reversal: ${doc.doc_type} reopen`, req.user._id); }
       } catch (jeErr) {
@@ -2868,6 +2896,7 @@ const reopenPrfCalf = catchAsync(async (req, res) => {
     // Clear calf_id on linked expense/logbook lines so they show as pending again
     if (doc.doc_type === 'CALF' && doc.linked_expense_id && doc.linked_expense_line_ids?.length) {
       try {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- linked_expense_id from entity-scoped doc (reopen scope)
         const expense = await ExpenseEntry.findById(doc.linked_expense_id);
         if (expense) {
           for (const line of expense.lines) {
@@ -2875,6 +2904,7 @@ const reopenPrfCalf = catchAsync(async (req, res) => {
           }
           await expense.save();
         } else {
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- linked_expense_id from entity-scoped doc
           const logbook = await CarLogbookEntry.findById(doc.linked_expense_id);
           if (logbook) {
             for (const fuel of logbook.fuel_entries) {
@@ -2899,11 +2929,14 @@ const reopenPrfCalf = catchAsync(async (req, res) => {
     // Auto-reopen linked expense/carlogbook (reverse its JE too)
     if (doc.doc_type === 'CALF' && doc.linked_expense_id) {
       try {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- linked_expense_id from entity-scoped doc (reopen scope)
         let source = await ExpenseEntry.findById(doc.linked_expense_id);
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- linked_expense_id from entity-scoped doc
         if (!source) source = await CarLogbookEntry.findById(doc.linked_expense_id);
         if (source && source.status === 'POSTED') {
           // Reverse source JEs — if this fails, source stays POSTED (acceptable: CALF already reopened)
           if (source.event_id) {
+            // eslint-disable-next-line vip-tenant/require-entity-filter -- source_event_id is unique; source above is same-entity per back-link contract
             const jes = await JournalEntry.find({ source_event_id: source.event_id, status: 'POSTED', is_reversal: { $ne: true } });
             for (const je of jes) { await reverseJournal(je._id, `Auto-reversal: linked CALF reopen`, req.user._id); }
           }
@@ -3629,6 +3662,7 @@ const postSingleSmer = async (doc, userId) => {
   } finally { session.endSession(); }
 
   // Non-blocking: DocumentAttachments
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- source_id is unique; doc fetched by Approval Hub with entity scope
   await DocumentAttachment.updateMany(
     { source_model: 'SmerEntry', source_id: doc._id },
     { $set: { event_id: doc.event_id } }
@@ -3697,10 +3731,12 @@ const postSingleCarLogbook = async (doc, userId) => {
       });
     } finally { session.endSession(); }
 
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- source_id is unique; days fetched within entity scope at top of branch
     await DocumentAttachment.updateMany(
       { source_model: 'CarLogbookEntry', source_id: { $in: days.map(d => d._id) } },
       { $set: { event_id: doc.event_id } }
     ).catch(() => {});
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- source_id is unique; doc fetched by Approval Hub with entity scope
     await DocumentAttachment.updateMany(
       { source_model: 'CarLogbookCycle', source_id: doc._id },
       { $set: { event_id: doc.event_id } }
@@ -3756,6 +3792,7 @@ const postSingleCarLogbook = async (doc, userId) => {
     });
   } finally { session.endSession(); }
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- source_id is unique; doc fetched by Approval Hub with entity scope (legacy per-day path)
   await DocumentAttachment.updateMany(
     { source_model: 'CarLogbookEntry', source_id: doc._id },
     { $set: { event_id: doc.event_id } }
@@ -3800,6 +3837,7 @@ const postSingleExpense = async (doc, userId) => {
   // contract isn't silently violated.
   for (const line of (doc.lines || [])) {
     if (line.calf_required && line.calf_id) {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- calf_id stored on entry by createPrfCalf back-link (same-entity enforced); doc from Approval Hub
       const calf = await PrfCalf.findById(line.calf_id).select('status calf_number').lean();
       if (!calf || calf.status !== 'POSTED') {
         throw new Error(
@@ -3826,6 +3864,7 @@ const postSingleExpense = async (doc, userId) => {
     });
   } finally { session.endSession(); }
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- source_id is unique; doc fetched by Approval Hub with entity scope
   await DocumentAttachment.updateMany(
     { source_model: 'ExpenseEntry', source_id: doc._id },
     { $set: { event_id: doc.event_id } }
@@ -3902,9 +3941,11 @@ const postSinglePrfCalf = async (doc, userId) => {
       // 3) Cascade — post the linked Expense/CarLogbook in the SAME session
       if (doc.doc_type !== 'CALF' || !doc.linked_expense_id) return;
 
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- linked_expense_id from doc (Approval Hub fetched with entity scope); CALF→source link verified at link time
       let source = await ExpenseEntry.findById(doc.linked_expense_id).session(session);
       let sourceType = 'EXPENSE';
       if (!source) {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- linked_expense_id from doc (Approval Hub fetched with entity scope)
         source = await CarLogbookEntry.findById(doc.linked_expense_id).session(session);
         sourceType = 'CARLOGBOOK';
       }
@@ -4003,6 +4044,7 @@ const postSinglePrfCalf = async (doc, userId) => {
   } finally { session.endSession(); }
 
   // Post-transaction: link DocumentAttachments to the CALF event (non-critical)
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- source_id is unique; doc fetched by Approval Hub with entity scope
   await DocumentAttachment.updateMany(
     { source_model: 'PrfCalf', source_id: doc._id },
     { $set: { event_id: doc.event_id } }
@@ -4022,7 +4064,7 @@ const _reversePrfHandler = buildPresidentReverseHandler('PRF');
 // call, auto-route: peek at the doc, then dispatch to the matching handler.
 // Keeps one URL per module — matches Sales/Collection ergonomics.
 const presidentReversePrfCalf = catchAsync(async (req, res) => {
-  const row = await PrfCalf.findById(req.params.id).select('doc_type').lean();
+  const row = await PrfCalf.findOne({ _id: req.params.id, entity_id: req.entityId }).select('doc_type').lean();
   if (!row) return res.status(404).json({ success: false, message: 'PRF/CALF not found in your scope' });
   const fn = row.doc_type === 'PRF' ? _reversePrfHandler : _reverseCalfHandler;
   return fn(req, res);

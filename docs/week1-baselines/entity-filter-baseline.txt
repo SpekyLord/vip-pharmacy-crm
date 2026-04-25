@@ -1,0 +1,918 @@
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\agents\complianceDeadlineAgent.js
+  31:22  warning  Lookup.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\agents\creditRiskAgent.js
+  32:27  warning  SalesLine.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  39:33  warning  Collection.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\agents\dailyBriefingAgent.js
+  43:29  warning  Lookup.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  46:30  warning  Lookup.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\agents\documentExpiryAgent.js
+   16:31  warning  CsiBooklet.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+   29:37  warning  CsiBooklet.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+   52:35  warning  InventoryLedger.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+   90:36  warning  InventoryLedger.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  135:38  warning  ConsignmentTracker.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  148:37  warning  InventoryLedger.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\agents\expansionReadinessAgent.js
+  21:23  warning  Lookup.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  36:10  warning  SalesLine.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  53:21  warning  SalesLine.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\agents\expenseAnomalyAgent.js
+   25:27  warning  ExpenseEntry.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+   73:39  warning  ExpenseEntry.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+   81:35  warning  ExpenseEntry.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  112:35  warning  ExpenseEntry.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  152:39  warning  ExpenseEntry.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\agents\fpaForecastAgent.js
+  24:23  warning  Lookup.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\agents\inventoryReorderAgent.js
+   17:31  warning  InventoryLedger.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+   83:36  warning  ConsignmentTracker.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  129:31  warning  OfficeSupply.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity             vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\agents\kpiVarianceAgent.js
+  208:33  warning  KpiSnapshot.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  219:32  warning  SalesGoalTarget.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  225:34  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  314:36  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\agents\kpiVarianceDigestAgent.js
+   57:24  warning  PeopleMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+   61:31  warning  PeopleMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  160:17  warning  VarianceAlert.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\agents\orgIntelligenceAgent.js
+  41:27  warning  PartnerScorecard.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  47:28  warning  PartnerScorecard.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\agents\performanceCoachAgent.js
+  66:27  warning  SalesLine.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+  73:30  warning  ExpenseEntry.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  79:33  warning  Collection.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\agents\proxySlaAgent.js
+  106:13  warning  CaptureSubmission.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  124:13  warning  CaptureSubmission.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\agents\systemIntegrityAgent.js
+   33:16  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+   96:34  warning  TransferPriceList.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  100:18  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+  168:36  warning  ProductMaster.countDocuments() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\agents\taskOverdueAgent.js
+  176:17  warning  Task.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\agents\treasuryAgent.js
+  24:23  warning  Lookup.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  32:22  warning  BankAccount.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  49:21  warning  PrfCalf.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+  66:21  warning  Collection.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\controllers\messageInboxController.js
+  726:29  warning  VarianceAlert.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  738:29  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  740:33  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\controllers\messageTemplateController.js
+  35:26  warning  PeopleMaster.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\controllers\userController.js
+  438:11  warning  PeopleMaster.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  472:27  warning  AccessTemplate.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\classificationController.js
+  33:13  warning  VendorMaster.findByIdAndUpdate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\collectionController.js
+  300:28  warning  PettyCashFund.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+  432:30  warning  PettyCashFund.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+  459:19  warning  PettyCashFund.findByIdAndUpdate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+  470:15  warning  DocumentAttachment.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  491:37  warning  SalesLine.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                      vip-tenant/require-entity-filter
+  505:17  warning  TransactionEvent.findByIdAndUpdate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  655:27  warning  JournalEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                   vip-tenant/require-entity-filter
+  673:17  warning  TransactionEvent.findByIdAndUpdate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  682:29  warning  PettyCashTransaction.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  693:36  warning  PettyCashFund.findByIdAndUpdate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+  793:25  warning  JournalEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                   vip-tenant/require-entity-filter
+  898:28  warning  PettyCashFund.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+  910:19  warning  PettyCashFund.findByIdAndUpdate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+  918:9   warning  DocumentAttachment.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\consignmentController.js
+  40:26  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\creditNoteController.js
+  143:26  warning  SalesLine.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\creditRuleController.js
+   48:21  warning  CreditRule.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+   94:21  warning  CreditRule.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  125:21  warning  CreditRule.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  192:22  warning  SalesLine.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\crmBridgeController.js
+  50:26  warning  InventoryLedger.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  68:25  warning  ProductMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\dashboardController.js
+   90:24  warning  SalesLine.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  139:24  warning  Collection.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\documentController.js
+   82:28  warning  TransactionEvent.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+   94:25  warning  TransactionEvent.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  109:33  warning  TransactionEvent.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\erpAccessController.js
+  106:26  warning  AccessTemplate.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+  146:26  warning  AccessTemplate.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+  154:9   warning  AccessTemplate.findByIdAndDelete() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  217:26  warning  AccessTemplate.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\expenseController.js
+   186:13  warning  SmerEntry.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+   619:13  warning  DocumentAttachment.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+   698:27  warning  JournalEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+   933:29  warning  ApprovalRequest.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  1333:36  warning  PrfCalf.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+  1532:28  warning  PrfCalf.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+  1584:11  warning  DocumentAttachment.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  1588:11  warning  DocumentAttachment.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  1667:29  warning  JournalEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+  1682:13  warning  CarLogbookEntry.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+  1713:27  warning  JournalEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+  1742:28  warning  CarLogbookCycle.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  1861:32  warning  Lookup.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                    vip-tenant/require-entity-filter
+  2093:36  warning  PrfCalf.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+  2169:24  warning  PrfCalf.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+  2205:13  warning  DocumentAttachment.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  2286:27  warning  JournalEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+  2343:27  warning  ExpenseEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+  2354:29  warning  CarLogbookEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  2416:27  warning  ExpenseEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+  2430:29  warning  CarLogbookEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  2498:28  warning  ExpenseEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+  2501:29  warning  CarLogbookEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  2509:29  warning  ExpenseEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+  2522:31  warning  CarLogbookEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  2676:27  warning  ExpenseEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+  2683:29  warning  CarLogbookEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  2715:31  warning  ExpenseEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+  2749:34  warning  ExpenseEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+  2755:36  warning  CarLogbookEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  2852:27  warning  JournalEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+  2871:31  warning  ExpenseEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+  2878:33  warning  CarLogbookEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  2902:28  warning  ExpenseEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+  2903:37  warning  CarLogbookEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  2907:31  warning  JournalEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+  3632:9   warning  DocumentAttachment.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  3700:11  warning  DocumentAttachment.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  3704:11  warning  DocumentAttachment.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  3759:9   warning  DocumentAttachment.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  3803:26  warning  PrfCalf.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+  3829:9   warning  DocumentAttachment.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  3905:26  warning  ExpenseEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+  3908:24  warning  CarLogbookEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  4006:9   warning  DocumentAttachment.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  4025:21  warning  PrfCalf.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\functionalRoleController.js
+   83:24  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+  113:27  warning  FunctionalRoleAssignment.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  189:24  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+  236:27  warning  FunctionalRoleAssignment.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\hospitalController.js
+  112:31  warning  Warehouse.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  163:31  warning  Warehouse.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\incentiveDisputeController.js
+   55:20  warning  IncentivePayout.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+   58:20  warning  SalesCredit.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+   61:18  warning  SalesLine.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+   64:18  warning  SalesGoalPlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+  240:25  warning  IncentiveDispute.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  261:25  warning  IncentiveDispute.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  290:25  warning  IncentiveDispute.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  330:30  warning  IncentivePayout.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  364:32  warning  SalesCredit.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  420:25  warning  IncentiveDispute.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  449:25  warning  IncentiveDispute.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\incentivePayoutController.js
+   95:21  warning  IncentivePayout.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  156:24  warning  IncentivePayout.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  215:24  warning  IncentivePayout.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  256:13  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  258:22  warning  SalesGoalPlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+  313:24  warning  IncentivePayout.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  502:25  warning  KpiSnapshot.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  543:27  warning  PeopleMaster.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  619:27  warning  PeopleMaster.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  737:25  warning  IncentivePayout.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  842:31  warning  PeopleMaster.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\incomeController.js
+  208:25  warning  IncomeReport.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  254:25  warning  IncomeReport.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  340:25  warning  IncomeReport.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  391:25  warning  IncomeReport.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  417:24  warning  IncomeReport.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  432:28  warning  IncomeReport.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\insuranceController.js
+  57:9  warning  InsurancePolicy.deleteOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\interCompanyController.js
+   45:27  warning  TransferPriceList.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+  162:26  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                  vip-tenant/require-entity-filter
+  292:23  warning  TransferPriceList.findOneAndUpdate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  335:32  warning  TransferPriceList.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+  489:26  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                  vip-tenant/require-entity-filter
+  512:26  warning  StockReassignment.countDocuments() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  560:30  warning  StockReassignment.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\inventoryController.js
+    98:26  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+   253:24  warning  InventoryLedger.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+   304:26  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+   355:25  warning  InventoryLedger.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+   411:29  warning  ProductMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+   562:26  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+   685:15  warning  GrnEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+   751:21  warning  GrnEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+   802:22  warning  PurchaseOrder.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+   826:32  warning  StockReassignment.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+   885:22  warning  Undertaking.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  1116:32  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+  1182:26  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+  1242:25  warning  ProductMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\kpiSelfRatingController.js
+   50:29  warning  FunctionalRoleAssignment.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  166:18  warning  KpiSelfRating.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\lookupGenericController.js
+  2691:22  warning  Lookup.findByIdAndUpdate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  2705:22  warning  Lookup.findByIdAndUpdate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\ocrSettingsController.js
+   91:22  warning  OcrUsageLog.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  112:26  warning  OcrUsageLog.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\payrollController.js
+  172:24  warning  Payslip.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  385:25  warning  Payslip.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  475:25  warning  Payslip.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  523:25  warning  Payslip.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\peopleController.js
+   61:29  warning  CompProfile.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                     vip-tenant/require-entity-filter
+  150:28  warning  FunctionalRoleAssignment.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  204:9   warning  CompProfile.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+  218:9   warning  PeopleMaster.findByIdAndUpdate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  224:25  warning  CompProfile.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                 vip-tenant/require-entity-filter
+  287:15  warning  PeopleMaster.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+  495:24  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                vip-tenant/require-entity-filter
+  547:28  warning  AccessTemplate.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+  587:24  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                vip-tenant/require-entity-filter
+  598:24  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                vip-tenant/require-entity-filter
+  609:24  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                vip-tenant/require-entity-filter
+  628:24  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\pettyCashController.js
+  261:24  warning  PettyCashFund.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+  316:26  warning  PettyCashFund.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+  341:33  warning  PettyCashFund.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+  472:11  warning  PettyCashTransaction.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  611:26  warning  PettyCashFund.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+  716:26  warning  PettyCashTransaction.countDocuments() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  721:9   warning  PettyCashFund.deleteOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\printController.js
+   29:28  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+   55:22  warning  PettyCashFund.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+   60:26  warning  PettyCashTransaction.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+   90:28  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  117:28  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  147:28  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  162:20  warning  PurchaseOrder.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  177:28  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\productMasterController.js
+   83:32  warning  Warehouse.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity             vip-tenant/require-entity-filter
+  248:27  warning  Warehouse.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  254:26  warning  InventoryLedger.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  285:25  warning  InventoryLedger.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  290:28  warning  Warehouse.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity             vip-tenant/require-entity-filter
+  494:19  warning  ProductMaster.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  515:15  warning  ProductMaster.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  547:13  warning  ProductMaster.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  584:11  warning  ProductMaster.deleteOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\purchasingController.js
+   45:22  warning  Warehouse.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+   53:30  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  269:25  warning  PurchaseOrder.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  316:28  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  337:26  warning  VendorMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  343:22  warning  PurchaseOrder.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  467:24  warning  VendorMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\salesController.js
+   113:30  warning  PettyCashFund.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+   133:19  warning  PettyCashFund.findByIdAndUpdate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+   202:28  warning  PettyCashFund.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+   222:17  warning  PettyCashFund.findByIdAndUpdate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+   230:11  warning  DocumentAttachment.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+   246:32  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+   458:9   warning  SalesLine.findByIdAndDelete() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+   651:30  warning  PettyCashFund.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+  1003:13  warning  DocumentAttachment.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  1047:34  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+  1138:27  warning  JournalEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                vip-tenant/require-entity-filter
+  1156:39  warning  InventoryLedger.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity             vip-tenant/require-entity-filter
+  1192:31  warning  PettyCashTransaction.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+  1203:38  warning  PettyCashFund.findByIdAndUpdate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  1352:33  warning  InventoryLedger.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity             vip-tenant/require-entity-filter
+  1372:25  warning  JournalEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                vip-tenant/require-entity-filter
+  1584:13  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+  1600:30  warning  InventoryLedger.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity             vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\salesGoalController.js
+    98:26  warning  SalesGoalTarget.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+   154:22  warning  SalesGoalPlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+   310:22  warning  SalesGoalPlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+   322:22  warning  SalesGoalPlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+   358:13  warning  SalesGoalTarget.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+   434:22  warning  SalesGoalPlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+   461:13  warning  SalesGoalTarget.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+   510:22  warning  SalesGoalPlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+   538:13  warning  SalesGoalTarget.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+   618:24  warning  SalesGoalTarget.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+   632:22  warning  SalesGoalPlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+   655:22  warning  SalesGoalPlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+   680:30  warning  SalesGoalTarget.findOneAndUpdate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+   718:24  warning  SalesGoalTarget.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+   722:24  warning  SalesGoalPlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+   765:22  warning  SalesGoalPlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+   996:22  warning  SalesGoalPlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+  1087:26  warning  KpiSnapshot.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+  1098:25  warning  KpiSnapshot.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                  vip-tenant/require-entity-filter
+  1118:13  warning  SalesGoalPlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+  1126:30  warning  KpiSnapshot.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                  vip-tenant/require-entity-filter
+  1141:34  warning  SalesGoalTarget.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+  1261:22  warning  SalesGoalPlan.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity             vip-tenant/require-entity-filter
+  1268:24  warning  SalesGoalTarget.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+  1274:29  warning  KpiSnapshot.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+  1278:32  warning  KpiSnapshot.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                  vip-tenant/require-entity-filter
+  1282:25  warning  ActionItem.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                   vip-tenant/require-entity-filter
+  1286:24  warning  PeopleMaster.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+  1353:22  warning  SalesGoalPlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+  1356:27  warning  KpiSnapshot.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                  vip-tenant/require-entity-filter
+  1396:13  warning  SalesGoalPlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+  1401:35  warning  KpiSnapshot.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                  vip-tenant/require-entity-filter
+  1530:24  warning  ActionItem.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+  1546:24  warning  ActionItem.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+  1566:26  warning  KpiSnapshot.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+  1611:22  warning  SalesGoalPlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+  1646:23  warning  SalesGoalPlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+  1652:29  warning  SalesGoalPlan.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity             vip-tenant/require-entity-filter
+  1732:22  warning  SalesGoalPlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+  1993:24  warning  SalesGoalTarget.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+  2011:22  warning  SalesGoalPlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\scorecardController.js
+  343:25  warning  PartnerScorecard.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  349:25  warning  PartnerScorecard.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\soxControlMatrixController.js
+  238:5  warning  Lookup.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  239:5  warning  Lookup.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  240:5  warning  Lookup.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\taskController.js
+  271:13  warning  Task.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  460:13  warning  Task.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  784:19  warning  Task.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\territoryController.js
+  15:27  warning  Territory.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+  27:27  warning  Territory.findByIdAndUpdate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  33:9   warning  Territory.findByIdAndDelete() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\universalApprovalController.js
+  139:27  warning  ApprovalRequest.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  144:24  warning  SmerEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+  295:27  warning  ApprovalRequest.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  299:27  warning  IncentiveDispute.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  355:34  warning  IncentivePayout.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  378:36  warning  SalesCredit.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  464:25  warning  IncomeReport.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  478:23  warning  GrnEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+  498:27  warning  Payslip.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+  523:26  warning  KpiSelfRating.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  549:23  warning  SalesLine.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+  573:23  warning  Collection.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  590:23  warning  SmerEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+  613:25  warning  CarLogbookCycle.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  625:15  warning  CarLogbookEntry.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  635:23  warning  CarLogbookEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  657:26  warning  CarLogbookEntry.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+  677:23  warning  ExpenseEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  694:23  warning  PrfCalf.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+  716:23  warning  Undertaking.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  743:23  warning  CreditNote.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  858:25  warning  ApprovalRequest.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  936:28  warning  ApprovalRequest.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  963:15  warning  ApprovalRequest.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\varianceAlertController.js
+   77:21  warning  VarianceAlert.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  105:23  warning  VarianceAlert.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  122:25  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  124:39  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\vendorLearningController.js
+  46:24  warning  VendorMaster.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\controllers\warehouseController.js
+   86:27  warning  Warehouse.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+   98:30  warning  InventoryLedger.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  156:27  warning  Warehouse.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  175:27  warning  Warehouse.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\addAngeline.js
+  77:28  warning  Territory.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\backfillDeductionScheduleApprovals.js
+  48:27  warning  DeductionSchedule.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  55:28  warning  ApprovalRequest.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\backfillDocRefNormalization.js
+  45:28  warning  SalesLine.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  96:23  warning  SalesLine.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\backfillEntityIdsFromFra.js
+  85:26  warning  PeopleMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+  92:30  warning  FunctionalRoleAssignment.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\backfillGrnUndertakings.js
+   70:28  warning  Undertaking.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  119:13  warning  GrnEntry.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\backfillSalesLineSource.js
+  24:21  warning  SalesLine.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\diagnoseIloMainAdjustments.js
+  32:20  warning  Warehouse.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  43:22  warning  InventoryLedger.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  53:5   warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+  54:5   warning  TransactionEvent.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\diagnoseStockVisibility.js
+   37:28  warning  Warehouse.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                  vip-tenant/require-entity-filter
+   62:28  warning  InventoryLedger.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+   79:33  warning  InventoryLedger.countDocuments() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+   80:30  warning  InventoryLedger.countDocuments() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+   81:29  warning  InventoryLedger.countDocuments() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+   95:26  warning  InventoryLedger.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  117:34  warning  ProductMaster.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  133:27  warning  InventoryLedger.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\findSuspectAdjustments.js
+  31:26  warning  InventoryLedger.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  40:23  warning  InventoryLedger.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  48:28  warning  Warehouse.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  56:26  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\importProductClean.js
+  68:25  warning  ProductMaster.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  72:23  warning  ProductMaster.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\importStockOnHand.js
+   89:28  warning  Warehouse.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+  155:23  warning  ProductMaster.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  173:13  warning  ProductMaster.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\inspectTransactionEvent.js
+  42:23  warning  TransactionEvent.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  54:22  warning  InventoryLedger.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  59:23  warning  Warehouse.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity             vip-tenant/require-entity-filter
+  60:24  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\migrateCalfOneAckFlow.js
+   64:24  warning  PrfCalf.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+   94:23  warning  ExpenseEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  101:23  warning  ApprovalRequest.deleteMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\migrateEntityData.js
+  174:15  warning  InventoryLedger.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+  178:15  warning  SalesLine.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+  182:15  warning  ProductMaster.deleteOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  185:15  warning  ProductMaster.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  236:13  warning  SalesLine.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+  411:11  warning  SalesLine.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+  415:11  warning  ConsignmentTracker.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\migrateErpAccess.js
+  30:27  warning  AccessTemplate.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\migrateHospitalWarehouses.js
+  58:28  warning  Warehouse.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\migrateSalesPhotoLookup.js
+  29:28  warning  Lookup.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\migrateSmerUniqueIndex.js
+  37:26  warning  SmerEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  49:13  warning  SmerEntry.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\migrateUomFields.js
+  21:26  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  44:13  warning  ProductMaster.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\migrateWarehouses.js
+  122:11  warning  Warehouse.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+  155:26  warning  GrnEntry.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+  167:22  warning  StockReassignment.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  171:22  warning  StockReassignment.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\refreshProductMaster.js
+  123:19  warning  ProductMaster.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  141:15  warning  ProductMaster.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  173:13  warning  ProductMaster.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\renumberLegacyJEs.js
+  35:24  warning  JournalEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  61:28  warning  SalesLine.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  80:15  warning  JournalEntry.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\repairStuckPerdiemOverrides.js
+  48:25  warning  ApprovalRequest.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  62:24  warning  SmerEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\repostMissingJEs.js
+   85:22  warning  JournalEntry.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  106:25  warning  SmerEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  163:26  warning  CarLogbookCycle.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  227:28  warning  ExpenseEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+  286:24  warning  PrfCalf.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\restoreGrnReversalStock.js
+  43:29  warning  InventoryLedger.countDocuments() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  52:30  warning  InventoryLedger.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+  63:28  warning  Warehouse.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\restoreIloMainOpeningStock.js
+  32:20  warning  Warehouse.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+  39:33  warning  InventoryLedger.countDocuments() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  50:26  warning  InventoryLedger.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+  63:23  warning  InventoryLedger.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  76:27  warning  ProductMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\seedPeopleMaster.js
+  37:28  warning  PeopleMaster.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\seedPettyCashFunds.js
+  49:29  warning  Warehouse.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\seedTerritories.js
+  38:9   warning  Territory.deleteMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  76:23  warning  Territory.countDocuments() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  80:21  warning  Territory.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\testCalfFlow.js
+  151:29  warning  ExpenseEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  214:27  warning  JournalEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  224:21  warning  ExpenseEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  290:28  warning  JournalEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  302:25  warning  JournalEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  309:18  warning  PrfCalf.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  319:31  warning  JournalEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  321:29  warning  JournalEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  330:21  warning  ExpenseEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  333:25  warning  JournalEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  354:21  warning  ExpenseEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  361:18  warning  PrfCalf.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  424:21  warning  ExpenseEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  469:29  warning  PrfCalf.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  470:28  warning  ExpenseEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  497:15  warning  JournalEntry.deleteMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\testExpenseEndpoints.js
+  40:27  warning  Territory.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\testPhase7.js
+  175:29  warning  SalesLine.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity             vip-tenant/require-entity-filter
+  459:52  warning  IncomeReport.deleteMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  460:49  warning  PnlReport.deleteMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  461:47  warning  MonthlyArchive.deleteMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  462:50  warning  Collection.deleteMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  463:49  warning  SalesLine.deleteMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  464:43  warning  SmerEntry.deleteMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  465:47  warning  ExpenseEntry.deleteMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  466:46  warning  PrfCalf.deleteMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\traceGrnStock.js
+   73:20  warning  Undertaking.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+   93:22  warning  TransactionEvent.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  107:13  warning  InventoryLedger.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\scripts\undoIloMainRestore.js
+  35:31  warning  InventoryLedger.countDocuments() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  44:29  warning  InventoryLedger.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity            vip-tenant/require-entity-filter
+  53:22  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\apPaymentService.js
+  30:25  warning  SupplierInvoice.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\approvalService.js
+  292:29  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+  361:37  warning  ApprovalRequest.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  455:26  warning  ApprovalRequest.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  524:25  warning  ApprovalRequest.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  529:22  warning  ApprovalRule.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+  627:25  warning  ApprovalRequest.countDocuments() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  633:26  warning  ApprovalRequest.countDocuments() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\arEngine.js
+  193:28  warning  SalesLine.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  197:27  warning  Collection.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\autoJournal.js
+  126:24  warning  CreditCard.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  132:24  warning  BankAccount.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\bankReconService.js
+   51:27  warning  BankStatement.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+   55:29  warning  BankAccount.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+  128:27  warning  BankStatement.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  134:20  warning  JournalEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+  149:27  warning  BankStatement.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  226:27  warning  BankStatement.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  230:29  warning  BankAccount.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+  278:9   warning  BankAccount.findByIdAndUpdate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\consignmentReportService.js
+  23:23  warning  ConsignmentTracker.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\copilotToolRegistry.js
+   245:41  warning  ApprovalRequest.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+   266:23  warning  ApprovalRequest.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+   402:25  warning  ApprovalRequest.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+   923:39  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+   993:39  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  1059:26  warning  KpiSnapshot.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+  1101:26  warning  KpiSnapshot.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+  1134:23  warning  Lookup.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                vip-tenant/require-entity-filter
+  1142:39  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  1145:36  warning  KpiSnapshot.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+  1149:13  warning  VarianceAlert.countDocuments() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\costCenterService.js
+  61:20  warning  CostCenter.findByIdAndUpdate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\creditRuleEngine.js
+  127:28  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  263:11  warning  SalesCredit.deleteMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  303:10  warning  SalesCredit.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\cycleReportService.js
+   27:26  warning  SalesLine.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+   34:25  warning  Collection.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+   51:5   warning  SmerEntry.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+   52:5   warning  CarLogbookEntry.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+   53:5   warning  ExpenseEntry.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+  100:24  warning  CycleReport.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  118:24  warning  CycleReport.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  136:24  warning  CycleReport.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\dashboardService.js
+  102:26  warning  InventoryLedger.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  181:27  warning  IncomeReport.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+  308:24  warning  InventoryLedger.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\deductionScheduleService.js
+   28:11  warning  ApprovalRequest.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  125:26  warning  DeductionSchedule.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  146:26  warning  DeductionSchedule.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  167:26  warning  DeductionSchedule.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  189:26  warning  DeductionSchedule.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  225:26  warning  DeductionSchedule.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  250:26  warning  DeductionSchedule.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  272:26  warning  DeductionSchedule.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  391:11  warning  ApprovalRequest.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\dependentDocChecker.js
+   73:23  warning  SalesLine.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity             vip-tenant/require-entity-filter
+  115:30  warning  InventoryLedger.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  468:23  warning  PettyCashTransaction.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  522:13  warning  CarLogbookEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  533:23  warning  PrfCalf.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\documentDetailHydrator.js
+  316:32  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  339:26  warning  InventoryLedger.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\documentReversalService.js
+   150:28  warning  JournalEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                   vip-tenant/require-entity-filter
+   158:26  warning  JournalEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                   vip-tenant/require-entity-filter
+   181:27  warning  InventoryLedger.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                vip-tenant/require-entity-filter
+   286:29  warning  PettyCashTransaction.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+   293:17  warning  PettyCashFund.findByIdAndUpdate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+   371:29  warning  PettyCashTransaction.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+   378:17  warning  PettyCashFund.findByIdAndUpdate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+   467:17  warning  ExpenseEntry.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+   476:17  warning  Collection.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                vip-tenant/require-entity-filter
+   891:11  warning  PettyCashTransaction.deleteOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+   915:13  warning  PettyCashFund.findByIdAndUpdate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+   932:26  warning  JournalEntry.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                vip-tenant/require-entity-filter
+   939:11  warning  JournalEntry.deleteOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+   983:25  warning  SalesGoalTarget.deleteMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+   985:15  warning  SalesGoalPlan.deleteOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity             vip-tenant/require-entity-filter
+  1014:25  warning  IncentivePayout.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                vip-tenant/require-entity-filter
+  1051:31  warning  IncentivePayout.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+  1059:29  warning  KpiSnapshot.deleteMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+  1063:31  warning  SalesGoalTarget.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+  1187:15  warning  CarLogbookEntry.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+  1444:28  warning  OfficeSupplyTransaction.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  1535:28  warning  OfficeSupply.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity               vip-tenant/require-entity-filter
+  1721:29  warning  GrnEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                       vip-tenant/require-entity-filter
+  1773:28  warning  JournalEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity                   vip-tenant/require-entity-filter
+  1781:30  warning  JournalEntry.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\erpNotificationService.js
+  593:24  warning  PeopleMaster.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  604:29  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  939:29  warning  SalesGoalTarget.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\expenseAnomalyService.js
+  36:14  warning  SmerEntry.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  41:14  warning  CarLogbookEntry.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  46:14  warning  Collection.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  51:14  warning  ExpenseEntry.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+  56:14  warning  Collection.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\fifoEngine.js
+  141:15  warning  InventoryLedger.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  188:24  warning  InventoryLedger.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\incentivePlanService.js
+   58:34  warning  IncentivePlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  127:29  warning  SalesGoalPlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  144:10  warning  SalesGoalPlan.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  179:27  warning  SalesGoalPlan.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  187:27  warning  SalesGoalPlan.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  248:11  warning  SalesGoalPlan.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  264:9   warning  IncentivePlan.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  285:9   warning  IncentivePlan.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\incomeCalc.js
+  585:24  warning  IncomeReport.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  656:9   warning  SmerEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  661:9   warning  Collection.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  670:9   warning  PnlReport.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  687:9   warning  ExpenseEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  925:26  warning  DeductionSchedule.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\integrationHooks.js
+  76:24  warning  Lookup.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\interCompanyService.js
+  184:37  warning  ProductMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  458:31  warning  ProductMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\journalEngine.js
+  130:28  warning  JournalEntry.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  164:13  warning  VatLedger.deleteMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\payslipCalc.js
+  277:21  warning  CarLogbookEntry.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  293:24  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  507:24  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  672:24  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  740:24  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  818:26  warning  DeductionSchedule.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+  869:25  warning  Payslip.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\performanceRankingService.js
+   53:5   warning  SmerEntry.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+   57:5   warning  CarLogbookEntry.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+   61:5   warning  ExpenseEntry.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+  127:24  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  150:11  warning  SmerEntry.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  151:11  warning  CarLogbookEntry.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  152:11  warning  ExpenseEntry.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\pnlCalc.js
+  235:28  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\profitShareEngine.js
+  71:28  warning  SalesLine.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\recurringJournalService.js
+  53:21  warning  RecurringJournalTemplate.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\rxCorrelationService.js
+  279:29  warning  Territory.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  436:29  warning  Territory.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  583:29  warning  Territory.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  654:26  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  663:27  warning  Territory.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\salesGoalLifecycleHooks.js
+  214:24  warning  SalesGoalTarget.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+  278:24  warning  SalesGoalTarget.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+  326:15  warning  IncentivePayout.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  395:24  warning  SalesGoalTarget.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity     vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\salesGoalService.js
+  489:35  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity      vip-tenant/require-entity-filter
+  660:24  warning  SalesGoalTarget.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  699:32  warning  KpiSnapshot.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  774:30  warning  ActionItem.countDocuments() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  775:34  warning  ActionItem.countDocuments() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  832:25  warning  SalesGoalTarget.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  844:32  warning  PeopleMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+  883:27  warning  KpiSnapshot.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+  968:25  warning  SalesGoalTarget.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+  977:30  warning  KpiSnapshot.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\smerCrmBridge.js
+  222:25  warning  CarLogbookEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  269:27  warning  CarLogbookEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\stockSeedService.js
+   22:28  warning  Warehouse.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+   57:28  warning  Warehouse.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity           vip-tenant/require-entity-filter
+  121:23  warning  ProductMaster.findOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  139:13  warning  ProductMaster.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\threeWayMatch.js
+   19:25  warning  SupplierInvoice.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+   23:34  warning  PurchaseOrder.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+   24:38  warning  GrnEntry.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+   26:16  warning  PurchaseOrder.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+  127:25  warning  PurchaseOrder.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity    vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\undertakingService.js
+  128:9  warning  GrnEntry.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\universalApprovalService.js
+   490:19  warning  CarLogbookEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity       vip-tenant/require-entity-filter
+   668:17  warning  SmerEntry.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity             vip-tenant/require-entity-filter
+  1486:30  warning  ProductMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity         vip-tenant/require-entity-filter
+  1520:13  warning  InventoryLedger.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  1527:13  warning  InventoryLedger.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\vatService.js
+  32:23  warning  VatLedger.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\services\vendorAutoLearner.js
+  195:13  warning  VendorMaster.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\utils\hospitalAccess.js
+  25:30  warning  Warehouse.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\erp\utils\userEntityRebuild.js
+   57:24  warning  PeopleMaster.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity              vip-tenant/require-entity-filter
+   62:30  warning  FunctionalRoleAssignment.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  116:24  warning  PeopleMaster.findById() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity          vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\scripts\backfillTaskKpiFields.js
+  46:7  warning  Task.countDocuments() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  47:7  warning  Task.countDocuments() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  48:7  warning  Task.countDocuments() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  49:7  warning  Task.countDocuments() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  50:7  warning  Task.countDocuments() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\scripts\debugCsi7648.js
+  22:22  warning  SalesLine.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  69:23  warning  Warehouse.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  97:25  warning  Collection.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\scripts\migrateSalesGoalVersioning.js
+   77:23  warning  SalesGoalPlan.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+   85:28  warning  SalesGoalPlan.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  131:27  warning  SalesGoalPlan.updateMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+  141:28  warning  IncentivePlan.find() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity        vip-tenant/require-entity-filter
+  159:13  warning  IncentivePlan.updateOne() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+
+C:\Users\LENOVO\OneDrive\Documents\VIP and VS CODE\VIP IP\VIP CRM ERP\vip-pharmacy-crm\backend\scripts\resetCarLogbook.js
+  46:26  warning  CarLogbookEntry.aggregate() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity   vip-tenant/require-entity-filter
+  86:24  warning  CarLogbookEntry.deleteMany() must include an entity_id filter, or add `// eslint-disable-next-line vip-tenant/require-entity-filter -- <reason>` if the call is intentionally cross-entity  vip-tenant/require-entity-filter
+
+✖ 647 problems (0 errors, 647 warnings)
+

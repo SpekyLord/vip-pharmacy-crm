@@ -37,6 +37,7 @@ const {
   canBroadcast,
   getFoldersConfig,
   getActionsConfig,
+  getHiddenFoldersForRole,
 } = require('../erp/utils/inboxLookups');
 
 const getMessageModel = () => MessageInbox;
@@ -171,6 +172,27 @@ const getInboxMessages = catchAsync(async (req, res) => {
   const entityScope = resolveEntityScope(req);
   if (entityScope) filter.entity_id = entityScope;
 
+  // Phase G9.R9 — Per-role hidden folders (lookup-driven). E.g. president sees
+  // approvals via Approval Hub, so the APPROVALS folder is hidden from their
+  // Inbox view + counts + folder rail. Returns [] for any role without a row.
+  const hiddenFolders = await getHiddenFoldersForRole({
+    entityId: entityScope,
+    role: req.user.role,
+  });
+
+  // If caller explicitly asked for a hidden folder (stale URL / direct API
+  // hit), short-circuit with an empty paginated response. Defence-in-depth:
+  // the rail won't render hidden folders, but URL bar / cached links still
+  // can. SENT is exempt (your own outbox includes everything you sent).
+  if (folder && folder !== 'INBOX' && folder !== 'SENT' && hiddenFolders.includes(folder)) {
+    return res.status(200).json({
+      success: true,
+      data: [],
+      pagination: { page, limit, total: 0, pages: 1 },
+      ...(wantCounts ? { counts: await computeFolderCounts(req, entityScope, hiddenFolders) } : {}),
+    });
+  }
+
   // Folder filter — virtual folders are computed (ARCHIVE / SENT / INBOX /
   // ACTION_REQUIRED), real folders match folder field directly.
   if (folder && folder !== 'INBOX') {
@@ -187,9 +209,16 @@ const getInboxMessages = catchAsync(async (req, res) => {
     } else if (folder === 'ACTION_REQUIRED') {
       filter.requires_action = true;
       filter.action_completed_at = null;
+      // Action-required virtual folder still shows ALL folders by default —
+      // suppress hidden ones so the red badge matches what's clickable.
+      if (hiddenFolders.length) filter.folder = { $nin: hiddenFolders };
     } else {
       filter.folder = folder;
     }
+  } else if (hiddenFolders.length) {
+    // Default INBOX virtual folder (catch-all) — exclude hidden folders so
+    // the catch-all view matches what the rail offers.
+    filter.folder = { $nin: hiddenFolders };
   }
 
   if (category && category !== 'all') {
@@ -237,7 +266,7 @@ const getInboxMessages = catchAsync(async (req, res) => {
   };
 
   if (wantCounts) {
-    response.counts = await computeFolderCounts(req, entityScope);
+    response.counts = await computeFolderCounts(req, entityScope, hiddenFolders);
   }
 
   res.status(200).json(response);
@@ -262,7 +291,7 @@ const ZERO_COUNTS = Object.freeze({
   chat: 0,
 });
 
-const computeFolderCounts = async (req, entityScope) => {
+const computeFolderCounts = async (req, entityScope, hiddenFoldersArg) => {
   const Message = getMessageModel();
   const baseAud = buildAudienceFilter(req.user);
   // Phase G9.R8 — hide per-user archived rows + soft-deleted rows from counts
@@ -273,6 +302,16 @@ const computeFolderCounts = async (req, entityScope) => {
     ...baseAud,
   };
   if (entityScope) baseFilter.entity_id = entityScope;
+
+  // Phase G9.R9 — Per-role hidden folders. Caller may pre-resolve to avoid a
+  // duplicate lookup hit (getInboxMessages already fetched it); fall back to a
+  // self-resolution for the standalone /counts endpoint.
+  const hiddenFolders = Array.isArray(hiddenFoldersArg)
+    ? hiddenFoldersArg
+    : await getHiddenFoldersForRole({ entityId: entityScope, role: req.user.role });
+  if (hiddenFolders.length) {
+    baseFilter.folder = { $nin: hiddenFolders };
+  }
 
   // Defensive cast: `$in` in aggregation does strict type-match. If auth
   // middleware ever normalises req.user._id to a string, comparing it to
@@ -962,6 +1001,22 @@ const markAllRead = catchAsync(async (req, res) => {
   const entityScope = resolveEntityScope(req);
   if (entityScope) filter.entity_id = entityScope;
 
+  // Phase G9.R9 — Per-role hidden folders. "Mark all read" must not reach
+  // across hidden folders (e.g. president marking Inbox read shouldn't
+  // silently mark every approval-folder row read too).
+  const hiddenFolders = await getHiddenFoldersForRole({
+    entityId: entityScope,
+    role: req.user.role,
+  });
+
+  // Asking to mark-all-read for a hidden folder is a no-op (defence-in-depth).
+  if (folder && folder !== 'INBOX' && folder !== 'SENT' && hiddenFolders.includes(folder)) {
+    return res.status(200).json({
+      success: true,
+      data: { matched: 0, modified: 0, folder },
+    });
+  }
+
   if (folder && folder !== 'INBOX') {
     if (folder === 'ARCHIVE') {
       filter.archivedBy = req.user._id;
@@ -974,9 +1029,13 @@ const markAllRead = catchAsync(async (req, res) => {
     } else if (folder === 'ACTION_REQUIRED') {
       filter.requires_action = true;
       filter.action_completed_at = null;
+      if (hiddenFolders.length) filter.folder = { $nin: hiddenFolders };
     } else {
       filter.folder = folder;
     }
+  } else if (hiddenFolders.length) {
+    // Default INBOX scope — exclude hidden folders.
+    filter.folder = { $nin: hiddenFolders };
   }
 
   const result = await Message.updateMany(filter, {
@@ -1145,14 +1204,19 @@ const getFolders = catchAsync(async (req, res) => {
   const entityScope = resolveEntityScope(req)
     || req.user.entity_id
     || (Array.isArray(req.user.entity_ids) && req.user.entity_ids.length > 0 ? req.user.entity_ids[0] : null);
-  const [folders, actions] = await Promise.all([
+  const [folders, actions, hiddenFolders] = await Promise.all([
     getFoldersConfig(entityScope),
     getActionsConfig(entityScope),
+    // Phase G9.R9 — drop hidden folders from the left-rail for the caller's role.
+    getHiddenFoldersForRole({ entityId: entityScope, role: req.user.role }),
   ]);
+  const visibleFolders = hiddenFolders.length
+    ? folders.filter((f) => !hiddenFolders.includes(String(f.code).toUpperCase()))
+    : folders;
   res.status(200).json({
     success: true,
     data: {
-      folders: folders.map((f) => ({
+      folders: visibleFolders.map((f) => ({
         code: f.code,
         label: f.label,
         sort_order: f.sort_order,

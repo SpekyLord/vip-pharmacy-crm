@@ -68,6 +68,7 @@ const WORKFLOW_GUIDES = {
       'Approval threads stay together by ApprovalRequest._id — request, decision and reopen events fold into one conversation. Look here before re-opening a posted document.',
       'Compose to send a direct message or broadcast — gated by messaging.* sub-permissions and the per-entity MESSAGE_ACCESS_ROLES matrix (Control Center → Lookup Tables to edit). Use "Require acknowledgement" to force recipients to confirm before they can act. Read-receipts button (sender + admin/president/ceo/finance) lists who acknowledged and who is still pending.',
       'Retention: archived / read / AI-agent / broadcast messages auto-purge via the nightly #MR Inbox Retention agent. Tune per-entity windows or run a preview / Run Now from Control Center → Inbox Retention.',
+      'Per-role folder visibility (Phase G9.R9): your role may have folders hidden from the rail and the Inbox count via the INBOX_HIDDEN_FOLDERS_BY_ROLE lookup. By default, president has APPROVALS hidden because the Approval Hub at /erp/approvals already lists every pending decision. Admin can extend (e.g. add a CEO row) or disable per role via Control Center → Lookup Tables.',
     ],
     next: [
       { label: 'Approval Hub', path: '/erp/approvals' },
