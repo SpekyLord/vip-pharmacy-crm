@@ -55,7 +55,10 @@ async function ensureHeader(plan, opts = {}) {
 
   // Already linked → fast path; just confirm header exists (in case row was deleted).
   if (plan.incentive_plan_id) {
-    const existingHeader = await IncentivePlan.findById(plan.incentive_plan_id).session(session);
+    const existingHeader = await IncentivePlan.findOne({
+      _id: plan.incentive_plan_id,
+      entity_id: plan.entity_id,
+    }).session(session);
     if (existingHeader) {
       return { header: existingHeader, plan, didBackfill: false };
     }
@@ -124,7 +127,10 @@ async function getActiveVersion(entityId, fiscalYear, opts = {}) {
   }).session(session).lean();
 
   if (header?.current_version_id) {
-    const versioned = await SalesGoalPlan.findById(header.current_version_id).session(session).lean();
+    const versioned = await SalesGoalPlan.findOne({
+      _id: header.current_version_id,
+      entity_id: entityId,
+    }).session(session).lean();
     if (versioned && versioned.status === 'ACTIVE') return versioned;
   }
 
@@ -141,6 +147,7 @@ async function getActiveVersion(entityId, fiscalYear, opts = {}) {
  */
 async function listVersions(headerId) {
   if (!headerId) return [];
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- incentive_plan_id is the IncentivePlan header _id (entity-unique by construction); all SalesGoalPlan versions linked to a header belong to the same entity
   return SalesGoalPlan.find({ incentive_plan_id: headerId })
     .sort({ version_no: -1, createdAt: -1 })
     .populate('supersedes_plan_id', 'version_no reference status')
@@ -176,6 +183,7 @@ async function createNewVersion({ basisPlanId, body = {}, userId, session: outer
   let newPlan = null;
   try {
     const work = async () => {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- basisPlanId from controller; ensureHeader below revalidates entity_id via plan.entity_id and the upserted header is entity-scoped
       const basis = await SalesGoalPlan.findById(basisPlanId).session(session);
       if (!basis) throw new Error('Basis plan not found');
 
@@ -184,6 +192,7 @@ async function createNewVersion({ basisPlanId, body = {}, userId, session: outer
 
       // Reject if a newer version already exists (only the *latest* version
       // can be the basis for v(N+1)).
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- incentive_plan_id is the entity-scoped IncentivePlan header _id; all linked versions share its entity
       const newer = await SalesGoalPlan.findOne({
         incentive_plan_id: header._id,
         version_no: { $gt: basis.version_no },
@@ -246,7 +255,7 @@ async function syncHeaderOnActivation(plan, opts = {}) {
   // effective_to and link superseded_by_plan_id.
   if (plan.supersedes_plan_id) {
     await SalesGoalPlan.updateOne(
-      { _id: plan.supersedes_plan_id, superseded_by_plan_id: { $in: [null, undefined] } },
+      { _id: plan.supersedes_plan_id, entity_id: plan.entity_id, superseded_by_plan_id: { $in: [null, undefined] } },
       {
         $set: {
           superseded_by_plan_id: plan._id,
@@ -262,7 +271,7 @@ async function syncHeaderOnActivation(plan, opts = {}) {
   // fiscal_year)" — already O(1) via the unique index, so no parallel lookup
   // mirror is needed.
   await IncentivePlan.updateOne(
-    { _id: header._id },
+    { _id: header._id, entity_id: plan.entity_id },
     {
       $set: {
         current_version_no: plan.version_no || 1,
@@ -283,7 +292,7 @@ async function syncHeaderOnLifecycleChange(plan, opts = {}) {
   const session = opts.session || null;
   if (!plan?.incentive_plan_id) return;
   await IncentivePlan.updateOne(
-    { _id: plan.incentive_plan_id, current_version_id: plan._id },
+    { _id: plan.incentive_plan_id, entity_id: plan.entity_id, current_version_id: plan._id },
     { $set: { status: plan.status } },
     { session }
   );
