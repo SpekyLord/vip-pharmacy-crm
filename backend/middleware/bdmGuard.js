@@ -1,5 +1,6 @@
 /**
- * BDM Guard — Rule #21 silent-self-fill detector (observation mode, Day 3 of 5).
+ * BDM Guard — Rule #21 silent-self-fill detector (Day 3 + Day 4 of Week-1
+ * Stabilization).
  *
  * Catches the bug class CLAUDE.md Rule #21 documents:
  *
@@ -14,6 +15,16 @@
  *   - the request did NOT include `?bdm_id=` (so the value isn't an explicit
  *     scope choice — it leaked from a fallback)
  *
+ * Modes (env var `BDM_GUARD_MODE`, read once at attach time):
+ *   - `log`   (default): console.error JSON line; in production, also fire a
+ *               deduped MessageInbox alert via guardAlerter.
+ *   - `throw`: console.error JSON line + throw inside the Mongoose pre-hook.
+ *               Use AFTER triage. The bug class is hard to clear from history
+ *               (every existing buggy controller would 500 immediately) — flip
+ *               to throw only once Phase G4.5d-style sweeps cover all 9
+ *               Rule-#21 endpoints.
+ *   - `off`:  plugin not registered.
+ *
  * False positives are unlikely in this codebase: admin / finance / president
  * are not BDMs on transactional records. If a real one shows up, mark the
  * route via `markCrossEntityAllowed(req)` or fix the controller per Rule #21.
@@ -26,6 +37,18 @@ const mongoose = require('mongoose');
 const path = require('path');
 
 const { readLiveCtx } = require('./requestContext');
+const { maybeAlert } = require('./guardAlerter');
+
+const VALID_MODES = ['log', 'throw', 'off'];
+const resolveMode = () => {
+  const raw = (process.env.BDM_GUARD_MODE || 'log').toLowerCase();
+  if (!VALID_MODES.includes(raw)) {
+    // eslint-disable-next-line no-console
+    console.warn(`[bdmGuard] Invalid BDM_GUARD_MODE="${raw}" — defaulting to 'log'.`);
+    return 'log';
+  }
+  return raw;
+};
 
 const QUERY_HOOKS = [
   'find',
@@ -110,12 +133,28 @@ const buildShortStack = () => {
     .map((line) => line.replace(process.cwd(), '.'));
 };
 
-const emitViolation = (payload) => {
+const emitViolation = (payload, mode) => {
   // eslint-disable-next-line no-console
   console.error('[BDM_GUARD_VIOLATION]', JSON.stringify(payload));
+
+  if (mode === 'throw') {
+    const err = new Error(
+      `[BDM_GUARD] ${payload.kind} on model ${payload.model} at ${payload.path || 'unknown path'} (op=${payload.op})`
+    );
+    err.code = 'BDM_GUARD_VIOLATION';
+    err.violation = payload;
+    throw err;
+  }
+
+  maybeAlert({
+    kind: payload.kind,
+    model: payload.model,
+    requestPath: payload.path,
+    payload,
+  });
 };
 
-const buildPlugin = (bdmScopedSet) => {
+const buildPlugin = (bdmScopedSet, mode) => {
   const queryHookFn = function bdmQueryHook() {
     const ctx = readLiveCtx();
     if (!ctx) return;
@@ -141,7 +180,7 @@ const buildPlugin = (bdmScopedSet) => {
       entityId: ctx.entityId,
       filterKeys: Object.keys(filter || {}).slice(0, 12),
       stack: buildShortStack(),
-    });
+    }, mode);
   };
 
   const aggregateHookFn = function bdmAggregateHook() {
@@ -171,7 +210,7 @@ const buildPlugin = (bdmScopedSet) => {
         Object.keys(stage || {}).slice(0, 1).join('') || '?'
       ).slice(0, 12),
       stack: buildShortStack(),
-    });
+    }, mode);
   };
 
   return (schema) => {
@@ -180,25 +219,37 @@ const buildPlugin = (bdmScopedSet) => {
   };
 };
 
-const attachBdmGuard = ({ verbose = true } = {}) => {
+const attachBdmGuard = ({ verbose = true, mode: modeOverride } = {}) => {
+  const mode = modeOverride || resolveMode();
   const config = require(path.join(__dirname, 'entityScopedModels.json'));
 
   const bdmScopedSet = new Set(config.strict_entity_and_bdm);
-  mongoose.plugin(buildPlugin(bdmScopedSet));
+
+  if (mode === 'off') {
+    if (verbose) {
+      // eslint-disable-next-line no-console
+      console.log('[bdmGuard] disabled via BDM_GUARD_MODE=off');
+    }
+    return { bdmScopedSet, mode };
+  }
+
+  mongoose.plugin(buildPlugin(bdmScopedSet, mode));
 
   if (verbose) {
     // eslint-disable-next-line no-console
     console.log(
-      `[bdmGuard] attached, observing ${bdmScopedSet.size} models for ` +
+      `[bdmGuard] attached (mode=${mode}), observing ${bdmScopedSet.size} models for ` +
       `Rule #21 silent-self-fill`
     );
   }
 
-  return { bdmScopedSet };
+  return { bdmScopedSet, mode };
 };
 
 module.exports = {
   attachBdmGuard,
   extractBdmIdValue,
   isSelfFill,
+  resolveMode,
+  VALID_MODES,
 };

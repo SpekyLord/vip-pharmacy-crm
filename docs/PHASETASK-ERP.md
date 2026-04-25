@@ -7969,3 +7969,46 @@ CLAUDE-ERP.md                                       (Rule #20 note)
 - Custom `local/require-entity-filter` ESLint rule + CI block (Day 5).
 - Actual DR drill — Lightsail snapshot restore + Atlas PITR restore + S3 DR bucket parity check (Day 5).
 - CRM-side guards for Visit / Doctor / MessageInbox (deferred to Week 2 pharmacy greenfield — different tenant model, not entity_id).
+
+---
+
+## WEEK-1 STABILIZATION — DAY 4: GUARD MODES + PROD ALERTING ✅ April 25, 2026
+
+> **Goal:** Promote Day-3's observation-mode guards into a real safety net. Add a `log / throw / off` mode switch on each guard, wire production violations to a deduped MessageInbox alert via the existing multi-channel `notify()` service, set local dev to `throw` so leaks fail loud during development, and unit-test the bug-class fingerprint so any regression that re-introduces the Phase-23 / Rule-#21 patterns fails CI.
+
+### Files added
+
+- [backend/middleware/guardAlerter.js](../backend/middleware/guardAlerter.js) — production MessageInbox notifier shared by `entityGuard` + `bdmGuard`. In-process LRU dedup (1 hour per `kind|model|path` triple, hard cap 500 entries to prevent unbounded growth). Recipient resolved via env var `ENTITY_GUARD_ALERT_RECIPIENT` (accepts `ALL_ADMINS` / `PRESIDENT` / 24-char `_id`; default `ALL_ADMINS`); resolution lazy-routes through the existing `notify()` enum so subscribers inherit `ROLE_SETS.ADMIN_LIKE` without new lookup work. Setimmediate + `.catch()` so a failed alert never breaks the original DB query. Verified recursion-safe: `notify()` writes to `User` + `MessageInbox` (both `deferred_crm` → guards skip) and the inbox ack-default hook queries Lookup *with* `entity_id` filter.
+- [backend/tests/unit/entityGuard.test.js](../backend/tests/unit/entityGuard.test.js) — 14 tests covering `filterHasEntityId` (direct / `$and` / `$or` / nested / circular guard / null), `pipelineHasEntityMatch`, and `resolveMode` (default, valid enum, mixed-case, invalid → fallback).
+- [backend/tests/unit/bdmGuard.test.js](../backend/tests/unit/bdmGuard.test.js) — 17 tests covering `extractBdmIdValue` (flat / nested / null), `isSelfFill` (string / ObjectId / `$eq` / `$in` arrays / null inputs), `resolveMode`, and an end-to-end Rule-#21 fingerprint walkthrough that simulates the buggy controller code-path the rule documents.
+- [backend/tests/unit/guardAlerter.test.js](../backend/tests/unit/guardAlerter.test.js) — 19 tests covering dedup window logic (same key suppressed; different model / path / kind bypass; expired window re-emits via mocked `Date.now`), recipient resolution (default / valid enum / valid `_id` / invalid → fallback), alert title / body shaping (kind-specific copy + Rule #21 cite), and `maybeAlert` production gating (no-op outside production; respects dedup; defers via `setImmediate`).
+
+### Files modified
+
+- [backend/middleware/entityGuard.js](../backend/middleware/entityGuard.js) — added `resolveMode()` reading `ENTITY_GUARD_MODE` env var; mode threads through `buildPlugin → emitViolation`. `throw` branch raises a tagged `Error` with `code = 'ENTITY_GUARD_VIOLATION'` and the full payload attached (caught by global `errorHandler` → 500). `off` branch returns from `attachEntityGuard` without registering the plugin. Boot log now echoes the mode: `[entityGuard] attached (mode=throw), observing 85 models …`.
+- [backend/middleware/bdmGuard.js](../backend/middleware/bdmGuard.js) — same shape, separate env var (`BDM_GUARD_MODE`). Independently configurable from entityGuard because Rule-#21 false-positive risk is higher (bdm_id self-fill is value-comparison, not just structural) — operators can run entityGuard in throw and bdmGuard in log if a hot-fix sweep is mid-flight.
+- [backend/.env](../backend/.env) (local, gitignored) — added `ENTITY_GUARD_MODE=throw`, `BDM_GUARD_MODE=throw`, `ENTITY_GUARD_ALERT_RECIPIENT=ALL_ADMINS`. Local dev fails loud on any leak.
+- [backend/.env.example](../backend/.env.example) — documented the three vars + recommended rollout (dev=throw, staging=throw, prod=log → flip to throw after triage).
+- [docs/RUNBOOK.md](RUNBOOK.md) — added **Section 9b: Tenant Guard Violation** with classify / fix / rollback procedure. Operators can act on the alert without reading source.
+- [CLAUDE-ERP.md](../CLAUDE-ERP.md) — added 1-paragraph entry under the Day-3 / Day-4 Week-1 Stabilization block linking the new env vars + alert procedure.
+
+### Subscription readiness
+
+- Guard mode env vars are platform-engineering controls (not per-tenant business config) — env var is the right primitive, not a Lookup. Subscribers ship with `log` mode, flip to `throw` once their controller fleet is clean.
+- `ENTITY_GUARD_ALERT_RECIPIENT` accepts an enum string OR a single user `_id`. `ALL_ADMINS` resolves through `notify()` → `User.find({ role: { $in: ROLE_SETS.ADMIN_LIKE } })` — same lookup-aligned role taxonomy as Phase G4 / G4.5 / Phase 3c, so no new role hardcoding ships with this work.
+- Alert dedup window (`DEDUP_WINDOW_MS = 1h`) is module-level constant; if a future subscriber needs faster alerting they tune at code level. Not exposed as Lookup because the operational reasoning is platform-wide (rate-limit the inbox, not per-tenant).
+- The MessageInbox alert routes via `category: 'compliance_alert'` which `inboxLookups.folderForCategory` maps to the `AI_AGENT_REPORTS` folder — already lookup-driven (`MESSAGE_FOLDERS` lazy-seeded per entity per Phase G9.A). No new category seeded; alert lands cleanly in the existing AI Agents tab.
+
+### Integrity verification
+
+- `npx jest --ci --runInBand` → 22 suites, 135 tests, all green. New work adds 3 suites + 50 tests.
+- Boot smoke (3 modes verified): `SKIP_DB_CONNECT=true ENTITY_GUARD_MODE={log,throw,off} BDM_GUARD_MODE={log,throw,off} node -e "require('./server').createApp()"` — all clean. Boot log mirrors mode.
+- **No cascading recursion:** traced `maybeAlert → notify → sendInApp → MessageInbox.create → preSaveAckDefault → evaluateAckDefault → Lookup.find({entity_id, ...})`. User + MessageInbox are `deferred_crm` (skipped); Lookup query filters by entity_id (no entity-guard fire). Confirmed by code inspection of [backend/erp/utils/inboxAckDefaults.js:72,99](../backend/erp/utils/inboxAckDefaults.js).
+- **No backwards-compat break:** without `ENTITY_GUARD_MODE` / `BDM_GUARD_MODE` set, both default to `log` — bit-identical to Day-3 behavior. Existing deployments don't need an env-var flip to keep working.
+
+### Out of scope today (Day 5)
+
+- Real Day-4 staging triage — needs an actual staging deploy + workflow exercise to surface real violations. The throw-mode capability is in place; the operator runs `pm2 logs | grep ENTITY_GUARD_VIOLATION` to drive the triage cycle.
+- Custom `local/require-entity-filter` ESLint rule + CI block (Day 5).
+- DR drill (Day 5).
+- CRM-side `userScopeGuard` parallel — pharmacy greenfield, Week 2.
