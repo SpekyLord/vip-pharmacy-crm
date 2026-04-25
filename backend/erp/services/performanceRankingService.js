@@ -50,14 +50,17 @@ async function aggregateExpenses(entityId, start) {
   const baseMatch = { entity_id: eId, status: 'POSTED' };
 
   const [smer, gas, expense] = await Promise.all([
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- $match spreads baseMatch which carries entity_id (L50); rule's aggregate check can't see through SpreadElement
     SmerEntry.aggregate([
       { $match: { ...baseMatch, period: periodStr } },
       { $group: { _id: '$bdm_id', total: { $sum: '$total_reimbursable' } } }
     ]),
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- $match spreads baseMatch which carries entity_id (L50)
     CarLogbookEntry.aggregate([
       { $match: { ...baseMatch, period: periodStr } },
       { $group: { _id: '$bdm_id', total: { $sum: '$official_gas_amount' } } }
     ]),
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- $match spreads baseMatch which carries entity_id (L50)
     ExpenseEntry.aggregate([
       { $match: { ...baseMatch, period: periodStr } },
       { $group: { _id: '$bdm_id', total: { $sum: '$total_amount' } } }
@@ -124,7 +127,7 @@ async function getNetCashRanking(entityId, period) {
  * getMomTrend — 6-month rolling trend for a person
  */
 async function getMomTrend(entityId, personId, periods = 6) {
-  const person = await PeopleMaster.findById(personId).select('user_id full_name').lean();
+  const person = await PeopleMaster.findOne({ _id: personId, entity_id: entityId }).select('user_id full_name').lean();
   if (!person) return { person_id: personId, full_name: 'Unknown', trends: [] };
 
   const bdmId = person.user_id?.toString();
@@ -147,8 +150,11 @@ async function getMomTrend(entityId, personId, periods = 6) {
         const bId = new mongoose.Types.ObjectId(bdmId);
         const baseMatch = { entity_id: eId, bdm_id: bId, status: 'POSTED', period: p };
         const [s, g, e] = await Promise.all([
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- $match: baseMatch where baseMatch carries entity_id (L148); rule's aggregate check can't see through Identifier
           SmerEntry.aggregate([{ $match: baseMatch }, { $group: { _id: null, t: { $sum: '$total_reimbursable' } } }]),
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- $match: baseMatch carries entity_id (L148)
           CarLogbookEntry.aggregate([{ $match: baseMatch }, { $group: { _id: null, t: { $sum: '$official_gas_amount' } } }]),
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- $match: baseMatch carries entity_id (L148)
           ExpenseEntry.aggregate([{ $match: baseMatch }, { $group: { _id: null, t: { $sum: '$total_amount' } } }])
         ]);
         return new Map([['total', (s[0]?.t || 0) + (g[0]?.t || 0) + (e[0]?.t || 0)]]);
