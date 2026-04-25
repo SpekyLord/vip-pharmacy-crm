@@ -148,6 +148,7 @@ async function reverseLinkedJEs({ event_id, reason, userId, entityId }) {
   if (!event_id) return { reversed: 0, already: 0 };
 
   const candidates = await JournalEntry.find({
+    entity_id: entityId,
     source_event_id: event_id,
     status: 'POSTED',
     is_reversal: { $ne: true },
@@ -155,6 +156,7 @@ async function reverseLinkedJEs({ event_id, reason, userId, entityId }) {
   if (!candidates.length) return { reversed: 0, already: 0 };
 
   const ids = candidates.map(j => j._id);
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- corrects_je_id ids are from entity-scoped candidates above
   const existing = await JournalEntry.find({
     corrects_je_id: { $in: ids },
   }).select('corrects_je_id').lean();
@@ -178,6 +180,7 @@ async function reverseLinkedJEs({ event_id, reason, userId, entityId }) {
  * event. Used by GRN, IC Transfer, Sales reversals. Operates in a session.
  */
 async function reverseInventoryFor({ event_id, reversalEventId, userId, session }) {
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- event_id is unique; original entry's entity_id is preserved on the reversal row below
   const originals = await InventoryLedger.find({ event_id }).session(session);
   for (const e of originals) {
     await InventoryLedger.create([{
@@ -283,6 +286,7 @@ async function reverseSale({ doc, userId, reason, tenantFilter }) {
       if (consignmentTouched) sideEffects.push(`consignment_restored=${consignmentTouched}`);
 
       if (doc.petty_cash_fund_id) {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- linked_sales_line_id is unique; doc fetched with tenantFilter scope
         const pcTxn = await PettyCashTransaction.findOne({
           linked_sales_line_id: doc._id, txn_type: 'DEPOSIT', status: 'POSTED',
         }).session(session);
@@ -290,6 +294,7 @@ async function reverseSale({ doc, userId, reason, tenantFilter }) {
           pcTxn.status = 'VOIDED'; pcTxn.voided_at = new Date(); pcTxn.voided_by = userId;
           pcTxn.void_reason = `President-reversed: ${doc.sale_type || 'CSI'} ${doc.invoice_number || doc.doc_ref || ''}`;
           await pcTxn.save({ session });
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- fund_id from same-entity-scoped pcTxn above
           await PettyCashFund.findByIdAndUpdate(pcTxn.fund_id, { $inc: { current_balance: -pcTxn.amount } }, { session });
           sideEffects.push('petty_cash_voided');
         }
@@ -368,6 +373,7 @@ async function reverseCollection({ doc, userId, reason, tenantFilter }) {
       if (releasedCsis) sideEffects.push(`csis_released=${releasedCsis}`);
 
       if (doc.petty_cash_fund_id) {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- linked_collection_id is unique; doc fetched with tenantFilter scope
         const pcTxn = await PettyCashTransaction.findOne({
           linked_collection_id: doc._id, txn_type: 'DEPOSIT', status: 'POSTED',
         }).session(session);
@@ -375,6 +381,7 @@ async function reverseCollection({ doc, userId, reason, tenantFilter }) {
           pcTxn.status = 'VOIDED'; pcTxn.voided_at = new Date(); pcTxn.voided_by = userId;
           pcTxn.void_reason = `President-reversed Collection ${doc.cr_no || ''}`;
           await pcTxn.save({ session });
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- fund_id from same-entity-scoped pcTxn above
           await PettyCashFund.findByIdAndUpdate(pcTxn.fund_id, { $inc: { current_balance: -pcTxn.amount } }, { session });
           sideEffects.push('petty_cash_voided');
         }
@@ -465,7 +472,7 @@ function makeReversePrfCalf(docTypeKey) {
 
         if (docTypeKey === 'CALF' && doc.linked_expense_id) {
           await ExpenseEntry.updateOne(
-            { _id: doc.linked_expense_id, status: { $ne: 'POSTED' } },
+            { _id: doc.linked_expense_id, entity_id: doc.entity_id, status: { $ne: 'POSTED' } },
             { $unset: { 'lines.$[].calf_id': '' } },
             { session }
           );
@@ -474,7 +481,7 @@ function makeReversePrfCalf(docTypeKey) {
 
         if (docTypeKey === 'PRF' && doc.linked_collection_id) {
           await Collection.updateOne(
-            { _id: doc.linked_collection_id },
+            { _id: doc.linked_collection_id, entity_id: doc.entity_id },
             { $unset: { rebate_prf_id: '' } },
             { session }
           );
@@ -888,6 +895,7 @@ async function loadPettyCashTxn({ doc_id, tenantFilter }) {
 async function reversePettyCashTxn({ doc, userId, reason, tenantFilter }) {
   const sideEffects = [];
   if (doc.status !== 'POSTED') {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- doc fetched with tenantFilter scope by loadPettyCashTxn
     await PettyCashTransaction.deleteOne({ _id: doc._id });
     return { doc_type: 'PETTY_CASH_TXN', doc_id: doc._id, doc_ref: doc.txn_no || String(doc._id), mode: 'HARD_DELETE', reversal_event_id: null, side_effects: ['hard_deleted'] };
   }
@@ -912,6 +920,7 @@ async function reversePettyCashTxn({ doc, userId, reason, tenantFilter }) {
       doc.void_reason = `President-reversed: ${reason}`;
       await doc.save({ session });
       const sign = doc.txn_type === 'DEPOSIT' ? -1 : 1;
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- fund_id from same-entity-scoped doc above
       await PettyCashFund.findByIdAndUpdate(doc.fund_id, { $inc: { current_balance: sign * doc.amount } }, { session });
       sideEffects.push('fund_balance_adjusted');
     });
@@ -929,6 +938,7 @@ async function loadJournal({ doc_id, tenantFilter }) {
   if (tenantFilter?.entity_id) filter.entity_id = tenantFilter.entity_id;
   const je = await JournalEntry.findOne(filter);
   if (!je) { const e = new Error('Journal entry not found'); e.statusCode = 404; throw e; }
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- corrects_je_id is unique per JE; je fetched with tenantFilter scope above
   const existing = await JournalEntry.findOne({ corrects_je_id: je._id }).select('_id').lean();
   if (existing) { const e = new Error('Journal entry already reversed'); e.statusCode = 409; throw e; }
   return je;
@@ -936,6 +946,7 @@ async function loadJournal({ doc_id, tenantFilter }) {
 
 async function reverseManualJournal({ doc, userId, reason }) {
   if (doc.status !== 'POSTED') {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- doc fetched with tenantFilter scope by loadJournal
     await JournalEntry.deleteOne({ _id: doc._id });
     return { doc_type: 'JOURNAL_ENTRY', doc_id: doc._id, doc_ref: doc.je_number, mode: 'HARD_DELETE', reversal_event_id: null, side_effects: ['hard_deleted'] };
   }
@@ -980,8 +991,10 @@ async function reverseSalesGoalPlan({ doc, userId, reason, tenantFilter }) {
     try {
       let deletedTargets = 0;
       await session.withTransaction(async () => {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id is unique; doc fetched with tenantFilter scope by loadSalesGoalPlan
         const t = await SalesGoalTarget.deleteMany({ plan_id: doc._id }, { session });
         deletedTargets = t.deletedCount || 0;
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- doc fetched with tenantFilter scope by loadSalesGoalPlan
         await SalesGoalPlan.deleteOne({ _id: doc._id }, { session });
       });
       if (deletedTargets) sideEffects.push(`targets_hard_deleted=${deletedTargets}`);
@@ -1011,6 +1024,7 @@ async function reverseSalesGoalPlan({ doc, userId, reason, tenantFilter }) {
   // reverseJournal runs its own session; doing it outside the plan txn keeps
   // the code symmetric with reverseManualJournal's pattern and avoids nested
   // transaction complications. Idempotent: reverseJournal skips already-reversed.
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id is unique; doc fetched with tenantFilter scope by loadSalesGoalPlan
   const payouts = await IncentivePayout.find({
     plan_id: doc._id,
     status: { $in: ['ACCRUED', 'APPROVED', 'PAID'] },
@@ -1048,6 +1062,7 @@ async function reverseSalesGoalPlan({ doc, userId, reason, tenantFilter }) {
       });
 
       // IncentivePayout → REVERSED (preserve journal_id refs for audit).
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id is unique; doc fetched with tenantFilter scope by loadSalesGoalPlan
       const payoutRes = await IncentivePayout.updateMany(
         { plan_id: doc._id, status: { $in: ['ACCRUED', 'APPROVED', 'PAID'] } },
         { $set: { status: 'REVERSED', reversed_by: userId, reversed_at: new Date(), reversal_reason: `President-reverse plan: ${reason}` } },
@@ -1056,10 +1071,12 @@ async function reverseSalesGoalPlan({ doc, userId, reason, tenantFilter }) {
       if (payoutRes.modifiedCount) sideEffects.push(`payouts_reversed=${payoutRes.modifiedCount}`);
 
       // KpiSnapshot → delete (derived data — once plan is reversed, snapshots are meaningless).
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id is unique; doc fetched with tenantFilter scope by loadSalesGoalPlan
       const snapRes = await KpiSnapshot.deleteMany({ plan_id: doc._id }, { session });
       if (snapRes.deletedCount) sideEffects.push(`snapshots_deleted=${snapRes.deletedCount}`);
 
       // SalesGoalTarget → CLOSED (keep for audit, prevent further use).
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id is unique; doc fetched with tenantFilter scope by loadSalesGoalPlan
       const targetRes = await SalesGoalTarget.updateMany(
         { plan_id: doc._id },
         { $set: { status: 'CLOSED' } },
@@ -1184,6 +1201,7 @@ async function reverseCarLogbook({ doc, userId, reason, tenantFilter }) {
         doc.deletion_event_id = reversalEvent._id;
         await doc.save({ session });
         // Stamp deletion_event_id on all per-day docs belonging to this cycle
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- cycle_id is unique; doc fetched with tenantFilter scope by loadCarLogbook
         await CarLogbookEntry.updateMany(
           { cycle_id: doc._id, status: 'POSTED' },
           { $set: { deletion_event_id: reversalEvent._id } },
@@ -1441,6 +1459,7 @@ async function reverseOfficeSupply({ doc, userId, reason, tenantFilter }) {
       });
 
       // Cascade: mark every non-reversed transaction for this item.
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- supply_id is unique; doc fetched with tenantFilter scope by loadOfficeSupply
       const txnRes = await OfficeSupplyTransaction.updateMany(
         { supply_id: doc._id, deletion_event_id: { $exists: false } },
         { $set: { deletion_event_id: reversalEvent._id } },
@@ -1532,6 +1551,7 @@ async function reverseOfficeSupplyTxn({ doc, userId, reason, tenantFilter }) {
 
       // Restore parent supply qty_on_hand. Guard negative floor (shouldn't fire
       // under normal flows, but the original recordTransaction also guards).
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- supply_id from same-entity-scoped doc above (loadOfficeSupplyTxn applies tenantFilter)
       const parent = await OfficeSupply.findById(doc.supply_id).session(session);
       if (parent) {
         parent.qty_on_hand = Math.max(0, (parent.qty_on_hand || 0) + restoreDelta);
@@ -1718,6 +1738,7 @@ async function listReversibleDocs({ doc_types, entityId, fromDate, toDate, page 
     const grnIds = rows.map(r => r.linked_grn_id).filter(Boolean);
     const grnNumberMap = new Map();
     if (grnIds.length) {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- grnIds harvested from entity-scoped Undertaking rows (baseEntity-scoped above); _id is unique
       const grnRows = await GrnEntry.find({ _id: { $in: grnIds } }).select('_id grn_number').lean();
       grnRows.forEach(g => { if (g.grn_number) grnNumberMap.set(String(g._id), g.grn_number); });
     }
@@ -1770,6 +1791,7 @@ async function listReversibleDocs({ doc_types, entityId, fromDate, toDate, page 
     if (dateFilter) q.je_date = dateFilter;
     const rows = await JournalEntry.find(q).select('_id je_number je_date entity_id source_module status').sort({ je_date: -1 }).limit(perTypeFetch).lean();
     const ids = rows.map(r => r._id);
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- ids harvested from entity-scoped JE rows above (q includes baseEntity); corrects_je_id is unique
     const reversed = await JournalEntry.find({ corrects_je_id: { $in: ids } }).select('corrects_je_id').lean();
     const skipIds = new Set(reversed.map(r => r.corrects_je_id.toString()));
     const visible = rows.filter(r => !skipIds.has(r._id.toString()));
@@ -1778,6 +1800,7 @@ async function listReversibleDocs({ doc_types, entityId, fromDate, toDate, page 
     // `from:` must be the actual collection name on the model, NOT the Mongoose-pluralized
     // default — JournalEntry explicitly uses `erp_journal_entries` (see models/JournalEntry.js).
     const jeCollectionName = JournalEntry.collection.collectionName;
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- $match: q where q is built from baseEntity (entity_id) above; aggregate inherits the same scope
     const jeCountAgg = await JournalEntry.aggregate([
       { $match: q },
       { $lookup: { from: jeCollectionName, localField: '_id', foreignField: 'corrects_je_id', as: 'reversals' } },
