@@ -11,7 +11,10 @@
 const mongoose = require('mongoose');
 
 const territorySchema = new mongoose.Schema({
-  entity_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Entity' },
+  // entity_id required as of Week-1 Day-4.5 (2026-04-25). All historical rows
+  // already carry entity_id (the {entity_id, territory_code} unique index would
+  // have failed on null otherwise), so no migration needed.
+  entity_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Entity', required: true },
   territory_code: {
     type: String,
     required: [true, 'Territory code is required'],

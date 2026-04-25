@@ -16,7 +16,9 @@
     "verify:rejection-wiring": "node scripts/verifyRejectionWiring.js",
     "verify:copilot-wiring": "node scripts/verifyCopilotWiring.js",
     "verify:inbox-wiring": "node scripts/verifyInboxWiring.js",
-    "verify:task-kpi-wiring": "node scripts/verifyTaskKpiWiring.js"
+    "verify:task-kpi-wiring": "node scripts/verifyTaskKpiWiring.js",
+    "lint:entity-filter": "node ../frontend/node_modules/eslint/bin/eslint.js --config eslint.config.js .",
+    "lint:entity-filter:strict": "node ../frontend/node_modules/eslint/bin/eslint.js --config eslint.config.js --rule \"{\\\"vip-tenant/require-entity-filter\\\":\\\"error\\\"}\" ."
   },
   "keywords": [
     "pharmacy",
