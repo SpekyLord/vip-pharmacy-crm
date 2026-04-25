@@ -5414,3 +5414,35 @@ CLAUDE-ERP.md                                    # this section
 2. Migration: `node backend/erp/scripts/migrateCalfOneAckFlow.js` (dry-run) surfaces stuck `SUBMITTED` expenses with linked CALFs. CALF=POSTED rows go to a manual-review list (finance hand-posts to avoid backdated JEs). CALF≠POSTED rows get reverted to DRAFT + stale `EXPENSE_ENTRY` ApprovalRequest rows dropped — re-run with `--apply` to commit.
 3. Smoke on staging/prod with a throwaway ACCESS expense: BDM create → banner surfaces auto-CALF → BDM submits the CALF → president approves CALF in Hub → both docs POSTED + JE posted, all in one transaction.
 4. Force-validation-failure test (stale COA) on a throwaway entry → confirm rollback: CALF stays DRAFT, Expense stays DRAFT, no partial journal. This is the regression-detection signal for future work.
+
+---
+
+## Week-1 Stabilization — Day 3: Tenant Guards (Observation Mode) — April 25, 2026
+
+Runtime detector for two recurring bug classes:
+
+1. **Cross-entity leak** — a query on a `strict_entity` model running without an
+   `entity_id` filter (the Phase 23 / G5 / G4.5d pattern).
+2. **Rule #21 silent self-fill** — a privileged caller (admin/finance/president)
+   running a query whose `bdm_id` filter equals the caller's own `_id`, with no
+   `?bdm_id=` in the request URL — the exact fingerprint that bit Phase G5 in 9
+   ERP endpoints.
+
+Both ship in **observation mode only** (Day 3 of 5). They emit
+`[ENTITY_GUARD_VIOLATION]` / `[BDM_GUARD_VIOLATION]` JSON lines. Day 4 triages
+the staging log; Day 5 adds the static (ESLint) gate.
+
+- **Plugins** attach via `mongoose.plugin(...)` at server.js:29-30, BEFORE any
+  schema is compiled — wiring is timing-sensitive.
+- **AsyncLocalStorage** ([backend/middleware/requestContext.js](backend/middleware/requestContext.js))
+  threads the live `req` reference into Mongoose hooks. Background jobs run
+  outside any request → guards skip silently.
+- **Source of truth** is [backend/middleware/entityScopedModels.json](backend/middleware/entityScopedModels.json)
+  (54 strict_entity, 31 strict_entity_and_bdm, 7 global, 2 special_cross_entity,
+  24 deferred_crm). Reconciles cleanly with `mongoose.modelNames()` at boot.
+- **Opt-out** for legitimate consolidated routes: call
+  `markCrossEntityAllowed(req, reason)` from the controller. Day 3 ships zero
+  call sites — the helper is there for Day-4 triage.
+
+See `docs/PHASETASK-ERP.md` (`WEEK-1 STABILIZATION — DAY 3`) for the full file
+list, verification matrix, and out-of-scope items.
