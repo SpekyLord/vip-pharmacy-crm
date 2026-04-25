@@ -200,16 +200,28 @@ const UNIT_CODES = [...new Set(Object.values(UNIT_MAP))].sort();
 
 /**
  * Print-form abbreviation for the CSI/DR overlay renderer.
- * Rule: canonicals longer than 4 letters collapse to their first 3
- * (AMPULE→AMP, BOTTLE→BOT, CAPSULE→CAP, TABLET→TAB, SACHET→SAC, STRIP→STR).
- * 4-letter and shorter canonicals pass through unchanged — the 1-char
- * savings isn't worth the readability loss (PAIR→PAI, YARD→YAR are
- * unreadable; VIAL/TUBE/PACK/ROLL still fit the 11mm MG unit column).
+ *
+ * Rule resolution (in priority order):
+ *   1. opts.overrides[canonical]           — explicit per-unit override (Lookup-driven, Rule #3)
+ *   2. canonical.length > opts.threshold   — collapse to opts.length chars
+ *   3. canonical                           — pass-through (default for ≤threshold)
+ *
+ * Defaults: threshold=4, length=3. So AMPULE→AMP, BOTTLE→BOT, CAPSULE→CAP,
+ * TABLET→TAB, SACHET→SAC, STRIP→STR (5+ letters); VIAL/TUBE/PACK/ROLL/PAIR/
+ * YARD/BOX/BAG/CAN/SET/JAR/PFS/PC pass through unchanged.
+ *
+ * The renderer reads opts from CSI_TEMPLATE Lookup metadata
+ * (`tpl.text.unit_abbreviations`, `unit_abbrev_threshold`, `unit_abbrev_length`)
+ * so subscribers can tune without code changes.
  */
-const abbreviateUnit = (raw) => {
+const abbreviateUnit = (raw, opts = {}) => {
   const canonical = normalizeUnit(raw);
   if (!canonical) return '';
-  return canonical.length > 4 ? canonical.slice(0, 3) : canonical;
+  const overrides = opts.overrides || {};
+  if (overrides[canonical]) return overrides[canonical];
+  const threshold = Number.isFinite(opts.threshold) ? opts.threshold : 4;
+  const length = Number.isFinite(opts.length) ? opts.length : 3;
+  return canonical.length > threshold ? canonical.slice(0, length) : canonical;
 };
 
 // ═══════════════════════════════════════════════════════════
