@@ -1,11 +1,20 @@
 /**
- * Entity Guard — Mongoose plugin (observation mode, Day 3 of 5).
+ * Entity Guard — Mongoose plugin (Day 3 + Day 4 of Week-1 Stabilization).
  *
  * Detects queries on entity-scoped models that omit an `entity_id` filter.
- * Logs violations as `[ENTITY_GUARD_VIOLATION] {...}` JSON lines so Day 4
- * triage can `pm2 logs | grep ENTITY_GUARD_VIOLATION`.
+ * Logs violations as `[ENTITY_GUARD_VIOLATION] {...}` JSON lines so triage
+ * can `pm2 logs | grep ENTITY_GUARD_VIOLATION`.
  *
- *  - DOES NOT THROW. Pure logging.
+ * Modes (env var `ENTITY_GUARD_MODE`, read once at attach time):
+ *   - `log`   (default): console.error JSON line; in production, also fire a
+ *               deduped MessageInbox alert via guardAlerter.
+ *   - `throw`: console.error JSON line + throw inside the Mongoose pre-hook,
+ *               causing the controller to surface a 500 (caught by global
+ *               errorHandler). Use after Day-4 triage classifies all
+ *               legitimate cross-entity reads via `markCrossEntityAllowed`.
+ *   - `off`:  plugin not registered. Use only in tests that legitimately
+ *               run unscoped queries against fixtures.
+ *
  *  - Skips when AsyncLocalStorage store is empty (background jobs).
  *  - Skips when `ctx.crossEntityAllowed` is true (route opted-in via
  *    `markCrossEntityAllowed(req)`).
@@ -29,6 +38,18 @@ const mongoose = require('mongoose');
 const path = require('path');
 
 const { readLiveCtx } = require('./requestContext');
+const { maybeAlert } = require('./guardAlerter');
+
+const VALID_MODES = ['log', 'throw', 'off'];
+const resolveMode = () => {
+  const raw = (process.env.ENTITY_GUARD_MODE || 'log').toLowerCase();
+  if (!VALID_MODES.includes(raw)) {
+    // eslint-disable-next-line no-console
+    console.warn(`[entityGuard] Invalid ENTITY_GUARD_MODE="${raw}" — defaulting to 'log'.`);
+    return 'log';
+  }
+  return raw;
+};
 
 const QUERY_HOOKS = [
   'find',
@@ -89,13 +110,34 @@ const buildShortStack = () => {
     .map((line) => line.replace(process.cwd(), '.'));
 };
 
-const emitViolation = (payload) => {
-  // Single-line JSON for greppability + machine ingest.
+const emitViolation = (payload, mode) => {
+  // Single-line JSON for greppability + machine ingest. Logged in BOTH log and
+  // throw modes — log mode keeps logging as the only signal; throw mode logs
+  // first so even if the thrown error gets swallowed somewhere, the structured
+  // line still hits stdout.
   // eslint-disable-next-line no-console
   console.error('[ENTITY_GUARD_VIOLATION]', JSON.stringify(payload));
+
+  if (mode === 'throw') {
+    const err = new Error(
+      `[ENTITY_GUARD] ${payload.kind} on model ${payload.model} at ${payload.path || 'unknown path'} (op=${payload.op})`
+    );
+    err.code = 'ENTITY_GUARD_VIOLATION';
+    err.violation = payload;
+    throw err;
+  }
+
+  // log mode: also fire MessageInbox alert in production (deduped, 1/hr per
+  // model+path; no-op outside production).
+  maybeAlert({
+    kind: payload.kind,
+    model: payload.model,
+    requestPath: payload.path,
+    payload,
+  });
 };
 
-const buildPlugin = (entityScopedSet) => {
+const buildPlugin = (entityScopedSet, mode) => {
   const queryHookFn = function entityQueryHook() {
     const ctx = readLiveCtx();
     if (!ctx) return;
@@ -120,7 +162,7 @@ const buildPlugin = (entityScopedSet) => {
       isPrivileged: ctx.isPrivileged,
       filterKeys: Object.keys(filter || {}).slice(0, 12),
       stack: buildShortStack(),
-    });
+    }, mode);
   };
 
   const aggregateHookFn = function entityAggregateHook() {
@@ -149,7 +191,7 @@ const buildPlugin = (entityScopedSet) => {
         Object.keys(stage || {}).slice(0, 1).join('') || '?'
       ).slice(0, 12),
       stack: buildShortStack(),
-    });
+    }, mode);
   };
 
   return (schema) => {
@@ -158,7 +200,8 @@ const buildPlugin = (entityScopedSet) => {
   };
 };
 
-const attachEntityGuard = ({ verbose = true } = {}) => {
+const attachEntityGuard = ({ verbose = true, mode: modeOverride } = {}) => {
+  const mode = modeOverride || resolveMode();
   const config = require(path.join(__dirname, 'entityScopedModels.json'));
 
   const entityScopedSet = new Set([
@@ -166,22 +209,32 @@ const attachEntityGuard = ({ verbose = true } = {}) => {
     ...config.strict_entity_and_bdm,
   ]);
 
-  mongoose.plugin(buildPlugin(entityScopedSet));
+  if (mode === 'off') {
+    if (verbose) {
+      // eslint-disable-next-line no-console
+      console.log('[entityGuard] disabled via ENTITY_GUARD_MODE=off');
+    }
+    return { entityScopedSet, config, mode };
+  }
+
+  mongoose.plugin(buildPlugin(entityScopedSet, mode));
 
   if (verbose) {
     // eslint-disable-next-line no-console
     console.log(
-      `[entityGuard] attached, observing ${entityScopedSet.size} models ` +
+      `[entityGuard] attached (mode=${mode}), observing ${entityScopedSet.size} models ` +
       `(strict_entity=${config.strict_entity.length}, ` +
       `strict_entity_and_bdm=${config.strict_entity_and_bdm.length})`
     );
   }
 
-  return { entityScopedSet, config };
+  return { entityScopedSet, config, mode };
 };
 
 module.exports = {
   attachEntityGuard,
   filterHasEntityId,
   pipelineHasEntityMatch,
+  resolveMode,
+  VALID_MODES,
 };

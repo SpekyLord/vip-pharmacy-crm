@@ -297,6 +297,55 @@ After each drill: update measured RTO in the relevant section above.
 
 ---
 
+## SECTION 9b — Tenant Guard Violation (production alert)
+
+> Triggered by: `[ENTITY_GUARD_VIOLATION]` or `[BDM_GUARD_VIOLATION]` JSON line in `pm2 logs`, OR a MessageInbox alert titled `[GUARD] …` arriving in admin inbox. Both signals fire from [backend/middleware/entityGuard.js](../backend/middleware/entityGuard.js) and [bdmGuard.js](../backend/middleware/bdmGuard.js). Production runs on `ENTITY_GUARD_MODE=log` so the violation **does not break the request** — it only paints a target on a tenant-isolation leak we shipped.
+
+### What it means
+
+Two separate fingerprints, same procedure:
+
+- **`entity_filter_missing`** — a query on a strict-entity model (e.g. `SmerEntry`, `ExpenseEntry`, `ChartOfAccounts`) ran with **no `entity_id` filter**. In a multi-tenant prod, that's a cross-tenant leak risk (Phase 23 / Phase G5 / Phase G4.5d bug class).
+- **`bdm_silent_self_fill`** — a privileged user (admin / finance / president) hit a query whose `bdm_id` filter equals **their own _id**, but the request URL had **no `?bdm_id=` param**. That's the Rule #21 silent-self-fill: their results are wrong (empty, instead of the full entity scope).
+
+### Steps
+
+1. **Read the alert body or the log line.** The structured JSON includes:
+   - `model` — the Mongoose model that ran the unfiltered query
+   - `path` — the request path (`GET /api/erp/sales`)
+   - `userId` / `role` / `entityId` / `requestId`
+   - `filterKeys` (or `pipelineStages` for aggregates)
+   - `stack` — first 6 non-`node_modules` frames; usually points straight at the controller line.
+
+2. **Classify the violation** (per the Day-4 triage procedure):
+   - **(a) Legitimate cross-entity read** — an admin all-entity dashboard, a consolidated finance report. Fix: in the route handler call `markCrossEntityAllowed(req, 'reason')` (see [backend/middleware/requestContext.js](../backend/middleware/requestContext.js)). Add a code comment explaining why the route is allowed cross-entity.
+   - **(b) Missing entity filter — actual bug.** Add `entity_id: req.entityId` to the query. Reference Rule #21 if it's a `bdm_id` issue.
+   - **(c) Wrong classification.** The model shouldn't be in `strict_entity` / `strict_entity_and_bdm`. Move it to `global` or `deferred_crm` in [backend/middleware/entityScopedModels.json](../backend/middleware/entityScopedModels.json) and update [docs/ENTITY_SCOPED_MODELS.md](ENTITY_SCOPED_MODELS.md).
+
+3. **Verify dedup is working.** A flooding violation only fires ONE alert per `(kind, model, path)` per hour ([backend/middleware/guardAlerter.js](../backend/middleware/guardAlerter.js) `DEDUP_WINDOW_MS`). If you see >1 alert per hour for the same triple, restart `pm2` (in-process Map cleared) or check for clock skew.
+
+4. **Once all observed violations are triaged**, flip prod from `log` to `throw`:
+   ```bash
+   # /var/www/vip-pharmacy-crm/backend/.env
+   ENTITY_GUARD_MODE=throw
+   BDM_GUARD_MODE=throw   # only after Rule #21 sweep covers all 9 endpoints
+   ```
+   Restart pm2. Any future leak will surface as a 500 in real time, caught by the controller's `catchAsync` and the global `errorHandler`.
+
+5. **Roll back to `log` if `throw` causes 500 storms:**
+   ```bash
+   ENTITY_GUARD_MODE=log
+   pm2 restart vip-api
+   ```
+   The structured log line still fires — you have 1 hour of dedup before the first alert lands, so triage is unblocked.
+
+### Won't catch
+
+- Background jobs / cron tasks — no AsyncLocalStorage context, guards skip silently. Audit those manually if a leak is suspected (see [backend/middleware/requestContext.js](../backend/middleware/requestContext.js) header comment for rationale).
+- CRM-side models (Visit, Doctor, MessageInbox-CRM) — different tenant model (`user` / `assignedTo[]`), classified as `deferred_crm`. Week-2 pharmacy greenfield will introduce a parallel `userScopeGuard`.
+
+---
+
 ## SECTION 10 — Maintenance Windows
 
 Recommended cadence for planned (non-emergency) work:
@@ -316,6 +365,7 @@ Recommended cadence for planned (non-emergency) work:
 | Date | Author | Change |
 |---|---|---|
 | 2026-04-25 | Founder + Claude | Initial runbook drafted during Week-1 Stabilization (Day 2b). 6 of 9 placeholders filled; 3 deferred (static IP, founder backup contact, DNS hosted zone). |
+| 2026-04-25 | Founder + Claude | Day 4 — added Section 9b (Tenant Guard Violation procedure) for ENTITY_GUARD / BDM_GUARD alerts. |
 | TBD | Founder | First DR drill — record measured RTOs in Sections 3 & 4 |
 
 ---

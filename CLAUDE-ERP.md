@@ -5446,3 +5446,19 @@ the staging log; Day 5 adds the static (ESLint) gate.
 
 See `docs/PHASETASK-ERP.md` (`WEEK-1 STABILIZATION — DAY 3`) for the full file
 list, verification matrix, and out-of-scope items.
+
+---
+
+## Week-1 Stabilization — Day 4: Guard Modes + Prod Alerting — April 25, 2026
+
+Day 3's observation-mode plugins are now mode-switchable and production-loud:
+
+- **`ENTITY_GUARD_MODE` / `BDM_GUARD_MODE`** (env vars on the backend, default `log`):
+  - `log` — console.error JSON line; in production, also fires a deduped MessageInbox alert.
+  - `throw` — log + throw inside the Mongoose pre-hook (controller's `catchAsync` returns 500).
+  - `off`  — plugin not registered (test-only).
+  Local dev defaults to `throw` so tenant leaks fail loud during development. Production stays on `log` until Day-4 triage clears all flagged routes.
+- **Production alerting** ([backend/middleware/guardAlerter.js](backend/middleware/guardAlerter.js)) routes through the existing multi-channel `notify()` service (`recipient_id: 'ALL_ADMINS'` by default; override via `ENTITY_GUARD_ALERT_RECIPIENT` env var). Dedup window is 1 hour per `(kind, model, request-path)` triple — flooding violations don't spam the inbox.
+- **Operator procedure** is in [docs/RUNBOOK.md](docs/RUNBOOK.md) Section 9b: classify (legitimate cross-entity / actual bug / wrong classification), fix, re-deploy. The throw-mode flip is the Day-4-finished gate.
+
+See `docs/PHASETASK-ERP.md` (`WEEK-1 STABILIZATION — DAY 4`) for the full file list, the integrity verification (135 tests / 22 suites green), and the recursion-safety trace through `notify → MessageInbox.create → preSaveAckDefault → Lookup.find`.
