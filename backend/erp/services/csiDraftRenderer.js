@@ -21,6 +21,7 @@
  */
 
 const PDFDocument = require('pdfkit');
+const { abbreviateUnit } = require('../utils/normalize');
 
 const MM_TO_PT = 2.8346;
 const mm = (v) => v * MM_TO_PT;
@@ -191,16 +192,22 @@ function drawPage({ doc, tpl, offsetX, offsetY, customerLabel, customerAddress,
     const batchYmm = firstY + rowH * batchRow;
     const expYmm   = firstY + rowH * expRow;
 
+    const unitAbbr = abbreviateUnit(line.unit);
+
     if (isVipShape) {
       // VIP: Item Description · Quantity · Unit Cost · Amount
-      drawText(doc, safe(line.description), px(cols.description.x), py(itemYmm));
+      // VIP layout has no separate unit column; prepend abbreviation to description.
+      const vipDesc = unitAbbr
+        ? `${unitAbbr} ${safe(line.description)}`
+        : safe(line.description);
+      drawText(doc, vipDesc,                px(cols.description.x), py(itemYmm));
       drawText(doc, formatQty(line.qty),    px(cols.quantity.x),    py(itemYmm), { align: cols.quantity.align });
       drawText(doc, formatMoney(line.unit_price), px(cols.unit_cost.x), py(itemYmm), { align: cols.unit_cost.align });
       drawText(doc, formatMoney(line.amount),     px(cols.amount.x),    py(itemYmm), { align: cols.amount.align });
     } else {
       // MG AND CO.: Qty · Unit · Articles · U/P · Amount
       drawText(doc, formatQty(line.qty),    px(cols.quantity.x), py(itemYmm), { align: cols.quantity.align });
-      drawText(doc, safe(line.unit),        px(cols.unit.x),     py(itemYmm), { align: cols.unit.align });
+      drawText(doc, unitAbbr,               px(cols.unit.x),     py(itemYmm), { align: cols.unit.align });
       drawText(doc, safe(line.description), px(cols.articles.x), py(itemYmm), { align: cols.articles.align });
       drawText(doc, formatMoney(line.unit_price), px(cols.unit_price.x), py(itemYmm), { align: cols.unit_price.align });
       drawText(doc, formatMoney(line.amount),     px(cols.amount.x),     py(itemYmm), { align: cols.amount.align });

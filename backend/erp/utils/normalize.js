@@ -198,6 +198,20 @@ const normalizeUnit = (raw) => {
  */
 const UNIT_CODES = [...new Set(Object.values(UNIT_MAP))].sort();
 
+/**
+ * Print-form abbreviation for the CSI/DR overlay renderer.
+ * Rule: canonicals longer than 4 letters collapse to their first 3
+ * (AMPULE→AMP, BOTTLE→BOT, CAPSULE→CAP, TABLET→TAB, SACHET→SAC, STRIP→STR).
+ * 4-letter and shorter canonicals pass through unchanged — the 1-char
+ * savings isn't worth the readability loss (PAIR→PAI, YARD→YAR are
+ * unreadable; VIAL/TUBE/PACK/ROLL still fit the 11mm MG unit column).
+ */
+const abbreviateUnit = (raw) => {
+  const canonical = normalizeUnit(raw);
+  if (!canonical) return '';
+  return canonical.length > 4 ? canonical.slice(0, 3) : canonical;
+};
+
 // ═══════════════════════════════════════════════════════════
 // PRODUCT NAME
 // ═══════════════════════════════════════════════════════════
@@ -217,6 +231,7 @@ module.exports = {
   cleanBatchNo,
   parseExpiry,
   normalizeUnit,
+  abbreviateUnit,
   cleanProductName,
   UNIT_MAP,
   UNIT_CODES,
