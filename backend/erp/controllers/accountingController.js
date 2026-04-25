@@ -196,7 +196,7 @@ const tagVatEntryEndpoint = catchAsync(async (req, res) => {
   if (!['INCLUDE', 'EXCLUDE', 'DEFER'].includes(tag)) {
     return res.status(400).json({ success: false, message: 'Tag must be INCLUDE, EXCLUDE, or DEFER' });
   }
-  const entry = await tagVatEntry(req.params.id, tag, req.user._id);
+  const entry = await tagVatEntry(req.params.id, tag, req.user._id, req.entityId);
   res.json({ success: true, data: entry });
 });
 
