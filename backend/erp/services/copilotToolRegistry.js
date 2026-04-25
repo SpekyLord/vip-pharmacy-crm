@@ -242,6 +242,7 @@ async function explainRejection(ctx, args = {}) {
   if (!doc_id || !mongoose.isValidObjectId(doc_id)) throw bad('valid doc_id required');
 
   const ApprovalRequest = tryModel('ApprovalRequest');
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- post-fetch entity check at L275 enforces ctx.entityId match for non-privileged callers; privileged see cross-entity by design
   let request = ApprovalRequest ? await ApprovalRequest.findById(doc_id).lean() : null;
   let sourceDoc = null, modelName = null;
 
@@ -263,6 +264,7 @@ async function explainRejection(ctx, args = {}) {
       }
     }
     if (sourceDoc && ApprovalRequest) {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- doc_id is unique; sourceDoc passed the entity_id === ctx.entityId check above
       request = await ApprovalRequest.findOne({ doc_id: sourceDoc._id }).sort({ created_at: -1 }).lean();
     }
   }
@@ -399,6 +401,7 @@ async function draftRejectionReason(ctx, args = {}) {
   const ApprovalRequest = tryModel('ApprovalRequest');
   if (!ApprovalRequest) throw bad('ApprovalRequest model not registered', 500);
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- post-fetch entity check at L406 enforces ctx.entityId match for non-privileged; privileged see cross-entity by design
   const request = await ApprovalRequest.findById(approval_request_id).lean();
   if (!request) throw bad('Approval request not found', 404);
 
@@ -920,7 +923,7 @@ async function suggestKpiTargets(ctx, args = {}) {
 
   const PeopleMaster = tryModel('PeopleMaster');
   const SGT = tryModel('SalesGoalTarget');
-  const Person = PeopleMaster ? await PeopleMaster.findById(person_id).lean() : null;
+  const Person = PeopleMaster ? await PeopleMaster.findOne({ _id: person_id, entity_id: ctx.entityId }).lean() : null;
   if (!Person) throw bad('person not found', 404);
 
   // Peer scope
@@ -990,7 +993,7 @@ async function draftCompAdjustment(ctx, args = {}) {
   if (!effective_date) throw bad('effective_date required (ISO)');
 
   const PeopleMaster = tryModel('PeopleMaster');
-  const Person = PeopleMaster ? await PeopleMaster.findById(person_id).lean() : null;
+  const Person = PeopleMaster ? await PeopleMaster.findOne({ _id: person_id, entity_id: ctx.entityId }).lean() : null;
   if (!Person) throw bad('person not found', 404);
 
   if (ctx.mode !== 'execute') {
@@ -1056,6 +1059,7 @@ async function auditSelfRatings(ctx, args = {}) {
     const selfScore = Number(r.self_score || r.score || 0);
     let actualScore = null;
     if (KpiSnapshot && r.person_id) {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- person_id is unique; r came from KpiRating entity-scoped query at L1051
       const snap = await KpiSnapshot.findOne({ person_id: r.person_id, period }).select('composite_score attainment_pct').lean();
       actualScore = snap?.composite_score ?? snap?.attainment_pct ?? null;
     }
@@ -1098,6 +1102,7 @@ async function rankPeople(ctx, args = {}) {
   for (const p of people) {
     let attainment = null;
     if (KpiSnapshot) {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- person_id is unique; p came from PeopleMaster entity-scoped query at L1093
       const snap = await KpiSnapshot.findOne({ person_id: p._id, period }).select('composite_score attainment_pct').lean();
       attainment = snap?.composite_score ?? snap?.attainment_pct ?? null;
     }
@@ -1131,6 +1136,7 @@ async function recommendHrAction(ctx, args = {}) {
   let bluntness = 'balanced';
   try {
     const Lookup = require('../models/Lookup');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- HR_ACTION_BLUNTNESS is a global system config (single DEFAULT row); not entity-scoped by design
     const row = await Lookup.findOne({ category: 'HR_ACTION_BLUNTNESS', code: 'DEFAULT', is_active: { $ne: false } }).lean();
     if (row?.metadata?.value) bluntness = String(row.metadata.value).toLowerCase();
   } catch { /* default */ }
@@ -1139,14 +1145,14 @@ async function recommendHrAction(ctx, args = {}) {
   const KpiSnapshot = tryModel('KpiSnapshot');
   const VarianceAlert = tryModel('VarianceAlert');
 
-  const person = PeopleMaster ? await PeopleMaster.findById(person_id).lean() : null;
+  const person = PeopleMaster ? await PeopleMaster.findOne({ _id: person_id, entity_id: ctx.entityId }).lean() : null;
   if (!person) throw bad('person not found', 404);
 
-  const snap = KpiSnapshot ? await KpiSnapshot.findOne({ person_id, period }).lean() : null;
+  const snap = KpiSnapshot ? await KpiSnapshot.findOne({ entity_id: ctx.entityId, person_id, period }).lean() : null;
   const attainment = snap?.composite_score ?? snap?.attainment_pct ?? null;
 
   const variances = VarianceAlert
-    ? await VarianceAlert.countDocuments({ person_id, status: { $ne: 'RESOLVED' } })
+    ? await VarianceAlert.countDocuments({ entity_id: ctx.entityId, person_id, status: { $ne: 'RESOLVED' } })
     : 0;
 
   // Decision tree — intentionally simple. Each tier flags requires_hr_legal_review

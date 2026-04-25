@@ -50,17 +50,24 @@ function periodFromDate(d) {
 async function _resolveArtifactContext(body) {
   // Hydrate denormalized period/fiscal_year from the linked artifact when
   // possible, so dashboards can group disputes without re-joining payouts.
+  // Cross-entity check below (filer's entity_id vs each artifact.entity_id)
+  // enforces the entity bind explicitly — these by-id lookups are intentionally
+  // unscoped so that mismatches surface as a 403 rather than a confusing 404.
   let payout = null, credit = null, sale = null, plan = null;
   if (body.payout_id) {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id validated post-fetch in fileDispute (L150-154)
     payout = await IncentivePayout.findById(body.payout_id).select('entity_id bdm_id period period_type fiscal_year plan_id tier_budget').lean();
   }
   if (body.sales_credit_id) {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id validated post-fetch in fileDispute (L150-154)
     credit = await SalesCredit.findById(body.sales_credit_id).select('entity_id credit_bdm_id period fiscal_year sale_line_id credited_amount').lean();
   }
   if (body.sale_line_id || credit?.sale_line_id) {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id validated post-fetch in fileDispute (L150-154)
     sale = await SalesLine.findById(body.sale_line_id || credit?.sale_line_id).select('entity_id bdm_id csi_date invoice_total').lean();
   }
   if (body.plan_id || payout?.plan_id) {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id validated post-fetch in fileDispute (L150-154)
     plan = await SalesGoalPlan.findById(body.plan_id || payout?.plan_id).select('entity_id fiscal_year').lean();
   }
 
@@ -237,7 +244,8 @@ exports.listDisputes = catchAsync(async (req, res) => {
 });
 
 exports.getDisputeById = catchAsync(async (req, res) => {
-  const dispute = await IncentiveDispute.findById(req.params.id)
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const dispute = await IncentiveDispute.findOne({ _id: req.params.id, ...entityScope })
     .populate('filed_by', 'name email')
     .populate('affected_bdm_id', 'name email')
     .populate('reviewer_id', 'name email')
@@ -258,7 +266,8 @@ exports.getDisputeById = catchAsync(async (req, res) => {
 // ─── LIFECYCLE TRANSITIONS ─────────────────────────────────────────────
 
 exports.takeReview = catchAsync(async (req, res) => {
-  const dispute = await IncentiveDispute.findById(req.params.id);
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const dispute = await IncentiveDispute.findOne({ _id: req.params.id, ...entityScope });
   if (!dispute) return res.status(404).json({ success: false, message: 'Dispute not found' });
   if (dispute.current_state !== 'OPEN') {
     return res.status(400).json({ success: false, message: `Cannot take review on dispute in state ${dispute.current_state}` });
@@ -287,7 +296,8 @@ exports.takeReview = catchAsync(async (req, res) => {
 });
 
 exports.resolveDispute = catchAsync(async (req, res) => {
-  const dispute = await IncentiveDispute.findById(req.params.id);
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const dispute = await IncentiveDispute.findOne({ _id: req.params.id, ...entityScope });
   if (!dispute) return res.status(404).json({ success: false, message: 'Dispute not found' });
   if (dispute.current_state !== 'UNDER_REVIEW') {
     return res.status(400).json({ success: false, message: `Cannot resolve dispute in state ${dispute.current_state}` });
@@ -327,6 +337,7 @@ exports.resolveDispute = catchAsync(async (req, res) => {
   if (outcome === 'APPROVED') {
     if (dispute.artifact_type === 'payout' && dispute.payout_id) {
       try {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- dispute fetched with entityScope above; payout_id is unique
         const payout = await IncentivePayout.findById(dispute.payout_id);
         if (payout && payout.journal_id && payout.status !== 'REVERSED') {
           const reversalJe = await reverseAccrualJournal(
@@ -361,6 +372,7 @@ exports.resolveDispute = catchAsync(async (req, res) => {
       // Append a reversal SalesCredit row (negative credited_amount). Engine
       // re-runs would NOT touch this row (source='reversal' is preserved).
       try {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- dispute fetched with entityScope above; sales_credit_id is unique
         const original = await SalesCredit.findById(dispute.sales_credit_id).lean();
         if (original) {
           const reversal = await SalesCredit.create([{
@@ -417,7 +429,8 @@ exports.resolveDispute = catchAsync(async (req, res) => {
 });
 
 exports.closeDispute = catchAsync(async (req, res) => {
-  const dispute = await IncentiveDispute.findById(req.params.id);
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const dispute = await IncentiveDispute.findOne({ _id: req.params.id, ...entityScope });
   if (!dispute) return res.status(404).json({ success: false, message: 'Dispute not found' });
   if (!['RESOLVED_APPROVED', 'RESOLVED_DENIED'].includes(dispute.current_state)) {
     return res.status(400).json({ success: false, message: `Cannot close dispute in state ${dispute.current_state}` });
@@ -446,7 +459,8 @@ exports.closeDispute = catchAsync(async (req, res) => {
 // Convenience: filer-cancel for an OPEN dispute. No gate (filer is just
 // withdrawing their own request). Does not produce a resolution row.
 exports.cancelDispute = catchAsync(async (req, res) => {
-  const dispute = await IncentiveDispute.findById(req.params.id);
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const dispute = await IncentiveDispute.findOne({ _id: req.params.id, ...entityScope });
   if (!dispute) return res.status(404).json({ success: false, message: 'Dispute not found' });
   if (dispute.current_state !== 'OPEN') {
     return res.status(400).json({ success: false, message: 'Only OPEN disputes can be cancelled by the filer' });

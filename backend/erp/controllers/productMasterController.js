@@ -80,8 +80,11 @@ const getAll = catchAsync(async (req, res) => {
   // Skip this filter when catalog=true (e.g. PO creation needs the full product list)
   const bdmRoles = [ROLES.CONTRACTOR];
   if (bdmRoles.includes(req.user?.role) && !isCatalog) {
+    // Entity-scope the warehouse search — a BDM should never see warehouse
+    // memberships across entities even if the User row drifted.
     const myWarehouses = await Warehouse.find({
-      $or: [{ manager_id: req.user._id }, { assigned_users: req.user._id }]
+      entity_id: req.entityId,
+      $or: [{ manager_id: req.user._id }, { assigned_users: req.user._id }],
     }).select('_id').lean();
     const whIds = myWarehouses.map(w => w._id);
 
@@ -245,12 +248,18 @@ const tagToWarehouse = catchAsync(async (req, res) => {
   if (!warehouse_id) return res.status(400).json({ success: false, message: 'warehouse_id is required' });
   if (!Array.isArray(product_ids) || !product_ids.length) return res.status(400).json({ success: false, message: 'product_ids array is required' });
 
-  const warehouse = await Warehouse.findById(warehouse_id).select('_id entity_id').lean();
-  if (!warehouse) return res.status(404).json({ success: false, message: 'Warehouse not found' });
+  // Entity-validate the warehouse before tagging — warehouse_id from req.body
+  // could otherwise point at a foreign-entity warehouse and silently create
+  // ledger entries against that entity's stock.
+  const whFilter = { _id: warehouse_id };
+  if (!req.isPresident) whFilter.entity_id = req.entityId;
+  const warehouse = await Warehouse.findOne(whFilter).select('_id entity_id').lean();
+  if (!warehouse) return res.status(404).json({ success: false, message: 'Warehouse not found in this entity' });
 
   let tagged = 0, skipped = 0;
   for (const pid of product_ids) {
-    // Check if product already has inventory in this warehouse
+    // Check if product already has inventory in this warehouse.
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- warehouse_id entity-validated above
     const exists = await InventoryLedger.findOne({ warehouse_id, product_id: pid }).lean();
     if (exists) { skipped++; continue; }
 
@@ -282,11 +291,18 @@ const getProductWarehouses = catchAsync(async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ success: false, message: 'Invalid product ID' });
   }
+  // Entity-scope the ledger scan — without it a regular user could probe
+  // any product_id and discover warehouse coverage across other entities.
+  // President bypass via empty match is fine (admin tooling).
+  const match = { product_id: mongoose.Types.ObjectId.createFromHexString(req.params.id) };
+  if (!req.isPresident && req.entityId) match.entity_id = req.entityId;
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id assigned conditionally on `match` above (president bypass); rule cannot statically trace the assignment
   const entries = await InventoryLedger.aggregate([
-    { $match: { product_id: mongoose.Types.ObjectId.createFromHexString(req.params.id) } },
+    { $match: match },
     { $group: { _id: '$warehouse_id' } }
   ]);
   const whIds = entries.map(e => e._id).filter(Boolean);
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- whIds derived from entity-scoped aggregate above
   const warehouses = await Warehouse.find({ _id: { $in: whIds } }).select('warehouse_code warehouse_name').lean();
   res.json({ success: true, data: warehouses });
 });
@@ -491,6 +507,7 @@ const refreshProducts = catchAsync(async (req, res) => {
         // Deactivate all duplicates FIRST (before updating keeper's item_key)
         for (const dup of candidates) {
           if (dup._id.toString() !== keeper._id.toString() && dup.is_active) {
+            // eslint-disable-next-line vip-tenant/require-entity-filter -- dup._id from entity-scoped ProductMaster.find above (line 479)
             await ProductMaster.updateOne({ _id: dup._id }, { $set: { is_active: false } });
             deactivated++;
           }
@@ -512,6 +529,7 @@ const refreshProducts = catchAsync(async (req, res) => {
         if (purchasePrice > 0) updateFields.purchase_price = purchasePrice;
         if (sellingPrice > 0) updateFields.selling_price = sellingPrice;
 
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- keeper._id from entity-scoped ProductMaster.find above (line 479)
         await ProductMaster.updateOne({ _id: keeper._id }, { $set: updateFields });
         updated++;
       } else {
@@ -544,6 +562,7 @@ const refreshProducts = catchAsync(async (req, res) => {
   for (const prod of activeProducts) {
     const prodClean = `${cleanName(prod.brand_name)}|${(prod.dosage_strength || '').toLowerCase()}`;
     if (!processedCleanKeys.has(prodClean)) {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- prod._id from entity-scoped ProductMaster.find above (line 543)
       await ProductMaster.updateOne({ _id: prod._id }, { $set: { is_active: false } });
       staleDeactivated++;
     }
@@ -581,6 +600,7 @@ const deleteProduct = async (req, res) => {
       return res.status(409).json({ success: false, message: 'Cannot delete — product has inventory transactions. Deactivate instead.' });
     }
 
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- product._id from entity-scoped ProductMaster.findOne above (line 576)
     await ProductMaster.deleteOne({ _id: product._id });
     res.json({ success: true, message: 'Product deleted' });
   } catch (err) {

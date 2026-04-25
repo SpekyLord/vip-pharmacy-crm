@@ -37,7 +37,8 @@ const VIP_TEMPLATE = {
     row_count: 20,
     max_items_per_page: 3,
     columns: {
-      description: { x: 10, align: 'left' },
+      description: { x: 10,  align: 'left' },
+      unit:        { x: 113, align: 'left' },
       quantity:    { x: 126, align: 'right' },
       unit_cost:   { x: 142, align: 'right' },
       amount:      { x: 166, align: 'right' },
@@ -64,6 +65,13 @@ const VIP_TEMPLATE = {
     note_line_1: 'NOTE: All expired and damaged items will be',
     note_line_2: 'accepted and changed',
     default_terms: '30 days',
+    // Lookup-driven unit abbreviation (Rule #3). Admin can edit per entity.
+    unit_abbreviations: {
+      AMPULE: 'AMP', BOTTLE: 'BOT', CAPSULE: 'CAP',
+      TABLET: 'TAB', SACHET: 'SAC', STRIP:  'STR',
+    },
+    unit_abbrev_threshold: 4,
+    unit_abbrev_length: 3,
   },
   font: { family: 'Helvetica-Bold', size_pt: 10 },
 };
@@ -110,6 +118,13 @@ const MG_TEMPLATE = {
     note_line_1: 'NOTE: All expired and damaged items will be',
     note_line_2: 'accepted and changed',
     default_terms: '30 days',
+    // Lookup-driven unit abbreviation (Rule #3). Admin can edit per entity.
+    unit_abbreviations: {
+      AMPULE: 'AMP', BOTTLE: 'BOT', CAPSULE: 'CAP',
+      TABLET: 'TAB', SACHET: 'SAC', STRIP:  'STR',
+    },
+    unit_abbrev_threshold: 4,
+    unit_abbrev_length: 3,
   },
   font: { family: 'Helvetica-Bold', size_pt: 10 },
 };

@@ -42,15 +42,17 @@ const createPO = catchAsync(async (req, res) => {
   // Resolve territory code from the selected warehouse, not the user's territory
   let warehouseCode;
   if (req.body.warehouse_id) {
-    const wh = await Warehouse.findById(req.body.warehouse_id).select('warehouse_code').lean();
+    const wh = await Warehouse.findOne({ _id: req.body.warehouse_id, entity_id: req.entityId }).select('warehouse_code').lean();
     warehouseCode = wh?.warehouse_code || null;
   }
 
-  // Enrich line items with UOM snapshot from ProductMaster
+  // Enrich line items with UOM snapshot from ProductMaster (entity-scoped — line_items
+  // come from req.body, so without the entity_id filter a caller could enrich a PO
+  // with UOM data from another entity's catalog).
   if (req.body.line_items && req.body.line_items.length > 0) {
     const productIds = req.body.line_items.filter(l => l.product_id).map(l => l.product_id);
     if (productIds.length > 0) {
-      const products = await ProductMaster.find({ _id: { $in: productIds } })
+      const products = await ProductMaster.find({ entity_id: req.entityId, _id: { $in: productIds } })
         .select('purchase_uom selling_uom conversion_factor unit_code')
         .lean();
       const productMap = new Map(products.map(p => [p._id.toString(), p]));
@@ -266,6 +268,7 @@ const addPOActivity = catchAsync(async (req, res) => {
   await po.save();
 
   // Return populated activity log
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- po fetched with tenantFilter upstream; po._id is unique
   const updated = await PurchaseOrder.findById(po._id)
     .select('activity_log')
     .populate('activity_log.created_by', 'firstName lastName')
@@ -313,6 +316,7 @@ const emailPO = catchAsync(async (req, res) => {
   if (po.line_items?.length) {
     try {
       const productIds = po.line_items.map(li => li.product_id).filter(Boolean);
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- productIds harvested from same-entity-scoped po.line_items (po loaded with entity_id at L302); _id is globally unique
       lineProducts = await ProductMaster.find({ _id: { $in: productIds } })
         .select('product_name brand_name dosage_strength unit_code purchase_uom').lean();
     } catch { /* non-critical */ }
@@ -334,13 +338,13 @@ const createInvoice = catchAsync(async (req, res) => {
   // Denormalize vendor_name and po_number for JE descriptions
   let vendor_name = req.body.vendor_name;
   if (!vendor_name && req.body.vendor_id) {
-    const vendor = await VendorMaster.findById(req.body.vendor_id).select('vendor_name').lean();
+    const vendor = await VendorMaster.findOne({ _id: req.body.vendor_id, entity_id: req.entityId }).select('vendor_name').lean();
     vendor_name = vendor?.vendor_name || '';
   }
 
   let po_number = req.body.po_number;
   if (!po_number && req.body.po_id) {
-    const po = await PurchaseOrder.findById(req.body.po_id).select('po_number').lean();
+    const po = await PurchaseOrder.findOne({ _id: req.body.po_id, entity_id: req.entityId }).select('po_number').lean();
     po_number = po?.po_number || '';
   }
 
@@ -464,6 +468,7 @@ const postInvoice = catchAsync(async (req, res) => {
   await checkPeriodOpen(req.entityId, invPeriod);
 
   // Fetch vendor TIN for VAT ledger entry
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- vendor_id from same-entity-scoped invoice (loaded with entity_id upstream)
   const vendor = await VendorMaster.findById(invoice.vendor_id).select('tin').lean();
 
   // Build JE data using existing journalFromAP — wrap in transaction for atomicity

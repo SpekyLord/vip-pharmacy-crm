@@ -485,7 +485,8 @@ async function accrueIncentive({
     return existing;
   }
 
-  // Resolve a BDM label once for the JE description
+  // Resolve a BDM label once for the JE description.
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- by-key from same-entity-scoped target.person_id (resolved one level up)
   const person = personId ? await PeopleMaster.findById(personId).select('full_name bdm_code').lean() : null;
   const bdmLabel = person ? `${person.full_name}${person.bdm_code ? ` (${person.bdm_code})` : ''}` : 'BDM';
 
@@ -658,6 +659,7 @@ async function computeBdmSnapshot(entityId, plan, bdmId, personId, territoryId, 
 
   // Get target for this BDM
   const target = await SalesGoalTarget.findOne({
+    entity_id: entityId,
     plan_id: plan._id,
     target_type: 'BDM',
     bdm_id: bdmId,
@@ -697,7 +699,7 @@ async function computeBdmSnapshot(entityId, plan, bdmId, personId, territoryId, 
       // For manual KPIs, check if there's an existing snapshot with manual data
       if (kpiDef.computation === 'manual') {
         const existing = await KpiSnapshot.findOne({
-          plan_id: plan._id, bdm_id: bdmId, period, period_type: periodType,
+          entity_id: entityId, plan_id: plan._id, bdm_id: bdmId, period, period_type: periodType,
         }).lean();
         const existingDriver = existing?.driver_kpis?.find(d => d.driver_code === driver.driver_code);
         const existingKpi = existingDriver?.kpis?.find(k => k.kpi_code === kpiDef.kpi_code && k.data_source === 'manual');
@@ -771,8 +773,8 @@ async function computeBdmSnapshot(entityId, plan, bdmId, personId, territoryId, 
   }
 
   // Action items summary
-  const actionsTotal = await ActionItem.countDocuments({ plan_id: plan._id, bdm_id: bdmId, status: { $nin: ['CANCELLED'] } });
-  const actionsCompleted = await ActionItem.countDocuments({ plan_id: plan._id, bdm_id: bdmId, status: 'DONE' });
+  const actionsTotal = await ActionItem.countDocuments({ entity_id: entityId, plan_id: plan._id, bdm_id: bdmId, status: { $nin: ['CANCELLED'] } });
+  const actionsCompleted = await ActionItem.countDocuments({ entity_id: entityId, plan_id: plan._id, bdm_id: bdmId, status: 'DONE' });
 
   // Upsert snapshot
   const snapshot = await KpiSnapshot.findOneAndUpdate(
@@ -830,6 +832,7 @@ async function computeBdmSnapshot(entityId, plan, bdmId, personId, territoryId, 
  */
 async function computeAllSnapshots(plan, period, periodType, options = {}) {
   const targets = await SalesGoalTarget.find({
+    entity_id: plan.entity_id,
     plan_id: plan._id,
     target_type: 'BDM',
     status: 'ACTIVE',
@@ -841,6 +844,7 @@ async function computeAllSnapshots(plan, period, periodType, options = {}) {
   const personIds = targets.map(t => t.person_id).filter(Boolean);
   let activePersonIds = new Set();
   if (personIds.length > 0) {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- by-key bulk lookup from same-entity targets above
     const activePeople = await PeopleMaster.find({
       _id: { $in: personIds },
       is_active: true,
@@ -881,6 +885,7 @@ async function getIncentiveBudgetAdvisor(entityId, plan) {
 
   // Compute each BDM's current tier
   const snapshots = await KpiSnapshot.find({
+    entity_id: entityId,
     plan_id: plan._id,
     period_type: 'YTD',
   }).lean();
@@ -966,6 +971,7 @@ async function simulatePlanSnapshots(plan, overrides = {}) {
 
   // Pull ACTIVE BDM targets + their latest YTD snapshot (if any)
   const targets = await SalesGoalTarget.find({
+    entity_id: entityId,
     plan_id: plan._id,
     target_type: 'BDM',
     status: 'ACTIVE',
@@ -975,6 +981,7 @@ async function simulatePlanSnapshots(plan, overrides = {}) {
   const activeTargets = targets.filter(t => !t.person_id || t.person_id.is_active !== false);
 
   const snapshotRows = await KpiSnapshot.find({
+    entity_id: entityId,
     plan_id: plan._id,
     period_type: 'YTD',
     period: String(fiscalYear),

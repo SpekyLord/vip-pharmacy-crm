@@ -198,6 +198,32 @@ const normalizeUnit = (raw) => {
  */
 const UNIT_CODES = [...new Set(Object.values(UNIT_MAP))].sort();
 
+/**
+ * Print-form abbreviation for the CSI/DR overlay renderer.
+ *
+ * Rule resolution (in priority order):
+ *   1. opts.overrides[canonical]           — explicit per-unit override (Lookup-driven, Rule #3)
+ *   2. canonical.length > opts.threshold   — collapse to opts.length chars
+ *   3. canonical                           — pass-through (default for ≤threshold)
+ *
+ * Defaults: threshold=4, length=3. So AMPULE→AMP, BOTTLE→BOT, CAPSULE→CAP,
+ * TABLET→TAB, SACHET→SAC, STRIP→STR (5+ letters); VIAL/TUBE/PACK/ROLL/PAIR/
+ * YARD/BOX/BAG/CAN/SET/JAR/PFS/PC pass through unchanged.
+ *
+ * The renderer reads opts from CSI_TEMPLATE Lookup metadata
+ * (`tpl.text.unit_abbreviations`, `unit_abbrev_threshold`, `unit_abbrev_length`)
+ * so subscribers can tune without code changes.
+ */
+const abbreviateUnit = (raw, opts = {}) => {
+  const canonical = normalizeUnit(raw);
+  if (!canonical) return '';
+  const overrides = opts.overrides || {};
+  if (overrides[canonical]) return overrides[canonical];
+  const threshold = Number.isFinite(opts.threshold) ? opts.threshold : 4;
+  const length = Number.isFinite(opts.length) ? opts.length : 3;
+  return canonical.length > threshold ? canonical.slice(0, length) : canonical;
+};
+
 // ═══════════════════════════════════════════════════════════
 // PRODUCT NAME
 // ═══════════════════════════════════════════════════════════
@@ -217,6 +243,7 @@ module.exports = {
   cleanBatchNo,
   parseExpiry,
   normalizeUnit,
+  abbreviateUnit,
   cleanProductName,
   UNIT_MAP,
   UNIT_CODES,

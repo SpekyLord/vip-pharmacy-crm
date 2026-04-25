@@ -25,6 +25,7 @@ const { generateDocNumber } = require('./docNumbering');
 async function closeApprovalRequest(docId, decisionStatus, userId, reason) {
   if (!docId) return;
   try {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- doc_id is the schedule's _id (entity-unique); ApprovalRequest's entity_id matches the schedule's by Phase G4.2 invariant
     await ApprovalRequest.updateMany(
       { doc_id: docId, module: 'DEDUCTION_SCHEDULE', status: 'PENDING' },
       {
@@ -122,6 +123,7 @@ async function createSchedule(entityId, ownerOrBdmId, data, userId, isFinance = 
  * Approve a PENDING_APPROVAL schedule → ACTIVE
  */
 async function approveSchedule(scheduleId, userId) {
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- scheduleId from controller (req.params.id); entityId not threaded to this service signature, deferred to controller-side gate
   const schedule = await DeductionSchedule.findById(scheduleId);
   if (!schedule) throw new Error('Schedule not found');
   if (schedule.status !== 'PENDING_APPROVAL') {
@@ -143,6 +145,7 @@ async function approveSchedule(scheduleId, userId) {
  * Reject a PENDING_APPROVAL schedule
  */
 async function rejectSchedule(scheduleId, userId, reason) {
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- scheduleId from controller (req.params.id); entityId not threaded to this service signature, deferred to controller-side gate
   const schedule = await DeductionSchedule.findById(scheduleId);
   if (!schedule) throw new Error('Schedule not found');
   if (schedule.status !== 'PENDING_APPROVAL') {
@@ -164,6 +167,7 @@ async function rejectSchedule(scheduleId, userId, reason) {
  * Cancel an ACTIVE schedule — marks all PENDING installments as CANCELLED
  */
 async function cancelSchedule(scheduleId, userId, reason) {
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- scheduleId from controller (req.params.id); entityId not threaded to this service signature, deferred to controller-side gate
   const schedule = await DeductionSchedule.findById(scheduleId);
   if (!schedule) throw new Error('Schedule not found');
   if (schedule.status !== 'ACTIVE') {
@@ -186,6 +190,7 @@ async function cancelSchedule(scheduleId, userId, reason) {
  * Early payoff — cancel remaining PENDING installments, create lump-sum for remaining balance
  */
 async function earlyPayoff(scheduleId, payoffPeriod, userId) {
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- scheduleId from controller (req.params.id); entityId not threaded to this service signature, deferred to controller-side gate
   const schedule = await DeductionSchedule.findById(scheduleId);
   if (!schedule) throw new Error('Schedule not found');
   if (schedule.status !== 'ACTIVE') {
@@ -222,6 +227,7 @@ async function earlyPayoff(scheduleId, payoffPeriod, userId) {
  * Finance adjusts a single installment amount
  */
 async function adjustInstallment(scheduleId, installmentId, newAmount, userId, note) {
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- scheduleId from controller (req.params.id); entityId not threaded to this service signature, deferred to controller-side gate
   const schedule = await DeductionSchedule.findById(scheduleId);
   if (!schedule) throw new Error('Schedule not found');
 
@@ -247,6 +253,7 @@ async function adjustInstallment(scheduleId, installmentId, newAmount, userId, n
  * Contractor path — updates `income_report_id` on the installment.
  */
 async function syncInstallmentStatus(scheduleId, installmentId, newStatus, incomeReportId, deductionLineId) {
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- scheduleId is the IncomeReport's deduction_line.schedule_id (from same-entity-scoped income report); internal sync from incomeController
   const schedule = await DeductionSchedule.findById(scheduleId);
   if (!schedule) return;
 
@@ -269,6 +276,7 @@ async function syncInstallmentStatus(scheduleId, installmentId, newStatus, incom
  * payslip each installment landed in.
  */
 async function syncInstallmentStatusForPayslip(scheduleId, installmentId, newStatus, payslipId, deductionLineId) {
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- scheduleId is the Payslip's deduction_line.schedule_id (from same-entity-scoped payslip); internal sync from payrollController / payslipCalc
   const schedule = await DeductionSchedule.findById(scheduleId);
   if (!schedule) return;
 
@@ -389,7 +397,7 @@ async function editPendingSchedule(scheduleId, bdmId, entityId, updates) {
   // the Approval Hub and the eventual Approval History row show stale values.
   try {
     await ApprovalRequest.updateMany(
-      { doc_id: schedule._id, module: 'DEDUCTION_SCHEDULE', status: 'PENDING' },
+      { entity_id: entityId, doc_id: schedule._id, module: 'DEDUCTION_SCHEDULE', status: 'PENDING' },
       {
         $set: {
           amount: schedule.total_amount,

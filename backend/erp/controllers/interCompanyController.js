@@ -42,6 +42,7 @@ const createTransfer = catchAsync(async (req, res) => {
   // Auto-fill transfer prices from TransferPriceList if not provided
   for (const item of line_items) {
     if (!item.transfer_price) {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- TransferPriceList is a cross-entity relationship model (keys: source_entity_id + target_entity_id, no single entity_id); both legs are validated upstream
       const price = await TransferPriceList.findOne({
         source_entity_id,
         target_entity_id,
@@ -159,6 +160,7 @@ const getTransferById = catchAsync(async (req, res) => {
 
   // Enrich line items with product details
   const productIds = transfer.line_items.map(li => li.product_id);
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- productIds harvested from same-entity-scoped transfer.line_items; _id is globally unique
   const products = await ProductMaster.find({ _id: { $in: productIds } })
     .select('brand_name generic_name item_key unit_code')
     .lean();
@@ -289,6 +291,7 @@ const setTransferPrice = catchAsync(async (req, res) => {
     });
   }
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- TransferPriceList is a cross-entity relationship model (keys: source_entity_id + target_entity_id, no single entity_id)
   const price = await TransferPriceList.findOneAndUpdate(
     { source_entity_id, target_entity_id, product_id },
     {
@@ -332,6 +335,7 @@ const getTransferPriceProducts = catchAsync(async (req, res) => {
     .lean();
 
   // Get existing transfer prices for this entity pair
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- TransferPriceList is a cross-entity relationship model (keys: source_entity_id + target_entity_id, no single entity_id)
   const existingPrices = await TransferPriceList.find({
     source_entity_id,
     target_entity_id,
@@ -484,22 +488,25 @@ const createReassignment = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'At least one line item is required' });
   }
 
-  // Validate products exist
+  // Use requesting user's entity_id, or allow override for president (resolved
+  // before product validation so we can scope the catalog query to this entity).
+  const entityId = req.entityId || req.body.entity_id;
+  if (!entityId) {
+    return res.status(400).json({ success: false, message: 'Entity ID required' });
+  }
+
+  // Validate products exist within the caller's entity. Without entity_id, a
+  // user could pass product_ids from a sibling entity and the reassignment
+  // would silently accept them. Mirrors the GRN-create fix in inventoryController.
   const productIds = line_items.map(li => li.product_id);
-  const products = await ProductMaster.find({ _id: { $in: productIds } }).select('_id item_key').lean();
+  const products = await ProductMaster.find({ entity_id: entityId, _id: { $in: productIds } }).select('_id item_key').lean();
   const productMap = new Map(products.map(p => [p._id.toString(), p]));
 
   for (const li of line_items) {
     if (!productMap.has(li.product_id?.toString())) {
-      return res.status(400).json({ success: false, message: `Product ${li.product_id} not found` });
+      return res.status(400).json({ success: false, message: `Product ${li.product_id} not found in this entity` });
     }
     if (!li.item_key) li.item_key = productMap.get(li.product_id.toString()).item_key;
-  }
-
-  // Use requesting user's entity_id, or allow override for president
-  const entityId = req.entityId || req.body.entity_id;
-  if (!entityId) {
-    return res.status(400).json({ success: false, message: 'Entity ID required' });
   }
 
   // Auto-generate reassignment_ref: TERRITORY-MMDDYY-SEQ
@@ -510,6 +517,7 @@ const createReassignment = catchAsync(async (req, res) => {
   const dateCode = `${mm}${dd}${yy}`;
   const prefix = territory_code ? territory_code.toUpperCase() : 'STR';
   const dayCount = await StockReassignment.countDocuments({
+    entity_id: entityId,
     reassignment_ref: new RegExp(`^${prefix}-${dateCode}-`)
   });
   const seq = String(dayCount + 1).padStart(3, '0');
@@ -557,7 +565,8 @@ const approveReassignment = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Action must be APPROVED or REJECTED' });
   }
 
-  const reassignment = await StockReassignment.findOne({ _id: req.params.id, status: 'PENDING' });
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const reassignment = await StockReassignment.findOne({ _id: req.params.id, ...entityScope, status: 'PENDING' });
   if (!reassignment) {
     return res.status(404).json({ success: false, message: 'Reassignment not found or not in PENDING status' });
   }

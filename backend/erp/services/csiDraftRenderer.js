@@ -21,6 +21,7 @@
  */
 
 const PDFDocument = require('pdfkit');
+const { abbreviateUnit } = require('../utils/normalize');
 
 const MM_TO_PT = 2.8346;
 const mm = (v) => v * MM_TO_PT;
@@ -182,6 +183,15 @@ function drawPage({ doc, tpl, offsetX, offsetY, customerLabel, customerAddress,
   const cols = tpl.body.columns;
   const isVipShape = Boolean(cols.description);  // VIP has description, MG has articles
 
+  // Lookup-driven abbreviation (Rule #3): subscribers tune via CSI_TEMPLATE
+  // Lookup metadata. Helper falls back to threshold=4/length=3 defaults if
+  // the template hasn't been migrated yet.
+  const abbrevOpts = {
+    overrides: tpl.text?.unit_abbreviations || {},
+    threshold: tpl.text?.unit_abbrev_threshold,
+    length: tpl.text?.unit_abbrev_length,
+  };
+
   lines.forEach((line, idx) => {
     const itemRow = idx * 3;
     const batchRow = itemRow + 1;
@@ -191,16 +201,23 @@ function drawPage({ doc, tpl, offsetX, offsetY, customerLabel, customerAddress,
     const batchYmm = firstY + rowH * batchRow;
     const expYmm   = firstY + rowH * expRow;
 
+    const unitAbbr = abbreviateUnit(line.unit, abbrevOpts);
+
     if (isVipShape) {
-      // VIP: Item Description · Quantity · Unit Cost · Amount
+      // VIP: Item Description · Unit · Quantity · Unit Cost · Amount
+      // Unit column added Apr 2026 at x=113mm (between description and quantity).
+      // Older Lookup rows without cols.unit still render — just skip unit.
       drawText(doc, safe(line.description), px(cols.description.x), py(itemYmm));
+      if (cols.unit) {
+        drawText(doc, unitAbbr,             px(cols.unit.x),        py(itemYmm), { align: cols.unit.align || 'left' });
+      }
       drawText(doc, formatQty(line.qty),    px(cols.quantity.x),    py(itemYmm), { align: cols.quantity.align });
       drawText(doc, formatMoney(line.unit_price), px(cols.unit_cost.x), py(itemYmm), { align: cols.unit_cost.align });
       drawText(doc, formatMoney(line.amount),     px(cols.amount.x),    py(itemYmm), { align: cols.amount.align });
     } else {
       // MG AND CO.: Qty · Unit · Articles · U/P · Amount
       drawText(doc, formatQty(line.qty),    px(cols.quantity.x), py(itemYmm), { align: cols.quantity.align });
-      drawText(doc, safe(line.unit),        px(cols.unit.x),     py(itemYmm), { align: cols.unit.align });
+      drawText(doc, unitAbbr,               px(cols.unit.x),     py(itemYmm), { align: cols.unit.align });
       drawText(doc, safe(line.description), px(cols.articles.x), py(itemYmm), { align: cols.articles.align });
       drawText(doc, formatMoney(line.unit_price), px(cols.unit_price.x), py(itemYmm), { align: cols.unit_price.align });
       drawText(doc, formatMoney(line.amount),     px(cols.amount.x),     py(itemYmm), { align: cols.amount.align });
