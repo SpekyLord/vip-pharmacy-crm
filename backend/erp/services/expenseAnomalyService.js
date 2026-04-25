@@ -33,26 +33,31 @@ async function aggregateComponent(entityId, period, component) {
 
   switch (component) {
     case 'SMER':
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id present via ...baseMatch spread (linter can't trace spread)
       return SmerEntry.aggregate([
         { $match: { ...baseMatch, period } },
         { $group: { _id: '$bdm_id', total: { $sum: '$total_reimbursable' } } }
       ]);
     case 'GAS_OFFICIAL':
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id present via ...baseMatch spread (linter can't trace spread)
       return CarLogbookEntry.aggregate([
         { $match: { ...baseMatch, period } },
         { $group: { _id: '$bdm_id', total: { $sum: '$official_gas_amount' } } }
       ]);
     case 'INSURANCE':
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id present via ...baseMatch spread (linter can't trace spread)
       return Collection.aggregate([
         { $match: { ...baseMatch, cr_date: { $gte: start, $lt: end } } },
         { $group: { _id: '$bdm_id', total: { $sum: '$total_partner_rebates' } } }
       ]);
     case 'ACCESS':
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id present via ...baseMatch spread (linter can't trace spread)
       return ExpenseEntry.aggregate([
         { $match: { ...baseMatch, period } },
         { $group: { _id: '$bdm_id', total: { $sum: '$total_access' } } }
       ]);
     case 'CORE_COMM':
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id present via ...baseMatch spread (linter can't trace spread)
       return Collection.aggregate([
         { $match: { ...baseMatch, cr_date: { $gte: start, $lt: end } } },
         { $group: { _id: '$bdm_id', total: { $sum: '$total_commission' } } }

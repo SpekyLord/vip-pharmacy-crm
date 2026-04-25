@@ -1520,6 +1520,7 @@ async function getUniversalPending(entityId, user, entityIds) {
 
       const [whResults, bdmResults] = await Promise.all([
         whConditions.length > 0
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- by-warehouse_id/product_id cascade: keys gathered from entity-scoped approval rows above
           ? InventoryLedger.aggregate([
               { $match: { $or: whConditions } },
               { $group: { _id: { warehouse_id: '$warehouse_id', product_id: '$product_id' }, total_in: { $sum: '$qty_in' }, total_out: { $sum: '$qty_out' } } },
@@ -1527,6 +1528,7 @@ async function getUniversalPending(entityId, user, entityIds) {
             ])
           : [],
         bdmConditions.length > 0
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- by-bdm_id/product_id cascade: keys gathered from entity-scoped approval rows above
           ? InventoryLedger.aggregate([
               { $match: { $or: bdmConditions } },
               { $group: { _id: { bdm_id: '$bdm_id', product_id: '$product_id' }, total_in: { $sum: '$qty_in' }, total_out: { $sum: '$qty_out' } } },

@@ -19,6 +19,7 @@ const { cleanName } = require('../utils/nameClean');
  * Resolves manager_id to User.name for each warehouse.
  */
 async function buildBdmToWarehouseMap() {
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- import utility: builds BDM→warehouse mapping across all entities for stock-on-hand seeding
   const warehouses = await Warehouse.find({ is_active: true }).lean();
   const managerIds = warehouses.filter(w => w.manager_id).map(w => w.manager_id);
   const users = await User.find({ _id: { $in: managerIds } }).select('_id name').lean();
@@ -54,6 +55,7 @@ async function seedStockFromRows(rows, options = {}) {
   const { hasWarehouseCode = false } = options;
 
   // Resolve all warehouses from DB
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- import utility: rows arrive with entity-agnostic warehouse codes; entity_id is resolved per-row from the matched warehouse below
   const warehouses = await Warehouse.find({}).lean();
   const whByCode = new Map(warehouses.map(w => [w.warehouse_code, w]));
 

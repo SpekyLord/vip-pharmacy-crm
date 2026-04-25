@@ -275,8 +275,9 @@ async function getCorrelationSummary(entityId, period, filters = {}) {
     ...rebatesByTerritory.keys(),
   ]);
 
-  // Populate territory names
+  // Populate territory names — entity-scope to prevent foreign-entity leak
   const territories = await Territory.find({
+    entity_id: eId,
     _id: { $in: [...allTerritoryIds].map(id => toObjectId(id)) },
   }).select('territory_code territory_name').lean();
 
@@ -432,8 +433,10 @@ async function getHospitalStakeholderView(entityId, period, filters = {}) {
     'hospitals.0': { $exists: true },
   };
   if (filters.territory_id) {
-    // Filter by assigned BDMs in this territory
-    const territory = await Territory.findById(filters.territory_id).select('assigned_bdms').lean();
+    // Filter by assigned BDMs in this territory — entity-scope to prevent
+    // probing a foreign-entity territory's BDM list via the territory_id filter.
+    const territory = await Territory.findOne({ _id: filters.territory_id, entity_id: eId })
+      .select('assigned_bdms').lean();
     if (territory?.assigned_bdms?.length) {
       stakeholderMatch.assignedTo = { $in: territory.assigned_bdms };
     }
@@ -580,7 +583,8 @@ async function getTerritoryDetail(entityId, territoryId, period) {
 
   const bdmUserIds = people.map(p => p.user_id).filter(Boolean);
   if (!bdmUserIds.length) {
-    const territory = await Territory.findById(tId).select('territory_code territory_name').lean();
+    const territory = await Territory.findOne({ _id: tId, entity_id: eId })
+      .select('territory_code territory_name').lean();
     return {
       period,
       territory_id: territoryId,
@@ -650,8 +654,9 @@ async function getTerritoryDetail(entityId, territoryId, period) {
   // Combine all product IDs
   const allProductIds = new Set([...visitsByErpProduct.keys(), ...salesByProduct.keys()]);
 
-  // Populate product names
+  // Populate product names — entity-scope to prevent foreign-entity leak
   const products = await ProductMaster.find({
+    entity_id: eId,
     _id: { $in: [...allProductIds].map(id => toObjectId(id)) },
   }).select('brand_name dosage_strength generic_name').lean();
 
@@ -660,7 +665,8 @@ async function getTerritoryDetail(entityId, territoryId, period) {
     productInfoMap.set(p._id.toString(), p);
   }
 
-  const territory = await Territory.findById(tId).select('territory_code territory_name').lean();
+  const territory = await Territory.findOne({ _id: tId, entity_id: eId })
+    .select('territory_code territory_name').lean();
 
   const productRows = [];
   for (const pId of allProductIds) {
