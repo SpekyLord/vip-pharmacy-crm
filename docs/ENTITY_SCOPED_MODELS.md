@@ -81,3 +81,103 @@ User, WebsiteProduct.
 2. Mirror the change in this document.
 3. Boot the API — log line `[entityGuard] attached to N models` should match
    the union of `strict_entity` + `strict_entity_and_bdm`.
+
+## ESLint rule (Day 5)
+
+Static counterpart to the runtime `entityGuard` middleware. Reads the same
+`entityScopedModels.json` so the model list never drifts between runtime and
+lint time.
+
+- Rule source: [backend/eslint-rules/require-entity-filter.js](../backend/eslint-rules/require-entity-filter.js)
+- Rule unit tests: [backend/eslint-rules/require-entity-filter.test.js](../backend/eslint-rules/require-entity-filter.test.js) (25 cases, runs via the existing Jest harness)
+- Flat config: [backend/eslint.config.js](../backend/eslint.config.js)
+
+### Run
+
+```bash
+cd backend
+npm run lint:entity-filter          # warn-severity (visibility, exits 0)
+npm run lint:entity-filter:strict   # error-severity (CI-gate-ready, exits non-zero on any flag)
+```
+
+The frontend's local ESLint v9 install is reused — no new backend dependency.
+
+### Day-5 baseline (2026-04-25)
+
+First production run produced **647 warnings across 134 files**. Captured
+under [docs/week1-baselines/](week1-baselines/):
+
+- `entity-filter-baseline.json` — full ESLint JSON output (one entry per file)
+- `entity-filter-baseline.txt` — stylish-format output for human review
+- `entity-filter-summary.txt` — top dirs + top files + top model.method patterns
+- `summarize.cjs` — re-runnable summarizer (read-only, takes the JSON as input)
+
+Concentration:
+
+| Top directories | Count |
+|---|---|
+| backend/erp/ | 580 |
+| backend/agents/ | 46 |
+| backend/scripts/ | 15 |
+| backend/controllers/ | 6 |
+
+| Top model.method | Count |
+|---|---|
+| ProductMaster.find | 30 |
+| PeopleMaster.findById | 26 |
+| SalesGoalPlan.findById | 21 |
+| JournalEntry.find | 20 |
+| InventoryLedger.aggregate | 19 |
+| ExpenseEntry.findById | 18 |
+| DocumentAttachment.updateMany | 14 |
+| Warehouse.find | 14 |
+
+### Triage (per the Day-5 handoff §1)
+
+For each unique `(model, method, path)` triple, classify as:
+
+**(a) Legitimate cross-entity** — admin all-entity dashboard, consolidated
+finance report, system-level aggregator. Add an inline disable WITH a reason:
+
+```js
+// eslint-disable-next-line vip-tenant/require-entity-filter -- admin all-entity dashboard
+const all = await Sale.find({});
+```
+
+The reason after `--` is the audit trail. Bare disables should be rejected
+in code review.
+
+**(b) Bug — missing entity filter.** Add `entity_id: req.entityId` (or spread
+`...req.tenantFilter`) to the first argument. Rule #21 silent-self-fill is
+the trap to watch for in `strict_entity_and_bdm` controllers.
+
+**(c) Wrong classification.** The model belongs in `global` /
+`special_cross_entity` / `deferred_crm`. Move it in the JSON and update this
+doc; the rule re-reads on every run.
+
+**Static-only false positives the rule will hit (escape via inline disable):**
+
+- `.where('entity_id').equals(x)` chained calls — entity filter is set after
+  the call site the rule inspects.
+- Filters built across statements (`const f = {}; f.entity_id = x; Model.find(f)`)
+  — runtime guard catches these; static rule passes them through.
+- `findById*` always flags. The runtime guard does the same. Triage in
+  practice: most calls pair with an upstream `protect` + `tenantFilter`
+  middleware, but the static rule cannot prove that. If the route is genuinely
+  scoped, an inline disable with reason `-- guarded by tenantFilter middleware`
+  is the right answer.
+
+### Rollout
+
+1. ✅ Rule + flat config + tests + baseline shipped (Day 5 §1).
+2. ⏳ Triage the 647-violation baseline. Same dispatch pattern as Day-4
+   runtime triage (§5 of `HANDOFF-vip-week1-day4-deferred.md`).
+3. ⏳ When the baseline is empty (every flag either fixed or annotated with
+   a reasoned disable), promote rule severity to `error` in
+   `backend/eslint.config.js` and wire `lint:entity-filter:strict` into the
+   PR workflow as a blocking check.
+
+The CI-gate flip is intentionally staged behind the triage pass — same
+philosophy as the Day-4 prod log→throw flip. Don't gate before triage;
+gating an unbounded flood blocks unrelated PRs and trains the team to
+silence the rule with bare disables.

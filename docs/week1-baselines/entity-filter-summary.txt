@@ -1,0 +1,56 @@
+Total: 647 warnings across 134 files
+
+Top directories:
+   580  backend/erp
+    46  backend/agents
+    15  backend/scripts
+     6  backend/controllers
+
+Top files:
+    46  backend/erp/controllers/expenseController.js
+    41  backend/erp/controllers/salesGoalController.js
+    25  backend/erp/services/documentReversalService.js
+    24  backend/erp/controllers/universalApprovalController.js
+    18  backend/erp/controllers/salesController.js
+    16  backend/erp/scripts/testCalfFlow.js
+    14  backend/erp/controllers/collectionController.js
+    14  backend/erp/controllers/inventoryController.js
+    12  backend/erp/controllers/peopleController.js
+    11  backend/erp/controllers/incentiveDisputeController.js
+    11  backend/erp/controllers/incentivePayoutController.js
+    11  backend/erp/services/copilotToolRegistry.js
+    10  backend/erp/services/salesGoalService.js
+     9  backend/erp/controllers/productMasterController.js
+     9  backend/erp/scripts/testPhase7.js
+     9  backend/erp/services/deductionScheduleService.js
+     8  backend/erp/controllers/printController.js
+     8  backend/erp/scripts/diagnoseStockVisibility.js
+     8  backend/erp/services/bankReconService.js
+     8  backend/erp/services/cycleReportService.js
+     8  backend/erp/services/incentivePlanService.js
+     7  backend/erp/controllers/interCompanyController.js
+     7  backend/erp/controllers/pettyCashController.js
+     7  backend/erp/controllers/purchasingController.js
+     7  backend/erp/scripts/migrateEntityData.js
+
+Top model.method patterns:
+    30  ProductMaster.find
+    26  PeopleMaster.findById
+    21  SalesGoalPlan.findById
+    20  JournalEntry.find
+    19  InventoryLedger.aggregate
+    18  ExpenseEntry.findById
+    14  DocumentAttachment.updateMany
+    14  Warehouse.find
+    13  InventoryLedger.find
+    11  PettyCashFund.findById
+    11  PrfCalf.findById
+    10  ExpenseEntry.aggregate
+    10  CarLogbookEntry.findById
+    10  ProductMaster.updateOne
+     9  Lookup.find
+     9  PettyCashFund.findByIdAndUpdate
+     8  KpiSnapshot.find
+     8  KpiSnapshot.findOne
+     8  IncomeReport.findById
+     7  SalesLine.find
