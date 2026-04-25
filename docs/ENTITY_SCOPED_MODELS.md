@@ -15,19 +15,19 @@
 | **special_cross_entity** | non-standard pair (e.g. `source_entity_id`/`target_entity_id`) | Special filter, two-sided | Skip both guards |
 | **deferred_crm** | CRM-only (`user`/`assignedTo[]`/`recipient_user_id`) | Not entity-scoped | Skip both guards (Week 2 pharmacy greenfield) |
 
-## Strict-entity (54 models)
+## Strict-entity (52 models)
 
 Entity-scoped only — bdm_id absent, optional, or non-canonical (e.g.
 Payslip uses `person_id` per Phase G1.4):
 
-ApPayment, AccessTemplate, AiUsageLog, ApprovalRequest, ApprovalRule, ArchiveBatch, ArchivedDocument, BankAccount, BankStatement, BudgetAllocation, CashflowStatement, ChartOfAccounts, Collateral, CompProfile, CostCenter, CreditCard, CreditCardTransaction, CreditRule, CsiBooklet, FixedAsset, FunctionalRoleAssignment, IncentiveDispute, IncentivePlan, InsurancePolicy, KpiSelfRating, KpiTemplate, LoanMaster, Lookup, OcrSettings, OcrUsageLog, OfficeSupply, OfficeSupplyTransaction, OwnerEquityEntry, PartnerScorecard, PaymentMode, Payslip, PeopleMaster, PeriodLock, PettyCashFund, PettyCashRemittance, PettyCashTransaction, ProductMapping, ProductMaster, PurchaseOrder, SalesGoalPlan, ErpSettings, StockReassignment, SupplierInvoice, Task, Territory, TransferPriceList, VatLedger, VendorMaster, Warehouse
+ApPayment, AccessTemplate, AiUsageLog, ApprovalRequest, ApprovalRule, ArchiveBatch, ArchivedDocument, BankAccount, BankStatement, BudgetAllocation, CashflowStatement, ChartOfAccounts, Collateral, CompProfile, CostCenter, CreditCard, CreditCardTransaction, CreditRule, CsiBooklet, FixedAsset, FunctionalRoleAssignment, IncentiveDispute, IncentivePlan, InsurancePolicy, KpiSelfRating, KpiTemplate, LoanMaster, Lookup, OcrSettings, OcrUsageLog, OfficeSupply, OfficeSupplyTransaction, OwnerEquityEntry, PartnerScorecard, Payslip, PeopleMaster, PeriodLock, PettyCashFund, PettyCashRemittance, PettyCashTransaction, ProductMapping, ProductMaster, PurchaseOrder, SalesGoalPlan, StockReassignment, SupplierInvoice, Task, Territory, TransferPriceList, VatLedger, VendorMaster, Warehouse
 
-## Strict-entity-and-bdm (31 models)
+## Strict-entity-and-bdm (30 models)
 
 Both `entity_id` and `bdm_id` declared. **Rule #21 silent-self-fill risk** lives
 exclusively in this bucket. bdmGuard observes these.
 
-ActionItem, AgentRun, CaptureSubmission, CarLogbookCycle, CarLogbookEntry,
+ActionItem, CaptureSubmission, CarLogbookCycle, CarLogbookEntry,
 Collection, ConsignmentTracker, CreditNote, CwtLedger, CycleReport,
 DeductionSchedule, DocumentAttachment, ErpAuditLog, ExpenseEntry, GrnEntry,
 IncentivePayout, IncomeReport, InventoryLedger, JournalEntry, KpiSnapshot,
@@ -35,20 +35,24 @@ MonthlyArchive, PnlReport, PrfCalf, RecurringJournalTemplate, SalesCredit,
 SalesGoalTarget, SalesLine, SmerEntry, TransactionEvent, Undertaking,
 VarianceAlert
 
-## Global (skip both guards) (7 models)
+## Global (skip both guards) (10 models)
 
 No tenant boundary applies — system-wide reference data, sequence counters,
-or globally shared masters keyed by tagged_bdms / aliases.
+singletons, system-level audit, or globally shared masters keyed by
+tagged_bdms / aliases.
 
 | Model | Reason |
 |---|---|
 | `AgentConfig` | Agent enable/disable config keyed by `agent_key`, system-wide. |
+| `AgentRun` | System-level agent execution audit. Schema has no `bdm_id`; `entity_id` not populated by callers (agents commonly process multiple entities per run). Reclassified Day-4.5 (was `strict_entity_and_bdm` — original classification was wrong). |
 | `Customer` | Phase G5 globalization Apr 2026. Visibility via `tagged_bdms[]`. |
 | `DocSequence` | Document number sequence keyed by sequence string, not entity. |
 | `Entity` | The tenant boundary itself. |
+| `ErpSettings` | Singleton (`Settings.findOne()`); schema has no `entity_id`. Per-entity overrides live in `Lookup` / `OcrSettings` / `CompProfile`. Reclassified Day-4.5 (was `strict_entity` — would have generated alerts on every read in production log mode). |
 | `ExpenseComponent` | Static enum-like reference data, no entity scope. |
 | `GovernmentRates` | PH tax/regulatory rates — system-wide, same for all subscribers. |
 | `Hospital` | Phase 4A.3 global hospitals. `entity_id` optional home-label. |
+| `PaymentMode` | Globally-shared payment-mode catalog keyed by `mode_code`. Schema has no `entity_id`. Per-entity COA / CALF rules layered on top via `Settings` and `BankAccount` / `CreditCard`. Reclassified Day-4.5 (was `strict_entity` — would have generated alerts on every PaymentMode read). |
 
 ## Special cross-entity (skip both guards) (2 models)
 

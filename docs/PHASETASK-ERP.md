@@ -8012,3 +8012,36 @@ CLAUDE-ERP.md                                       (Rule #20 note)
 - Custom `local/require-entity-filter` ESLint rule + CI block (Day 5).
 - DR drill (Day 5).
 - CRM-side `userScopeGuard` parallel — pharmacy greenfield, Week 2.
+
+---
+
+## Week-1 Stabilization — Day 4.5: Audit-List Cleanup — April 25, 2026
+
+> **Goal:** Fix four classification bugs in [backend/middleware/entityScopedModels.json](../backend/middleware/entityScopedModels.json) that would have generated false-positive alerts on every read in production `log` mode (and 500 storms in `throw` mode) once the deferred Day-4 staging rollout begins. Verified via schema inspection: three models (`PaymentMode`, `ErpSettings`, `AgentRun`) have **no `entity_id` field at all** in their Mongoose schema, yet were classified as `strict_entity*`. One model (`Territory`) had `entity_id` declared but missing `required: true` despite the compound unique index `{entity_id, territory_code}` proving entity-scoped intent.
+
+### Files touched
+
+- [backend/middleware/entityScopedModels.json](../backend/middleware/entityScopedModels.json) — three reclassifications:
+  - `PaymentMode`: `strict_entity` → `global`. Schema has no `entity_id`; queried by `_id` / `mode_code` / `mode_type` everywhere ([erp/models/PaymentMode.js](../backend/erp/models/PaymentMode.js), [autoJournal.js:137-138](../backend/erp/services/autoJournal.js)). Globally-shared payment-mode catalog. Per-entity COA / CALF rules layered on top via `Settings` and `BankAccount` / `CreditCard`.
+  - `ErpSettings`: `strict_entity` → `global`. Singleton — `Settings.findOne()` with no filter ([erp/models/Settings.js:185-191](../backend/erp/models/Settings.js)). Per-entity overrides live in `Lookup` / `OcrSettings` / `CompProfile`.
+  - `AgentRun`: `strict_entity_and_bdm` → `global`. System-level agent execution audit. Schema has no `bdm_id` field at all (despite the bucket name); `entity_id` not populated by callers ([agents/agentExecutor.js:108-115](../backend/agents/agentExecutor.js)) — agents commonly process multiple entities per run. Original classification was wrong from Day 3.
+- [backend/erp/models/Territory.js](../backend/erp/models/Territory.js) — added `required: true` on `entity_id`. Compound unique index `{entity_id: 1, territory_code: 1}` already prevented null `entity_id` rows from existing, so no migration needed. Comment block notes the Day-4.5 source.
+- [docs/ENTITY_SCOPED_MODELS.md](ENTITY_SCOPED_MODELS.md) — updated bucket counts (52/30/10) and added rationale rows for the three new `global` entries.
+- [CLAUDE-ERP.md](../CLAUDE-ERP.md) — refreshed the bucket-count one-liner in the Day-3 architecture summary, noted the reclassification source.
+
+### Verification
+
+- `npx jest --ci --runInBand` → 22 suites, 135 tests, all green (unchanged).
+- Boot log: `[entityGuard] attached (mode=throw), observing 82 models (strict_entity=52, strict_entity_and_bdm=30)` + `[bdmGuard] attached (mode=throw), observing 30 models for Rule #21 silent-self-fill`. Down from 85 / 54 / 31 / 31. The three reclassified models are now correctly skipped.
+- **No call-site impact.** None of the three reclassified models had Mongoose query call sites that filtered by `entity_id` (because the field doesn't exist on the schema). The guard simply stops observing them — zero behavior change for application code.
+- **Territory `required: true` is non-breaking** — pre-existing rows already populate `entity_id` (the compound unique index would have errored on null otherwise). Verified by schema inspection; no DB migration scripted because there's nothing to migrate.
+
+### Subscription readiness
+
+- All three new `global` rows are tagged with the reason in `ENTITY_SCOPED_MODELS.md`, so a future subscriber's reviewer (or Claude in a later session) can see why each model is exempt without re-deriving it from schema source.
+- The cleanup unblocks the deferred Day-4 staging triage (`HANDOFF-vip-week1-day4-deferred.md` step 3-5) — prod can now safely flip to `log` mode without alert spam, and staging can run `throw` mode without 500-storming on every PaymentMode/Settings/AgentRun query.
+
+### Out of scope (deferred to Day 5 or later)
+
+- The 9 `strict_entity_and_bdm` models with `bdm_id` not marked `required: true` (CwtLedger, IncentivePayout, RecurringJournalTemplate, plus 5 intentionally-optional cases like JournalEntry / MonthlyArchive / DeductionSchedule / SalesGoalTarget / ErpAuditLog). Audit + per-model decision deferred — the bdmGuard observes all 30 regardless of schema enforcement.
+- The orphan-cron + daily integrity sweep (proposed Day-4.5 step 3) — separate commit.

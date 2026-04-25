@@ -5438,8 +5438,11 @@ the staging log; Day 5 adds the static (ESLint) gate.
   threads the live `req` reference into Mongoose hooks. Background jobs run
   outside any request → guards skip silently.
 - **Source of truth** is [backend/middleware/entityScopedModels.json](backend/middleware/entityScopedModels.json)
-  (54 strict_entity, 31 strict_entity_and_bdm, 7 global, 2 special_cross_entity,
-  24 deferred_crm). Reconciles cleanly with `mongoose.modelNames()` at boot.
+  (52 strict_entity, 30 strict_entity_and_bdm, 10 global, 2 special_cross_entity,
+  24 deferred_crm). Day-4.5 (2026-04-25) reclassified PaymentMode + ErpSettings +
+  AgentRun from `strict_entity*` to `global` (their schemas have no `entity_id`
+  field — they are singletons / shared catalogs / system audit). Reconciles
+  cleanly with `mongoose.modelNames()` at boot.
 - **Opt-out** for legitimate consolidated routes: call
   `markCrossEntityAllowed(req, reason)` from the controller. Day 3 ships zero
   call sites — the helper is there for Day-4 triage.
