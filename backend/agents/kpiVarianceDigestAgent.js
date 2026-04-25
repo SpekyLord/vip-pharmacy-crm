@@ -54,10 +54,12 @@ async function loadDigestWindowDays(entityId) {
  */
 async function groupByManager(alerts) {
   const personIds = [...new Set(alerts.map(a => a.person_id?.toString()).filter(Boolean))];
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: PeopleMaster lookup by primary key (_id) collected from already-entity-scoped VarianceAlert query
   const people = await PeopleMaster.find({ _id: { $in: personIds } }).select('_id full_name reports_to user_id').lean();
   const personIndex = new Map(people.map(p => [String(p._id), p]));
 
   const managerIds = [...new Set(people.map(p => p.reports_to?.toString()).filter(Boolean))];
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: PeopleMaster lookup by primary key (_id), resolves reports_to chain
   const managerPeople = await PeopleMaster.find({ _id: { $in: managerIds } }).select('_id full_name user_id').lean();
   const managerPeopleIndex = new Map(managerPeople.map(p => [String(p._id), p]));
 
@@ -157,6 +159,7 @@ async function run(args = {}) {
         // Mark every included alert as digested so next week's run starts clean.
         const alertIds = rec.alerts.map(a => a._id);
         if (alertIds.length) {
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: alertIds collected from already-entity-scoped VarianceAlert query in this loop iteration
           await VarianceAlert.updateMany(
             { _id: { $in: alertIds } },
             { $set: { digested_at: new Date() } }

@@ -28,6 +28,7 @@ const BASELINE_DEADLINES = [
 async function loadDeadlines() {
   const Lookup = tryModel('Lookup');
   if (!Lookup) return BASELINE_DEADLINES;
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: COMPLIANCE_DEADLINES are PH-wide regulatory dates shared across all entities
   const rows = await Lookup.find({ category: 'COMPLIANCE_DEADLINES', is_active: { $ne: false } }).lean();
   if (!rows.length) return BASELINE_DEADLINES;
   return rows.map(r => ({

@@ -487,6 +487,7 @@ const MODULE_QUERIES = [
       return Promise.all(cycles.map(async (cycle) => {
         // Hydrate per-day docs for this cycle (detail panel needs the fuel_receipts + per-day rows)
         const days = CarLogbookEntry
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- by-cycle_id cascade: cycle was entity-scoped via the find above
           ? await CarLogbookEntry.find({ cycle_id: cycle._id }).sort({ entry_date: 1 }).lean()
           : [];
 
@@ -665,6 +666,7 @@ const MODULE_QUERIES = [
       // (Hospital model uses `hospital_name`, not `name` — see Hospital.js)
       const smerIds = [...new Set(pendingOverrides.map(r => r.doc_id?.toString()).filter(Boolean))];
       const smers = smerIds.length
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- by-_id cascade: smerIds collected from entity-scoped pendingOverrides above
         ? await SmerEntry.find({ _id: { $in: smerIds } })
             .populate('daily_entries.hospital_ids', 'hospital_name')
             .populate('daily_entries.hospital_id', 'hospital_name')
@@ -1483,6 +1485,7 @@ async function getUniversalPending(entityId, user, entityIds) {
     const ProductMaster = getModel('ProductMaster');
     if (ProductMaster) {
       const productIds = [...productIdSet].map(id => new mongoose.Types.ObjectId(id));
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- by-_id cascade: productIds gathered from entity-scoped approval rows above
       const products = await ProductMaster.find({ _id: { $in: productIds } })
         .select('brand_name dosage_strength item_key')
         .lean();

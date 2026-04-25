@@ -30,6 +30,7 @@ async function run() {
 
       const inventoryProductIds = await InventoryLedger.distinct('product_id');
       const existingProductIds = new Set(
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- cron-mode integrity sweep: validates inventory product_id refs against the global ProductMaster set
         (await ProductMaster.find({ _id: { $in: inventoryProductIds } }).select('_id').lean())
           .map(p => p._id.toString())
       );
@@ -93,10 +94,12 @@ async function run() {
       const TransferPriceList = require('../erp/models/TransferPriceList');
       const ProductMaster = require('../erp/models/ProductMaster');
 
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- cron-mode integrity sweep: scans every entity's transfer prices for stale product references
       const activePrices = await TransferPriceList.find({ is_active: true }).select('product_id').lean();
       if (activePrices.length > 0) {
         const priceProductIds = activePrices.map(p => p.product_id);
         const activeProducts = new Set(
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- cron-mode integrity sweep: cross-references against the global ProductMaster set
           (await ProductMaster.find({ _id: { $in: priceProductIds }, is_active: true }).select('_id').lean())
             .map(p => p._id.toString())
         );
@@ -165,6 +168,7 @@ async function run() {
     // ─── 7. Products with zero prices ──────────────────────────────
     try {
       const ProductMaster = require('../erp/models/ProductMaster');
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- cron-mode integrity sweep: scans every entity's products for zero-price configuration gaps
       const zeroPriceCount = await ProductMaster.countDocuments({
         is_active: true,
         $or: [

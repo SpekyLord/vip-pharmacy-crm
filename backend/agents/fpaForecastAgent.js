@@ -21,6 +21,7 @@ function tryModel(name) { try { return mongoose.model(name); } catch { return nu
 async function getAiMode() {
   try {
     const Lookup = require('../erp/models/Lookup');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: FPA_FORECAST_AI_MODE is a system-wide AI toggle shared across all entities
     const row = await Lookup.findOne({ category: 'FPA_FORECAST_AI_MODE', code: 'DEFAULT', is_active: { $ne: false } }).lean();
     return row?.metadata?.value === 'ai' ? 'ai' : 'rule';
   } catch { return 'rule'; }

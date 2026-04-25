@@ -63,6 +63,7 @@ async function run() {
         visitDate: { $gte: monthStart },
       });
 
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: per-BDM coaching aggregates sales across all entities the BDM submits against
       const sales = await SalesLine.aggregate([
         { $match: { bdm_id: bdm._id, status: 'POSTED', csi_date: { $gte: monthStart } } },
         { $group: { _id: null, total: { $sum: '$invoice_total' }, count: { $sum: 1 } } },
@@ -70,12 +71,14 @@ async function run() {
       const salesTotal = sales[0]?.total || 0;
       const salesCount = sales[0]?.count || 0;
 
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: per-BDM coaching aggregates expenses across all entities the BDM submits against
       const expenses = await ExpenseEntry.aggregate([
         { $match: { bdm_id: bdm._id, status: 'POSTED', period: currentPeriod } },
         { $group: { _id: null, total: { $sum: '$total_amount' } } },
       ]);
       const expenseTotal = expenses[0]?.total || 0;
 
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: per-BDM coaching aggregates collections across all entities the BDM submits against
       const collections = await Collection.aggregate([
         { $match: { bdm_id: bdm._id, status: 'POSTED', cr_date: { $gte: monthStart } } },
         { $group: { _id: null, total: { $sum: '$cr_amount' }, count: { $sum: 1 } } },

@@ -21,6 +21,7 @@ function tryModel(name) { try { return mongoose.model(name); } catch { return nu
 async function getAiMode() {
   try {
     const Lookup = require('../erp/models/Lookup');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- cron-mode agent: TREASURY_AGENT_AI_MODE is a system-wide tunable, not per-entity
     const row = await Lookup.findOne({ category: 'TREASURY_AGENT_AI_MODE', code: 'DEFAULT', is_active: { $ne: false } }).lean();
     return row?.metadata?.value === 'ai' ? 'ai' : 'rule';
   } catch { return 'rule'; }
@@ -29,6 +30,7 @@ async function getAiMode() {
 async function sumBankBalances() {
   const BankAccount = tryModel('BankAccount');
   if (!BankAccount) return { total: 0, byBank: [] };
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- cron-mode agent: aggregates cash on hand across every entity for the president-level brief
   const rows = await BankAccount.find({ is_active: { $ne: false } }).select('bank_name current_balance').lean();
   const total = rows.reduce((s, r) => s + (Number(r.current_balance) || 0), 0);
   const byBank = rows.slice(0, 5).map(r => ({ bank: r.bank_name, bal: Number(r.current_balance) || 0 }));
@@ -46,6 +48,7 @@ async function sumUpcomingOutflows() {
   const currentPeriod = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const prevPeriod = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- cron-mode agent: aggregates upcoming PRF/CALF outflows across every entity for the president-level brief
   const agg = await PrfCalf.aggregate([
     {
       $match: {
@@ -63,6 +66,7 @@ async function sumExpectedInflows() {
   if (!Collection) return { total: 0, count: 0 };
   const now = new Date();
   const weekAgo = new Date(now.getTime() - 7 * 24 * 3600 * 1000);
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- cron-mode agent: aggregates trailing-7-day collection inflow across every entity for the president-level brief
   const agg = await Collection.aggregate([
     { $match: { status: 'POSTED', cr_date: { $gte: weekAgo } } },
     { $group: { _id: null, total: { $sum: { $ifNull: ['$cr_amount', 0] } }, count: { $sum: 1 } } },

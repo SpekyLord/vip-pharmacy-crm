@@ -14,6 +14,7 @@ async function run() {
   const alerts = [];
 
   try {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: scans stock levels per (product, warehouse) across all entities for low-stock/reorder alerts
     const stockLevels = await InventoryLedger.aggregate([
       {
         $group: {
@@ -80,6 +81,7 @@ async function run() {
     const sixtyDaysAgo = new Date();
     sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
 
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: scans slow consignment conversions across all entities/hospitals
     const slowConsignments = await ConsignmentTracker.aggregate([
       {
         $match: {
@@ -126,6 +128,7 @@ async function run() {
 
   try {
     const OfficeSupply = require('../erp/models/OfficeSupply');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: scans office supplies across all entities for reorder-level alerts
     const lowSupplies = await OfficeSupply.find({
       is_active: true,
       $expr: { $lte: ['$qty_on_hand', '$reorder_level'] },

@@ -173,6 +173,7 @@ async function run(args = {}) {
         // expires. Better than firing twice: an extra missed alert is
         // recoverable; spam is not.
         try {
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: task._id collected from already-entity-scoped Task.find above (parent loop iterates entities)
           await Task.updateOne(
             { _id: task._id },
             { $set: { last_overdue_notify_at: now } }

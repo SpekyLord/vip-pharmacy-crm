@@ -103,6 +103,7 @@ async function run({ entityId } = {}) {
 
       // Mark alert sent (idempotent)
       const staleIds = stalePending.map(s => s._id);
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: staleIds collected from already-entity-scoped CaptureSubmission query above
       await CaptureSubmission.updateMany(
         { _id: { $in: staleIds } },
         { $set: { sla_alert_sent_at: now } }
@@ -121,6 +122,7 @@ async function run({ entityId } = {}) {
 
     if (staleReview.length > 0) {
       const staleReviewIds = staleReview.map(s => s._id);
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: staleReviewIds collected from already-entity-scoped CaptureSubmission query above
       await CaptureSubmission.updateMany(
         { _id: { $in: staleReviewIds } },
         {

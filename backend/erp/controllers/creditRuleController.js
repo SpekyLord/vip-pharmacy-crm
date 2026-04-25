@@ -45,15 +45,17 @@ exports.listRules = catchAsync(async (req, res) => {
 });
 
 exports.getRuleById = catchAsync(async (req, res) => {
-  const row = await CreditRule.findById(req.params.id)
+  // Consolidate the read + entity check into a single entity-scoped query.
+  // Previously a findById + post-fetch 403 — equivalent but leaked cross-
+  // entity id existence (different status code on stranger ids). Now 404
+  // for any non-matching id, indistinguishable from a non-existent rule.
+  const filter = { _id: req.params.id };
+  if (!req.isPresident) filter.entity_id = req.entityId;
+  const row = await CreditRule.findOne(filter)
     .populate('credit_bdm_id', 'name email')
     .populate('plan_id', 'plan_name fiscal_year version_no')
     .lean();
   if (!row) return res.status(404).json({ success: false, message: 'Credit rule not found' });
-  // Entity scope check (defense in depth)
-  if (!req.isPresident && String(row.entity_id) !== String(req.entityId)) {
-    return res.status(403).json({ success: false, message: 'Forbidden' });
-  }
   res.json({ success: true, data: row });
 });
 
@@ -91,11 +93,10 @@ exports.createRule = catchAsync(async (req, res) => {
 });
 
 exports.updateRule = catchAsync(async (req, res) => {
-  const row = await CreditRule.findById(req.params.id);
+  const filter = { _id: req.params.id };
+  if (!req.isPresident) filter.entity_id = req.entityId;
+  const row = await CreditRule.findOne(filter);
   if (!row) return res.status(404).json({ success: false, message: 'Credit rule not found' });
-  if (!req.isPresident && String(row.entity_id) !== String(req.entityId)) {
-    return res.status(403).json({ success: false, message: 'Forbidden' });
-  }
 
   // Whitelist editable fields — entity_id and created_by are immutable.
   const editable = [
@@ -122,11 +123,10 @@ exports.updateRule = catchAsync(async (req, res) => {
 });
 
 exports.deleteRule = catchAsync(async (req, res) => {
-  const row = await CreditRule.findById(req.params.id);
+  const filter = { _id: req.params.id };
+  if (!req.isPresident) filter.entity_id = req.entityId;
+  const row = await CreditRule.findOne(filter);
   if (!row) return res.status(404).json({ success: false, message: 'Credit rule not found' });
-  if (!req.isPresident && String(row.entity_id) !== String(req.entityId)) {
-    return res.status(403).json({ success: false, message: 'Forbidden' });
-  }
   // Soft delete by deactivating — historical SalesCredit rows still
   // reference the rule_id for auditability, so we never hard-delete.
   row.is_active = false;

@@ -205,6 +205,7 @@ async function run(args = {}) {
 
       for (const plan of plans) {
         // Pull every YTD snapshot for the plan
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: snapshots are scoped via plan_id which is itself entity-scoped (parent loop iterates entities)
         const snapshots = await KpiSnapshot.find({
           plan_id: plan._id,
           period_type: 'YTD',
@@ -216,12 +217,14 @@ async function run(args = {}) {
           bdmsProcessed++;
 
           // Filter to active BDMs (skip deactivated PeopleMaster)
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: target is scoped via plan_id (entity-scoped) — parent loop iterates entities
           const target = await SalesGoalTarget.findOne({
             plan_id: plan._id,
             bdm_id: snap.bdm_id,
             status: 'ACTIVE',
           }).select('person_id').lean();
           if (target?.person_id) {
+            // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: PeopleMaster lookup by primary key (_id), no entity filter needed
             const person = await PeopleMaster.findById(target.person_id).select('is_active full_name bdm_code').lean();
             if (person && !person.is_active) continue;
           }
@@ -311,6 +314,7 @@ async function run(args = {}) {
           try {
             const personId = target?.person_id || snap.person_id;
             if (personId) {
+              // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: PeopleMaster lookup by primary key (_id), no entity filter needed
               const person = await PeopleMaster.findById(personId).select('full_name bdm_code').lean();
               if (person) bdmLabel = `${person.full_name}${person.bdm_code ? ` (${person.bdm_code})` : ''}`;
             }

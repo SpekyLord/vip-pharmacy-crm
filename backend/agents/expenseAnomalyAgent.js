@@ -22,6 +22,7 @@ async function run() {
 
     // ─── 1. Duplicate OR numbers ───────────────────────────────────
     try {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: detects duplicate OR numbers across all entities (cross-entity duplicates are a fraud signal)
       const dupes = await ExpenseEntry.aggregate([
         { $unwind: '$lines' },
         { $match: { 'lines.or_number': { $exists: true, $ne: null, $ne: '' } } },
@@ -70,6 +71,7 @@ async function run() {
       for (const bdm of bdms) {
         try {
           // Current cycle total
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: per-BDM expense over-budget check; BDM may submit across entities, all counts toward their personal budget
           const currentResult = await ExpenseEntry.aggregate([
             { $match: { bdm_id: bdm._id, period: currentPeriod, cycle: currentCycle } },
             { $group: { _id: null, total: { $sum: '$total_amount' } } }
@@ -78,6 +80,7 @@ async function run() {
           if (currentTotal === 0) continue;
 
           // 3-month average (same cycle)
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: per-BDM 3-month baseline; BDM expenses span all entities they submit against
           const avgResult = await ExpenseEntry.aggregate([
             { $match: { bdm_id: bdm._id, period: { $in: lookbackPeriods }, cycle: currentCycle } },
             { $group: { _id: null, total: { $sum: '$total_amount' }, count: { $sum: 1 } } }
@@ -109,6 +112,7 @@ async function run() {
 
     // ─── 3. Large single expenses > P5,000 without president override ──
     try {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: scans large expense lines across all entities for president review
       const largeExpenses = await ExpenseEntry.aggregate([
         { $match: { recorded_on_behalf_of: { $exists: false } } },
         { $unwind: '$lines' },
@@ -149,6 +153,7 @@ async function run() {
 
     // ─── 4. ORE with non-cash payment ─────────────────────────────
     try {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: ORE-must-be-cash policy violations across all entities
       const oreCashViolations = await ExpenseEntry.aggregate([
         { $unwind: '$lines' },
         {

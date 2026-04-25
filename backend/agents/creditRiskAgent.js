@@ -29,6 +29,7 @@ async function run() {
       const twelveMonthsAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
       const idField = entityType === 'hospital' ? 'hospital_id' : 'customer_id';
 
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: scores credit risk per hospital/customer aggregated across all entities they trade with
       const sales = await SalesLine.find({
         [idField]: entityId,
         status: 'POSTED',
@@ -36,6 +37,7 @@ async function run() {
       }).select('_id csi_date invoice_total').lean();
       if (!sales.length) return null;
 
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: scores credit risk per hospital/customer aggregated across all entities they trade with
       const collections = await Collection.find({
         [idField]: entityId,
         status: 'POSTED',

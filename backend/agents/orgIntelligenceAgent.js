@@ -38,12 +38,14 @@ async function run() {
     const entities = await Entity.find({ status: 'ACTIVE' }).select('entity_name short_name entity_type').lean();
 
     // Get current and previous scorecards
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: cross-entity org intelligence digest for parent-entity president (sees all subsidiaries)
     const current = await PartnerScorecard.find({ period })
       .populate('person_id', 'full_name person_type position bdm_code date_hired entity_id')
       .populate('entity_id', 'short_name')
       .sort({ score_overall: -1 })
       .lean();
 
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: cross-entity scorecards for prior period to compute deltas
     const previous = await PartnerScorecard.find({ period: prevPeriod })
       .select('person_id score_overall')
       .lean();

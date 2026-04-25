@@ -18,6 +18,7 @@ function tryModel(name) { try { return mongoose.model(name); } catch { return nu
 async function loadConfig() {
   try {
     const Lookup = require('../erp/models/Lookup');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: EXPANSION_READINESS_CONFIG is a system-wide tunable shared across all entities
     const row = await Lookup.findOne({ category: 'EXPANSION_READINESS_CONFIG', code: 'DEFAULT', is_active: { $ne: false } }).lean();
     const m = row?.metadata || {};
     return {
@@ -33,6 +34,7 @@ async function entityRanking() {
   const SalesLine = tryModel('SalesLine');
   if (!SalesLine) return [];
   const since = new Date(Date.now() - 60 * 24 * 3600 * 1000);
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: ranks ALL entities by 60-day POSTED sales (entity_id is the group key, not a filter)
   return SalesLine.aggregate([
     { $match: { csi_date: { $gte: since }, status: 'POSTED' } },
     { $group: { _id: '$entity_id', total: { $sum: { $ifNull: ['$invoice_total', 0] } }, count: { $sum: 1 } } },
@@ -50,6 +52,7 @@ async function bdmGraduationFlags(cfg) {
   since.setDate(1);
   since.setHours(0, 0, 0, 0);
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: ranks BDMs across all entities for graduation flagging (cross-entity by design)
   const agg = await SalesLine.aggregate([
     { $match: { csi_date: { $gte: since }, status: 'POSTED', bdm_id: { $ne: null } } },
     {

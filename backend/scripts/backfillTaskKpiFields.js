@@ -13,6 +13,7 @@
  *
  * Exit code 0 on success, 1 on Mongo connect failure.
  */
+/* eslint-disable vip-tenant/require-entity-filter -- report-only CLI: aggregates Task tagging coverage across every entity by design; no req context */
 'use strict';
 
 const mongoose = require('mongoose');
