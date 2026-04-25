@@ -43,6 +43,7 @@ exports.list = catchAsync(async (req, res) => {
     .populate('updated_by', 'name email')
     .lean();
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id stamped by baseScope() at L18-23 (linter can't trace through helper); president cross-entity is intentional via ?entity_id=
   const counts = await VendorMaster.aggregate([
     { $match: baseScope(req) },
     { $group: { _id: '$learning_status', count: { $sum: 1 } } },

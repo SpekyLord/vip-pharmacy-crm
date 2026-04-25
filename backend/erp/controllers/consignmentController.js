@@ -35,9 +35,10 @@ const createDR = catchAsync(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Hospital not found' });
   }
 
-  // Validate products exist
+  // Validate products exist — entity-scope to prevent foreign-entity product
+  // ids being smuggled into a consignment dispatch payload.
   const productIds = line_items.map(li => li.product_id);
-  const products = await ProductMaster.find({ _id: { $in: productIds } })
+  const products = await ProductMaster.find({ entity_id: req.entityId, _id: { $in: productIds } })
     .select('_id item_key brand_name').lean();
   const productMap = new Map(products.map(p => [p._id.toString(), p]));
 
