@@ -205,6 +205,7 @@ const addDeductionLine = catchAsync(async (req, res) => {
   await report.save();
 
   // Re-fetch with populates
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- report fetched with tenantFilter upstream; report._id is unique
   const updated = await IncomeReport.findById(report._id)
     .populate('bdm_id', 'name email')
     .populate('deduction_lines.entered_by', 'name')
@@ -251,6 +252,7 @@ const removeDeductionLine = catchAsync(async (req, res) => {
   report.deduction_lines.pull(lineId);
   await report.save();
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- report fetched with tenantFilter upstream; report._id is unique
   const updated = await IncomeReport.findById(report._id)
     .populate('bdm_id', 'name email')
     .populate('deduction_lines.entered_by', 'name')
@@ -337,6 +339,7 @@ const verifyDeductionLine = catchAsync(async (req, res) => {
     }
   }
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- report fetched with tenantFilter upstream; report._id is unique
   const updated = await IncomeReport.findById(report._id)
     .populate('bdm_id', 'name email')
     .populate('deduction_lines.entered_by', 'name')
@@ -388,6 +391,7 @@ const financeAddDeductionLine = catchAsync(async (req, res) => {
 
   await report.save();
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- report fetched with entity_id at L364; report._id is unique
   const updated = await IncomeReport.findById(report._id)
     .populate('bdm_id', 'name email')
     .populate('deduction_lines.entered_by', 'name')
@@ -414,7 +418,8 @@ const returnIncome = catchAsync(async (req, res) => {
 
 const confirmIncome = catchAsync(async (req, res) => {
   // BDM can only confirm their own report
-  const report = await IncomeReport.findById(req.params.id);
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const report = await IncomeReport.findOne({ _id: req.params.id, ...entityScope });
   if (!report) return res.status(404).json({ success: false, message: 'Income report not found' });
 
   if (report.bdm_id.toString() !== req.bdmId?.toString() && req.user.role !== 'admin') {
@@ -429,6 +434,7 @@ const creditIncome = catchAsync(async (req, res) => {
   const report = await transitionIncomeStatus(req.params.id, 'credit', req.user._id);
 
   // Sync all SCHEDULE deduction lines' installments to POSTED
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- transitionIncomeStatus above already validated entity scope on this id
   const fullReport = await IncomeReport.findById(req.params.id);
   if (fullReport) {
     const scheduleLines = (fullReport.deduction_lines || []).filter(
