@@ -339,14 +339,17 @@ exports.groupSummary = catchAsync(async (req, res) => {
 exports.getByPerson = catchAsync(async (req, res) => {
   const { personId } = req.params;
   const period = req.query.period || currentPeriod();
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
 
-  const current = await PartnerScorecard.findOne({ person_id: personId, period })
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id present via ...entityScope spread (built at L342, empty for president cross-entity view)
+  const current = await PartnerScorecard.findOne({ ...entityScope, person_id: personId, period })
     .populate('person_id', 'full_name person_type position department bdm_code date_hired')
     .populate('entity_id', 'entity_name short_name')
     .lean();
 
   // Last 6 months history
-  const history = await PartnerScorecard.find({ person_id: personId })
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id present via ...entityScope spread (built at L342, empty for president cross-entity view)
+  const history = await PartnerScorecard.find({ ...entityScope, person_id: personId })
     .sort({ period: -1 })
     .limit(6)
     .select('period score_overall score_visits score_sales score_collections score_efficiency score_engagement graduation.readiness_pct')

@@ -88,6 +88,7 @@ exports.getUsage = catchAsync(async (req, res) => {
                    : groupBy === 'skipped_reason' ? '$skipped_reason'
                    : '$doc_type';
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- $match: match var built with entity_id at L76; rule requires inline ObjectExpression in $match
   const rows = await OcrUsageLog.aggregate([
     { $match: match },
     {
@@ -109,6 +110,7 @@ exports.getUsage = catchAsync(async (req, res) => {
   const settings = await OcrSettings.getForEntity(entityId);
 
   // Phase H5 — summary counters for vendor auto-learn telemetry
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- $match: match var built with entity_id at L76; rule requires inline ObjectExpression in $match
   const learnAgg = await OcrUsageLog.aggregate([
     { $match: match },
     { $group: { _id: '$vendor_auto_learn_action', count: { $sum: 1 } } },
