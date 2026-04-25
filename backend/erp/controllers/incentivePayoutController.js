@@ -92,7 +92,8 @@ exports.listPayouts = catchAsync(async (req, res) => {
 });
 
 exports.getPayoutById = catchAsync(async (req, res) => {
-  const row = await IncentivePayout.findById(req.params.id)
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const row = await IncentivePayout.findOne({ _id: req.params.id, ...entityScope })
     .populate('bdm_id', 'name email')
     .populate('person_id', 'full_name bdm_code position')
     .populate('plan_id', 'plan_name fiscal_year reference')
@@ -153,7 +154,8 @@ exports.getPayable = catchAsync(async (req, res) => {
 // ─── LIFECYCLE ACTIONS ───────────────────────────────────────────────────
 
 exports.approvePayout = catchAsync(async (req, res) => {
-  const payout = await IncentivePayout.findById(req.params.id);
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const payout = await IncentivePayout.findOne({ _id: req.params.id, ...entityScope });
   if (!payout) return res.status(404).json({ success: false, message: 'Payout not found' });
   if (payout.status !== 'ACCRUED') {
     return res.status(400).json({ success: false, message: `Cannot approve payout in status ${payout.status}` });
@@ -212,7 +214,8 @@ exports.approvePayout = catchAsync(async (req, res) => {
 });
 
 exports.payPayout = catchAsync(async (req, res) => {
-  const payout = await IncentivePayout.findById(req.params.id);
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const payout = await IncentivePayout.findOne({ _id: req.params.id, ...entityScope });
   if (!payout) return res.status(404).json({ success: false, message: 'Payout not found' });
   if (!['ACCRUED', 'APPROVED'].includes(payout.status)) {
     return res.status(400).json({ success: false, message: `Cannot pay payout in status ${payout.status}` });
@@ -253,8 +256,10 @@ exports.payPayout = catchAsync(async (req, res) => {
   }
 
   const person = payout.person_id
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- person_id is unique; payout fetched with entityScope above
     ? await PeopleMaster.findById(payout.person_id).select('full_name bdm_code').lean()
     : null;
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id is unique; payout fetched with entityScope above
   const plan = await SalesGoalPlan.findById(payout.plan_id).select('reference plan_name').lean();
   const bdmLabel = person ? `${person.full_name}${person.bdm_code ? ` (${person.bdm_code})` : ''}` : 'BDM';
 
@@ -310,7 +315,8 @@ exports.payPayout = catchAsync(async (req, res) => {
 });
 
 exports.reversePayout = catchAsync(async (req, res) => {
-  const payout = await IncentivePayout.findById(req.params.id);
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const payout = await IncentivePayout.findOne({ _id: req.params.id, ...entityScope });
   if (!payout) return res.status(404).json({ success: false, message: 'Payout not found' });
   if (payout.status === 'REVERSED') {
     return res.status(400).json({ success: false, message: 'Payout already reversed' });
@@ -499,7 +505,10 @@ async function _resolveTierContext(entityId, planId, bdmId, fiscalYear) {
   // current tier + projected tier in the statement header. This is the same
   // data the dashboard ring shows; we just embed it in the statement.
   if (!planId) return null;
+  // entityId may be null when caller is president without entity context — fall through unscoped.
+  const entityFilter = entityId ? { entity_id: entityId } : {};
   const ytdSnap = await KpiSnapshot.findOne({
+    ...entityFilter,
     plan_id: planId, bdm_id: bdmId, period: String(fiscalYear), period_type: 'YTD',
   }).sort({ computed_at: -1 }).lean();
   if (!ytdSnap) return null;
@@ -540,7 +549,8 @@ exports.getCompensationStatement = catchAsync(async (req, res) => {
 
   // BDM identity for the header (full name + bdm_code)
   const userDoc = await User.findById(bdmId).select('name email').lean();
-  const personDoc = await PeopleMaster.findOne({ user_id: bdmId, is_active: true }).select('full_name bdm_code position territory_id').lean();
+  const personEntityScope = entityScope ? { entity_id: entityScope } : {};
+  const personDoc = await PeopleMaster.findOne({ ...personEntityScope, user_id: bdmId, is_active: true }).select('full_name bdm_code position territory_id').lean();
   const bdmHeader = {
     bdm_id: bdmId,
     name: personDoc?.full_name || userDoc?.name || userDoc?.email || 'BDM',
@@ -616,7 +626,8 @@ exports.printCompensationStatement = catchAsync(async (req, res) => {
   }
 
   const userDoc = await User.findById(bdmId).select('name email').lean();
-  const personDoc = await PeopleMaster.findOne({ user_id: bdmId, is_active: true }).select('full_name bdm_code position').lean();
+  const personEntityScope = entityScope ? { entity_id: entityScope } : {};
+  const personDoc = await PeopleMaster.findOne({ ...personEntityScope, user_id: bdmId, is_active: true }).select('full_name bdm_code position').lean();
   const bdmHeader = {
     bdm_id: bdmId,
     name: personDoc?.full_name || userDoc?.name || userDoc?.email || 'BDM',
@@ -734,6 +745,7 @@ exports.getStatementArchive = catchAsync(async (req, res) => {
   }
 
   // Group by (fiscal_year, period) and aggregate totals + last activity.
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- $match: filter where filter is built above with entity_id (L725-726); rule can't see through Identifier
   const archive = await IncentivePayout.aggregate([
     { $match: filter },
     {
@@ -839,7 +851,7 @@ exports.dispatchStatementsForPeriod = catchAsync(async (req, res) => {
       const { summary } = await _composeStatement({
         bdmId, fiscalYear, period, entityScope,
       });
-      const personDoc = await PeopleMaster.findOne({ user_id: bdmId, is_active: true })
+      const personDoc = await PeopleMaster.findOne({ entity_id: entityScope, user_id: bdmId, is_active: true })
         .select('full_name bdm_code').lean();
       const userDoc = await User.findById(bdmId).select('name email').lean();
       const bdmName = personDoc?.full_name || userDoc?.name || 'BDM';
