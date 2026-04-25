@@ -95,6 +95,7 @@ const getMyStock = catchAsync(async (req, res) => {
 
   // Enrich with product details
   const productIds = [...productMap.keys()].map(id => new mongoose.Types.ObjectId(id));
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- productIds harvested from same-entity-scoped stock aggregation upstream; _id is globally unique
   const products = await ProductMaster.find({ _id: { $in: productIds } })
     .select('brand_name generic_name item_key dosage_strength selling_price unit_code vat_status')
     .lean();
@@ -250,6 +251,7 @@ const getVariance = catchAsync(async (req, res) => {
   const IN_TYPES = ['OPENING_BALANCE', 'GRN', 'RETURN_IN', 'TRANSFER_IN'];
   const OUT_TYPES = ['CSI', 'DR_SAMPLING', 'DR_CONSIGNMENT', 'TRANSFER_OUT'];
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- $match: match where match is built above with entity_id from req.entityId; rule can't see through Identifier
   const result = await InventoryLedger.aggregate([
     { $match: match },
     {
@@ -301,6 +303,7 @@ const getVariance = catchAsync(async (req, res) => {
 
   // Enrich with product details
   const productIds = result.map(r => r._id);
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- productIds harvested from same-entity-scoped variance aggregate; _id is globally unique
   const products = await ProductMaster.find({ _id: { $in: productIds } })
     .select('brand_name generic_name item_key')
     .lean();
@@ -352,6 +355,7 @@ const recordPhysicalCount = catchAsync(async (req, res) => {
     } else {
       matchFilter.bdm_id = new mongoose.Types.ObjectId(bdmId);
     }
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- $match: matchFilter where matchFilter is built above with entity_id from req.entityId; rule can't see through Identifier
     const [agg] = await InventoryLedger.aggregate([
       {
         $match: matchFilter
@@ -408,6 +412,7 @@ const recordPhysicalCount = catchAsync(async (req, res) => {
   // Auto-journal for inventory adjustments (non-blocking)
   for (const adj of adjustments) {
     try {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- adj.product_id from same-entity-scoped physical-count match (entity_id filtered above)
       const product = await ProductMaster.findById(adj.product_id).select('purchase_price brand_name').lean();
       const unitCost = product?.purchase_price || 0;
       const amount = Math.round(Math.abs(adj.variance) * unitCost * 100) / 100;
@@ -557,14 +562,17 @@ const createGrn = catchAsync(async (req, res) => {
     });
   }
 
-  // Validate products exist
+  // Validate products exist within the caller's entity. Without entity_id, a
+  // user could pass product_ids from another entity and the GRN would silently
+  // accept them — creating ledger entries that reference a stranger entity's
+  // catalog. Belt-and-braces: line_items come from req.body.
   const productIds = line_items.map(li => li.product_id);
-  const products = await ProductMaster.find({ _id: { $in: productIds } }).select('_id item_key').lean();
+  const products = await ProductMaster.find({ entity_id: req.entityId, _id: { $in: productIds } }).select('_id item_key').lean();
   const productMap = new Map(products.map(p => [p._id.toString(), p]));
 
   for (const li of line_items) {
     if (!productMap.has(li.product_id?.toString())) {
-      return res.status(400).json({ success: false, message: `Product ${li.product_id} not found` });
+      return res.status(400).json({ success: false, message: `Product ${li.product_id} not found in this entity` });
     }
     if (!li.item_key) li.item_key = productMap.get(li.product_id.toString()).item_key;
   }
@@ -682,6 +690,7 @@ const createGrn = catchAsync(async (req, res) => {
   }
 
   // Re-read GRN so the API response reflects the undertaking_id back-link
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- grn._id from same-entity-scoped GrnEntry.create just above (entity_id: req.entityId)
   grn = await GrnEntry.findById(grn._id).lean();
 
   await ErpAuditLog.logChange({
@@ -748,6 +757,7 @@ async function approveGrnCore({ grnId, userId, session }) {
   if (!grnId) throw new Error('approveGrnCore: grnId is required');
   if (!session) throw new Error('approveGrnCore: session is required');
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- callers (approveGrn HTTP handler + undertakingController.postSingleUndertaking) apply tenantFilter before passing grnId; grnId is unique
   const grn = await GrnEntry.findById(grnId).session(session);
   if (!grn) throw Object.assign(new Error('GRN not found'), { statusCode: 404 });
   if (grn.status !== 'PENDING') {
@@ -799,6 +809,7 @@ async function approveGrnCore({ grnId, userId, session }) {
   }
 
   if (grn.po_id) {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- grn.po_id from same-entity-scoped grn above
     const po = await PurchaseOrder.findById(grn.po_id).session(session);
     if (po) {
       for (const item of grn.line_items) {
@@ -823,6 +834,7 @@ async function approveGrnCore({ grnId, userId, session }) {
 
   if (isInternalTransfer) {
     const StockReassignment = require('../models/StockReassignment');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- grn.reassignment_id from same-entity-scoped grn above
     const reassignment = await StockReassignment.findById(grn.reassignment_id).session(session);
     if (reassignment && reassignment.status === 'AWAITING_GRN') {
       reassignment.status = 'COMPLETED';
@@ -882,6 +894,7 @@ const approveGrn = catchAsync(async (req, res) => {
   // acknowledges UT from the Approval Hub (cascade-approves the GRN).
   if (!req.isPresident) {
     const Undertaking = require('../models/Undertaking');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- linked_grn_id is unique; grn fetched with entity-scoped tenantFilter upstream
     const ut = await Undertaking.findOne({ linked_grn_id: grn._id })
       .select('status undertaking_number')
       .lean();
@@ -1113,6 +1126,7 @@ const getAlerts = catchAsync(async (req, res) => {
 
   // Enrich expiry alerts with product details
   const expiryProductIds = [...new Set(expiryAlerts.map(a => a.product_id))];
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- expiryProductIds harvested from same-entity-scoped expiryAlerts; _id is globally unique
   const expiryProducts = await ProductMaster.find({ _id: { $in: expiryProductIds } })
     .select('brand_name generic_name item_key').lean();
   const expiryProductMap = new Map(expiryProducts.map(p => [p._id.toString(), p]));
@@ -1179,6 +1193,7 @@ const getExpiryDashboard = catchAsync(async (req, res) => {
   // Enrich with product details
   const allEntries = [...expired, ...critical, ...warning, ...caution];
   const productIds = [...new Set(allEntries.map(e => e.product_id))];
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- productIds harvested from getMyStockAgg(req.entityId, ...); _id is globally unique
   const products = await ProductMaster.find({ _id: { $in: productIds } })
     .select('brand_name generic_name dosage_strength item_key').lean();
   const productMap = new Map(products.map(p => [p._id.toString(), p]));
@@ -1239,6 +1254,7 @@ const getBatchTrace = catchAsync(async (req, res) => {
   }
 
   // Get product details
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- productId reached this point only after entity-scoped ledger query at L1231 returned rows (404 short-circuits otherwise); product must belong to req.entityId by data invariant
   const product = await ProductMaster.findById(productId)
     .select('brand_name generic_name dosage_strength item_key')
     .lean();
