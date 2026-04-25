@@ -5202,6 +5202,38 @@ Single inbox surface for ALL roles that fuses approvals, tasks, AI agent finding
 - **Entity field on existing AI-agent rows.** Pre-G9 `MessageInbox` rows have `entity_id = null` until the migration runs. The new list endpoint scopes by entity for non-privileged users — those legacy rows will not appear for them after the migration unless backfilled. Run the backfill before users notice.
 - **Task editor URL.** `TaskMiniEditor` is mounted ONLY when `activeFolder === 'TASKS'` AND the task was successfully fetched via `GET /erp/tasks/:id`. If the underlying task was deleted (orphaned message), the standard `InboxThreadView` renders instead — graceful fallback.
 
+### Phase G9.R9 — Per-role Hidden Folders ✅ (April 25, 2026)
+
+**Why.** President's APPROVALS folder duplicates `/erp/approvals` (Approval Hub) — same items, two badges. Other roles will hit similar duplication as the inbox grows. Solved with one lookup category.
+
+**What shipped**
+| Layer | Change |
+|---|---|
+| Lookup (new) | `INBOX_HIDDEN_FOLDERS_BY_ROLE` per-entity. Default seed: `{ code: 'president', metadata: { hidden_folders: ['APPROVALS'] } }`. `insert_only_metadata: true` so admin edits survive re-seeds. |
+| Helper | `backend/erp/utils/inboxLookups.js` — added `HIDDEN_FOLDERS_BY_ROLE_DEFAULTS` + `getHiddenFoldersConfig` + `getHiddenFoldersForRole({ entityId, role })`. Returns uppercase string[]; missing/empty row → []. |
+| Seed registry | `backend/erp/controllers/lookupGenericController.js` — `INBOX_HIDDEN_FOLDERS_BY_ROLE` row added next to `INBOX_ACK_DEFAULTS` (Foundation Health denominator stays accurate, Phase 24-C). |
+| Controller | `backend/controllers/messageInboxController.js` — `getInboxMessages`, `computeFolderCounts` (incl. `getCounts`), `markAllRead` apply `filter.folder = { $nin: hiddenFolders }` to INBOX (catch-all) + ACTION_REQUIRED. Explicit `?folder=APPROVALS` short-circuits to empty 200. `getFolders` strips hidden codes from rail response. SENT + ARCHIVE exempt by design. |
+| Verify | `backend/scripts/verifyInboxWiring.js` — 3 new checks (lazy-seed null path, president → APPROVALS hidden, staff → empty). New required exports listed. |
+| Banners | `frontend/src/erp/components/WorkflowGuide.jsx` (inbox) + `frontend/src/components/common/PageGuide.jsx` (inbox) — added step describing the new lookup, where to extend it, and the default. |
+
+**Integrity results**
+- `node -c` clean on all 4 modified backend files.
+- `verify:inbox-wiring` → **22/22 passes, 0 errors, 0 warnings** (was 19/19 pre-R9).
+- `npx vite build` (frontend) → built in 26.95 s, no errors.
+
+**Migration / deploy order**
+1. Deploy backend (lookup helper + controller + seed entry).
+2. First time any user hits `/api/messages/folders` for an entity → `INBOX_HIDDEN_FOLDERS_BY_ROLE` lazy-seeds the `president` row for that entity. No backfill script needed.
+3. Deploy frontend (banner copy only — no JSX changes; existing `InboxFolderNav` consumes the trimmed `/folders` response unchanged).
+4. Verify president inbox has no APPROVALS in left rail; staff inbox unchanged.
+
+**Common gotchas (R9)**
+- **Don't change creation-time** — `notifyApprovalRequest`/`notifyApprovalDecision` still write rows for audit + email + SMS. Filtering is purely view-time. Mirrors `archivedBy` (per-recipient archive) precedent.
+- **insert_only_metadata is load-bearing** — without it, admin edits to `metadata.hidden_folders` get wiped on every `seedAll`. See line 2218 of `lookupGenericController.js` for the buildSeedOps note.
+- **SENT folder is exempt** — sender's own outbox includes everything they sent regardless of role-based filtering. Otherwise the president couldn't audit their own approval-related broadcasts.
+- **getFolders return is the rail authority** — frontend `InboxFolderNav.jsx` renders whatever the endpoint returns; no frontend role-check shim needed. Stay backend-side.
+- **Per-entity, lazy-seed** — switching `X-Entity-Id` causes the lookup to seed for the new entity on first read. Admin edits live per-entity (one subscriber may want CEO too, another may not).
+
 ---
 
 ## Phase G10 — Tasks ↔ KPI Alignment + Gantt + Kanban + Bulk Ops ✅ (April 20, 2026)

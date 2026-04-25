@@ -52,8 +52,9 @@ function checkInboxLookupsShape() {
   try { mod = require(path.join(ROOT, 'erp/utils/inboxLookups')); }
   catch (e) { fail(`inboxLookups failed to load: ${e.message}`); return; }
   const required = [
-    'FOLDER_DEFAULTS', 'ACTION_DEFAULTS', 'ACCESS_ROLES_DEFAULTS', 'CATEGORY_TO_FOLDER',
+    'FOLDER_DEFAULTS', 'ACTION_DEFAULTS', 'ACCESS_ROLES_DEFAULTS', 'HIDDEN_FOLDERS_BY_ROLE_DEFAULTS', 'CATEGORY_TO_FOLDER',
     'folderForCategory', 'getFoldersConfig', 'getActionsConfig', 'getAccessRolesConfig',
+    'getHiddenFoldersConfig', 'getHiddenFoldersForRole',
     'canDm', 'canBroadcast',
   ];
   for (const k of required) {
@@ -101,6 +102,23 @@ async function checkLazyDefaults() {
     if (!Array.isArray(actions) || actions.length === 0) {
       fail('getActionsConfig(null) returned empty — should fall back to ACTION_DEFAULTS');
     } else { ok('getActionsConfig(null) → defaults'); }
+    // Phase G9.R9 — hidden-folders matrix lazy-seed.
+    if (typeof mod.getHiddenFoldersConfig === 'function') {
+      const hidden = await mod.getHiddenFoldersConfig(null);
+      if (!Array.isArray(hidden)) {
+        fail('getHiddenFoldersConfig(null) did not return array');
+      } else { ok('getHiddenFoldersConfig(null) → defaults'); }
+    }
+    if (typeof mod.getHiddenFoldersForRole === 'function') {
+      const presidentHidden = await mod.getHiddenFoldersForRole({ entityId: null, role: 'president' });
+      if (!Array.isArray(presidentHidden) || !presidentHidden.includes('APPROVALS')) {
+        fail(`getHiddenFoldersForRole(president) should include 'APPROVALS', got [${presidentHidden}]`);
+      } else { ok('getHiddenFoldersForRole(president) hides APPROVALS by default'); }
+      const staffHidden = await mod.getHiddenFoldersForRole({ entityId: null, role: 'staff' });
+      if (!Array.isArray(staffHidden) || staffHidden.length !== 0) {
+        fail(`getHiddenFoldersForRole(staff) should be empty (no row), got [${staffHidden}]`);
+      } else { ok('getHiddenFoldersForRole(staff) hides nothing by default'); }
+    }
   } catch (e) {
     fail(`Lazy-seed null-entityId path threw: ${e.message}`);
   }

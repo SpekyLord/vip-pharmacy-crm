@@ -950,6 +950,16 @@ const SEED_DEFAULTS = {
     { code: 'REQUIRES_ACTION', label: 'Require ack when requires_action is true', metadata: { value: true } },
     { code: 'BROADCAST_ROLES', label: 'Sender roles whose broadcasts need ack', metadata: { value: ['president', 'admin'] } },
   ],
+  // Phase G9.R9 — Per-role hidden-folders matrix (Apr 2026)
+  // Consumed by backend/erp/utils/inboxLookups.js → getHiddenFoldersForRole().
+  // President's APPROVALS folder is duplicate of /erp/approvals (Approval Hub),
+  // so it's hidden by default. Admin can extend per Control Center: e.g. add
+  // a `ceo` row, hide TASKS for finance, etc. `metadata.hidden_folders` is the
+  // authoritative array; missing/empty → role sees every folder.
+  // insert_only_metadata: admin edits to hidden_folders are preserved across re-seeds.
+  INBOX_HIDDEN_FOLDERS_BY_ROLE: [
+    { code: 'president', label: 'President', insert_only_metadata: true, metadata: { hidden_folders: ['APPROVALS'], description: 'President uses Approval Hub (/erp/approvals); APPROVALS folder would duplicate.' } },
+  ],
   // Name cleanup rules — used by backend/utils/nameCleanup.js
   NAME_PARTICLE: [
     { code: 'DE', label: 'de', metadata: { position: 'any' } },

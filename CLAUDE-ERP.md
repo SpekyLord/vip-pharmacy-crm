@@ -4592,6 +4592,30 @@ A new subsidiary tomorrow gets:
 - Cross-entity inbox view for presidents (currently surfaces all entities when `?entity_id=` omitted; no per-entity grouping pill in the list yet).
 - Dual-route POSTED-event notifications (Phase G8 SoD pattern): currently `notifyDocumentPosted` writes one row to all of management; subscribers complaining of in-app noise can later split into PRESIDENT-with-all-channels + FINANCE/ADMIN-in-app-only without schema changes.
 
+### Phase G9.R9 — Per-role Hidden Folders (April 25, 2026)
+
+**Why.** President's APPROVALS folder duplicates `/erp/approvals` (the Approval Hub). Same items, two surfaces, two unread badges. Resolved with a lookup-driven per-role folder visibility matrix.
+
+**Behavior.** New lookup category `INBOX_HIDDEN_FOLDERS_BY_ROLE` (per-entity, lazy-seed). Each row keys a role; `metadata.hidden_folders` is the array of folder codes (uppercase) to hide from that role's left rail, default `INBOX` view, `ACTION_REQUIRED` virtual folder, and folder badge counts. Default seed: `{ code: 'president', metadata: { hidden_folders: ['APPROVALS'] } }`. Other roles see all folders.
+
+**Wiring.**
+- `backend/erp/utils/inboxLookups.js` — `HIDDEN_FOLDERS_BY_ROLE_DEFAULTS` constant + `getHiddenFoldersConfig` (lazy-seed) + `getHiddenFoldersForRole({ entityId, role })` returns uppercase string[]. Empty array = role sees everything.
+- `backend/erp/controllers/lookupGenericController.js` — `INBOX_HIDDEN_FOLDERS_BY_ROLE` row in `SEED_DEFAULTS` with `insert_only_metadata: true` so admin edits to `hidden_folders` survive re-seeds (mirrors `INBOX_ACK_DEFAULTS` / `PERDIEM_RATES` pattern).
+- `backend/controllers/messageInboxController.js` — `getInboxMessages`, `computeFolderCounts`, `getCounts`, `markAllRead`, and `getFolders` all consult `getHiddenFoldersForRole` and apply `filter.folder = { $nin: hiddenFolders }` to `INBOX` (catch-all) + `ACTION_REQUIRED`. Explicit `?folder=APPROVALS` short-circuits to empty 200. `getFolders` strips hidden codes from the rail response. `SENT` (own outbox) and `ARCHIVE` (own past choices) are deliberately exempt.
+- `backend/scripts/verifyInboxWiring.js` — adds `HIDDEN_FOLDERS_BY_ROLE_DEFAULTS`, `getHiddenFoldersConfig`, `getHiddenFoldersForRole` to required exports + 3 functional checks (lazy-seed null path, president → APPROVALS hidden, staff → empty). Health check runs 22/22 PASSES post-G9.R9 (was 19/19 pre-).
+- `frontend/src/erp/components/WorkflowGuide.jsx` (inbox key) + `frontend/src/components/common/PageGuide.jsx` (inbox key) — banner steps mention the new lookup.
+
+**Why query-time, not creation-time.**
+- Approval messages still get created (audit trail + email/SMS dispatch unchanged).
+- Reversible: admin wipes the row → folder reappears immediately on next request (lazy-seed only fires when no rows exist for the entity).
+- Existing `MessageInbox` rows are filtered, not migrated.
+- Mirrors the `archivedBy` per-recipient archive precedent — view-time projection over an immutable audit trail.
+
+**To extend.**
+- CEO row: Control Center → Lookup Tables → `INBOX_HIDDEN_FOLDERS_BY_ROLE` → add `{ code: 'ceo', metadata: { hidden_folders: ['APPROVALS'] } }`. No code change.
+- Hide TASKS for finance: same path, add `{ code: 'finance', metadata: { hidden_folders: ['TASKS'] } }`.
+- Disable for president (restore default behavior): edit the seeded row, set `metadata.hidden_folders = []`, save.
+
 ---
 
 ## Phase 32R — GRN Capture + Undertaking Approval Wrapper (April 20, 2026)

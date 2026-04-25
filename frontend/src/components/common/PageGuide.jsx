@@ -189,6 +189,7 @@ const PAGE_GUIDES = {
       'Bulk mode: use "Select" in the list toolbar to tick several rows then "Archive selected" in one shot. "Mark all read" flips every unread message in the current folder so the counter clears.',
       'Tasks open with a mini-editor so you can change status / due date / assignee inline. Need the full Gantt / Kanban view? Use the "Open full page" button.',
       'New message? Hit "+ New" to send a direct message or broadcast — backend enforces who can DM whom via the messaging.* sub-permissions and the MESSAGE_ACCESS_ROLES lookup. Admin/president can require acknowledgement on the compose modal; the tri-state default is driven by INBOX_ACK_DEFAULTS (see Control Center → Inbox Retention).',
+      'Per-role folder visibility (Phase G9.R9): your role may have folders hidden via INBOX_HIDDEN_FOLDERS_BY_ROLE lookup. By default the president has APPROVALS hidden because Approval Hub already covers them. Edit the lookup in Control Center → Lookup Tables to add CEO, hide TASKS for finance, etc.',
     ],
     next: [
       { label: 'Dashboard', path: '/bdm' },
