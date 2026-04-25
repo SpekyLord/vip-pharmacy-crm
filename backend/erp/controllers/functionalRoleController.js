@@ -79,7 +79,8 @@ const createAssignment = catchAsync(async (req, res) => {
   if (!functional_role) return res.status(400).json({ success: false, message: 'functional_role is required' });
   if (!valid_from) return res.status(400).json({ success: false, message: 'valid_from is required' });
 
-  // Look up person to get home_entity_id
+  // Look up person to get home_entity_id.
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- FRA is the cross-entity person→entity bridge by design (Phase 31); home_entity_id is read off this person and stored separately from the assignment's target entity_id
   const person = await PeopleMaster.findById(person_id).select('entity_id full_name').lean();
   if (!person) return res.status(404).json({ success: false, message: 'Person not found' });
 
@@ -110,6 +111,7 @@ const createAssignment = catchAsync(async (req, res) => {
     created_by: req.user._id,
   });
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- assignment._id from FunctionalRoleAssignment.create above (entity_id stamped at write)
   const populated = await FunctionalRoleAssignment.findById(assignment._id)
     .populate(POPULATE_FIELDS)
     .lean();
@@ -186,6 +188,7 @@ const bulkCreate = catchAsync(async (req, res) => {
     ? functional_roles.map(r => r.toUpperCase())
     : [functional_role.toUpperCase()];
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- FRA is the cross-entity person→entity bridge by design (Phase 31); home_entity_id is read off this person and stored separately from each assignment's target entity_id
   const person = await PeopleMaster.findById(person_id).select('entity_id full_name').lean();
   if (!person) return res.status(404).json({ success: false, message: 'Person not found' });
 
@@ -233,6 +236,7 @@ const bulkCreate = catchAsync(async (req, res) => {
   // rows (all share person_id — just different entity_id / role).
   await safeRebuildFromPerson(person_id, 'bulkCreate');
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- created._ids from FunctionalRoleAssignment.insertMany above (entity_id stamped on each doc at write)
   const populated = await FunctionalRoleAssignment.find({
     _id: { $in: created.map(c => c._id) },
   }).populate(POPULATE_FIELDS).lean();
