@@ -138,9 +138,11 @@ const validateCreditNotes = catchAsync(async (req, res) => {
       if (!item.return_reason) rowErrors.push(`Line ${i + 1}: return reason is required`);
     }
 
-    // Verify original sale exists if referenced
+    // Verify original sale exists if referenced — entity-scope so a foreign-entity
+    // sale_id can't be probed through the credit-note payload.
     if (row.original_sale_id) {
-      const sale = await SalesLine.findById(row.original_sale_id).select('status doc_ref').lean();
+      const sale = await SalesLine.findOne({ _id: row.original_sale_id, entity_id: row.entity_id })
+        .select('status doc_ref').lean();
       if (!sale) rowErrors.push('Original sale reference not found');
       else if (sale.status !== 'POSTED') rowErrors.push(`Original sale ${sale.doc_ref || ''} is not POSTED`);
     }

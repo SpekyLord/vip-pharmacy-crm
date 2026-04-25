@@ -212,6 +212,7 @@ async function onPersonChanged(person) {
  */
 async function enrollPerson(plan, person) {
   const exists = await SalesGoalTarget.findOne({
+    entity_id: plan.entity_id,
     plan_id: plan._id,
     target_type: 'BDM',
     person_id: person._id,
@@ -276,6 +277,7 @@ async function enrollPerson(plan, person) {
  */
 async function closePersonLifecycle(plan, person, prior) {
   const target = await SalesGoalTarget.findOne({
+    entity_id: plan.entity_id,
     plan_id: plan._id,
     target_type: 'BDM',
     person_id: person._id,
@@ -324,7 +326,7 @@ async function closePersonLifecycle(plan, person, prior) {
         // Rationale: lifecycle hooks must never post FI journals without a
         // human in the loop — that's an audit-risk path.
         await IncentivePayout.updateMany(
-          { _id: { $in: openPayouts.map(p => p._id) } },
+          { entity_id: plan.entity_id, _id: { $in: openPayouts.map(p => p._id) } },
           {
             $set: {
               status: 'REJECTED',
@@ -393,6 +395,7 @@ async function closePersonLifecycle(plan, person, prior) {
  */
 async function revisePersonTarget(plan, person, prior, { territoryChanged, roleChanged }) {
   const target = await SalesGoalTarget.findOne({
+    entity_id: plan.entity_id,
     plan_id: plan._id,
     target_type: 'BDM',
     person_id: person._id,

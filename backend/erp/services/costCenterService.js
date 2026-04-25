@@ -49,16 +49,19 @@ async function getCostCenters(entityId, filters = {}) {
 }
 
 /**
- * Update a cost center
+ * Update a cost center. `entityId` (optional) scopes the update so the
+ * cost-center _id can't be probed across entities through the API.
  */
-async function updateCostCenter(costCenterId, updates, userId) {
+async function updateCostCenter(costCenterId, updates, userId, entityId = null) {
   const allowedFields = ['name', 'parent_cost_center', 'description', 'is_active'];
   const updateData = {};
   for (const field of allowedFields) {
     if (updates[field] !== undefined) updateData[field] = updates[field];
   }
 
-  const cc = await CostCenter.findByIdAndUpdate(costCenterId, updateData, { new: true }).lean();
+  const filter = { _id: costCenterId };
+  if (entityId) filter.entity_id = entityId;
+  const cc = await CostCenter.findOneAndUpdate(filter, updateData, { new: true }).lean();
   if (!cc) throw Object.assign(new Error('Cost center not found'), { statusCode: 404 });
   return cc;
 }

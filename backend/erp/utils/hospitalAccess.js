@@ -22,6 +22,7 @@ async function buildHospitalAccessFilter(user) {
   if (!user || isAdminLike(user.role)) return {}; // no filter for admin-like roles
 
   // Find warehouses this BDM is assigned to (manager or assigned_user)
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- intentional cross-entity sweep: collects ALL warehouses user manages; entity scope is re-applied by caller's Hospital.find via tenantFilter
   const myWarehouses = await Warehouse.find({
     is_active: true,
     $or: [{ manager_id: user._id }, { assigned_users: user._id }]

@@ -54,7 +54,7 @@ const update = catchAsync(async (req, res) => {
 const remove = catchAsync(async (req, res) => {
   const policy = await InsurancePolicy.findOne({ _id: req.params.id, ...req.tenantFilter });
   if (!policy) return res.status(404).json({ success: false, message: 'Insurance policy not found' });
-  await InsurancePolicy.deleteOne({ _id: policy._id });
+  await InsurancePolicy.deleteOne({ _id: policy._id, entity_id: policy.entity_id });
   res.json({ success: true, message: `Policy ${policy.policy_no || policy._id} deleted` });
 });
 

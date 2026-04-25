@@ -67,8 +67,10 @@ async function getProductMdTags(entityId, bdmId, periodStart, periodEnd, maxProd
     }
   }
 
-  // Lookup SalesLines to get product_ids per CSI
+  // Lookup SalesLines to get product_ids per CSI — entity-scope to match the
+  // POSTED Collections we just queried; sales line _ids came off those rows.
   const salesLines = await SalesLine.find({
+    entity_id: new mongoose.Types.ObjectId(entityId),
     _id: { $in: salesLineIds }
   }).select('_id line_items.product_id').lean();
 

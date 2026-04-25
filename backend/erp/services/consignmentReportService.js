@@ -20,6 +20,7 @@ async function getConsolidatedConsignmentAging(entityId, filters = {}) {
 
   const now = new Date();
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id is set on `match` at L15 (linter can't trace through variable assignment)
   const items = await ConsignmentTracker.aggregate([
     { $match: match },
     // Recompute days_outstanding live

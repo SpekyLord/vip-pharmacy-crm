@@ -1,3 +1,4 @@
+/* eslint-disable vip-tenant/require-entity-filter -- one-shot admin diagnostic; finds CSI #7648 across all entities then probes each entity's data; no req/tenant context */
 /**
  * Diagnostic: why does CSI #7648 show in AR Aging but not in Collections "open CSIs"?
  *

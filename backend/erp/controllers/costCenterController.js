@@ -18,7 +18,8 @@ const list = catchAsync(async (req, res) => {
 });
 
 const update = catchAsync(async (req, res) => {
-  const data = await svc.updateCostCenter(req.params.id, req.body, req.user._id);
+  const scopeEntityId = req.isPresident ? null : req.entityId;
+  const data = await svc.updateCostCenter(req.params.id, req.body, req.user._id, scopeEntityId);
   res.json({ success: true, data });
 });
 

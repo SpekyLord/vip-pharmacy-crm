@@ -169,6 +169,7 @@ const postPayroll = catchAsync(async (req, res) => {
       // the catch, which was itself swallowed by `.catch(() => {})`).
       let fullPs = null;
       try {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- by-key re-fetch with populates; postedPs._id originated from entity-scoped Payslip.find(filter) at L132 (filter carries entity_id)
         fullPs = await Payslip.findById(postedPs._id)
           .populate('person_id', 'full_name')
           .lean();
@@ -382,6 +383,7 @@ const financeAddDeductionLine = catchAsync(async (req, res) => {
   payslip.markModified('deductions');
   await payslip.save();
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- by-key re-fetch with populates; payslip._id from entity-scoped findOne above (L350)
   const updated = await Payslip.findById(payslip._id)
     .populate('person_id', 'full_name person_type department')
     .populate('deduction_lines.entered_by', 'name')
@@ -472,6 +474,7 @@ const verifyDeductionLine = catchAsync(async (req, res) => {
     }
   }
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- by-key re-fetch with populates; payslip._id from entity-scoped findOne above (L406)
   const updated = await Payslip.findById(payslip._id)
     .populate('person_id', 'full_name person_type department')
     .populate('deduction_lines.entered_by', 'name')
@@ -520,6 +523,7 @@ const removeDeductionLine = catchAsync(async (req, res) => {
   payslip.markModified('deductions');
   await payslip.save();
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- by-key re-fetch with populates; payslip._id from entity-scoped findOne above (L491)
   const updated = await Payslip.findById(payslip._id)
     .populate('person_id', 'full_name person_type department')
     .populate('deduction_lines.entered_by', 'name')

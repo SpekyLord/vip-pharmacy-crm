@@ -138,6 +138,7 @@ const consumeSpecificBatch = async (entityId, bdmId, productId, batchLotNo, qty,
   const match = buildStockMatch(entityId, bdmId, opts, productId);
   match.batch_lot_no = normalized;
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id is always set in match by buildStockMatch() at L24 (linter can't trace through helper builder)
   const agg = InventoryLedger.aggregate([
     { $match: match },
     {
@@ -185,6 +186,7 @@ const consumeSpecificBatch = async (entityId, bdmId, productId, batchLotNo, qty,
 const getMyStock = async (entityId, bdmId, opts) => {
   const match = buildStockMatch(entityId, bdmId, opts);
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id is always set in match by buildStockMatch() at L24 (linter can't trace through helper builder)
   const result = await InventoryLedger.aggregate([
     { $match: match },
     {

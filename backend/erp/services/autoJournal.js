@@ -123,12 +123,14 @@ async function resolveFundingCoa(doc, fallback) {
   const fb = fallback || c(coa, 'CASH_ON_HAND');
 
   if (doc.funding_card_id) {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- by-_id cascade: funding_card_id is the foreign key on the entity-bound transactional doc
     const card = await CreditCard.findById(doc.funding_card_id).lean();
     if (card?.coa_code) return { coa_code: card.coa_code, coa_name: card.card_name };
   }
 
   const bankRef = doc.funding_account_id || doc.bank_account_id;
   if (bankRef) {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- by-_id cascade: funding_account_id/bank_account_id is the foreign key on the entity-bound transactional doc
     const bank = await BankAccount.findById(bankRef).lean();
     if (bank?.coa_code) return { coa_code: bank.coa_code, coa_name: bank.bank_name };
   }

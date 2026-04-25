@@ -73,6 +73,7 @@ async function loadRegistry(force = false) {
   const now = Date.now();
   if (!force && registryCache && (now - registryCacheAt) < REGISTRY_TTL_MS) return registryCache;
   try {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- INTEGRATION_EVENTS is a global enum-style registry shared across all entities (one process-level cache)
     const rows = await Lookup.find({
       category: 'INTEGRATION_EVENTS',
       is_active: true,

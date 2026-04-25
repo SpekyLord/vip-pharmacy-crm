@@ -268,7 +268,7 @@ const createTask = catchAsync(async (req, res) => {
   // block task creation; the tree can be rebuilt from parent_task_id at any time)
   if (parentId) {
     try {
-      await Task.updateOne({ _id: parentId }, { $addToSet: { sub_tasks: doc._id } });
+      await Task.updateOne({ _id: parentId, entity_id: req.entityId }, { $addToSet: { sub_tasks: doc._id } });
     } catch {
       /* non-blocking */
     }
@@ -457,7 +457,7 @@ const deleteTask = catchAsync(async (req, res) => {
   // Detach from parent's sub_tasks cache (best-effort)
   if (task.parent_task_id) {
     try {
-      await Task.updateOne({ _id: task.parent_task_id }, { $pull: { sub_tasks: task._id } });
+      await Task.updateOne({ _id: task.parent_task_id, entity_id: task.entity_id }, { $pull: { sub_tasks: task._id } });
     } catch {
       /* non-blocking */
     }
@@ -781,7 +781,7 @@ const bulkDelete = catchAsync(async (req, res) => {
       continue;
     }
     if (task.parent_task_id) {
-      try { await Task.updateOne({ _id: task.parent_task_id }, { $pull: { sub_tasks: task._id } }); } catch { /* non-blocking */ }
+      try { await Task.updateOne({ _id: task.parent_task_id, entity_id: task.entity_id }, { $pull: { sub_tasks: task._id } }); } catch { /* non-blocking */ }
     }
     try { await task.deleteOne(); deleted.push(String(task._id)); }
     catch (err) { errors.push({ id: String(task._id), reason: err.message }); }

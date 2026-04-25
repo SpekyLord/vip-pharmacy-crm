@@ -29,8 +29,9 @@ const override = catchAsync(async (req, res) => {
 
   if (save_as_default) {
     if (vendor_id) {
-      // Update existing vendor's default
-      await VendorMaster.findByIdAndUpdate(vendor_id, {
+      // Update existing vendor's default — entity-scope so a foreign-entity
+      // vendor_id can't be silently mutated through the override payload.
+      await VendorMaster.findOneAndUpdate({ _id: vendor_id, entity_id: req.entityId }, {
         $set: {
           default_coa_code: new_coa_code,
           default_expense_category: new_category,

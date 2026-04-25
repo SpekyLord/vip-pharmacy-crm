@@ -32,6 +32,7 @@ const {
 async function getSenderTitle(userId) {
   try {
     const PeopleMaster = require('../erp/models/PeopleMaster');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- by-user_id lookup: title is user-attribute (same person across entities reads the same title); CRM controller has no req.entityId in scope here
     const person = await PeopleMaster.findOne({ user_id: userId }).select('position').lean();
     if (person?.position) return person.position;
   } catch { /* PeopleMaster may not exist for all users */ }

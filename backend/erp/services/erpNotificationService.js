@@ -590,6 +590,7 @@ async function resolveReportsToChain(userId, { maxDepth = ESCALATION_DEFAULTS.RE
   try {
     const PeopleMaster = require('../models/PeopleMaster');
     const visited = new Set(); // PeopleMaster _id strings
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- entry-point lookup: caller passes raw userId and reports_to chain may legitimately span entities (parent CEO oversees subsidiary BDM); see function header comment
     let cursor = await PeopleMaster.findOne({ user_id: userId, is_active: true })
       .select('_id reports_to').lean();
     if (!cursor) return chain;
@@ -601,6 +602,7 @@ async function resolveReportsToChain(userId, { maxDepth = ESCALATION_DEFAULTS.RE
       if (visited.has(nextId)) break; // cycle guard
       visited.add(nextId);
 
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- manager chain may legitimately span entities (parent CEO oversees subsidiary BDM); cycle-guarded by visited set
       const manager = await PeopleMaster.findById(cursor.reports_to)
         .select('_id user_id reports_to is_active').lean();
       if (!manager) break;
@@ -937,6 +939,7 @@ const notifySalesGoalPlanLifecycle = async ({ entityId, planId, planRef, planNam
     try {
       const SalesGoalTarget = require('../models/SalesGoalTarget');
       const targets = await SalesGoalTarget.find({
+        entity_id: entityId,
         plan_id: planId,
         target_type: 'BDM',
         bdm_id: { $exists: true, $ne: null },

@@ -87,6 +87,7 @@ const getSalesSummary = catchAsync(async (req, res) => {
     filter.csi_date = { $gte: new Date(y, m - 1, 1), $lt: new Date(y, m, 1) };
   }
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- $match: filter where filter spreads req.tenantFilter (entity_id) at L83; rule's $match check requires inline ObjectExpression
   const result = await SalesLine.aggregate([
     { $match: filter },
     {
@@ -136,6 +137,7 @@ const getCollectionSummary = catchAsync(async (req, res) => {
     filter.cr_date = { $gte: new Date(y, m - 1, 1), $lt: new Date(y, m, 1) };
   }
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- $match: filter where filter spreads req.tenantFilter (entity_id) at L132; rule's $match check requires inline ObjectExpression
   const result = await Collection.aggregate([
     { $match: filter },
     {

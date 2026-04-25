@@ -229,10 +229,10 @@ async function generatePnlReport(entityId, bdmId, period, userId) {
   // 6. Profit Sharing eligibility
   const psResult = await evaluateEligibility(entityId, bdmId, period, { net_income: netIncome });
 
-  // Populate product names
+  // Populate product names — entity-scope to prevent foreign-entity leak
   if (psResult.ps_products.length > 0) {
     const productIds = psResult.ps_products.map(p => p.product_id);
-    const products = await ProductMaster.find({ _id: { $in: productIds } })
+    const products = await ProductMaster.find({ entity_id: entityId, _id: { $in: productIds } })
       .select('brand_name dosage_strength').lean();
     const prodMap = new Map(products.map(p => [p._id.toString(), p]));
     for (const psp of psResult.ps_products) {

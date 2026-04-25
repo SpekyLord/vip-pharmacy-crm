@@ -181,6 +181,7 @@ const receiveTransfer = async (transferId, receivedBy) => {
         );
 
         // Resolve the product_id in target entity
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- by-_id cascade: source product looked up under source entity (transfer.source_entity_id) — used only to read the cross-entity item_key for the target lookup below
         const sourceProduct = await ProductMaster.findById(item.product_id).lean();
         let targetProduct = await ProductMaster.findOne({
           entity_id: transfer.target_entity_id,
@@ -455,7 +456,10 @@ const cancelTransfer = async (transferId, cancelledBy, reason) => {
  * If target entity doesn't have a ProductMaster record for this product, auto-create one.
  */
 async function syncProductToTargetEntity(sourceProductId, sourceEntityId, targetEntityId, transferPrice, userId) {
-  const sourceProduct = await ProductMaster.findById(sourceProductId).lean();
+  const sourceProduct = await ProductMaster.findOne({
+    _id: sourceProductId,
+    entity_id: sourceEntityId,
+  }).lean();
   if (!sourceProduct) return;
 
   // Check if product already exists in target entity

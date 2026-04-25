@@ -54,11 +54,13 @@ async function rebuildUserEntityIdsForUser(userId) {
   // Find every PeopleMaster record linked to this user. In most orgs this
   // is 1:1, but the schema allows 1:N (same user across multiple entities
   // as distinct PeopleMasters). Union all their FRA rows.
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- intentional cross-entity sweep: helper computes the union of entities a user belongs to
   const people = await PeopleMaster.find({ user_id: userId }).select('_id').lean();
   const personIds = people.map((p) => p._id);
 
   let fraEntityIds = [];
   if (personIds.length) {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- intentional cross-entity sweep: collects entity_ids from all active FRAs to rebuild User.entity_ids
     const activeFras = await FunctionalRoleAssignment.find({
       person_id: { $in: personIds },
       is_active: true,
@@ -113,6 +115,7 @@ async function rebuildUserEntityIdsForUser(userId) {
  */
 async function rebuildUserEntityIdsFromPerson(personId) {
   if (!personId) return null;
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- by-id read on internally-trusted personId; only checks user_id link to fan out to rebuild
   const person = await PeopleMaster.findById(personId).select('user_id').lean();
   if (!person || !person.user_id) return null;
   return rebuildUserEntityIdsForUser(person.user_id);

@@ -313,6 +313,7 @@ async function enrichLineItems(details) {
     if (ProductMaster) {
       try {
         const objIds = productIds.map(id => new mongoose.Types.ObjectId(id));
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- by-_id cascade: productIds collected from entity-bound details.line_items above (caller passed in an entity-scoped doc)
         const products = await ProductMaster.find({ _id: { $in: objIds } })
           .select('brand_name dosage_strength item_key unit_code')
           .lean();
@@ -336,6 +337,7 @@ async function enrichLineItems(details) {
       const match = { product_id: { $in: objIds } };
       if (whId) match.warehouse_id = new mongoose.Types.ObjectId(whId);
       else if (bdmId) match.bdm_id = new mongoose.Types.ObjectId(bdmId);
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- by-warehouse_id/bdm_id cascade: keys come off the entity-bound details doc; product_ids are pre-filtered to the same doc
       const rows = await InventoryLedger.aggregate([
         { $match: match },
         {

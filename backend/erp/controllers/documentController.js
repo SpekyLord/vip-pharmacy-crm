@@ -79,7 +79,10 @@ const getDocumentFlow = catchAsync(async (req, res) => {
     throw new ApiError(400, 'Invalid event_id');
   }
 
-  const startEvent = await TransactionEvent.findById(event_id).lean();
+  // Entity-scope the entry point so foreign-entity event_ids can't be probed.
+  const startFilter = { _id: event_id };
+  if (!req.isPresident) startFilter.entity_id = req.entityId;
+  const startEvent = await TransactionEvent.findOne(startFilter).lean();
   if (!startEvent) throw new ApiError(404, 'Event not found');
 
   // Build flow chain by traversing linked_events in both directions
@@ -91,6 +94,7 @@ const getDocumentFlow = catchAsync(async (req, res) => {
     if (visited.has(idStr)) return;
     visited.add(idStr);
 
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- by-_id traversal: eventId reached via linked_events from entity-scoped startEvent above
     const event = await TransactionEvent.findById(eventId)
       .select('event_type event_date document_ref status payload linked_events corrects_event_id')
       .lean();
@@ -106,6 +110,7 @@ const getDocumentFlow = catchAsync(async (req, res) => {
     }
 
     // Reverse links — find events that link TO this one
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- by-linked_events.event_id traversal: eventId came from entity-scoped startEvent chain
     const reverseLinked = await TransactionEvent.find({
       'linked_events.event_id': eventId,
       status: 'ACTIVE'

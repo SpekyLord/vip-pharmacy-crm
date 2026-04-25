@@ -26,10 +26,13 @@ async function createVatEntry(data) {
 }
 
 /**
- * Finance tags a VAT entry (INCLUDE/EXCLUDE/DEFER)
+ * Finance tags a VAT entry (INCLUDE/EXCLUDE/DEFER).
+ * `entityId` is required to entity-scope the lookup — without it, a finance
+ * user in entity A could tag entity B's VAT entries by guessing the id.
  */
-async function tagVatEntry(entryId, tag, userId) {
-  const entry = await VatLedger.findById(entryId);
+async function tagVatEntry(entryId, tag, userId, entityId) {
+  if (!entityId) throw new Error('entityId is required for tagVatEntry');
+  const entry = await VatLedger.findOne({ _id: entryId, entity_id: entityId });
   if (!entry) throw new Error('VAT entry not found');
 
   entry.finance_tag = tag;

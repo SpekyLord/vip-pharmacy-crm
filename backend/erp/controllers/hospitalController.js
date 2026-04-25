@@ -109,6 +109,7 @@ const exportHospitals = catchAsync(async (req, res) => {
     .lean();
 
   // Build warehouse lookup for codes
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- admin Hospital export reads warehouse codes across all entities (Hospital.warehouse_ids is multi-entity per Phase G3)
   const allWarehouses = await Warehouse.find({ is_active: true }).select('_id warehouse_code').lean();
   const whMap = new Map(allWarehouses.map(w => [w._id.toString(), w.warehouse_code]));
 
@@ -160,6 +161,7 @@ const importHospitals = catchAsync(async (req, res) => {
   const rows = XLSX.utils.sheet_to_json(ws);
 
   // Build warehouse code→id map for import
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- admin Hospital import resolves warehouse codes across all entities (Hospital.warehouse_ids is multi-entity per Phase G3)
   const allWarehouses = await Warehouse.find({ is_active: true }).select('_id warehouse_code').lean();
   const whCodeToId = new Map(allWarehouses.map(w => [w.warehouse_code.toUpperCase(), w._id]));
 

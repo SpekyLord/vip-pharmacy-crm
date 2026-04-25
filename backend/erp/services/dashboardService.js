@@ -99,6 +99,7 @@ async function getSummary(entityId, bdmId, isAdmin) {
   const accountsReceivable = Math.round((totalSales - totalCollections) * 100) / 100;
 
   // 4. Stock on Hand Value (sum of available_qty × purchase_price per product)
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- $match: filter from L80-82; conditionally entity-scoped (entityId=null is the admin cross-entity dashboard view per Rule #21)
   const stockAgg = await InventoryLedger.aggregate([
     { $match: filter },
     {
@@ -178,6 +179,7 @@ async function getMtd(entityId, bdmId, isAdmin) {
   if (entityId) incomeFilter.entity_id = new mongoose.Types.ObjectId(entityId);
   if (bdmId && !isAdmin) incomeFilter.bdm_id = new mongoose.Types.ObjectId(bdmId);
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- $match: incomeFilter from L177-179; conditionally entity-scoped (entityId=null is the admin cross-entity dashboard view per Rule #21)
   const incomeAgg = await IncomeReport.aggregate([
     { $match: incomeFilter },
     { $group: { _id: null, total: { $sum: '$net_pay' } } }
@@ -305,6 +307,7 @@ async function getProductStockLevels(entityId, bdmId, isAdmin) {
   if (entityId) filter.entity_id = new mongoose.Types.ObjectId(entityId);
   if (bdmId && !isAdmin) filter.bdm_id = new mongoose.Types.ObjectId(bdmId);
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- $match: filter from L304-306; conditionally entity-scoped (entityId=null is the admin cross-entity dashboard view per Rule #21)
   const result = await InventoryLedger.aggregate([
     { $match: filter },
     {

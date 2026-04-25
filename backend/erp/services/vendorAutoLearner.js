@@ -192,7 +192,7 @@ async function learnFromAiResult({ aiResult, extractedFields = {}, rawOcrText = 
         update.$set['learning_meta.source_raw_snippet'] = (rawOcrText || '').slice(0, guardrails.MAX_RAW_SNIPPET);
         update.$set.learned_at = new Date();
       }
-      await VendorMaster.updateOne({ _id: existing._id }, update);
+      await VendorMaster.updateOne({ _id: existing._id, entity_id: entityId }, update);
       return { action: 'ALIAS_ADDED', vendor_id: existing._id, reason: 'ALIAS_APPENDED' };
     } catch (err) {
       return { action: 'SKIPPED', vendor_id: existing._id, reason: `ALIAS_UPDATE_FAILED: ${err.message}` };
