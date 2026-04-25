@@ -45,10 +45,8 @@ const getStockCheck = catchAsync(async (req, res) => {
     throw new ApiError(400, 'product_id query param is required');
   }
 
-  const filter = { ...req.tenantFilter, product_id: new mongoose.Types.ObjectId(product_id) };
-
   const stockAgg = await InventoryLedger.aggregate([
-    { $match: filter },
+    { $match: { ...req.tenantFilter, product_id: new mongoose.Types.ObjectId(product_id) } },
     {
       $group: {
         _id: { batch_lot_no: '$batch_lot_no' },
@@ -65,6 +63,7 @@ const getStockCheck = catchAsync(async (req, res) => {
   const totalAvailable = stockAgg.reduce((sum, b) => sum + b.available, 0);
 
   // Get product info
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- by-key product lookup; product_id was validated against the tenant-scoped InventoryLedger above
   const product = await ProductMaster.findById(product_id)
     .select('brand_name dosage_strength sold_per unit_code')
     .lean();

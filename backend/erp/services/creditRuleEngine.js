@@ -124,7 +124,10 @@ async function buildContext(saleLine) {
 
   let productCodes = new Set();
   if (productIds.length > 0) {
-    const products = await ProductMaster.find({ _id: { $in: productIds } })
+    const products = await ProductMaster.find({
+      entity_id: saleLine.entity_id,
+      _id: { $in: productIds },
+    })
       .select('product_code')
       .lean();
     productCodes = new Set(products.map(p => p.product_code).filter(Boolean));
@@ -261,7 +264,7 @@ async function assign(saleLine, opts = {}) {
   const session = opts.session || null;
   try {
     await SalesCredit.deleteMany(
-      { sale_line_id: saleLine._id, source: { $in: ['rule', 'fallback'] } },
+      { entity_id: saleLine.entity_id, sale_line_id: saleLine._id, source: { $in: ['rule', 'fallback'] } },
       session ? { session } : {}
     );
     if (rows.length > 0) {
@@ -300,6 +303,7 @@ async function assign(saleLine, opts = {}) {
  */
 async function listForSale(saleLineId) {
   if (!saleLineId) return [];
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- by-sale_line_id cascade: callers pass an entity-resolved SalesLine._id
   return SalesCredit.find({ sale_line_id: saleLineId })
     .populate('credit_bdm_id', 'name email')
     .populate('rule_id', 'rule_name priority')

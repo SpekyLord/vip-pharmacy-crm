@@ -235,8 +235,11 @@ const CONTROLS = [
 async function loadAuthConfig(entityId) {
   const [moduleRoles, approvalModules, approvalCategories, subPerms] = await Promise.all([
     Lookup.find({ entity_id: entityId, category: 'MODULE_DEFAULT_ROLES', is_active: true }).lean(),
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- APPROVAL_MODULE is a global enum-style lookup, not per-entity
     Lookup.find({ category: 'APPROVAL_MODULE', is_active: true }).lean(),
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- APPROVAL_CATEGORY is a global enum-style lookup, not per-entity
     Lookup.find({ category: 'APPROVAL_CATEGORY', is_active: true }).lean(),
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- ERP_SUB_PERMISSION is a global enum-style lookup, not per-entity
     Lookup.find({ category: 'ERP_SUB_PERMISSION', is_active: true }).lean(),
   ]);
 

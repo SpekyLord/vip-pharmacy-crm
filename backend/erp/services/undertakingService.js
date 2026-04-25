@@ -126,7 +126,7 @@ async function autoUndertakingForGrn(grn, { session } = {}) {
 
   // Back-link on GRN
   await GrnEntry.updateOne(
-    { _id: grn._id },
+    { _id: grn._id, entity_id: grn.entity_id },
     { $set: { undertaking_id: undertaking._id } },
     { session }
   );

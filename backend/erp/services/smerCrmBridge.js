@@ -219,6 +219,7 @@ async function getDailyLogbookCounts(bdmUserId, startDate, endDate) {
     : toManilaDateKey(endDate);
 
   const mongooseLib = require('mongoose');
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- by-bdm_id cascade: caller (smerEntry / smerCrmRouter) is entity-scoped; BDM resolves to a single entity (FRA proxy uses a separate code path)
   const entries = await CarLogbookEntry.find({
     bdm_id: typeof bdmUserId === 'string'
       ? mongooseLib.Types.ObjectId.createFromHexString(bdmUserId)
@@ -266,6 +267,7 @@ async function getDailyVisitDetails(bdmUserId, date, opts = {}) {
     : toManilaDateKey(date);
 
   if (source === 'logbook') {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- by-bdm_id cascade: caller (smerEntry / smerCrmRouter) is entity-scoped; BDM resolves to a single entity (FRA proxy uses a separate code path)
     const entries = await CarLogbookEntry.find({
       bdm_id: bdmUserId,
       entry_date: { $gte: manilaDayStart(dateKey), $lte: manilaDayEnd(dateKey) },

@@ -1,3 +1,4 @@
+/* eslint-disable vip-tenant/require-entity-filter -- global admin reset; intentionally cross-entity scan/delete of CarLogbookEntry across all tenants (per Apr 21 2026 user directive) */
 /**
  * resetCarLogbook.js — Phase 33 reset utility
  *

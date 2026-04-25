@@ -48,6 +48,7 @@ function buildPeriod(periodType, year, month) {
 async function getKpisForPerson(personId, entityId) {
   // Get person's functional roles from active assignments
   const assignments = await FunctionalRoleAssignment.find({
+    entity_id: entityId,
     person_id: personId,
     is_active: true,
     status: 'ACTIVE',
@@ -163,6 +164,7 @@ const getMyCurrentDraft = catchAsync(async (req, res) => {
   });
 
   // Re-fetch with population
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- by-key re-fetch for populate immediately after KpiSelfRating.create above; entity_id was stamped on create
   rating = await KpiSelfRating.findById(rating._id).populate(POPULATE_REVIEWER).lean();
 
   res.status(201).json({ success: true, data: rating, message: 'Draft created' });

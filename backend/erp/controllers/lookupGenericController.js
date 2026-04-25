@@ -2698,7 +2698,14 @@ exports.update = catchAsync(async (req, res) => {
   for (const key of allowed) {
     if (req.body[key] !== undefined) updates[key] = req.body[key];
   }
-  const item = await Lookup.findByIdAndUpdate(req.params.id, { $set: updates }, { new: true, runValidators: true });
+  // Entity-scope the update — without it, admin at entity A could mutate
+  // entity B's lookup row (label/metadata/is_active) by guessing the id.
+  // Lookup rows govern dropdowns, role lists, COA codes, danger sub-perms,
+  // proxy roles — Rule #3 anchor surface, high blast radius. President
+  // bypass for cross-entity admin tooling.
+  const filter = { _id: req.params.id };
+  if (!req.isPresident) filter.entity_id = req.entityId;
+  const item = await Lookup.findOneAndUpdate(filter, { $set: updates }, { new: true, runValidators: true });
   if (!item) return res.status(404).json({ success: false, message: 'Lookup item not found' });
   if (EXPENSE_CLASSIFIER_CATEGORIES.has(item.category)) invalidateRulesCache();
   if (OR_PARSER_LOOKUP_CATEGORIES.has(item.category)) invalidateOrParserCache();
@@ -2712,7 +2719,11 @@ exports.update = catchAsync(async (req, res) => {
 
 // Delete a lookup item (soft — set is_active=false)
 exports.remove = catchAsync(async (req, res) => {
-  const item = await Lookup.findByIdAndUpdate(req.params.id, { $set: { is_active: false } }, { new: true });
+  // Entity-scope the soft-delete — same risk as update (cross-entity lookup
+  // tampering). President bypass for admin tooling.
+  const filter = { _id: req.params.id };
+  if (!req.isPresident) filter.entity_id = req.entityId;
+  const item = await Lookup.findOneAndUpdate(filter, { $set: { is_active: false } }, { new: true });
   if (!item) return res.status(404).json({ success: false, message: 'Lookup item not found' });
   if (EXPENSE_CLASSIFIER_CATEGORIES.has(item.category)) invalidateRulesCache();
   if (OR_PARSER_LOOKUP_CATEGORIES.has(item.category)) invalidateOrParserCache();

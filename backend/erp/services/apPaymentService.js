@@ -27,7 +27,7 @@ function dateToPeriod(d) {
  * @returns {Object} ApPayment document with je_id
  */
 async function recordApPayment(invoiceId, paymentData, entityId, userId) {
-  const invoice = await SupplierInvoice.findById(invoiceId);
+  const invoice = await SupplierInvoice.findOne({ _id: invoiceId, entity_id: entityId });
   if (!invoice) throw new Error('Supplier invoice not found');
   if (invoice.status !== 'POSTED') throw new Error('Can only pay POSTED invoices');
   if (invoice.payment_status === 'PAID') throw new Error('Invoice is already fully paid');

@@ -190,10 +190,12 @@ async function getCollectionRate(entityId, bdmId, dateFrom, dateTo) {
     collMatch.cr_date = dateFilter;
   }
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id added to salesMatch at L178 when entityId is provided; null entityId is the admin cross-entity AR view per Rule #21
   const [salesAgg] = await SalesLine.aggregate([
     { $match: salesMatch },
     { $group: { _id: null, total: { $sum: '$invoice_total' } } }
   ]);
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id added to collMatch at L179 when entityId is provided; null entityId is the admin cross-entity AR view per Rule #21
   const [collAgg] = await Collection.aggregate([
     { $match: collMatch },
     { $group: { _id: null, total: { $sum: '$cr_amount' } } }

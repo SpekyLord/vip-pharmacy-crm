@@ -47,10 +47,16 @@ async function runDueTemplates(entityId, userId, asOfDate = new Date()) {
 }
 
 /**
- * Run a single template regardless of schedule
+ * Run a single template regardless of schedule.
+ * `entityId` (optional) scopes the lookup so a foreign-entity templateId
+ * can't be invoked through the runNow API. Pass null only from the cron
+ * runner (which iterates per-entity through runDueTemplates).
  */
-async function runSingleTemplate(templateId, userId) {
-  const tpl = await RecurringJournalTemplate.findById(templateId);
+async function runSingleTemplate(templateId, userId, entityId = null) {
+  const filter = { _id: templateId };
+  if (entityId) filter.entity_id = entityId;
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id added when caller supplies it; null entityId is the per-entity cron path that already iterates an entity-scoped queue
+  const tpl = await RecurringJournalTemplate.findOne(filter);
   if (!tpl) throw new Error('Template not found');
   if (!tpl.is_active) throw new Error('Template is inactive');
 

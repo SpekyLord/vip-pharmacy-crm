@@ -120,6 +120,7 @@ async function seedStockFromRows(rows, options = {}) {
 
     // Strategy 3: cross-entity
     if (!product && csvBrandClean) {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- import fallback: explicitly cross-entity Strategy 3 when entity-scoped Strategy 1+2 missed
       product = await ProductMaster.findOne({
         brand_name_clean: csvBrandClean,
         dosage_strength: csvDosage || { $in: [null, ''] },
@@ -138,6 +139,7 @@ async function seedStockFromRows(rows, options = {}) {
     if (!product.selling_price && parseFloat(row.SellingPrice)) updates.selling_price = parseFloat(row.SellingPrice);
     if (!product.reorder_min_qty && parseInt(row.MinimalStock)) updates.reorder_min_qty = parseInt(row.MinimalStock);
     if (Object.keys(updates).length) {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- by-_id cascade: product was resolved via entity-scoped Strategy 1/2 (or explicit cross-entity Strategy 3) above
       await ProductMaster.updateOne({ _id: product._id }, { $set: updates });
       productUpdated++;
     }

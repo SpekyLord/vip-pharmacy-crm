@@ -79,7 +79,8 @@ const deleteTemplate = catchAsync(async (req, res) => {
 });
 
 const runNow = catchAsync(async (req, res) => {
-  const result = await runSingleTemplate(req.params.id, req.user._id);
+  const scopeEntityId = req.isPresident ? null : req.entityId;
+  const result = await runSingleTemplate(req.params.id, req.user._id, scopeEntityId);
   res.json({ success: true, data: result });
 });
 
