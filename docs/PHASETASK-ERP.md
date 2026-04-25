@@ -8075,5 +8075,107 @@ CLAUDE-ERP.md                                       (Rule #20 note)
 
 ### Out of scope (deferred to Day 5 or later)
 
-- The 9 `strict_entity_and_bdm` models with `bdm_id` not marked `required: true` (CwtLedger, IncentivePayout, RecurringJournalTemplate, plus 5 intentionally-optional cases like JournalEntry / MonthlyArchive / DeductionSchedule / SalesGoalTarget / ErpAuditLog). Audit + per-model decision deferred — the bdmGuard observes all 30 regardless of schema enforcement.
-- The orphan-cron + daily integrity sweep (proposed Day-4.5 step 3) — separate commit.
+- ~~The 9 `strict_entity_and_bdm` models with `bdm_id` not marked `required: true` (CwtLedger, IncentivePayout, RecurringJournalTemplate, plus 5 intentionally-optional cases like JournalEntry / MonthlyArchive / DeductionSchedule / SalesGoalTarget / ErpAuditLog). Audit + per-model decision deferred — the bdmGuard observes all 30 regardless of schema enforcement.~~ Audited Day 4.5 #4 below — list was based on a flawed reading of the schemas. Resolved as: 1 reclassification (RecurringJournalTemplate → `strict_entity`, no top-level `bdm_id`), 1 flip (CwtLedger.bdm_id → required), 1 explicit non-candidate (IncentivePayout supports XOR with `person_id` by design). The remaining 5 stay optional — their pattern is intentional, not a gap.
+- ~~The orphan-cron + daily integrity sweep (proposed Day-4.5 step 3) — separate commit.~~ Shipped as Day 4.5 #3 below.
+
+---
+
+## Week-1 Stabilization — Day 4.5 #3: Orphan Audit Agent — April 25, 2026
+
+> **Goal:** Wrap the read-only [erp/scripts/findOrphanedOwnerRecords.js](../backend/erp/scripts/findOrphanedOwnerRecords.js) sweep into a scheduled agent so silent regressions of the Phase G4.5d / Rule #21 owner-fingerprint surface within a week instead of waiting for an operator to remember to run the script. Reuses the Day-4 [notify()](../backend/agents/notificationService.js) plumbing — same recipient enums, same deferred-CRM escape hatch, same in-app + email channel selection. No new lookup keys, no new model classification work.
+
+### Why this exists
+
+Phase G4.5d (April 23, 2026) closed the silent self-fill in `resolveOwnerForWrite` that was stamping admin/finance/president `_id` onto `bdm_id`. The script that surfaced the bug — `findOrphanedOwnerRecords.js` — covered 4 collections at first, then expanded to 8 across G4.5e and G4.5f. It was operator-run on demand. After the runtime entityGuard / bdmGuard work in Day 3-4, the missing piece was a *scheduled* counterpart: a weekly sweep that catches new orphan rows the moment they appear, without depending on an operator to remember the command. The orphan cron is that piece.
+
+### Files touched
+
+- [backend/agents/orphanAuditAgent.js](../backend/agents/orphanAuditAgent.js) (NEW, 184 lines) — `run()` returns the standard `{status, summary, message_ids}` envelope. `findOrphans()` is exported as a pure function for unit testing. `MODULES` table mirrors the script (sales, collections, expenses, car_logbook, car_logbook_day, prf_calf, undertaking, smer_entry — 8 collections). Uses `tryRequire()` so a missing model degrades gracefully instead of crashing the cron.
+- [backend/agents/agentRegistry.js](../backend/agents/agentRegistry.js) — registered key `orphan_audit` (label "Orphan Owner Audit", FREE, schedule "Mon 5:15 AM"). Discoverable by the existing Agent Console UI without frontend changes.
+- [backend/agents/agentScheduler.js](../backend/agents/agentScheduler.js) — wired `cron.schedule('15 5 * * 1', …)` Asia/Manila, sandwiched between System Integrity (05:00) and Treasury (05:30) so the morning briefings see fresh data.
+- [backend/tests/unit/orphanAuditAgent.test.js](../backend/tests/unit/orphanAuditAgent.test.js) (NEW, 10 tests) — covers clean sweep, owner grouping/sorting, lookup-driven role override, run() short-circuit on zero orphans, run() fan-out to PRESIDENT + ALL_ADMINS with correct channels and message_id collection, priority escalation when grandTotal > 50, mongoose-disconnected error path, and notification-body truncation at MAX_BODY_LINES.
+
+### Notification body shape
+
+Per-entity grouped report:
+
+```
+Orphan Audit — 2026-04-25
+Total orphaned rows across all entities: 4
+
+═══ VIP (4 orphan row(s)) ═══
+  [sales] 4 row(s); valid owner roles: staff
+    • Admin Andy (admin) <andy@vip> — 3 row(s)
+      refs: CSI-001, CSI-002, CSI-003
+    • Finance Faye (finance) — 1 row(s)
+      refs: CSI-004
+
+Repair path: re-open each flagged doc → reassign ownership via
+OwnerPicker to the correct BDM → re-submit. Period locks and
+journal reversals apply as normal.
+```
+
+Caps: top 8 owners per module, top 5 refs per owner, ~120 lines per body. Operator runs the script (`--csv`) for the unbounded view.
+
+### Notification routing
+
+- `recipient_id: 'PRESIDENT'` with `channels: ['in_app', 'email']` — primary signal. `getParentEntityIds()` filtering keeps subsidiary presidents out of parent-level alerts (per `feedback_parent_vs_subsidiary_president`).
+- `recipient_id: 'ALL_ADMINS'` with `channels: ['in_app']` only — flood prevention. Admins see it inline; no email blast for what's typically a low-volume signal.
+- `category: 'compliance_alert'` routes to the AI_AGENT_REPORTS folder via `folderForCategory()` — same plumbing the Day-4 guardAlerter uses.
+- `priority: 'high'` when grandTotal > 50 (signal of a regressing controller); `priority: 'important'` otherwise.
+
+### Subscription readiness
+
+- Per-entity scan: every read uses `entity_id: entity._id` so the agent itself doesn't trip Day-3 entityGuard violations once that flips to `throw`.
+- `VALID_OWNER_ROLES` is read per `(entity, module)` from the existing Lookup category; subscribers can already widen the valid-owner set per module without code changes (e.g. allow `finance` as a valid SALES owner for an entity that runs lean).
+- Default valid owner roles `['staff']` is the post-Phase-S2 contractor-renamed value. Lookup absent → falls back to default.
+- Cron schedule line is one-line in `agentScheduler.js` — a subscriber that wants daily instead of weekly flips `'15 5 * * 1'` → `'15 5 * * *'`. No registry change required.
+
+### Verification
+
+- `npx jest --ci --runInBand` → 24 suites, 170 tests, all green (was 23 / 160 — +1 suite, +10 tests).
+- Manual smoke: `Run Now` from Agent Console fires the same `run()` path; output matches the script's `--csv` output for orphan counts on the same data.
+- Boot log: `[AgentScheduler]   ✓ #OA Orphan Audit - Monday 5:15 AM`.
+
+### Out of scope (deferred / future)
+
+- Auto-repair (e.g. flipping orphan rows back to DRAFT and pinging the original requester to re-pick the BDM via OwnerPicker). Repair must remain a human decision per the script's existing posture — the agent only surfaces.
+- A frontend Agent Console "last orphan count" widget. The existing Agent Run history already shows summary + key_findings; a dedicated card is over-engineering for a weekly low-volume signal.
+- CSV attachment in the email body. Resend supports it but the in-app text dump is sufficient for triage; if orphan counts climb past 200 across entities, attach a CSV via `findOrphanedOwnerRecords.js --csv` piped to the alert.
+
+---
+
+## Week-1 Stabilization — Day 4.5 #4: Bdm-required Schema Audit — April 25, 2026
+
+> **Goal:** Close the deferred bullet from Day 4.5 (`9 strict_entity_and_bdm models with bdm_id not marked required:true`). The list itself turned out to be based on a flawed reading of the model files; the actual remediation is one reclassification, one schema flip, and one explicit non-candidate. No "9 models" gap exists — the 5 intentionally-optional cases (JournalEntry / MonthlyArchive / DeductionSchedule / SalesGoalTarget / ErpAuditLog) are correctly optional by design.
+
+### What was actually wrong
+
+The earlier deferred bullet listed three models as "clear adds": `CwtLedger`, `IncentivePayout`, `RecurringJournalTemplate`. Reading the schemas:
+
+- **`RecurringJournalTemplate`** — top-level template has **no** `bdm_id` field at all. The only `bdm_id` lives on the `jeLineSchema` line sub-document ([RecurringJournalTemplate.js:9](../backend/erp/models/RecurringJournalTemplate.js)). Mongoose plugins like bdmGuard fire on the parent document, so the field never participated in any guard observation. The model was misclassified as `strict_entity_and_bdm` from Day 3 — same class of bug as the Day-4.5 PaymentMode/ErpSettings/AgentRun reclassification.
+- **`IncentivePayout`** — schema explicitly supports `bdm_id` XOR `person_id` ([IncentivePayout.js:25-26](../backend/erp/models/IncentivePayout.js)) for the Phase G1.4 employee deduction path. The unique index uses `partialFilterExpression: { bdm_id: { $exists: true } }` ([line 78-80](../backend/erp/models/IncentivePayout.js)) — proof that `bdm_id` is intentionally absent on some rows. Forcing `required: true` would break the person_id-only path.
+- **`CwtLedger`** — top-level `bdm_id` is real but optional. Both write paths ([collectionController.js:586](../backend/erp/controllers/collectionController.js) and [:975](../backend/erp/controllers/collectionController.js)) inherit `bdm_id` from a `Collection` (which is itself `bdm_id: required: true`, [Collection.js:31](../backend/erp/models/Collection.js)). Single writer is `cwtService.createCwtEntry` ([cwtService.js:13](../backend/erp/services/cwtService.js)). Safe to flip — the value is always present at write time.
+
+### Files touched
+
+- [backend/erp/models/CwtLedger.js](../backend/erp/models/CwtLedger.js) — `bdm_id` flipped to `required: true` with a comment block citing the upstream `Collection` guarantee.
+- [backend/middleware/entityScopedModels.json](../backend/middleware/entityScopedModels.json) — `RecurringJournalTemplate` moved from `strict_entity_and_bdm` → `strict_entity`. `_comment` updated with Day-4.5 #4 attribution.
+- [docs/ENTITY_SCOPED_MODELS.md](ENTITY_SCOPED_MODELS.md) — bucket counts now read 53 / 29 (was 52 / 30); rationale notes added for both the RecurringJournalTemplate reclassification and the CwtLedger flip + IncentivePayout audit.
+
+### Verification
+
+- `node -c` clean on the modified backend file.
+- `npx jest --ci --runInBand` → 24 suites, 170 tests, all green (no test churn — none of the suites exercise the CwtLedger or RecurringJournalTemplate write paths directly; the schema flip is validated by Mongoose at runtime, not by the unit suite).
+- No data migration required. CwtLedger has no historical rows missing `bdm_id` — every existing row was created via `createCwtEntry` from a Collection that itself has `bdm_id` enforced. Verified by grep: no other write paths exist for the model.
+- Boot log: bdmGuard observation count drops by 1 (`30 → 29`), reflecting the RecurringJournalTemplate reclassification.
+
+### Subscription readiness
+
+- `IncentivePayout`'s XOR pattern is the right shape for subscribers: a payroll-only subscriber (no BDM org) populates `person_id`; a sales-only subscriber populates `bdm_id`. Hardcoding `bdm_id: required: true` would have boxed out either case. Documented explicitly so the next person reading the schema doesn't add the constraint as a "cleanup".
+- `RecurringJournalTemplate`'s reclassification is a no-op for application code — bdmGuard never observed it anyway. The classification now matches the runtime behavior, so future Claude sessions reading `entityScopedModels.json` get an accurate picture.
+
+### Out of scope
+
+- The 5 remaining `strict_entity_and_bdm` models with optional `bdm_id` (JournalEntry / MonthlyArchive / DeductionSchedule / SalesGoalTarget / ErpAuditLog). Each has a documented reason for the optionality — JournalEntry's lines may not all be BDM-attributable, MonthlyArchive is an aggregate, DeductionSchedule supports XOR with person_id like IncentivePayout, SalesGoalTarget is a plan template, ErpAuditLog is a system audit. Leave as-is.
+- Per-line `bdm_id` enforcement on `RecurringJournalTemplate.lines[].bdm_id` (the line subdoc field). Cost-center allocation is intentionally optional; the field is informational, not a Rule #21 vector. No action needed.

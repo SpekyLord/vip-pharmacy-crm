@@ -120,6 +120,13 @@ function initAgentScheduler() {
   cron.schedule('0 2 * * *', () => triggerScheduled('message_retention', 'Inbox Retention'), { timezone: TIMEZONE });
   console.log('[AgentScheduler]   ✓ #MR Inbox Retention - daily 2:00 AM');
 
+  // Week-1 Stabilization Day-4.5 #3 — Orphan Owner Audit. Mon 05:15 Manila,
+  // sandwiched between System Integrity (05:00) and Treasury (05:30) so the
+  // morning briefings see fresh data. Read-only sweep of 8 transactional
+  // collections; alerts via Day-4 notify() plumbing on any orphan found.
+  cron.schedule('15 5 * * 1', () => triggerScheduled('orphan_audit', 'Orphan Owner Audit'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #OA Orphan Audit - Monday 5:15 AM');
+
   const hasAiKey = !!process.env.ANTHROPIC_API_KEY;
 
   if (hasAiKey) {

@@ -52,6 +52,12 @@ const AGENT_DEFINITIONS = {
   // See backend/erp/services/messageRetentionAgent.js. Scheduled nightly in
   // backend/agents/agentScheduler.js (2:00 AM Asia/Manila).
   message_retention:     { key: 'message_retention',     label: 'Inbox Retention',                modulePath: '../erp/services/messageRetentionAgent', type: 'FREE', schedule: 'Daily 2:00 AM' },
+  // Week-1 Stabilization Day-4.5 #3 — Orphan Audit (FREE; no AI)
+  // Wraps the read-only `findOrphanedOwnerRecords.js` script into a weekly
+  // sweep that fires a MessageInbox alert when any of the 8 covered
+  // transactional collections has a `bdm_id` pointing to a non-BDM user.
+  // Reuses Day-4 notify() plumbing (PRESIDENT + ALL_ADMINS).
+  orphan_audit:          { key: 'orphan_audit',          label: 'Orphan Owner Audit',             modulePath: './orphanAuditAgent',           type: 'FREE', schedule: 'Mon 5:15 AM' },
 };
 
 const AGENT_KEYS = Object.keys(AGENT_DEFINITIONS);
