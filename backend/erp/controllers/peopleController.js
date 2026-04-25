@@ -58,6 +58,7 @@ const getPersonById = catchAsync(async (req, res) => {
   const compProfile = await CompProfile.getActiveProfile(person._id);
 
   // Get comp history
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- person_id is unique; person fetched with entityScope above
   const compHistory = await CompProfile.find({ person_id: person._id })
     .sort({ effective_date: -1 })
     .limit(10)
@@ -147,6 +148,7 @@ const separatePerson = catchAsync(async (req, res) => {
   await person.save();
 
   // 2. Deactivate all functional role assignments
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- person_id is unique; person fetched with entityScope above
   const roleResult = await FunctionalRoleAssignment.updateMany(
     { person_id: person._id, is_active: true },
     { $set: { is_active: false, status: 'REVOKED', updated_by: req.user._id } }
@@ -200,28 +202,37 @@ const getCompProfile = catchAsync(async (req, res) => {
 });
 
 const createCompProfile = catchAsync(async (req, res) => {
-  // Supersede existing active profile
+  // Verify the person belongs to caller's entity before mutating their comp profile.
+  const entityScope = req.isPresident ? {} : (req.entityId ? { entity_id: req.entityId } : {});
+  const person = await PeopleMaster.findOne({ _id: req.params.id, ...entityScope });
+  if (!person) {
+    return res.status(404).json({ success: false, message: 'Person not found' });
+  }
+
+  // Supersede existing active profile (entity-scoped to the person we just verified)
   await CompProfile.updateMany(
-    { person_id: req.params.id, status: 'ACTIVE' },
+    { entity_id: person.entity_id, person_id: person._id, status: 'ACTIVE' },
     { $set: { status: 'SUPERSEDED' } }
   );
 
   const profile = await CompProfile.create({
     ...req.body,
-    person_id: req.params.id,
-    entity_id: req.entityId,
+    person_id: person._id,
+    entity_id: person.entity_id,
     status: 'ACTIVE',
     set_by: req.user._id,
   });
 
-  // Update person's comp_profile_id
-  await PeopleMaster.findByIdAndUpdate(req.params.id, { comp_profile_id: profile._id });
+  // Update person's comp_profile_id (person already entity-verified above)
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- person fetched with entityScope above
+  await PeopleMaster.findByIdAndUpdate(person._id, { comp_profile_id: profile._id });
 
   res.status(201).json({ success: true, data: profile });
 });
 
 const updateCompProfile = catchAsync(async (req, res) => {
-  const profile = await CompProfile.findById(req.params.profileId);
+  const entityScope = req.isPresident ? {} : (req.entityId ? { entity_id: req.entityId } : {});
+  const profile = await CompProfile.findOne({ _id: req.params.profileId, ...entityScope });
   if (!profile) {
     return res.status(404).json({ success: false, message: 'Compensation profile not found' });
   }
@@ -284,6 +295,7 @@ const syncFromCrm = catchAsync(async (req, res) => {
       if (u.live_date && u.live_date?.toISOString() !== existingPerson.live_date?.toISOString()) updates.live_date = u.live_date;
 
       if (Object.keys(updates).length > 0) {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- existingPerson._id from same-entity-scoped PeopleMaster.find above (line 265)
         await PeopleMaster.updateOne({ _id: existingPerson._id }, { $set: updates });
         updated++;
       } else {
@@ -492,7 +504,8 @@ const createPersonUnified = catchAsync(async (req, res) => {
 
 const createLoginForPerson = catchAsync(async (req, res) => {
   const { email, password, template_id } = req.body;
-  const person = await PeopleMaster.findById(req.params.id);
+  const entityScope = req.isPresident ? {} : (req.entityId ? { entity_id: req.entityId } : {});
+  const person = await PeopleMaster.findOne({ _id: req.params.id, ...entityScope });
   if (!person) return res.status(404).json({ success: false, message: 'Person not found' });
   if (!email || !password) return res.status(400).json({ success: false, message: 'Email and password are required' });
 
@@ -544,7 +557,9 @@ const createLoginForPerson = catchAsync(async (req, res) => {
   let erpAccess = { enabled: true };
   if (template_id) {
     const AccessTemplate = require('../models/AccessTemplate');
-    const template = await AccessTemplate.findById(template_id).lean();
+    // Template must belong to person's entity (ignored for president cross-entity provisioning).
+    const tplScope = req.isPresident ? {} : { entity_id: person.entity_id };
+    const template = await AccessTemplate.findOne({ _id: template_id, ...tplScope }).lean();
     if (template) {
       erpAccess = {
         enabled: true,
@@ -584,7 +599,8 @@ const createLoginForPerson = catchAsync(async (req, res) => {
 // ═══ Disable Login (deactivate CRM User, keep link) ═══
 
 const disableLogin = catchAsync(async (req, res) => {
-  const person = await PeopleMaster.findById(req.params.id);
+  const entityScope = req.isPresident ? {} : (req.entityId ? { entity_id: req.entityId } : {});
+  const person = await PeopleMaster.findOne({ _id: req.params.id, ...entityScope });
   if (!person) return res.status(404).json({ success: false, message: 'Person not found' });
   if (!person.user_id) return res.status(400).json({ success: false, message: 'Person has no login to disable' });
 
@@ -595,7 +611,8 @@ const disableLogin = catchAsync(async (req, res) => {
 // ═══ Enable Login (reactivate CRM User) ═══
 
 const enableLogin = catchAsync(async (req, res) => {
-  const person = await PeopleMaster.findById(req.params.id);
+  const entityScope = req.isPresident ? {} : (req.entityId ? { entity_id: req.entityId } : {});
+  const person = await PeopleMaster.findOne({ _id: req.params.id, ...entityScope });
   if (!person) return res.status(404).json({ success: false, message: 'Person not found' });
   if (!person.user_id) return res.status(400).json({ success: false, message: 'Person has no login to enable' });
 
@@ -606,7 +623,8 @@ const enableLogin = catchAsync(async (req, res) => {
 // ═══ Unlink Login (disconnect CRM User from PeopleMaster) ═══
 
 const unlinkLogin = catchAsync(async (req, res) => {
-  const person = await PeopleMaster.findById(req.params.id);
+  const entityScope = req.isPresident ? {} : (req.entityId ? { entity_id: req.entityId } : {});
+  const person = await PeopleMaster.findOne({ _id: req.params.id, ...entityScope });
   if (!person) return res.status(404).json({ success: false, message: 'Person not found' });
   if (!person.user_id) return res.status(400).json({ success: false, message: 'Person has no login to unlink' });
 
@@ -625,7 +643,8 @@ const changeSystemRole = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: `Invalid role "${role}". Must be one of: ${ALL_ROLES.join(', ')}` });
   }
 
-  const person = await PeopleMaster.findById(req.params.id);
+  const entityScope = req.isPresident ? {} : (req.entityId ? { entity_id: req.entityId } : {});
+  const person = await PeopleMaster.findOne({ _id: req.params.id, ...entityScope });
   if (!person) return res.status(404).json({ success: false, message: 'Person not found' });
   if (!person.user_id) return res.status(400).json({ success: false, message: 'Person has no linked login — create one first' });
 
