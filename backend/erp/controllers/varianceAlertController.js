@@ -74,6 +74,7 @@ exports.getVarianceAlertStats = catchAsync(async (req, res) => {
 
   if (req.query.fiscal_year) filter.fiscal_year = Number(req.query.fiscal_year);
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- $match: filter where filter.entity_id is set unconditionally on L66-67
   const agg = await VarianceAlert.aggregate([
     { $match: filter },
     { $group: {
@@ -102,13 +103,13 @@ exports.getVarianceAlertStats = catchAsync(async (req, res) => {
 
 // POST /variance-alerts/:id/resolve
 exports.resolveVarianceAlert = catchAsync(async (req, res) => {
-  const alert = await VarianceAlert.findById(req.params.id);
+  // Entity-scope the read so a contractor probing alert ids in another
+  // entity gets a clean 404 rather than leaking existence through the
+  // 403-after-read path. President bypass for cross-entity admin tooling.
+  const alertFilter = { _id: req.params.id };
+  if (!req.isPresident) alertFilter.entity_id = req.entityId;
+  const alert = await VarianceAlert.findOne(alertFilter);
   if (!alert) return res.status(404).json({ success: false, message: 'Alert not found' });
-
-  // Entity guard — only president can cross entities.
-  if (!req.isPresident && String(alert.entity_id) !== String(req.entityId)) {
-    return res.status(403).json({ success: false, message: 'Alert is in a different entity' });
-  }
 
   // Only the BDM themselves, their reports_to chain, admin/finance/president
   // may resolve. Contractor-level users can only resolve their own alerts.
@@ -119,8 +120,10 @@ exports.resolveVarianceAlert = catchAsync(async (req, res) => {
     let managerAllowed = false;
     if (alert.person_id) {
       try {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- person_id sourced from entity-scoped alert fetched above; internal manager-chain lookup
         const p = await PeopleMaster.findById(alert.person_id).select('reports_to').lean();
         if (p?.reports_to) {
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- reports_to chain may legitimately cross entities (parent CEO oversees subsidiary BDM)
           const managerPerson = await PeopleMaster.findById(p.reports_to).select('user_id').lean();
           if (managerPerson?.user_id && String(managerPerson.user_id) === String(req.user._id)) {
             managerAllowed = true;
