@@ -110,6 +110,7 @@ const postSaleRow = async (row, userId, opts = {}) => {
 
         // Direct petty cash deposit for SERVICE_INVOICE with CASH payment + fund routing
         if (row.petty_cash_fund_id && saleType === 'SERVICE_INVOICE' && row.payment_mode === 'CASH') {
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- petty_cash_fund_id validated at validate-time (entity-scoped check, see L651); row from same-entity-scoped post path
           const fund = await PettyCashFund.findById(row.petty_cash_fund_id).session(session);
           if (!fund) throw new Error(`Petty cash fund not found for ${row.invoice_number || row._id}`);
           if (['SUSPENDED', 'CLOSED'].includes(fund.status)) throw new Error(`Fund ${fund.fund_code} is ${fund.status}`);
@@ -130,6 +131,7 @@ const postSaleRow = async (row, userId, opts = {}) => {
               created_by: userId,
               running_balance: Math.round((fund.current_balance + depositAmount) * 100) / 100
             }], { session });
+            // eslint-disable-next-line vip-tenant/require-entity-filter -- fund._id from same-entity-scoped fund above
             await PettyCashFund.findByIdAndUpdate(fund._id, {
               $inc: { current_balance: depositAmount }
             }, { session });
@@ -199,6 +201,7 @@ const postSaleRow = async (row, userId, opts = {}) => {
 
       // Direct petty cash deposit for CASH_RECEIPT with CASH payment + fund routing
       if (row.petty_cash_fund_id && saleType === 'CASH_RECEIPT' && row.payment_mode === 'CASH') {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- petty_cash_fund_id validated at validate-time (entity-scoped check, see L651); row from same-entity-scoped post path
         const fund = await PettyCashFund.findById(row.petty_cash_fund_id).session(session);
         if (!fund) throw new Error(`Petty cash fund not found for ${row.invoice_number || row._id}`);
         if (['SUSPENDED', 'CLOSED'].includes(fund.status)) throw new Error(`Fund ${fund.fund_code} is ${fund.status}`);
@@ -219,6 +222,7 @@ const postSaleRow = async (row, userId, opts = {}) => {
             created_by: userId,
             running_balance: Math.round((fund.current_balance + depositAmount) * 100) / 100
           }], { session });
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- fund._id from same-entity-scoped fund above
           await PettyCashFund.findByIdAndUpdate(fund._id, {
             $inc: { current_balance: depositAmount }
           }, { session });
@@ -227,6 +231,7 @@ const postSaleRow = async (row, userId, opts = {}) => {
     });
 
     // 5. Link DocumentAttachments (non-blocking)
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- source_id is unique; row from same-entity-scoped post path
     await DocumentAttachment.updateMany(
       { source_model: 'SalesLine', source_id: row._id },
       { $set: { event_id: eventId } }
@@ -243,6 +248,7 @@ const postSaleRow = async (row, userId, opts = {}) => {
       // COGS JE (skip for SERVICE_INVOICE and OPENING_AR)
       if (saleType !== 'SERVICE_INVOICE' && row.source !== 'OPENING_AR' && row.line_items?.length) {
         const productIds = row.line_items.map(li => li.product_id);
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- productIds harvested from same-entity-scoped row.line_items; _id is globally unique
         const products = await ProductMaster.find({ _id: { $in: productIds } }).select('purchase_price').lean();
         const costMap = new Map(products.map(p => [p._id.toString(), p.purchase_price || 0]));
         const totalCogs = row.line_items.reduce((sum, li) => sum + (li.qty || 0) * (costMap.get(li.product_id?.toString()) || 0), 0);
@@ -455,6 +461,7 @@ const deleteDraftRow = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Only DRAFT rows can be deleted' });
   }
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- sale fetched via widenFilterForProxy (entity-scoped) above
   await SalesLine.findByIdAndDelete(sale._id);
 
   await ErpAuditLog.logChange({
@@ -648,13 +655,12 @@ const validateSales = catchAsync(async (req, res) => {
       } else if (saleType === 'CSI') {
         rowErrors.push('CSI sales cannot route to petty cash — use Collections');
       } else {
-        const pcFund = await PettyCashFund.findById(row.petty_cash_fund_id).lean();
+        const pcFund = await PettyCashFund.findOne({ _id: row.petty_cash_fund_id, entity_id: row.entity_id }).lean();
         if (!pcFund) {
-          rowErrors.push('Petty cash fund not found');
+          // tenantFilter at find-time enforces the entity bind; the prior post-fetch
+          // entity check ('belongs to a different entity') becomes a not-found here.
+          rowErrors.push('Petty cash fund not found in this entity');
         } else {
-          if (pcFund.entity_id?.toString() !== row.entity_id?.toString()) {
-            rowErrors.push('Petty cash fund belongs to a different entity');
-          }
           if (pcFund.status !== 'ACTIVE') {
             rowErrors.push(`Petty cash fund is ${pcFund.status} — deposits blocked`);
           }
@@ -1000,6 +1006,7 @@ const submitSales = catchAsync(async (req, res) => {
 
     // Phase 9.1b: Link DocumentAttachments to events (outside transaction — non-blocking)
     for (let i = 0; i < validRows.length; i++) {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- source_id is unique; validRows fetched with entity-scoped tenantFilter upstream
       await DocumentAttachment.updateMany(
         { source_model: 'SalesLine', source_id: validRows[i]._id },
         { $set: { event_id: eventIds[i] } }
@@ -1044,6 +1051,7 @@ const submitSales = catchAsync(async (req, res) => {
         // COGS JE (skip for SERVICE_INVOICE and OPENING_AR — no inventory consumed)
         if (saleType !== 'SERVICE_INVOICE' && row.source !== 'OPENING_AR' && row.line_items?.length) {
           const productIds = row.line_items.map(li => li.product_id);
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- productIds harvested from same-entity-scoped row.line_items; _id is globally unique
           const products = await ProductMaster.find({ _id: { $in: productIds } }).select('purchase_price').lean();
           const costMap = new Map(products.map(p => [p._id.toString(), p.purchase_price || 0]));
           const totalCogs = row.line_items.reduce((sum, li) => sum + (li.qty || 0) * (costMap.get(li.product_id?.toString()) || 0), 0);
@@ -1135,6 +1143,7 @@ const reopenSales = catchAsync(async (req, res) => {
     // Step 1: Reverse JEs FIRST — if fails, skip this row (keep POSTED, ledger stays balanced)
     if (row.event_id) {
       try {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- source_event_id is unique; row from entity-scoped reopen path
         const jes = await JournalEntry.find({
           source_event_id: row.event_id, status: 'POSTED', is_reversal: { $ne: true }
         });
@@ -1153,6 +1162,7 @@ const reopenSales = catchAsync(async (req, res) => {
     try {
       await session.withTransaction(async () => {
         // Create reversal InventoryLedger entries
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- event_id is unique; row from entity-scoped reopen path
         const originalEntries = await InventoryLedger.find({ event_id: row.event_id }).session(session);
         for (const entry of originalEntries) {
           await InventoryLedger.create([{
@@ -1189,6 +1199,7 @@ const reopenSales = catchAsync(async (req, res) => {
 
         // Reverse petty cash deposit if sale was routed to a fund
         if (row.petty_cash_fund_id) {
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- linked_sales_line_id is unique; row from entity-scoped reopen path
           const pcTxn = await PettyCashTransaction.findOne({
             linked_sales_line_id: row._id,
             txn_type: 'DEPOSIT',
@@ -1200,6 +1211,7 @@ const reopenSales = catchAsync(async (req, res) => {
             pcTxn.voided_by = req.user._id;
             pcTxn.void_reason = `Auto-reversed: ${row.sale_type} ${row.invoice_number || row.doc_ref || ''} reopened`;
             await pcTxn.save({ session });
+            // eslint-disable-next-line vip-tenant/require-entity-filter -- fund_id from same-entity-scoped pcTxn above
             const fundResult = await PettyCashFund.findByIdAndUpdate(pcTxn.fund_id, {
               $inc: { current_balance: -pcTxn.amount }
             }, { session });
@@ -1349,6 +1361,7 @@ const approveDeletion = catchAsync(async (req, res) => {
   });
 
   // Reverse InventoryLedger entries
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- event_id is unique; sale fetched with entity-scoped tenantFilter upstream
   const originalEntries = await InventoryLedger.find({ event_id: sale.event_id });
   for (const entry of originalEntries) {
     await InventoryLedger.create({
@@ -1369,6 +1382,7 @@ const approveDeletion = catchAsync(async (req, res) => {
   // Reverse journal entries (SAP Storno)
   if (sale.event_id) {
     try {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- source_event_id is unique; sale fetched with entity-scoped tenantFilter upstream
       const jes = await JournalEntry.find({
         source_event_id: sale.event_id, status: 'POSTED', is_reversal: { $ne: true }
       });
@@ -1581,6 +1595,7 @@ const generateCsiDraft = catchAsync(async (req, res) => {
   // batch expiry dates from InventoryLedger.
   const productIds = sale.line_items.map((li) => li.product_id).filter(Boolean);
   const products = productIds.length
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- productIds harvested from same-entity-scoped sale.line_items; _id is globally unique
     ? await ProductMaster.find({ _id: { $in: productIds } })
         .select('brand_name generic_name dosage_strength')
         .lean()
@@ -1597,6 +1612,7 @@ const generateCsiDraft = catchAsync(async (req, res) => {
 
   let expiryMap = new Map();
   if (expiryLookups.length) {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- each $or branch carries entity_id from sale.entity_id (built above); rule can't see through .map()
     const ledgerRows = await InventoryLedger.find({ $or: expiryLookups })
       .select('product_id batch_lot_no expiry_date')
       .lean();
