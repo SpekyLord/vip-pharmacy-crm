@@ -8004,7 +8004,7 @@ CLAUDE-ERP.md                                       (Rule #20 note)
 - `npx jest --ci --runInBand` → 22 suites, 135 tests, all green. New work adds 3 suites + 50 tests.
 - Boot smoke (3 modes verified): `SKIP_DB_CONNECT=true ENTITY_GUARD_MODE={log,throw,off} BDM_GUARD_MODE={log,throw,off} node -e "require('./server').createApp()"` — all clean. Boot log mirrors mode.
 - **No cascading recursion:** traced `maybeAlert → notify → sendInApp → MessageInbox.create → preSaveAckDefault → evaluateAckDefault → Lookup.find({entity_id, ...})`. User + MessageInbox are `deferred_crm` (skipped); Lookup query filters by entity_id (no entity-guard fire). Confirmed by code inspection of [backend/erp/utils/inboxAckDefaults.js:72,99](../backend/erp/utils/inboxAckDefaults.js).
-- **No backwards-compat break:** without `ENTITY_GUARD_MODE` / `BDM_GUARD_MODE` set, both default to `log` — bit-identical to Day-3 behavior. Existing deployments don't need an env-var flip to keep working.
+- **Backwards-compat:** without `ENTITY_GUARD_MODE` / `BDM_GUARD_MODE` set, both default to `log`. In dev / staging / test the behavior is bit-identical to Day 3 (only the `console.error` JSON line). **In production, `log` mode now ALSO fires the MessageInbox alert** — that's the Day-4 feature, not a regression. To opt out without editing code, set `ENTITY_GUARD_MODE=off` (drops the plugin entirely) or run the alerter with a no-op recipient (set `ENTITY_GUARD_ALERT_RECIPIENT` to a known user id you control).
 
 ### Out of scope today (Day 5)
 
