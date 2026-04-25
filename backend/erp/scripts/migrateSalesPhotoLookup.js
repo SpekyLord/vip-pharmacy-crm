@@ -1,3 +1,4 @@
+/* eslint-disable vip-tenant/require-entity-filter -- standalone admin/migration/diagnostic script: no req context; intentional cross-entity reads/writes for ops work */
 /**
  * Migration: Split SALES_SETTINGS.REQUIRE_CSI_PHOTO into two codes.
  *

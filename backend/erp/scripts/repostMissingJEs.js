@@ -1,3 +1,4 @@
+/* eslint-disable vip-tenant/require-entity-filter -- standalone backlog repost script: no req context; intentionally scans all entities for missing JEs */
 /**
  * Repost Missing JEs — Phase 35 backlog script
  *

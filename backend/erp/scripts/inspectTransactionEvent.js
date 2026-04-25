@@ -12,6 +12,7 @@
  *
  * READ-ONLY. Safe on prod.
  */
+/* eslint-disable vip-tenant/require-entity-filter -- read-only inspector CLI: by-event_id lookup spans every warehouse/entity by design; no req context */
 require('dotenv').config();
 const mongoose = require('mongoose');
 const connectDB = require('../../config/db');

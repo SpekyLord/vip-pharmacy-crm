@@ -70,6 +70,7 @@ async function checkGrnDependents({ doc, tenantFilter }) {
   if (!eventIds.length) return { has_deps: false, dependents };
 
   // Sales consumers
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- by-event_id cascade: eventIds were collected from entity-scoped InventoryLedger above
   const sales = await SalesLine.find({
     event_id: { $in: eventIds },
     deletion_event_id: { $exists: false },
@@ -112,6 +113,7 @@ async function checkIcTransferDependents({ doc /* , tenantFilter */ }) {
 
   // Any qty_out against the target_event_id's lot inventory?
   // Resolve target inventory lots created by this IC.
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- by-event_id cascade: target_event_id is the unique IC-receive event (by definition entity-bound)
   const targetLedger = await InventoryLedger.find({
     event_id: doc.target_event_id,
     qty_in: { $gt: 0 },
@@ -465,6 +467,7 @@ async function checkSalesGoalPlanDependents({ doc }) {
 async function checkPettyCashTxnDependents({ doc }) {
   const dependents = [];
   if (!doc.fund_id || !doc.txn_date) return { has_deps: false, dependents };
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- by-fund_id cascade: fund is entity-scoped and same-fund txns share the running balance chain
   const later = await PettyCashTransaction.find({
     fund_id: doc.fund_id,
     _id: { $ne: doc._id },
@@ -519,6 +522,7 @@ async function checkCarLogbookDependents({ doc }) {
   // CarLogbookCycle wrapper — in which case we fan out to days.
   const isCycle = doc.constructor && doc.constructor.modelName === 'CarLogbookCycle';
   const dayDocs = isCycle
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- by-cycle_id cascade: cycle is the entity-scoped parent doc passed in
     ? await CarLogbookEntry.find({ cycle_id: doc._id }).select('fuel_entries').lean()
     : [doc];
 
@@ -530,6 +534,7 @@ async function checkCarLogbookDependents({ doc }) {
   }
   if (!calfIds.length) return { has_deps: false, dependents };
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- by-_id cascade: calfIds were collected from entity-scoped CarLogbook fuel_entries above
   const calfs = await PrfCalf.find({
     _id: { $in: calfIds },
     doc_type: 'CALF',

@@ -16,13 +16,17 @@ const GrnEntry = require('../models/GrnEntry');
  * @returns {Object} { matched_lines[], discrepancy_lines[], unmatched_lines[], overall_status }
  */
 async function matchInvoice(invoiceId, tolerancePct = 0.02) {
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- caller (purchasingController.runThreeWayMatch) pre-validates invoice's entity_id; this is a trusted internal service
   const invoice = await SupplierInvoice.findById(invoiceId);
   if (!invoice) throw new Error('Supplier invoice not found');
 
   // Load PO and GRN if linked; auto-discover PO from GRN when invoice has grn_id but no po_id
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- po_id sourced from caller-validated invoice; FK ref written by in-entity create flow
   let po = invoice.po_id ? await PurchaseOrder.findById(invoice.po_id).lean() : null;
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- grn_id sourced from caller-validated invoice; FK ref written by in-entity create flow
   const grn = invoice.grn_id ? await GrnEntry.findById(invoice.grn_id).lean() : null;
   if (!po && grn?.po_id) {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- po_id sourced from in-entity grn fetched above
     po = await PurchaseOrder.findById(grn.po_id).lean();
   }
 
@@ -124,6 +128,7 @@ async function matchInvoice(invoiceId, tolerancePct = 0.02) {
 
   // Update PO qty_invoiced for matched AND discrepancy lines (ISSUE 8: track invoiced qty regardless of match quality)
   if (po) {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- po_id sourced from caller-validated invoice (same id as L23 read); writeable handle
     const poDoc = await PurchaseOrder.findById(invoice.po_id);
     if (poDoc) {
       const invoicedLines = [...matched_lines, ...discrepancy_lines];

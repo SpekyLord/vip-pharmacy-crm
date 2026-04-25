@@ -1,3 +1,4 @@
+/* eslint-disable vip-tenant/require-entity-filter -- standalone remediation script: no req context; targets a specific historical incident */
 /**
  * Restore ILO-MAIN Opening Stock — Remediation
  *

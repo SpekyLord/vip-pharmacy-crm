@@ -40,9 +40,11 @@ function renderTemplate(template, vars = {}) {
 
 async function getEnabledEntities() {
   // We need entity_ids where BOTH PRESIDENT_COPILOT and PRESIDENT_DAILY_BRIEFING are active
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: enumerates ALL entities that have AI Copilot enabled (entity_id is the result, not the filter)
   const copilotRows = await Lookup.find({
     category: 'AI_COWORK_FEATURES', code: 'PRESIDENT_COPILOT', is_active: true,
   }).select('entity_id').lean();
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: enumerates ALL entities that have Daily Briefing enabled (entity_id is the result, not the filter)
   const briefingRows = await Lookup.find({
     category: 'AI_COWORK_FEATURES', code: FEATURE_CODE, is_active: true,
   }).select('entity_id metadata').lean();

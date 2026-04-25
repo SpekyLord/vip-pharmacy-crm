@@ -83,7 +83,12 @@ const getMyWarehouses = catchAsync(async (req, res) => {
  * GET /warehouse/:id — single warehouse with stock summary
  */
 const getWarehouse = catchAsync(async (req, res) => {
-  const warehouse = await Warehouse.findById(req.params.id)
+  // Entity-scope the lookup — without it any user could probe foreign-entity
+  // warehouse_ids and read manager/contact/stock details. President bypass
+  // for admin tooling.
+  const filter = { _id: req.params.id };
+  if (!req.isPresident) filter.entity_id = req.entityId;
+  const warehouse = await Warehouse.findOne(filter)
     .populate('manager_id', 'name email')
     .populate('assigned_users', 'name email')
     .populate('entity_id', 'entity_name short_name')
@@ -95,6 +100,7 @@ const getWarehouse = catchAsync(async (req, res) => {
   }
 
   // Stock summary: total products, total units, total value
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- warehouse_id from entity-scoped warehouse fetched above
   const stockSummary = await InventoryLedger.aggregate([
     { $match: { warehouse_id: warehouse._id } },
     { $group: { _id: '$product_id', total_in: { $sum: '$qty_in' }, total_out: { $sum: '$qty_out' } } },
@@ -153,7 +159,12 @@ const createWarehouse = catchAsync(async (req, res) => {
  * PUT /warehouse/:id — update warehouse
  */
 const updateWarehouse = catchAsync(async (req, res) => {
-  const warehouse = await Warehouse.findById(req.params.id);
+  // Entity-scope the lookup — admin/finance updating a warehouse must hit
+  // their own entity's row, not silently mutate a foreign-entity warehouse
+  // by guessing the id. President bypass for cross-entity admin tooling.
+  const filter = { _id: req.params.id };
+  if (!req.isPresident) filter.entity_id = req.entityId;
+  const warehouse = await Warehouse.findOne(filter);
   if (!warehouse) {
     return res.status(404).json({ success: false, message: 'Warehouse not found' });
   }
@@ -172,6 +183,7 @@ const updateWarehouse = catchAsync(async (req, res) => {
 
   await warehouse.save();
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- warehouse._id from entity-scoped findOne above
   const populated = await Warehouse.findById(warehouse._id)
     .populate('manager_id', 'name email')
     .populate('assigned_users', 'name email')

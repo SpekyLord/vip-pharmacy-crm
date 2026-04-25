@@ -22,6 +22,7 @@
  * Safety: never modifies KpiSnapshot, IncentivePayout, or SalesGoalTarget
  * rows. The new versioning fields are additive on SalesGoalPlan only.
  */
+/* eslint-disable vip-tenant/require-entity-filter -- one-shot migration CLI: scans every entity by design; no req context */
 
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });

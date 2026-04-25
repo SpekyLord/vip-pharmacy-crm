@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* eslint-disable vip-tenant/require-entity-filter -- standalone migration script: by-design cross-entity reads/writes (consolidating data between entities) */
 /**
  * Phase 4A — Entity Data Migration
  *

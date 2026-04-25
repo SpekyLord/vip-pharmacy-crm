@@ -1,3 +1,4 @@
+/* eslint-disable vip-tenant/require-entity-filter -- standalone admin/migration/diagnostic script: no req context; intentional cross-entity reads/writes for ops work */
 /**
  * Backend test: Exercise all expense endpoints
  * Tests SMER, Car Logbook, ORE/ACCESS, PRF/CALF full lifecycle

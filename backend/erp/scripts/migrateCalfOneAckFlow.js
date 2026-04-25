@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* eslint-disable vip-tenant/require-entity-filter -- standalone admin/migration/diagnostic script: no req context; intentional cross-entity reads/writes for ops work */
 /**
  * migrateCalfOneAckFlow.js — Phase G4.5h (Apr 2026)
  *

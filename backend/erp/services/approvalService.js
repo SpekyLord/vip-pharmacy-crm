@@ -289,6 +289,7 @@ const resolveApprovers = async (rule, entityId, requesterId) => {
       if (!person?.reports_to) return [];
 
       // reports_to references another PeopleMaster; find their User account
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- person fetched with entity_id at L286; reports_to is a PeopleMaster ref within the same entity
       const manager = await PeopleMaster.findById(person.reports_to)
         .select('user_id')
         .lean();
@@ -359,6 +360,7 @@ const checkApprovalRequired = async (opts) => {
       // Requester not authorized to post → hold for Approval Hub.
       // Check for existing pending/approved request first (idempotent re-submit).
       const existingDefault = await ApprovalRequest.findOne({
+        entity_id: opts.entityId,
         doc_id: opts.docId,
         status: { $in: ['PENDING', 'APPROVED'] },
       }).lean();
@@ -453,6 +455,7 @@ const checkApprovalRequired = async (opts) => {
 
   // Check if there's already a pending/approved request for this doc at the first level
   const existing = await ApprovalRequest.findOne({
+    entity_id: opts.entityId,
     doc_id: opts.docId,
     status: { $in: ['PENDING', 'APPROVED'] },
   }).lean();
@@ -521,11 +524,13 @@ const checkApprovalRequired = async (opts) => {
  * @returns {Promise<Object>} updated ApprovalRequest
  */
 const processDecision = async (requestId, decision, deciderId, reason) => {
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- requestId is unique; callers (universalApprove + module controllers) supply id from gated approver list
   const request = await ApprovalRequest.findById(requestId);
   if (!request) throw new Error('Approval request not found');
   if (request.status !== 'PENDING') throw new Error(`Request is already ${request.status}`);
 
   // Verify the decider is authorized
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- rule_id from same-entity-scoped request above
   const rule = await ApprovalRule.findById(request.rule_id).lean();
   if (rule) {
     const approvers = await resolveApprovers(rule, request.entity_id, request.requested_by);
@@ -624,12 +629,14 @@ const processDecision = async (requestId, decision, deciderId, reason) => {
  * @returns {Promise<boolean>}
  */
 const isFullyApproved = async (docId) => {
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- doc_id is unique-per-doc; this is a lookup keyed on the canonical document id, not a list query
   const pending = await ApprovalRequest.countDocuments({
     doc_id: docId,
     status: 'PENDING',
   });
   if (pending > 0) return false;
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- doc_id is unique-per-doc; same justification as the pending-count above
   const approved = await ApprovalRequest.countDocuments({
     doc_id: docId,
     status: 'APPROVED',

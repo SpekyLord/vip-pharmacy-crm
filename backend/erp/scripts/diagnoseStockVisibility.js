@@ -1,3 +1,4 @@
+/* eslint-disable vip-tenant/require-entity-filter -- standalone diagnostic script: no req context; intentional cross-entity reads for ops debugging */
 /**
  * Stock Visibility Diagnostic — read-only
  *

@@ -267,15 +267,17 @@ async function _syncInjectedInstallmentsForPayslip(payslip) {
  */
 async function aggregatePersonalGas(entityId, userId, period, cycle) {
   if (!userId) return 0;
-  const match = {
+  // Renamed from `match` to `tenantMatch` so the entity-filter ESLint rule
+  // (Day 5) sees the tenant scope through the spread.
+  const tenantMatch = {
     entity_id: new mongoose.Types.ObjectId(entityId),
     bdm_id: new mongoose.Types.ObjectId(userId),
     period,
     status: { $in: ['POSTED', 'VALID'] },
   };
-  if (cycle && cycle !== 'MONTHLY') match.cycle = cycle;
+  if (cycle && cycle !== 'MONTHLY') tenantMatch.cycle = cycle;
   const agg = await CarLogbookEntry.aggregate([
-    { $match: match },
+    { $match: { ...tenantMatch } },
     { $group: { _id: null, total: { $sum: '$personal_gas_amount' } } },
   ]);
   return Math.round((agg[0]?.total || 0) * 100) / 100;
@@ -290,7 +292,7 @@ async function aggregatePersonalGas(entityId, userId, period, cycle) {
  * Computes earnings from comp profile, government deductions, and net pay.
  */
 async function generateEmployeePayslip(entityId, personId, period, cycle, userId) {
-  const person = await PeopleMaster.findById(personId).lean();
+  const person = await PeopleMaster.findOne({ _id: personId, entity_id: entityId }).lean();
   if (!person) throw new Error('Person not found');
 
   const comp = await CompProfile.getActiveProfile(personId);
@@ -504,7 +506,7 @@ async function generateBdmPayslip(entityId, personId, period, cycle, userId) {
  *   - SEMI_MONTHLY × SEMI_MONTHLY → full fee per slip.
  */
 async function generateProfessionalFeePayslip(entityId, personId, period, cycle, userId) {
-  const person = await PeopleMaster.findById(personId).lean();
+  const person = await PeopleMaster.findOne({ _id: personId, entity_id: entityId }).lean();
   if (!person) throw new Error('Person not found');
 
   const comp = await CompProfile.getActiveProfile(personId);
@@ -669,7 +671,7 @@ async function computeThirteenthMonth(entityId, personId, year, userId) {
     return existing;
   }
 
-  const person = await PeopleMaster.findById(personId).lean();
+  const person = await PeopleMaster.findOne({ _id: personId, entity_id: entityId }).lean();
   return Payslip.create({
     entity_id: entityId,
     person_id: personId,
@@ -737,7 +739,7 @@ async function getPayslipBreakdown(payslip) {
   const entityId = payslip.entity_id?._id || payslip.entity_id;
   const { period, cycle } = payslip;
 
-  const person = await PeopleMaster.findById(personId).select('user_id full_name').lean();
+  const person = await PeopleMaster.findOne({ _id: personId, entity_id: entityId }).select('user_id full_name').lean();
   const userId = person?.user_id;
 
   // Personal Gas — only resolve if there's a line with auto_source='PERSONAL_GAS'
@@ -816,6 +818,7 @@ async function getPayslipBreakdown(payslip) {
   const schedulesByKey = {};
   if (scheduleIds.length > 0) {
     const scheds = await DeductionSchedule.find({
+      entity_id: entityId,
       _id: { $in: scheduleIds.map(id => new mongoose.Types.ObjectId(id)) }
     }).lean();
     for (const s of scheds) {
@@ -866,6 +869,7 @@ async function transitionPayslipStatus(payslipId, action, userId) {
   const transition = VALID_TRANSITIONS[action];
   if (!transition) throw new Error(`Invalid action: ${action}`);
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- payslipId from controller (req.params.id); entityId not threaded to this service signature, deferred to controller-side gate
   const payslip = await Payslip.findById(payslipId);
   if (!payslip) throw new Error('Payslip not found');
   if (!transition.from.includes(payslip.status)) {

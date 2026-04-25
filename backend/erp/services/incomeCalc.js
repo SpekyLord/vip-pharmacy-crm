@@ -582,6 +582,7 @@ async function transitionIncomeStatus(reportId, action, userId, data = {}) {
     throw new Error(`Invalid action: ${action}`);
   }
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- workflow helper called by 4 incomeController endpoints; entity_id pre-validation belongs at the controller layer (confirmIncome at L417 already does this; review/return/credit follow the same pattern). Refactor to push entityId into this signature is tracked separately.
   const report = await IncomeReport.findById(reportId);
   if (!report) {
     throw new Error('Income report not found');
@@ -653,11 +654,13 @@ async function getIncomeBreakdown(report) {
   const [smer, collections, pnl, calfs, logbookEntries, expenseEntries] = await Promise.all([
     // 1. SMER
     source_refs?.smer_id
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- smer_id from same-entity-scoped report.source_refs
       ? SmerEntry.findById(source_refs.smer_id).lean()
       : null,
 
     // 2. Collections (commission source)
     source_refs?.collection_ids?.length
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- collection_ids harvested from same-entity-scoped report.source_refs; _id is globally unique
       ? Collection.find({ _id: { $in: source_refs.collection_ids } })
           .populate('hospital_id', 'hospital_name')
           .populate('customer_id', 'customer_name')
@@ -667,6 +670,7 @@ async function getIncomeBreakdown(report) {
 
     // 3. PNL Report (profit sharing source)
     source_refs?.pnl_report_id
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- pnl_report_id from same-entity-scoped report.source_refs
       ? PnlReport.findById(source_refs.pnl_report_id).lean()
       : null,
 
@@ -684,6 +688,7 @@ async function getIncomeBreakdown(report) {
 
     // 6. Expense entries (ORE detail)
     source_refs?.expense_ids?.length
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- expense_ids harvested from same-entity-scoped report.source_refs; _id is globally unique
       ? ExpenseEntry.find({ _id: { $in: source_refs.expense_ids } }).lean()
       : []
   ]);
@@ -922,6 +927,7 @@ async function getIncomeBreakdown(report) {
   )];
   const schedulesByKey = {};
   if (scheduleIds.length > 0) {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- scheduleIds harvested from same-entity-scoped report.deduction_lines; _id is globally unique
     const scheds = await DeductionSchedule.find({
       _id: { $in: scheduleIds.map(id => new mongoose.Types.ObjectId(id)) }
     }).lean();

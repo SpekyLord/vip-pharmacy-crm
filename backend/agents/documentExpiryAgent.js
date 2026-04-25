@@ -1,5 +1,12 @@
 /**
  * Document Expiry Agent (#10)
+ *
+ * Cron-mode agent: scans ALL entities for system-wide alerts
+ * (CSI booklet exhaustion, product expiry, consignment batch expiry).
+ * Cross-entity by design — one run aggregates findings and routes them
+ * to entity admins / BDMs via notify(). No req.entityId context exists
+ * at agent runtime, so the entity-scope warnings below are annotated
+ * rather than fixed.
  */
 
 const { notify, countSuccessfulChannels, getInAppMessageIds } = require('./notificationService');
@@ -13,6 +20,7 @@ async function run() {
   try {
     const CsiBooklet = require('../erp/models/CsiBooklet');
 
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- cron-mode agent: scans all entities for system-wide CSI booklet alerts; see top-of-file note
     const lowBooklets = await CsiBooklet.find({
       status: 'ACTIVE',
       remaining_count: { $lt: 20, $gt: 0 },
@@ -26,6 +34,7 @@ async function run() {
       });
     }
 
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- cron-mode agent: scans all entities; see top-of-file note
     const exhaustedBooklets = await CsiBooklet.find({
       status: 'ACTIVE',
       remaining_count: { $lte: 0 },
@@ -49,6 +58,7 @@ async function run() {
     const ninetyDaysFromNow = new Date(now);
     ninetyDaysFromNow.setDate(ninetyDaysFromNow.getDate() + 90);
 
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- cron-mode agent: aggregates expiring inventory across all entities; alerts route per-entity via bdm_ids on each row; see top-of-file note
     const expiringBatches = await InventoryLedger.aggregate([
       { $match: { expiry_date: { $lte: ninetyDaysFromNow, $gte: now } } },
       {
@@ -87,6 +97,7 @@ async function run() {
       });
     }
 
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- cron-mode agent: aggregates expired-with-stock across all entities; alerts route per-entity via bdm_ids; see top-of-file note
     const expiredWithStock = await InventoryLedger.aggregate([
       { $match: { expiry_date: { $lt: now } } },
       {
@@ -132,6 +143,7 @@ async function run() {
     const sixtyDaysFromNow = new Date(now);
     sixtyDaysFromNow.setDate(sixtyDaysFromNow.getDate() + 60);
 
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- cron-mode agent: scans all entities for active consignments; alerts route per-entity via bdm_id; see top-of-file note
     const activeConsignments = await ConsignmentTracker.find({
       status: 'ACTIVE',
       batch_lot_no: { $exists: true, $ne: null },
@@ -145,6 +157,7 @@ async function run() {
 
       if (orConditions.length > 0) {
         const InventoryLedger = require('../erp/models/InventoryLedger');
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- cron-mode agent: cross-entity batch expiry lookup keyed by product_id+batch_lot_no harvested from same-batch consignments above; see top-of-file note
         const batchExpiries = await InventoryLedger.aggregate([
           { $match: { $or: orConditions } },
           {

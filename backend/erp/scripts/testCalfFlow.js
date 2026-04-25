@@ -15,7 +15,13 @@
  *  11. Cleanup all test data
  *
  * Usage: cd backend && node erp/scripts/testCalfFlow.js
+ *
+ * Entity-scope posture: this is a stand-alone test script with no req/
+ * tenantFilter context. All findById/find calls operate on test-created
+ * docs whose _ids the script itself just created. Disabling the rule
+ * file-wide rather than annotating 16 lines individually.
  */
+/* eslint-disable vip-tenant/require-entity-filter -- standalone test script: no req context; queries are by-id on test-created docs the script itself just generated */
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
