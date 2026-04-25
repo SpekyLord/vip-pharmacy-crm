@@ -19,6 +19,16 @@ const path = require('path');
 const { randomUUID } = require('crypto');
 const dotenv = require('dotenv');
 
+// Week-1 Stabilization Day 3: tenant guards. MUST attach before any model schema
+// is compiled — Mongoose plugins only apply to schemas defined AFTER the call.
+// Models in this codebase are required transitively via route requires inside
+// `createApp()`, so attaching here (top of server.js) catches all of them.
+const { attachEntityGuard } = require('./middleware/entityGuard');
+const { attachBdmGuard } = require('./middleware/bdmGuard');
+const { requestContextRoot } = require('./middleware/requestContext');
+attachEntityGuard();
+attachBdmGuard();
+
 const connectDB = require('./config/db');
 const {
   parseIntEnv,
@@ -224,6 +234,7 @@ const createApp = () => {
   }
 
   app.use(attachRequestId);
+  app.use(requestContextRoot);
 
   app.use(
     helmet({

@@ -7929,3 +7929,43 @@ CLAUDE-ERP.md                                       (Rule #20 note)
 - Drop the `ROLES.CONTRACTOR` alias + legacy `employeeOnly` / `adminOrEmployee` names once call sites are swept to STAFF everywhere.
 - Rename `frontend/src/components/employee/*` directory → `.../staff/*` (cosmetic; file contents already use role: staff at runtime).
 - Seed a `SYSTEM_ROLES` lookup in preparation for Phase S3 (schema-aware MetadataEditor with role multi-select UI).
+
+---
+
+## WEEK-1 STABILIZATION — DAY 3: TENANT GUARDS (OBSERVATION MODE) ✅ April 25, 2026
+
+> **Goal:** Catch the bug class behind Phase G4.5d / G5 / Phase 23 cross-entity leaks BEFORE they reach prod, by attaching runtime Mongoose hooks that log every query missing an `entity_id` filter (entityGuard) and every privileged-user query that silent-self-fills `bdm_id` from `req.user._id` (bdmGuard, Rule #21). Day 3 ships in **observation mode only** — pure logging, zero behavior change. Day 4 triages the violation log, Day 5 adds the static (ESLint) gate.
+
+### Files added
+
+- [backend/middleware/requestContext.js](../backend/middleware/requestContext.js) — AsyncLocalStorage scope holding the live `req` reference; `requestContextRoot` mounts as the second middleware (after `attachRequestId`); `markCrossEntityAllowed(req, reason)` is the opt-out helper for legitimate consolidated reports.
+- [backend/middleware/entityGuard.js](../backend/middleware/entityGuard.js) — Mongoose plugin emitting `[ENTITY_GUARD_VIOLATION] {...}` JSON lines for queries on entity-scoped models that omit an `entity_id` filter. Hooks read **and** write paths (find / findOne / count / countDocuments / distinct / updateOne / updateMany / replaceOne / deleteOne / deleteMany / findOneAndUpdate / findOneAndReplace / findOneAndDelete) plus a separate aggregate hook that scans every `$match` stage in the pipeline.
+- [backend/middleware/bdmGuard.js](../backend/middleware/bdmGuard.js) — Mongoose plugin emitting `[BDM_GUARD_VIOLATION] {...}` JSON lines for the Rule #21 fingerprint: privileged caller + filter contains `bdm_id` + value equals caller's own `_id` + the original request URL had **no** `?bdm_id=` query param. Attached only to `strict_entity_and_bdm` models.
+- [backend/middleware/entityScopedModels.json](../backend/middleware/entityScopedModels.json) — single source of truth, consumed by both guards today and (Day 5) by the `local/require-entity-filter` ESLint rule. 5 buckets: `strict_entity` (54), `strict_entity_and_bdm` (31), `global` (7), `special_cross_entity` (2), `deferred_crm` (24).
+- [docs/ENTITY_SCOPED_MODELS.md](ENTITY_SCOPED_MODELS.md) — human-readable classification + rationale.
+
+### Files modified
+
+- [backend/server.js](../backend/server.js) — `attachEntityGuard()` and `attachBdmGuard()` are called BEFORE `createApp()` (line 29-30) so plugins apply to all schemas registered transitively via route requires. `requestContextRoot` mounts as the second app-level middleware (line 235, after `attachRequestId`).
+
+### Verification
+
+- **Inventory completeness:** registered Mongoose models (117) ↔ JSON entries reconcile cleanly. Zero registered models unclassified, zero JSON typos. One phantom (`WebsiteProduct`) is the cross-DB pharmacy-website model — kept in `deferred_crm` as documentation.
+- **Boot log:** `[entityGuard] attached, observing 85 models (strict_entity=54, strict_entity_and_bdm=31)` + `[bdmGuard] attached, observing 31 models for Rule #21 silent-self-fill`. Server starts cleanly with `SKIP_DB_CONNECT=true`.
+- **Plugin timing:** plugins attach at server.js:29-30, BEFORE the rest of server.js requires anything that touches a model. Ordering verified — only `express`, `cors`, `mongoose` itself, and dotenv/path/crypto loaded earlier; none compile a schema.
+- **Hot path safety:** `requestContextRoot` wraps `next()` inside `AsyncLocalStorage.run(...)`. Express middleware chain runs synchronously through that callback; native promises preserve the store across `await`. Background jobs (agentScheduler, cron tasks) run OUTSIDE any request — `getStore()` is `undefined` → guards skip silently. Intentional for Day 3 (we audit request-driven traffic only).
+- **No throw:** both guards `console.error` only. Every `pre()` hook returns `void` without throwing — Mongoose continues with the original query unchanged.
+
+### Subscription readiness
+
+- The classification JSON is repo-level (every subscriber inherits the same model classification — that is correct, since the model definitions themselves are repo-level code).
+- Per-route legitimate cross-entity opt-outs use `markCrossEntityAllowed(req, reason)` — no Lookup/Settings work needed today since Day 3 ships zero opt-out routes. Day 4 triage may convert a small allowlist into a Lookup-driven `CROSS_ENTITY_ROUTES` table if the list grows past a handful.
+- `bdmGuard` builds on existing infrastructure: `req.bdmId`, `req.isPresident`/`isAdmin`/`isFinance` from ERP `tenantFilter` middleware (already lookup-driven via `MODULE_DEFAULT_ROLES` / `PROXY_ENTRY_ROLES`). No new role hardcoding.
+
+### Out of scope today (Days 4-5)
+
+- Triage the violation log from staging (Day 4).
+- Production deploy with prod=log+alert vs staging=throw split (Day 4).
+- Custom `local/require-entity-filter` ESLint rule + CI block (Day 5).
+- Actual DR drill — Lightsail snapshot restore + Atlas PITR restore + S3 DR bucket parity check (Day 5).
+- CRM-side guards for Visit / Doctor / MessageInbox (deferred to Week 2 pharmacy greenfield — different tenant model, not entity_id).
