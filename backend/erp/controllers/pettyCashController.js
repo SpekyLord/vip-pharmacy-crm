@@ -258,6 +258,7 @@ const updateTransaction = catchAsync(async (req, res) => {
 
   // Balance soft-check for disbursement amount changes
   if (txn.txn_type === 'DISBURSEMENT' && req.body.amount) {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- fund_id from same-entity-scoped txn (fetched via pcFilter tenantFilter upstream)
     const fund = await PettyCashFund.findById(txn.fund_id).lean();
     if (fund && req.body.amount > fund.current_balance) {
       return res.status(400).json({ success: false, message: `Insufficient balance. Current: ₱${fund.current_balance}, Requested: ₱${req.body.amount}` });
@@ -313,6 +314,7 @@ const postTransaction = catchAsync(async (req, res) => {
       if (!txn) throw Object.assign(new Error('Transaction not found'), { statusCode: 404 });
       if (txn.status === 'POSTED') throw Object.assign(new Error('Transaction already posted'), { statusCode: 400 });
 
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- fund_id from same-entity-scoped txn fetched at L308 via pcFilter tenantFilter
       const fund = await PettyCashFund.findById(txn.fund_id).session(session);
       if (!fund) throw Object.assign(new Error('Fund not found'), { statusCode: 404 });
 
@@ -338,6 +340,7 @@ const postTransaction = catchAsync(async (req, res) => {
     // ── Post-commit: ceiling breach notification (non-blocking) ──
     let ceilingBreached = false;
     try {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- fund_id from result (txn just posted in same-entity-scoped session above)
       const updatedFund = await PettyCashFund.findById(result.fund_id).lean();
       if (updatedFund && updatedFund.current_balance > updatedFund.balance_ceiling) {
         ceilingBreached = true;
@@ -469,6 +472,7 @@ const generateRemittance = catchAsync(async (req, res) => {
 
   // Mark transactions as linked
   if (txnIds.length) {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- txnIds harvested from same-entity-scoped query upstream; _id is globally unique
     await PettyCashTransaction.updateMany(
       { _id: { $in: txnIds } },
       { remittance_id: doc._id }
@@ -608,6 +612,7 @@ const processDocument = catchAsync(async (req, res) => {
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- fund_id from same-entity-scoped doc fetched at L600 via pcFilter tenantFilter
       const fund = await PettyCashFund.findById(doc.fund_id._id || doc.fund_id).session(session);
       if (!fund) throw Object.assign(new Error('Fund not found'), { statusCode: 404 });
 
@@ -713,11 +718,13 @@ const deleteFund = catchAsync(async (req, res) => {
   }
 
   // Check for any linked transactions
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- fund_id is unique; fund fetched with pcFilter tenantFilter at L708
   const txnCount = await PettyCashTransaction.countDocuments({ fund_id: fund._id });
   if (txnCount > 0) {
     return res.status(400).json({ success: false, message: `Cannot delete fund with ${txnCount} transaction(s). Close the fund instead.` });
   }
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- fund fetched with pcFilter tenantFilter at L708
   await PettyCashFund.deleteOne({ _id: fund._id });
   res.json({ success: true, message: `Fund ${fund.fund_code} deleted` });
 });
