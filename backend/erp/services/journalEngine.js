@@ -45,20 +45,23 @@ async function createJournal(entityId, data) {
  * @param {String} jeId — JournalEntry _id
  * @param {String} userId — who is posting
  * @param {String} entityId — entity scope (prevents cross-entity posting)
+ * @param {Object} [options] — { session } for transaction support
  * @returns {Object} posted JournalEntry
  */
-async function postJournal(jeId, userId, entityId) {
+async function postJournal(jeId, userId, entityId, options = {}) {
   const query = { _id: jeId };
   if (entityId) query.entity_id = entityId;
 
-  const je = await JournalEntry.findOne(query);
+  const findQuery = JournalEntry.findOne(query);
+  if (options.session) findQuery.session(options.session);
+  const je = await findQuery;
   if (!je) throw new Error('Journal entry not found');
   if (je.status !== 'DRAFT') throw new Error(`Cannot post JE in status: ${je.status}`);
 
   je.status = 'POSTED';
   je.posted_by = userId;
   je.posted_at = new Date();
-  await je.save(); // pre-save validates DR=CR balance
+  await je.save(options.session ? { session: options.session } : undefined); // pre-save validates DR=CR balance
 
   return je;
 }
