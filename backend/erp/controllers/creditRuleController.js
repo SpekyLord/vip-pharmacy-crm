@@ -189,11 +189,10 @@ exports.listCredits = catchAsync(async (req, res) => {
 // Gated by plan_manage in the route file.
 exports.reassignSale = catchAsync(async (req, res) => {
   const SalesLine = require('../models/SalesLine');
-  const sale = await SalesLine.findById(req.params.saleLineId);
+  const filter = { _id: req.params.saleLineId };
+  if (!req.isPresident) filter.entity_id = req.entityId;
+  const sale = await SalesLine.findOne(filter);
   if (!sale) return res.status(404).json({ success: false, message: 'Sale not found' });
-  if (!req.isPresident && String(sale.entity_id) !== String(req.entityId)) {
-    return res.status(403).json({ success: false, message: 'Forbidden' });
-  }
   if (sale.status !== 'POSTED') {
     return res.status(400).json({ success: false, message: 'Only POSTED sales can have credit rules re-run' });
   }
