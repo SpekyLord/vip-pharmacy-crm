@@ -1,3 +1,4 @@
+/* eslint-disable vip-tenant/require-entity-filter -- standalone admin/migration/diagnostic script: no req context; intentional cross-entity reads/writes for ops work */
 /**
  * Seed Script — Petty Cash Funds for Iloilo eBDMs
  * Phase 19

@@ -8,6 +8,7 @@
  *
  * IMPORTANT: Run this ONCE after deploying Phase 17 code. Idempotent — skips existing warehouses.
  */
+/* eslint-disable vip-tenant/require-entity-filter -- one-shot migration CLI: backfills warehouse_id on every entity by design; no req context */
 require('dotenv').config();
 const mongoose = require('mongoose');
 const connectDB = require('../../config/db');

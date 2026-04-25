@@ -1,3 +1,4 @@
+/* eslint-disable vip-tenant/require-entity-filter -- standalone admin/migration/diagnostic script: no req context; intentional cross-entity reads/writes for ops work */
 /**
  * Migrate Hospital Access: tagged_bdms → warehouse_ids
  * Also imports new hospitals for GSC (Gensan) territory.

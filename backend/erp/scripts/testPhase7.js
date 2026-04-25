@@ -1,3 +1,4 @@
+/* eslint-disable vip-tenant/require-entity-filter -- standalone test script: no req context; queries are by-id on test-created docs the script itself just generated */
 /**
  * Phase 7 Test Script — Income, PNL, Profit Sharing & Year-End Close
  *

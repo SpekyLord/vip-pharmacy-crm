@@ -1,3 +1,4 @@
+/* eslint-disable vip-tenant/require-entity-filter -- standalone admin/migration/diagnostic script: no req context; intentional cross-entity reads/writes for ops work */
 /**
  * Backfill User.entity_ids_static + rebuild User.entity_ids — Phase FRA-A (April 22, 2026).
  *
