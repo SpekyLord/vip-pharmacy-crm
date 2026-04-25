@@ -760,9 +760,13 @@ const executeAction = catchAsync(async (req, res) => {
       const VarianceAlert = require('../erp/models/VarianceAlert');
       const PeopleMaster = require('../erp/models/PeopleMaster');
       const results = [];
+      // Variance IDs came from msg.action_payload, written by the system when the
+      // inbox row was created against msg.entity_id. Scope by msg.entity_id so a
+      // foreign payload can't cross entities even if injected.
+      const alertEntityScope = msg.entity_id ? { entity_id: msg.entity_id } : {};
       for (const vid of variances) {
         if (!isObjectId(vid)) continue;
-        const alert = await VarianceAlert.findById(vid);
+        const alert = await VarianceAlert.findOne({ _id: vid, ...alertEntityScope });
         if (!alert) continue;
         if (alert.status === 'RESOLVED') { results.push({ id: vid, ok: true, already: true }); continue; }
         // Permission mirror of varianceAlertController.resolveVarianceAlert
@@ -774,8 +778,10 @@ const executeAction = catchAsync(async (req, res) => {
         let managerOk = false;
         if (!canResolve && alert.person_id) {
           try {
+            // eslint-disable-next-line vip-tenant/require-entity-filter -- by-key reports_to lookup; alert is already entity-scoped above
             const p = await PeopleMaster.findById(alert.person_id).select('reports_to').lean();
             if (p?.reports_to) {
+              // eslint-disable-next-line vip-tenant/require-entity-filter -- by-key manager-chain cascade from alert.entity_id
               const mgr = await PeopleMaster.findById(p.reports_to).select('user_id').lean();
               if (mgr?.user_id && String(mgr.user_id) === String(req.user._id)) managerOk = true;
             }

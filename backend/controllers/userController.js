@@ -435,6 +435,7 @@ const hardDeleteUser = catchAsync(async (req, res) => {
   // Unlink any PeopleMaster record that references this user
   try {
     const PeopleMaster = require('../erp/models/PeopleMaster');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- admin user-delete must unlink the user from PeopleMaster rows across ALL entities they belonged to
     await PeopleMaster.updateMany(
       { user_id: user._id },
       { $set: { user_id: null } }
@@ -469,6 +470,7 @@ const getEntitiesLookup = catchAsync(async (req, res) => {
 // Lookup: ERP access templates for BDM assignment dropdown
 const getAccessTemplatesLookup = catchAsync(async (req, res) => {
   const AccessTemplate = require('../erp/models/AccessTemplate');
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- admin BDM-assignment UI lists templates across all entities; mirrors getEntitiesLookup
   const templates = await AccessTemplate.find().select('template_name description').lean();
   res.json({ success: true, data: templates });
 });
