@@ -15,14 +15,16 @@
 | **special_cross_entity** | non-standard pair (e.g. `source_entity_id`/`target_entity_id`) | Special filter, two-sided | Skip both guards |
 | **deferred_crm** | CRM-only (`user`/`assignedTo[]`/`recipient_user_id`) | Not entity-scoped | Skip both guards (Week 2 pharmacy greenfield) |
 
-## Strict-entity (52 models)
+## Strict-entity (53 models)
 
 Entity-scoped only — bdm_id absent, optional, or non-canonical (e.g.
 Payslip uses `person_id` per Phase G1.4):
 
-ApPayment, AccessTemplate, AiUsageLog, ApprovalRequest, ApprovalRule, ArchiveBatch, ArchivedDocument, BankAccount, BankStatement, BudgetAllocation, CashflowStatement, ChartOfAccounts, Collateral, CompProfile, CostCenter, CreditCard, CreditCardTransaction, CreditRule, CsiBooklet, FixedAsset, FunctionalRoleAssignment, IncentiveDispute, IncentivePlan, InsurancePolicy, KpiSelfRating, KpiTemplate, LoanMaster, Lookup, OcrSettings, OcrUsageLog, OfficeSupply, OfficeSupplyTransaction, OwnerEquityEntry, PartnerScorecard, Payslip, PeopleMaster, PeriodLock, PettyCashFund, PettyCashRemittance, PettyCashTransaction, ProductMapping, ProductMaster, PurchaseOrder, SalesGoalPlan, StockReassignment, SupplierInvoice, Task, Territory, TransferPriceList, VatLedger, VendorMaster, Warehouse
+ApPayment, AccessTemplate, AiUsageLog, ApprovalRequest, ApprovalRule, ArchiveBatch, ArchivedDocument, BankAccount, BankStatement, BudgetAllocation, CashflowStatement, ChartOfAccounts, Collateral, CompProfile, CostCenter, CreditCard, CreditCardTransaction, CreditRule, CsiBooklet, FixedAsset, FunctionalRoleAssignment, IncentiveDispute, IncentivePlan, InsurancePolicy, KpiSelfRating, KpiTemplate, LoanMaster, Lookup, OcrSettings, OcrUsageLog, OfficeSupply, OfficeSupplyTransaction, OwnerEquityEntry, PartnerScorecard, Payslip, PeopleMaster, PeriodLock, PettyCashFund, PettyCashRemittance, PettyCashTransaction, ProductMapping, ProductMaster, PurchaseOrder, RecurringJournalTemplate, SalesGoalPlan, StockReassignment, SupplierInvoice, Task, Territory, TransferPriceList, VatLedger, VendorMaster, Warehouse
 
-## Strict-entity-and-bdm (30 models)
+> **Day-4.5 #4 (2026-04-25)**: `RecurringJournalTemplate` reclassified from `strict_entity_and_bdm` → `strict_entity`. The top-level template schema has no `bdm_id` field — the only `bdm_id` is on the per-line `jeLineSchema` sub-document, which the bdmGuard never observed (Mongoose plugins fire on the parent doc). Original classification overstated the model's bucket; the bdmGuard had no fingerprint to fire on it anyway.
+
+## Strict-entity-and-bdm (29 models)
 
 Both `entity_id` and `bdm_id` declared. **Rule #21 silent-self-fill risk** lives
 exclusively in this bucket. bdmGuard observes these.
@@ -31,9 +33,11 @@ ActionItem, CaptureSubmission, CarLogbookCycle, CarLogbookEntry,
 Collection, ConsignmentTracker, CreditNote, CwtLedger, CycleReport,
 DeductionSchedule, DocumentAttachment, ErpAuditLog, ExpenseEntry, GrnEntry,
 IncentivePayout, IncomeReport, InventoryLedger, JournalEntry, KpiSnapshot,
-MonthlyArchive, PnlReport, PrfCalf, RecurringJournalTemplate, SalesCredit,
+MonthlyArchive, PnlReport, PrfCalf, SalesCredit,
 SalesGoalTarget, SalesLine, SmerEntry, TransactionEvent, Undertaking,
 VarianceAlert
+
+> **Day-4.5 #4 (2026-04-25)**: `CwtLedger.bdm_id` flipped to `required: true`. Both write paths inherit `bdm_id` from a `Collection` (which is itself `bdm_id: required: true`), and `cwtService.createCwtEntry` is the only writer — making the Mongoose schema the static counterpart to the runtime bdmGuard. `IncentivePayout` was audited but kept optional: it intentionally supports `bdm_id` XOR `person_id` per Phase G1.4 (employee deduction path), proven by the partial unique index `partialFilterExpression: { bdm_id: { $exists: true } }`. Forcing `required: true` would break the person_id-only path.
 
 ## Global (skip both guards) (10 models)
 

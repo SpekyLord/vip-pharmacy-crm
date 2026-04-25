@@ -12,9 +12,15 @@ const cwtLedgerSchema = new mongoose.Schema({
     ref: 'Entity',
     required: true
   },
+  // Day-4.5 #4 (2026-04-25): flipped to required:true. Both write paths
+  // (collectionController.js:586 + :975) inherit bdm_id from a Collection,
+  // and Collection.bdm_id is itself required. cwtService.createCwtEntry is
+  // the only writer. Hardening here makes the schema match the runtime
+  // bdmGuard's expectation.
   bdm_id: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
+    ref: 'User',
+    required: true
   },
   period: {
     type: String,

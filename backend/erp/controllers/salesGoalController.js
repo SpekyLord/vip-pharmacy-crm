@@ -96,6 +96,7 @@ async function autoEnrollEligibleBdms(plan, userId, session) {
   // 4) Find which already have a BDM target under this plan (idempotent check)
   const personIds = people.map(p => p._id);
   const existing = await SalesGoalTarget.find({
+    entity_id: plan.entity_id,
     plan_id: plan._id,
     target_type: 'BDM',
     person_id: { $in: personIds },
@@ -151,7 +152,10 @@ exports.getPlans = catchAsync(async (req, res) => {
 });
 
 exports.getPlanById = catchAsync(async (req, res) => {
-  const plan = await SalesGoalPlan.findById(req.params.id)
+  // Plans are entity-level (no bdm_id field), so we can't spread req.tenantFilter
+  // for a contractor — it would inject a non-existent field and return 0 docs.
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const plan = await SalesGoalPlan.findOne({ _id: req.params.id, ...entityScope })
     .populate('entity_id', 'entity_name short_name')
     .populate('approved_by', 'name email')
     .populate('created_by', 'name email')
@@ -307,7 +311,7 @@ exports.createPlan = catchAsync(async (req, res) => {
 });
 
 exports.updatePlan = catchAsync(async (req, res) => {
-  const plan = await SalesGoalPlan.findById(req.params.id);
+  const plan = await SalesGoalPlan.findOne({ _id: req.params.id, ...req.tenantFilter });
   if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
   if (plan.status !== 'DRAFT') {
     return res.status(400).json({ success: false, message: 'Only DRAFT plans can be edited' });
@@ -319,7 +323,7 @@ exports.updatePlan = catchAsync(async (req, res) => {
 });
 
 exports.activatePlan = catchAsync(async (req, res) => {
-  const plan = await SalesGoalPlan.findById(req.params.id);
+  const plan = await SalesGoalPlan.findOne({ _id: req.params.id, ...req.tenantFilter });
   if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
   if (plan.status !== 'DRAFT') {
     return res.status(400).json({ success: false, message: 'Only DRAFT plans can be activated' });
@@ -355,6 +359,7 @@ exports.activatePlan = catchAsync(async (req, res) => {
       plan.approved_at = new Date();
       await plan.save({ session });
 
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id is unique; plan fetched with entity scope above
       await SalesGoalTarget.updateMany(
         { plan_id: plan._id, status: 'DRAFT' },
         { $set: { status: 'ACTIVE' } },
@@ -431,7 +436,7 @@ exports.activatePlan = catchAsync(async (req, res) => {
 });
 
 exports.reopenPlan = catchAsync(async (req, res) => {
-  const plan = await SalesGoalPlan.findById(req.params.id);
+  const plan = await SalesGoalPlan.findOne({ _id: req.params.id, ...req.tenantFilter });
   if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
   if (plan.status !== 'ACTIVE') {
     return res.status(400).json({ success: false, message: 'Only ACTIVE plans can be reopened' });
@@ -458,6 +463,7 @@ exports.reopenPlan = catchAsync(async (req, res) => {
       plan.reopened_at = new Date();
       await plan.save({ session });
 
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id is unique; plan fetched with entity scope above
       await SalesGoalTarget.updateMany(
         { plan_id: plan._id, status: 'ACTIVE' },
         { $set: { status: 'DRAFT' } },
@@ -507,7 +513,7 @@ exports.reopenPlan = catchAsync(async (req, res) => {
 });
 
 exports.closePlan = catchAsync(async (req, res) => {
-  const plan = await SalesGoalPlan.findById(req.params.id);
+  const plan = await SalesGoalPlan.findOne({ _id: req.params.id, ...req.tenantFilter });
   if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
   if (plan.status === 'CLOSED') {
     return res.status(400).json({ success: false, message: 'Plan is already closed' });
@@ -535,6 +541,7 @@ exports.closePlan = catchAsync(async (req, res) => {
       plan.closed_at = new Date();
       await plan.save({ session });
 
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id is unique; plan fetched with entity scope above
       await SalesGoalTarget.updateMany(
         { plan_id: plan._id },
         { $set: { status: 'CLOSED' } },
@@ -616,6 +623,7 @@ exports.getTargets = catchAsync(async (req, res) => {
 exports.getMyTarget = catchAsync(async (req, res) => {
   const fiscalYear = req.query.fiscal_year || new Date().getFullYear();
   const target = await SalesGoalTarget.findOne({
+    ...req.tenantFilter,
     bdm_id: req.user._id,
     fiscal_year: Number(fiscalYear),
     target_type: 'BDM',
@@ -629,7 +637,7 @@ exports.getMyTarget = catchAsync(async (req, res) => {
 });
 
 exports.createTarget = catchAsync(async (req, res) => {
-  const plan = await SalesGoalPlan.findById(req.body.plan_id).lean();
+  const plan = await SalesGoalPlan.findOne({ _id: req.body.plan_id, ...req.tenantFilter }).lean();
   if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
 
   // Auto-compute collection target if not provided
@@ -652,7 +660,7 @@ exports.bulkCreateTargets = catchAsync(async (req, res) => {
   if (!Array.isArray(targets) || targets.length === 0) {
     return res.status(400).json({ success: false, message: 'targets array required' });
   }
-  const plan = await SalesGoalPlan.findById(plan_id).lean();
+  const plan = await SalesGoalPlan.findOne({ _id: plan_id, ...req.tenantFilter }).lean();
   if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
 
   const totalSalesTarget = targets.reduce((s, t) => s + (Number(t.sales_target) || 0), 0);
@@ -677,6 +685,7 @@ exports.bulkCreateTargets = catchAsync(async (req, res) => {
       for (const t of targets) {
         const salesTarget = Number(t.sales_target) || 0;
         const collectionTarget = t.collection_target || Math.round(salesTarget * (plan.collection_target_pct || 0));
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id is unique; plan fetched with entity scope above; entity_id stamped on $set
         const target = await SalesGoalTarget.findOneAndUpdate(
           { plan_id, target_type: t.target_type, bdm_id: t.bdm_id || null, target_entity_id: t.target_entity_id || null, territory_id: t.territory_id || null },
           {
@@ -715,10 +724,11 @@ exports.bulkCreateTargets = catchAsync(async (req, res) => {
 });
 
 exports.updateTarget = catchAsync(async (req, res) => {
-  const target = await SalesGoalTarget.findById(req.params.id);
+  const target = await SalesGoalTarget.findOne({ _id: req.params.id, ...req.tenantFilter });
   if (!target) return res.status(404).json({ success: false, message: 'Target not found' });
 
   if (req.body.sales_target && !req.body.collection_target) {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- target.plan_id from same-entity-scoped target above
     const plan = await SalesGoalPlan.findById(target.plan_id).lean();
     req.body.collection_target = Math.round(req.body.sales_target * (plan?.collection_target_pct));
   }
@@ -762,9 +772,11 @@ exports.importTargets = catchAsync(async (req, res) => {
   const planId = req.body.plan_id || req.query.plan_id;
   if (!planId) return res.status(400).json({ success: false, message: 'plan_id is required' });
 
-  const plan = await SalesGoalPlan.findById(planId).lean();
+  const plan = await SalesGoalPlan.findOne({ _id: planId, ...req.tenantFilter }).lean();
   if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
   // Subscription safety: refuse to import targets into another entity's plan.
+  // tenantFilter already enforces this for non-president; this guard catches a
+  // president switching entities mid-request without re-targeting the plan.
   if (String(plan.entity_id) !== String(req.entityId) && !req.isPresident) {
     return res.status(403).json({ success: false, message: 'Plan belongs to a different entity' });
   }
@@ -993,7 +1005,7 @@ exports.importTargets = catchAsync(async (req, res) => {
 // ═══════════════════════════════════════
 
 exports.computeSnapshots = catchAsync(async (req, res) => {
-  const plan = await SalesGoalPlan.findById(req.body.plan_id || req.query.plan_id);
+  const plan = await SalesGoalPlan.findOne({ _id: req.body.plan_id || req.query.plan_id, ...req.tenantFilter });
   if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
 
   const period = req.body.period || req.query.period || currentPeriod();
@@ -1085,6 +1097,7 @@ exports.getMySnapshot = catchAsync(async (req, res) => {
   const periodType = req.query.period_type || 'YTD';
 
   const snapshot = await KpiSnapshot.findOne({
+    ...req.tenantFilter,
     bdm_id: req.user._id,
     fiscal_year: Number(fiscalYear),
     period: periodType === 'YTD' ? String(fiscalYear) : period,
@@ -1096,6 +1109,7 @@ exports.getMySnapshot = catchAsync(async (req, res) => {
 
   // Also get last 6 months history
   const history = await KpiSnapshot.find({
+    ...req.tenantFilter,
     bdm_id: req.user._id,
     fiscal_year: Number(fiscalYear),
     period_type: 'MONTHLY',
@@ -1114,8 +1128,9 @@ exports.getMySnapshot = catchAsync(async (req, res) => {
 
 exports.getGoalDashboard = catchAsync(async (req, res) => {
   const planId = req.query.plan_id;
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
   const plan = planId
-    ? await SalesGoalPlan.findById(planId).lean()
+    ? await SalesGoalPlan.findOne({ _id: planId, ...entityScope }).lean()
     : await SalesGoalPlan.findOne({ status: 'ACTIVE', entity_id: req.entityId }).sort({ fiscal_year: -1 }).lean();
 
   if (!plan) return res.json({ success: true, data: null, message: 'No active plan found' });
@@ -1123,6 +1138,7 @@ exports.getGoalDashboard = catchAsync(async (req, res) => {
   const config = await salesGoalService.getGoalConfig(req.entityId);
 
   // Get YTD snapshots
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id is unique; plan fetched with entity scope above
   const rawSnapshots = await KpiSnapshot.find({
     plan_id: plan._id,
     period_type: 'YTD',
@@ -1138,6 +1154,7 @@ exports.getGoalDashboard = catchAsync(async (req, res) => {
   const snapshots = rawSnapshots.filter(s => !s.person_id || s.person_id.is_active !== false);
 
   // Entity targets — keep raw target_entity_id (no populate) so orphan references survive
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id is unique; plan fetched with entity scope above
   const entityTargetsRaw = await SalesGoalTarget.find({
     plan_id: plan._id,
     target_type: 'ENTITY',
@@ -1258,32 +1275,39 @@ exports.getBdmGoalDetail = catchAsync(async (req, res) => {
   const { bdmId } = req.params;
   const fiscalYear = req.query.fiscal_year || new Date().getFullYear();
 
+  // Pinned to caller's working entity; president switches entities via the
+  // entity-switcher header before drilling into a BDM in another subsidiary.
   const plan = await SalesGoalPlan.findOne({
+    entity_id: req.entityId,
     status: { $in: ['ACTIVE', 'CLOSED'] },
     fiscal_year: Number(fiscalYear),
   }).lean();
 
   if (!plan) return res.json({ success: true, data: null });
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id is unique; plan fetched with entity scope above
   const target = await SalesGoalTarget.findOne({
     plan_id: plan._id, target_type: 'BDM', bdm_id: bdmId,
   })
     .populate('territory_id', 'territory_code territory_name')
     .lean();
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id is unique; plan fetched with entity scope above
   const ytdSnapshot = await KpiSnapshot.findOne({
     plan_id: plan._id, bdm_id: bdmId, period_type: 'YTD',
   }).lean();
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id is unique; plan fetched with entity scope above
   const monthlyHistory = await KpiSnapshot.find({
     plan_id: plan._id, bdm_id: bdmId, period_type: 'MONTHLY',
   }).sort({ period: 1 }).lean();
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id is unique; plan fetched with entity scope above
   const actions = await ActionItem.find({
     plan_id: plan._id, bdm_id: bdmId, status: { $nin: ['CANCELLED'] },
   }).sort({ status: 1, due_date: 1 }).lean();
 
-  const person = await PeopleMaster.findOne({ user_id: bdmId })
+  const person = await PeopleMaster.findOne({ entity_id: req.entityId, user_id: bdmId })
     .select('full_name bdm_code position bdm_stage territory_id')
     .lean();
 
@@ -1350,9 +1374,11 @@ exports.getDriverSummary = catchAsync(async (req, res) => {
   const planId = req.query.plan_id;
   if (!planId) return res.status(400).json({ success: false, message: 'plan_id required' });
 
-  const plan = await SalesGoalPlan.findById(planId).lean();
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const plan = await SalesGoalPlan.findOne({ _id: planId, ...entityScope }).lean();
   if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id is unique; plan fetched with entity scope above
   const snapshots = await KpiSnapshot.find({
     plan_id: planId, period_type: 'YTD',
   }).lean();
@@ -1392,12 +1418,14 @@ exports.getDriverSummary = catchAsync(async (req, res) => {
 
 exports.getIncentiveBoard = catchAsync(async (req, res) => {
   const planId = req.query.plan_id;
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
   const plan = planId
-    ? await SalesGoalPlan.findById(planId).lean()
+    ? await SalesGoalPlan.findOne({ _id: planId, ...entityScope }).lean()
     : await SalesGoalPlan.findOne({ status: 'ACTIVE', entity_id: req.entityId }).sort({ fiscal_year: -1 }).lean();
 
   if (!plan) return res.json({ success: true, data: null });
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id is unique; plan fetched with entity scope above
   const rawBoardSnapshots = await KpiSnapshot.find({ plan_id: plan._id, period_type: 'YTD' })
     .populate('person_id', 'full_name bdm_code position is_active')
     .populate('territory_id', 'territory_name')
@@ -1527,7 +1555,8 @@ exports.createAction = catchAsync(async (req, res) => {
 });
 
 exports.updateAction = catchAsync(async (req, res) => {
-  const action = await ActionItem.findById(req.params.id);
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const action = await ActionItem.findOne({ _id: req.params.id, ...entityScope });
   if (!action) return res.status(404).json({ success: false, message: 'Action not found' });
 
   // BDMs can only update their own actions
@@ -1543,7 +1572,8 @@ exports.updateAction = catchAsync(async (req, res) => {
 });
 
 exports.completeAction = catchAsync(async (req, res) => {
-  const action = await ActionItem.findById(req.params.id);
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const action = await ActionItem.findOne({ _id: req.params.id, ...entityScope });
   if (!action) return res.status(404).json({ success: false, message: 'Action not found' });
 
   action.status = 'DONE';
@@ -1563,7 +1593,9 @@ exports.enterManualKpi = catchAsync(async (req, res) => {
   const { plan_id, period, driver_code, kpi_code, actual_value } = req.body;
   const bdmId = req.body.bdm_id || req.user._id;
 
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
   const snapshot = await KpiSnapshot.findOne({
+    ...entityScope,
     plan_id,
     bdm_id: bdmId,
     period,
@@ -1608,7 +1640,8 @@ exports.enterManualKpi = catchAsync(async (req, res) => {
 // owned by the same IncentivePlan header. Used by the SalesGoalSetup UI to
 // render a version-history strip + "active" badge.
 exports.listPlanVersions = catchAsync(async (req, res) => {
-  const plan = await SalesGoalPlan.findById(req.params.id);
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const plan = await SalesGoalPlan.findOne({ _id: req.params.id, ...entityScope });
   if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
 
   // Lazy-backfill the header if missing (legacy row).
@@ -1643,12 +1676,14 @@ exports.listPlanVersions = catchAsync(async (req, res) => {
 // because creating a draft is reversible (delete) but activation supersedes
 // the prior version's effective range.
 exports.createNewVersion = catchAsync(async (req, res) => {
-  const basis = await SalesGoalPlan.findById(req.params.id);
+  // Write endpoint — gated to admin/finance/president (no bdm_id leak in tenantFilter).
+  const basis = await SalesGoalPlan.findOne({ _id: req.params.id, ...req.tenantFilter });
   if (!basis) return res.status(404).json({ success: false, message: 'Basis plan not found' });
 
   // Only the latest version may be the basis (refused inside the service too,
   // but cheap to pre-check here for a clearer error).
   const { header } = await incentivePlanService.ensureHeader(basis, { persist: true });
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- header._id derived from same-entity-scoped basis above
   const latestNewer = await SalesGoalPlan.findOne({
     incentive_plan_id: header._id,
     version_no: { $gt: basis.version_no || 1 },
@@ -1729,11 +1764,13 @@ exports.presidentReversePlan = buildPresidentReverseHandler('SALES_GOAL_PLAN');
 // applied post-compute so the math is always full-company).
 // ─────────────────────────────────────────────────────────────────────────────
 exports.simulatePlan = catchAsync(async (req, res) => {
-  const plan = await SalesGoalPlan.findById(req.params.id).lean();
+  const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const plan = await SalesGoalPlan.findOne({ _id: req.params.id, ...entityScope }).lean();
   if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
 
-  // Enforce entity scope — even president/admin are pinned to their current
-  // req.entityId unless they switched context via the entity switcher.
+  // Belt-and-braces: tenantFilter already enforced this for non-president. The
+  // explicit check stays so a president who switched entities mid-request gets
+  // a clearer 403 message than the implicit 404 they'd otherwise see.
   if (!req.isPresident && String(plan.entity_id) !== String(req.entityId)) {
     return res.status(403).json({ success: false, message: 'Plan is in a different entity' });
   }
@@ -1990,7 +2027,8 @@ exports.getTrending = catchAsync(async (req, res) => {
 //  - Atomic under one transaction. Emits integration event `target.revised`.
 // ─────────────────────────────────────────────────────────────────────────────
 exports.reviseTarget = catchAsync(async (req, res) => {
-  const target = await SalesGoalTarget.findById(req.params.id);
+  // Write endpoint — gated to admin/finance/president (no bdm_id leak in tenantFilter).
+  const target = await SalesGoalTarget.findOne({ _id: req.params.id, ...req.tenantFilter });
   if (!target) return res.status(404).json({ success: false, message: 'Target not found' });
 
   // Feature toggle via lookup — default is disabled for safety. Subscribers
@@ -2008,6 +2046,7 @@ exports.reviseTarget = catchAsync(async (req, res) => {
     });
   }
 
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- target.plan_id from same-entity-scoped target above
   const plan = await SalesGoalPlan.findById(target.plan_id).lean();
   if (!plan) return res.status(404).json({ success: false, message: 'Linked plan not found' });
   if (plan.status !== 'ACTIVE') {

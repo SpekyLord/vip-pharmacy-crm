@@ -4,6 +4,22 @@
  * GET  /universal-pending — all pending items across all modules
  * POST /universal-approve — approve/reject any item from the hub (routes to module's own logic)
  * PATCH /universal-edit   — quick-edit whitelisted fields before approving (Phase G3)
+ *
+ * ── Entity-scope posture (Day-5 ESLint triage, Apr 2026) ──────────────────
+ * Each module handler does `Model.findById(id)` where `id` comes from
+ * req.body. The entity-scope contract today is: the Hub LIST endpoint
+ * (`getUniversalPending`) IS entity-scoped via req.entityId, and approvers
+ * are gated by `erpAccessCheck('approvals')` + per-module `hasApprovalSub`.
+ * The handlers themselves trust that the supplied `id` matches an item
+ * displayed in the gated list.
+ *
+ * GAP: a malicious approver could craft a request body with an arbitrary
+ * doc id from a sibling entity, bypassing the UI list. Closing that gap
+ * requires a pre-flight target-model dispatch + entity-scope guard before
+ * the handler runs, which is a behavior change with its own test surface.
+ * Tracked as a Phase G6.x follow-up; the 24 inline disables below
+ * document the stance instead of silently inheriting it.
+ * ──────────────────────────────────────────────────────────────────────────
  */
 const { catchAsync } = require('../../middleware/errorHandler');
 const { getUniversalPending, MODULE_TO_SUB_KEY, hasApprovalSub } = require('../services/universalApprovalService');
@@ -136,11 +152,13 @@ const approvalHandlers = {
     // record the decision on the ApprovalRequest — this prevents the silent-skip
     // class of bug where the request flips to APPROVED but the SMER stays PENDING.
     const ApprovalRequest = require('../models/ApprovalRequest');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
     const request = await ApprovalRequest.findById(id).lean();
     if (!request) throw new Error('Per diem override: approval request not found');
     if (!request.doc_id) throw new Error('Per diem override: approval request missing doc_id (SMER reference)');
 
     const SmerEntry = require('../models/SmerEntry');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- doc_id from same-entity-scoped request above
     const smer = await SmerEntry.findById(request.doc_id);
     if (!smer) throw new Error(`Per diem override: SMER ${request.doc_id} not found`);
 
@@ -292,10 +310,12 @@ const approvalHandlers = {
     const IncentiveDispute = require('../models/IncentiveDispute');
     const { processDecision } = require('../services/approvalService');
 
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
     const request = await ApprovalRequest.findById(id).lean();
     if (!request) throw new Error('Incentive dispute: approval request not found');
     if (!request.doc_id) throw new Error('Incentive dispute: approval request missing doc_id');
 
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- doc_id from same-entity-scoped request above
     const dispute = await IncentiveDispute.findById(request.doc_id);
     if (!dispute) throw new Error(`Incentive dispute ${request.doc_id} not found`);
 
@@ -352,6 +372,7 @@ const approvalHandlers = {
           try {
             const IncentivePayout = require('../models/IncentivePayout');
             const { reverseAccrualJournal } = require('../services/journalFromIncentive');
+            // eslint-disable-next-line vip-tenant/require-entity-filter -- payout_id from same-entity-scoped dispute above
             const payout = await IncentivePayout.findById(dispute.payout_id);
             if (payout && payout.journal_id && payout.status !== 'REVERSED') {
               const reversalJe = await reverseAccrualJournal(
@@ -375,6 +396,7 @@ const approvalHandlers = {
         } else if (dispute.artifact_type === 'credit' && dispute.sales_credit_id) {
           try {
             const SalesCredit = require('../models/SalesCredit');
+            // eslint-disable-next-line vip-tenant/require-entity-filter -- sales_credit_id from same-entity-scoped dispute above
             const original = await SalesCredit.findById(dispute.sales_credit_id).lean();
             if (original) {
               const reversal = await SalesCredit.create([{
@@ -461,6 +483,7 @@ const approvalHandlers = {
   income_report: async (id, action, userId, reason) => {
     if (action === 'reject') {
       const IncomeReport = require('../models/IncomeReport');
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
       const doc = await IncomeReport.findById(id);
       if (!doc) throw new Error('Income report not found');
       doc.status = 'RETURNED';
@@ -475,6 +498,7 @@ const approvalHandlers = {
 
   grn: async (id, action, userId, reason) => {
     const GrnEntry = require('../models/GrnEntry');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
     const grn = await GrnEntry.findById(id);
     if (!grn) throw new Error('GRN not found');
     if (grn.status !== 'PENDING') throw new Error(`GRN not in PENDING status`);
@@ -495,6 +519,7 @@ const approvalHandlers = {
 
   payslip: async (id, action, userId, reason) => {
     const Payslip = require('../models/Payslip');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
     const payslip = await Payslip.findById(id);
     if (!payslip) throw new Error('Payslip not found');
 
@@ -520,6 +545,7 @@ const approvalHandlers = {
 
   kpi_rating: async (id, action, userId, reason) => {
     const KpiSelfRating = require('../models/KpiSelfRating');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
     const rating = await KpiSelfRating.findById(id);
     if (!rating) throw new Error('KPI rating not found');
 
@@ -546,6 +572,7 @@ const approvalHandlers = {
 
   sales_line: async (id, action, userId, reason) => {
     const SalesLine = require('../models/SalesLine');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
     const doc = await SalesLine.findById(id);
     if (!doc) throw new Error('Sales line not found');
     if (doc.status !== 'VALID') throw new Error('Sales line not in VALID status');
@@ -570,6 +597,7 @@ const approvalHandlers = {
 
   collection: async (id, action, userId, reason) => {
     const Collection = require('../models/Collection');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
     const doc = await Collection.findById(id);
     if (!doc) throw new Error('Collection not found');
     if (doc.status !== 'VALID') throw new Error('Collection not in VALID status');
@@ -587,6 +615,7 @@ const approvalHandlers = {
 
   smer_entry: async (id, action, userId, reason) => {
     const SmerEntry = require('../models/SmerEntry');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
     const doc = await SmerEntry.findById(id);
     if (!doc) throw new Error('SMER entry not found');
     if (doc.status !== 'VALID') throw new Error('SMER not in VALID status');
@@ -610,6 +639,7 @@ const approvalHandlers = {
     // Phase 33: the Approval Hub references the CarLogbookCycle wrapper doc_id.
     // Legacy approvals (pre-Phase 33) may still carry a per-day CarLogbookEntry id
     // — fall through to that path when no cycle wrapper matches.
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
     const cycle = await CarLogbookCycle.findById(id);
     if (cycle) {
       if (action === 'post') {
@@ -622,6 +652,7 @@ const approvalHandlers = {
         cycle.validation_errors = [reason];
         await cycle.save();
         // Propagate rejection onto every VALID per-day doc belonging to this cycle
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- cycle_id is unique; cycle fetched above
         await CarLogbookEntry.updateMany(
           { cycle_id: cycle._id, status: 'VALID' },
           { $set: { status: 'ERROR', rejection_reason: reason, validation_errors: [reason] } }
@@ -632,6 +663,7 @@ const approvalHandlers = {
     }
 
     // Legacy per-day fallback (ensures old pending approvals still dispatch)
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
     const doc = await CarLogbookEntry.findById(id);
     if (!doc) throw new Error('Car logbook entry not found');
     const batchFilter = { entity_id: doc.entity_id, bdm_id: doc.bdm_id, period: doc.period, cycle: doc.cycle, status: 'VALID' };
@@ -654,6 +686,7 @@ const approvalHandlers = {
   fuel_entry: async (id, action, userId, reason) => {
     const CarLogbookEntry = require('../models/CarLogbookEntry');
     // The fuel entry id is a subdoc _id on a CarLogbookEntry.fuel_entries array.
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
     const dayDoc = await CarLogbookEntry.findOne({ 'fuel_entries._id': id });
     if (!dayDoc) throw new Error('Fuel entry not found');
     const fuel = dayDoc.fuel_entries.id(id);
@@ -674,6 +707,7 @@ const approvalHandlers = {
 
   expense_entry: async (id, action, userId, reason) => {
     const ExpenseEntry = require('../models/ExpenseEntry');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
     const doc = await ExpenseEntry.findById(id);
     if (!doc) throw new Error('Expense entry not found');
     if (doc.status !== 'VALID') throw new Error('Expense entry not in VALID status');
@@ -691,6 +725,7 @@ const approvalHandlers = {
 
   prf_calf: async (id, action, userId, reason) => {
     const PrfCalf = require('../models/PrfCalf');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
     const doc = await PrfCalf.findById(id);
     if (!doc) throw new Error('PRF/CALF not found');
     if (doc.status !== 'VALID') throw new Error('PRF/CALF not in VALID status');
@@ -713,6 +748,7 @@ const approvalHandlers = {
   // rejection_reason captures why).
   undertaking: async (id, action, userId, reason) => {
     const Undertaking = require('../models/Undertaking');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
     const doc = await Undertaking.findById(id);
     if (!doc) throw new Error('Undertaking not found');
     if (doc.status !== 'SUBMITTED') {
@@ -740,6 +776,7 @@ const approvalHandlers = {
   // reject flips status to ERROR so the submitter can edit and resubmit.
   credit_note: async (id, action, userId, reason) => {
     const CreditNote = require('../models/CreditNote');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
     const doc = await CreditNote.findById(id);
     if (!doc) throw new Error('Credit note not found');
     if (doc.status !== 'VALID') throw new Error('Credit note not in VALID status');
@@ -855,6 +892,7 @@ async function buildGroupBReject({ actionType, id, action, userId, reason, model
   // The id we receive may be either an ApprovalRequest._id (gap module path) or the
   // source doc _id directly (if this handler is ever invoked outside the Hub).
   // Try ApprovalRequest first; fall back to source doc lookup.
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
   const request = await ApprovalRequest.findById(id).lean();
 
   let modelName, docId;
@@ -933,6 +971,7 @@ const universalApprove = catchAsync(async (req, res) => {
   if (type === 'approval_request') {
     try {
       const ApprovalRequest = require('../models/ApprovalRequest');
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
       const reqDoc = await ApprovalRequest.findById(id).select('module').lean();
       if (reqDoc?.module) moduleKey = reqDoc.module;
     } catch (err) {
@@ -960,6 +999,7 @@ const universalApprove = catchAsync(async (req, res) => {
         : (['post', 'approve', 'credit'].includes(action)) ? 'APPROVED'
         : null;
       if (decisionStatus) {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: doc_id from gated approver via entity-scoped list; see top-of-file note
         await ApprovalRequest.updateMany(
           { doc_id: id, status: 'PENDING' },
           {

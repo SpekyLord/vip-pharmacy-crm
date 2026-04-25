@@ -82,6 +82,12 @@
 
 **Estimated RTO**: ~30-45 minutes (measured during Day 5 drill — update this after testing)
 
+**Drill measurements** (Day-5 DR drill — fill in during run):
+
+| Date | Snapshot used | Provision time | SSH-ready time | Health-200 time | Total RTO | Operator notes |
+|---|---|---|---|---|---|---|
+| 2026-04-25 | TBD | TBD min | TBD min | TBD min | TBD min | TBD |
+
 ### Steps
 
 1. **Confirm scope**: try SSH from a different network. Is it the VM or your local connection?
@@ -122,6 +128,12 @@
 **Symptoms**: User reports "all my data is gone" or unusual amounts of records missing. Audit log shows mass-delete operation.
 
 **Estimated RTO**: ~1 hour (most of it is Atlas PITR cluster spin-up time)
+
+**Drill measurements** (Day-5 DR drill — fill in during run):
+
+| Date | PITR target | Cluster spin-up | mongodump time | Dump file size | Total RTO | Operator notes |
+|---|---|---|---|---|---|---|
+| 2026-04-25 | ~1h ago | TBD min | TBD min | TBD MB | TBD min | TBD |
 
 ### Steps
 
@@ -287,9 +299,10 @@ DR procedures are only real if tested. Schedule:
 
 | Drill | Frequency | Last Run | Next Due |
 |---|---|---|---|
-| Lightsail snapshot restore | Quarterly | Not yet run | Q3 2026 (planned during Day 5 sign-off) |
-| Atlas PITR restore | Quarterly | Not yet run | Q3 2026 (planned during Day 5 sign-off) |
-| S3 DR bucket failover (config swap) | Bi-annually | Not yet run | H2 2026 |
+| Lightsail snapshot restore | Quarterly | 2026-04-25 (Day-5 drill — TBD pass/fail) | 2026-07-25 (Q3) |
+| Atlas PITR restore | Quarterly | 2026-04-25 (Day-5 drill — TBD pass/fail) | 2026-07-25 (Q3) |
+| S3 DR bucket sanity check (object count + fetch) | Quarterly | 2026-04-25 (Day-5 drill — TBD pass/fail) | 2026-07-25 (Q3) |
+| S3 DR bucket failover (config swap, full traffic) | Bi-annually | Not yet run | H2 2026 |
 | End-to-end "VM is dead" full restore | Annually | Not yet run | 2026 |
 | Tabletop incident response (no actual restore) | Quarterly | Not yet run | Q3 2026 |
 

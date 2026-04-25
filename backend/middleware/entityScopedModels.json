@@ -1,6 +1,6 @@
 {
   "$schema": "./entityScopedModels.schema.json",
-  "_comment": "Source of truth for entityGuard + bdmGuard + (Day 5) ESLint rule. See docs/ENTITY_SCOPED_MODELS.md for classification rationale. Built 2026-04-25. Day-4.5 (2026-04-25): reclassified PaymentMode + ErpSettings + AgentRun to 'global' (schemas have no entity_id field; would have generated false-positive alerts in production log mode).",
+  "_comment": "Source of truth for entityGuard + bdmGuard + (Day 5) ESLint rule. See docs/ENTITY_SCOPED_MODELS.md for classification rationale. Built 2026-04-25. Day-4.5 (2026-04-25): reclassified PaymentMode + ErpSettings + AgentRun to 'global' (schemas have no entity_id field; would have generated false-positive alerts in production log mode). Day-4.5 #4 (2026-04-25): reclassified RecurringJournalTemplate from 'strict_entity_and_bdm' to 'strict_entity' (top-level template has no bdm_id; the field only exists on the jeLineSchema sub-document — bdmGuard never observed it anyway).",
 
   "strict_entity": [
     "ApPayment",
@@ -46,6 +46,7 @@
     "ProductMapping",
     "ProductMaster",
     "PurchaseOrder",
+    "RecurringJournalTemplate",
     "SalesGoalPlan",
     "StockReassignment",
     "SupplierInvoice",
@@ -80,7 +81,6 @@
     "MonthlyArchive",
     "PnlReport",
     "PrfCalf",
-    "RecurringJournalTemplate",
     "SalesCredit",
     "SalesGoalTarget",
     "SalesLine",

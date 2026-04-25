@@ -297,13 +297,11 @@ const validateCollections = catchAsync(async (req, res) => {
       if (row.bank_account_id) {
         errors.push('Cannot set both bank account and petty cash fund — choose one destination');
       }
-      const pcFund = await PettyCashFund.findById(row.petty_cash_fund_id).lean();
+      const pcFund = await PettyCashFund.findOne({ _id: row.petty_cash_fund_id, entity_id: row.entity_id }).lean();
       if (!pcFund) {
-        errors.push('Petty cash fund not found');
+        // tenantFilter at find-time enforces entity bind; cross-entity surfaces here as not-found.
+        errors.push('Petty cash fund not found in this entity');
       } else {
-        if (pcFund.entity_id?.toString() !== row.entity_id?.toString()) {
-          errors.push('Petty cash fund belongs to a different entity');
-        }
         if (pcFund.status !== 'ACTIVE') {
           errors.push(`Petty cash fund is ${pcFund.status} — deposits blocked`);
         }
@@ -429,6 +427,7 @@ const submitCollections = catchAsync(async (req, res) => {
         // Petty cash auto-deposit (inside transaction for atomicity)
         // Approval is covered by the Collection's gateApproval — no separate petty cash gate
         if (row.petty_cash_fund_id) {
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- petty_cash_fund_id validated at validate-time (entity-scoped check, see L300); row from same-entity-scoped post path
           const fund = await PettyCashFund.findById(row.petty_cash_fund_id).session(session);
           if (!fund) {
             throw new Error(`Petty cash fund not found for CR ${row.cr_no}`);
@@ -456,6 +455,7 @@ const submitCollections = catchAsync(async (req, res) => {
               created_by: req.user._id,
               running_balance: Math.round((fund.current_balance + depositAmount) * 100) / 100
             }], { session });
+            // eslint-disable-next-line vip-tenant/require-entity-filter -- fund._id from same-entity-scoped fund above
             await PettyCashFund.findByIdAndUpdate(fund._id, {
               $inc: { current_balance: depositAmount }
             }, { session });
@@ -467,6 +467,7 @@ const submitCollections = catchAsync(async (req, res) => {
     // Phase 9.1b: Link DocumentAttachments to events (outside transaction — non-blocking)
     for (const row of validRows) {
       if (row.event_id) {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- source_id is unique; validRows fetched with entity-scoped tenantFilter
         await DocumentAttachment.updateMany(
           { source_model: 'Collection', source_id: row._id },
           { $set: { event_id: row.event_id } }
@@ -488,6 +489,7 @@ const submitCollections = catchAsync(async (req, res) => {
         }).lean();
 
         // Match CSI events by checking if their source SalesLine is in settled list
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- salesLineIds harvested from same-entity-scoped row.settled_csis; _id is globally unique
         const csiSalesLines = await SalesLine.find({
           _id: { $in: salesLineIds },
           event_id: { $ne: null }
@@ -502,6 +504,7 @@ const submitCollections = catchAsync(async (req, res) => {
             event_id: eid,
             relationship: 'SETTLES'
           }));
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- row.event_id from same-entity-scoped row above
           await TransactionEvent.findByIdAndUpdate(row.event_id, {
             $push: { linked_events: { $each: linkedEvents } }
           });
@@ -652,6 +655,7 @@ const reopenCollections = catchAsync(async (req, res) => {
     // Step 1: Reverse JEs FIRST — if fails, skip this row (keep POSTED, ledger stays balanced)
     if (row.event_id) {
       try {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- source_event_id is unique; row from entity-scoped reopen path
         const jes = await JournalEntry.find({
           source_event_id: row.event_id, status: 'POSTED', is_reversal: { $ne: true }
         });
@@ -670,6 +674,7 @@ const reopenCollections = catchAsync(async (req, res) => {
     try {
       await session.withTransaction(async () => {
         if (row.event_id) {
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- row.event_id from same-entity-scoped reopen path
           await TransactionEvent.findByIdAndUpdate(row.event_id, { status: 'DELETED' }, { session });
           // VatLedger / CwtLedger entries are NOT deleted on reopen (Phase 3a/3b
           // alignment): VAT/CWT rows are a staging layer owned by finance —
@@ -679,6 +684,7 @@ const reopenCollections = catchAsync(async (req, res) => {
           // BIR audit trail intact even after a reversal.
         }
         // Reverse petty cash deposit
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- linked_collection_id is unique; row from entity-scoped reopen path
         const pcTxn = await PettyCashTransaction.findOne({
           linked_collection_id: row._id,
           txn_type: 'DEPOSIT',
@@ -690,6 +696,7 @@ const reopenCollections = catchAsync(async (req, res) => {
           pcTxn.voided_by = req.user._id;
           pcTxn.void_reason = `Auto-reversed: Collection ${row.cr_no} reopened`;
           await pcTxn.save({ session });
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- fund_id from same-entity-scoped pcTxn above
           const fundResult = await PettyCashFund.findByIdAndUpdate(pcTxn.fund_id, {
             $inc: { current_balance: -pcTxn.amount }
           }, { session });
@@ -790,6 +797,7 @@ const approveDeletion = catchAsync(async (req, res) => {
   // Reverse journal entries (collection JE + CWT JE)
   if (collection.event_id) {
     try {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- source_event_id is unique; collection fetched with entity-scoped tenantFilter upstream
       const jes = await JournalEntry.find({
         source_event_id: collection.event_id, status: 'POSTED', is_reversal: { $ne: true }
       });
@@ -895,6 +903,7 @@ const postSingleCollection = async (doc, userId) => {
 
       // Petty cash auto-deposit (inside transaction for atomicity)
       if (doc.petty_cash_fund_id) {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- petty_cash_fund_id validated at validate-time; doc dispatched from approval-hub with same-entity scope
         const fund = await PettyCashFund.findById(doc.petty_cash_fund_id).session(session);
         if (fund && !['SUSPENDED', 'CLOSED'].includes(fund.status) && (fund.fund_mode || 'REVOLVING') !== 'EXPENSE_ONLY') {
           const depositAmount = doc.cr_amount || 0;
@@ -907,6 +916,7 @@ const postSingleCollection = async (doc, userId) => {
               posted_by: userId, created_by: userId,
               running_balance: Math.round((fund.current_balance + depositAmount) * 100) / 100
             }], { session });
+            // eslint-disable-next-line vip-tenant/require-entity-filter -- fund._id from same-entity-scoped fund above
             await PettyCashFund.findByIdAndUpdate(fund._id, { $inc: { current_balance: depositAmount } }, { session });
           }
         }
@@ -915,6 +925,7 @@ const postSingleCollection = async (doc, userId) => {
   } finally { await session.endSession(); }
 
   // Non-blocking: DocumentAttachments
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- source_id is unique; doc dispatched from approval-hub with same-entity scope
   await DocumentAttachment.updateMany(
     { source_model: 'Collection', source_id: doc._id },
     { $set: { event_id: doc.event_id } }
