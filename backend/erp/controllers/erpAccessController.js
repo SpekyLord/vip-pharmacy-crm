@@ -103,7 +103,13 @@ const createTemplate = catchAsync(async (req, res) => {
 });
 
 const updateTemplate = catchAsync(async (req, res) => {
-  const template = await AccessTemplate.findById(req.params.id);
+  // Entity-scope the lookup — without it, admin/finance in entity A could
+  // mutate entity B's template (modules, sub_permissions, can_approve) by
+  // guessing the id, then a later applyTemplateToUser would propagate the
+  // hijacked permissions. President bypass for cross-entity admin tooling.
+  const filter = { _id: req.params.id };
+  if (!req.isPresident) filter.entity_id = req.entityId;
+  const template = await AccessTemplate.findOne(filter);
   if (!template) {
     return res.status(404).json({ success: false, message: 'Template not found' });
   }
@@ -143,7 +149,11 @@ const updateTemplate = catchAsync(async (req, res) => {
 });
 
 const deleteTemplate = catchAsync(async (req, res) => {
-  const template = await AccessTemplate.findById(req.params.id);
+  // Entity-scope the lookup — same risk as updateTemplate (cross-entity
+  // template manipulation). President bypass for admin tooling.
+  const filter = { _id: req.params.id };
+  if (!req.isPresident) filter.entity_id = req.entityId;
+  const template = await AccessTemplate.findOne(filter);
   if (!template) {
     return res.status(404).json({ success: false, message: 'Template not found' });
   }
@@ -151,7 +161,8 @@ const deleteTemplate = catchAsync(async (req, res) => {
     return res.status(403).json({ success: false, message: 'System templates cannot be deleted' });
   }
 
-  await AccessTemplate.findByIdAndDelete(req.params.id);
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- template._id from entity-scoped findOne above
+  await AccessTemplate.findByIdAndDelete(template._id);
   res.json({ success: true, message: 'Template deleted' });
 });
 
@@ -214,7 +225,13 @@ const applyTemplateToUser = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'template_id is required' });
   }
 
-  const template = await AccessTemplate.findById(template_id).lean();
+  // Entity-scope the template lookup. Without it, admin in entity A could
+  // pass entity B's looser template_id and copy its modules/sub_permissions
+  // onto a user — direct cross-entity privilege escalation vector. President
+  // bypass keeps cross-entity admin tooling working.
+  const tplFilter = { _id: template_id };
+  if (!req.isPresident) tplFilter.entity_id = req.entityId;
+  const template = await AccessTemplate.findOne(tplFilter).lean();
   if (!template) {
     return res.status(404).json({ success: false, message: 'Template not found' });
   }
