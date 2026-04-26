@@ -7826,6 +7826,65 @@ CLAUDE-ERP.md                                       (Rule #20 note)
 
 ---
 
+## Phase 37 — Master-Data Entity-Scope Honoring (Apr 26 2026) ✅ SHIPPED
+
+### Problem
+The user (President) sat in the **MG and CO.** entity (top-right entity selector) and opened **People Master**. The list showed every person across every entity — Chantelle (consultant), every BDM, themselves — not the scoped MG and CO. roster they expected.
+
+Root cause: `tenantFilter.js:43-50` returns `req.tenantFilter = {}` for president-likes by design (Phase 31-E convention — transactional reads like Sales/Reversal Console SHOULD span all entities for audit). `peopleController.getPeopleList` spread that empty filter, so the entity dropdown was effectively a "stamp on creates" affordance only — silently ignored on reads. Misleading, and the absence of an Entity column on the table made it impossible to even see what was happening.
+
+For **transactional** lists this is correct. For **master-data** lists (People, Vendors, Customers, Hospitals — admin-edit surfaces tied to a specific entity) the dropdown selection should drive the read.
+
+### Fix
+**Default scope-by-selector + opt-in cross-entity, lookup-gated by role.**
+
+- Helper `backend/erp/utils/resolveEntityScope.js` (new). Returns `{ entityScope, isCrossEntity, scopedEntityId }`:
+  - Non-president: keep tenantFilter as-is (admin/finance: `{ entity_id }`; contractor: `{ entity_id, bdm_id }` — unchanged).
+  - President without `?cross_entity=true`: scope to `req.entityId` (selector wins).
+  - President with `?cross_entity=true`: widen ONLY if their role is in `CROSS_ENTITY_VIEW_ROLES.<MODULE>.metadata.roles` (default `['president', 'ceo']`). Roles outside the allowlist silently stay scoped — no error escalation, Rule #21 alignment.
+- Lookup category `CROSS_ENTITY_VIEW_ROLES` seeded in `lookupGenericController.SEED_DEFAULTS` with `insert_only_metadata: true` so admin edits to `metadata.roles` survive the auto-seed pass (same fix that `PROXY_ENTRY_ROLES` got after the silent-revert bug). Cache TTL 60s, busted on lookup write in all four lifecycle handlers (`create` / `update` / `remove` / `seedCategory` / `seedAll`).
+- `peopleController.getPeopleList` rewritten to use the helper. Response now also populates `entity_id` (entity_name + short_name + brand_color) and returns `meta: { is_cross_entity, scoped_entity_id }` so the FE can render the Entity column + scope banner.
+
+### Frontend
+- `frontend/src/erp/pages/PeopleList.jsx`:
+  - "View all entities" toggle in the page header — only rendered for president-likes (`isPresidentLike(user.role)`).
+  - When toggled on, request appends `?cross_entity=true` and the table grows an Entity column showing each row's entity badge (uses `entity_id.brand_color` for visual identity).
+  - Yellow scope banner above the table when cross-entity mode is active, so the wider scope is unmissable.
+- `frontend/src/erp/components/WorkflowGuide.jsx` `people-list` entry — first two steps now describe scope-by-selector + the cross-entity toggle. `tip` paragraph documents the lookup category.
+
+### Subscription / scalability
+- Lookup-driven (Rule #3): a subsidiary granting their CFO consolidated view across entities adds the role to `CROSS_ENTITY_VIEW_ROLES.PEOPLE_MASTER.metadata.roles` via Control Center → Lookup Tables. Zero code change.
+- Pattern is generalized — `resolveEntityScope(req, 'VENDORS')` / `'CUSTOMERS'` / `'HOSPITALS'` will work the same way once those master-data lists are revisited; just add the corresponding `CROSS_ENTITY_VIEW_ROLES.<MODULE>` seed row.
+
+### Files touched
+```
+backend/erp/utils/resolveEntityScope.js                     (new, ~140 lines)
+backend/erp/controllers/peopleController.js                 (1 edit: getPeopleList)
+backend/erp/controllers/lookupGenericController.js          (5 edits: import, set, SEED_DEFAULTS row, 4 invalidator wires)
+frontend/src/erp/pages/PeopleList.jsx                       (4 edits: imports, state, header+toggle+banner, Entity column)
+frontend/src/erp/components/WorkflowGuide.jsx               (1 edit: people-list entry)
+CLAUDE-ERP.md                                               (status banner + new "Master-Data Read Scoping" section)
+docs/PHASETASK-ERP.md                                       (this section)
+```
+
+### Preserved guards
+- `tenantFilter.js` unchanged — Phase 31-E "president sees all transactional" convention preserved for Sales / Reversal Console / Approval Hub.
+- `getPersonById`, `updatePerson`, `deactivatePerson`, `separatePerson`, `reactivatePerson`, `createLoginForPerson`, `disableLogin`, `enableLogin`, `unlinkLogin`, `changeSystemRole`, `getOrgChart` — all unchanged. President can still view/edit any person they have an ID for; org chart still spans all entities by intent.
+- `getAsUsers` (the lightweight CRM-compatible picker used by OwnerPicker, etc.) intentionally NOT touched in this phase. It's read by ~10 different pickers; changing it without per-picker UX work would shift the bug from "see too much" to "can't pick the cross-entity person you need." Tracked as a follow-up.
+- `erpAccessCheck('people')` route gate unchanged — BDMs still can't reach People Master.
+- `PROXY_ENTRY_ROLES` / `VALID_OWNER_ROLES` cache invalidation paths unchanged — added the new invalidator alongside, no shared state.
+
+### Rule #21 alignment
+- Never silent-fall-back to a different scope. If a non-allowlisted role sends `?cross_entity=true`, the helper quietly stays scoped (no error escalation that could leak which roles are allowlisted, no silent widening).
+- `req.entityId` continues to be the legitimate working-context scope for everyone except president-with-explicit-opt-in.
+
+### Out of scope
+- Vendor / Customer / Hospital list endpoints — same pattern applies, separate phases. Helper is ready when those modules are revisited.
+- `getAsUsers` — see "Preserved guards" above. Separate UX-design pass needed.
+- Audit log on cross-entity opt-in — president has full data access already; flag-flip telemetry isn't a security event.
+
+---
+
 ## Phase 15.3 — CSI Draft Overlay (Print-Into-Booklet)
 
 **Scope**: Proxy / contractor enters a sale in the ERP; system generates a mm-precise PDF the BDM feeds **through** their physical BIR-registered CSI booklet page. The PDF prints only variable data (customer, date, items, totals); the booklet supplies all pre-printed content (CSI#, logo, TIN, ATP footer, column labels). Closes the round-trip BIR compliance dance that Phase G4.5a's proxy entry opened — proxy inputs data, BDM writes the legal receipt, existing Phase 15.2 ScanCSIModal captures the booklet serial back into `SalesLine.doc_ref`.
