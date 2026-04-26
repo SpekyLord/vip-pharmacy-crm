@@ -143,6 +143,8 @@ When the consultant delivers the gap list, the concrete work gets its own Phase 
 
 ## ERP Phases
 
+> **CRM-side phase note (April 26, 2026)**: Phase **VIP-1.A** shipped on the CRM side — `Doctor` extended with `partnership_status` (LEAD/CONTACTED/VISITED/PARTNER/INACTIVE), `lead_source`, `partner_agreement_date`, `prc_license_number` (sparse), `partnership_notes` + new admin page `/admin/md-leads` + `backend/utils/mdPartnerAccess.js` (lookup-driven role gates: `MD_PARTNER_ROLES.{VIEW_LEADS,MANAGE_PARTNERSHIP,SET_AGREEMENT_DATE}` with inline `[admin, president]` defaults). ERP integration lands in **VIP-1.B** (`PatientMdAttribution` + `MdProductRebate` + `MdCapitationRule` + `StaffCommissionRule`) and **VIP-1.F** (rebate accrual on Collection POSTED → ERP Approval Hub → BIR 2307 service-fee export with `bir_flag: 'INTERNAL'` stamping). The 3-gate guardrail enforces, in MdProductRebate / MdCapitationRule pre-save: (a) `Doctor.partnership_status === 'PARTNER'`, (b) `Doctor.partner_agreement_date` set, (c) `PatientMdAttribution.attribution_consent_log.timestamp` present — all three before a single peso accrues. See `docs/PHASE-TASKS-CRM.md` §VIP-1.A for the schema/controller/route detail and `~/.claude/plans/vip-1-integrated-build-plan.md` for the full roadmap. Per-tenant note: `MdProductRebate` schema must NEVER allow `product_id` filtering (per-patient capitation only — RA 6675 / FDA 2011-002 compliance).
+
 | Phase | Module | Status |
 |-------|--------|--------|
 | 0 | ERP Scaffold + Router | ✅ |

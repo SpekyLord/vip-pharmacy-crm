@@ -8383,3 +8383,41 @@ Once a staff person is granted an entity via this flow, the existing `resolveOwn
 - **Health-check script for PeopleMaster.entity_id ↔ User.entity_id drift** — `transferEntity` dual-writes atomically, so drift only occurs from out-of-band edits (mongosh). Existing `backfillEntityIdsFromFra.js` covers `User.entity_ids_static` ↔ `entity_ids` drift; PeopleMaster ↔ User home drift is a future polish.
 - **Cache invalidation on `PEOPLE_LIFECYCLE_CONFIG` lookup write** — 5-min TTL is acceptable for a config that changes rarely. If subscribers need instant takes, add bust hook in `lookupGenericController.js` (mirror `invalidateProxyRolesCache` pattern).
 - **Bulk transfer / bulk grant** — current endpoints are per-person. Bulk would be a separate phase.
+
+## Phase VIP-1.A — MD Partner Lead Pipeline (April 26, 2026) ✅ SHIPPED (CRM-side)
+
+### Cross-link, not a phase
+
+VIP-1.A is a **CRM-side phase**; full detail lives in `docs/PHASE-TASKS-CRM.md` §VIP-1.A. This entry exists so ERP-side readers can find the upstream that downstream rebate phases (VIP-1.B / VIP-1.F) read from.
+
+### What landed (CRM)
+
+- `Doctor` schema: `partnership_status` (LEAD/CONTACTED/VISITED/PARTNER/INACTIVE — indexed), `lead_source`, `partner_agreement_date`, `prc_license_number` (sparse indexed), `partnership_notes`. Pre-save hook stamps `LEAD` on net-new docs; legacy docs being saved without the field get backfilled to `PARTNER` (everyone in the production CRM today is at minimum visited).
+- `doctorController.updatePartnershipStatus` — state-machine endpoint with role + ownership cascade. BDMs can move LEAD → CONTACTED → VISITED on their own assignees but cannot promote to PARTNER. PARTNER promotion requires `partner_agreement_date` (3-gate guardrail, gate #1).
+- `doctorController.getAllDoctors` — added `?partnership_status=` filter (single value or comma-separated `$in`). Invalid tokens silently dropped per Rule #21 (no fall-back to a default that hides data).
+- `backend/utils/mdPartnerAccess.js` — lookup-driven role gates (`MD_PARTNER_ROLES.{VIEW_LEADS, MANAGE_PARTNERSHIP, SET_AGREEMENT_DATE}`) with inline `[admin, president]` defaults. 60s TTL cache, falls back to defaults on Lookup outage. Subscribers extend per-entity via Control Center → Lookup Tables without a deployment.
+- `/admin/md-leads` page (admin-only today, BDM access deferred to a later sub-phase). Lookup-driven status pill labels + colors come from `DOCTOR_PARTNERSHIP_STATUS`; lead-source labels from `DOCTOR_LEAD_SOURCE`. PageGuide banner per Rule #1.
+- `AuditLog.action` enum extended with `'DOCTOR_PARTNERSHIP_TRANSITION'` — every state-machine move is audit-logged with actor + before/after.
+- `backend/scripts/backfillDoctorPartnershipStatus.js` — one-shot script for any prod doc that escaped the pre-save hook (e.g. inserted via mongosh or an old import path that bypassed mongoose).
+
+### What this unblocks downstream (ERP)
+
+- **VIP-1.B (next sub-phase, ~2 days)**: schemas `PatientMdAttribution`, `MdProductRebate`, `MdCapitationRule`, `StaffCommissionRule`. Pre-save hooks on the rebate-eligible schemas enforce the **3-gate guardrail**:
+  - (a) `Doctor.partnership_status === 'PARTNER'`
+  - (b) `Doctor.partner_agreement_date` is set
+  - (c) `PatientMdAttribution.attribution_consent_log.timestamp` present
+  All three required before a single peso accrues. The first two gates are enforced in this phase (VIP-1.A) at the data-model level; gate (c) lands with `PatientMdAttribution` in VIP-1.B.
+- **VIP-1.F (rebate accrual)**: on Collection POSTED, `MdProductRebate` evaluates → creates an Approval Hub request (financial category, escalation per `ApprovalRule`). Approved rebates produce a `RebatePayout` doc that lands in the BIR 2307 service-fee export with `bir_flag: 'INTERNAL'` stamping (mirrors the legal counsel's framing — service fee for prescription-channel attribution, not a kickback).
+
+### Compliance guardrails baked into the schema (do NOT relax in VIP-1.B)
+
+- `MdProductRebate` schema **must NEVER allow `product_id` filtering**. Per-patient capitation only — RA 6675 (Generics Act) + FDA Circular 2011-002 prohibit per-product MD incentives. The schema reviewer should reject any PR that adds a `product_id` field to this model.
+- `partner_agreement_date` is reversible in VIP-1.A (admin can move PARTNER → INACTIVE); becomes irreversible-without-audit-event in VIP-1.B once `MdProductRebate` records start referencing it.
+
+### Verification
+
+- Backend: `node -c` clean across Doctor/controller/routes/mdPartnerAccess/AuditLog.
+- Frontend: `vite build` clean (11.18s, MdLeadsPage chunk emitted in dist/).
+- Backend startup: `npm run startup:check` passes — server boots, all routes mount, entity-guard + bdm-guard observe the new `Doctor` fields without warnings.
+- ESLint risk-gate: clean (was failing on unused `ChevronDown` import; closed in `bb01e9f`).
+- Playwright UI smoke: **deferred** — credentialed click-through pending valid admin login. Build + syntax + startup guarantee structural correctness, but live happy-path remains unverified in this commit.
