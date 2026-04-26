@@ -125,6 +125,40 @@ const clmSessionSchema = new mongoose.Schema(
       default: 'in_progress',
     },
 
+    // ── Phase N — Mode (in-person vs remote shareable deck) ─────────
+    // 'in_person'  — BDM presents face-to-face. QR + GPS + photo path applies.
+    //                Existing default — preserves backward compat for every
+    //                CLM session created before Phase N.
+    // 'remote'     — BDM generates a public deck link and shares it via
+    //                Viber/Messenger/WhatsApp. No GPS, no photo, no
+    //                in-person requirement. The CommunicationLog row is
+    //                what carries proof in this case (clm_session_id ref).
+    mode: {
+      type: String,
+      enum: ['in_person', 'remote'],
+      default: 'in_person',
+    },
+
+    // ── Phase N — Reciprocal FK to Visit ────────────────────────────
+    // Set during the merged in-person flow: VisitLogger's "Start Presentation"
+    // generates a UUID, CLMSession picks it up as idempotencyKey, then on
+    // Visit submit the visitController back-stamps this field. Sparse so
+    // remote and standalone CLM sessions don't bloat the index.
+    // Note: explicit sparse index declared below (clmSessionSchema.index calls)
+    visit_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Visit',
+    },
+
+    // ── Phase N — Public deck open tracking (anonymous viewers) ─────
+    // Stamped by GET /api/clm/deck/:id whenever an unauthenticated viewer
+    // hits the public route. Distinct from qrDisplayedAt (which fires on
+    // slide 6 in the BDM's in-person flow). Both can be set on the same
+    // session — qrDisplayedAt = "BDM showed it", deckOpenedAt = "remote
+    // viewer opened the public link".
+    deckOpenedAt: { type: Date },
+    deckOpenCount: { type: Number, default: 0 },
+
     // ── Offline sync idempotency ────────────────────────────────────
     // Generated client-side when a session is created offline (UUIDv4 shape).
     // Used to detect duplicate sync attempts (BDM syncs same draft twice).
@@ -151,5 +185,8 @@ clmSessionSchema.index({ entity_id: 1, user: 1, createdAt: -1 });
 // Sparse unique index on idempotencyKey — prevents duplicate offline syncs
 // Only applies to sessions created offline (key is null for online sessions)
 clmSessionSchema.index({ idempotencyKey: 1 }, { unique: true, sparse: true });
+// Phase N — sparse so standalone CLM sessions (no merged Visit) don't bloat the index
+clmSessionSchema.index({ visit_id: 1 }, { sparse: true });
+clmSessionSchema.index({ mode: 1, status: 1 });
 
 module.exports = mongoose.model('CLMSession', clmSessionSchema);

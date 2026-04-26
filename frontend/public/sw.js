@@ -12,7 +12,10 @@
  * select doctors and present even without connectivity.
  */
 
-const CACHE_VERSION = 'v1';
+// Phase N — bumped to v2 because we added multipart-rebuild logic to the
+// queue replay path. Cache name bump forces clients to drop the old SW
+// cleanly during activate() and pick up the new replay contract.
+const CACHE_VERSION = 'v2';
 const SHELL_CACHE = `vip-shell-${CACHE_VERSION}`;
 const CLM_CACHE = `vip-clm-${CACHE_VERSION}`;
 const DATA_CACHE = `vip-data-${CACHE_VERSION}`;
@@ -40,6 +43,9 @@ const CACHEABLE_API_PATHS = [
 const QUEUEABLE_METHODS = ['POST', 'PUT', 'PATCH'];
 const QUEUEABLE_API_PATHS = [
   '/api/clm/',
+  // Phase N — visit POST is multipart/form-data, requires the photo-detach
+  // path below (visit_photos store + rebuildFormDataFromQueue) to round-trip.
+  '/api/visits/',
 ];
 
 // ── IndexedDB for offline queue ────────────────────────────────────
@@ -55,6 +61,85 @@ const META_KEY_CURRENT_USER = 'current-user-id';
 // Drop queued requests older than this at replay time. Guards against
 // indefinite accumulation when a user abandons drafts.
 const QUEUE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+// ── Phase N — Cross-DB read for visit photo blobs during multipart replay ──
+// Visit photos are persisted by VisitLogger/CameraCapture into the
+// `vip-offline-data` IndexedDB (offlineStore.js), in the `visit_photos`
+// store. The SW lives in `vip-offline-queue` and can't share a DB connection,
+// but it CAN open the data DB read-only at replay time and reconstruct
+// the FormData from there. Keeping these constants in sync with offlineStore.js
+// is enforced by Phase N's healthcheck script.
+const VIP_DATA_DB_NAME = 'vip-offline-data';
+const VIP_DATA_DB_VERSION = 3; // Phase N: bump from v2 → v3 (new visit stores)
+const VIP_DATA_VISIT_PHOTOS = 'visit_photos';
+
+function openVipDataDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(VIP_DATA_DB_NAME, VIP_DATA_DB_VERSION);
+    // SW does NOT define onupgradeneeded for this DB — the main thread
+    // (offlineStore.js) owns the schema. SW just opens and reads. If a
+    // SW activation runs before the main thread has opened the DB at v3,
+    // the SW's open call WILL trigger upgradeneeded with no handler — that
+    // creates an empty DB at v3 with no stores. We guard against that
+    // race by re-checking objectStoreNames before reading and gracefully
+    // returning [] if the visit_photos store is absent.
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+    req.onblocked = () => {
+      // Another tab has the DB open at an older version. Resolve with null
+      // so the SW falls back to "skip this replay item" rather than hanging.
+      resolve(null);
+    };
+  });
+}
+
+async function readVisitPhotoBlob(photoRef) {
+  if (!photoRef) return null;
+  let db;
+  try {
+    db = await openVipDataDB();
+    if (!db || !db.objectStoreNames.contains(VIP_DATA_VISIT_PHOTOS)) {
+      // Race or schema-skew — main thread hasn't created the store yet.
+      // Caller treats null as "drop this draft" (the photo is gone).
+      if (db) db.close();
+      return null;
+    }
+    const tx = db.transaction(VIP_DATA_VISIT_PHOTOS, 'readonly');
+    const store = tx.objectStore(VIP_DATA_VISIT_PHOTOS);
+    const req = store.get(photoRef);
+    return await new Promise((resolve) => {
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  } catch (err) {
+    console.warn('[SW] readVisitPhotoBlob failed:', err);
+    return null;
+  } finally {
+    if (db) try { db.close(); } catch { /* ignore */ }
+  }
+}
+
+async function deleteVisitPhotoBlob(photoRef) {
+  if (!photoRef) return;
+  let db;
+  try {
+    db = await openVipDataDB();
+    if (!db || !db.objectStoreNames.contains(VIP_DATA_VISIT_PHOTOS)) {
+      if (db) db.close();
+      return;
+    }
+    const tx = db.transaction(VIP_DATA_VISIT_PHOTOS, 'readwrite');
+    tx.objectStore(VIP_DATA_VISIT_PHOTOS).delete(photoRef);
+    await new Promise((resolve, reject) => {
+      tx.oncomplete = resolve;
+      tx.onerror = reject;
+    });
+  } catch (err) {
+    console.warn('[SW] deleteVisitPhotoBlob failed:', err);
+  } finally {
+    if (db) try { db.close(); } catch { /* ignore */ }
+  }
+}
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -113,11 +198,19 @@ async function setCurrentUserId(userId) {
   }
 }
 
-async function enqueueRequest(request, body) {
+async function enqueueRequest(request, body, extra = {}) {
   try {
     // Stamp the queued item with the current user so replay can filter out
     // other users' drafts on shared devices. null is allowed (pre-v2 rows
     // behaved the same way; replay treats null userId as "anyone may replay").
+    //
+    // Phase N — `extra` carries the visit-kind envelope when an incoming
+    // request was a multipart visit POST. The SW intercept (fetch handler)
+    // serializes the JSON portion into `body` and the photo refs + form
+    // fields into `extra.kind='visit', extra.photoRefs, extra.formFields`.
+    // On replay, the SW rebuilds FormData from photoRefs (Blob lookups
+    // against the data DB) + formFields. Items without `extra.kind` are
+    // treated as straight JSON requests (existing CLM contract).
     const userId = await getCurrentUserId();
     const db = await openDB();
     const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -129,6 +222,11 @@ async function enqueueRequest(request, body) {
       body: body,
       timestamp: Date.now(),
       userId,
+      // Phase N — optional multipart-rebuild envelope. Undefined for legacy
+      // CLM JSON queue items so they replay unchanged.
+      kind: extra.kind || null,
+      photoRefs: extra.photoRefs || null,
+      formFields: extra.formFields || null,
     });
     await new Promise((resolve, reject) => {
       tx.oncomplete = resolve;
@@ -140,6 +238,48 @@ async function enqueueRequest(request, body) {
     console.error('[SW] Failed to enqueue request:', err);
     return false;
   }
+}
+
+// ── Phase N — Rebuild a multipart FormData payload from a queued visit ──
+// item. Returns null if any photo blob is missing (the draft is unrecoverable
+// — caller drops it from the queue and notifies the user).
+async function rebuildVisitFormData(item) {
+  if (!item || item.kind !== 'visit') return null;
+  const photoRefs = Array.isArray(item.photoRefs) ? item.photoRefs : [];
+  const formFields = item.formFields || {};
+
+  const formData = new FormData();
+
+  // Append non-photo fields first. JSON-encode complex fields (objects/arrays)
+  // because Express body-parser receives them as strings on the multipart
+  // path — visitController.createVisit already handles JSON.parse of these.
+  for (const [key, value] of Object.entries(formFields)) {
+    if (value === null || value === undefined) continue;
+    if (typeof value === 'object') {
+      formData.append(key, JSON.stringify(value));
+    } else {
+      formData.append(key, String(value));
+    }
+  }
+
+  // Append photo blobs. The 'photos' field name + ordering match the
+  // upload middleware's expectations on the create endpoint.
+  for (const ref of photoRefs) {
+    const record = await readVisitPhotoBlob(ref);
+    if (!record?.blob) {
+      // Photo is missing — refuse to replay a partial submit. Caller
+      // drops the queued item entirely; lost-draft signal is delivered
+      // to the user via the existing VIP_SYNC_COMPLETE message stream.
+      return null;
+    }
+    const filename = record.filename || `${ref}.jpg`;
+    const file = new File([record.blob], filename, {
+      type: record.blob.type || 'image/jpeg',
+    });
+    formData.append('photos', file);
+  }
+
+  return { formData, photoRefs };
 }
 
 async function getQueuedRequests() {
@@ -231,7 +371,52 @@ self.addEventListener('fetch', (event) => {
           const response = await fetch(request.clone());
           return response;
         } catch (err) {
-          // Offline — queue the request
+          // Offline — queue the request.
+          //
+          // Phase N — Visit submissions are multipart/form-data. The default
+          // body=request.text() path strips Blob bytes, so we route visits
+          // through a separate envelope that carries photoRefs + formFields
+          // and rebuilds FormData on replay (rebuildVisitFormData).
+          //
+          // The frontend's visitService is responsible for posting the
+          // envelope as JSON via X-VIP-Visit-Envelope header when offline,
+          // OR for sending the original multipart request (the SW notices
+          // the multipart content-type and short-circuits to "drop on
+          // floor" — frontend should never reach this code path for visits
+          // unless something went wrong; defensive log + drop).
+          const isVisit = url.pathname.includes('/api/visits/') || url.pathname.endsWith('/api/visits');
+          const contentType = request.headers.get('content-type') || '';
+
+          if (isVisit && contentType.includes('application/json')) {
+            // Visit envelope — JSON body shaped { kind, photoRefs, formFields }.
+            // VisitService writes this when offlineManager detects offline.
+            try {
+              const envelopeText = await request.clone().text();
+              const envelope = JSON.parse(envelopeText);
+              if (envelope?.kind === 'visit') {
+                const queued = await enqueueRequest(request, null, {
+                  kind: 'visit',
+                  photoRefs: envelope.photoRefs || [],
+                  formFields: envelope.formFields || {},
+                });
+                if (queued) {
+                  return new Response(
+                    JSON.stringify({
+                      success: true,
+                      offline: true,
+                      message: 'Visit saved offline. Will sync when connection returns.',
+                      data: { _id: `offline_${Date.now()}`, offlineQueued: true },
+                    }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } }
+                  );
+                }
+              }
+            } catch (envErr) {
+              console.warn('[SW] Visit envelope parse failed, falling back to text body:', envErr);
+            }
+          }
+
+          // Default path (CLM, or non-envelope visit) — store JSON body verbatim
           const body = await request.clone().text();
           const queued = await enqueueRequest(request, body);
           if (queued) {
@@ -390,14 +575,55 @@ async function replayQueue() {
     }
 
     try {
+      // Phase N — Visit-kind items rebuild FormData from photo blobs at
+      // replay time. Strip Content-Type so fetch() sets the multipart
+      // boundary itself; sending the queued JSON content-type would break
+      // the upstream multer parser.
+      let replayBody = item.body || undefined;
+      let replayHeaders = item.headers || {};
+
+      if (item.kind === 'visit') {
+        const rebuilt = await rebuildVisitFormData(item);
+        if (!rebuilt) {
+          // Photos lost — drop the queued visit. Notify clients so VisitLogger
+          // can surface "draft data lost, please re-capture and re-submit"
+          // instead of silently dropping the user's work.
+          await removeQueuedRequest(item.id);
+          const clients = await self.clients.matchAll();
+          clients.forEach((client) => {
+            client.postMessage({
+              type: 'VIP_VISIT_DRAFT_LOST',
+              message: 'A queued offline visit could not be restored — please re-capture and re-submit.',
+              draftId: item.id,
+            });
+          });
+          continue;
+        }
+        replayBody = rebuilt.formData;
+        // Drop Content-Type from the headers — fetch() must compute a fresh
+        // multipart boundary or the body bytes won't parse server-side.
+        const cleanHeaders = { ...item.headers };
+        delete cleanHeaders['content-type'];
+        delete cleanHeaders['Content-Type'];
+        replayHeaders = cleanHeaders;
+      }
+
       const response = await fetch(item.url, {
         method: item.method,
-        headers: item.headers,
-        body: item.body || undefined,
+        headers: replayHeaders,
+        body: replayBody,
         credentials: 'include',
       });
 
       if (response.ok || (response.status >= 200 && response.status < 400)) {
+        // Visit replay success — clean up the photo blobs so they don't
+        // accumulate. Best-effort; any orphans get age-evicted on next
+        // openVipDataDB cycle.
+        if (item.kind === 'visit' && Array.isArray(item.photoRefs)) {
+          for (const ref of item.photoRefs) {
+            await deleteVisitPhotoBlob(ref);
+          }
+        }
         await removeQueuedRequest(item.id);
         continue;
       }
@@ -407,14 +633,29 @@ async function replayQueue() {
         tokenRefreshAttempted = true;
         const refreshed = await attemptTokenRefresh();
         if (refreshed) {
-          // Retry this request with fresh token
+          // Retry this request with fresh token. Visit-kind needs a NEW
+          // FormData — the original was consumed by the failed request.
+          let retryBody = replayBody;
+          if (item.kind === 'visit') {
+            const reRebuilt = await rebuildVisitFormData(item);
+            if (!reRebuilt) {
+              await removeQueuedRequest(item.id);
+              continue;
+            }
+            retryBody = reRebuilt.formData;
+          }
           const retryResponse = await fetch(item.url, {
             method: item.method,
-            headers: item.headers,
-            body: item.body || undefined,
+            headers: replayHeaders,
+            body: retryBody,
             credentials: 'include',
           });
           if (retryResponse.ok || (retryResponse.status >= 200 && retryResponse.status < 400)) {
+            if (item.kind === 'visit' && Array.isArray(item.photoRefs)) {
+              for (const ref of item.photoRefs) {
+                await deleteVisitPhotoBlob(ref);
+              }
+            }
             await removeQueuedRequest(item.id);
             continue;
           }
@@ -434,12 +675,46 @@ async function replayQueue() {
 
       // 409 Conflict = duplicate — remove from queue (server already has it)
       if (response.status === 409) {
+        if (item.kind === 'visit' && Array.isArray(item.photoRefs)) {
+          for (const ref of item.photoRefs) {
+            await deleteVisitPhotoBlob(ref);
+          }
+        }
         await removeQueuedRequest(item.id);
         continue;
       }
 
+      // Phase N — Treat E11000 (visit unique-index dup) as idempotent success.
+      // Visit's compound unique index on {doctor, user, yearWeekKey} naturally
+      // dedups offline retries — if BDM-1 had already submitted this visit
+      // online from another device while their offline queue was sitting,
+      // the server returns 400 with a "weekly limit" error. Drop the queued
+      // copy so it doesn't loop indefinitely.
+      if (response.status === 400) {
+        try {
+          const errBody = await response.clone().json();
+          const msg = String(errBody?.message || '').toLowerCase();
+          if (msg.includes('already been logged this week') || msg.includes('duplicate key') || msg.includes('e11000')) {
+            if (item.kind === 'visit' && Array.isArray(item.photoRefs)) {
+              for (const ref of item.photoRefs) {
+                await deleteVisitPhotoBlob(ref);
+              }
+            }
+            await removeQueuedRequest(item.id);
+            continue;
+          }
+        } catch {
+          // JSON parse failed — fall through to generic 4xx path
+        }
+      }
+
       // 4xx (other than 401/409) = client error, remove to prevent infinite retry
       if (response.status >= 400 && response.status < 500) {
+        if (item.kind === 'visit' && Array.isArray(item.photoRefs)) {
+          for (const ref of item.photoRefs) {
+            await deleteVisitPhotoBlob(ref);
+          }
+        }
         await removeQueuedRequest(item.id);
         continue;
       }

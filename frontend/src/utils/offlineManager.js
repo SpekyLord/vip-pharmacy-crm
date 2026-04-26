@@ -209,6 +209,41 @@ const offlineManager = {
   },
 
   /**
+   * Phase N — Submit a visit envelope to the SW queue. Used by visitService
+   * when offline. The envelope shape mirrors what sw.js expects in the
+   * fetch interceptor: { kind: 'visit', photoRefs: [...], formFields: {...} }.
+   *
+   * The fetch goes via a real POST to /api/visits with JSON body — the SW
+   * notices the application/json + visit envelope, queues it instead of
+   * passing through, and returns a synthetic 200 with offlineQueued:true.
+   *
+   * @param {object} envelope - { photoRefs, formFields }
+   * @returns {Promise<object>} the synthetic queued response body
+   */
+  async queueVisit(envelope) {
+    if (!envelope?.photoRefs || !envelope?.formFields) {
+      throw new Error('queueVisit requires { photoRefs, formFields }');
+    }
+    // Issue a JSON POST so the SW intercepts. We hit the same endpoint the
+    // online path uses; the SW differentiates by the X-VIP-Visit-Envelope
+    // marker and the JSON body shape.
+    const res = await fetch('/api/visits', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-VIP-Visit-Envelope': '1',
+      },
+      body: JSON.stringify({
+        kind: 'visit',
+        photoRefs: envelope.photoRefs,
+        formFields: envelope.formFields,
+      }),
+    });
+    return res.json();
+  },
+
+  /**
    * Manage periodic sync timer.
    * Runs every 30s while the app is visible and online.
    * Stops when the app is hidden or offline.
@@ -280,6 +315,18 @@ function handleSWMessage(event) {
   if (data.type === 'VIP_SYNC_AUTH_REQUIRED') {
     authListeners.forEach((cb) => {
       try { cb(data.message || 'Session expired. Please log in again.'); } catch { /* ignore */ }
+    });
+  }
+
+  // Phase N — Visit draft lost (photos missing on replay). Bubble up via
+  // the auth-required listener pool because both events share the same UX
+  // contract: a toast that asks the BDM to take some recovery action.
+  // Subscribers can distinguish on data.type if they need to.
+  if (data.type === 'VIP_VISIT_DRAFT_LOST') {
+    authListeners.forEach((cb) => {
+      try {
+        cb(data.message || 'Offline visit data was lost. Please re-capture and re-submit.');
+      } catch { /* ignore */ }
     });
   }
 }

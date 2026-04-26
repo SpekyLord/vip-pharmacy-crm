@@ -1,8 +1,11 @@
 /**
  * CLM Routes
  *
- * Endpoints:
- * POST   /api/clm/sessions                      - Start a new CLM session (with optional productIds)
+ * Public (anonymous):
+ * GET    /api/clm/deck/:id                       - Phase N: public deck viewer (rate-limited, read-only)
+ *
+ * Authenticated:
+ * POST   /api/clm/sessions                      - Start a new CLM session (with optional productIds + mode)
  * GET    /api/clm/sessions/my                    - Get current BDM's sessions
  * GET    /api/clm/sessions/all                   - Get all sessions (admin)
  * GET    /api/clm/sessions/analytics             - Get analytics summary (admin)
@@ -19,6 +22,7 @@
  * CLM-specific webhook endpoint.
  */
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const { protect } = require('../middleware/auth');
 const { adminOnly, adminOrEmployee } = require('../middleware/roleCheck');
@@ -34,9 +38,25 @@ const {
   getAllSessions,
   getSessionById,
   getAnalytics,
+  // Phase N — public anonymous deck viewer
+  getPublicDeck,
 } = require('../controllers/clmController');
 
-// Every route requires a decoded JWT for req.user; role gates layer on top.
+// ── Phase N — Public deck viewer (mounted BEFORE protect) ───────────
+// Rate-limited per IP at 10 req/min — generous for the BDM's office WiFi
+// (multiple BDMs sharing the same outbound IP) but tight enough to deter
+// enumeration. Only remote-mode sessions are exposed; in-person sessions
+// 404 even with a correct ID.
+const publicDeckRateLimit = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many requests. Please slow down.' },
+});
+router.get('/deck/:id', publicDeckRateLimit, getPublicDeck);
+
+// Every route below this line requires a decoded JWT for req.user; role gates layer on top.
 router.use(protect);
 
 // ── Admin routes (specific paths FIRST — before the /:id generic) ───

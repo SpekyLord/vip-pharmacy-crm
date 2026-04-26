@@ -19,7 +19,7 @@ const { ROLES, isAdminLike } = require('../constants/roles');
  * @access  Private (BDM, Admin)
  */
 const createLog = catchAsync(async (req, res) => {
-  const { doctor, client, channel, direction, notes, contactedAt } = req.body;
+  const { doctor, client, channel, direction, notes, contactedAt, clm_session_id } = req.body;
 
   // Must have at least one target
   if (!doctor && !client) {
@@ -66,6 +66,15 @@ const createLog = catchAsync(async (req, res) => {
     hash: photo.hash,
   }));
 
+  // Phase N — Optional CLM remote-deck reference. The BDM's "Generate CLM
+  // Deck Link" button on this page creates a remote-mode CLMSession, then
+  // submits a CommLog stamped with that session ID so analytics can join the
+  // remote pitch back to the channel/direction it was shared through.
+  const mongoose = require('mongoose');
+  const clmSessionRef = (typeof clm_session_id === 'string' && clm_session_id.trim() && mongoose.Types.ObjectId.isValid(clm_session_id))
+    ? clm_session_id.trim()
+    : null;
+
   const log = await CommunicationLog.create({
     doctor: doctor || null,
     client: client || null,
@@ -76,6 +85,7 @@ const createLog = catchAsync(async (req, res) => {
     contactedAt: contactedAt || new Date(),
     source: 'manual',
     photos,
+    ...(clmSessionRef ? { clm_session_id: clmSessionRef } : {}),
   });
 
   res.status(201).json({

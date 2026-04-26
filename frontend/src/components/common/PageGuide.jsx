@@ -135,13 +135,14 @@ const PAGE_GUIDES = {
       'Capture at least one photo as proof of visit (1-10 photos)',
       'GPS location is captured automatically — ensure location services are on',
       'Select products discussed and add any notes',
+      'Tap "Start Presentation" (after picking products) to walk the VIP Client through the partnership deck — both the visit and the pitch are linked automatically',
       'Submit the visit — it will be validated against weekly/monthly limits',
     ],
     next: [
       { label: 'My Visits', path: '/bdm/visits' },
       { label: 'Dashboard', path: '/bdm' },
     ],
-    tip: 'Maximum one visit per VIP Client per week. Photos and GPS are required for every visit.',
+    tip: 'Offline-friendly: photos and form fields auto-save while you work. Submit while offline to queue the visit; it syncs automatically when you reconnect. Maximum one visit per VIP Client per week.',
   },
   'call-plan': {
     title: 'Call Plan (CPT)',
@@ -259,6 +260,7 @@ const PAGE_GUIDES = {
   'communication-log': {
     title: 'Communication Log',
     steps: [
+      'Tap "Generate Deck Link" to create a shareable partnership presentation URL — paste it into Viber/Messenger/WhatsApp so a remote VIP Client can view the slides without logging in',
       'Tap "Log Interaction" to record a Viber, Messenger, WhatsApp, Email, or Google Chat conversation',
       'Select the VIP Client or Regular Client you contacted',
       'Choose the channel used and attach 1-10 screenshots as proof',
@@ -270,7 +272,7 @@ const PAGE_GUIDES = {
       { label: 'My Visits', path: '/bdm/visits' },
       { label: 'Dashboard', path: '/bdm' },
     ],
-    tip: 'Screenshots serve as proof of engagement. Once messaging APIs are connected, sent messages are logged automatically.',
+    tip: 'Generated deck links are anonymous + read-only. The VIP Client opens the URL on any browser — no login required. If you log a CommLog right after generating a link, the two records are joined automatically for analytics.',
   },
   'admin-communication-logs': {
     title: 'Communication Logs Overview',

@@ -17,14 +17,25 @@
  */
 
 const DB_NAME = 'vip-offline-data';
-const DB_VERSION = 2; // Bumped from 1 → 2 to add product_images store
+// v1 → v2: product_images store
+// v2 → v3 (Phase N): visit_drafts + visit_photos stores
+const DB_VERSION = 3;
 
 const STORES = {
   DOCTORS: 'doctors',
   PRODUCTS: 'products',
   PRODUCT_IMAGES: 'product_images',
   CLM_DRAFTS: 'clm_drafts',
+  // Phase N — VisitLogger persists in-progress drafts here so a tab close /
+  // device reboot mid-encounter doesn't lose the BDM's photos and form data.
+  // Drafts are keyed by `id` (UUID generated at draft creation time, also
+  // used as the SW queue's session_group_id). Photos are keyed by `photo_<uuid>`.
+  VISIT_DRAFTS: 'visit_drafts',
+  VISIT_PHOTOS: 'visit_photos',
 };
+
+// Phase N — Constants the SW reads (must stay in sync with sw.js)
+const VISIT_PHOTO_REF_PREFIX = 'photo_';
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -42,6 +53,20 @@ function openDB() {
       }
       if (!db.objectStoreNames.contains(STORES.CLM_DRAFTS)) {
         db.createObjectStore(STORES.CLM_DRAFTS, { keyPath: 'id', autoIncrement: true });
+      }
+      // Phase N — Visit drafts (in-progress visits). keyPath='id' is a UUID
+      // generated client-side; it doubles as session_group_id when the BDM
+      // also runs a CLM presentation as part of the same encounter.
+      if (!db.objectStoreNames.contains(STORES.VISIT_DRAFTS)) {
+        db.createObjectStore(STORES.VISIT_DRAFTS, { keyPath: 'id' });
+      }
+      // Phase N — Visit photo blobs. keyPath='ref' = photo_<uuid>. The SW
+      // opens this DB at replay time, reads each ref into a Blob, rebuilds
+      // FormData, and replays the multipart POST. Index by draftId so we
+      // can age-evict orphaned photos when their parent draft is deleted.
+      if (!db.objectStoreNames.contains(STORES.VISIT_PHOTOS)) {
+        const photoStore = db.createObjectStore(STORES.VISIT_PHOTOS, { keyPath: 'ref' });
+        photoStore.createIndex('byDraft', 'draftId', { unique: false });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -242,6 +267,131 @@ const offlineStore = {
       await deleteOne(STORES.CLM_DRAFTS, id);
     } catch (err) {
       console.warn('[OfflineStore] Failed to delete CLM draft:', err);
+    }
+  },
+
+  // ── Phase N — Visit Drafts (in-progress offline visits) ─────────
+  /**
+   * Save a visit draft. `id` MUST be a stable UUID — both the visit_photos
+   * blobs and the SW queue's session_group_id share this identifier.
+   *
+   * @param {object} draft - { id, doctorId, photoRefs, formFields, createdAt, updatedAt }
+   */
+  async saveVisitDraft(draft) {
+    if (!draft?.id) throw new Error('Visit draft requires a stable id');
+    try {
+      await putOne(STORES.VISIT_DRAFTS, {
+        ...draft,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn('[OfflineStore] Failed to save visit draft:', err);
+    }
+  },
+
+  async getVisitDraft(id) {
+    try {
+      return await getOne(STORES.VISIT_DRAFTS, id);
+    } catch {
+      return null;
+    }
+  },
+
+  async getVisitDrafts() {
+    try {
+      return await getAll(STORES.VISIT_DRAFTS);
+    } catch {
+      return [];
+    }
+  },
+
+  async deleteVisitDraft(id) {
+    try {
+      await deleteOne(STORES.VISIT_DRAFTS, id);
+      // Cascade: drop photos owned by this draft. Best-effort.
+      try {
+        const db = await openDB();
+        const tx = db.transaction(STORES.VISIT_PHOTOS, 'readwrite');
+        const idx = tx.objectStore(STORES.VISIT_PHOTOS).index('byDraft');
+        const cursorReq = idx.openCursor(IDBKeyRange.only(id));
+        await new Promise((resolve, reject) => {
+          cursorReq.onsuccess = (e) => {
+            const cursor = e.target.result;
+            if (cursor) {
+              cursor.delete();
+              cursor.continue();
+            } else {
+              resolve();
+            }
+          };
+          cursorReq.onerror = () => reject(cursorReq.error);
+        });
+        await new Promise((resolve, reject) => {
+          tx.oncomplete = resolve;
+          tx.onerror = reject;
+        });
+        db.close();
+      } catch (err) {
+        console.warn('[OfflineStore] Failed to cascade-delete visit photos:', err);
+      }
+    } catch (err) {
+      console.warn('[OfflineStore] Failed to delete visit draft:', err);
+    }
+  },
+
+  // ── Phase N — Visit Photo Blobs (offline-captured proof) ─────────
+  /**
+   * Persist a captured photo Blob into IndexedDB. Returns the photo ref
+   * (a `photo_<uuid>` string) which the caller stores on the draft so the
+   * SW can rebuild FormData on replay.
+   *
+   * @param {Blob} blob - the captured photo bytes
+   * @param {object} meta - { draftId, capturedAt, source, gps, hash, filename }
+   * @returns {Promise<string>} the photo ref
+   */
+  async saveVisitPhoto(blob, meta = {}) {
+    if (!blob) throw new Error('saveVisitPhoto requires a Blob');
+    const ref = `${VISIT_PHOTO_REF_PREFIX}${
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}_${Math.random().toString(36).slice(2)}`
+    }`;
+    await putOne(STORES.VISIT_PHOTOS, {
+      ref,
+      draftId: meta.draftId || null,
+      blob,
+      mimeType: blob.type || 'image/jpeg',
+      size: blob.size,
+      capturedAt: meta.capturedAt || new Date().toISOString(),
+      source: meta.source || 'camera',
+      gps: meta.gps || null,
+      hash: meta.hash || null,
+      filename: meta.filename || `${ref}.jpg`,
+    });
+    return ref;
+  },
+
+  /**
+   * Get a cached visit photo as an object URL — for re-rendering the draft's
+   * photo grid when the BDM reopens an in-progress visit.
+   * @param {string} ref - photo_<uuid>
+   * @returns {Promise<string|null>}
+   */
+  async getVisitPhotoUrl(ref) {
+    try {
+      const record = await getOne(STORES.VISIT_PHOTOS, ref);
+      if (!record?.blob) return null;
+      return URL.createObjectURL(record.blob);
+    } catch {
+      return null;
+    }
+  },
+
+  async deleteVisitPhoto(ref) {
+    try {
+      await deleteOne(STORES.VISIT_PHOTOS, ref);
+    } catch (err) {
+      console.warn('[OfflineStore] Failed to delete visit photo:', err);
     }
   },
 };

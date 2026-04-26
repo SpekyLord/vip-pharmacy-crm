@@ -35,6 +35,8 @@ const PrivacyPolicyPage = lazyRetry(() => import('./pages/PrivacyPolicyPage'));
 const TermsOfServicePage = lazyRetry(() => import('./pages/TermsOfServicePage'));
 const DataDeletionPage = lazyRetry(() => import('./pages/DataDeletionPage'));
 const DataDeletionStatusPage = lazyRetry(() => import('./pages/DataDeletionStatusPage'));
+// Phase N — Public anonymous CLM deck viewer (read-only, rate-limited)
+const DeckViewerPage = lazyRetry(() => import('./pages/public/DeckViewerPage'));
 
 // BDM pages
 const EmployeeDashboard = lazyRetry(() => import('./pages/employee/EmployeeDashboard'));
@@ -282,6 +284,11 @@ function App() {
           <Route path="/terms" element={<TermsOfServicePage />} />
           <Route path="/data-deletion" element={<DataDeletionPage />} />
           <Route path="/data-deletion/status/:code" element={<DataDeletionStatusPage />} />
+
+          {/* Phase N — Public CLM deck viewer. Anonymous, rate-limited
+              (10 req/min/IP at the API layer). Mounted OUTSIDE
+              <ProtectedRoute> because remote VIP Clients have no CRM login. */}
+          <Route path="/clm/deck/:id" element={<DeckViewerPage />} />
 
           {/* Employee Routes */}
           <Route

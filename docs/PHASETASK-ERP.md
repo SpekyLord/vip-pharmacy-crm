@@ -8421,3 +8421,33 @@ VIP-1.A is a **CRM-side phase**; full detail lives in `docs/PHASE-TASKS-CRM.md` 
 - Backend startup: `npm run startup:check` passes — server boots, all routes mount, entity-guard + bdm-guard observe the new `Doctor` fields without warnings.
 - ESLint risk-gate: clean (was failing on unused `ChevronDown` import; closed in `bb01e9f`).
 - Playwright UI smoke: **deferred** — credentialed click-through pending valid admin login. Build + syntax + startup guarantee structural correctness, but live happy-path remains unverified in this commit.
+
+## Phase N — Offline Visit + CLM Merge + Public Deck (April 26, 2026) ✅ SHIPPED (CRM-side, branch `feat/phase-n-offline-visit-clm-merge`)
+
+### Cross-link, not a phase
+
+Phase N is a **CRM-side phase**; full detail lives in `~/.claude/plans/phase-n-offline-visit-clm-merge.md`. This entry exists so ERP-side readers know the CRM Visit/CLM/CommLog schemas are now linked, the merged in-person flow is live, and a public deck route exists for remote pitches.
+
+### What landed (CRM)
+
+- **Visit** ([backend/models/Visit.js](backend/models/Visit.js)) gains `clm_session_id` (sparse ref CLMSession) + `session_group_id` (sparse String, maxlength 128). [visitController.createVisit](backend/controllers/visitController.js) reads `session_group_id` from the multipart body, looks up the CLMSession by `idempotencyKey`, and stamps both halves of the FK pair (best-effort — visit still saves with just `session_group_id` if the CLM lookup fails).
+- **CLMSession** ([backend/models/CLMSession.js](backend/models/CLMSession.js)) gains `visit_id` (sparse ref Visit), `mode` enum `['in_person','remote']` default `'in_person'`, plus `deckOpenedAt` + `deckOpenCount` for public-link analytics. [clmController.startSession](backend/controllers/clmController.js) accepts `mode` from the body; remote-mode sessions discard any `location` payload server-side so a hostile client can't fake an in-person attribution.
+- **CommunicationLog** ([backend/models/CommunicationLog.js](backend/models/CommunicationLog.js)) gains `clm_session_id` (sparse ref). The BDM CommLogPage's new "Generate CLM Deck Link" panel creates a remote-mode session, copies the public URL to clipboard, and the next CommLog submission stamps that ref so admin can join "remote pitch shared" → "deck opened" downstream.
+- **Public anonymous deck** (`GET /api/clm/deck/:id`) — [clmController.getPublicDeck](backend/controllers/clmController.js) mounted OUTSIDE `router.use(protect)` in [clmRoutes.js](backend/routes/clmRoutes.js), rate-limited 10 req/min/IP via express-rate-limit, returns ONLY remote-mode sessions (in-person sessions 404 even with a correct ID), redacts to first names only — no BDM email/phone, no GPS, no full PII. Idempotently increments `deckOpenCount`.
+- **Frontend public route** at `/clm/deck/:id` → [DeckViewerPage.jsx](frontend/src/pages/public/DeckViewerPage.jsx) renders `CLMPresenter previewMode=true`. Uses `withCredentials: false` so cookies never travel.
+- **Offline visit submit**: SW queue path in [frontend/public/sw.js](frontend/public/sw.js) now accepts `/api/visits/` + a JSON envelope `{ kind:'visit', photoRefs, formFields }`. Photos persist as Blobs in `vip-offline-data` IndexedDB DB v3 store `visit_photos`; SW reads them at replay and rebuilds FormData. E11000 (weekly-limit dup) treated as success → dequeue, not retry.
+- **Merged in-person flow**: VisitLogger generates a stable UUID (`draftIdRef`), passes it to CameraCapture as `draftId` (triggers Blob persistence) AND uses it as `session_group_id` at submit. The "Start Presentation" button navigates to `/bdm/partnership?doctorId=…&session_group_id=…&products=…`; PartnershipCLM reads the params, prefills doctor + products, and uses the same UUID as `idempotencyKey` on `clmService.startSession`.
+- **Healthcheck**: [backend/scripts/healthcheckOfflineVisitWiring.js](backend/scripts/healthcheckOfflineVisitWiring.js) statically verifies the wiring contract end-to-end (8 sections, 0 issues at ship time on Phase N.1–N.6).
+
+### What this unblocks downstream (ERP)
+
+- **No ERP-side schema changes required.** Phase N is purely additive on the CRM side.
+- **Future CLM-Visit conversion analytics** (deferred): admin dashboard reading `Visit.clm_session_id` → `CLMSession.interestLevel` to derive "% of pitches that converted to a real visit." Out of Phase N scope; lands in a future analytics phase.
+- **Tenant SaaS implication**: the offline visit pattern transfers directly when the pharmacy SaaS spins out (subscriber-pharmacy field reps in low-signal locations are the use case Phase N built for).
+
+### Verification
+
+- Backend: `node -c` clean across all modified backend files.
+- Phase N healthcheck: `node backend/scripts/healthcheckOfflineVisitWiring.js` — 8/8 green at ship.
+- System health: `node scripts/check-system-health.js` baseline preserved (1 pre-existing `orphan_audit` enum mismatch, unrelated to Phase N).
+- Playwright UI smoke: **see Phase N.7** in the plan file.
