@@ -38,6 +38,8 @@ const BASELINE_DANGER_SUB_PERMS = new Set([
   'accounting.settings_write',         // Phase 3c — COA_MAP, VAT rates, module config write
   'people.terminate',                  // Phase 3c — separate/deactivate person
   'people.manage_login',               // Phase 3c — disable/unlink/change-role/bulk-change-role
+  'people.transfer_entity',            // Phase G7 — move PeopleMaster.entity_id (org-structure mutation)
+  'people.grant_entity',               // Phase G7 — grant/revoke User.entity_ids_static (auth-tier scope)
   'erp_access.template_delete',        // Phase 3c — delete Access Template
   'payroll.gov_rate_delete',           // Phase 3c — delete government tax/BIR rate row
   'inventory.transfer_price_set',      // Phase 3c — set/bulk-set inter-company transfer prices

@@ -8310,3 +8310,76 @@ The earlier deferred bullet listed three models as "clear adds": `CwtLedger`, `I
 
 - The 5 remaining `strict_entity_and_bdm` models with optional `bdm_id` (JournalEntry / MonthlyArchive / DeductionSchedule / SalesGoalTarget / ErpAuditLog). Each has a documented reason for the optionality — JournalEntry's lines may not all be BDM-attributable, MonthlyArchive is an aggregate, DeductionSchedule supports XOR with person_id like IncentivePayout, SalesGoalTarget is a plan template, ErpAuditLog is a system audit. Leave as-is.
 - Per-line `bdm_id` enforcement on `RecurringJournalTemplate.lines[].bdm_id` (the line subdoc field). Cost-center allocation is intentionally optional; the field is informational, not a Rule #21 vector. No action needed.
+
+---
+
+## Phase G6.1 — People Master Entity Lifecycle (April 26, 2026) ✅ SHIPPED
+
+### What & Why
+
+Phase G6 (Apr 26) made master-data **reads** honor the entity selector. Phase G6.1 closes the **write side**: how a person gets visible in another entity, how to move them, and how staff become valid cross-entity proxies. Built entirely on top of existing infrastructure — no schema changes:
+
+- `User.entity_ids_static` + `userEntityRebuild` (FRA-A, Apr 22)
+- `PROXY_ENTRY_ROLES` + `resolveOwnerForWrite` (Phase G4.5a–G4.5f, Apr 22–23)
+- `erpSubAccessCheck` + `dangerSubPermissions` (Phase 3a / 3c)
+- `resolveEntityScope` + `CROSS_ENTITY_VIEW_ROLES` (Phase G6)
+
+### Deliverables
+
+1. **Visibility union on `getPeopleList`** ([backend/erp/controllers/peopleController.js](../backend/erp/controllers/peopleController.js)) — when scoped to a single entity, includes home-entity rows ∪ User-spanned rows ∪ active-FRA holders. Two extra queries (User.entity_ids lookup + FRA query); union via `$or` with same query params honored.
+2. **Three new endpoints** under `/erp/people/:id/`:
+   - `POST /transfer-entity { new_entity_id, reason }` — moves home entity, dual-writes to linked User. Blocks (HTTP 409) when source entity has any non-DRAFT JournalEntry referencing the person within the configured lookback (default 90, lookup-tunable).
+   - `POST /grant-entity { entity_id, reason }` — adds to User.entity_ids_static, triggers FRA-A rebuild. Idempotent.
+   - `POST /revoke-entity { entity_id, reason }` — removes from User.entity_ids_static. Cannot revoke home (use Transfer instead). Warns if still effective via active FRA.
+3. **Two new danger-baseline sub-perms** ([backend/erp/services/dangerSubPermissions.js](../backend/erp/services/dangerSubPermissions.js)):
+   - `people.transfer_entity` — gates `transferEntity`
+   - `people.grant_entity` — gates both `grantEntity` and `revokeEntity` (revoke is the inverse, gate together)
+4. **Three new AuditLog enum values** ([backend/models/AuditLog.js](../backend/models/AuditLog.js)) — `PERSON_ENTITY_TRANSFER`, `PERSON_ENTITY_GRANT`, `PERSON_ENTITY_REVOKE`. Logged with reason + before/after `User.entity_ids` snapshot. 90-day TTL (existing index).
+5. **`entity_access` summary on `getPersonById`** — Home + Additional (with via_static / via_fra source labels) + effective set + has_login flag. UI renders without re-querying.
+6. **Entity Access UI card** on [PersonDetail.jsx](../frontend/src/erp/pages/PersonDetail.jsx) between Person Info and Compensation Profile. Sub-perm-gated buttons (Transfer Home / + Grant Entity); × revoke button on static-only chips. Modal with entity dropdown + reason field. Shared modal for Transfer + Grant.
+7. **WorkflowGuide updates** for `people-list` and `person-detail` ([frontend/src/erp/components/WorkflowGuide.jsx](../frontend/src/erp/components/WorkflowGuide.jsx)).
+
+### Subscription readiness (Rule #3)
+
+- **Lookback days** are per-entity-configurable via Lookup `PEOPLE_LIFECYCLE_CONFIG` / `TRANSFER_BLOCK_LOOKBACK_DAYS` (default 90). 5-min cache. Future SaaS tenants with different operating cadences (weekly site rotation, monthly cycle) tune via Control Center → Lookup Tables — no code release.
+- **Sub-perm gating** uses the existing `erpSubAccessCheck` middleware. Subscribers grant the perm to whatever role they want via Access Template — admin/staff/finance can all be enabled. President bypasses upstream.
+- **No hardcoded role lists** — gates are sub-perm-driven, not role-string-matched.
+
+### Edge cases handled
+
+- **No linked User**: Transfer works (only mutates `PeopleMaster.entity_id`). Grant/Revoke return 400 with clear message ("Create login first or use Transfer").
+- **Granting an entity already in static**: returns 200 noop, no audit row, idempotent.
+- **Revoking the home entity**: 400 — "Use Transfer Entity to move the home, then revoke."
+- **Revoking an entity still active via FRA**: succeeds, but response message warns ("still has access via active functional role(s)").
+- **Active POSTED docs in source on Transfer**: 409 with payload `{ active_doc_count, source_entity_id, lookback_days }` so the UI can surface counts.
+- **Cross-database concerns**: none — User + PeopleMaster + FRA all live in the main CRM/ERP DB.
+
+### Cross-entity proxy interaction
+
+Once a staff person is granted an entity via this flow, the existing `resolveOwnerForWrite` defense-in-depth at [resolveOwnerScope.js:211](../backend/erp/utils/resolveOwnerScope.js#L211) accepts them as a valid proxy target on every transactional surface (Sales / Opening AR / Expenses / Collections / GRN / SMER / Per-Diem / CALF / Car Logbook / Undertaking) — no per-module wiring. The check is `targetEntities = [target.entity_id, ...target.entity_ids]` includes the request entity, which becomes true after grant.
+
+### Files touched
+
+| File | Change |
+|---|---|
+| [backend/erp/services/dangerSubPermissions.js](../backend/erp/services/dangerSubPermissions.js) | +2 baseline keys |
+| [backend/models/AuditLog.js](../backend/models/AuditLog.js) | +3 enum actions |
+| [backend/erp/controllers/peopleController.js](../backend/erp/controllers/peopleController.js) | Visibility union + entity_access summary + 3 endpoints + lookup-driven lookback helper |
+| [backend/erp/routes/peopleRoutes.js](../backend/erp/routes/peopleRoutes.js) | 3 new routes with sub-perm gates |
+| [frontend/src/erp/hooks/usePeople.js](../frontend/src/erp/hooks/usePeople.js) | 3 client methods |
+| [frontend/src/erp/pages/PersonDetail.jsx](../frontend/src/erp/pages/PersonDetail.jsx) | Entity Access card + Transfer/Grant modal + revoke handler |
+| [frontend/src/erp/components/WorkflowGuide.jsx](../frontend/src/erp/components/WorkflowGuide.jsx) | Updated people-list + person-detail banners |
+| [CLAUDE-ERP.md](../CLAUDE-ERP.md) | Phase G6.1 architecture section |
+
+### Verification
+
+- `node -c` clean on all 4 modified backend files.
+- Frontend Vite build green.
+- Playwright smoke executed (see "Playwright smoke results" section in chat transcript).
+- `tenantFilter` reads fresh `User.entity_ids` on every request (via `protect` middleware querying User by ID), so grants take effect immediately without logout — verified by reading [middleware/auth.js:62](../backend/middleware/auth.js#L62).
+
+### Out of scope
+
+- **Health-check script for PeopleMaster.entity_id ↔ User.entity_id drift** — `transferEntity` dual-writes atomically, so drift only occurs from out-of-band edits (mongosh). Existing `backfillEntityIdsFromFra.js` covers `User.entity_ids_static` ↔ `entity_ids` drift; PeopleMaster ↔ User home drift is a future polish.
+- **Cache invalidation on `PEOPLE_LIFECYCLE_CONFIG` lookup write** — 5-min TTL is acceptable for a config that changes rarely. If subscribers need instant takes, add bust hook in `lookupGenericController.js` (mirror `invalidateProxyRolesCache` pattern).
+- **Bulk transfer / bulk grant** — current endpoints are per-person. Bulk would be a separate phase.

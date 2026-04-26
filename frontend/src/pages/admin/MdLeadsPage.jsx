@@ -139,7 +139,7 @@ export default function MdLeadsPage() {
   const fetchList = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await doctorService.getMdLeads({
+      const res = await doctorService.getAll({
         partnership_status: filterStatus,
         search: search.trim() || undefined,
         limit: 100,
@@ -178,7 +178,7 @@ export default function MdLeadsPage() {
     }
     setPendingId(doctor._id);
     try {
-      await doctorService.setPartnershipStatus(doctor._id, { status: nextStatus });
+      await doctorService.updatePartnershipStatus(doctor._id, { partnership_status: nextStatus });
       toast.success(`Moved ${doctor.firstName || ''} ${doctor.lastName || ''} to ${nextStatus}`);
       fetchList();
       fetchCounts();
@@ -201,8 +201,8 @@ export default function MdLeadsPage() {
     }
     setPendingId(partnerModal.doctor._id);
     try {
-      await doctorService.setPartnershipStatus(partnerModal.doctor._id, {
-        status: 'PARTNER',
+      await doctorService.updatePartnershipStatus(partnerModal.doctor._id, {
+        partnership_status: 'PARTNER',
         partner_agreement_date,
         partnership_notes,
       });

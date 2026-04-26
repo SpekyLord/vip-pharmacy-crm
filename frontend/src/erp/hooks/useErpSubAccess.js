@@ -26,6 +26,8 @@ import { ROLES } from '../../constants/roles';
 // Phase 3c (Apr 2026): expanded from 1 → 10 keys covering period-lock, year-end,
 // settings, transfer-pricing, people/login mgmt, access-template delete, payroll
 // gov-rate delete, and product hard-delete. See backend file for the full mapping.
+// Phase G6.1 (Apr 26 2026): +2 keys for People Master entity lifecycle (transfer
+// home / grant span). See backend dangerSubPermissions.js for matching entries.
 const BASELINE_DANGER_SUB_PERMS = new Set([
   'accounting.reverse_posted',
   'accounting.period_force_unlock',
@@ -33,6 +35,8 @@ const BASELINE_DANGER_SUB_PERMS = new Set([
   'accounting.settings_write',
   'people.terminate',
   'people.manage_login',
+  'people.transfer_entity',
+  'people.grant_entity',
   'erp_access.template_delete',
   'payroll.gov_rate_delete',
   'inventory.transfer_price_set',

@@ -3,8 +3,12 @@ const PeopleMaster = require('../models/PeopleMaster');
 const CompProfile = require('../models/CompProfile');
 const FunctionalRoleAssignment = require('../models/FunctionalRoleAssignment');
 const User = require('../../models/User');
+const Entity = require('../models/Entity');
+const JournalEntry = require('../models/JournalEntry');
+const AuditLog = require('../../models/AuditLog');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { resolveEntityScope } = require('../utils/resolveEntityScope');
+const { rebuildUserEntityIdsForUser } = require('../utils/userEntityRebuild');
 
 // ═══ People CRUD ═══
 
@@ -18,6 +22,40 @@ const getPeopleList = catchAsync(async (req, res) => {
   // eslint-disable-next-line vip-tenant/require-entity-filter -- entity scoping handled by resolveEntityScope (lookup-driven, Rule #21 compliant)
   const { entityScope, isCrossEntity, scopedEntityId } = await resolveEntityScope(req, 'PEOPLE_MASTER');
   const filter = { ...entityScope };
+
+  // Phase G7 (Apr 26 2026) — visibility union. When scoped to a single entity,
+  // include people whose home is THIS entity OR who have auth-tier span here
+  // (User.entity_ids contains scope) OR who hold an active functional role
+  // here (FRA.entity_id == scope, load-bearing for User-less people only —
+  // FRA-A's userEntityRebuild already folds active FRA entities into
+  // User.entity_ids for User-linked people).
+  const scopeId = filter.entity_id;
+  if (scopeId && !isCrossEntity) {
+    const [usersWithSpan, peopleViaFra] = await Promise.all([
+      User.find({ entity_ids: scopeId }).select('_id').lean(),
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- explicit entity_id scope; FRA query intentionally narrowed to the requested entity
+      FunctionalRoleAssignment.find({
+        entity_id: scopeId,
+        is_active: true,
+        status: 'ACTIVE',
+      }).select('person_id').lean(),
+    ]);
+    const userIds = usersWithSpan.map((u) => u._id);
+    const fraPersonIds = peopleViaFra.map((f) => f.person_id).filter(Boolean);
+
+    let viaUserPersonIds = [];
+    if (userIds.length) {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- intentional cross-entity sweep: maps entity_ids span back to PeopleMaster rows
+      const ppl = await PeopleMaster.find({ user_id: { $in: userIds } }).select('_id').lean();
+      viaUserPersonIds = ppl.map((p) => p._id);
+    }
+
+    const additionalIds = [...viaUserPersonIds, ...fraPersonIds];
+    if (additionalIds.length) {
+      delete filter.entity_id;
+      filter.$or = [{ entity_id: scopeId }, { _id: { $in: additionalIds } }];
+    }
+  }
 
   if (req.query.person_type) filter.person_type = req.query.person_type;
   if (req.query.status) filter.status = req.query.status;
@@ -58,7 +96,7 @@ const getPersonById = catchAsync(async (req, res) => {
   const entityScope = req.isPresident ? {} : (req.entityId ? { entity_id: req.entityId } : {});
   const person = await PeopleMaster.findOne({ _id: req.params.id, ...entityScope })
     .select('+government_ids.sss_no +government_ids.philhealth_no +government_ids.pagibig_no +government_ids.tin +bank_account.bank +bank_account.account_no +bank_account.account_name')
-    .populate('user_id', 'name email role isActive')
+    .populate('user_id', 'name email role isActive entity_id entity_ids entity_ids_static')
     .populate('reports_to', 'full_name position department')
     .lean();
 
@@ -76,7 +114,43 @@ const getPersonById = catchAsync(async (req, res) => {
     .limit(10)
     .lean();
 
-  res.json({ success: true, data: { ...person, comp_profile: compProfile, comp_history: compHistory } });
+  // Phase G7 (Apr 26 2026) — entity_access summary. Compose Home (PeopleMaster.entity_id),
+  // Additional (User.entity_ids_static + active FRAs minus home), and effective set
+  // for the UI to render chips without re-querying. Resolves Entity docs in one batch.
+  const homeId = person.entity_id ? String(person.entity_id) : null;
+  const linkedUser = person.user_id && typeof person.user_id === 'object' ? person.user_id : null;
+  const staticIds = (linkedUser?.entity_ids_static || []).map(String);
+  const effectiveIds = (linkedUser?.entity_ids || []).map(String);
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- by-person sweep; person fetched with entityScope above
+  const fraRows = await FunctionalRoleAssignment.find({
+    person_id: person._id,
+    is_active: true,
+    status: 'ACTIVE',
+  }).select('entity_id functional_role').lean();
+  const fraEntityIds = [...new Set(fraRows.map((r) => String(r.entity_id)).filter(Boolean))];
+
+  const allIds = new Set([homeId, ...staticIds, ...effectiveIds, ...fraEntityIds].filter(Boolean));
+  const entityDocs = allIds.size
+    ? await Entity.find({ _id: { $in: [...allIds] } }).select('entity_name short_name brand_color').lean()
+    : [];
+  const entityById = new Map(entityDocs.map((e) => [String(e._id), e]));
+  const formatEntity = (id) => {
+    const doc = entityById.get(String(id));
+    return doc
+      ? { _id: doc._id, entity_name: doc.entity_name, short_name: doc.short_name, brand_color: doc.brand_color }
+      : { _id: id };
+  };
+  const additionalIds = [...new Set([...staticIds, ...fraEntityIds])].filter((id) => id !== homeId);
+  const entity_access = {
+    home: homeId ? formatEntity(homeId) : null,
+    additional: additionalIds.map(formatEntity),
+    via_static: staticIds.filter((id) => id !== homeId).map(formatEntity),
+    via_fra: fraEntityIds.filter((id) => id !== homeId).map(formatEntity),
+    effective: [...new Set([homeId, ...effectiveIds].filter(Boolean))].map(formatEntity),
+    has_login: !!linkedUser,
+  };
+
+  res.json({ success: true, data: { ...person, comp_profile: compProfile, comp_history: compHistory, entity_access } });
 });
 
 const createPerson = catchAsync(async (req, res) => {
@@ -706,6 +780,274 @@ const getLegacyRoleCounts = catchAsync(async (req, res) => {
   res.json({ success: true, data: counts });
 });
 
+// ═══ Entity Lifecycle (Phase G7, Apr 26 2026) ═══
+//
+// Three admin/president (or sub-perm-granted staff) actions to manage how a
+// person spans entities:
+//   - transferEntity → move PeopleMaster.entity_id (home)
+//   - grantEntity    → add to User.entity_ids_static (auth-tier span)
+//   - revokeEntity   → remove from User.entity_ids_static
+//
+// Both grant and revoke trigger rebuildUserEntityIdsForUser so the effective
+// User.entity_ids reflects union(static, active FRA) — same path FRA-A uses.
+// This keeps tenantFilter and resolveOwnerForWrite (Rule #19, Rule #21) honest
+// without dual-writing.
+//
+// Auditing: every mutation writes a PERSON_ENTITY_* row to AuditLog with
+// before/after snapshots. Block-on-active-docs uses JournalEntry as the
+// canonical financial trail (every posted ERP transaction creates one).
+//
+// Subscription-readiness (Rule #3): lookback days are per-entity-configurable
+// via Lookup PEOPLE_LIFECYCLE_CONFIG / TRANSFER_BLOCK_LOOKBACK_DAYS so future
+// SaaS tenants can tune to their operating cadence without a code release.
+
+const DEFAULT_LOOKBACK_DAYS = 90;
+const _lookbackCache = new Map();
+const LOOKBACK_CACHE_TTL_MS = 5 * 60 * 1000;
+
+async function getActiveDocLookbackDays(entityId) {
+  if (!entityId) return DEFAULT_LOOKBACK_DAYS;
+  const key = String(entityId);
+  const cached = _lookbackCache.get(key);
+  if (cached && Date.now() - cached.ts < LOOKBACK_CACHE_TTL_MS) return cached.days;
+  let days = DEFAULT_LOOKBACK_DAYS;
+  try {
+    const Lookup = require('../models/Lookup');
+    const doc = await Lookup.findOne({
+      entity_id: entityId,
+      category: 'PEOPLE_LIFECYCLE_CONFIG',
+      code: 'TRANSFER_BLOCK_LOOKBACK_DAYS',
+      is_active: true,
+    }).lean();
+    const v = Number(doc?.metadata?.value);
+    if (Number.isFinite(v) && v > 0) days = v;
+  } catch (err) {
+    console.warn('[peopleController] PEOPLE_LIFECYCLE_CONFIG lookup failed, using default:', err.message);
+  }
+  _lookbackCache.set(key, { ts: Date.now(), days });
+  return days;
+}
+
+async function countActivePostedDocs(userId, entityId, lookbackDays) {
+  if (!userId || !entityId) return 0;
+  const since = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000);
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- explicit entity_id in filter; sweep intentionally narrow to source entity
+  return JournalEntry.countDocuments({
+    bdm_id: userId,
+    entity_id: entityId,
+    status: { $ne: 'DRAFT' },
+    createdAt: { $gte: since },
+  });
+}
+
+const transferEntity = catchAsync(async (req, res) => {
+  const { new_entity_id, reason } = req.body || {};
+  if (!new_entity_id) {
+    return res.status(400).json({ success: false, message: 'new_entity_id is required' });
+  }
+  if (!reason || !String(reason).trim()) {
+    return res.status(400).json({ success: false, message: 'reason is required for audit trail' });
+  }
+
+  const sourceScope = req.isPresident ? {} : (req.entityId ? { entity_id: req.entityId } : {});
+  const person = await PeopleMaster.findOne({ _id: req.params.id, ...sourceScope });
+  if (!person) return res.status(404).json({ success: false, message: 'Person not found' });
+
+  const oldEntityId = person.entity_id ? String(person.entity_id) : null;
+  if (String(new_entity_id) === oldEntityId) {
+    return res.status(400).json({ success: false, message: 'Person is already in this entity' });
+  }
+
+  const newEntity = await Entity.findById(new_entity_id).select('entity_name short_name').lean();
+  if (!newEntity) {
+    return res.status(400).json({ success: false, message: 'Target entity not found' });
+  }
+
+  const lookbackDays = await getActiveDocLookbackDays(oldEntityId || req.entityId);
+  if (person.user_id && oldEntityId) {
+    const activeCount = await countActivePostedDocs(person.user_id, oldEntityId, lookbackDays);
+    if (activeCount > 0) {
+      return res.status(409).json({
+        success: false,
+        message: `Cannot transfer: ${activeCount} POSTED document(s) in the source entity within the last ${lookbackDays} days reference this person. Settle, reverse, or wait for them to age out before transferring.`,
+        data: { active_doc_count: activeCount, source_entity_id: oldEntityId, lookback_days: lookbackDays },
+      });
+    }
+  }
+
+  person.entity_id = new_entity_id;
+  await person.save();
+
+  let userRebuildResult = null;
+  if (person.user_id) {
+    const linkedUser = await User.findById(person.user_id);
+    if (linkedUser) {
+      linkedUser.entity_id = new_entity_id;
+      const staticSet = new Set((linkedUser.entity_ids_static || []).map(String));
+      staticSet.delete(oldEntityId);
+      staticSet.add(String(new_entity_id));
+      linkedUser.entity_ids_static = [...staticSet];
+      await linkedUser.save();
+      userRebuildResult = await rebuildUserEntityIdsForUser(linkedUser._id);
+    }
+  }
+
+  await AuditLog.create({
+    action: 'PERSON_ENTITY_TRANSFER',
+    userId: req.user._id,
+    targetUserId: person.user_id || undefined,
+    ipAddress: req.ip,
+    userAgent: req.get('user-agent'),
+    details: {
+      person_id: person._id,
+      person_name: person.full_name,
+      from_entity_id: oldEntityId,
+      to_entity_id: String(new_entity_id),
+      to_entity_name: newEntity.short_name || newEntity.entity_name,
+      reason: String(reason).trim(),
+      user_entity_ids_after: userRebuildResult?.entity_ids || null,
+    },
+  });
+
+  res.json({
+    success: true,
+    message: `Transferred to ${newEntity.short_name || newEntity.entity_name}`,
+    data: { person_id: person._id, new_entity_id, user_rebuild: userRebuildResult },
+  });
+});
+
+const grantEntity = catchAsync(async (req, res) => {
+  const { entity_id, reason } = req.body || {};
+  if (!entity_id) return res.status(400).json({ success: false, message: 'entity_id is required' });
+  if (!reason || !String(reason).trim()) {
+    return res.status(400).json({ success: false, message: 'reason is required for audit trail' });
+  }
+
+  const sourceScope = req.isPresident ? {} : (req.entityId ? { entity_id: req.entityId } : {});
+  const person = await PeopleMaster.findOne({ _id: req.params.id, ...sourceScope });
+  if (!person) return res.status(404).json({ success: false, message: 'Person not found' });
+
+  if (!person.user_id) {
+    return res.status(400).json({
+      success: false,
+      message: 'Person has no linked login — create a login first, or use Transfer Entity instead. Multi-entity span lives on the User auth record.',
+    });
+  }
+
+  const targetEntity = await Entity.findById(entity_id).select('entity_name short_name').lean();
+  if (!targetEntity) return res.status(400).json({ success: false, message: 'Target entity not found' });
+
+  const linkedUser = await User.findById(person.user_id);
+  if (!linkedUser) return res.status(400).json({ success: false, message: 'Linked user not found' });
+
+  const staticSet = new Set((linkedUser.entity_ids_static || []).map(String));
+  if (staticSet.has(String(entity_id))) {
+    return res.status(200).json({
+      success: true,
+      message: 'Entity already granted (no change)',
+      data: { person_id: person._id, entity_id, no_op: true },
+    });
+  }
+  staticSet.add(String(entity_id));
+  linkedUser.entity_ids_static = [...staticSet];
+  await linkedUser.save();
+
+  const rebuild = await rebuildUserEntityIdsForUser(linkedUser._id);
+
+  await AuditLog.create({
+    action: 'PERSON_ENTITY_GRANT',
+    userId: req.user._id,
+    targetUserId: linkedUser._id,
+    ipAddress: req.ip,
+    userAgent: req.get('user-agent'),
+    details: {
+      person_id: person._id,
+      person_name: person.full_name,
+      entity_id: String(entity_id),
+      entity_name: targetEntity.short_name || targetEntity.entity_name,
+      reason: String(reason).trim(),
+      user_entity_ids_after: rebuild?.entity_ids || null,
+    },
+  });
+
+  res.json({
+    success: true,
+    message: `Granted access to ${targetEntity.short_name || targetEntity.entity_name}`,
+    data: { person_id: person._id, entity_id, user_rebuild: rebuild },
+  });
+});
+
+const revokeEntity = catchAsync(async (req, res) => {
+  const { entity_id, reason } = req.body || {};
+  if (!entity_id) return res.status(400).json({ success: false, message: 'entity_id is required' });
+  if (!reason || !String(reason).trim()) {
+    return res.status(400).json({ success: false, message: 'reason is required for audit trail' });
+  }
+
+  const sourceScope = req.isPresident ? {} : (req.entityId ? { entity_id: req.entityId } : {});
+  const person = await PeopleMaster.findOne({ _id: req.params.id, ...sourceScope });
+  if (!person) return res.status(404).json({ success: false, message: 'Person not found' });
+
+  if (!person.user_id) {
+    return res.status(400).json({
+      success: false,
+      message: 'Person has no linked login — nothing to revoke. Use Transfer Entity to move the home entity instead.',
+    });
+  }
+
+  if (String(entity_id) === String(person.entity_id)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Cannot revoke the home entity. Use Transfer Entity to move the home, then revoke if needed.',
+    });
+  }
+
+  const linkedUser = await User.findById(person.user_id);
+  if (!linkedUser) return res.status(400).json({ success: false, message: 'Linked user not found' });
+
+  const staticSet = new Set((linkedUser.entity_ids_static || []).map(String));
+  if (!staticSet.has(String(entity_id))) {
+    return res.status(200).json({
+      success: true,
+      message: 'Entity not in static span (no change). Note: active functional roles in this entity will keep it in the effective span until revoked separately.',
+      data: { person_id: person._id, entity_id, no_op: true },
+    });
+  }
+  staticSet.delete(String(entity_id));
+  linkedUser.entity_ids_static = [...staticSet];
+  await linkedUser.save();
+
+  const rebuild = await rebuildUserEntityIdsForUser(linkedUser._id);
+  const stillEffective = (rebuild?.entity_ids || []).map(String).includes(String(entity_id));
+
+  const targetEntity = await Entity.findById(entity_id).select('entity_name short_name').lean();
+
+  await AuditLog.create({
+    action: 'PERSON_ENTITY_REVOKE',
+    userId: req.user._id,
+    targetUserId: linkedUser._id,
+    ipAddress: req.ip,
+    userAgent: req.get('user-agent'),
+    details: {
+      person_id: person._id,
+      person_name: person.full_name,
+      entity_id: String(entity_id),
+      entity_name: targetEntity?.short_name || targetEntity?.entity_name || null,
+      reason: String(reason).trim(),
+      still_effective_via_fra: stillEffective,
+      user_entity_ids_after: rebuild?.entity_ids || null,
+    },
+  });
+
+  res.json({
+    success: true,
+    message: stillEffective
+      ? `Revoked static grant. Person still has access via active functional role(s) in ${targetEntity?.short_name || 'this entity'} — revoke those to fully remove access.`
+      : `Revoked access to ${targetEntity?.short_name || targetEntity?.entity_name || 'entity'}`,
+    data: { person_id: person._id, entity_id, still_effective_via_fra: stillEffective, user_rebuild: rebuild },
+  });
+});
+
 module.exports = {
   getPeopleList,
   getPersonById,
@@ -728,4 +1070,7 @@ module.exports = {
   changeSystemRole,
   bulkChangeSystemRole,
   getLegacyRoleCounts,
+  transferEntity,
+  grantEntity,
+  revokeEntity,
 };
