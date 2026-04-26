@@ -94,6 +94,20 @@ const doctorService = {
     const response = await api.put('/doctors/name-cleanup/apply', { approved });
     return response.data;
   },
+
+  // Phase VIP-1.A — Update MD Partner partnership_status (LEAD → CONTACTED →
+  // VISITED → PARTNER → INACTIVE). Payload shape:
+  //   { partnership_status, partner_agreement_date?, partnership_notes? }
+  // Backend enforces:
+  //   - PARTNER promotion requires partner_agreement_date (3-gate Gate #2)
+  //   - Role gate driven by MD_PARTNER_ROLES lookup (admin/president by default;
+  //     subscribers can override per-entity in Control Center → Lookup Tables)
+  //   - BDMs may self-transition their own assigned Doctor to LEAD/CONTACTED/
+  //     VISITED/INACTIVE; PARTNER promotion is admin/president only
+  updatePartnershipStatus: async (id, payload) => {
+    const response = await api.put(`/doctors/${id}/partnership-status`, payload);
+    return response.data;
+  },
 };
 
 export default doctorService;

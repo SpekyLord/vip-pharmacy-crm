@@ -30,6 +30,7 @@ const {
   getDoctorsByBdm,
   previewNameCleanup,
   applyNameCleanup,
+  setPartnershipStatus,
 } = require('../controllers/doctorController');
 
 const { protect } = require('../middleware/auth');
@@ -54,6 +55,12 @@ router.get('/:id/products', getDoctorProducts);
 
 // Admin or Employee (BDM) routes - ownership checked in controller
 router.put('/:id/target-products', adminOrEmployee, updateTargetProducts);
+
+// Phase VIP-1.A — Partnership pipeline transitions. Auth required at the route
+// level; the controller does the full role + ownership cascade (admin/president
+// manage cross-records; BDMs self-transition own records; PARTNER promotion is
+// gated by SET_AGREEMENT_DATE roles + agreement_date).
+router.put('/:id/partnership-status', setPartnershipStatus);
 
 // Admin or Employee (BDM) routes - ownership checked in controller
 router.put('/:id', adminOrEmployee, updateDoctorValidation, updateDoctor);

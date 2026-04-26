@@ -1248,3 +1248,59 @@ Do NOT let M5 considerations influence M1-M4 architecture. It reuses existing mu
 4. Legal: draft MD Partner Agreement + SaaS Terms + DPA templates
 5. Judy Mae + BIR consultant: start BIR CAS PTU prep (3-6 months processing)
 
+---
+
+# PHASE VIP-1 — INTEGRATED VIP REBATE + COMMISSION ENGINE
+
+> **Source plan**: `~/.claude/plans/no-show-me-the-shimmying-candy.md` (re-scoped April 26, 2026 with mentor-mode pushback baked in).
+> **Strategy**: `~/.claude/projects/<repo>/memory/project_vios_modular_saas_strategy_apr2026.md`.
+> **Spans both repos**: `vip-pharmacy-crm` (CRM/ERP) and `vip-pharmacy-express` (storefront).
+
+## VIP-1.A — Doctor schema + MD Leads page ✅ SHIPPED Apr 26 2026
+
+Foundation for the MD-rebate moat. Discovery is automated (Rx OCR + storefront customer attestation in VIP-1.D/E); conversion is human (BDM in-person visits).
+
+### Backend (vip-pharmacy-crm)
+
+- `backend/models/Doctor.js` — added 5 fields:
+  - `partnership_status: enum('LEAD','CONTACTED','VISITED','PARTNER','INACTIVE')` (no default; pre-save hook stamps `LEAD` on new docs, `PARTNER` on legacy docs being saved without it)
+  - `lead_source: enum('RX_PARSE','CUSTOMER_ATTESTATION','BDM_MANUAL','IMPORT','OTHER')` default `BDM_MANUAL`
+  - `partner_agreement_date: Date` (rebate Gate #2)
+  - `prc_license_number: String` (sparse partial index — VIP-1.B may flip to unique post-dedup)
+  - `partnership_notes: String`
+- Indexes: `{ partnership_status, isActive }`, `{ assignedTo, partnership_status, isActive }`, sparse `{ prc_license_number }`.
+- `backend/utils/mdPartnerAccess.js` (NEW) — lookup-driven role gates (`MD_PARTNER_ROLES` category, codes `VIEW_LEADS`/`MANAGE_PARTNERSHIP`/`SET_AGREEMENT_DATE`). Mirrors `PROXY_ENTRY_ROLES` lazy-seed-from-defaults pattern in [resolveOwnerScope.js:58](backend/erp/utils/resolveOwnerScope.js#L58). Inline defaults = `[admin, president]`. 60-second cache, `invalidate(entityId)` on Lookup save.
+- `backend/controllers/doctorController.js`:
+  - `getAllDoctors` accepts `?partnership_status=LEAD` (single) or `?partnership_status=LEAD,CONTACTED,VISITED,PARTNER,INACTIVE` (comma-separated → `$in`). Invalid enum tokens silently dropped (Rule #21 — never fall back to a default that hides data).
+  - NEW `setPartnershipStatus` controller. Authorization cascade:
+    - PARTNER promotion: requires `SET_AGREEMENT_DATE` role from lookup AND `partner_agreement_date` payload (Gate #2).
+    - Other transitions: `MANAGE_PARTNERSHIP` role OR (BDM owns the record AND target is in `BDM_SELF_TRANSITIONS = LEAD/CONTACTED/VISITED/INACTIVE`).
+  - `updateDoctor` admin-allowed fields extended with `lead_source`, `prc_license_number`, `partnership_notes` (BDMs get only `partnership_notes`).
+- `backend/routes/doctorRoutes.js` — `PUT /api/doctors/:id/partnership-status` mounted before the catch-all `PUT /:id`.
+
+### Frontend (vip-pharmacy-crm)
+
+- `frontend/src/pages/admin/MdLeadsPage.jsx` (NEW) — operator surface. Status pill counts client-side from a single fetch (`partnership_status=LEAD,CONTACTED,VISITED,PARTNER,INACTIVE`). Promote-to-PARTNER opens a modal that requires `partner_agreement_date`. Lookup-driven UI: status pills + colors from `DOCTOR_PARTNERSHIP_STATUS`, lead-source labels from `DOCTOR_LEAD_SOURCE` (uses `useLookupOptions` hook).
+- `frontend/src/services/doctorService.js` — added `updatePartnershipStatus(id, payload)` calling `PUT /doctors/:id/partnership-status`.
+- `frontend/src/App.jsx` — added route `/admin/md-leads` lazy-loaded, gated `ROLE_SETS.ADMIN_ONLY`.
+- `frontend/src/components/common/Sidebar.jsx` — added "MD Leads" entry in admin Management section (Handshake icon).
+- `frontend/src/components/common/PageGuide.jsx` — added `'md-leads'` PAGE_GUIDES entry per Rule #1.
+
+### Verification (Rule 0b)
+
+- Backend syntax: `node -c` clean on Doctor.js, doctorController.js, doctorRoutes.js, mdPartnerAccess.js
+- Frontend build: `npx vite build` → ✅ 11.12s, `MdLeadsPage` chunk emitted, no errors
+- Schema enum + controller `PARTNERSHIP_STATUSES` constant kept in sync (manual today; if changed, change both — health check should assert this in a future pass)
+
+### Lookup categories (admin must seed for full UX, but defaults work without)
+
+- `DOCTOR_PARTNERSHIP_STATUS` — codes `LEAD`, `CONTACTED`, `VISITED`, `PARTNER`, `INACTIVE`. Each row has `metadata: { color: '#hex', next: 'CODE_OF_NEXT_STAGE', description: 'tooltip' }`.
+- `DOCTOR_LEAD_SOURCE` — codes `RX_PARSE`, `CUSTOMER_ATTESTATION`, `BDM_MANUAL`, `IMPORT`, `OTHER`. Each row has `metadata: { color: '#hex' }` (optional).
+- `MD_PARTNER_ROLES` — codes `VIEW_LEADS`, `MANAGE_PARTNERSHIP`, `SET_AGREEMENT_DATE`. Each row has `metadata: { roles: ['admin', 'president'] }`. Without lookup rows, helper falls back to inline defaults `[admin, president]`.
+
+### Open items / handoff to VIP-1.B
+
+- Seed the 3 lookup categories above (Control Center → Lookup Tables) so the page renders with the intended pills/colors instead of fallback grey + status codes.
+- VIP-1.B will introduce `MdProductRebate`, `NonMdPartnerRebateRule`, `MdCapitationRule`, `StaffCommissionRule` — all of these read `Doctor.partnership_status === 'PARTNER'` and `Doctor.partner_agreement_date` set as gates. The 3-gate guardrail (PARTNER + agreement_date + consent_log) is enforced at MdProductRebate / MdCapitationRule pre-save in VIP-1.B.
+
+

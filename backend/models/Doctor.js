@@ -138,6 +138,42 @@ const doctorSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    // ── Phase VIP-1.A (Apr 2026) — MD Partner Lead Pipeline ────────────────────
+    // Foundation for the MD-rebate moat (VIP-1.B). Discovery is automated via
+    // storefront sync (VIP-1.D Rx OCR + customer attestation, future); conversion
+    // is human (BDM in-person visits). Schema enums are the validation gate;
+    // labels + colors come from DOCTOR_PARTNERSHIP_STATUS + DOCTOR_LEAD_SOURCE
+    // lookups (Rule #3 — subscriber configures via Control Center).
+    //
+    // Pre-save default behavior:
+    //   - new docs without partnership_status → LEAD (auto-discovered MD pipeline)
+    //   - existing docs without partnership_status → PARTNER on next save
+    //     (assumption: anyone in CRM pre-VIP-1.A is at least at VISITED stage)
+    partnership_status: {
+      type: String,
+      enum: {
+        values: ['LEAD', 'CONTACTED', 'VISITED', 'PARTNER', 'INACTIVE'],
+        message: 'partnership_status must be LEAD, CONTACTED, VISITED, PARTNER, or INACTIVE',
+      },
+    },
+    lead_source: {
+      type: String,
+      enum: {
+        values: ['RX_PARSE', 'CUSTOMER_ATTESTATION', 'BDM_MANUAL', 'IMPORT', 'OTHER'],
+        message: 'lead_source must be RX_PARSE, CUSTOMER_ATTESTATION, BDM_MANUAL, IMPORT, or OTHER',
+      },
+      default: 'BDM_MANUAL',
+    },
+    partner_agreement_date: { type: Date, default: null },
+    prc_license_number: {
+      type: String,
+      trim: true,
+      maxlength: [40, 'PRC license number cannot exceed 40 characters'],
+    },
+    partnership_notes: {
+      type: String,
+      maxlength: [2000, 'Partnership notes cannot exceed 2000 characters'],
+    },
     // Clinic/office schedule for planning
     clinicSchedule: {
       monday: { type: Boolean, default: true },
@@ -317,6 +353,16 @@ doctorSchema.index({ vip_client_name_clean: 1 });
 // Phase A.5 — merged-record lookup (cron hard-delete + rollback queries)
 doctorSchema.index({ mergedInto: 1 });
 doctorSchema.index({ mergedAt: 1 });
+// Phase VIP-1.A — partnership pipeline hot path: MD Leads page filters by
+// partnership_status; BDM-self pipeline filters by both assignedTo + status.
+doctorSchema.index({ partnership_status: 1, isActive: 1 });
+doctorSchema.index({ assignedTo: 1, partnership_status: 1, isActive: 1 });
+// Sparse partial index — only documents that have a string PRC# get indexed.
+// VIP-1.B may flip to unique after admin dedups duplicates via the merge tool.
+doctorSchema.index(
+  { prc_license_number: 1 },
+  { partialFilterExpression: { prc_license_number: { $type: 'string' } } },
+);
 // Phase M1 — partner referral code is unique when set. `sparse` doesn't work here
 // because the schema writes `referralCode: null` by default, which the sparse index
 // still indexes and then collides across every unenrolled doctor. Partial filter
@@ -363,9 +409,17 @@ doctorSchema.methods.isAvailableOnDay = function (dayOfWeek) {
 
 // Pre-save hook: auto-clean firstName/lastName to proper case (lookup-driven)
 // + Phase A.5 (Apr 2026): maintain vip_client_name_clean canonical key.
+// + Phase VIP-1.A (Apr 2026): default partnership_status — LEAD for new docs,
+//   PARTNER for legacy docs being saved without the field set. Runs before the
+//   name-not-modified early-return so it triggers even on partnership-only saves.
 // Key shape: `lastname|firstname` (lowercased, inner whitespace collapsed).
 // Mirrors Customer.customer_name_clean / Hospital.hospital_name_clean pattern.
 doctorSchema.pre('save', async function (next) {
+  // Phase VIP-1.A — partnership_status default
+  if (this.partnership_status == null) {
+    this.partnership_status = this.isNew ? 'LEAD' : 'PARTNER';
+  }
+
   const nameModified = this.isModified('firstName') || this.isModified('lastName');
   if (!nameModified) return next();
   try {

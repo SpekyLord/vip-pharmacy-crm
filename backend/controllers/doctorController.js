@@ -20,6 +20,17 @@ const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/err
 const { sanitizeSearchString } = require('../utils/controllerHelpers');
 const { ROLES, isAdminLike } = require('../constants/roles');
 const { loadNameRules, generatePreview, findPotentialDuplicates } = require('../utils/nameCleanup');
+const {
+  getManagePartnershipRoles,
+  getSetAgreementDateRoles,
+} = require('../utils/mdPartnerAccess');
+
+// Phase VIP-1.A — Mirrors Doctor.js schema enum. If you change the schema, change this list.
+// Health check asserts the two stay in sync.
+const PARTNERSHIP_STATUSES = ['LEAD', 'CONTACTED', 'VISITED', 'PARTNER', 'INACTIVE'];
+// BDMs may self-transition their own assigned Doctor through these statuses.
+// PARTNER promotion is gated separately on SET_AGREEMENT_DATE roles.
+const BDM_SELF_TRANSITIONS = ['LEAD', 'CONTACTED', 'VISITED', 'INACTIVE'];
 
 /**
  * Build access filter based on user role
@@ -91,6 +102,20 @@ const getAllDoctors = catchAsync(async (req, res) => {
   // Filter by hospital affiliation (Gap 9)
   if (req.query.hospital_id) {
     filter['hospitals.hospital_id'] = req.query.hospital_id;
+  }
+
+  // Phase VIP-1.A — partnership_status filter. Accepts a single value
+  // ('LEAD') or comma-separated list ('LEAD,CONTACTED,VISITED,PARTNER,INACTIVE')
+  // so the MD Leads page can fetch all five buckets in one round-trip and tally
+  // counts client-side. Invalid enum values are silently dropped (Rule #21:
+  // never fall back to a default that hides data — drop only the bad token).
+  if (req.query.partnership_status) {
+    const parts = String(req.query.partnership_status)
+      .split(',')
+      .map((s) => s.trim().toUpperCase())
+      .filter((s) => PARTNERSHIP_STATUSES.includes(s));
+    if (parts.length === 1) filter.partnership_status = parts[0];
+    else if (parts.length > 1) filter.partnership_status = { $in: parts };
   }
 
   // Compose search + needsCleanup clauses via $and so both $or conditions coexist.
@@ -806,6 +831,104 @@ const applyNameCleanup = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Update a Doctor's partnership_status (LEAD → CONTACTED → VISITED → PARTNER → INACTIVE).
+ *          Body shape (matches MdLeadsPage.jsx contract):
+ *            {
+ *              partnership_status: 'PARTNER',
+ *              partner_agreement_date?: '2026-04-26',
+ *              partnership_notes?: '...'
+ *            }
+ *          Authorization cascade:
+ *            - PARTNER promotion: requires SET_AGREEMENT_DATE roles (lookup-driven)
+ *              AND partner_agreement_date is supplied (3-gate Gate #2 of rebate engine).
+ *            - Other transitions: MANAGE_PARTNERSHIP role OR
+ *              (BDM owns the record AND target status is in BDM_SELF_TRANSITIONS).
+ * @route   PUT /api/doctors/:id/partnership-status
+ * @access  Authenticated; controller does the role/ownership cascade
+ */
+const setPartnershipStatus = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const {
+    partnership_status: newStatus,
+    partner_agreement_date,
+    partnership_notes,
+  } = req.body || {};
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ success: false, message: 'Invalid doctor ID' });
+  }
+  if (!newStatus || !PARTNERSHIP_STATUSES.includes(newStatus)) {
+    return res.status(400).json({
+      success: false,
+      message: `partnership_status is required and must be one of: ${PARTNERSHIP_STATUSES.join(', ')}`,
+    });
+  }
+
+  const doctor = await Doctor.findById(id);
+  if (!doctor) throw new NotFoundError('Doctor not found');
+
+  const role = req.user.role;
+  const ownsRecord = (() => {
+    const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
+    return assignedToId && assignedToId.toString() === req.user._id.toString();
+  })();
+  const isBdm = !isAdminLike(role) && role === ROLES.STAFF;
+
+  if (newStatus === 'PARTNER') {
+    const setAgreementRoles = await getSetAgreementDateRoles(req.entityId);
+    const allowed = isAdminLike(role) || setAgreementRoles.includes(role);
+    if (!allowed) {
+      throw new ForbiddenError(
+        `Promoting to PARTNER requires one of: ${setAgreementRoles.join(', ')}. Your role: ${role}.`,
+      );
+    }
+    if (!partner_agreement_date) {
+      return res.status(400).json({
+        success: false,
+        message: 'partner_agreement_date is required when promoting to PARTNER (rebate gate #2)',
+      });
+    }
+    const parsed = new Date(partner_agreement_date);
+    if (Number.isNaN(parsed.getTime())) {
+      return res.status(400).json({ success: false, message: 'partner_agreement_date is not a valid date' });
+    }
+    doctor.partner_agreement_date = parsed;
+  } else {
+    const manageRoles = await getManagePartnershipRoles(req.entityId);
+    const canManageAcrossRecords = isAdminLike(role) || manageRoles.includes(role);
+    const canSelfTransition = isBdm && ownsRecord && BDM_SELF_TRANSITIONS.includes(newStatus);
+    if (!canManageAcrossRecords && !canSelfTransition) {
+      throw new ForbiddenError(
+        `Setting partnership_status=${newStatus} requires one of: ${manageRoles.join(', ')} (or BDM ownership for non-PARTNER transitions).`,
+      );
+    }
+    // Optional pre-fill: admin/manage roles can stash partner_agreement_date
+    // before the formal PARTNER flip (e.g. to record an agreement-in-progress).
+    if (partner_agreement_date !== undefined && canManageAcrossRecords) {
+      const parsed = partner_agreement_date ? new Date(partner_agreement_date) : null;
+      if (parsed && Number.isNaN(parsed.getTime())) {
+        return res.status(400).json({ success: false, message: 'partner_agreement_date is not a valid date' });
+      }
+      doctor.partner_agreement_date = parsed;
+    }
+  }
+
+  doctor.partnership_status = newStatus;
+  if (partnership_notes !== undefined && typeof partnership_notes === 'string') {
+    doctor.partnership_notes = partnership_notes;
+  }
+
+  await doctor.save();
+  await doctor.populate('assignedTo', 'name email');
+
+  res.status(200).json({
+    success: true,
+    message: 'Partnership status updated',
+    data: doctor,
+  });
+});
+
 module.exports = {
   getAllDoctors,
   getDoctorById,
@@ -821,4 +944,5 @@ module.exports = {
   getDoctorsByBdm,
   previewNameCleanup,
   applyNameCleanup,
+  setPartnershipStatus,
 };

@@ -60,6 +60,21 @@ const PAGE_GUIDES = {
     ],
     tip: 'VIP Clients marked "Due" should be visited this week. "Carried" means a missed visit from a previous week.',
   },
+  'md-leads': {
+    title: 'MD Partner Leads',
+    steps: [
+      'Pick a status pill (LEAD / CONTACTED / VISITED / PARTNER / INACTIVE) to filter the pipeline. Counts are tallied client-side from a single fetch.',
+      'For each row, the action button advances the MD one step (LEAD → CONTACTED → VISITED → PARTNER) — discovery is automated, conversion is human in-person.',
+      'Promoting to PARTNER opens a modal that requires the partner_agreement_date — that\'s gate #2 of the rebate engine (VIP-1.B). Capture the actual signed date for BIR 2307 service-fee framing.',
+      'BDMs may transition their own assigned MDs to LEAD/CONTACTED/VISITED/INACTIVE; PARTNER promotion is admin/president-only (lookup-driven via MD_PARTNER_ROLES).',
+      'Status pill labels + colors + lead-source labels come from the DOCTOR_PARTNERSHIP_STATUS and DOCTOR_LEAD_SOURCE lookup categories. Subscribers configure them via Control Center → Lookup Tables (no code change needed).',
+    ],
+    next: [
+      { label: 'VIP Clients', path: '/admin/doctors' },
+      { label: 'BDMs', path: '/admin/employees' },
+    ],
+    tip: 'New auto-discovered MDs (Rx OCR + storefront customer attestation, ships in VIP-1.D/E) land here as LEAD. Existing pre-VIP-1.A doctors save as PARTNER on next save (legacy assumption: anyone in CRM is at least at VISITED). Demote via the action menu if wrong.',
+  },
   'doctors-page': {
     title: 'VIP Client Management',
     steps: [
