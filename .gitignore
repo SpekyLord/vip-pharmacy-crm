@@ -92,3 +92,10 @@ scripts/sync-prod-to-dev.sh
 
 # Claude Code permission allowlist (accumulates session commands — can capture test creds, paths)
 .claude/settings.json
+
+# Playwright MCP session debris (regenerated each run)
+.playwright-mcp/
+
+# Smoke-test screenshots (regenerated each run)
+/je-tx-*.png
+/smoke-*.png
