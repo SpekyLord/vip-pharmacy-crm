@@ -8480,3 +8480,97 @@ PH BIR audit obligation per **RA 9994** (Expanded Senior Citizens Act, 2010) + *
 - Health check: `backend/scripts/healthCheckCollections.js` auto-discovers `SalesBookSCPWD` (model file in `backend/erp/models/` is walked automatically). New collection shows EMPTY in fresh envs (transactional, no seed required) — not an error.
 - Playwright UI smoke: see CRM-side ship note for the live click-through evidence (admin login → /admin/scpwd-sales-book → empty state → New Entry → modal → POSTED row → exports both download).
 - bir_flag coverage audit (Phase 0 prep step): all major JE flows verified — Sales/Collections/Expenses/COGS/Payroll correctly use `'BOTH'`; Petty Cash Remittance/Replenishment, IC Transfers, Credit Card Payment, Auto-CALF correctly use `'INTERNAL'`. No rebate-related JE creation exists yet (will be addressed in VIP-1.B). Storefront-feeding JEs do not exist yet (storefront not live).
+
+---
+
+## Phase VIP-1.B — Rebate + Commission Engine (April 26, 2026) — Phases 0 + 1A + 2 + 3A SHIPPED, Phases 4-6 PLANNED
+
+### Status
+- **Phase 0** (commit `bc57fba`): bir_flag leak fix — `journalFromPrfCalf` default flipped from `'BOTH'` → `'INTERNAL'`. Backfill script `backend/scripts/backfillPrfCalfBirFlag.js` ready (dry-run default).
+- **Phase 1A** (commit `6e1da00`): 7 schemas + matrix walker — pure-additive, +1394 lines.
+- **Phase 2** (commit `2bdb8f6`): 3 services — autoPrfRouting + rebateAccrualEngine + ecommCommissionEngine, +991 lines.
+- **Phase 3A** (this commit): lookup-driven role helper + 7 SEED_DEFAULTS categories + cache-bust hook wiring.
+- **Phase 3B** (this commit): docs (CLAUDE-ERP.md + this section).
+
+### Files added (cumulative through Phase 3)
+| Layer | File | Phase |
+|---|---|---|
+| Backend script | `backend/scripts/backfillPrfCalfBirFlag.js` | 0 |
+| ERP model | `backend/erp/models/MdProductRebate.js` | 1A |
+| ERP model | `backend/erp/models/NonMdPartnerRebateRule.js` | 1A |
+| ERP model | `backend/erp/models/MdCapitationRule.js` | 1A |
+| ERP model | `backend/erp/models/StaffCommissionRule.js` | 1A |
+| ERP model | `backend/erp/models/PatientMdAttribution.js` | 1A |
+| ERP model | `backend/erp/models/RebatePayout.js` | 1A |
+| ERP model | `backend/erp/models/CommissionPayout.js` | 1A |
+| ERP service | `backend/erp/services/matrixWalker.js` | 1A |
+| ERP service | `backend/erp/services/autoPrfRouting.js` | 2 |
+| ERP service | `backend/erp/services/rebateAccrualEngine.js` | 2 |
+| ERP service | `backend/erp/services/ecommCommissionEngine.js` | 2 |
+| Backend util | `backend/utils/rebateCommissionAccess.js` | 3A |
+
+### Files modified
+- `backend/erp/services/autoJournal.js` (Phase 0 — line 754 bir_flag default flip)
+- `backend/erp/controllers/lookupGenericController.js` (Phase 3A — added 7 SEED_DEFAULTS categories + cache-invalidation hook for REBATE_ROLES + COMMISSION_ROLES via `invalidateRebateCommissionCache`)
+- `CLAUDE-ERP.md` (this commit — VIP-1.B phase note)
+- `docs/PHASETASK-ERP.md` (this commit — this section)
+
+### Schema 3-gate enforcement (MdProductRebate + MdCapitationRule pre-save)
+
+1. `Doctor.partnership_status === 'PARTNER'` — LEAD/CONTACTED/VISITED/INACTIVE rejected.
+2. `Doctor.partner_agreement_date != null` — signed agreement on file.
+3. `rebate_pct <= Settings.MAX_MD_REBATE_PCT` (default 25, lookup-driven via Settings model — admin overrides per-entity via Control Center).
+
+The runtime engine in `rebateAccrualEngine.js` mirrors gates 1+2 at apply time (gate 3 only when `rebate_pct` is provided, since Tier-B uses different ceilings). Apply-time check catches rules that were saved when the MD was a PARTNER but later demoted.
+
+### Lookup-driven role gates (REBATE_ROLES + COMMISSION_ROLES)
+
+Helper: [backend/utils/rebateCommissionAccess.js](backend/utils/rebateCommissionAccess.js) — 60s TTL cache, mirrors scpwdAccess.js / mdPartnerAccess.js.
+
+| Category | Code | Default roles |
+|---|---|---|
+| REBATE_ROLES | MANAGE_MD_MATRIX | admin, president |
+| REBATE_ROLES | MANAGE_NONMD_MATRIX | admin, finance |
+| REBATE_ROLES | VIEW_PAYOUTS | admin, finance, president |
+| REBATE_ROLES | RUN_MONTHLY_CLOSE | admin, finance |
+| REBATE_ROLES | MARK_PAID | admin, finance |
+| REBATE_ROLES | EXPORT_BIR_2307 | admin, finance |
+| COMMISSION_ROLES | MANAGE_RULES | admin, finance, president |
+| COMMISSION_ROLES | VIEW_PAYOUTS | admin, finance, president |
+| COMMISSION_ROLES | OVERRIDE_AUTO_RATES | admin, finance |
+
+### BIR_FLAG invariants
+- All rebate-sourced JEs (PRF posting via autoJournal.journalFromPrfCalf) → `'INTERNAL'` (Phase 0 fix).
+- All commission-sourced JEs (when payouts post via PRF or payroll) → `'BOTH'` (BIR-deductible expense).
+- The engines stamp the Payout LEDGER row only; bir_flag enforcement happens at PRF/payroll post time (existing flow is correct post-Phase 0).
+
+### NOT YET WIRED (Phase 4 — next session, ~1.5-2 days)
+
+- **Collection.js pre-save bridge**: walk MdProductRebate/NonMdPartnerRebateRule/StaffCommissionRule per CSI line, populate new `md_rebate_lines[]` subschema + auto-fill `partner_tags[].rebate_pct` (when 0) + `settled_csis[].commission_rate` (when 0). Tier-A products excluded from partner_tags subtotal.
+- **collectionController POST hook**: invoke `autoPrfRouting.routePrfsForCollection({collectionId, userId, session})` inside the existing JE-TX transaction.
+- **4 admin matrix pages** + frontend services + Collections.jsx auto-fill badges:
+  - `RebateMatrixPage.jsx` (MdProductRebate editor)
+  - `NonMdPartnerRebateMatrixPage.jsx` (NonMdPartnerRebateRule editor)
+  - `CapitationRulesPage.jsx` (MdCapitationRule editor + read-only excluded products view)
+  - `CommissionMatrixPage.jsx` (StaffCommissionRule with payee_role tabs)
+- **Routes**: 4 new admin route files mounted in `routes/index.js`.
+- **Sidebar entries**: under Operations group (Rebate Matrix, Commission Matrix, Capitation Rules, Non-MD Rebate Matrix, Rebate Payouts, Commission Payouts).
+- **PageGuide banners**: per Rule #1, one entry per new page key.
+- **Health check entries**: `scripts/check-system-health.js` section addition for VIP-1.B collections.
+- **Playwright UI smoke**: golden path admin → seed PARTNER MD → add MdProductRebate row → record Collection touching that product → POST → verify auto-PRFs in PrfCalf list → run P&L Internal vs BIR view (rebate line absent from BIR).
+
+### Schema gap — Territory model (Phase 2.5, before storefront live)
+
+`Territory.js` lacks `provinces: [String]` and `area_bdm_user_id` fields. `ecommCommissionEngine.resolveAreaBdmFromProvince` queries them defensively (returns null on current schema, accrues no AREA_BDM commission). Phase 2.5 adds:
+- `Territory.provinces: [String]` (admin-managed via Control Center → Territories)
+- `Territory.area_bdm_user_id: ObjectId` (User ref, optional — falls back to first `assigned_bdms[]` if absent)
+
+### Divergence from VIP-1.A note
+
+The VIP-1.A phase note (CLAUDE-ERP.md line 146) referenced an apply-time 3-gate `(c)` of `PatientMdAttribution.attribution_consent_log.timestamp present`. VIP-1.B Phase 1A's `PatientMdAttribution.js` has `confidence` + `source` fields instead — the consent log is a non-breaking schema extension deferred for Phase 4 or later. Adding `attribution_consent_log.timestamp` is a clean 5-line schema add + one extra runtime check in `runtime3GateCheck` in `rebateAccrualEngine.js`. The next session should resolve the divergence (either implement consent_log or remove from the VIP-1.A note as out-of-scope).
+
+### Verification
+- `node -c` green on all 13 added files.
+- `node -c backend/erp/controllers/lookupGenericController.js` clean after Phase 3A edits.
+- Build verification (`vite build`) deferred to next session along with frontend wiring.
+- Playwright smoke deferred until admin pages ship (Phase 4).
