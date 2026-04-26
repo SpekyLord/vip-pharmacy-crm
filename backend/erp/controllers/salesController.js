@@ -470,6 +470,33 @@ const deleteDraftRow = catchAsync(async (req, res) => {
   res.json({ success: true, message: 'Draft row deleted' });
 });
 
+// Rule #4 — enrich each sale's line_items[] with product_name + dosage so list/
+// detail views can show brand_name + dosage_strength alongside the SKU
+// (item_key). Mutates sales in place. Safe on empty line_items.
+async function enrichLineItemsWithProductDisplay(sales) {
+  const productIds = new Set();
+  for (const s of sales) {
+    for (const li of s.line_items || []) {
+      if (li.product_id) productIds.add(String(li.product_id));
+    }
+  }
+  if (!productIds.size) return;
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- productIds harvested from same-entity-scoped sale.line_items; _id is globally unique
+  const products = await ProductMaster.find({ _id: { $in: Array.from(productIds) } })
+    .select('brand_name dosage_strength')
+    .lean();
+  const productMap = new Map(products.map(p => [String(p._id), p]));
+  for (const s of sales) {
+    for (const li of s.line_items || []) {
+      const p = productMap.get(String(li.product_id));
+      if (p) {
+        li.product_name = p.brand_name || '';
+        li.dosage = p.dosage_strength || '';
+      }
+    }
+  }
+}
+
 const getSales = catchAsync(async (req, res) => {
   // Phase G4.5a — widen filter to all BDMs in entity when caller is an eligible
   // proxy. Non-proxy callers stay scoped to their own bdm_id via tenantFilter.
@@ -510,6 +537,8 @@ const getSales = catchAsync(async (req, res) => {
     SalesLine.countDocuments(filter)
   ]);
 
+  await enrichLineItemsWithProductDisplay(sales);
+
   res.json({
     success: true,
     data: sales,
@@ -534,6 +563,8 @@ const getSaleById = catchAsync(async (req, res) => {
   if (!sale) {
     return res.status(404).json({ success: false, message: 'Sale not found' });
   }
+
+  await enrichLineItemsWithProductDisplay([sale]);
 
   res.json({ success: true, data: sale });
 });

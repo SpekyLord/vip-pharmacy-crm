@@ -4,6 +4,8 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import usePeople from '../hooks/usePeople';
 import useErpSubAccess from '../hooks/useErpSubAccess';
+import { useAuth } from '../../hooks/useAuth';
+import { isPresidentLike } from '../../constants/roles';
 
 import SelectField from '../../components/common/Select';
 import { useLookupOptions } from '../hooks/useLookups';
@@ -96,6 +98,13 @@ export function PeopleListContent() {
   // Mirrors backend peopleRoutes /bulk-change-role.
   const { hasSubPermission } = useErpSubAccess();
   const canManageLogin = hasSubPermission('people', 'manage_login');
+  // Phase G6 (Apr 26, 2026) — president-likes can opt into cross-entity view.
+  // Default is scope-by-selector (entity dropdown); flipping the toggle sends
+  // ?cross_entity=true, gated server-side by CROSS_ENTITY_VIEW_ROLES.PEOPLE_MASTER.
+  const { user } = useAuth();
+  const isPresident = isPresidentLike(user?.role);
+  const [crossEntity, setCrossEntity] = useState(false);
+  const [meta, setMeta] = useState({ is_cross_entity: false, scoped_entity_id: null });
   const { options: personTypeOpts } = useLookupOptions('PERSON_TYPE');
   const { options: systemRoleOpts } = useLookupOptions('SYSTEM_ROLE');
   const getRoleLabel = (code) => {
@@ -142,13 +151,18 @@ export function PeopleListContent() {
       } else {
         if (!filters.status) params.status = 'SEPARATED';
       }
+      // Phase G6 — opt-in cross-entity view for president-likes only. Backend
+      // re-checks the role against CROSS_ENTITY_VIEW_ROLES.PEOPLE_MASTER, so
+      // a non-president sending the flag is silently ignored (no escalation).
+      if (isPresident && crossEntity) params.cross_entity = 'true';
       if (bust) params._t = Date.now(); // bypass 304 cache after mutations
       const res = await api.getPeopleList(params);
       setPeople(res?.data || []);
       setPagination(res?.pagination || { page: 1, limit: 50, total: 0, pages: 0 });
+      setMeta(res?.meta || { is_cross_entity: false, scoped_entity_id: null });
     } catch (err) { console.error('[PeopleList] load error:', err.message); } finally { setLoading(false); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, tab]);
+  }, [filters, tab, crossEntity, isPresident]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -233,19 +247,35 @@ export function PeopleListContent() {
 
       <div className="ppl-header">
         <h2>People Master</h2>
-        <button
-          style={{ padding: '8px 16px', borderRadius: 6, background: syncing ? '#6d28d9' : '#7c3aed', color: '#fff', border: 'none', cursor: syncing ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: 13, marginRight: 8, opacity: syncing ? 0.7 : 1 }}
-          disabled={syncing}
-          onClick={async () => {
-            setSyncing(true);
-            try {
-              const res = await api.post('/people/sync-from-crm', {});
-              showSuccess(res?.message || `Synced: ${res?.data?.created || 0} created, ${res?.data?.skipped || 0} already exist`);
-              load(1, true);
-            } catch (err) { showError(err, 'Could not sync from CRM'); } finally { setSyncing(false); }
-          }}>{syncing ? 'Syncing...' : 'Sync from CRM'}</button>
-        <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ Add Person</button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {isPresident && (
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#374151', background: meta.is_cross_entity ? '#fef3c7' : '#f3f4f6', padding: '6px 10px', borderRadius: 6, border: '1px solid', borderColor: meta.is_cross_entity ? '#f59e0b' : '#d1d5db', cursor: 'pointer' }}>
+              <input type="checkbox" checked={crossEntity} onChange={e => setCrossEntity(e.target.checked)} style={{ margin: 0 }} />
+              <span style={{ fontWeight: 600 }}>View all entities</span>
+            </label>
+          )}
+          <button
+            style={{ padding: '8px 16px', borderRadius: 6, background: syncing ? '#6d28d9' : '#7c3aed', color: '#fff', border: 'none', cursor: syncing ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: 13, opacity: syncing ? 0.7 : 1 }}
+            disabled={syncing}
+            onClick={async () => {
+              setSyncing(true);
+              try {
+                const res = await api.post('/people/sync-from-crm', {});
+                showSuccess(res?.message || `Synced: ${res?.data?.created || 0} created, ${res?.data?.skipped || 0} already exist`);
+                load(1, true);
+              } catch (err) { showError(err, 'Could not sync from CRM'); } finally { setSyncing(false); }
+            }}>{syncing ? 'Syncing...' : 'Sync from CRM'}</button>
+          <button className="btn btn-primary" onClick={() => setShowForm(true)}>+ Add Person</button>
+        </div>
       </div>
+
+      {/* Phase G6 — scope banner. When cross-entity is on, surface the wider scope explicitly so admins know they're seeing across subsidiaries. */}
+      {meta.is_cross_entity && (
+        <div style={{ background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: 10, padding: '10px 14px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10, fontSize: 12, color: '#92400e' }}>
+          <span style={{ fontWeight: 700 }}>Cross-entity view active.</span>
+          <span>Showing people across all entities. Toggle off to scope to your selected entity only.</span>
+        </div>
+      )}
 
       <div className="ppl-filters">
         <input placeholder="Search name..." value={filters.search}
@@ -279,6 +309,7 @@ export function PeopleListContent() {
                 <th>Name</th>
                 <th>Email / Phone</th>
                 <th>Type</th>
+                {meta.is_cross_entity && <th className="ppl-hide-mobile">Entity</th>}
                 <th className="ppl-hide-mobile">Role</th>
                 <th className="ppl-hide-mobile">Login</th>
                 <th className="ppl-hide-mobile">Position</th>
@@ -305,6 +336,15 @@ export function PeopleListContent() {
                       {!p.email && !p.phone && '—'}
                     </td>
                     <td><span className="badge" style={{ background: tc.bg, color: tc.text }}>{p.person_type.replace(/_/g, ' ')}</span></td>
+                    {meta.is_cross_entity && (
+                      <td className="ppl-hide-mobile" style={{ fontSize: 11 }}>
+                        {p.entity_id ? (
+                          <span className="badge" style={{ background: p.entity_id.brand_color || '#e5e7eb', color: '#fff', fontWeight: 600 }}>
+                            {p.entity_id.short_name || p.entity_id.entity_name || '—'}
+                          </span>
+                        ) : <span style={{ color: '#9ca3af' }}>—</span>}
+                      </td>
+                    )}
                     <td className="ppl-hide-mobile">
                       {p.user_id?.role ? (() => {
                         const rc = ROLE_COLORS[p.user_id.role] || { bg: '#f3f4f6', text: '#374151' };

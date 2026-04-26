@@ -7,6 +7,7 @@ const { invalidateGuardrailCache } = require('../services/vendorAutoLearner');
 const { invalidateDangerCache } = require('../services/dangerSubPermissions');
 const { invalidateEditableStatuses } = require('../services/approvalService');
 const { invalidateProxyRolesCache, invalidateValidOwnerRolesCache } = require('../utils/resolveOwnerScope');
+const { invalidateCrossEntityRolesCache } = require('../utils/resolveEntityScope');
 
 // Categories whose changes must bust the OR parser's lookup cache (couriers/payment keywords)
 const OR_PARSER_LOOKUP_CATEGORIES = new Set(['OCR_COURIER_ALIASES', 'OCR_PAYMENT_KEYWORDS']);
@@ -31,6 +32,13 @@ const PROXY_ENTRY_ROLES_CATEGORIES = new Set(['PROXY_ENTRY_ROLES']);
 // manager carrying a territory) extend the list via Control Center without
 // a code change. Matching invalidator in resolveOwnerScope.js (60s TTL).
 const VALID_OWNER_ROLES_CATEGORIES = new Set(['VALID_OWNER_ROLES']);
+
+// Phase G6 (Apr 26, 2026) — bust cross-entity-view role cache when admin
+// edits CROSS_ENTITY_VIEW_ROLES. Cache TTL is 60s in resolveEntityScope.js;
+// busting on lookup write makes role-allowlist edits take effect instantly.
+// Without this, a subsidiary admin granting their CFO cross-entity People
+// Master visibility would have to wait up to 60s per running instance.
+const CROSS_ENTITY_VIEW_ROLES_CATEGORIES = new Set(['CROSS_ENTITY_VIEW_ROLES']);
 
 // Phase G6.10/G7 — categories whose seeded rows must default is_active: false so
 // subscribers explicitly opt in (Anthropic-billable features, spend caps that
@@ -2539,6 +2547,17 @@ const SEED_DEFAULTS = {
   PROXY_SLA_THRESHOLDS: [
     { code: 'DEFAULT', label: 'Default Proxy SLA Thresholds', metadata: { pending_alert_hours: 24, auto_ack_hours: 72, description: 'Hours before SLA alert (pending) and auto-acknowledgment (review)' }, insert_only_metadata: true },
   ],
+  // Phase G6 (Apr 26, 2026) — Cross-entity read allowlist per master-data
+  // module. President-likes default to scope-by-selector (entity dropdown);
+  // ?cross_entity=true on a list endpoint widens to all entities ONLY when the
+  // caller's role appears in metadata.roles. Subscribers grant a consolidating
+  // CFO/group-finance role cross-entity visibility via Control Center without
+  // a code change (Rule #3). Matching cache busted in resolveEntityScope.js
+  // (60s TTL) on lookup write. `insert_only_metadata: true` so admin edits to
+  // metadata.roles survive auto-seed (same fix as PROXY_ENTRY_ROLES).
+  CROSS_ENTITY_VIEW_ROLES: [
+    { code: 'PEOPLE_MASTER', label: 'People Master — cross-entity view (?cross_entity=true)', insert_only_metadata: true, metadata: { roles: ['president', 'ceo'], sort_order: 1 } },
+  ],
 };
 
 // List all distinct categories for current entity
@@ -2688,6 +2707,7 @@ exports.create = catchAsync(async (req, res) => {
   if (REJECTION_CONFIG_CATEGORIES.has(cat)) invalidateEditableStatuses(req.entityId, item.code);
   if (PROXY_ENTRY_ROLES_CATEGORIES.has(cat)) invalidateProxyRolesCache(req.entityId);
   if (VALID_OWNER_ROLES_CATEGORIES.has(cat)) invalidateValidOwnerRolesCache(req.entityId);
+  if (CROSS_ENTITY_VIEW_ROLES_CATEGORIES.has(cat)) invalidateCrossEntityRolesCache(req.entityId);
   res.status(201).json({ success: true, data: item });
 });
 
@@ -2714,6 +2734,7 @@ exports.update = catchAsync(async (req, res) => {
   if (REJECTION_CONFIG_CATEGORIES.has(item.category)) invalidateEditableStatuses(item.entity_id, item.code);
   if (PROXY_ENTRY_ROLES_CATEGORIES.has(item.category)) invalidateProxyRolesCache(item.entity_id);
   if (VALID_OWNER_ROLES_CATEGORIES.has(item.category)) invalidateValidOwnerRolesCache(item.entity_id);
+  if (CROSS_ENTITY_VIEW_ROLES_CATEGORIES.has(item.category)) invalidateCrossEntityRolesCache(item.entity_id);
   res.json({ success: true, data: item });
 });
 
@@ -2732,6 +2753,7 @@ exports.remove = catchAsync(async (req, res) => {
   if (REJECTION_CONFIG_CATEGORIES.has(item.category)) invalidateEditableStatuses(item.entity_id, item.code);
   if (PROXY_ENTRY_ROLES_CATEGORIES.has(item.category)) invalidateProxyRolesCache(item.entity_id);
   if (VALID_OWNER_ROLES_CATEGORIES.has(item.category)) invalidateValidOwnerRolesCache(item.entity_id);
+  if (CROSS_ENTITY_VIEW_ROLES_CATEGORIES.has(item.category)) invalidateCrossEntityRolesCache(item.entity_id);
   res.json({ success: true, data: item, message: 'Item deactivated' });
 });
 
@@ -2752,6 +2774,7 @@ exports.seedCategory = catchAsync(async (req, res) => {
   if (REJECTION_CONFIG_CATEGORIES.has(category)) invalidateEditableStatuses(req.entityId);
   if (PROXY_ENTRY_ROLES_CATEGORIES.has(category)) invalidateProxyRolesCache(req.entityId);
   if (VALID_OWNER_ROLES_CATEGORIES.has(category)) invalidateValidOwnerRolesCache(req.entityId);
+  if (CROSS_ENTITY_VIEW_ROLES_CATEGORIES.has(category)) invalidateCrossEntityRolesCache(req.entityId);
   const items = await Lookup.find({ entity_id: req.entityId, category }).sort({ sort_order: 1 }).lean();
   res.json({ success: true, data: items, message: `Seeded ${defaults.length} defaults for ${category}` });
 });
@@ -2776,6 +2799,7 @@ exports.seedAll = catchAsync(async (req, res) => {
   invalidateEditableStatuses(req.entityId);
   invalidateProxyRolesCache(req.entityId);
   invalidateValidOwnerRolesCache(req.entityId);
+  invalidateCrossEntityRolesCache(req.entityId);
   const populated = await Lookup.distinct('category', { entity_id: req.entityId });
   res.json({ success: true, data: results, message: `Seeded ${populated.length}/${Object.keys(SEED_DEFAULTS).length} categories` });
 });

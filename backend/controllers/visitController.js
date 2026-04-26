@@ -80,6 +80,15 @@ const createVisit = catchAsync(async (req, res) => {
     }
   }
 
+  // Mirror VisitLogger.jsx client-side gate (Rule #3 — server is the system
+  // boundary; the toast can be bypassed via direct API call).
+  if (!Array.isArray(engagementData) || engagementData.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'At least one engagement type is required.',
+    });
+  }
+
   const visitDateObj = visitDate ? new Date(visitDate) : new Date();
 
   // Check if user can visit this doctor (region access, weekly and monthly limits)

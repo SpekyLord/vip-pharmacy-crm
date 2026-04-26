@@ -512,9 +512,19 @@ export default function SalesList() {
                     <td data-label="Entity"><EntityBadge entity={getEntityById(sale.entity_id)} size="sm" /></td>
                   )}
                   <td data-label="Products" style={{ fontSize: 11, maxWidth: 220, whiteSpace: 'pre-line' }}>
-                    {sale.line_items?.map((li, i) => (
-                      <div key={i}>{li.item_key || '—'} × {li.qty}</div>
-                    ))}
+                    {sale.line_items?.map((li, i) => {
+                      // Rule #4 — show brand_name + dosage_strength alongside
+                      // the SKU. Backend enriches line_items via
+                      // enrichLineItemsWithProductDisplay (salesController).
+                      const display = [li.product_name, li.dosage].filter(Boolean).join(' ');
+                      return (
+                        <div key={i}>
+                          {li.item_key || '—'}
+                          {display && <> — {display}</>}
+                          {' '}× {li.qty}
+                        </div>
+                      );
+                    })}
                   </td>
                   <td data-label="Actions" onClick={e => e.stopPropagation()}>
                     <div className="sales-actions">

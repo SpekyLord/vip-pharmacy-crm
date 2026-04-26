@@ -891,6 +891,8 @@ const WORKFLOW_GUIDES = {
   'people-list': {
     title: 'People Directory',
     steps: [
+      'The list scopes to the entity selected in the top-right entity selector — only people under that entity show by default',
+      'President/CEO can flip the "View all entities" toggle in the header to see people across every subsidiary (an Entity column appears when active)',
       'Use the Active / Archive tabs to switch between current and separated employees',
       'Use search and filters to find people by name, type, role, or status',
       'The table shows system role, login status, employment type, BDM code, stage, and territory at a glance',
@@ -903,7 +905,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Org Chart', path: '/erp/org-chart' },
       { label: 'Add Person', path: '/erp/people' },
     ],
-    tip: 'The Active tab shows current employees (ACTIVE, ON_LEAVE, SUSPENDED). The Archive tab shows separated employees. Use "Sync from CRM" to import existing CRM users. Reactivating a person sets them to ACTIVE but does not restore login or role assignments — those must be re-enabled manually. Note: all people selection dropdowns across the ERP (Managed By, Reports To, Assign To, etc.) only show ACTIVE people.',
+    tip: 'The Active tab shows current employees (ACTIVE, ON_LEAVE, SUSPENDED). The Archive tab shows separated employees. Use "Sync from CRM" to import existing CRM users. Reactivating a person sets them to ACTIVE but does not restore login or role assignments — those must be re-enabled manually. Cross-entity view is governed by the CROSS_ENTITY_VIEW_ROLES.PEOPLE_MASTER lookup (Control Center → Lookup Tables) — by default only president/ceo can opt in. Note: all people selection dropdowns across the ERP (Managed By, Reports To, Assign To, etc.) only show ACTIVE people.',
   },
   'person-detail': {
     title: 'Person Profile',
