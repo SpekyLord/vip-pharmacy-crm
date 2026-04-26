@@ -26,7 +26,6 @@ import {
   AlertTriangle,
   X,
   ArrowRight,
-  ChevronDown,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Navbar from '../../components/common/Navbar';
