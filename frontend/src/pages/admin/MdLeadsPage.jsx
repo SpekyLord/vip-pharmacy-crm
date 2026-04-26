@@ -16,7 +16,7 @@
  * Route: /admin/md-leads
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Handshake,
   RefreshCw,
@@ -32,13 +32,14 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import PageGuide from '../../components/common/PageGuide';
 import doctorService from '../../services/doctorService';
+import { useLookupOptions } from '../../erp/hooks/useLookups';
 
 const STATUSES = ['LEAD', 'CONTACTED', 'VISITED', 'PARTNER', 'INACTIVE'];
 
-// Display metadata. Subscriber overrides should land via the
-// MD_PARTNER_ROLES lookup category (backend) + a future labels lookup;
-// for VIP-1.A this is inline (UI-only, schema enum is the validation gate).
-const STATUS_META = {
+// Inline fallback. Used when the DOCTOR_PARTNERSHIP_STATUS lookup is empty,
+// loading, or unreachable — so the page never goes dark on a Lookup outage.
+// Lookup rows can override label + metadata.bg/fg per entity (Rule #3).
+const STATUS_META_FALLBACK = {
   LEAD:      { label: 'LEAD',      bg: '#dbeafe', fg: '#1d4ed8' },
   CONTACTED: { label: 'CONTACTED', bg: '#cffafe', fg: '#0891b2' },
   VISITED:   { label: 'VISITED',   bg: '#fef3c7', fg: '#b45309' },
@@ -134,6 +135,34 @@ export default function MdLeadsPage() {
   const [search, setSearch] = useState('');
   const [pendingId, setPendingId] = useState(null);
   const [partnerModal, setPartnerModal] = useState(null); // {doctor} or null
+
+  // Lookup-driven labels + colors. Falls back to inline defaults if the
+  // category isn't seeded for this entity (Rule #3 — subscriber-configurable
+  // via Control Center → Lookup Tables → DOCTOR_PARTNERSHIP_STATUS).
+  const { options: statusOptions } = useLookupOptions('DOCTOR_PARTNERSHIP_STATUS');
+  const { options: leadSourceOptions } = useLookupOptions('DOCTOR_LEAD_SOURCE');
+
+  const STATUS_META = useMemo(() => {
+    const merged = { ...STATUS_META_FALLBACK };
+    for (const opt of statusOptions || []) {
+      if (!opt?.code) continue;
+      const meta = opt.metadata || {};
+      merged[opt.code] = {
+        label: (opt.label || opt.code).toUpperCase(),
+        bg: meta.bg || STATUS_META_FALLBACK[opt.code]?.bg || '#f3f4f6',
+        fg: meta.fg || STATUS_META_FALLBACK[opt.code]?.fg || '#6b7280',
+      };
+    }
+    return merged;
+  }, [statusOptions]);
+
+  const LEAD_SOURCE_LABELS = useMemo(() => {
+    const map = {};
+    for (const opt of leadSourceOptions || []) {
+      if (opt?.code) map[opt.code] = opt.label || opt.code;
+    }
+    return map;
+  }, [leadSourceOptions]);
 
   const fetchList = useCallback(async () => {
     setLoading(true);
@@ -306,7 +335,7 @@ export default function MdLeadsPage() {
                           <td>
                             <span className="ml-pill" style={{ background: meta.bg, color: meta.fg }}>{meta.label}</span>
                           </td>
-                          <td>{d.lead_source || '—'}</td>
+                          <td>{d.lead_source ? (LEAD_SOURCE_LABELS[d.lead_source] || d.lead_source) : '—'}</td>
                           <td>{formatDate(d.createdAt)}</td>
                           <td>{d.assignedTo?.name || '—'}</td>
                           <td>{formatDate(d.partner_agreement_date)}</td>
