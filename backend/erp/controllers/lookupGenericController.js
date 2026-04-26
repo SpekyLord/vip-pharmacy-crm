@@ -8,6 +8,7 @@ const { invalidateDangerCache } = require('../services/dangerSubPermissions');
 const { invalidateEditableStatuses } = require('../services/approvalService');
 const { invalidateProxyRolesCache, invalidateValidOwnerRolesCache } = require('../utils/resolveOwnerScope');
 const { invalidateCrossEntityRolesCache } = require('../utils/resolveEntityScope');
+const { invalidate: invalidateScpwdRolesCache } = require('../../utils/scpwdAccess');
 
 // Categories whose changes must bust the OR parser's lookup cache (couriers/payment keywords)
 const OR_PARSER_LOOKUP_CATEGORIES = new Set(['OCR_COURIER_ALIASES', 'OCR_PAYMENT_KEYWORDS']);
@@ -39,6 +40,12 @@ const VALID_OWNER_ROLES_CATEGORIES = new Set(['VALID_OWNER_ROLES']);
 // Without this, a subsidiary admin granting their CFO cross-entity People
 // Master visibility would have to wait up to 60s per running instance.
 const CROSS_ENTITY_VIEW_ROLES_CATEGORIES = new Set(['CROSS_ENTITY_VIEW_ROLES']);
+
+// Phase VIP-1.H (Apr 2026) — bust the SC/PWD register's role cache when admin
+// edits SCPWD_ROLES. Cache TTL is 60s in scpwdAccess.js; without this hook,
+// a finance role added to EXPORT_VAT_RECLAIM would wait up to 60s before
+// being able to download the BIR Form 2306 worksheet.
+const SCPWD_ROLES_CATEGORIES = new Set(['SCPWD_ROLES']);
 
 // Phase G6.10/G7 — categories whose seeded rows must default is_active: false so
 // subscribers explicitly opt in (Anthropic-billable features, spend caps that
@@ -2589,6 +2596,25 @@ const SEED_DEFAULTS = {
     { code: 'MANAGE_PARTNERSHIP', label: 'Drive LEAD/CONTACTED/VISITED transitions', insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 2, description: 'Cross-record management. BDM-on-own-record bypass enforced separately in controller.' } },
     { code: 'SET_AGREEMENT_DATE', label: 'Promote to PARTNER (rebate gate #2)',   insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 3, description: 'Locks rebate eligibility — keep narrow. President-only is a safer posture once VIP-1.B ships.' } },
   ],
+  // ── Phase VIP-1.H (Apr 2026) — SC/PWD Sales Book + BIR Sales Book exports ──
+  // scpwdAccess.js reads metadata.roles for each code with 60s TTL cache.
+  // Default posture is admin + finance (NOT president) — BIR audit-reportable
+  // exports should travel through accountability roles for traceability.
+  // Subscribers in jurisdictions outside PH can repurpose this category for
+  // their own discount-register access gates without code changes.
+  SCPWD_ROLES: [
+    { code: 'VIEW_REGISTER',      label: 'View SC/PWD Sales Book register',          insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 1, description: 'Read-only access to the SC/PWD register page + filters. Wider than CREATE/EXPORT because executives review without writing.' } },
+    { code: 'CREATE_ENTRY',       label: 'Create / ingest SC/PWD entries',           insert_only_metadata: true, metadata: { roles: ['admin', 'finance'], sort_order: 2, description: 'Manual entry posting + idempotent ingest from ERP Sale POSTED. Storefront ingest (VIP-1.D) uses the same gate.' } },
+    { code: 'EXPORT_MONTHLY',     label: 'Export monthly BIR register (RR 7-2010)',  insert_only_metadata: true, metadata: { roles: ['admin', 'finance'], sort_order: 3, description: 'CSV/PDF export of the monthly SC/PWD sales book. Audit-logged with period + who exported.' } },
+    { code: 'EXPORT_VAT_RECLAIM', label: 'Export Input VAT Credit Worksheet (Form 2306)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance'], sort_order: 4, description: 'BIR Form 2306 input-VAT reclaim worksheet — narrow gate; first-time exports should be reviewed by accountant before filing.' } },
+  ],
+  // ID-format regex per jurisdiction. PH defaults seeded; subscribers in other
+  // markets override per-entity. Pre-save in SalesBookSCPWD.js validates the
+  // ID against this regex (permissive fallback if lookup unreachable).
+  SCPWD_ID_FORMATS: [
+    { code: 'OSCA_PH', label: 'PH OSCA Senior Citizen ID',  insert_only_metadata: true, metadata: { regex: '^[A-Z0-9-]{4,20}$', sort_order: 1, description: 'OSCA-issued IDs vary by LGU; permissive 4-20 alphanumeric/dash range covers most LGU formats. Tighten per municipality if needed.' } },
+    { code: 'PWD_PH',  label: 'PH DSWD PWD ID',             insert_only_metadata: true, metadata: { regex: '^[A-Z0-9-]{4,20}$', sort_order: 2, description: 'DSWD-issued PWD IDs (RA 7277/9442). Some LGUs use 13-character formats; admin can tighten per municipality.' } },
+  ],
 };
 
 // List all distinct categories for current entity
@@ -2739,6 +2765,7 @@ exports.create = catchAsync(async (req, res) => {
   if (PROXY_ENTRY_ROLES_CATEGORIES.has(cat)) invalidateProxyRolesCache(req.entityId);
   if (VALID_OWNER_ROLES_CATEGORIES.has(cat)) invalidateValidOwnerRolesCache(req.entityId);
   if (CROSS_ENTITY_VIEW_ROLES_CATEGORIES.has(cat)) invalidateCrossEntityRolesCache(req.entityId);
+  if (SCPWD_ROLES_CATEGORIES.has(cat)) invalidateScpwdRolesCache(req.entityId);
   res.status(201).json({ success: true, data: item });
 });
 
@@ -2766,6 +2793,7 @@ exports.update = catchAsync(async (req, res) => {
   if (PROXY_ENTRY_ROLES_CATEGORIES.has(item.category)) invalidateProxyRolesCache(item.entity_id);
   if (VALID_OWNER_ROLES_CATEGORIES.has(item.category)) invalidateValidOwnerRolesCache(item.entity_id);
   if (CROSS_ENTITY_VIEW_ROLES_CATEGORIES.has(item.category)) invalidateCrossEntityRolesCache(item.entity_id);
+  if (SCPWD_ROLES_CATEGORIES.has(item.category)) invalidateScpwdRolesCache(item.entity_id);
   res.json({ success: true, data: item });
 });
 
@@ -2785,6 +2813,7 @@ exports.remove = catchAsync(async (req, res) => {
   if (PROXY_ENTRY_ROLES_CATEGORIES.has(item.category)) invalidateProxyRolesCache(item.entity_id);
   if (VALID_OWNER_ROLES_CATEGORIES.has(item.category)) invalidateValidOwnerRolesCache(item.entity_id);
   if (CROSS_ENTITY_VIEW_ROLES_CATEGORIES.has(item.category)) invalidateCrossEntityRolesCache(item.entity_id);
+  if (SCPWD_ROLES_CATEGORIES.has(item.category)) invalidateScpwdRolesCache(item.entity_id);
   res.json({ success: true, data: item, message: 'Item deactivated' });
 });
 
@@ -2806,6 +2835,7 @@ exports.seedCategory = catchAsync(async (req, res) => {
   if (PROXY_ENTRY_ROLES_CATEGORIES.has(category)) invalidateProxyRolesCache(req.entityId);
   if (VALID_OWNER_ROLES_CATEGORIES.has(category)) invalidateValidOwnerRolesCache(req.entityId);
   if (CROSS_ENTITY_VIEW_ROLES_CATEGORIES.has(category)) invalidateCrossEntityRolesCache(req.entityId);
+  if (SCPWD_ROLES_CATEGORIES.has(category)) invalidateScpwdRolesCache(req.entityId);
   const items = await Lookup.find({ entity_id: req.entityId, category }).sort({ sort_order: 1 }).lean();
   res.json({ success: true, data: items, message: `Seeded ${defaults.length} defaults for ${category}` });
 });

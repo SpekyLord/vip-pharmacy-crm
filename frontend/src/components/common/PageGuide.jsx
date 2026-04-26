@@ -75,6 +75,22 @@ const PAGE_GUIDES = {
     ],
     tip: 'New auto-discovered MDs (Rx OCR + storefront customer attestation, ships in VIP-1.D/E) land here as LEAD. Existing pre-VIP-1.A doctors save as PARTNER on next save (legacy assumption: anyone in CRM is at least at VISITED). Demote via the action menu if wrong.',
   },
+  'scpwd-sales-book': {
+    title: 'SC / PWD Sales Book (BIR-mandated)',
+    steps: [
+      'Pick the BIR period (year + month) at the top — the table, counts, and exports all filter on the chosen period.',
+      'Click "New Entry" to land a SC/PWD transaction. Enter the OSCA / PWD ID + customer name, then add line items (qty × unit price). The 20% discount + 12% VAT-exemption math auto-derives per RA 9994.',
+      'Each row starts as DRAFT. Verify the math then click "Post" to commit it to the BIR Sales Book — POSTED rows lock the period\'s totals.',
+      'A POSTED row can be voided with a written reason (audit trail). Voids do NOT remove the row from monthly export totals — they show with discount = 0 so BIR auditors can see the reversal trail.',
+      '"Export Monthly CSV" produces the BIR RR 7-2010 format Sales Book — Senior Citizen / PWD register. File this with your monthly BIR submission.',
+      '"Export VAT Reclaim (DRAFT)" produces a BIR Form 2306 worksheet showing the input VAT recoverable from suppliers. Review with your accredited tax accountant before filing — this is real money owed back from BIR.',
+    ],
+    next: [
+      { label: 'VIP Clients', path: '/admin/doctors' },
+      { label: 'Period Locks (ERP)', path: '/erp/period-locks' },
+    ],
+    tip: 'Once a BIR period is filed and locked (Period Locks page in ERP), retroactive SC/PWD entries are rejected. Default role gates: admin + finance for write/export; admin + finance + president for view. Subscribers configure per entity via Control Center → Lookup Tables → SCPWD_ROLES.',
+  },
   'doctors-page': {
     title: 'VIP Client Management',
     steps: [

@@ -8421,3 +8421,62 @@ VIP-1.A is a **CRM-side phase**; full detail lives in `docs/PHASE-TASKS-CRM.md` 
 - Backend startup: `npm run startup:check` passes — server boots, all routes mount, entity-guard + bdm-guard observe the new `Doctor` fields without warnings.
 - ESLint risk-gate: clean (was failing on unused `ChevronDown` import; closed in `bb01e9f`).
 - Playwright UI smoke: **deferred** — credentialed click-through pending valid admin login. Build + syntax + startup guarantee structural correctness, but live happy-path remains unverified in this commit.
+
+## Phase VIP-1.H — SC/PWD Sales Book + BIR Sales Book exports (April 26, 2026) ✅ FOUNDATION SHIPPED
+
+### Context
+
+PH BIR audit obligation per **RA 9994** (Expanded Senior Citizens Act, 2010) + **RA 7277/9442** (Magna Carta for PWD) + **BIR RR 7-2010** (mandatory separate Sales Book — Senior Citizen / PWD register) + **BIR Form 2306** (input VAT credit reclaim worksheet). VIP runs an FDA-licensed retail pharmacy → these exports are filed monthly. The same module ports to future pharmacy-SaaS tenants since every PH pharmacy faces the identical compliance bar.
+
+**Why SC/PWD escapes the data-privacy default**: RA 10173 §13 explicitly recognizes legal-mandate exceptions to processing restrictions. BIR's audit authority creates that mandate. This register MUST be printable/exportable. (Distinct from VIP-2 prescription-data sharing, which is consent-based view-only.)
+
+### What landed (ERP)
+
+- **`backend/erp/models/SalesBookSCPWD.js`** — denormalized BIR-ready register row.
+  - Fields per BIR RR 7-2010 + RR 5-2017: `sc_pwd_type`, `osca_or_pwd_id`, `customer_name`, `date_of_birth`, `id_expiry_date`, `id_photo_url`, `transaction_date`, `bir_period.{year,month}`, line `items[]` with per-line gross/discount/vat-exempt/net, header `gross_amount`, `discount_amount`, `vat_exempt_amount`, `net_amount`, `input_vat_paid_to_supplier` (Form 2306 reclaim).
+  - Lifecycle: `DRAFT → POSTED → VOID` with full audit trail (`posted_by`, `posted_at`, `voided_by`, `voided_at`, `void_reason`).
+  - Idempotency: `{entity_id, source_type, source_doc_ref}` unique index — re-syncs from ERP Sale POSTED or future storefront Order.paid won't double-write.
+  - Pre-save validators (RA 9994 + 12% VAT-exemption math): rejects rows where `discount_amount ≠ 20% × gross`, `vat_exempt_amount ≠ 12% × (gross − discount)`, or sum-of-line totals ≠ header totals (0.01 tolerance).
+  - Pre-save also validates the OSCA/PWD ID against the lookup-driven `SCPWD_ID_FORMATS` regex (permissive fallback if lookup unreachable, so the register never goes dark on a Lookup outage).
+- **`backend/erp/services/scpwdReportingService.js`** — two CSV generators:
+  - `generateMonthlyExport(entityId, year, month)` — BIR RR 7-2010 column layout (Date, OR/SI No., Type, OSCA/PWD ID, Customer Name, Gross, 20% Discount, VAT-Exempt, Net, Items, Notes + TOTALS row).
+  - `generateInputVatCreditWorksheet(entityId, year, month)` — BIR Form 2306 input-VAT reclaim. Output is labeled `[DRAFT — review with accountant before filing]` until accountant signs off. Falls back to `12/112` grossing-up factor if `input_vat_paid_to_supplier` is unset; uses the actual paid amount once storefront feeds it (VIP-1.D).
+- **`backend/erp/controllers/scpwdSalesBookController.js`** — list/summary/getById/create/update/post/void/exportMonthly/exportVatReclaim. Lookup-driven role gates per endpoint via `scpwdAccess.js`. Idempotent create surfaces the existing row on duplicate-key (HTTP 409). Privileged users can opt into cross-entity views via explicit `?entity_id=` (Rule #21 — no silent self-fallback).
+- **`backend/erp/routes/scpwdSalesBookRoutes.js`** — mounted at `/api/erp/scpwd-sales-book` from `routes/index.js`. POST/PUT/post-action paths run through `periodLockCheck('SCPWD')` middleware so locked BIR-filed periods reject retroactive changes.
+- **`backend/utils/scpwdAccess.js`** — lookup-driven gate helper mirroring `mdPartnerAccess.js` (60s TTL cache + cache-bust hook). Four gates: `VIEW_REGISTER`, `CREATE_ENTRY`, `EXPORT_MONTHLY`, `EXPORT_VAT_RECLAIM`. Defaults: `[admin, finance, president]` for view; `[admin, finance]` for write/export. President is intentionally NOT in the default for write/export — BIR-reportable exports travel through accountability roles for traceability.
+- **`backend/erp/models/PeriodLock.js`** — added `'SCPWD'` to the module enum so the SCPWD register participates in the existing period-lock surface (Phase 21.3-21.4).
+- **`backend/erp/controllers/lookupGenericController.js`** — added two SEED_DEFAULTS categories (`SCPWD_ROLES`, `SCPWD_ID_FORMATS`) with `insert_only_metadata: true` rows so admin edits to PH ID-format regex / role lists survive future re-seeds. Cache invalidation hook wired to `scpwdAccess.invalidate()` so role-edits take effect instantly across instances.
+
+### What landed (Frontend)
+
+- **`frontend/src/erp/services/scpwdService.js`** — wraps `/api/erp/scpwd-sales-book/*` endpoints. Includes `downloadMonthlyExport` + `downloadVatReclaimExport` helpers that handle blob → trigger-download UX.
+- **`frontend/src/pages/admin/SCPWDSalesBookPage.jsx`** — admin operator surface at `/admin/scpwd-sales-book`.
+  - Period filter (year + month picker), counts strip (DRAFT/POSTED/VOID + posted gross + posted VAT-exempt), table view, action toolbar (Refresh, New Entry, Export Monthly, Export VAT Reclaim).
+  - Entry modal: SC/PWD type, ID, name, transaction date, line items (qty × unit price). 20% discount + 12% VAT-exemption math auto-derives client-side and validates server-side.
+  - Per-row actions: Post (DRAFT → POSTED), Void (POSTED → VOID with required reason).
+- **`frontend/src/App.jsx`** — `/admin/scpwd-sales-book` route guarded by `ROLE_SETS.ADMIN_ONLY`. Backend gates layer on lookup-driven SCPWD_ROLES per endpoint.
+- **`frontend/src/components/common/Sidebar.jsx`** — admin Operations group → "SC/PWD Sales Book" entry (icon: ShieldCheck).
+- **`frontend/src/components/common/PageGuide.jsx`** — `'scpwd-sales-book'` PAGE_GUIDES entry per Rule #1: 6-step walkthrough, two next-step links (VIP Clients, Period Locks), tip on lookup-driven role-gate configuration.
+
+### What this DOES NOT do (out-of-scope for VIP-1.H foundation; deferred)
+
+- **Storefront integration** — when the storefront (`vip-pharmacy-express`) goes live with checkout, an `Order.paid` listener will write SalesBookSCPWD rows via the same idempotent `source_type: 'STOREFRONT_ORDER'` ingest path. Storefront repo work deferred until storefront launches (recommendation #1 in the original handoff).
+- **Auto-feed from ERP `Sale.js` POSTED** — wiring exists (`source_type: 'ERP_SALE'`, `sale_id` ref, `source_doc_ref` keyed on CSI), but the Sale → SalesBookSCPWD bridge is not yet hooked. Manual entry covers v1; bridge lands in a follow-up commit once SC/PWD detection is added to Sale capture.
+- **PDF rendering** — CSV is sufficient for monthly BIR filing. PDF audit-binder format is a follow-up if BIR demands it explicitly.
+- **Accountant-signed VAT reclaim flow** — the Input VAT Credit Worksheet ships with the `[DRAFT]` filename prefix. Removing that prefix (admin sign-off after accountant review) is a small follow-up tied to a Settings flag.
+- **Customer SC/PWD profile fields** — `Customer.sc_pwd_id` / `senior_citizen` flags don't exist yet. Manual entry doesn't need them; auto-feed from Sale will.
+
+### Subscription-readiness (Rule #19 + Rule #3 alignment)
+
+- All rows carry `entity_id` (Rule #19). Same model shape ports cleanly to PostgreSQL schema-per-tenant SaaS.
+- ID format regex (`SCPWD_ID_FORMATS.OSCA_PH`, `SCPWD_ID_FORMATS.PWD_PH`) is lookup-driven — subscribers in non-PH jurisdictions configure their own format codes per entity without code changes.
+- Role gates via `SCPWD_ROLES` lookup with inline-default fallback for boot resilience. Subscribers extend per-entity via Control Center → Lookup Tables.
+- 20% discount + 12% VAT exemption math is hardcoded against PH RA 9994 + NIRC §109 because changing those would mean the schema rejects valid entries; PH subscribers all face the same bar. International subscribers would substitute the entire reporting service module (Phase 2 generalization, not a v1 concern).
+
+### Verification
+
+- Backend: `node -c` clean on all 5 new files + 2 edited files (`PeriodLock.js`, `lookupGenericController.js`).
+- Frontend: `vite build` clean — 15.30s, SCPWDSalesBookPage chunk emitted in dist/.
+- Health check: `backend/scripts/healthCheckCollections.js` auto-discovers `SalesBookSCPWD` (model file in `backend/erp/models/` is walked automatically). New collection shows EMPTY in fresh envs (transactional, no seed required) — not an error.
+- Playwright UI smoke: see CRM-side ship note for the live click-through evidence (admin login → /admin/scpwd-sales-book → empty state → New Entry → modal → POSTED row → exports both download).
+- bir_flag coverage audit (Phase 0 prep step): all major JE flows verified — Sales/Collections/Expenses/COGS/Payroll correctly use `'BOTH'`; Petty Cash Remittance/Replenishment, IC Transfers, Credit Card Payment, Auto-CALF correctly use `'INTERNAL'`. No rebate-related JE creation exists yet (will be addressed in VIP-1.B). Storefront-feeding JEs do not exist yet (storefront not live).

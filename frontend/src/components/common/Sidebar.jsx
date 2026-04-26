@@ -63,6 +63,7 @@ import {
   Smartphone,
   ListChecks,
   ScanLine,
+  ShieldCheck,
 } from 'lucide-react';
 
 /* =============================================================================
@@ -1057,6 +1058,10 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
               { path: '/admin/message-templates', label: 'Msg Templates', icon: MessageSquare },
               { path: '/admin/clm-sessions', label: 'CLM Sessions', icon: Presentation },
               { path: '/admin/clm-branding', label: 'CLM Branding', icon: Presentation },
+              // Phase VIP-1.H — SC/PWD Sales Book (RA 9994 + BIR RR 7-2010).
+              // Route guard admin-only; backend layers lookup-driven SCPWD_ROLES
+              // per gate so finance/president can be added per entity.
+              { path: '/admin/scpwd-sales-book', label: 'SC/PWD Sales Book', icon: ShieldCheck },
               { path: '/admin/settings', label: 'Programs', icon: Settings },
             ],
           },
