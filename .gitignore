@@ -96,6 +96,9 @@ scripts/sync-prod-to-dev.sh
 # Playwright MCP session debris (regenerated each run)
 .playwright-mcp/
 
+# Git worktrees for parallel-phase isolation (Rule 0e)
+.worktrees/
+
 # Smoke-test screenshots — block ALL pngs at repo root.
 # Real assets live in frontend/public/, frontend/src/assets/, etc. and are unaffected.
 # Local screenshots stay on disk for inspection but never get staged.
