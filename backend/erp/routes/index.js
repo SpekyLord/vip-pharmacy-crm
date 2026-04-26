@@ -196,6 +196,20 @@ router.use('/recurring-journals', erpAccessCheck('accounting'), require('./recur
 // keep this Rule #3-aligned (subscriber-configurable per entity).
 router.use('/scpwd-sales-book', require('./scpwdSalesBookRoutes'));
 
+// ═══ Phase VIP-1.B — Rebate + Commission Matrices + Payout Ledgers ═══
+// Tier-A per-MD per-product rebates + Non-MD partner rebates + Tier-B
+// capitation + BDM/ECOMM_REP/AREA_BDM commission matrix + read-only payout
+// ledgers. Lookup-driven role gates inside each controller via
+// REBATE_ROLES + COMMISSION_ROLES (rebateCommissionAccess.js).
+// Subscription-ready: subscribers configure per-entity gates via
+// Control Center → Lookup Tables. Tenant-isolated via tenantFilter.
+router.use('/md-product-rebates', require('./mdProductRebateRoutes'));
+router.use('/non-md-partner-rebate-rules', require('./nonMdPartnerRebateRuleRoutes'));
+router.use('/md-capitation-rules', require('./mdCapitationRuleRoutes'));
+router.use('/staff-commission-rules', require('./staffCommissionRuleRoutes'));
+router.use('/rebate-payouts', require('./rebatePayoutRoutes'));
+router.use('/commission-payouts', require('./commissionPayoutRoutes'));
+
 // ═══ Phase 15 — SAP-Equivalent Improvements ═══
 // CSI Booklets: the inventory gate blocks the management UI from BDMs without
 // inventory module access. BDMs still need to see their OWN available numbers

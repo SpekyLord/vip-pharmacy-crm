@@ -227,8 +227,15 @@ async function ensurePrfForBucket({
     period,
     cycle,
     payee_name: bucket.payee_name,
+    // Populate first-class fields so existing reverse-lookups (linked_collection_id,
+    // partner_id, payee_type) keep working. Schema-level fields are the canonical
+    // source of truth; metadata is the auto-generation provenance + idempotency key.
+    partner_id: bucket.payee_id,
+    payee_type: payee_kind === 'MD' ? 'DOCTOR' : 'NON_MD_PARTNER',
+    linked_collection_id: collection_id,
     rebate_amount: bucket.total,
     amount: bucket.total,
+    bir_flag: 'INTERNAL', // explicit — rebate JEs never hit BIR P&L (Phase 0)
     purpose: `${payee_kind === 'MD' ? 'MD' : 'Non-MD'} partner rebate — ${
       collection_doc_ref || 'CR'
     }`,

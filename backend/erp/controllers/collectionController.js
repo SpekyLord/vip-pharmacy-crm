@@ -424,6 +424,29 @@ const submitCollections = catchAsync(async (req, res) => {
         row.event_id = event._id;
         await row.save({ session });
 
+        // Phase VIP-1.B — auto-route rebate accruals → PRFs inside the same
+        // transaction. If routing fails, the entire POST rolls back: keeping
+        // ledger + rebate audit ledger atomic. Idempotent on re-submit.
+        try {
+          const { routePrfsForCollection } = require('../services/autoPrfRouting');
+          const routed = await routePrfsForCollection({
+            collectionId: row._id,
+            userId: req.user._id,
+            session,
+          });
+          if (routed.payeesProcessed > 0) {
+            console.log(
+              `[autoPrfRouting] CR ${row.cr_no}: ${routed.prfsCreated} new PRFs, ` +
+              `${routed.prfsExisted} existing, ${routed.payeesProcessed} payees, ` +
+              `${routed.rebatePayouts} payout rows`
+            );
+          }
+        } catch (routeErr) {
+          // Rebate routing failures abort the whole transaction so the
+          // ledger and the audit-rebate trail stay in lockstep.
+          throw new Error(`autoPrfRouting failed for CR ${row.cr_no}: ${routeErr.message}`);
+        }
+
         // Petty cash auto-deposit (inside transaction for atomicity)
         // Approval is covered by the Collection's gateApproval — no separate petty cash gate
         if (row.petty_cash_fund_id) {
@@ -717,6 +740,27 @@ const reopenCollections = catchAsync(async (req, res) => {
         row.posted_by = undefined;
         row.event_id = undefined;
         await row.save({ session });
+
+        // Phase VIP-1.B — clean up DRAFT auto-PRFs on reopen so a re-submit
+        // produces fresh ones from the (possibly edited) settled_csis. POSTED
+        // PRFs (rebate already paid) are NOT touched — they need an explicit
+        // reversal flow, out of v1 scope. RebatePayout rows (audit ledger)
+        // stay too — the re-route's idempotency dedup keeps them consistent.
+        try {
+          const PrfCalf = require('../models/PrfCalf');
+          const cleanup = await PrfCalf.deleteMany({
+            entity_id: row.entity_id,
+            doc_type: 'PRF',
+            status: 'DRAFT',
+            'metadata.auto_generated_by': 'autoPrfRouting',
+            'metadata.source_collection_id': row._id,
+          }).session(session);
+          if (cleanup.deletedCount) {
+            console.log(`[autoPrfRouting] reopen CR ${row.cr_no}: cleaned ${cleanup.deletedCount} DRAFT auto-PRFs`);
+          }
+        } catch (cleanupErr) {
+          console.warn(`[autoPrfRouting] DRAFT auto-PRF cleanup failed for CR ${row.cr_no}:`, cleanupErr.message);
+        }
       });
 
       reopened.push(row._id);
@@ -900,6 +944,27 @@ const postSingleCollection = async (doc, userId) => {
       doc.posted_by = userId;
       doc.event_id = event._id;
       await doc.save({ session });
+
+      // Phase VIP-1.B — auto-route rebate accruals → PRFs (Approval Hub path).
+      // Same atomic guarantee as submitCollections: routing failure aborts
+      // the POST, keeping ledger + rebate trail in lockstep.
+      try {
+        const { routePrfsForCollection } = require('../services/autoPrfRouting');
+        const routed = await routePrfsForCollection({
+          collectionId: doc._id,
+          userId,
+          session,
+        });
+        if (routed.payeesProcessed > 0) {
+          console.log(
+            `[autoPrfRouting] (hub) CR ${doc.cr_no}: ${routed.prfsCreated} new PRFs, ` +
+            `${routed.prfsExisted} existing, ${routed.payeesProcessed} payees, ` +
+            `${routed.rebatePayouts} payout rows`
+          );
+        }
+      } catch (routeErr) {
+        throw new Error(`autoPrfRouting failed for CR ${doc.cr_no}: ${routeErr.message}`);
+      }
 
       // Petty cash auto-deposit (inside transaction for atomicity)
       if (doc.petty_cash_fund_id) {

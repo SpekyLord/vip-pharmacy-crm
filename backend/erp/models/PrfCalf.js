@@ -121,6 +121,14 @@ const prfCalfSchema = new mongoose.Schema({
   // SAP Storno reversal — set when PRF/CALF is reversed; original stays POSTED for audit trail
   deletion_event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
 
+  // Phase VIP-1.B (Apr 2026) — auto-generation provenance for autoPrfRouting.
+  // Populated when a PRF is created from a posted Collection's rebate accruals
+  // (settled_csis[].md_rebate_lines + partner_tags). Used for idempotency on
+  // re-routing the same collection (see autoPrfRouting.ensurePrfForBucket).
+  // Mixed type so we can stash an itemized line array alongside source refs
+  // without a tightly typed subschema (matrix lines vary by payee_kind).
+  metadata: { type: mongoose.Schema.Types.Mixed, default: undefined },
+
   // Audit
   created_at: { type: Date, default: Date.now, immutable: true },
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -174,5 +182,11 @@ prfCalfSchema.index({ entity_id: 1, bdm_id: 1, doc_type: 1, period: 1 });
 prfCalfSchema.index({ entity_id: 1, bdm_id: 1, status: 1 });
 prfCalfSchema.index({ doc_type: 1, status: 1 });
 prfCalfSchema.index({ linked_collection_id: 1 });
+// Phase VIP-1.B — autoPrfRouting idempotency lookup (sparse so it doesn't bloat
+// for non-auto-generated PRFs/CALFs created via the BDM UI).
+prfCalfSchema.index(
+  { entity_id: 1, doc_type: 1, period: 1, 'metadata.source_collection_id': 1, 'metadata.payee_id': 1 },
+  { sparse: true, name: 'autoPrfRouting_idem' }
+);
 
 module.exports = mongoose.model('PrfCalf', prfCalfSchema);
