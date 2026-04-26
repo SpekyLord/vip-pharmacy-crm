@@ -100,3 +100,11 @@ scripts/sync-prod-to-dev.sh
 # Real assets live in frontend/public/, frontend/src/assets/, etc. and are unaffected.
 # Local screenshots stay on disk for inspection but never get staged.
 /*.png
+
+# Third-party Agent Skills (coreyhaines31/marketingskills, etc.).
+# Restore on a fresh clone with: npx skills experimental_install
+# skills-lock.json IS committed so the install is reproducible.
+.agents/
+.claude/skills/*
+# But keep our own project-local skills under version control.
+!.claude/skills/pharma-marketing-compliance-ph/
