@@ -1,8 +1,8 @@
 # VIP ERP - Project Context
 
-> **Last Updated**: April 23, 2026
-> **Version**: 7.1
-> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G5 + G1.5 + H1-H5 + Phase 34 + Phase 3a + Phase 3c Complete. Phase 3c (Apr 18, 2026): **Comprehensive hardcoded-role migration** — 30 destructive endpoints across ~15 modules now use `erpSubAccessCheck(module, key)` instead of `roleCheck('admin','finance','president')`. Baseline danger set grew 1 → 10 keys; 19 new sub-perms appear in the Access Template editor (period force-unlock, year-end, settings write, transfer pricing, people terminate/login mgmt, master data deactivate/delete, lookup deletes, etc.). Phase 3a (Apr 18, 2026): **Lookup-driven Danger Sub-Permission Gate + President-Reverse rollout**. Hardcoded `roleCheck('president')` on destructive endpoints replaced with `erpSubAccessCheck('accounting','reverse_posted')` so subsidiaries can delegate to CFO/Finance via Access Template editor without a code change. Rollout adds per-module `/president-reverse` routes to Expenses (ORE/ACCESS), PRF/CALF, and Petty Cash — on top of the existing Sales + Collection endpoints. Baseline danger set stays hardcoded (platform safety floor); subscribers extend via ERP_DANGER_SUB_PERMISSIONS lookup (5-min cache, busted on lookup write). Phase G5 (Apr 18, 2026): Fixed privileged-user BDM filter fallback bug in 9 ERP endpoints.
+> **Last Updated**: April 26, 2026
+> **Version**: 7.2
+> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G6 + G1.5 + H1-H5 + Phase 34 + Phase 3a + Phase 3c Complete. Phase G6 (Apr 26, 2026): **Master-data entity-scope honoring**. People Master list now respects the top-right entity selector for president-likes (was silently cross-entity). New `resolveEntityScope` helper + `CROSS_ENTITY_VIEW_ROLES` lookup category gate explicit `?cross_entity=true` opt-in by per-module role allowlist (default `['president','ceo']`). 60s cache + bust-on-lookup-write. Pattern ready for vendor/customer/hospital lists. Phase 3c (Apr 18, 2026): **Comprehensive hardcoded-role migration** — 30 destructive endpoints across ~15 modules now use `erpSubAccessCheck(module, key)` instead of `roleCheck('admin','finance','president')`. Baseline danger set grew 1 → 10 keys; 19 new sub-perms appear in the Access Template editor (period force-unlock, year-end, settings write, transfer pricing, people terminate/login mgmt, master data deactivate/delete, lookup deletes, etc.). Phase 3a (Apr 18, 2026): **Lookup-driven Danger Sub-Permission Gate + President-Reverse rollout**. Hardcoded `roleCheck('president')` on destructive endpoints replaced with `erpSubAccessCheck('accounting','reverse_posted')` so subsidiaries can delegate to CFO/Finance via Access Template editor without a code change. Rollout adds per-module `/president-reverse` routes to Expenses (ORE/ACCESS), PRF/CALF, and Petty Cash — on top of the existing Sales + Collection endpoints. Baseline danger set stays hardcoded (platform safety floor); subscribers extend via ERP_DANGER_SUB_PERMISSIONS lookup (5-min cache, busted on lookup write). Phase G5 (Apr 18, 2026): Fixed privileged-user BDM filter fallback bug in 9 ERP endpoints.
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -37,6 +37,20 @@ Users can access multiple entities via `entity_ids: [ObjectId]` on the User mode
 - **Multi-entity users** (`entity_ids.length > 1`): get an entity switcher in the navbar, can switch working entity
 - **Single-entity users**: unchanged, locked to `entity_id`
 - Controllers are unaffected — they keep using `req.entityId` and `req.tenantFilter`
+
+### Master-Data Read Scoping (Phase G6, Apr 26 2026)
+
+`tenantFilter` returns `req.tenantFilter = {}` for president-likes so transactional reads (Sales/Reversal Console) span all entities by design — that's the Phase 31-E convention. **Master-data lists are different**: People Master, Vendors, Customers, Hospitals are admin-edit surfaces tied to a specific entity, and a working-entity selector that's silently ignored on reads is misleading.
+
+Use `resolveEntityScope(req, moduleKey)` from `backend/erp/utils/resolveEntityScope.js` for master-data list endpoints:
+
+- **Default** (no flag): scope to `req.entityId` for everyone, including president. The top-right entity dropdown finally drives the read.
+- **Opt-in cross-entity** (`?cross_entity=true`): widens to all entities, but only for roles in the `CROSS_ENTITY_VIEW_ROLES.<MODULE>.metadata.roles` lookup. Default seed: `['president', 'ceo']`. A subsidiary CFO needing consolidated view is added via Control Center → Lookup Tables, no code change (Rule #3).
+- **Roles outside the allowlist** silently stay scoped — they don't see widened data they aren't authorized for, and there's no error escalation that could leak which roles exist.
+
+Endpoints adopting the helper return `meta: { is_cross_entity, scoped_entity_id }` so frontends can render an Entity column + scope banner. Currently wired: `peopleController.getPeopleList`. Pattern is ready for vendors/customers/hospitals when those master-data lists are revisited.
+
+Cache TTL is 60s with bust-on-lookup-write (mirrors `PROXY_ENTRY_ROLES`). `insert_only_metadata: true` on the seed row is load-bearing — without it, admin edits to `metadata.roles` get silently reverted on the next page load (same fix as PROXY_ENTRY_ROLES).
 
 ## Governance Principles
 

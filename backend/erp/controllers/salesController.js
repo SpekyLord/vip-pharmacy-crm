@@ -228,46 +228,39 @@ const postSaleRow = async (row, userId, opts = {}) => {
           }, { session });
         }
       }
-    });
 
-    // 5. Link DocumentAttachments (non-blocking)
-    // eslint-disable-next-line vip-tenant/require-entity-filter -- source_id is unique; row from same-entity-scoped post path
-    await DocumentAttachment.updateMany(
-      { source_model: 'SalesLine', source_id: row._id },
-      { $set: { event_id: eventId } }
-    ).catch(() => {});
-
-    // 6. Journal entries (non-blocking)
-    try {
+      // 5. Auto-journal entries — INSIDE the transaction (Phase JE-TX).
+      //    Atomicity contract: if the JE post fails, the source-doc status flip
+      //    + FIFO consumption + petty cash deposit ALL roll back together. No
+      //    silent ledger drift; the user sees the JE error and retries after fix.
       const jeData = saleType === 'SERVICE_INVOICE'
         ? await journalFromServiceRevenue(row, row.entity_id, userId)
         : await journalFromSale(row, row.entity_id, userId);
       jeData.source_event_id = eventId;
-      await createAndPostJournal(row.entity_id, jeData);
+      await createAndPostJournal(row.entity_id, jeData, { session });
 
       // COGS JE (skip for SERVICE_INVOICE and OPENING_AR)
       if (saleType !== 'SERVICE_INVOICE' && row.source !== 'OPENING_AR' && row.line_items?.length) {
         const productIds = row.line_items.map(li => li.product_id);
         // eslint-disable-next-line vip-tenant/require-entity-filter -- productIds harvested from same-entity-scoped row.line_items; _id is globally unique
-        const products = await ProductMaster.find({ _id: { $in: productIds } }).select('purchase_price').lean();
+        const products = await ProductMaster.find({ _id: { $in: productIds } }).select('purchase_price').session(session).lean();
         const costMap = new Map(products.map(p => [p._id.toString(), p.purchase_price || 0]));
         const totalCogs = row.line_items.reduce((sum, li) => sum + (li.qty || 0) * (costMap.get(li.product_id?.toString()) || 0), 0);
         const cogsData = await journalFromCOGS(row, Math.round(totalCogs * 100) / 100, userId);
         if (cogsData) {
           cogsData.source_event_id = eventId;
-          await createAndPostJournal(row.entity_id, cogsData);
+          await createAndPostJournal(row.entity_id, cogsData, { session });
         }
       }
-    } catch (jeErr) {
-      console.error('Auto-journal failed for sale:', row.doc_ref || row._id, jeErr.message);
-      ErpAuditLog.logChange({
-        entity_id: row.entity_id, log_type: 'LEDGER_ERROR',
-        target_ref: row.doc_ref || row._id?.toString(), target_model: 'JournalEntry',
-        field_changed: 'auto_journal', new_value: jeErr.message,
-        changed_by: row.posted_by,
-        note: `Auto-journal failed for sale ${row.doc_ref || row._id} (approval hub)`
-      }).catch(() => {});
-    }
+    });
+
+    // 6. Link DocumentAttachments — outside transaction, non-blocking. A linker
+    //    failure does not invalidate the posted sale (attachment is metadata).
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- source_id is unique; row from same-entity-scoped post path
+    await DocumentAttachment.updateMany(
+      { source_model: 'SalesLine', source_id: row._id },
+      { $set: { event_id: eventId } }
+    ).catch(() => {});
 
     // 7. Phase 15.2 (softened) — auto-mark CSI number as used. Non-blocking.
     if ((row.sale_type || 'CSI') === 'CSI' && row.doc_ref) {
@@ -477,6 +470,33 @@ const deleteDraftRow = catchAsync(async (req, res) => {
   res.json({ success: true, message: 'Draft row deleted' });
 });
 
+// Rule #4 — enrich each sale's line_items[] with product_name + dosage so list/
+// detail views can show brand_name + dosage_strength alongside the SKU
+// (item_key). Mutates sales in place. Safe on empty line_items.
+async function enrichLineItemsWithProductDisplay(sales) {
+  const productIds = new Set();
+  for (const s of sales) {
+    for (const li of s.line_items || []) {
+      if (li.product_id) productIds.add(String(li.product_id));
+    }
+  }
+  if (!productIds.size) return;
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- productIds harvested from same-entity-scoped sale.line_items; _id is globally unique
+  const products = await ProductMaster.find({ _id: { $in: Array.from(productIds) } })
+    .select('brand_name dosage_strength')
+    .lean();
+  const productMap = new Map(products.map(p => [String(p._id), p]));
+  for (const s of sales) {
+    for (const li of s.line_items || []) {
+      const p = productMap.get(String(li.product_id));
+      if (p) {
+        li.product_name = p.brand_name || '';
+        li.dosage = p.dosage_strength || '';
+      }
+    }
+  }
+}
+
 const getSales = catchAsync(async (req, res) => {
   // Phase G4.5a — widen filter to all BDMs in entity when caller is an eligible
   // proxy. Non-proxy callers stay scoped to their own bdm_id via tenantFilter.
@@ -517,6 +537,8 @@ const getSales = catchAsync(async (req, res) => {
     SalesLine.countDocuments(filter)
   ]);
 
+  await enrichLineItemsWithProductDisplay(sales);
+
   res.json({
     success: true,
     data: sales,
@@ -541,6 +563,8 @@ const getSaleById = catchAsync(async (req, res) => {
   if (!sale) {
     return res.status(404).json({ success: false, message: 'Sale not found' });
   }
+
+  await enrichLineItemsWithProductDisplay([sale]);
 
   res.json({ success: true, data: sale });
 });
@@ -891,6 +915,7 @@ const submitSales = catchAsync(async (req, res) => {
     await session.withTransaction(async () => {
       for (const row of validRows) {
         const saleType = row.sale_type || 'CSI';
+        const skipInventory = saleType === 'SERVICE_INVOICE' || row.source === 'OPENING_AR';
 
         // 1. Create TransactionEvent (immutable)
         const eventType = saleType === 'SERVICE_INVOICE' ? 'SERVICE_INVOICE'
@@ -916,26 +941,14 @@ const submitSales = catchAsync(async (req, res) => {
 
         eventIds.push(event._id);
 
-        // 2. SERVICE_INVOICE: no inventory deduction — skip to posting
-        if (saleType === 'SERVICE_INVOICE') {
+        // 2. Inventory deduction (skipped for SERVICE_INVOICE + OPENING_AR)
+        if (skipInventory) {
           row.status = 'POSTED';
           row.posted_at = new Date();
           row.posted_by = req.user._id;
           row.event_id = event._id;
           await row.save({ session });
-          continue;
-        }
-
-        // 3. Create InventoryLedger entries per line item (CSI + CASH_RECEIPT)
-        // OPENING_AR: pre-live-date CSI — skip inventory deduction entirely (no FIFO, no consignment)
-        if (row.source === 'OPENING_AR') {
-          row.status = 'POSTED';
-          row.posted_at = new Date();
-          row.posted_by = req.user._id;
-          row.event_id = event._id;
-          await row.save({ session });
-          continue;
-        }
+        } else {
 
         for (const item of row.line_items) {
           // Check if this CSI references a DR (consignment)
@@ -1001,6 +1014,32 @@ const submitSales = catchAsync(async (req, res) => {
         row.posted_by = req.user._id;
         row.event_id = event._id;
         await row.save({ session });
+        }  // end of: skipInventory else-branch
+
+        // 4. Auto-journal entries — INSIDE the transaction (Phase JE-TX).
+        //    Atomicity contract: a JE failure rolls back THIS row's event +
+        //    status flip + FIFO consumption AND every prior row in this batch.
+        //    Bulk-submit is now all-or-nothing on the ledger; partial-batch
+        //    success-with-no-JE was the worse failure mode (Romela incident).
+        const jeData = saleType === 'SERVICE_INVOICE'
+          ? await journalFromServiceRevenue(row, row.entity_id, req.user._id)
+          : await journalFromSale(row, row.entity_id, req.user._id);
+        jeData.source_event_id = event._id;
+        await createAndPostJournal(row.entity_id, jeData, { session });
+
+        // COGS JE (skip for SERVICE_INVOICE and OPENING_AR — no inventory consumed)
+        if (!skipInventory && row.line_items?.length) {
+          const productIds = row.line_items.map(li => li.product_id);
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- productIds harvested from same-entity-scoped row.line_items; _id is globally unique
+          const products = await ProductMaster.find({ _id: { $in: productIds } }).select('purchase_price').session(session).lean();
+          const costMap = new Map(products.map(p => [p._id.toString(), p.purchase_price || 0]));
+          const totalCogs = row.line_items.reduce((sum, li) => sum + (li.qty || 0) * (costMap.get(li.product_id?.toString()) || 0), 0);
+          const cogsData = await journalFromCOGS(row, Math.round(totalCogs * 100) / 100, req.user._id);
+          if (cogsData) {
+            cogsData.source_event_id = event._id;
+            await createAndPostJournal(row.entity_id, cogsData, { session });
+          }
+        }
       }
     });
 
@@ -1034,42 +1073,6 @@ const submitSales = catchAsync(async (req, res) => {
         }
       } catch (csiErr) {
         console.error('CSI markUsed failed (non-blocking):', row.doc_ref, csiErr.message);
-      }
-    }
-
-    // Phase 11: Auto-journal entries (non-blocking — outside transaction)
-    for (const row of validRows) {
-      try {
-        const saleType = row.sale_type || 'CSI';
-        // Revenue JE
-        const jeData = saleType === 'SERVICE_INVOICE'
-          ? await journalFromServiceRevenue(row, row.entity_id, req.user._id)
-          : await journalFromSale(row, row.entity_id, req.user._id);
-        jeData.source_event_id = row.event_id;
-        await createAndPostJournal(row.entity_id, jeData);
-
-        // COGS JE (skip for SERVICE_INVOICE and OPENING_AR — no inventory consumed)
-        if (saleType !== 'SERVICE_INVOICE' && row.source !== 'OPENING_AR' && row.line_items?.length) {
-          const productIds = row.line_items.map(li => li.product_id);
-          // eslint-disable-next-line vip-tenant/require-entity-filter -- productIds harvested from same-entity-scoped row.line_items; _id is globally unique
-          const products = await ProductMaster.find({ _id: { $in: productIds } }).select('purchase_price').lean();
-          const costMap = new Map(products.map(p => [p._id.toString(), p.purchase_price || 0]));
-          const totalCogs = row.line_items.reduce((sum, li) => sum + (li.qty || 0) * (costMap.get(li.product_id?.toString()) || 0), 0);
-          const cogsData = await journalFromCOGS(row, Math.round(totalCogs * 100) / 100, req.user._id);
-          if (cogsData) {
-            cogsData.source_event_id = row.event_id;
-            await createAndPostJournal(row.entity_id, cogsData);
-          }
-        }
-      } catch (jeErr) {
-        console.error('Auto-journal failed for sale:', row.doc_ref || row._id, jeErr.message);
-        ErpAuditLog.logChange({
-          entity_id: row.entity_id, log_type: 'LEDGER_ERROR',
-          target_ref: row.doc_ref || row._id?.toString(), target_model: 'JournalEntry',
-          field_changed: 'auto_journal', new_value: jeErr.message,
-          changed_by: req.user._id,
-          note: `Auto-journal failed for sale ${row.doc_ref || row._id}`
-        }).catch(() => {});
       }
     }
 

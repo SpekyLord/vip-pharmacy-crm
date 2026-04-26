@@ -7826,6 +7826,137 @@ CLAUDE-ERP.md                                       (Rule #20 note)
 
 ---
 
+## Phase 37 — Master-Data Entity-Scope Honoring (Apr 26 2026) ✅ SHIPPED
+
+### Problem
+The user (President) sat in the **MG and CO.** entity (top-right entity selector) and opened **People Master**. The list showed every person across every entity — Chantelle (consultant), every BDM, themselves — not the scoped MG and CO. roster they expected.
+
+Root cause: `tenantFilter.js:43-50` returns `req.tenantFilter = {}` for president-likes by design (Phase 31-E convention — transactional reads like Sales/Reversal Console SHOULD span all entities for audit). `peopleController.getPeopleList` spread that empty filter, so the entity dropdown was effectively a "stamp on creates" affordance only — silently ignored on reads. Misleading, and the absence of an Entity column on the table made it impossible to even see what was happening.
+
+For **transactional** lists this is correct. For **master-data** lists (People, Vendors, Customers, Hospitals — admin-edit surfaces tied to a specific entity) the dropdown selection should drive the read.
+
+### Fix
+**Default scope-by-selector + opt-in cross-entity, lookup-gated by role.**
+
+- Helper `backend/erp/utils/resolveEntityScope.js` (new). Returns `{ entityScope, isCrossEntity, scopedEntityId }`:
+  - Non-president: keep tenantFilter as-is (admin/finance: `{ entity_id }`; contractor: `{ entity_id, bdm_id }` — unchanged).
+  - President without `?cross_entity=true`: scope to `req.entityId` (selector wins).
+  - President with `?cross_entity=true`: widen ONLY if their role is in `CROSS_ENTITY_VIEW_ROLES.<MODULE>.metadata.roles` (default `['president', 'ceo']`). Roles outside the allowlist silently stay scoped — no error escalation, Rule #21 alignment.
+- Lookup category `CROSS_ENTITY_VIEW_ROLES` seeded in `lookupGenericController.SEED_DEFAULTS` with `insert_only_metadata: true` so admin edits to `metadata.roles` survive the auto-seed pass (same fix that `PROXY_ENTRY_ROLES` got after the silent-revert bug). Cache TTL 60s, busted on lookup write in all four lifecycle handlers (`create` / `update` / `remove` / `seedCategory` / `seedAll`).
+- `peopleController.getPeopleList` rewritten to use the helper. Response now also populates `entity_id` (entity_name + short_name + brand_color) and returns `meta: { is_cross_entity, scoped_entity_id }` so the FE can render the Entity column + scope banner.
+
+### Frontend
+- `frontend/src/erp/pages/PeopleList.jsx`:
+  - "View all entities" toggle in the page header — only rendered for president-likes (`isPresidentLike(user.role)`).
+  - When toggled on, request appends `?cross_entity=true` and the table grows an Entity column showing each row's entity badge (uses `entity_id.brand_color` for visual identity).
+  - Yellow scope banner above the table when cross-entity mode is active, so the wider scope is unmissable.
+- `frontend/src/erp/components/WorkflowGuide.jsx` `people-list` entry — first two steps now describe scope-by-selector + the cross-entity toggle. `tip` paragraph documents the lookup category.
+
+### Subscription / scalability
+- Lookup-driven (Rule #3): a subsidiary granting their CFO consolidated view across entities adds the role to `CROSS_ENTITY_VIEW_ROLES.PEOPLE_MASTER.metadata.roles` via Control Center → Lookup Tables. Zero code change.
+- Pattern is generalized — `resolveEntityScope(req, 'VENDORS')` / `'CUSTOMERS'` / `'HOSPITALS'` will work the same way once those master-data lists are revisited; just add the corresponding `CROSS_ENTITY_VIEW_ROLES.<MODULE>` seed row.
+
+### Files touched
+```
+backend/erp/utils/resolveEntityScope.js                     (new, ~140 lines)
+backend/erp/controllers/peopleController.js                 (1 edit: getPeopleList)
+backend/erp/controllers/lookupGenericController.js          (5 edits: import, set, SEED_DEFAULTS row, 4 invalidator wires)
+frontend/src/erp/pages/PeopleList.jsx                       (4 edits: imports, state, header+toggle+banner, Entity column)
+frontend/src/erp/components/WorkflowGuide.jsx               (1 edit: people-list entry)
+CLAUDE-ERP.md                                               (status banner + new "Master-Data Read Scoping" section)
+docs/PHASETASK-ERP.md                                       (this section)
+```
+
+### Preserved guards
+- `tenantFilter.js` unchanged — Phase 31-E "president sees all transactional" convention preserved for Sales / Reversal Console / Approval Hub.
+- `getPersonById`, `updatePerson`, `deactivatePerson`, `separatePerson`, `reactivatePerson`, `createLoginForPerson`, `disableLogin`, `enableLogin`, `unlinkLogin`, `changeSystemRole`, `getOrgChart` — all unchanged. President can still view/edit any person they have an ID for; org chart still spans all entities by intent.
+- `getAsUsers` (the lightweight CRM-compatible picker used by OwnerPicker, etc.) intentionally NOT touched in this phase. It's read by ~10 different pickers; changing it without per-picker UX work would shift the bug from "see too much" to "can't pick the cross-entity person you need." Tracked as a follow-up.
+- `erpAccessCheck('people')` route gate unchanged — BDMs still can't reach People Master.
+- `PROXY_ENTRY_ROLES` / `VALID_OWNER_ROLES` cache invalidation paths unchanged — added the new invalidator alongside, no shared state.
+
+### Rule #21 alignment
+- Never silent-fall-back to a different scope. If a non-allowlisted role sends `?cross_entity=true`, the helper quietly stays scoped (no error escalation that could leak which roles are allowlisted, no silent widening).
+- `req.entityId` continues to be the legitimate working-context scope for everyone except president-with-explicit-opt-in.
+
+### Out of scope
+- Vendor / Customer / Hospital list endpoints — same pattern applies, separate phases. Helper is ready when those modules are revisited.
+- `getAsUsers` — see "Preserved guards" above. Separate UX-design pass needed.
+- Audit log on cross-entity opt-in — president has full data access already; flag-flip telemetry isn't a security event.
+
+---
+
+## Phase 38 — One-PeopleMaster-Per-Person + Entity-Membership Query 📋 PLANNED
+
+> **Trigger**: Surfaced during Phase 37 smoke-test (Apr 26 2026). Phase 37 closed the entity-scope UX bug for People Master; this phase fixes the underlying data-shape issue exposed by it.
+
+### Problem
+`PeopleMaster` has a single scalar `entity_id` — each row lives in exactly one entity. But `User` has both `entity_id` (primary) AND `entity_ids: [ObjectId]` (Phase 26 multi-entity assignment). [peopleController.js:269-330](backend/erp/controllers/peopleController.js#L269-L330) `syncFromCrm` only finds users whose **primary** `entity_id` matches the current selector, so people assigned to entity X via `entity_ids[]` (with a different primary) never get a PeopleMaster row under X.
+
+**Concrete production state** (Apr 26 2026):
+- VIP synced first → 11 BDMs got PM rows under VIP.
+- MG and CO. synced later → only Jake Montero (whose primary is MG and CO.) got a PM row there.
+- Cristina, Edcel, Jay Ann, Jenny Rose, Judy Mae, Mae Navarro, etc. work for MG and CO. via `User.entity_ids` / FRA, but their PeopleMaster row only exists under VIP. MG and CO.'s People Master shows 1 row when it should show ~11.
+
+**Why it matters now (compounding cost)**:
+1. PII drift — a person has one TIN, one PhilHealth #, one bank account. Storing those N times across N entity rows guarantees they diverge over time. Divergence on government-ID surfaces is a BIR-audit-class bug.
+2. Per-entity CompProfile is correct (different salary in subsidiary is real). Per-entity PII is fiction.
+3. Linear growth — dupe count = hires × subsidiaries. Cheap now (12 PM rows, 2-3 dupes); expensive in 6 months.
+
+### Why deferred (not blocking)
+- Phase 37 closed the immediate UX bug. Admins can SEE what's scoped and toggle out of it; the wrong-roster confusion is gone.
+- Day-to-day operations are driven by `User` + Functional Role Assignments + Approval Hub, not direct PeopleMaster reads. Drift hasn't bitten anyone yet.
+- The CRM has the **identical pattern** queued as Phase A.5 (canonical VIP Client merge — "one human, multiple records"). Per memory: A.5.5 ships the merge tool, A.5.2 flips the unique index. **Reuse Phase A.5.5's merge UX** for PeopleMaster — building two merge tools is wasteful.
+
+### Plan (5 sub-phases)
+
+**38a — Audit script** (~1h)
+- `backend/erp/scripts/auditPeopleMasterDuplicates.js` — list `User.entity_ids.length > 1` users + their PM row count per entity. Flag dupes (same `user_id` across N>1 PM rows). Output the merge candidate set + per-row data-completeness diff (TIN, PhilHealth, bank, comp profile, FRA assignments).
+- Run dry-run on prod; commit the output as a snapshot in `docs/`.
+
+**38b — Merge tool UI** (~1d)
+- Admin page `/erp/people/merge` (gated by `people.manage_login` danger sub-perm).
+- Shows merge candidates from 38a's output. Per candidate: side-by-side row diff (which has the TIN, which has the bank, etc.). One-click merge picks keeper, copies missing fields from losers, soft-deletes losers (`mergedInto: ObjectId, mergedAt: Date`), rewrites foreign keys.
+- Foreign-key rewrites: `CompProfile.person_id`, `FunctionalRoleAssignment.person_id`, `AccessTemplate.person_id`, `Payslip.person_id`, `IncentivePayout.person_id`, `KpiSelfRating.person_id`, anywhere else `person_id` is referenced. Dry-run preview before commit.
+- Reuse the Phase A.5.5 CRM merge UX shape (same pattern, different model).
+
+**38c — Unique index + schema fields** (~10min after 38b runs clean on prod)
+- Add `{ user_id: 1 }` unique sparse index on `PeopleMaster` (sparse because some PM rows have null `user_id` for people without logins).
+- Add `mergedInto: ObjectId` + `mergedAt: Date` fields. Excluded from default queries via pre-find hook (`is_active: true` + `mergedInto: null`).
+- Migration script `migratePeopleMasterUniqueUser.js` (dry-run / `--apply`) — refuses `--apply` if any duplicates remain (forces 38b first).
+
+**38d — Sync rewrite** (~30min)
+- `peopleController.syncFromCrm` becomes idempotent on `user_id` — never creates a second row for an already-linked user. New users are created with primary entity = current selector.
+- For users newly added to an entity via `entity_ids[]`: no PM row created (the existing one becomes globally accessible via 38e).
+- Health check: assert PM rows are 1:1 with linked Users.
+
+**38e — List query flip** (~1h)
+- `getPeopleList` joins `User.entity_ids` via a `$lookup` aggregate pipeline. A person is "in" entity X if their `User.entity_id == X` OR `User.entity_ids[]` includes X.
+- Cross-entity (`?cross_entity=true`) stays the same — drops the membership filter.
+- `entity_id` field on PeopleMaster keeps its meaning as "primary affiliation" (used for reports, payslip-default routing) but is no longer the read filter.
+- `resolveEntityScope` from Phase 37 still wraps the call — the lookup-driven role allowlist + scoping behavior is preserved.
+
+### Out of scope
+- Cross-CRM identity merge (CRM `User` ↔ ERP `PeopleMaster`) — that's already 1:1 via `PeopleMaster.user_id` ref. This phase only dedupes within PeopleMaster.
+- Vendor / Customer / Hospital one-row-per-entity flips — same pattern, separate phases.
+- Per-entity comp profiles — stays as is. CompProfile is keyed `(entity_id, person_id)`, so Cristina has one PM row but can have N comp profiles (one per subsidiary she works for). Correct.
+
+### Risk
+- **Low** if 38a is run first and the dupe count is small (current prod: ~2-3 dupes). High blast radius would only come from the FK rewrite in 38b — manual review of the dry-run output is mandatory before commit.
+- Soft-deleted losers stay queryable for audit. Reversible: `mergedInto` field doubles as undo pointer.
+
+### Success criteria
+- [ ] Phase 37 entity scope still works (regression test: `?cross_entity=true` toggle, scope-by-selector default).
+- [ ] Switch to MG and CO. selector → ALL people assigned to MG and CO. (via `entity_id` OR `entity_ids[]`) appear, not just primary-MG-and-CO. people.
+- [ ] No duplicate PM rows for any single user_id.
+- [ ] Edit Cristina's TIN once → reflected everywhere (no per-entity drift).
+- [ ] CompProfile / FRA / Payroll / KPI all read the keeper PM doc; soft-deleted losers don't appear in any list query.
+- [ ] Migration script idempotent (re-run = no-op).
+
+### Estimated effort
+~1.5 days of focused work, scheduled in tandem with CRM Phase A.5.5 (merge tool reuse).
+
+---
+
 ## Phase 15.3 — CSI Draft Overlay (Print-Into-Booklet)
 
 **Scope**: Proxy / contractor enters a sale in the ERP; system generates a mm-precise PDF the BDM feeds **through** their physical BIR-registered CSI booklet page. The PDF prints only variable data (customer, date, items, totals); the booklet supplies all pre-printed content (CSI#, logo, TIN, ATP footer, column labels). Closes the round-trip BIR compliance dance that Phase G4.5a's proxy entry opened — proxy inputs data, BDM writes the legal receipt, existing Phase 15.2 ScanCSIModal captures the booklet serial back into `SalesLine.doc_ref`.

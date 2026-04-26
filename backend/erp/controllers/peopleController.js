@@ -4,13 +4,20 @@ const CompProfile = require('../models/CompProfile');
 const FunctionalRoleAssignment = require('../models/FunctionalRoleAssignment');
 const User = require('../../models/User');
 const { catchAsync } = require('../../middleware/errorHandler');
+const { resolveEntityScope } = require('../utils/resolveEntityScope');
 
 // ═══ People CRUD ═══
 
 const getPeopleList = catchAsync(async (req, res) => {
-  const filter = { ...req.tenantFilter };
-  // Remove bdm_id for people list — admin/finance should see all people in entity
-  if (req.isAdmin || req.isFinance || req.isPresident) delete filter.bdm_id;
+  // Phase G6 (Apr 26, 2026): respect the entity selector. President-likes used
+  // to see every entity's people because tenantFilter is `{}` for them; the
+  // working-entity dropdown was effectively a stamp-on-creates affordance,
+  // not a true read filter. Master-data lists (People Master) now scope to
+  // req.entityId by default; opt-in cross-entity via ?cross_entity=true gated
+  // by CROSS_ENTITY_VIEW_ROLES.PEOPLE_MASTER lookup.
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- entity scoping handled by resolveEntityScope (lookup-driven, Rule #21 compliant)
+  const { entityScope, isCrossEntity, scopedEntityId } = await resolveEntityScope(req, 'PEOPLE_MASTER');
+  const filter = { ...entityScope };
 
   if (req.query.person_type) filter.person_type = req.query.person_type;
   if (req.query.status) filter.status = req.query.status;
@@ -30,6 +37,7 @@ const getPeopleList = catchAsync(async (req, res) => {
       .populate('user_id', 'name email role isActive')
       .populate('reports_to', 'full_name position')
       .populate('territory_id', 'territory_name territory_code')
+      .populate('entity_id', 'entity_name short_name brand_color')
       .lean(),
     PeopleMaster.countDocuments(filter),
   ]);
@@ -38,6 +46,10 @@ const getPeopleList = catchAsync(async (req, res) => {
     success: true,
     data: people,
     pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    meta: {
+      is_cross_entity: isCrossEntity,
+      scoped_entity_id: scopedEntityId,
+    },
   });
 });
 

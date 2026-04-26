@@ -8,6 +8,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { ROLE_SETS } from '../../constants/roles';
 import WorkflowGuide from '../components/WorkflowGuide';
 import RejectionBanner from '../components/RejectionBanner';
+import { showError, showApprovalPending } from '../utils/errorToast';
 
 /**
  * PayslipView — Phase G1.3 transparent layout + Phase G1.4 installments & Finance UI.
@@ -188,13 +189,20 @@ export default function PayslipView() {
     setActionBusy(lineId);
     try {
       const res = await api.verifyPayslipDeductionLine(id, lineId, { action: 'verify' });
+      if (res?.approval_pending) {
+        showApprovalPending(res.message);
+      }
       setPs(res?.data || null);
       // Schedule sync (cascade) changes installment statuses — refresh timeline.
       if ((res?.data?.deduction_lines || []).some(l => l.auto_source === 'SCHEDULE' && l._id === lineId)) {
         await loadBreakdown(true);
       }
     } catch (err) {
-      alert(err.response?.data?.message || err.message || 'Verify failed');
+      if (err?.response?.data?.approval_pending) {
+        showApprovalPending(err.response.data.message);
+      } else {
+        showError(err, 'Verify failed');
+      }
     } finally {
       setActionBusy(null);
     }
@@ -207,10 +215,17 @@ export default function PayslipView() {
     setActionBusy(lineId);
     try {
       const res = await api.verifyPayslipDeductionLine(id, lineId, { action: 'reject', finance_note: reason });
+      if (res?.approval_pending) {
+        showApprovalPending(res.message);
+      }
       setPs(res?.data || null);
       await loadBreakdown(true);
     } catch (err) {
-      alert(err.response?.data?.message || err.message || 'Reject failed');
+      if (err?.response?.data?.approval_pending) {
+        showApprovalPending(err.response.data.message);
+      } else {
+        showError(err, 'Reject failed');
+      }
     } finally {
       setActionBusy(null);
     }
@@ -222,9 +237,16 @@ export default function PayslipView() {
     setActionBusy(lineId);
     try {
       const res = await api.removePayslipDeductionLine(id, lineId);
+      if (res?.approval_pending) {
+        showApprovalPending(res.message);
+      }
       setPs(res?.data || null);
     } catch (err) {
-      alert(err.response?.data?.message || err.message || 'Remove failed');
+      if (err?.response?.data?.approval_pending) {
+        showApprovalPending(err.response.data.message);
+      } else {
+        showError(err, 'Remove failed');
+      }
     } finally {
       setActionBusy(null);
     }
@@ -234,7 +256,7 @@ export default function PayslipView() {
     if (!showCorrect) return;
     const amount = Number(correctAmount);
     if (!Number.isFinite(amount) || amount < 0) {
-      alert('Enter a valid non-negative amount');
+      showError(null, 'Enter a valid non-negative amount');
       return;
     }
     setActionBusy(showCorrect.lineId);
@@ -244,12 +266,19 @@ export default function PayslipView() {
         amount,
         finance_note: correctNote,
       });
+      if (res?.approval_pending) {
+        showApprovalPending(res.message);
+      }
       setPs(res?.data || null);
       setShowCorrect(null);
       setCorrectAmount('');
       setCorrectNote('');
     } catch (err) {
-      alert(err.response?.data?.message || err.message || 'Correct failed');
+      if (err?.response?.data?.approval_pending) {
+        showApprovalPending(err.response.data.message);
+      } else {
+        showError(err, 'Correct failed');
+      }
     } finally {
       setActionBusy(null);
     }
@@ -259,7 +288,7 @@ export default function PayslipView() {
     const { deduction_type, deduction_label, amount } = addForm;
     const amt = Number(amount);
     if (!deduction_type || !deduction_label || !Number.isFinite(amt) || amt < 0) {
-      alert('Fill in type, label, and a non-negative amount');
+      showError(null, 'Fill in type, label, and a non-negative amount');
       return;
     }
     setActionBusy('add');
@@ -271,11 +300,18 @@ export default function PayslipView() {
         description: addForm.description,
         finance_note: addForm.finance_note,
       });
+      if (res?.approval_pending) {
+        showApprovalPending(res.message);
+      }
       setPs(res?.data || null);
       setShowAdd(false);
       setAddForm({ deduction_type: '', deduction_label: '', amount: '', description: '', finance_note: '' });
     } catch (err) {
-      alert(err.response?.data?.message || err.message || 'Add failed');
+      if (err?.response?.data?.approval_pending) {
+        showApprovalPending(err.response.data.message);
+      } else {
+        showError(err, 'Add failed');
+      }
     } finally {
       setActionBusy(null);
     }

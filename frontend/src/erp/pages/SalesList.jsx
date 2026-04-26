@@ -12,6 +12,7 @@ import EntityBadge from '../components/EntityBadge';
 import PresidentReverseModal from '../components/PresidentReverseModal';
 import RejectionBanner from '../components/RejectionBanner';
 import ScanCSIModal from '../components/ScanCSIModal';
+import ConfirmModal from '../components/ConfirmModal';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -240,6 +241,9 @@ export default function SalesList() {
   // OCR, just upload → returns { csi_photo_url, csi_attachment_id } which we
   // route into PUT /sales/:id/received-csi as the received-CSI proof.
   const [attachReceivedTarget, setAttachReceivedTarget] = useState(null);
+  // Lifecycle confirm state (Submit/Validate/Reopen/Request-Delete/Approve-Delete).
+  // Replaces window.confirm() with the styled ERP ConfirmModal. See ConfirmModal.jsx.
+  const [confirm, setConfirm] = useState(null);
 
   const loadSales = useCallback(async (page = 1) => {
     setLoading(true);
@@ -262,7 +266,7 @@ export default function SalesList() {
     setFilters(prev => ({ ...prev, [key]: value }));
   };
 
-  const handleSubmit = async (saleId) => {
+  const handleSubmit = (saleId) => {
     const target = saleId ? data.find(s => s._id === saleId) : null;
     const isOpeningAr = target?.source === 'OPENING_AR';
     const msg = saleId
@@ -270,26 +274,34 @@ export default function SalesList() {
         ? 'Submit this Opening AR entry? AR journal will be created (no stock deduction).'
         : 'Submit this sale? Stock will be deducted via FIFO.'
       : 'Submit all validated sales? Stock will be deducted via FIFO (Opening AR entries skip stock).';
-    if (!window.confirm(msg)) return;
-    try {
-      // Submit returns 202 with { approval_pending: true, message } when the
-      // caller's role is not in MODULE_DEFAULT_ROLES.SALES (lookup-driven, per
-      // CLAUDE-ERP Phase G4). axios resolves 2xx, so the pending case lands in
-      // the success branch. Mirror SalesEntry/OpeningArEntry belt-and-braces
-      // handling — some backends still throw on 202 (legacy interceptors).
-      const res = await sales.submitSales(saleId ? [saleId] : undefined);
-      if (res?.approval_pending) {
-        showApprovalPending(res.message);
-      }
-      loadSales(pagination.page);
-    } catch (err) {
-      if (err?.response?.data?.approval_pending) {
-        showApprovalPending(err.response.data.message);
-        loadSales(pagination.page);
-      } else {
-        showError(err, 'Could not submit sales');
-      }
-    }
+    setConfirm({
+      title: saleId ? 'Submit sale' : 'Submit all validated',
+      message: msg,
+      confirmText: 'Submit',
+      variant: 'primary',
+      onConfirm: async () => {
+        setConfirm(null);
+        try {
+          // Submit returns 202 with { approval_pending: true, message } when the
+          // caller's role is not in MODULE_DEFAULT_ROLES.SALES (lookup-driven, per
+          // CLAUDE-ERP Phase G4). axios resolves 2xx, so the pending case lands in
+          // the success branch. Mirror SalesEntry/OpeningArEntry belt-and-braces
+          // handling — some backends still throw on 202 (legacy interceptors).
+          const res = await sales.submitSales(saleId ? [saleId] : undefined);
+          if (res?.approval_pending) {
+            showApprovalPending(res.message);
+          }
+          loadSales(pagination.page);
+        } catch (err) {
+          if (err?.response?.data?.approval_pending) {
+            showApprovalPending(err.response.data.message);
+            loadSales(pagination.page);
+          } else {
+            showError(err, 'Could not submit sales');
+          }
+        }
+      },
+    });
   };
 
   const handleAttachReceivedCsi = async (scannedData) => {
@@ -311,54 +323,86 @@ export default function SalesList() {
     }
   };
 
-  const handleValidate = async (saleId) => {
-    if (!window.confirm('Validate this sale? Stock, VAT, and required fields will be checked.')) return;
-    try {
-      const res = await sales.validateSales([saleId]);
-      const rowResult = res?.errors?.find(e => String(e.sale_id) === String(saleId));
-      if (rowResult?.messages?.length) {
-        showError(null, `Validation failed:\n${rowResult.messages.join('\n')}`);
-      } else if (rowResult?.warnings?.length) {
-        showWarning(rowResult.warnings.join('\n'));
-      } else {
-        showSuccess('Sale validated — Submit button is now available.');
-      }
-      loadSales(pagination.page);
-    } catch (err) {
-      showError(err, 'Could not validate sale');
-    }
+  const handleValidate = (saleId) => {
+    setConfirm({
+      title: 'Validate sale',
+      message: 'Validate this sale? Stock, VAT, and required fields will be checked.',
+      confirmText: 'Validate',
+      variant: 'primary',
+      onConfirm: async () => {
+        setConfirm(null);
+        try {
+          const res = await sales.validateSales([saleId]);
+          const rowResult = res?.errors?.find(e => String(e.sale_id) === String(saleId));
+          if (rowResult?.messages?.length) {
+            showError(null, `Validation failed:\n${rowResult.messages.join('\n')}`);
+          } else if (rowResult?.warnings?.length) {
+            showWarning(rowResult.warnings.join('\n'));
+          } else {
+            showSuccess('Sale validated — Submit button is now available.');
+          }
+          loadSales(pagination.page);
+        } catch (err) {
+          showError(err, 'Could not validate sale');
+        }
+      },
+    });
   };
 
-  const handleReopen = async (id) => {
-    if (!window.confirm('Re-open this posted sale? Stock will be reversed.')) return;
-    try {
-      const res = await sales.reopenSales([id]);
-      const failed = res?.failed || [];
-      if (failed.length) {
-        showWarning(failed.map(f => `${f.doc_ref || f._id}: ${f.error}`).join('\n'));
-      } else {
-        showSuccess(res?.message || 'Sale reopened');
-      }
-      loadSales(pagination.page);
-    } catch (err) {
-      showError(err, 'Could not reopen sale');
-    }
+  const handleReopen = (id) => {
+    setConfirm({
+      title: 'Re-open sale',
+      message: 'Re-open this posted sale? Stock will be reversed.',
+      confirmText: 'Re-open',
+      variant: 'warning',
+      onConfirm: async () => {
+        setConfirm(null);
+        try {
+          const res = await sales.reopenSales([id]);
+          const failed = res?.failed || [];
+          if (failed.length) {
+            showWarning(failed.map(f => `${f.doc_ref || f._id}: ${f.error}`).join('\n'));
+          } else {
+            showSuccess(res?.message || 'Sale reopened');
+          }
+          loadSales(pagination.page);
+        } catch (err) {
+          showError(err, 'Could not reopen sale');
+        }
+      },
+    });
   };
 
-  const handleRequestDeletion = async (id) => {
-    if (!window.confirm('Request deletion for this sale?')) return;
-    try {
-      await sales.requestDeletion(id);
-      loadSales(pagination.page);
-    } catch (err) { showError(err, 'Could not request deletion'); }
+  const handleRequestDeletion = (id) => {
+    setConfirm({
+      title: 'Request deletion',
+      message: 'Request deletion for this sale?',
+      confirmText: 'Request deletion',
+      variant: 'warning',
+      onConfirm: async () => {
+        setConfirm(null);
+        try {
+          await sales.requestDeletion(id);
+          loadSales(pagination.page);
+        } catch (err) { showError(err, 'Could not request deletion'); }
+      },
+    });
   };
 
-  const handleApproveDeletion = async (id) => {
-    if (!window.confirm('Approve deletion? A reversal entry will be created (SAP Storno).')) return;
-    try {
-      await sales.approveDeletion(id, 'Approved by admin');
-      loadSales(pagination.page);
-    } catch (err) { showError(err, 'Could not approve deletion'); }
+  const handleApproveDeletion = (id) => {
+    setConfirm({
+      title: 'Approve deletion',
+      message: 'Approve deletion? A reversal entry will be created (SAP Storno).',
+      confirmText: 'Approve deletion',
+      variant: 'danger',
+      onConfirm: async () => {
+        setConfirm(null);
+        try {
+          await sales.approveDeletion(id, 'Approved by admin');
+          loadSales(pagination.page);
+        } catch (err) { showError(err, 'Could not approve deletion'); }
+      },
+    });
   };
 
   const handlePresidentReverse = async ({ reason, confirm }) => {
@@ -512,9 +556,19 @@ export default function SalesList() {
                     <td data-label="Entity"><EntityBadge entity={getEntityById(sale.entity_id)} size="sm" /></td>
                   )}
                   <td data-label="Products" style={{ fontSize: 11, maxWidth: 220, whiteSpace: 'pre-line' }}>
-                    {sale.line_items?.map((li, i) => (
-                      <div key={i}>{li.item_key || '—'} × {li.qty}</div>
-                    ))}
+                    {sale.line_items?.map((li, i) => {
+                      // Rule #4 — show brand_name + dosage_strength alongside
+                      // the SKU. Backend enriches line_items via
+                      // enrichLineItemsWithProductDisplay (salesController).
+                      const display = [li.product_name, li.dosage].filter(Boolean).join(' ');
+                      return (
+                        <div key={i}>
+                          {li.item_key || '—'}
+                          {display && <> — {display}</>}
+                          {' '}× {li.qty}
+                        </div>
+                      );
+                    })}
                   </td>
                   <td data-label="Actions" onClick={e => e.stopPropagation()}>
                     <div className="sales-actions">
@@ -609,6 +663,17 @@ export default function SalesList() {
               onClose={() => setReverseTarget(null)}
             />
           )}
+
+          {/* Lifecycle Confirm Modal — Submit / Validate / Reopen / Request-Delete / Approve-Delete */}
+          <ConfirmModal
+            isOpen={!!confirm}
+            title={confirm?.title}
+            message={confirm?.message}
+            confirmText={confirm?.confirmText}
+            variant={confirm?.variant}
+            onConfirm={confirm?.onConfirm}
+            onCancel={() => setConfirm(null)}
+          />
 
           {/* Detail Modal */}
           {selectedSale && (

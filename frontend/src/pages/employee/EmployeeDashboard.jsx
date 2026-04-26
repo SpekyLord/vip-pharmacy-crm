@@ -25,6 +25,7 @@ import scheduleService from '../../services/scheduleService';
 import messageService from '../../services/messageInboxService';
 import { getWeekOfMonth, getCycleWeekRange } from '../../utils/cycleUtils';
 import PageGuide from '../../components/common/PageGuide';
+import toast from 'react-hot-toast';
 
 const dashboardStyles = `
   .main-content h1 {
@@ -669,7 +670,7 @@ const EmployeeDashboard = () => {
       setClients(prev => prev.filter(c => c._id !== client._id));
     } catch (err) {
       console.error('Failed to delete client:', err);
-      alert(err.response?.data?.message || 'Failed to delete client');
+      toast.error(err.response?.data?.message || 'Failed to delete client');
     }
   };
 
