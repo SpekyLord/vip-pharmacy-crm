@@ -2558,6 +2558,37 @@ const SEED_DEFAULTS = {
   CROSS_ENTITY_VIEW_ROLES: [
     { code: 'PEOPLE_MASTER', label: 'People Master — cross-entity view (?cross_entity=true)', insert_only_metadata: true, metadata: { roles: ['president', 'ceo'], sort_order: 1 } },
   ],
+  // Phase VIP-1.A (Apr 26, 2026) — MD Partner Lead Pipeline.
+  // Schema enum on Doctor.partnership_status is the validation gate; the lookup
+  // drives display labels + pill colors so subscribers can rename / recolor
+  // without a deploy (Rule #3). Codes match the schema enum 1-to-1 — adding a
+  // new lookup row with an unrecognized code is harmless (UI shows it, but the
+  // Doctor model rejects it on save).
+  // `insert_only_metadata: true` — admin edits to color/description survive
+  // lazy re-seeds (same posture as PROXY_ENTRY_ROLES).
+  DOCTOR_PARTNERSHIP_STATUS: [
+    { code: 'LEAD',      label: 'Lead',      insert_only_metadata: true, metadata: { bg: '#dbeafe', fg: '#1d4ed8', sort_order: 1, description: 'Discovered MD; not yet contacted.' } },
+    { code: 'CONTACTED', label: 'Contacted', insert_only_metadata: true, metadata: { bg: '#cffafe', fg: '#0891b2', sort_order: 2, description: 'BDM has reached out (call / Viber / Messenger).' } },
+    { code: 'VISITED',   label: 'Visited',   insert_only_metadata: true, metadata: { bg: '#fef3c7', fg: '#b45309', sort_order: 3, description: 'In-person meeting completed; partnership pitched.' } },
+    { code: 'PARTNER',   label: 'Partner',   insert_only_metadata: true, metadata: { bg: '#dcfce7', fg: '#15803d', sort_order: 4, description: 'Signed partnership agreement on file (rebate gate #2).' } },
+    { code: 'INACTIVE',  label: 'Inactive',  insert_only_metadata: true, metadata: { bg: '#f3f4f6', fg: '#6b7280', sort_order: 5, description: 'Dormant / declined / out-of-network.' } },
+  ],
+  DOCTOR_LEAD_SOURCE: [
+    { code: 'BDM_MANUAL',          label: 'BDM Manual Entry',           insert_only_metadata: true, metadata: { sort_order: 1, description: 'BDM added the MD directly through the CRM.' } },
+    { code: 'CUSTOMER_ATTESTATION', label: 'Customer Attestation',       insert_only_metadata: true, metadata: { sort_order: 2, description: 'Patient told the storefront which MD prescribed (VIP-1.D).' } },
+    { code: 'RX_PARSE',             label: 'Prescription OCR',           insert_only_metadata: true, metadata: { sort_order: 3, description: 'Storefront Rx OCR matched a doctor signature (VIP-1.D).' } },
+    { code: 'IMPORT',               label: 'Bulk Import',                insert_only_metadata: true, metadata: { sort_order: 4, description: 'Loaded via Excel / CPT / migration script.' } },
+    { code: 'OTHER',                label: 'Other',                      insert_only_metadata: true, metadata: { sort_order: 5, description: 'Catch-all — note the actual source in partnership_notes.' } },
+  ],
+  // mdPartnerAccess.js reads metadata.roles for each code with 60s TTL cache.
+  // Keep in lock-step with DEFAULT_VIEW_LEADS / DEFAULT_MANAGE_PARTNERSHIP /
+  // DEFAULT_SET_AGREEMENT_DATE in backend/utils/mdPartnerAccess.js — the helper
+  // falls back to those constants if the lookup is missing/unreadable.
+  MD_PARTNER_ROLES: [
+    { code: 'VIEW_LEADS',         label: 'View MD Lead pipeline',                 insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 1, description: 'See /admin/md-leads + counts. BDMs view their own assignees from VIP Client list regardless.' } },
+    { code: 'MANAGE_PARTNERSHIP', label: 'Drive LEAD/CONTACTED/VISITED transitions', insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 2, description: 'Cross-record management. BDM-on-own-record bypass enforced separately in controller.' } },
+    { code: 'SET_AGREEMENT_DATE', label: 'Promote to PARTNER (rebate gate #2)',   insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 3, description: 'Locks rebate eligibility — keep narrow. President-only is a safer posture once VIP-1.B ships.' } },
+  ],
 };
 
 // List all distinct categories for current entity
