@@ -7885,6 +7885,78 @@ docs/PHASETASK-ERP.md                                       (this section)
 
 ---
 
+## Phase 38 — One-PeopleMaster-Per-Person + Entity-Membership Query 📋 PLANNED
+
+> **Trigger**: Surfaced during Phase 37 smoke-test (Apr 26 2026). Phase 37 closed the entity-scope UX bug for People Master; this phase fixes the underlying data-shape issue exposed by it.
+
+### Problem
+`PeopleMaster` has a single scalar `entity_id` — each row lives in exactly one entity. But `User` has both `entity_id` (primary) AND `entity_ids: [ObjectId]` (Phase 26 multi-entity assignment). [peopleController.js:269-330](backend/erp/controllers/peopleController.js#L269-L330) `syncFromCrm` only finds users whose **primary** `entity_id` matches the current selector, so people assigned to entity X via `entity_ids[]` (with a different primary) never get a PeopleMaster row under X.
+
+**Concrete production state** (Apr 26 2026):
+- VIP synced first → 11 BDMs got PM rows under VIP.
+- MG and CO. synced later → only Jake Montero (whose primary is MG and CO.) got a PM row there.
+- Cristina, Edcel, Jay Ann, Jenny Rose, Judy Mae, Mae Navarro, etc. work for MG and CO. via `User.entity_ids` / FRA, but their PeopleMaster row only exists under VIP. MG and CO.'s People Master shows 1 row when it should show ~11.
+
+**Why it matters now (compounding cost)**:
+1. PII drift — a person has one TIN, one PhilHealth #, one bank account. Storing those N times across N entity rows guarantees they diverge over time. Divergence on government-ID surfaces is a BIR-audit-class bug.
+2. Per-entity CompProfile is correct (different salary in subsidiary is real). Per-entity PII is fiction.
+3. Linear growth — dupe count = hires × subsidiaries. Cheap now (12 PM rows, 2-3 dupes); expensive in 6 months.
+
+### Why deferred (not blocking)
+- Phase 37 closed the immediate UX bug. Admins can SEE what's scoped and toggle out of it; the wrong-roster confusion is gone.
+- Day-to-day operations are driven by `User` + Functional Role Assignments + Approval Hub, not direct PeopleMaster reads. Drift hasn't bitten anyone yet.
+- The CRM has the **identical pattern** queued as Phase A.5 (canonical VIP Client merge — "one human, multiple records"). Per memory: A.5.5 ships the merge tool, A.5.2 flips the unique index. **Reuse Phase A.5.5's merge UX** for PeopleMaster — building two merge tools is wasteful.
+
+### Plan (5 sub-phases)
+
+**38a — Audit script** (~1h)
+- `backend/erp/scripts/auditPeopleMasterDuplicates.js` — list `User.entity_ids.length > 1` users + their PM row count per entity. Flag dupes (same `user_id` across N>1 PM rows). Output the merge candidate set + per-row data-completeness diff (TIN, PhilHealth, bank, comp profile, FRA assignments).
+- Run dry-run on prod; commit the output as a snapshot in `docs/`.
+
+**38b — Merge tool UI** (~1d)
+- Admin page `/erp/people/merge` (gated by `people.manage_login` danger sub-perm).
+- Shows merge candidates from 38a's output. Per candidate: side-by-side row diff (which has the TIN, which has the bank, etc.). One-click merge picks keeper, copies missing fields from losers, soft-deletes losers (`mergedInto: ObjectId, mergedAt: Date`), rewrites foreign keys.
+- Foreign-key rewrites: `CompProfile.person_id`, `FunctionalRoleAssignment.person_id`, `AccessTemplate.person_id`, `Payslip.person_id`, `IncentivePayout.person_id`, `KpiSelfRating.person_id`, anywhere else `person_id` is referenced. Dry-run preview before commit.
+- Reuse the Phase A.5.5 CRM merge UX shape (same pattern, different model).
+
+**38c — Unique index + schema fields** (~10min after 38b runs clean on prod)
+- Add `{ user_id: 1 }` unique sparse index on `PeopleMaster` (sparse because some PM rows have null `user_id` for people without logins).
+- Add `mergedInto: ObjectId` + `mergedAt: Date` fields. Excluded from default queries via pre-find hook (`is_active: true` + `mergedInto: null`).
+- Migration script `migratePeopleMasterUniqueUser.js` (dry-run / `--apply`) — refuses `--apply` if any duplicates remain (forces 38b first).
+
+**38d — Sync rewrite** (~30min)
+- `peopleController.syncFromCrm` becomes idempotent on `user_id` — never creates a second row for an already-linked user. New users are created with primary entity = current selector.
+- For users newly added to an entity via `entity_ids[]`: no PM row created (the existing one becomes globally accessible via 38e).
+- Health check: assert PM rows are 1:1 with linked Users.
+
+**38e — List query flip** (~1h)
+- `getPeopleList` joins `User.entity_ids` via a `$lookup` aggregate pipeline. A person is "in" entity X if their `User.entity_id == X` OR `User.entity_ids[]` includes X.
+- Cross-entity (`?cross_entity=true`) stays the same — drops the membership filter.
+- `entity_id` field on PeopleMaster keeps its meaning as "primary affiliation" (used for reports, payslip-default routing) but is no longer the read filter.
+- `resolveEntityScope` from Phase 37 still wraps the call — the lookup-driven role allowlist + scoping behavior is preserved.
+
+### Out of scope
+- Cross-CRM identity merge (CRM `User` ↔ ERP `PeopleMaster`) — that's already 1:1 via `PeopleMaster.user_id` ref. This phase only dedupes within PeopleMaster.
+- Vendor / Customer / Hospital one-row-per-entity flips — same pattern, separate phases.
+- Per-entity comp profiles — stays as is. CompProfile is keyed `(entity_id, person_id)`, so Cristina has one PM row but can have N comp profiles (one per subsidiary she works for). Correct.
+
+### Risk
+- **Low** if 38a is run first and the dupe count is small (current prod: ~2-3 dupes). High blast radius would only come from the FK rewrite in 38b — manual review of the dry-run output is mandatory before commit.
+- Soft-deleted losers stay queryable for audit. Reversible: `mergedInto` field doubles as undo pointer.
+
+### Success criteria
+- [ ] Phase 37 entity scope still works (regression test: `?cross_entity=true` toggle, scope-by-selector default).
+- [ ] Switch to MG and CO. selector → ALL people assigned to MG and CO. (via `entity_id` OR `entity_ids[]`) appear, not just primary-MG-and-CO. people.
+- [ ] No duplicate PM rows for any single user_id.
+- [ ] Edit Cristina's TIN once → reflected everywhere (no per-entity drift).
+- [ ] CompProfile / FRA / Payroll / KPI all read the keeper PM doc; soft-deleted losers don't appear in any list query.
+- [ ] Migration script idempotent (re-run = no-op).
+
+### Estimated effort
+~1.5 days of focused work, scheduled in tandem with CRM Phase A.5.5 (merge tool reuse).
+
+---
+
 ## Phase 15.3 — CSI Draft Overlay (Print-Into-Booklet)
 
 **Scope**: Proxy / contractor enters a sale in the ERP; system generates a mm-precise PDF the BDM feeds **through** their physical BIR-registered CSI booklet page. The PDF prints only variable data (customer, date, items, totals); the booklet supplies all pre-printed content (CSI#, logo, TIN, ATP footer, column labels). Closes the round-trip BIR compliance dance that Phase G4.5a's proxy entry opened — proxy inputs data, BDM writes the legal receipt, existing Phase 15.2 ScanCSIModal captures the booklet serial back into `SalesLine.doc_ref`.
