@@ -1036,6 +1036,9 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
             defaultOpen: true,
             items: [
               { path: '/admin/doctors', label: 'VIP Clients', icon: Stethoscope },
+              // Phase VIP-1.A — MD Partner Lead pipeline. Admin/president-only by default;
+              // backend gate is lookup-driven via MD_PARTNER_ROLES.
+              { path: '/admin/md-leads', label: 'MD Leads', icon: Handshake },
               { path: '/admin/employees', label: 'BDMs', icon: Users },
               { path: '/admin/products', label: 'Products', icon: Package },
             ],

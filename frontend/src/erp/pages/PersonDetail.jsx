@@ -131,6 +131,11 @@ export default function PersonDetail() {
   const canTerminate = hasSubPermission('people', 'terminate');
   const canManageLogin = hasSubPermission('people', 'manage_login');
   const canDeleteInsurance = hasSubPermission('payroll', 'insurance_delete');
+  // Phase G7 — entity lifecycle gates (sub-perms registered as danger-baseline,
+  // so admin/staff need explicit grant via Access Template). President bypasses
+  // upstream in middleware.
+  const canTransferEntity = hasSubPermission('people', 'transfer_entity');
+  const canGrantEntity = hasSubPermission('people', 'grant_entity');
 
   const [person, setPerson] = useState(null);
   const [payslips, setPayslips] = useState([]);
@@ -153,6 +158,10 @@ export default function PersonDetail() {
   const [latestRating, setLatestRating] = useState(null);
   const [allPeople, setAllPeople] = useState([]);
   const savingRef = useRef(false);
+  // Phase G7 — entity lifecycle state
+  const [allEntities, setAllEntities] = useState([]);
+  const [entityModal, setEntityModal] = useState(null);
+  const [entityBusy, setEntityBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -217,6 +226,39 @@ export default function PersonDetail() {
       if (ratings?.length) setLatestRating(ratings[0]);
     }).catch(() => {});
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Phase G7 — load entities once for Transfer/Grant pickers
+  useEffect(() => {
+    api.get('/erp/entities').then(r => setAllEntities(r?.data?.data || [])).catch(() => {});
+  }, []);
+
+  // Phase G7 — entity lifecycle handlers
+  const submitEntityModal = async () => {
+    if (!entityModal) return;
+    const { mode, entity_id, reason } = entityModal;
+    if (!entity_id) { showWarning('Pick an entity'); return; }
+    if (!reason || !reason.trim()) { showWarning('Reason is required for the audit trail'); return; }
+    setEntityBusy(true);
+    try {
+      let res;
+      if (mode === 'transfer') res = await pplApi.transferEntity(id, entity_id, reason.trim());
+      else res = await pplApi.grantEntity(id, entity_id, reason.trim());
+      showSuccess(res?.message || (mode === 'transfer' ? 'Transferred' : 'Granted'));
+      setEntityModal(null);
+      load();
+    } catch (err) {
+      showError(err, mode === 'transfer' ? 'Could not transfer entity' : 'Could not grant entity');
+    } finally { setEntityBusy(false); }
+  };
+  const handleRevokeEntity = async (entityId, entityName) => {
+    const reason = window.prompt(`Revoke access to ${entityName}? Enter a reason for the audit trail:`, '');
+    if (reason === null) return;
+    if (!reason.trim()) { showWarning('Reason is required'); return; }
+    try {
+      const res = await pplApi.revokeEntity(id, entityId, reason.trim());
+      showSuccess(res?.message || 'Revoked');
+      load();
+    } catch (err) { showError(err, 'Could not revoke entity'); }
+  };
   useEffect(() => {
     pplApi.getPeopleList({ limit: 200, status: 'ACTIVE' }).then(r => setAllPeople(r?.data || [])).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -563,6 +605,78 @@ export default function PersonDetail() {
               <F lbl="Account Name" name="bank_account.account_name" val={person.bank_account?.account_name} editing={editPerson} form={personForm} onChange={handlePersonChange} />
             </div>
           </div>
+
+          {/* ═══ SECTION A.1: Entity Access (Phase G7, Apr 26 2026) ═══
+              Home entity = PeopleMaster.entity_id (immutable except via Transfer).
+              Additional = User.entity_ids_static (admin-direct grants) + active FRA entities.
+              Granted entities widen visibility on lists (People Master, Sales, etc.) and
+              unlock the existing PROXY_ENTRY_ROLES proxy on transactional documents. */}
+          {(() => {
+            const ea = person.entity_access || { home: null, additional: [], via_static: [], via_fra: [] };
+            const staticIds = new Set((ea.via_static || []).map(e => String(e._id)));
+            const fraIds = new Set((ea.via_fra || []).map(e => String(e._id)));
+            return (
+              <div className="pd-card">
+                <div className="pd-card-hdr">
+                  <h3>Entity Access</h3>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {canTransferEntity && (
+                      <button className="pd-btn" onClick={() => setEntityModal({ mode: 'transfer', entity_id: '', reason: '' })}>
+                        Transfer Home
+                      </button>
+                    )}
+                    {canGrantEntity && (
+                      <button className="pd-btn pd-btn-p" onClick={() => setEntityModal({ mode: 'grant', entity_id: '', reason: '' })}>
+                        + Grant Entity
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--erp-muted)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6 }}>Home Entity</div>
+                    {ea.home ? (
+                      <span className="badge" style={{ background: ea.home.brand_color || '#1e5eff', color: '#fff', fontWeight: 700, padding: '4px 12px', fontSize: 12 }}>
+                        {ea.home.short_name || ea.home.entity_name || '—'}
+                      </span>
+                    ) : <span className="pd-empty" style={{ padding: 0 }}>No home entity set</span>}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--erp-muted)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: 6 }}>
+                      Additional Entities {ea.additional?.length ? `(${ea.additional.length})` : ''}
+                    </div>
+                    {ea.additional && ea.additional.length ? (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {ea.additional.map(e => {
+                          const eid = String(e._id);
+                          const viaStatic = staticIds.has(eid);
+                          const viaFra = fraIds.has(eid);
+                          return (
+                            <span key={eid} className="badge" style={{ background: e.brand_color || '#e5e7eb', color: e.brand_color ? '#fff' : '#374151', fontWeight: 600, padding: '4px 10px', fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                              {e.short_name || e.entity_name || '—'}
+                              <span style={{ fontSize: 10, opacity: 0.85, fontWeight: 500 }}>
+                                {viaStatic && viaFra ? 'static + FRA' : viaStatic ? 'static' : viaFra ? 'FRA' : ''}
+                              </span>
+                              {viaStatic && canGrantEntity && (
+                                <button onClick={() => handleRevokeEntity(eid, e.short_name || e.entity_name || 'this entity')}
+                                  title="Revoke static grant"
+                                  style={{ background: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, marginLeft: 2, fontSize: 14, lineHeight: 1 }}>×</button>
+                              )}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    ) : <span className="pd-empty" style={{ padding: 0 }}>No additional entity access</span>}
+                  </div>
+                  {!ea.has_login && (
+                    <div style={{ fontSize: 11, color: '#92400e', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 6, padding: '8px 10px' }}>
+                      No linked login — only the home entity applies. Create a login to grant multi-entity access, or use Transfer Home to move the home entity.
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* ═══ SECTION B: Compensation Profile ═══ */}
           <div className="pd-card">
@@ -971,6 +1085,59 @@ export default function PersonDetail() {
               </div>
             ) : <div className="pd-empty">No performance ratings yet</div>}
           </div>
+
+          {/* ═══ Phase G7 — Entity Transfer / Grant modal ═══ */}
+          {entityModal && (() => {
+            const isTransfer = entityModal.mode === 'transfer';
+            const homeId = String(person.entity_access?.home?._id || person.entity_id || '');
+            const additional = (person.entity_access?.additional || []).map(e => String(e._id));
+            const excludeIds = isTransfer ? new Set([homeId]) : new Set([homeId, ...additional]);
+            const options = allEntities.filter(e => !excludeIds.has(String(e._id)));
+            return (
+              <div role="dialog" aria-modal="true"
+                style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+                onClick={(e) => { if (e.target === e.currentTarget && !entityBusy) setEntityModal(null); }}>
+                <div style={{ background: '#fff', borderRadius: 12, padding: 22, width: '100%', maxWidth: 480, boxShadow: '0 10px 30px rgba(0,0,0,.18)' }}>
+                  <h3 style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700 }}>
+                    {isTransfer ? 'Transfer Home Entity' : 'Grant Additional Entity Access'}
+                  </h3>
+                  <p style={{ margin: '0 0 14px', fontSize: 12, color: '#64748b', lineHeight: 1.5 }}>
+                    {isTransfer
+                      ? `Move ${person.full_name} to a different home entity. The linked login's home and static span are dual-written. Active POSTED documents within the configured lookback window will block the transfer.`
+                      : `Widen ${person.full_name}'s auth-tier scope to include another entity. They will become visible in that entity's People Master and can be selected as a proxy target on transactional documents (existing PROXY_ENTRY_ROLES rules apply).`}
+                  </p>
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: 4 }}>
+                      {isTransfer ? 'New Home Entity' : 'Entity to Grant'}
+                    </label>
+                    <select value={entityModal.entity_id}
+                      onChange={(e) => setEntityModal(m => ({ ...m, entity_id: e.target.value }))}
+                      style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}>
+                      <option value="">— Pick an entity —</option>
+                      {options.map(e => (
+                        <option key={e._id} value={e._id}>{e.entity_name}{e.short_name ? ` (${e.short_name})` : ''}</option>
+                      ))}
+                    </select>
+                    {!options.length && <div style={{ fontSize: 11, color: '#dc2626', marginTop: 4 }}>No eligible entities (already home or already granted).</div>}
+                  </div>
+                  <div style={{ marginBottom: 14 }}>
+                    <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: 4 }}>Reason (audit trail)</label>
+                    <input value={entityModal.reason}
+                      onChange={(e) => setEntityModal(m => ({ ...m, reason: e.target.value }))}
+                      placeholder={isTransfer ? 'e.g. Promoted to MG and CO. branch manager' : 'e.g. Covering MG sales while branch manager is on leave'}
+                      style={{ width: '100%', padding: '8px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                    <button className="pd-btn" disabled={entityBusy} onClick={() => setEntityModal(null)}>Cancel</button>
+                    <button className="pd-btn pd-btn-p" disabled={entityBusy || !entityModal.entity_id || !entityModal.reason.trim()}
+                      onClick={submitEntityModal}>
+                      {entityBusy ? 'Working…' : isTransfer ? 'Transfer' : 'Grant'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
         </main>
       </div>

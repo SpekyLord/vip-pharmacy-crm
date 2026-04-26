@@ -900,13 +900,14 @@ const WORKFLOW_GUIDES = {
       'Click any row to view full person details and change role or access',
       'In the Archive tab, click "Reactivate" to restore a separated employee to active status',
       'If a legacy role banner appears (e.g. medrep, contractor, employee), click "Migrate" to bulk-convert users to the current "staff" role',
-      'Missing someone you expect to see? "Sync from CRM" only imports each user under their PRIMARY entity today — multi-entity assignments come from BDM Management → Multi-Entity tab. A person assigned to this entity via entity_ids[] but not synced here will not appear until Phase 38 (planned: one-PeopleMaster-per-person + entity-membership query)',
+      'List visibility honors multi-entity span (Phase G7): a person appears in this entity\'s list when this is their home entity OR they have a static grant via Entity Access OR they hold an active Functional Role here',
+      'To make someone visible in another entity, open their profile → Entity Access → Grant Entity (or Transfer Home to move them entirely)',
     ],
     next: [
       { label: 'Org Chart', path: '/erp/org-chart' },
       { label: 'Add Person', path: '/erp/people' },
     ],
-    tip: 'The Active tab shows current employees (ACTIVE, ON_LEAVE, SUSPENDED). The Archive tab shows separated employees. Use "Sync from CRM" to import existing CRM users (currently primary-entity only — see Phase 38). Reactivating a person sets them to ACTIVE but does not restore login or role assignments — those must be re-enabled manually. Cross-entity view is governed by the CROSS_ENTITY_VIEW_ROLES.PEOPLE_MASTER lookup (Control Center → Lookup Tables) — by default only president/ceo can opt in. Note: all people selection dropdowns across the ERP (Managed By, Reports To, Assign To, etc.) only show ACTIVE people.',
+    tip: 'The Active tab shows current employees (ACTIVE, ON_LEAVE, SUSPENDED). The Archive tab shows separated employees. Use "Sync from CRM" to import existing CRM users (creates them under the currently-selected entity). Phase G7 visibility union: this list now includes spanned people (User.entity_ids) and FRA holders, not just home-entity rows — so a parent-VIP staff granted access to MG and CO. shows up under both. Reactivating a person sets them to ACTIVE but does not restore login or role assignments — those must be re-enabled manually. Cross-entity view (president toggle) is governed by the CROSS_ENTITY_VIEW_ROLES.PEOPLE_MASTER lookup. Note: all people selection dropdowns across the ERP (Managed By, Reports To, Assign To, etc.) only show ACTIVE people.',
   },
   'person-detail': {
     title: 'Person Profile',
@@ -917,13 +918,14 @@ const WORKFLOW_GUIDES = {
       'Use "Separate Employee" to deactivate — this revokes role assignments and disables login',
       'Use "Reactivate" on separated employees to restore active status (login and roles must be re-enabled manually)',
       'Person types, positions, departments, employment types, and BDM stages are managed via Lookup Tables (Control Center → System Settings)',
+      'Entity Access (Phase G7): Home Entity is the person\'s primary scope; Additional Entities widen visibility and unlock cross-entity proxy on transactional documents. Use "Transfer Home" to move primary scope; use "+ Grant Entity" to add additional access',
     ],
     next: [
       { label: 'People List', path: '/erp/people' },
       { label: 'Org Chart', path: '/erp/org-chart' },
       { label: 'Payroll', path: '/erp/payroll' },
     ],
-    tip: 'Separating an employee cascades: marks SEPARATED, revokes all role assignments, and disables system login. Reactivation restores ACTIVE status only — re-enable login and role assignments manually. Career path: CONTRACTOR → PS_ELIGIBLE → TRANSITIONING → SUBSIDIARY → SHAREHOLDER. Position and Department are lookup-driven — to add new options, go to Control Center → Lookup Tables.',
+    tip: 'Separating an employee cascades: marks SEPARATED, revokes all role assignments, and disables system login. Reactivation restores ACTIVE status only — re-enable login and role assignments manually. Career path: CONTRACTOR → PS_ELIGIBLE → TRANSITIONING → SUBSIDIARY → SHAREHOLDER. Position and Department are lookup-driven — to add new options, go to Control Center → Lookup Tables. Entity Access: Transfer Home blocks if there are POSTED documents in the source entity within the configured lookback (default 90 days; per-entity tunable via Lookup PEOPLE_LIFECYCLE_CONFIG.TRANSFER_BLOCK_LOOKBACK_DAYS). Granting an entity widens VISIBILITY only — module-level access still requires an Access Template assignment per entity. Sub-perms people.transfer_entity and people.grant_entity are danger-baseline (require explicit grant on Access Template, even for module-FULL admins).',
   },
   'role-assignment-manager': {
     title: 'Role Assignment Manager',

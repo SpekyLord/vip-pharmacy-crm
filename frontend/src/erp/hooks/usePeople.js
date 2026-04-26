@@ -29,6 +29,11 @@ export default function usePeople() {
   const separatePerson = useCallback((id) => post(`/people/${id}/separate`), [post]);
   const reactivatePerson = useCallback((id) => post(`/people/${id}/reactivate`), [post]);
 
+  // Phase G7 — entity lifecycle
+  const transferEntity = useCallback((id, new_entity_id, reason) => post(`/people/${id}/transfer-entity`, { new_entity_id, reason }), [post]);
+  const grantEntity = useCallback((id, entity_id, reason) => post(`/people/${id}/grant-entity`, { entity_id, reason }), [post]);
+  const revokeEntity = useCallback((id, entity_id, reason) => post(`/people/${id}/revoke-entity`, { entity_id, reason }), [post]);
+
   // Compensation profiles
   const getCompProfile = useCallback((personId) => get(`/people/${personId}/comp`), [get]);
   const createCompProfile = useCallback((personId, data) => post(`/people/${personId}/comp`, data), [post]);
@@ -54,5 +59,8 @@ export default function usePeople() {
     getCompProfile,
     createCompProfile,
     updateCompProfile,
+    transferEntity,
+    grantEntity,
+    revokeEntity,
   };
 }

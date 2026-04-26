@@ -70,6 +70,8 @@ const MessageTemplatesPage = lazyRetry(() => import('./pages/admin/MessageTempla
 const InvitesPage = lazyRetry(() => import('./pages/admin/InvitesPage'));
 const CLMSessionsPage = lazyRetry(() => import('./pages/admin/CLMSessionsPage'));
 const ClmBrandingPage = lazyRetry(() => import('./pages/admin/ClmBrandingPage'));
+// Phase VIP-1.A — MD Partner Lead Pipeline
+const MdLeadsPage = lazyRetry(() => import('./pages/admin/MdLeadsPage'));
 
 // ERP pages
 const ErpDashboard = lazyRetry(() => import('./erp/pages/ErpDashboard'));
@@ -519,6 +521,19 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.BDM_ADMIN}>
                 <InvitesPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Phase VIP-1.A — MD Partner Lead Pipeline. Route guard is admin-like;
+              backend setPartnershipStatus does the lookup-driven role + ownership
+              cascade (admin/president promote to PARTNER; BDMs self-transition
+              their own records via direct API or future BDM-side surface). */}
+          <Route
+            path="/admin/md-leads"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_ONLY}>
+                <MdLeadsPage />
               </ProtectedRoute>
             }
           />

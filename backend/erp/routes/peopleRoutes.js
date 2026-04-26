@@ -24,6 +24,9 @@ const {
   changeSystemRole,
   bulkChangeSystemRole,
   getLegacyRoleCounts,
+  transferEntity,
+  grantEntity,
+  revokeEntity,
 } = require('../controllers/peopleController');
 
 // ═══ Bulk Role Migration (admin-only) ═══
@@ -51,6 +54,14 @@ router.post('/:id/change-role', erpSubAccessCheck('people', 'manage_login'), cha
 router.post('/:id/separate', erpSubAccessCheck('people', 'terminate'), separatePerson);
 router.post('/:id/reactivate', roleCheck('admin', 'president'), reactivatePerson);
 router.delete('/:id', erpSubAccessCheck('people', 'terminate'), deactivatePerson);
+
+// Phase G7 — entity lifecycle (transfer home, grant/revoke additional span). Danger-baseline.
+// Sub-perms (people.transfer_entity, people.grant_entity) are baseline-tagged in
+// dangerSubPermissions.js so they require explicit grant via Access Template
+// even for module-FULL users — staff can be enabled per-template by admin.
+router.post('/:id/transfer-entity', erpSubAccessCheck('people', 'transfer_entity'), transferEntity);
+router.post('/:id/grant-entity', erpSubAccessCheck('people', 'grant_entity'), grantEntity);
+router.post('/:id/revoke-entity', erpSubAccessCheck('people', 'grant_entity'), revokeEntity);
 
 // ═══ Compensation Profiles ═══
 router.get('/:id/comp', getCompProfile);
