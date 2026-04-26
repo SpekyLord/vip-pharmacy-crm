@@ -511,6 +511,83 @@ const PAGE_GUIDES = {
     ],
     tip: 'Leave any field blank to fall back to a neutral placeholder. Each entity has its own branding — subsidiaries and subscribers configure their own identity without a code deploy. Upload both logos before your first BDM pitch to avoid blank placeholders on the deck.',
   },
+  // ── Phase VIP-1.B Phase 4 ─────────────────────────────────────────────
+  'rebate-matrix': {
+    title: 'Tier-A MD Product Rebate Matrix',
+    steps: [
+      'List shows active MdProductRebate rows (one per MD × product). Switch the filter to see inactive / superseded rows.',
+      'Click Add Rule to seed a new (MD × product × %) row. The 3-gate validator enforces: PARTNER status + signed agreement_date + rebate_pct ≤ Settings.MAX_MD_REBATE_PCT (default 25%).',
+      'Failures surface the schema error verbatim — fix the underlying gate (promote MD via /admin/md-leads, set agreement date, or raise the ceiling via Control Center → Settings).',
+      'Deactivate (soft-delete) sets is_active=false + effective_to=now. Future Collection rebates stop matching this rule. Existing posted PRFs are NOT affected.',
+      'Rules walked at Collection.save → md_rebate_lines auto-populated → Tier-A excludes the line_item from Non-MD partner rebate base. Routing happens at Collection POST → 1 PRF per (MD, period).',
+    ],
+    next: [
+      { label: 'MD Leads', path: '/admin/md-leads' },
+      { label: 'Capitation Rules', path: '/admin/capitation-rules' },
+      { label: 'Payout Ledger', path: '/admin/payout-ledger' },
+    ],
+    tip: 'Tier-A wins over Non-MD partner rebates per product. Add a Tier-B capitation rule for the same MD if you want monthly per-patient pay on products the MD does NOT have a Tier-A row for.',
+  },
+  'non-md-rebate-matrix': {
+    title: 'Non-MD Partner Rebate Matrix',
+    steps: [
+      'List shows NonMdPartnerRebateRule rows for non-MD partners (pharmacist, hospital staff, etc.). Specificity walk picks the most-specific rule at apply-time.',
+      'Click Add Rule to define a rule. Optional dimensions (hospital_id / customer_id / product_code) narrow when the rule fires; lower priority breaks ties.',
+      'Rebates compute on Collection.net_of_vat MINUS any Tier-A line_items already covered (see Tier-A exclusion).',
+      'Auto-fill at Collection entry: if BDM doesn\'t set partner_tags[].rebate_pct, the matrix fills it from the most-specific match for that (partner, hospital, customer, product).',
+      'Deactivate sets is_active=false; manual rebate_pct overrides on existing partner_tags are preserved.',
+    ],
+    next: [
+      { label: 'MD Rebate Matrix', path: '/admin/rebate-matrix' },
+      { label: 'Payout Ledger', path: '/admin/payout-ledger' },
+    ],
+    tip: 'Manual rebate_pct on a partner_tags row at Collection entry takes precedence over the matrix. Use this for one-off arrangements.',
+  },
+  'capitation-rules': {
+    title: 'Tier-B MD Capitation Rules',
+    steps: [
+      'Tier-B = per-patient flat ₱ or % of order. Same 3-gate as Tier-A (PARTNER + signed agreement_date).',
+      'Pick MODE = Flat (per qualifying patient) OR % (of order net). Pick frequency window: monthly / quarterly / annually / per-order.',
+      'Rules apply ONLY to products NOT covered by an active Tier-A rebate for the same MD — the Excluded Products view shows the live exclusion set.',
+      'Capitation ACCRUES at Order.paid (storefront — VIP-1.D wires the listener). For now the engine is read-ready; admin can seed rules in advance.',
+      'Deactivate stops new accruals; existing PAID payouts are unaffected.',
+    ],
+    next: [
+      { label: 'MD Rebate Matrix', path: '/admin/rebate-matrix' },
+      { label: 'Payout Ledger', path: '/admin/payout-ledger' },
+    ],
+    tip: 'Capitation excels for relationships where the MD steers patients to your pharmacy regardless of the specific product. Tier-A excels for product-specific deals.',
+  },
+  'commission-matrix': {
+    title: 'Staff Commission Matrix',
+    steps: [
+      'Tabs split rules by payee_role: BDM (field reps), ECOMM_REP (storefront referrers), AREA_BDM (territory leads).',
+      'Add Rule with optional payee_id (blank = matches any user with that role) + amount band + product/customer/hospital filters.',
+      'At Collection entry, BDM commission auto-fills from this matrix; if no rule matches, falls back to legacy CompProfile.commission_rate.',
+      'Lower priority breaks ties when multiple rules match (most-specific wins on dimension count).',
+      'Manual commission_rate override at the CSI level beats the matrix — Finance retains override authority via COMMISSION_ROLES.OVERRIDE_AUTO_RATES.',
+    ],
+    next: [
+      { label: 'Payout Ledger', path: '/admin/payout-ledger' },
+      { label: 'BDM Mgmt', path: '/admin/employees' },
+    ],
+    tip: 'AREA_BDM accruals require Territory.area_bdm_user_id (not yet wired in this phase — defer until storefront launches).',
+  },
+  'payout-ledger': {
+    title: 'Payout Ledger (Read-only)',
+    steps: [
+      'Tabs split between Rebate Payouts (RebatePayout collection) and Commission Payouts (CommissionPayout). Both auto-populated by engines.',
+      'Filter by status + period + payee. Summary chips at top roll up totals by status × payee_kind / payee_role.',
+      'Lifecycle: ACCRUING → READY_TO_PAY (period close) → PAID (after PRF posts). Inline buttons gated by REBATE_ROLES.RUN_MONTHLY_CLOSE / MARK_PAID.',
+      'Void requires a reason; voided rows are terminal — re-accrual creates a new row to preserve audit trail.',
+      'Each row links back to its source Collection / Order so investigators can trace the rebate to the originating sale.',
+    ],
+    next: [
+      { label: 'PRF / CALF', path: '/erp/prf-calf' },
+      { label: 'MD Rebate Matrix', path: '/admin/rebate-matrix' },
+    ],
+    tip: 'Discrepancy between the ledger and posted PRFs usually means a manual PRF was created outside autoPrfRouting. Check the PRF\'s metadata.auto_generated_by field.',
+  },
 };
 
 export default function PageGuide({ pageKey, onVisibilityChange }) {

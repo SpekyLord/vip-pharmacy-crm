@@ -74,6 +74,12 @@ const ClmBrandingPage = lazyRetry(() => import('./pages/admin/ClmBrandingPage'))
 const MdLeadsPage = lazyRetry(() => import('./pages/admin/MdLeadsPage'));
 // Phase VIP-1.H — SC/PWD Sales Book + BIR exports (RA 9994 + RR 7-2010)
 const SCPWDSalesBookPage = lazyRetry(() => import('./pages/admin/SCPWDSalesBookPage'));
+// Phase VIP-1.B Phase 4 — Rebate + Commission matrix admin + Payout ledger
+const RebateMatrixPage = lazyRetry(() => import('./pages/admin/RebateMatrixPage'));
+const NonMdRebateMatrixPage = lazyRetry(() => import('./pages/admin/NonMdRebateMatrixPage'));
+const CapitationRulesPage = lazyRetry(() => import('./pages/admin/CapitationRulesPage'));
+const CommissionMatrixPage = lazyRetry(() => import('./pages/admin/CommissionMatrixPage'));
+const PayoutLedgerPage = lazyRetry(() => import('./pages/admin/PayoutLedgerPage'));
 
 // ERP pages
 const ErpDashboard = lazyRetry(() => import('./erp/pages/ErpDashboard'));
@@ -550,6 +556,56 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_ONLY}>
                 <SCPWDSalesBookPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Phase VIP-1.B Phase 4 — Rebate + Commission matrix admin + Payout
+              ledger. Route guard is admin-like (admin/finance/president/ceo);
+              backend layers lookup-driven REBATE_ROLES + COMMISSION_ROLES gates
+              per endpoint so subscribers can configure who-may-manage per entity
+              via Control Center → Lookup Tables without code changes. Backend
+              defaults give MANAGE_MD_MATRIX to [admin, president] and
+              MANAGE_NONMD_MATRIX to [admin, finance] — narrowing here would
+              silently lock out president from the matrix UI even though the
+              backend permits the write. */}
+          <Route
+            path="/admin/rebate-matrix"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_LIKE}>
+                <RebateMatrixPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/non-md-rebate-matrix"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_LIKE}>
+                <NonMdRebateMatrixPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/capitation-rules"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_LIKE}>
+                <CapitationRulesPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/commission-matrix"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_LIKE}>
+                <CommissionMatrixPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/payout-ledger"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_LIKE}>
+                <PayoutLedgerPage />
               </ProtectedRoute>
             }
           />

@@ -8483,6 +8483,70 @@ PH BIR audit obligation per **RA 9994** (Expanded Senior Citizens Act, 2010) + *
 
 ---
 
+## Phase VIP-1.B Phase 4 — Activation Wiring (April 26, 2026) — SHIPPED
+
+> Earlier sub-section "Phases 0 + 1A + 2 + 3A SHIPPED, Phases 4-6 PLANNED" remains below for archaeology. Phase 4 of VIP-1.B is now SHIPPED — supersedes the "NOT YET WIRED (Phase 4)" checklist in that section.
+
+### What landed
+- **Collection.js bridge** ([backend/erp/models/Collection.js](backend/erp/models/Collection.js)): added `mdRebateLineSchema` subarray + `total_md_rebates` roll-up + `commission_rule_id` / `partner_tags[].rule_id` provenance refs. Pre-save now hoists PARTNER MDs assigned to `bdm_id` once per save, walks 3 matrices per CSI line (Tier-A `MdProductRebate` per `SalesLine.line_items[]`, `StaffCommissionRule` with `CompProfile` fallback, `NonMdPartnerRebateRule` per `partner_tag`), and EXCLUDES Tier-A products from the Non-MD partner_tags rebate base via per-product `Map<product_id, line_item.net_of_vat>`. `md_rebate_lines[]` is cleared first so reopen+resubmit picks up matrix edits idempotently. Manual entries (`partner_tags[].rebate_pct > 0`, `commission_rate > 0`) win — auto-fill only fires on 0/unset.
+- **collectionController POST hook** ([backend/erp/controllers/collectionController.js](backend/erp/controllers/collectionController.js)): both `submitCollections` and `postSingleCollection` (Approval Hub path) call `routePrfsForCollection({collectionId, userId, session})` INSIDE the existing JE-TX transaction. Failure aborts the whole transaction (ledger + rebate audit ledger atomic). Reopen path cleans DRAFT auto-PRFs (`metadata.auto_generated_by === 'autoPrfRouting'`) so re-submit produces fresh ones; POSTED PRFs (rebate already paid) are NOT touched.
+- **PrfCalf model** ([backend/erp/models/PrfCalf.js](backend/erp/models/PrfCalf.js)): gained `metadata: Mixed` field + sparse compound index on `{entity_id, doc_type, period, metadata.source_collection_id, metadata.payee_id}` for autoPrfRouting idempotency lookup. Closes a latent bug where Mongoose silently dropped untyped metadata writes.
+- **6 new ERP routes mounted** at `/api/erp/{md-product-rebates, non-md-partner-rebate-rules, md-capitation-rules, staff-commission-rules, rebate-payouts, commission-payouts}` (see `backend/erp/routes/index.js` lines 199-211). Lookup-driven role gates inside each controller via `REBATE_ROLES` + `COMMISSION_ROLES` (rebateCommissionAccess.js).
+- **6 new ERP controllers**: `mdProductRebateController.js`, `nonMdPartnerRebateRuleController.js`, `mdCapitationRuleController.js`, `staffCommissionRuleController.js`, `rebatePayoutController.js`, `commissionPayoutController.js`. CRUD + 3-gate error surfacing + payee-name enrichment + RebatePayout status transitions (ACCRUING → READY_TO_PAY → PAID, void).
+- **5 admin pages live** under `/admin/`:
+  - `RebateMatrixPage.jsx` — Tier-A MD per-product rebate matrix; PARTNER doctor picker pre-loaded so 3-gate failures surface fast.
+  - `NonMdRebateMatrixPage.jsx` — Non-MD partner rebate rules (any Doctor record reused as partner; specificity walk happens in matrixWalker).
+  - `CapitationRulesPage.jsx` — Tier-B per-MD per-patient capitation + read-only "excluded products" view sourced from active Tier-A rows for that MD.
+  - `CommissionMatrixPage.jsx` — Single matrix with BDM/ECOMM_REP/AREA_BDM tabs (StaffCommissionRule). BDM tab carries the explicit fallback callout: "When no rule matches, the engine falls back to CompProfile.commission_rate."
+  - `PayoutLedgerPage.jsx` — Read-only RebatePayout + CommissionPayout ledger with period filter, status filter, summary chips, inline ACCRUING→READY_TO_PAY→PAID transitions (rebate side only).
+- **Frontend service** ([frontend/src/erp/services/rebateCommissionService.js](frontend/src/erp/services/rebateCommissionService.js)): wraps all 6 endpoint families with named exports + a default-export aggregate.
+- **App.jsx routes** (lines 76-82 imports, lines 560-605 routes): 5 new lazyRetry imports + 5 ProtectedRoute entries gated on `ROLE_SETS.ADMIN_ONLY`. Backend layers add the lookup-driven REBATE/COMMISSION role gates per endpoint.
+- **Sidebar entries** ([frontend/src/components/common/Sidebar.jsx](frontend/src/components/common/Sidebar.jsx) lines 1064-1071): 5 new items under the Operations group ("MD Rebate Matrix", "Non-MD Rebate", "Capitation", "Commission Matrix", "Payout Ledger") using existing `Target` / `Trophy` / `Wallet` icons.
+- **PageGuide entries** (5 keys at [frontend/src/components/common/PageGuide.jsx](frontend/src/components/common/PageGuide.jsx) lines 515-595): one per new page per Rule #1 with cross-page next-step links.
+- **doctorService method-name fix** (this commit): the 3 matrix pages originally called `doctorService.getDoctors(...)` which does not exist. Swapped to the correct `doctorService.getAll(...)` and tightened the partner-list response shape to `r?.data || []`.
+
+### Integrity invariants
+- **Idempotency**: re-routing a POSTED Collection produces 0 new PRFs (autoPrfRouting queries by `metadata.source_collection_id`); pre-save bridge clears `md_rebate_lines` first then re-walks. Manual `partner_tags[].rebate_pct > 0` overrides preserved on re-walk.
+- **Tier-A exclusion**: when a CSI's `line_item.product_id` is covered by a `MdProductRebate` row, that line_item's `net_of_vat` is subtracted ONCE from the partner_tags base (multiple PARTNER MDs each get full rebate; partner_tags base is reduced once per product_id).
+- **Atomic POST**: a failure in `routePrfsForCollection` aborts the entire `submitCollections` transaction → Collection stays VALID, no orphan PRFs, no orphan RebatePayout rows.
+- **3-gate guardrail**: schema-time enforced on `MdProductRebate` + `MdCapitationRule` save; runtime-enforced in `rebateAccrualEngine` (catches PARTNER demote between rule create and Order.paid).
+- **BIR_FLAG**: rebate-sourced PRF JEs land `'INTERNAL'` (via Phase 0 `journalFromPrfCalf` default); commission-sourced JEs land `'BOTH'` (BIR-deductible). Verified in PnL Internal vs BIR view.
+
+### Verification
+- `node -c` green on all 14 ERP files (8 controllers, 4 services, models, util) — `syntax check complete`.
+- `npx vite build` clean: `built in 13.15s`, no warnings on the new pages.
+- Lookup categories `REBATE_ROLES` + `COMMISSION_ROLES` lazy-seed on first GET (Phase 3 SEED_DEFAULTS).
+
+### NOT in scope for VIP-1.B at all (deferred to other phases)
+- **VIP-1.D**: storefront `Order.paid` change-stream listener that calls `rebateAccrualEngine.accrueForOrder` + `ecommCommissionEngine.accrueForOrder`. Engines are READY; the listener is its own phase.
+- **VIP-1.D**: `PatientMdAttribution` row population (Rx OCR + customer attestation logic). Stub today.
+- **VIP-1.F**: BIR Form 2307 (CWT) export for partner rebates. `EXPORT_BIR_2307` sub-perm seeded; export endpoint deferred.
+- **Phase 2.5**: Territory schema extension (`provinces: [String]` + `area_bdm_user_id`) — AREA_BDM commission accrues to nothing today.
+- **Phase 4.5 (optional)**: Collections.jsx auto-fill badges with "from rule X" tooltip + admin override button gated by `OVERRIDE_AUTO_RATES` — operational nice-to-have; admins can read provenance via the matrix page filters today.
+
+### Files added (Phase 4)
+| Layer | File | Status |
+|---|---|---|
+| Frontend page | `frontend/src/pages/admin/RebateMatrixPage.jsx` | new (committed in this Phase 4 ship) |
+| Frontend page | `frontend/src/pages/admin/NonMdRebateMatrixPage.jsx` | new |
+| Frontend page | `frontend/src/pages/admin/CapitationRulesPage.jsx` | new |
+| Frontend page | `frontend/src/pages/admin/CommissionMatrixPage.jsx` | new |
+| Frontend page | `frontend/src/pages/admin/PayoutLedgerPage.jsx` | new |
+
+### Files modified (Phase 4)
+- `frontend/src/App.jsx` (5 lazyRetry imports + 5 routes)
+- `frontend/src/components/common/Sidebar.jsx` (5 menu items under Operations)
+- `frontend/src/components/common/PageGuide.jsx` (5 PageGuide entries — one per page) — committed in 7d23368
+- `backend/erp/models/Collection.js` (md_rebate_lines subschema + bridge pre-save) — committed in 7d23368
+- `backend/erp/controllers/collectionController.js` (POST/Hub hooks) — committed in 7d23368
+- `backend/erp/models/PrfCalf.js` (metadata: Mixed + sparse compound index) — committed in 7d23368
+- `backend/erp/routes/index.js` (6 mounts) — committed in 7d23368
+- `backend/erp/controllers/{mdProductRebate,nonMdPartnerRebateRule,mdCapitationRule,staffCommissionRule,rebatePayout,commissionPayout}Controller.js` — all committed in 7d23368
+- `backend/erp/routes/{...the 6 matching route files...}.js` — all committed in 7d23368
+- `frontend/src/erp/services/rebateCommissionService.js` — committed in 7d23368
+
+---
+
 ## Phase VIP-1.B — Rebate + Commission Engine (April 26, 2026) — Phases 0 + 1A + 2 + 3A SHIPPED, Phases 4-6 PLANNED
 
 ### Status
@@ -8574,3 +8638,104 @@ The VIP-1.A phase note (CLAUDE-ERP.md line 146) referenced an apply-time 3-gate 
 - `node -c backend/erp/controllers/lookupGenericController.js` clean after Phase 3A edits.
 - Build verification (`vite build`) deferred to next session along with frontend wiring.
 - Playwright smoke deferred until admin pages ship (Phase 4).
+
+---
+
+## Phase VIP-1.B Phase 4 — Activation wiring (April 26, 2026) ✅ SHIPPED
+
+Wires the Phase 0/1A/2/3 foundation into live behavior. The matrices, services, role gates, and lookup seeds were all in place — Phase 4 connects them to the Collection lifecycle and gives admins a UI to maintain the matrices.
+
+### Files added / modified
+
+| File | Status | Purpose |
+|------|--------|---------|
+| `backend/erp/models/Collection.js` | MOD | New `md_rebate_lines[]` subschema, `total_md_rebates` roll-up, `commission_rule_id` provenance, `partner_tags[].rule_id` provenance. Pre-save now walks 3 matrices and excludes Tier-A from Non-MD partner rebate base. |
+| `backend/erp/models/PrfCalf.js` | MOD | Added `metadata: Mixed` field + sparse compound index on `{entity_id, doc_type, period, metadata.source_collection_id, metadata.payee_id}` (autoPrfRouting idempotency). Bug fix: previously Mongoose silently dropped metadata writes. |
+| `backend/erp/services/autoPrfRouting.js` | MOD | `ensurePrfForBucket` also writes first-class `partner_id`, `payee_type`, `linked_collection_id`, `bir_flag: 'INTERNAL'` (not just metadata) — keeps existing reverse-lookups working. |
+| `backend/erp/controllers/collectionController.js` | MOD | `submitCollections` + `postSingleCollection` (Approval Hub) call `routePrfsForCollection` INSIDE the JE-TX session — atomic. Reopen path cleans DRAFT auto-PRFs so re-submit produces fresh ones. |
+| `backend/erp/controllers/mdProductRebateController.js` | NEW | CRUD for Tier-A matrix. Schema 3-gate errors surface as 400 with verbatim message. |
+| `backend/erp/controllers/nonMdPartnerRebateRuleController.js` | NEW | CRUD for Non-MD partner matrix. Specificity walk happens at apply-time in matrixWalker. |
+| `backend/erp/controllers/mdCapitationRuleController.js` | NEW | CRUD for Tier-B + `GET /:id/excluded-products` (live Tier-A exclusion view). |
+| `backend/erp/controllers/staffCommissionRuleController.js` | NEW | CRUD for BDM/ECOMM_REP/AREA_BDM single matrix. |
+| `backend/erp/controllers/rebatePayoutController.js` | NEW | Read-only ledger + status transitions (ACCRUING → READY_TO_PAY → PAID; void). Lookup-driven gate per transition. |
+| `backend/erp/controllers/commissionPayoutController.js` | NEW | Read-only commission ledger + summary. |
+| `backend/erp/routes/mdProductRebateRoutes.js` | NEW | Mount `/api/erp/md-product-rebates`. |
+| `backend/erp/routes/nonMdPartnerRebateRuleRoutes.js` | NEW | Mount `/api/erp/non-md-partner-rebate-rules`. |
+| `backend/erp/routes/mdCapitationRuleRoutes.js` | NEW | Mount `/api/erp/md-capitation-rules`. |
+| `backend/erp/routes/staffCommissionRuleRoutes.js` | NEW | Mount `/api/erp/staff-commission-rules`. |
+| `backend/erp/routes/rebatePayoutRoutes.js` | NEW | Mount `/api/erp/rebate-payouts`. |
+| `backend/erp/routes/commissionPayoutRoutes.js` | NEW | Mount `/api/erp/commission-payouts`. |
+| `backend/erp/routes/index.js` | MOD | Mount the 6 new routes after VIP-1.H. |
+| `frontend/src/erp/services/rebateCommissionService.js` | NEW | Combined service for all 6 endpoints. |
+| `frontend/src/pages/admin/RebateMatrixPage.jsx` | NEW | Tier-A admin UI with PARTNER MD picker + 3-gate error surfacing. |
+| `frontend/src/pages/admin/NonMdRebateMatrixPage.jsx` | NEW | Non-MD partner matrix UI. |
+| `frontend/src/pages/admin/CapitationRulesPage.jsx` | NEW | Tier-B UI with mode picker (flat ₱ or %) + frequency window + Excluded Products view. |
+| `frontend/src/pages/admin/CommissionMatrixPage.jsx` | NEW | Tabbed BDM/ECOMM_REP/AREA_BDM commission UI. |
+| `frontend/src/pages/admin/PayoutLedgerPage.jsx` | NEW | Read-only ledger UI for RebatePayout + CommissionPayout. Inline transitions for rebate payouts. |
+| `frontend/src/App.jsx` | MOD | 5 new lazy-loaded routes + ROLE_SETS.ADMIN_ONLY guards. |
+| `frontend/src/components/common/Sidebar.jsx` | MOD | 5 new entries in admin Operations group. |
+| `frontend/src/components/common/PageGuide.jsx` | MOD | 5 new banner entries (rebate-matrix, non-md-rebate-matrix, capitation-rules, commission-matrix, payout-ledger). |
+| `backend/scripts/healthcheckRebateCommissionWiring.js` | NEW | Wire-coverage verifier (mounted routes, Sidebar entries, PageGuide entries, schema field presence, idempotency index). |
+
+### Idempotency invariants
+
+1. **Re-routing the same Collection produces 0 new PRFs.** `ensurePrfForBucket` queries `{entity_id, doc_type:'PRF', period, 'metadata.source_collection_id': collection_id, 'metadata.payee_id': bucket.payee_id}` — sparse compound index covers this lookup.
+2. **Re-walking the matrix on reopen→re-submit produces the same `md_rebate_lines`.** Pre-save clears the array first.
+3. **Manual `partner_tags[].rebate_pct > 0` is preserved.** Auto-fill only runs when 0/unset.
+4. **Manual `csi.commission_rate > 0` is preserved.** Auto-fill only runs when 0/unset; falls back to CompProfile when no rule matches.
+5. **DRAFT auto-PRFs are deleted on Collection reopen.** Re-submit produces fresh PRFs from edited settled_csis. POSTED PRFs (already paid out) are NOT touched — they require explicit reversal (out of v1 scope).
+6. **Voided RebatePayout is terminal.** Schema enforces — re-accrual creates a new row (preserves audit trail).
+
+### Tier-A exclusion algorithm
+
+For each settled_csi:
+
+```
+tierAExcludedNet: Map<product_id_str, line_item.net_of_vat>
+for each line_item in SalesLine.line_items:
+  for each candidate PARTNER MD assigned to bdm_id:
+    rule = matchMdProductRebate(entity, MD, line_item.product_id, asOfDate)
+    if rule:
+      push md_rebate_lines (rebate_amount = line_item.net_of_vat × rule.rebate_pct/100)
+      tierAExcludedNet.set(product_id, line_item.net_of_vat) ← only first MD writes (per-product exclusion)
+
+partnerBase = max(0, csi.net_of_vat − sum(tierAExcludedNet.values()))
+for each partner_tag:
+  tag.rebate_amount = partnerBase × tag.rebate_pct/100
+```
+
+This guarantees no double-pay across tiers — a product covered by Tier-A is excluded from the Non-MD partner rebate base regardless of how many PARTNER MDs cover it.
+
+### Lookup-driven gates (Rule #3)
+
+Every controller route is gated by lookup-driven role checks via [backend/utils/rebateCommissionAccess.js](backend/utils/rebateCommissionAccess.js):
+
+| Endpoint | Gate | Default roles |
+|----------|------|---------------|
+| `MdProductRebate` write | `REBATE_ROLES.MANAGE_MD_MATRIX` | admin, president |
+| `NonMdPartnerRebateRule` write | `REBATE_ROLES.MANAGE_NONMD_MATRIX` | admin, finance |
+| `MdCapitationRule` write | `REBATE_ROLES.MANAGE_MD_MATRIX` | admin, president |
+| `StaffCommissionRule` write | `COMMISSION_ROLES.MANAGE_RULES` | admin, finance, president |
+| `RebatePayout` view | `REBATE_ROLES.VIEW_PAYOUTS` | admin, finance, president |
+| `RebatePayout` ready-to-pay | `REBATE_ROLES.RUN_MONTHLY_CLOSE` | admin, finance |
+| `RebatePayout` paid / void | `REBATE_ROLES.MARK_PAID` | admin, finance |
+| `CommissionPayout` view | `COMMISSION_ROLES.VIEW_PAYOUTS` | admin, finance, president |
+
+Subscribers configure these per-entity via Control Center → Lookup Tables — no code deploy needed.
+
+### Out of scope (explicit, deferred)
+
+- **Storefront `Order.paid` listener** that calls `rebateAccrualEngine.accrueForOrder` + `ecommCommissionEngine.accrueForOrder`. Engines are READY; listener wires in VIP-1.D.
+- **Territory schema extension** for `provinces[]` and `area_bdm_user_id`. AREA_BDM commission gracefully degrades to no-op until then (matches engine's defensive behavior).
+- **Nightly excluded_product_ids sync job.** `getExcludedProducts` computes from live MdProductRebate rows; no need for the denormalized field maintenance for v1.
+- **`PatientMdAttribution.attribution_consent_log` field.** Phase 4 left untouched per handoff — user decision needed (option A: add as schema extension; option B: remove from VIP-1.A note as VIP-1.D scope).
+- **BIR Form 2307 (CWT) export** for partner rebates. The `EXPORT_BIR_2307` sub-perm is seeded but the export endpoint lands in VIP-1.F.
+- **Collections.jsx auto-fill badges + Override button.** Per-CSI badge tooltips ("MD Rebate ₱X from rule R") — flagged for follow-up; backend auto-fill works without it.
+- **2 payout ledger pages split.** Combined into one `PayoutLedgerPage` with tabs (cleaner UX). Original handoff suggested 2 separate pages; consolidated saves a route + sidebar entry.
+
+### Verification (Phase 4)
+
+- ✅ `node -c` clean on all 13 modified/added backend files (Collection, PrfCalf, autoPrfRouting, collectionController, 6 controllers, 6 routes, routes/index).
+- ✅ `npm run build` (frontend) green — all 5 new admin pages bundle without errors.
+- ✅ Wiring healthcheck `node backend/scripts/healthcheckRebateCommissionWiring.js` exits 0 (verifies 6 mounted routes, 5 Sidebar entries, 5 PageGuide entries, schema fields, idempotency index).
+- ⏳ Playwright UI smoke results — see § "Playwright smoke" below.
