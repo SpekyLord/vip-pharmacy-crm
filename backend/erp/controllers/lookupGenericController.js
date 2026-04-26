@@ -8,6 +8,8 @@ const { invalidateDangerCache } = require('../services/dangerSubPermissions');
 const { invalidateEditableStatuses } = require('../services/approvalService');
 const { invalidateProxyRolesCache, invalidateValidOwnerRolesCache } = require('../utils/resolveOwnerScope');
 const { invalidateCrossEntityRolesCache } = require('../utils/resolveEntityScope');
+const { invalidate: invalidateScpwdRolesCache } = require('../../utils/scpwdAccess');
+const { invalidate: invalidateRebateCommissionCache } = require('../../utils/rebateCommissionAccess');
 
 // Categories whose changes must bust the OR parser's lookup cache (couriers/payment keywords)
 const OR_PARSER_LOOKUP_CATEGORIES = new Set(['OCR_COURIER_ALIASES', 'OCR_PAYMENT_KEYWORDS']);
@@ -39,6 +41,18 @@ const VALID_OWNER_ROLES_CATEGORIES = new Set(['VALID_OWNER_ROLES']);
 // Without this, a subsidiary admin granting their CFO cross-entity People
 // Master visibility would have to wait up to 60s per running instance.
 const CROSS_ENTITY_VIEW_ROLES_CATEGORIES = new Set(['CROSS_ENTITY_VIEW_ROLES']);
+
+// Phase VIP-1.H (Apr 2026) — bust the SC/PWD register's role cache when admin
+// edits SCPWD_ROLES. Cache TTL is 60s in scpwdAccess.js; without this hook,
+// a finance role added to EXPORT_VAT_RECLAIM would wait up to 60s before
+// being able to download the BIR Form 2306 worksheet.
+const SCPWD_ROLES_CATEGORIES = new Set(['SCPWD_ROLES']);
+
+// Phase VIP-1.B (Apr 2026) — bust the rebate/commission role caches when admin
+// edits REBATE_ROLES or COMMISSION_ROLES. Same 60s TTL invariant as SCPWD/MD
+// Partner — without this hook, a fresh role addition would wait up to 60s
+// before propagating to the rebate matrix or commission matrix UI gates.
+const REBATE_COMMISSION_ROLES_CATEGORIES = new Set(['REBATE_ROLES', 'COMMISSION_ROLES']);
 
 // Phase G6.10/G7 — categories whose seeded rows must default is_active: false so
 // subscribers explicitly opt in (Anthropic-billable features, spend caps that
@@ -2589,6 +2603,74 @@ const SEED_DEFAULTS = {
     { code: 'MANAGE_PARTNERSHIP', label: 'Drive LEAD/CONTACTED/VISITED transitions', insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 2, description: 'Cross-record management. BDM-on-own-record bypass enforced separately in controller.' } },
     { code: 'SET_AGREEMENT_DATE', label: 'Promote to PARTNER (rebate gate #2)',   insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 3, description: 'Locks rebate eligibility — keep narrow. President-only is a safer posture once VIP-1.B ships.' } },
   ],
+  // ── Phase VIP-1.H (Apr 2026) — SC/PWD Sales Book + BIR Sales Book exports ──
+  // scpwdAccess.js reads metadata.roles for each code with 60s TTL cache.
+  // Default posture is admin + finance (NOT president) — BIR audit-reportable
+  // exports should travel through accountability roles for traceability.
+  // Subscribers in jurisdictions outside PH can repurpose this category for
+  // their own discount-register access gates without code changes.
+  SCPWD_ROLES: [
+    { code: 'VIEW_REGISTER',      label: 'View SC/PWD Sales Book register',          insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 1, description: 'Read-only access to the SC/PWD register page + filters. Wider than CREATE/EXPORT because executives review without writing.' } },
+    { code: 'CREATE_ENTRY',       label: 'Create / ingest SC/PWD entries',           insert_only_metadata: true, metadata: { roles: ['admin', 'finance'], sort_order: 2, description: 'Manual entry posting + idempotent ingest from ERP Sale POSTED. Storefront ingest (VIP-1.D) uses the same gate.' } },
+    { code: 'EXPORT_MONTHLY',     label: 'Export monthly BIR register (RR 7-2010)',  insert_only_metadata: true, metadata: { roles: ['admin', 'finance'], sort_order: 3, description: 'CSV/PDF export of the monthly SC/PWD sales book. Audit-logged with period + who exported.' } },
+    { code: 'EXPORT_VAT_RECLAIM', label: 'Export Input VAT Credit Worksheet (Form 2306)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance'], sort_order: 4, description: 'BIR Form 2306 input-VAT reclaim worksheet — narrow gate; first-time exports should be reviewed by accountant before filing.' } },
+  ],
+  // ID-format regex per jurisdiction. PH defaults seeded; subscribers in other
+  // markets override per-entity. Pre-save in SalesBookSCPWD.js validates the
+  // ID against this regex (permissive fallback if lookup unreachable).
+  SCPWD_ID_FORMATS: [
+    { code: 'OSCA_PH', label: 'PH OSCA Senior Citizen ID',  insert_only_metadata: true, metadata: { regex: '^[A-Z0-9-]{4,20}$', sort_order: 1, description: 'OSCA-issued IDs vary by LGU; permissive 4-20 alphanumeric/dash range covers most LGU formats. Tighten per municipality if needed.' } },
+    { code: 'PWD_PH',  label: 'PH DSWD PWD ID',             insert_only_metadata: true, metadata: { regex: '^[A-Z0-9-]{4,20}$', sort_order: 2, description: 'DSWD-issued PWD IDs (RA 7277/9442). Some LGUs use 13-character formats; admin can tighten per municipality.' } },
+  ],
+  // ── Phase VIP-1.B (Apr 2026) — Rebate + Commission Engine role gates ───
+  // rebateCommissionAccess.js reads metadata.roles for each code with 60s
+  // TTL cache. Defaults reflect the Apr 26 strategy memo: MD-rebate matrix
+  // management is admin/president (senior decision); non-MD matrix +
+  // payout ops are admin/finance; views include president for executive
+  // oversight. Subscribers reconfigure via Control Center → Lookup Tables.
+  REBATE_ROLES: [
+    { code: 'MANAGE_MD_MATRIX',    label: 'Manage MD rebate matrix (Tier-A + Tier-B)',     insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 1, description: 'Edit MdProductRebate + MdCapitationRule rows. Senior gate — these decisions lock rebate eligibility per the 3-gate.' } },
+    { code: 'MANAGE_NONMD_MATRIX', label: 'Manage non-MD partner rebate matrix',           insert_only_metadata: true, metadata: { roles: ['admin', 'finance'], sort_order: 2, description: 'Edit NonMdPartnerRebateRule rows. Replaces error-prone manual partner_tags rebate_pct entry per CSI.' } },
+    { code: 'VIEW_PAYOUTS',        label: 'View rebate payout ledger',                     insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 3, description: 'Read-only access to RebatePayout ledger. Includes ACCRUING / READY_TO_PAY / PAID / VOIDED states.' } },
+    { code: 'RUN_MONTHLY_CLOSE',   label: 'Run monthly close (ACCRUING → READY_TO_PAY)',   insert_only_metadata: true, metadata: { roles: ['admin', 'finance'], sort_order: 4, description: 'Trigger period-close that flips ACCRUING payouts to READY_TO_PAY and generates PRFs in batch.' } },
+    { code: 'MARK_PAID',           label: 'Mark payout PAID (after PRF posts)',            insert_only_metadata: true, metadata: { roles: ['admin', 'finance'], sort_order: 5, description: 'Manual PAID status flip — usually auto-set when PRF.status → POSTED. Manual gate exists for exceptional cases.' } },
+    { code: 'EXPORT_BIR_2307',     label: 'Export BIR Form 2307 (CWT for partner rebates)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance'], sort_order: 6, description: 'CWT certificate generation for partner rebates if jurisdiction requires withholding. Audit-logged.' } },
+  ],
+  COMMISSION_ROLES: [
+    { code: 'MANAGE_RULES',        label: 'Manage staff commission matrix',                insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 1, description: 'Edit StaffCommissionRule (BDM + ECOMM_REP + AREA_BDM). Compensation policy gate — wider than rebate matrix because finance owns it.' } },
+    { code: 'VIEW_PAYOUTS',        label: 'View commission payout ledger',                 insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 2, description: 'Read-only access to CommissionPayout ledger across all payee_role tabs.' } },
+    { code: 'OVERRIDE_AUTO_RATES', label: 'Override auto-filled rates on Collection',      insert_only_metadata: true, metadata: { roles: ['admin', 'finance'], sort_order: 3, description: 'Manual override of Collection.settled_csis[].commission_rate when admin disagrees with the matrix walk. Audit-logged with reason.' } },
+  ],
+  // ── UI label categories (no role gates; just labels + colors for badges) ──
+  REBATE_PAYOUT_STATUS: [
+    { code: 'ACCRUING',     label: 'Accruing',        insert_only_metadata: true, metadata: { bg: '#fef3c7', fg: '#92400e', sort_order: 1, description: 'Computed from a Collection POST or Order.paid; awaiting period close.' } },
+    { code: 'READY_TO_PAY', label: 'Ready to Pay',    insert_only_metadata: true, metadata: { bg: '#dbeafe', fg: '#1e40af', sort_order: 2, description: 'Period closed and PRF generated; awaiting Finance posting.' } },
+    { code: 'PAID',         label: 'Paid',            insert_only_metadata: true, metadata: { bg: '#dcfce7', fg: '#15803d', sort_order: 3, description: 'PRF POSTED → cash sent → JE landed.' } },
+    { code: 'VOIDED',       label: 'Voided',          insert_only_metadata: true, metadata: { bg: '#f3f4f6', fg: '#6b7280', sort_order: 4, description: 'Cancelled (Collection reopened, reversed, etc.). Terminal — re-accrue creates a new row.' } },
+  ],
+  STAFF_COMMISSION_PAYEE_ROLE: [
+    { code: 'BDM',        label: 'BDM (ERP collection)', insert_only_metadata: true, metadata: { sort_order: 1, description: 'Existing pre-VIP-1.B flow. Commission accrues from Collection POSTED. Falls back to CompProfile.commission_rate when no rule matches.' } },
+    { code: 'ECOMM_REP',  label: 'E-commerce Rep',       insert_only_metadata: true, metadata: { sort_order: 2, description: 'Storefront Order.paid → commission accrual via Order.ecomm_rep_id. No fallback — explicit rule required.' } },
+    { code: 'AREA_BDM',   label: 'Area BDM (territory)',  insert_only_metadata: true, metadata: { sort_order: 3, description: 'Storefront geographic territory commission. Resolved by Order.shipping_address.province ↔ Territory.provinces[].' } },
+  ],
+  REBATE_SOURCE_KIND: [
+    { code: 'TIER_A_PRODUCT',    label: 'Tier-A (per-product %)',  insert_only_metadata: true, metadata: { sort_order: 1, description: 'MdProductRebate matched on Collection CSI line. High-value, audit-gated by 3-gate.' } },
+    { code: 'TIER_B_CAPITATION', label: 'Tier-B (per-patient capitation)', insert_only_metadata: true, metadata: { sort_order: 2, description: 'MdCapitationRule matched on storefront Order, frequency-windowed.' } },
+    { code: 'NON_MD',            label: 'Non-MD partner',          insert_only_metadata: true, metadata: { sort_order: 3, description: 'NonMdPartnerRebateRule matched. Pharmacist staff, hospital admin, etc. Not 3-gated.' } },
+  ],
+  MD_CAPITATION_FREQUENCY: [
+    { code: 'PER_PATIENT_PER_MONTH',   label: 'Per patient per month',   insert_only_metadata: true, metadata: { sort_order: 1, description: 'One accrual per (patient, MD) per calendar month.' } },
+    { code: 'PER_PATIENT_PER_QUARTER', label: 'Per patient per quarter', insert_only_metadata: true, metadata: { sort_order: 2, description: 'One accrual per (patient, MD) per calendar quarter.' } },
+    { code: 'PER_PATIENT_PER_YEAR',    label: 'Per patient per year',    insert_only_metadata: true, metadata: { sort_order: 3, description: 'One accrual per (patient, MD) per calendar year.' } },
+    { code: 'PER_ORDER',               label: 'Every qualifying order',  insert_only_metadata: true, metadata: { sort_order: 4, description: 'No window — every Order.paid that matches accrues. Use sparingly.' } },
+  ],
+  PATIENT_MD_ATTRIBUTION_SOURCE: [
+    { code: 'RX_PARSE',             label: 'Prescription OCR',     insert_only_metadata: true, metadata: { sort_order: 1, description: 'Storefront Rx OCR matched a doctor signature (VIP-1.D).' } },
+    { code: 'CUSTOMER_ATTESTATION', label: 'Customer Attestation', insert_only_metadata: true, metadata: { sort_order: 2, description: 'Patient told the storefront which MD prescribed.' } },
+    { code: 'STAFF_ENTRY',          label: 'Staff Entry',          insert_only_metadata: true, metadata: { sort_order: 3, description: 'Pharmacist tagged the order with the MD post-fact.' } },
+    { code: 'IMPORT',               label: 'Bulk Import',          insert_only_metadata: true, metadata: { sort_order: 4, description: 'Loaded via migration script.' } },
+    { code: 'OTHER',                label: 'Other',                insert_only_metadata: true, metadata: { sort_order: 5, description: 'Catch-all — note the actual source in attribution notes.' } },
+  ],
 };
 
 // List all distinct categories for current entity
@@ -2739,6 +2821,8 @@ exports.create = catchAsync(async (req, res) => {
   if (PROXY_ENTRY_ROLES_CATEGORIES.has(cat)) invalidateProxyRolesCache(req.entityId);
   if (VALID_OWNER_ROLES_CATEGORIES.has(cat)) invalidateValidOwnerRolesCache(req.entityId);
   if (CROSS_ENTITY_VIEW_ROLES_CATEGORIES.has(cat)) invalidateCrossEntityRolesCache(req.entityId);
+  if (SCPWD_ROLES_CATEGORIES.has(cat)) invalidateScpwdRolesCache(req.entityId);
+  if (REBATE_COMMISSION_ROLES_CATEGORIES.has(cat)) invalidateRebateCommissionCache(req.entityId);
   res.status(201).json({ success: true, data: item });
 });
 
@@ -2766,6 +2850,8 @@ exports.update = catchAsync(async (req, res) => {
   if (PROXY_ENTRY_ROLES_CATEGORIES.has(item.category)) invalidateProxyRolesCache(item.entity_id);
   if (VALID_OWNER_ROLES_CATEGORIES.has(item.category)) invalidateValidOwnerRolesCache(item.entity_id);
   if (CROSS_ENTITY_VIEW_ROLES_CATEGORIES.has(item.category)) invalidateCrossEntityRolesCache(item.entity_id);
+  if (SCPWD_ROLES_CATEGORIES.has(item.category)) invalidateScpwdRolesCache(item.entity_id);
+  if (REBATE_COMMISSION_ROLES_CATEGORIES.has(item.category)) invalidateRebateCommissionCache(item.entity_id);
   res.json({ success: true, data: item });
 });
 
@@ -2785,6 +2871,8 @@ exports.remove = catchAsync(async (req, res) => {
   if (PROXY_ENTRY_ROLES_CATEGORIES.has(item.category)) invalidateProxyRolesCache(item.entity_id);
   if (VALID_OWNER_ROLES_CATEGORIES.has(item.category)) invalidateValidOwnerRolesCache(item.entity_id);
   if (CROSS_ENTITY_VIEW_ROLES_CATEGORIES.has(item.category)) invalidateCrossEntityRolesCache(item.entity_id);
+  if (SCPWD_ROLES_CATEGORIES.has(item.category)) invalidateScpwdRolesCache(item.entity_id);
+  if (REBATE_COMMISSION_ROLES_CATEGORIES.has(item.category)) invalidateRebateCommissionCache(item.entity_id);
   res.json({ success: true, data: item, message: 'Item deactivated' });
 });
 
@@ -2806,6 +2894,8 @@ exports.seedCategory = catchAsync(async (req, res) => {
   if (PROXY_ENTRY_ROLES_CATEGORIES.has(category)) invalidateProxyRolesCache(req.entityId);
   if (VALID_OWNER_ROLES_CATEGORIES.has(category)) invalidateValidOwnerRolesCache(req.entityId);
   if (CROSS_ENTITY_VIEW_ROLES_CATEGORIES.has(category)) invalidateCrossEntityRolesCache(req.entityId);
+  if (SCPWD_ROLES_CATEGORIES.has(category)) invalidateScpwdRolesCache(req.entityId);
+  if (REBATE_COMMISSION_ROLES_CATEGORIES.has(category)) invalidateRebateCommissionCache(req.entityId);
   const items = await Lookup.find({ entity_id: req.entityId, category }).sort({ sort_order: 1 }).lean();
   res.json({ success: true, data: items, message: `Seeded ${defaults.length} defaults for ${category}` });
 });

@@ -72,6 +72,8 @@ const CLMSessionsPage = lazyRetry(() => import('./pages/admin/CLMSessionsPage'))
 const ClmBrandingPage = lazyRetry(() => import('./pages/admin/ClmBrandingPage'));
 // Phase VIP-1.A — MD Partner Lead Pipeline
 const MdLeadsPage = lazyRetry(() => import('./pages/admin/MdLeadsPage'));
+// Phase VIP-1.H — SC/PWD Sales Book + BIR exports (RA 9994 + RR 7-2010)
+const SCPWDSalesBookPage = lazyRetry(() => import('./pages/admin/SCPWDSalesBookPage'));
 
 // ERP pages
 const ErpDashboard = lazyRetry(() => import('./erp/pages/ErpDashboard'));
@@ -534,6 +536,20 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_ONLY}>
                 <MdLeadsPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Phase VIP-1.H — SC/PWD Sales Book + BIR exports. Route guard is
+              admin-like to keep customer SC/PWD IDs off BDM eyeballs; backend
+              endpoints layer on lookup-driven SCPWD_ROLES per gate (view /
+              create / export-monthly / export-vat-reclaim) so finance can be
+              extended without code changes. */}
+          <Route
+            path="/admin/scpwd-sales-book"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_ONLY}>
+                <SCPWDSalesBookPage />
               </ProtectedRoute>
             }
           />

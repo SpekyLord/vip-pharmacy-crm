@@ -743,6 +743,11 @@ async function journalFromPrfCalf(doc, userId) {
       { account_code: funding.coa_code, account_name: funding.coa_name, debit: 0, credit: amount, description: `CALF: ${docRef}`, is_contra: fundingIsContra }
     ];
   }
+  // VIP-1.B Phase 0 fix: PRF (Partner Rebate Funding) is INTERNAL-only — partner
+  // rebates are an internal cost allocation and must NOT appear on BIR P&L.
+  // CALF (BDM Cash Advance) is a balance-sheet reclass (DR AR_BDM / CR Cash) with
+  // no P&L effect, but explicitly flagged INTERNAL for policy clarity. The eventual
+  // liquidation expense JE goes through journalFromExpense which correctly flags BOTH.
   return {
     je_date: doc.posted_at || new Date(),
     period: doc.period,
@@ -751,7 +756,7 @@ async function journalFromPrfCalf(doc, userId) {
     source_event_id: doc.event_id || null,
     source_doc_ref: docRef,
     lines,
-    bir_flag: doc.bir_flag || 'BOTH',
+    bir_flag: doc.bir_flag || 'INTERNAL',
     vat_flag: 'N/A',
     bdm_id: doc.bdm_id || null,
     created_by: userId

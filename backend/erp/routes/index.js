@@ -189,6 +189,13 @@ router.use('/insurance', erpAccessCheck('people'), require('./insuranceRoutes'))
 router.use('/period-locks', erpAccessCheck('accounting'), require('./periodLockRoutes'));
 router.use('/recurring-journals', erpAccessCheck('accounting'), require('./recurringJournalRoutes'));
 
+// ═══ Phase VIP-1.H — SC/PWD Sales Book + BIR Sales Book exports ═══
+// Per RA 9994 + RA 7277/9442 + BIR RR 7-2010. Role gates are lookup-driven
+// inside the controller via SCPWD_ROLES (scpwdAccess.js), so no module-level
+// erpAccessCheck — the lookup-driven gates supersede module-level auth and
+// keep this Rule #3-aligned (subscriber-configurable per entity).
+router.use('/scpwd-sales-book', require('./scpwdSalesBookRoutes'));
+
 // ═══ Phase 15 — SAP-Equivalent Improvements ═══
 // CSI Booklets: the inventory gate blocks the management UI from BDMs without
 // inventory module access. BDMs still need to see their OWN available numbers
