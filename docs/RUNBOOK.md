@@ -456,6 +456,85 @@ Recommended cadence for planned (non-emergency) work:
 | 2026-04-25 | Founder | Day-5 DR Drills #1 (S3 parity) + #2 (Atlas PITR) — both PASSED. Drill #3 (Lightsail) paused on AWS vCPU quota. RTOs in Sections 3/4 still TBD-backfill. |
 | 2026-04-27 | Founder + Claude | Section 9 schedule synced to actual Drill #1 + #2 results. Section 9a added — Drill #3 Lightsail snapshot-restore procedure pre-staged for execution post-quota-approval. |
 | TBD | Founder | First Drill #3 run after AWS quota approval — record measured RTO + evidence in Sections 9a + 3. |
+| 2026-04-28 | Founder + Claude | Section 10 added — Accounting Integrity Agent + Orphan Ledger Audit Agent operator procedures (manual trigger, expected output, alert routing, repair paths). |
+
+---
+
+## Section 10 — Accounting Integrity Alerts (added Apr 28 2026)
+
+The system now runs two integrity agents on adjacent nightly slots. Both notify PRESIDENT (in_app + email) and ALL_ADMINS (in_app — covers admin/finance/president/ceo) via the standard `notify()` plumbing. They have different jobs and different repair paths.
+
+### 10a. Orphan Ledger Audit (cron `0 3 * * *` Asia/Manila)
+
+**What it checks**: any POSTED `Sale / Collection / PrfCalf` row whose `event_id` has NO matching POSTED `JournalEntry.source_event_id`. Scans all entities, no date window — persistent orphans keep alerting until fixed.
+
+**Why it exists**: the auto-journal block in CR / CSI / PRF POST runs OUTSIDE the POST transaction. If the JE engine throws (COA mismatch, period lock, missing fund), the source doc stays POSTED but no JournalEntry exists — books silently inconsistent until BIR filing time.
+
+**Manual trigger** (any operator with shell access):
+```bash
+cd backend
+node scripts/runOrphanLedgerAuditOnce.js                     # via agent (full notification + AgentRun record)
+node erp/scripts/findOrphanedLedgerEntries.js                # standalone, console output
+node erp/scripts/findOrphanedLedgerEntries.js --csv          # CSV block for finance
+node erp/scripts/findOrphanedLedgerEntries.js --module sales # one module
+```
+
+**Expected baseline (healthy system)**: agent.run() returns `status: 'success'`, summary `key_findings: ['Scanned N POSTED rows. No ledger orphans detected. ✓']`, 0 messages_sent.
+
+**Alert priority routing**:
+- `> 10 orphans` → priority `'high'` — investigate within the same business day. Likely a controller bug introduced recently (check git log for recent edits to `collectionController.js` / `salesController.js`).
+- `1–10 orphans` → priority `'important'` — investigate within 48h. Often a one-off data error (missing COA mapping for a new vendor, period lock fired mid-write).
+
+**Repair path** (per orphan):
+1. Search `ErpAuditLog` for `event=LEDGER_ERROR` with `target_ref` matching the orphan's `doc_ref` — this captures why the JE engine threw.
+2. Once "Retry JE" UI ships (Step 2 of the larger remediation plan): open the doc, click Retry.
+3. Until then: open the doc → Reopen → Re-submit (the JE engine is idempotent on `source_event_id`, so this is safe).
+
+### 10b. Accounting Integrity (cron `0 4 * * *` Asia/Manila)
+
+**What it checks** — five strict + one informational check per entity per day:
+
+| # | Check | Strict? | Source | Repair |
+|---|---|---|---|---|
+| 1 | Trial balance (cumulative + per-period) | ✅ | aggregate POSTED `JournalEntry.lines` | Search `ErpAuditLog` for direct-DB writes; recompute totals via `JE.save()` |
+| 2 | Sub-ledger == control account (VAT + CWT) | ⓘ | `VatLedger / CwtLedger` vs GL | Informational — drift = VAT-portion of open A/R |
+| 3 | JE-row math sanity | ✅ | per-row `total_debit == total_credit` + recompute | Open the JE in `/erp/journal`, re-save (pre-save validator recomputes) |
+| 4 | IC over-settled | ✅ | POSTED `IcTransfer` vs POSTED `IcSettlement.settled_transfers` | Void the excess IcSettlement, re-issue with correct `settled_transfers` |
+| 5 | Period-close readiness | ✅ | drafts in previous month across 6 collections | Post (or void) every draft listed before flipping the `PeriodLock` |
+
+**Manual trigger**:
+```bash
+cd backend
+node scripts/runAccountingIntegrityOnce.js                                # full agent run + notify
+node scripts/runAccountingIntegrityOnce.js --entity 69cd76ec7f6beb5888bd1a53  # one entity
+node scripts/runAccountingIntegrityOnce.js --period 2026-04                # specific period
+
+node erp/scripts/findAccountingIntegrityIssues.js                          # standalone, full output
+node erp/scripts/findAccountingIntegrityIssues.js --csv                    # CSV for finance
+node erp/scripts/findAccountingIntegrityIssues.js --check tb               # one check (tb / subledger / jemath / ic / periodclose)
+```
+
+**Expected baseline (healthy system)**: 0 strict failures. Sub-ledger VAT/CWT drift shown as ⓘ informational — that's expected for accrual-GL vs cash-VatLedger PH setup; ignore unless the gap doesn't match open-AR-VAT.
+
+**Alert priority routing**:
+- TB out-of-balance OR JE-math drift > 0 → priority `'high'`. Books literally don't add up. Page on-call before BIR-deadline windows.
+- Period-close drafts OR IC over-settled → priority `'important'`. Same-business-day investigation.
+
+**Tolerance tuning** (Lookup category `ACCOUNTING_INTEGRITY_THRESHOLDS`, code `DEFAULT`):
+- `tb_tolerance` (default 0.01): bank rounding to the cent. Don't raise above 0.10.
+- `je_math_tolerance` (default 0.01): same rationale.
+- `subledger_tolerance` (default 1.00): peso-rounding cushion across many rows.
+- `ic_tolerance` (default 1.00): same rationale for inter-entity netting.
+- `subledger_enforce` (default `false`): flip to `true` ONLY after the org commits to a single recognition basis end-to-end (pure accrual or pure cash). Otherwise daily false alarms — the PH JE engine writes OUTPUT_VAT to GL on Sale POST (accrual) but writes the VatLedger row on Collection POST (cash, for 2550Q filing).
+
+Edit via Control Center → Lookup Tables → `ACCOUNTING_INTEGRITY_THRESHOLDS` → row `DEFAULT` → metadata. `insert_only_metadata: true` so admin edits survive auto-seed.
+
+### 10c. Common false-alarm pitfalls
+
+- **Sub-ledger drift complaint** ("OUTPUT_VAT GL doesn't match VatLedger"): expected by design. Drift = VAT on open A/R. Verify against the open-AR aging report. Don't flip `subledger_enforce` until the JE engine writes VatLedger inline (or the VAT is moved to cash basis end-to-end).
+- **TB unbalanced after migration**: a script that did `JE.updateOne({...})` instead of `JE.save()` will skip the pre-save validator. Recompute via `for (const je of unbalanced) await je.save()` — pre-save will re-sum lines.
+- **Period-close drafts after a holiday**: BDMs leave SalesLine drafts open. Post or void from `/erp/sales`. Don't lock the period until the draft list is empty.
+- **IC over-settled after a void**: IcSettlement was voided but the IcTransfer it closed wasn't reopened. Manual journal correction may be required if the settled_transfers links can't be cleanly reversed.
 
 ---
 

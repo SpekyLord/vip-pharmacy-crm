@@ -117,6 +117,12 @@ const AGENT_META = {
   proxy_sla:             { icon: Clock,         color: '#f59e0b', schedule: 'Every 4 hours' },
   // Phase G9.R8 — Inbox Retention (#MR)
   message_retention:     { icon: Mail,          color: '#475569', schedule: 'Daily 2:00 AM' },
+  // Day-4.5 #3 — Orphan Owner Audit
+  orphan_audit:          { icon: ShieldAlert,   color: '#9f1239', schedule: 'Mon 5:15 AM' },
+  // VIP-1.B follow-up — Orphan Ledger Audit
+  orphan_ledger_audit:   { icon: ShieldAlert,   color: '#7f1d1d', schedule: 'Daily 3:00 AM' },
+  // Apr 2026 follow-up — Accounting Integrity (TB / sub-ledger / IC / period-close)
+  accounting_integrity:  { icon: ShieldAlert,   color: '#1e3a8a', schedule: 'Daily 4:00 AM' },
 };
 const DEFAULT_META = { icon: Bot, color: '#64748b', schedule: 'Scheduled' };
 
