@@ -9,7 +9,7 @@
  *
  * Route: /admin/rebate-matrix
  */
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Handshake, RefreshCw, Plus, X, AlertTriangle, Loader, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Navbar from '../../components/common/Navbar';

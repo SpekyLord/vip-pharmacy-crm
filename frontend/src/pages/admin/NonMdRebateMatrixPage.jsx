@@ -17,7 +17,6 @@ import doctorService from '../../services/doctorService';
 import rebateCommissionService from '../../erp/services/rebateCommissionService';
 
 const fmtPct = (n) => `${(Number(n || 0)).toFixed(2)}%`;
-const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-PH') : '—';
 
 export default function NonMdRebateMatrixPage() {
   const [rows, setRows] = useState([]);
