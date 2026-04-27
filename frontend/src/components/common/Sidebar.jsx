@@ -1102,6 +1102,7 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
               { path: '/bdm/visits', label: 'My Visits', icon: ClipboardCheck },
               { path: '/bdm/comm-log', label: 'Comm Log', icon: MessageSquare },
               { path: '/bdm/partnership', label: 'Partnership', icon: Handshake },
+              { path: '/bdm/field-guide', label: 'Field Guide', icon: BookOpen },
             ],
           },
         ],

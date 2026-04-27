@@ -52,6 +52,9 @@ const CallPlanPage = lazyRetry(() => import('./pages/employee/CallPlanPage'));
 const DoctorDetailPage = lazyRetry(() => import('./pages/employee/DoctorDetailPage'));
 const ProductSpecPage = lazyRetry(() => import('./pages/employee/ProductSpecPage'));
 const CommLogPage = lazyRetry(() => import('./pages/employee/CommLogPage'));
+// Phase N offline-first sprint — BDM Field Guide (offline visit + CLM +
+// sync-error walkthrough). Persistent reference; revisitable from sidebar.
+const FieldGuidePage = lazyRetry(() => import('./pages/employee/FieldGuidePage'));
 // CLM — Closed Loop Marketing (Partnership Presentation)
 const PartnershipCLM = lazyRetry(() => import('./pages/employee/PartnershipCLM'));
 
@@ -77,6 +80,8 @@ const ClmBrandingPage = lazyRetry(() => import('./pages/admin/ClmBrandingPage'))
 const MdLeadsPage = lazyRetry(() => import('./pages/admin/MdLeadsPage'));
 // Phase VIP-1.H — SC/PWD Sales Book + BIR exports (RA 9994 + RR 7-2010)
 const SCPWDSalesBookPage = lazyRetry(() => import('./pages/admin/SCPWDSalesBookPage'));
+// Phase VIP-1.J — BIR Compliance Dashboard (12+ forms, accountant view)
+const BIRCompliancePage = lazyRetry(() => import('./pages/admin/BIRCompliancePage'));
 // Phase VIP-1.B Phase 4 — Rebate + Commission matrix admin + Payout ledger
 const RebateMatrixPage = lazyRetry(() => import('./pages/admin/RebateMatrixPage'));
 const NonMdRebateMatrixPage = lazyRetry(() => import('./pages/admin/NonMdRebateMatrixPage'));
@@ -398,6 +403,15 @@ function App() {
               </ProtectedRoute>
             }
           />
+          {/* Phase N — BDM Field Guide (offline visit + CLM + sync-error reference) */}
+          <Route
+            path="/bdm/field-guide"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BDM_ADMIN}>
+                <FieldGuidePage />
+              </ProtectedRoute>
+            }
+          />
           {/* CLM — Partnership Presentation */}
           <Route
             path="/bdm/partnership"
@@ -571,6 +585,22 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_ONLY}>
                 <SCPWDSalesBookPage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Phase VIP-1.J — BIR Compliance Dashboard. Route guard uses
+              BIR_FILING role-set (admin/finance/president/bookkeeper) so the
+              external bookkeeper can land here without seeing /admin/employees,
+              /admin/payroll, etc. Backend endpoints layer lookup-driven
+              BIR_ROLES per scope (view / export / mark-reviewed / mark-filed
+              / mark-confirmed / run-data-audit / manage-tax-config) so
+              subscribers reconfigure per entity via Control Center. */}
+          <Route
+            path="/admin/bir"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BIR_FILING}>
+                <BIRCompliancePage />
               </ProtectedRoute>
             }
           />
