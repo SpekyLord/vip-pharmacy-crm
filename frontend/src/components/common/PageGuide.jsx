@@ -52,13 +52,16 @@ const PAGE_GUIDES = {
       'View your assigned VIP Clients and their visit status for this cycle',
       'Check which VIP Clients are due for a visit this week',
       'Tap a VIP Client to view their profile, then log a visit',
+      'You can close the app between clinic visits to save battery — the dashboard caches your VIP Client list locally so the next page (and offline visit logging) still works on weak signal',
+      'When you reconnect, queued offline visits sync automatically. You\'ll see a toast ("Synced N visits") and a copy lands in your Inbox so you can audit data spend later',
+      'If a queued visit can\'t replay (e.g., photos lost from local storage), a red "Sync errors (N)" badge appears next to your name — tap it to review and discard',
     ],
     next: [
       { label: 'Log Visit', path: '/bdm/visit/new' },
       { label: 'My Visits', path: '/bdm/visits' },
       { label: 'Call Plan', path: '/bdm/cpt' },
     ],
-    tip: 'VIP Clients marked "Due" should be visited this week. "Carried" means a missed visit from a previous week.',
+    tip: 'VIP Clients marked "Due" should be visited this week. "Carried" means a missed visit from a previous week. Visit logging + partnership presentations work offline; financial / approval pages need WiFi or cellular.',
   },
   'md-leads': {
     title: 'MD Partner Leads',
@@ -142,7 +145,7 @@ const PAGE_GUIDES = {
       { label: 'My Visits', path: '/bdm/visits' },
       { label: 'Dashboard', path: '/bdm' },
     ],
-    tip: 'Offline-friendly: photos and form fields auto-save while you work. Submit while offline to queue the visit; it syncs automatically when you reconnect. Maximum one visit per VIP Client per week.',
+    tip: 'Offline-friendly: photos and form fields auto-save while you work. Submit while offline to queue the visit; it syncs automatically when you reconnect (you\'ll see a toast + an audit entry in your Inbox showing how much mobile data was used). If the VIP Client doesn\'t appear in the offline picker, open them once while online so the dashboard caches the profile. Maximum one visit per VIP Client per week.',
   },
   'call-plan': {
     title: 'Call Plan (CPT)',
@@ -194,6 +197,24 @@ const PAGE_GUIDES = {
       { label: 'Dashboard', path: '/bdm' },
     ],
     tip: 'Hospital HEAT data appears automatically when a VIP Client has hospital affiliations set by admin.',
+  },
+  // Phase N offline-first sprint — pseudo-page key for the sync errors tray.
+  // The tray itself is a drawer (no dedicated route), so this entry surfaces
+  // contextually inside the drawer's header tooltip if a future iteration
+  // wants to render PageGuide there. Kept here so the wiring contract holds.
+  'sync-errors-tray': {
+    title: 'Sync Errors',
+    steps: [
+      'Each row is an offline visit draft that could not be replayed when connectivity returned',
+      'The most common cause is "photos lost" — your browser cleared its local blob storage between offline capture and the next sync',
+      'Tap "Discard" to clear the local row. A copy stays in your Inbox so admin can still see what happened',
+      'There is no "Retry" because the original photo blobs are gone by definition. Re-capture the visit from the New Visit page',
+    ],
+    next: [
+      { label: 'Log Visit', path: '/bdm/visit/new' },
+      { label: 'Inbox', path: '/employee/inbox' },
+    ],
+    tip: 'Sync errors are device-local. Each device tracks its own outstanding failures so you can clean up per-device without affecting your inbox audit trail.',
   },
   'inbox': {
     title: 'Unified Inbox',
@@ -466,7 +487,7 @@ const PAGE_GUIDES = {
       { label: 'My Visits', path: '/bdm/visits' },
       { label: 'Dashboard', path: '/bdm' },
     ],
-    tip: 'Each product you select shows on slide 5. Mark which ones the VIP Client was interested in before ending the session. Skipping products is allowed — slide 5 will show a neutral empty-state card instead of specific products. If offline, your drafts sync automatically when connectivity returns.',
+    tip: 'Each product you select shows on slide 5. Mark which ones the VIP Client was interested in before ending the session. Skipping products is allowed — slide 5 will show a neutral empty-state card instead of specific products. If offline, your CLM drafts sync automatically when connectivity returns and you\'ll see a confirmation toast + audit entry in your Inbox.',
   },
   'clm-sessions-admin': {
     title: 'CLM Sessions Overview',
