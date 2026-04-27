@@ -12,6 +12,7 @@ import { ROLES, ROLE_SETS } from './constants/roles';
 import LoginPage from './pages/LoginPage';
 import HomePage from './pages/HomePage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
+import OfflineRouteGuard from './components/common/OfflineRouteGuard';
 
 // Auto-retry dynamic imports: on chunk-hash mismatch after deploy, reload once
 const lazyRetry = (importFn) =>
@@ -274,6 +275,13 @@ function App() {
     <ErrorBoundary>
       <Toaster position="top-right" />
       <Suspense fallback={<LoadingSpinner />}>
+        {/* Phase N offline-first sprint — single guard at the Routes root.
+            When the device is offline AND the current pathname matches one
+            of the OFFLINE_REQUIRED_PATHS lookup prefixes (or the inline
+            DEFAULT_OFFLINE_REQUIRED fallback), it short-circuits to a
+            "needs WiFi or cellular" panel. Visit / CLM / Dashboard remain
+            offline-capable because their paths aren't in the blocked list. */}
+        <OfflineRouteGuard>
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<LoginPage />} />
@@ -996,6 +1004,7 @@ function App() {
           {/* 404 catch-all */}
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
+        </OfflineRouteGuard>
         {/* Phase G7 — Floating Copilot widget + Cmd+K palette. ErpAddons wrapper
             checks the path BEFORE rendering the lazy chunks so non-ERP pages
             never download these bundles. Components themselves also guard via
