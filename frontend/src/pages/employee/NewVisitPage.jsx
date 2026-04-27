@@ -18,6 +18,14 @@ import LoadingSpinner from '../../components/common/LoadingSpinner';
 import doctorService from '../../services/doctorService';
 import visitService from '../../services/visitService';
 import PageGuide from '../../components/common/PageGuide';
+// Phase N — offline fallback: when the BDM is offline, the canVisit /
+// getById network calls fail and would otherwise block the entire page,
+// preventing the offline-aware VisitLogger from ever rendering. Read the
+// doctor from IndexedDB instead and trust the SW's idempotent replay
+// (Visit unique index { doctor, user, yearWeekKey } enforces the limit
+// authoritatively at sync time).
+import { offlineStore } from '../../utils/offlineStore';
+import { offlineManager } from '../../utils/offlineManager';
 
 const newVisitStyles = `
   .dashboard-layout {
@@ -206,15 +214,55 @@ const NewVisitPage = () => {
       try {
         setLoading(true);
 
-        // Fetch doctor details and visit eligibility in parallel
-        const [doctorRes, canVisitRes] = await Promise.all([
+        // Fetch doctor details and visit eligibility in parallel.
+        // allSettled instead of all so a single failure (typically the
+        // canVisit call when offline) doesn't sink the whole page.
+        const [doctorResult, canVisitResult] = await Promise.allSettled([
           doctorService.getById(doctorId),
           visitService.canVisit(doctorId),
         ]);
 
+        let resolvedDoctor = doctorResult.status === 'fulfilled'
+          ? doctorResult.value.data
+          : null;
+        let resolvedCanVisit = canVisitResult.status === 'fulfilled'
+          ? canVisitResult.value.data
+          : null;
+
+        // Phase N — offline fallback. If the network failed and we're
+        // offline, read the doctor from the IndexedDB cache (populated by
+        // EmployeeDashboard / PartnershipCLM while online). Stub canVisit
+        // to true: the Visit unique index + SW idempotent replay handles
+        // weekly-limit enforcement when the queued submit reaches the
+        // server.
+        if (!resolvedDoctor && !offlineManager.isOnline) {
+          try {
+            const cached = await offlineStore.getCachedDoctors();
+            resolvedDoctor = cached.find((d) => d._id === doctorId) || null;
+          } catch {
+            resolvedDoctor = null;
+          }
+        }
+        if (!resolvedCanVisit && !offlineManager.isOnline && resolvedDoctor) {
+          resolvedCanVisit = {
+            canVisit: true,
+            offlineFallback: true,
+            reason: 'Weekly limit will be enforced when this visit syncs.',
+          };
+        }
+
         if (isMounted) {
-          setDoctor(doctorRes.data);
-          setCanVisit(canVisitRes.data);
+          if (resolvedDoctor) {
+            setDoctor(resolvedDoctor);
+            setCanVisit(resolvedCanVisit);
+          } else if (!offlineManager.isOnline) {
+            setError('You are offline and this VIP Client is not in your local cache. Open them while online once to enable offline visits.');
+          } else {
+            const reason = doctorResult.status === 'rejected'
+              ? doctorResult.reason?.response?.data?.message
+              : null;
+            setError(reason || 'Failed to load doctor information');
+          }
         }
       } catch (err) {
         if (isMounted) {

@@ -26,6 +26,9 @@ import messageService from '../../services/messageInboxService';
 import { getWeekOfMonth, getCycleWeekRange } from '../../utils/cycleUtils';
 import PageGuide from '../../components/common/PageGuide';
 import toast from 'react-hot-toast';
+// Phase N — seed IndexedDB doctor cache so NewVisitPage can render offline
+// for any VIP Client the BDM has seen on the dashboard while online.
+import { offlineStore } from '../../utils/offlineStore';
 
 const dashboardStyles = `
   .main-content h1 {
@@ -554,6 +557,11 @@ const EmployeeDashboard = () => {
 
       if (doctorsResult.status === 'rejected') {
         console.error('Failed to fetch doctors:', doctorsResult.reason);
+      } else if (doctorsList.length > 0) {
+        // Phase N — fire-and-forget cache refresh. NewVisitPage falls back
+        // to this cache when offline so the BDM can still log a visit for
+        // any VIP Client they've seen on this dashboard.
+        offlineStore.cacheDoctors(doctorsList).catch(() => { /* non-critical */ });
       }
 
       // Process today's VIP visits - non-critical, use fallback
