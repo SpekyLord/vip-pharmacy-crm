@@ -299,14 +299,88 @@ DR procedures are only real if tested. Schedule:
 
 | Drill | Frequency | Last Run | Next Due |
 |---|---|---|---|
-| Lightsail snapshot restore | Quarterly | 2026-04-25 (Day-5 drill — TBD pass/fail) | 2026-07-25 (Q3) |
-| Atlas PITR restore | Quarterly | 2026-04-25 (Day-5 drill — TBD pass/fail) | 2026-07-25 (Q3) |
-| S3 DR bucket sanity check (object count + fetch) | Quarterly | 2026-04-25 (Day-5 drill — TBD pass/fail) | 2026-07-25 (Q3) |
+| Lightsail snapshot restore | Quarterly | ⏸ **PAUSED on AWS quota** — Service Quotas case open Apr 27 2026 (vCPU 10 → 40 requested). Procedure pre-staged in Section 9a. | Once quota approved, then quarterly |
+| Atlas PITR restore | Quarterly | ✅ **PASSED 2026-04-25** (Drill #2, Day-5) — RTO TBD-backfill in Section 4 | 2026-07-25 (Q3) |
+| S3 DR bucket sanity check (object count + fetch) | Quarterly | ✅ **PASSED 2026-04-25** (Drill #1, Day-5) — Singapore↔Sydney parity: 1,318 objects + sample JPEG byte-verified | 2026-07-25 (Q3) |
 | S3 DR bucket failover (config swap, full traffic) | Bi-annually | Not yet run | H2 2026 |
 | End-to-end "VM is dead" full restore | Annually | Not yet run | 2026 |
 | Tabletop incident response (no actual restore) | Quarterly | Not yet run | Q3 2026 |
 
 After each drill: update measured RTO in the relevant section above.
+
+---
+
+## SECTION 9a — Drill #3 Pre-Staged Procedure (Lightsail Snapshot Restore)
+
+> **Status (as of 2026-04-27)**: BLOCKED on AWS Service Quotas case (EC2/Lightsail vCPU 10 → 40, status `Case opened`). Once approved, execute this procedure within the same week. This section is the planned-drill counterpart to Section 3 (which is the *incident* version of the same restore). Do not conflate: Section 3 fires under pressure with prod down; Section 9a fires deliberately, against a snapshot, with prod still running.
+
+### Goal
+
+Verify that a Lightsail snapshot can be restored to a working instance **without touching production**, and measure the real RTO so Section 3's "30-45 min" estimate becomes evidence rather than a guess.
+
+### Pre-flight (do not start without all 5)
+
+1. ☐ AWS Service Quotas case for Lightsail/EC2 vCPU is **Approved**, and current usage + 1 prod-equivalent instance fits under the new cap. Verify in Lightsail console → Account → Usage.
+2. ☐ Confirm a recent Lightsail **snapshot** of the prod instance exists. Console → Snapshots → check timestamp ≤ 24h old. If not, take a manual snapshot named `drill3-baseline-YYYY-MM-DD` and wait for it to complete (~5-10 min).
+3. ☐ Schedule a 90-minute window. BDMs not in active field hours (after 18:00 Manila or weekend morning).
+4. ☐ A **secondary `.env`** file prepared in OneDrive Personal Vault, named `.env.drill3`, with: (a) `MONGODB_URI` pointed to a **throwaway Atlas PITR-restored cluster** OR commented out entirely, (b) `S3_BUCKET_NAME=vip-pharmacy-crm-prod-dr`, (c) `JWT_SECRET` regenerated (do not reuse prod's — restored instance must not mint tokens prod will accept).
+5. ☐ Founder backup contact informed that drill is starting (so they don't think prod is down if they see the activity).
+
+### Steps (timer starts at Step 2)
+
+1. **T-0** — Open AWS Lightsail console → Snapshots. Note the snapshot name and timestamp you'll restore from.
+2. **Provision** — Click snapshot → "Create new instance from snapshot". Settings:
+   - Region: **ap-southeast-1** (snapshots are region-pinned — must match)
+   - Plan: same as prod (do not downsize — RTO won't be representative)
+   - Name: `vip-erp-drill3-YYYYMMDD`
+   - **Do NOT attach the prod static IP.** Leave it on prod. The drill instance gets its own dynamic public IP.
+3. **Wait for SSH-ready** — record the time the instance shows "Running" and SSH succeeds. Target: ≤ 5 min.
+4. **Firewall lockdown** — Lightsail → Networking → firewall on the drill instance → restrict SSH (22) and HTTPS (443) to your operator IP only. Reject 0.0.0.0/0. Prevents accidental BDM traffic landing on the drill instance.
+5. **Replace .env** — SSH in:
+   ```bash
+   sudo cp /var/www/vip-pharmacy-crm/backend/.env /var/www/vip-pharmacy-crm/backend/.env.snapshot-bak
+   sudo nano /var/www/vip-pharmacy-crm/backend/.env
+   # Paste contents of .env.drill3 from OneDrive Personal Vault
+   sudo chown ubuntu:ubuntu /var/www/vip-pharmacy-crm/backend/.env
+   sudo chmod 600 /var/www/vip-pharmacy-crm/backend/.env
+   ```
+   This step is the **dual-write firebreak**. Skipping it means the restored app reads AND writes to prod Atlas + prod S3.
+6. **Reload PM2** — `pm2 reload all` and `pm2 logs --lines 50`. Look for `MongoDB connected` (against the throwaway cluster, NOT prod). If you see a connection to the prod cluster URI, **STOP and re-do Step 5 — you are now dual-writing to prod**.
+7. **Smoke walk** — hit the drill instance's public IP directly (skip DNS, since drill IP isn't in DNS):
+   - `curl https://<drill-public-ip>/api/health -k` → expect 200
+   - Log in via browser using throwaway-cluster credentials → confirm dashboard loads
+   - Open one VIP Client record → confirm products list (cross-DB read works)
+   - DO NOT log a real visit (would write to throwaway cluster, fine, but no value in adding noise)
+8. **Stop timer** — record `Total RTO` = (T-0 to "smoke green").
+9. **Evidence capture** — screenshots: Lightsail console showing both instances running, PM2 logs showing connection to throwaway cluster, browser showing login + dashboard.
+
+### Teardown (must complete same session)
+
+10. **Stop PM2 on drill instance**: `pm2 stop all`
+11. **Lightsail → drill instance → Stop, then Delete instance.** Confirm prod instance is still running.
+12. **Delete throwaway Atlas PITR cluster** (Atlas charges hourly for it). Atlas → Clusters → recovery cluster → Terminate.
+13. **Verify prod is untouched** — log into prod via normal URL, confirm BDM list / dashboard / recent visits look correct. Spot-check one document modified during the drill window — its `updated_at` should NOT have changed.
+14. **Wipe `.env.drill3`** from local disk if it was copied out of OneDrive (it should never have left the vault, but verify).
+
+### Pass criteria (all four required)
+
+- ✅ Drill instance reached HTTP 200 on `/api/health` within ≤ 45 min (matches Section 3's RTO claim)
+- ✅ Smoke walk passed against throwaway cluster (login + dashboard + cross-DB product read)
+- ✅ Zero writes to prod Atlas during drill window (verify via Atlas → Cluster0 → Profiler or `auditlogs` check)
+- ✅ Teardown complete — drill instance deleted, recovery cluster terminated, prod-only state restored
+
+### Evidence log row (fill in after run, append to Section 3 measurements table)
+
+| Date | Snapshot used | Provision time | SSH-ready time | Health-200 time | Total RTO | Operator notes |
+|---|---|---|---|---|---|---|
+| TBD | TBD | TBD min | TBD min | TBD min | TBD min | Drill #3 — first run after AWS quota approval |
+
+### Failure modes to watch for
+
+- **Restored instance can't reach Atlas** — likely .env points at a cluster IP-allowlist that doesn't include the drill instance's public IP. Add it temporarily; remove after teardown.
+- **PM2 starts but app 500s** — check `pm2 logs`. Most common cause: the throwaway `JWT_SECRET` is < 32 chars (server.js validation rejects it). Regenerate to ≥ 32.
+- **Smoke walk login fails** — throwaway cluster has no users. Either (a) seed one test admin via `npm run seed` against the throwaway cluster, or (b) restore the throwaway cluster from PITR with prod data and accept the data-handling risk for the 90-min drill window (then verify deletion in Step 12).
+- **Snapshot restore stuck in "Pending" > 15 min** — Lightsail snapshot service has occasional regional slowness. If > 30 min, escalate via AWS Support case. Drill is paused, not failed.
 
 ---
 
@@ -379,7 +453,9 @@ Recommended cadence for planned (non-emergency) work:
 |---|---|---|
 | 2026-04-25 | Founder + Claude | Initial runbook drafted during Week-1 Stabilization (Day 2b). 6 of 9 placeholders filled; 3 deferred (static IP, founder backup contact, DNS hosted zone). |
 | 2026-04-25 | Founder + Claude | Day 4 — added Section 9b (Tenant Guard Violation procedure) for ENTITY_GUARD / BDM_GUARD alerts. |
-| TBD | Founder | First DR drill — record measured RTOs in Sections 3 & 4 |
+| 2026-04-25 | Founder | Day-5 DR Drills #1 (S3 parity) + #2 (Atlas PITR) — both PASSED. Drill #3 (Lightsail) paused on AWS vCPU quota. RTOs in Sections 3/4 still TBD-backfill. |
+| 2026-04-27 | Founder + Claude | Section 9 schedule synced to actual Drill #1 + #2 results. Section 9a added — Drill #3 Lightsail snapshot-restore procedure pre-staged for execution post-quota-approval. |
+| TBD | Founder | First Drill #3 run after AWS quota approval — record measured RTO + evidence in Sections 9a + 3. |
 
 ---
 

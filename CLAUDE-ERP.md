@@ -1,8 +1,8 @@
 # VIP ERP - Project Context
 
 > **Last Updated**: April 27, 2026
-> **Version**: 7.3
-> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G6 + G6.1 + G1.5 + H1-H5 + Phase 34 + Phase 3a + Phase 3c Complete. Phase G6.1 (Apr 26, 2026): **People Master Entity Lifecycle** — Transfer Home + Grant/Revoke endpoints + visibility union on People List (home ∪ User.entity_ids span ∪ active FRA holders). Two new danger-baseline sub-perms `people.transfer_entity` + `people.grant_entity`. Lookback days lookup-driven (`PEOPLE_LIFECYCLE_CONFIG.TRANSFER_BLOCK_LOOKBACK_DAYS`, default 90). Three new `AuditLog` enum values for full lineage. Closes the write-side gap left open by Phase G6 (which only made reads honor the entity selector). Phase G6 (Apr 26, 2026): **Master-data entity-scope honoring**. People Master list now respects the top-right entity selector for president-likes (was silently cross-entity). New `resolveEntityScope` helper + `CROSS_ENTITY_VIEW_ROLES` lookup category gate explicit `?cross_entity=true` opt-in by per-module role allowlist (default `['president','ceo']`). 60s cache + bust-on-lookup-write. Pattern ready for vendor/customer/hospital lists. Phase 3c (Apr 18, 2026): **Comprehensive hardcoded-role migration** — 30 destructive endpoints across ~15 modules now use `erpSubAccessCheck(module, key)` instead of `roleCheck('admin','finance','president')`. Baseline danger set grew 1 → 10 keys; 19 new sub-perms appear in the Access Template editor (period force-unlock, year-end, settings write, transfer pricing, people terminate/login mgmt, master data deactivate/delete, lookup deletes, etc.). Phase 3a (Apr 18, 2026): **Lookup-driven Danger Sub-Permission Gate + President-Reverse rollout**. Hardcoded `roleCheck('president')` on destructive endpoints replaced with `erpSubAccessCheck('accounting','reverse_posted')` so subsidiaries can delegate to CFO/Finance via Access Template editor without a code change. Rollout adds per-module `/president-reverse` routes to Expenses (ORE/ACCESS), PRF/CALF, and Petty Cash — on top of the existing Sales + Collection endpoints. Baseline danger set stays hardcoded (platform safety floor); subscribers extend via ERP_DANGER_SUB_PERMISSIONS lookup (5-min cache, busted on lookup write). Phase G5 (Apr 18, 2026): Fixed privileged-user BDM filter fallback bug in 9 ERP endpoints.
+> **Version**: 7.4
+> **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G6 + G6.1 + G1.5 + H1-H5 + Phase 34 + Phase 3a + Phase 3c Complete. **Phase G5 (Customer Globalization) Index Migration applied on dev Apr 27 2026** — `migrateCustomerGlobalUnique.js --apply` dropped 3 legacy compound indexes; Customer is now Hospital-style global. Cross-entity duplicate POST returns 400 with global-unique error; cross-entity read visibility confirmed. Prod apply still pending (gated on Atlas backup — see `memory/handoff_customer_global_migration_apr27_2026.md`). Phase G6.1 (Apr 26, 2026): **People Master Entity Lifecycle** — Transfer Home + Grant/Revoke endpoints + visibility union on People List (home ∪ User.entity_ids span ∪ active FRA holders). Two new danger-baseline sub-perms `people.transfer_entity` + `people.grant_entity`. Lookback days lookup-driven (`PEOPLE_LIFECYCLE_CONFIG.TRANSFER_BLOCK_LOOKBACK_DAYS`, default 90). Three new `AuditLog` enum values for full lineage. Closes the write-side gap left open by Phase G6 (which only made reads honor the entity selector). Phase G6 (Apr 26, 2026): **Master-data entity-scope honoring**. People Master list now respects the top-right entity selector for president-likes (was silently cross-entity). New `resolveEntityScope` helper + `CROSS_ENTITY_VIEW_ROLES` lookup category gate explicit `?cross_entity=true` opt-in by per-module role allowlist (default `['president','ceo']`). 60s cache + bust-on-lookup-write. Pattern ready for vendor/customer/hospital lists. Phase 3c (Apr 18, 2026): **Comprehensive hardcoded-role migration** — 30 destructive endpoints across ~15 modules now use `erpSubAccessCheck(module, key)` instead of `roleCheck('admin','finance','president')`. Baseline danger set grew 1 → 10 keys; 19 new sub-perms appear in the Access Template editor (period force-unlock, year-end, settings write, transfer pricing, people terminate/login mgmt, master data deactivate/delete, lookup deletes, etc.). Phase 3a (Apr 18, 2026): **Lookup-driven Danger Sub-Permission Gate + President-Reverse rollout**. Hardcoded `roleCheck('president')` on destructive endpoints replaced with `erpSubAccessCheck('accounting','reverse_posted')` so subsidiaries can delegate to CFO/Finance via Access Template editor without a code change. Rollout adds per-module `/president-reverse` routes to Expenses (ORE/ACCESS), PRF/CALF, and Petty Cash — on top of the existing Sales + Collection endpoints. Baseline danger set stays hardcoded (platform safety floor); subscribers extend via ERP_DANGER_SUB_PERMISSIONS lookup (5-min cache, busted on lookup write). Phase G5 (Apr 18, 2026): Fixed privileged-user BDM filter fallback bug in 9 ERP endpoints.
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -4892,7 +4892,7 @@ Until one of those fires, VIP continues with the existing two-model design.
 
 1. **Do not propose fusion in regular work.** When editing `Customer`, `Hospital`, or any txn model carrying `hospital_id`/`customer_id` (`SalesLine`, `Collection`, `CreditNote`, `Collateral`, `SmerEntry`, `ConsignmentTracker`, `CwtLedger`, `CreditRule`), keep the existing dual-reference OR pattern. Do not sneak in a Party refactor as part of an unrelated change.
 2. **Preserve hospital global sharing.** `Hospital.entity_id` stays optional. `hospital_name_clean` stays globally unique. One `St Luke's` record is shared across VIP + MG AND CO. + any future subsidiary.
-3. **Preserve customer entity-scoping.** `Customer.entity_id` stays required. Unique index stays on `(entity_id, customer_name_clean)`.
+3. **Customer is now global (Phase G5 Customer Globalization, Apr 24-27 2026).** `Customer.entity_id` is OPTIONAL — kept as a "home entity" reporting label only, NOT a visibility/uniqueness boundary. Unique index is `{ customer_name_clean: 1 }` (single-field global), mirroring `Hospital.hospital_name_clean`. The legacy `(entity_id, customer_name_clean)` compound was dropped on dev Apr 27 2026 by `backend/erp/scripts/migrateCustomerGlobalUnique.js --apply`. **Prod still pending** (gated on Atlas backup + dev smoke ratification — see deferred handoff `memory/handoff_customer_global_migration_apr27_2026.md` for the runbook).
 4. **Preserve the two split access patterns.** Do not migrate hospitals to direct `tagged_bdms`, and do not add `warehouse_ids` to `Customer`. Territorial access applies to hospital networks; retail/pharmacy/diagnostic customers are per-BDM direct tagging:
    - Hospitals → [backend/erp/utils/hospitalAccess.js:21-38](backend/erp/utils/hospitalAccess.js#L21-L38) (`buildHospitalAccessFilter`, warehouse-driven).
    - Customers → [backend/erp/controllers/customerController.js:20-24](backend/erp/controllers/customerController.js#L20-L24) (direct `tagged_bdms.$elemMatch`).
@@ -5699,9 +5699,11 @@ See `docs/PHASETASK-ERP.md` (`WEEK-1 STABILIZATION — DAY 4`) for the full file
 
 ---
 
-## Phase VIP-1.J — BIR Tax Compliance Suite (planned, started Apr 27 2026)
+## Phase VIP-1.J — BIR Tax Compliance Suite (J0 SHIPPED + SMOKE-PASSED Apr 27 2026, J1-J7 deferred)
 
 **Goal**: replace the bookkeeper-as-black-box workflow with a president-facing BIR Compliance Dashboard + per-form copy-paste UX into eBIR Forms + `.dat` exports for Alphalist Data Entry + loose-leaf Books of Accounts PDFs. Covers VIP, Balai Lawaan, online pharmacy, MG, CO, and future SaaS subscribers.
+
+**Status (Apr 27 2026 evening)**: J0 (Compliance Dashboard + Foundation + Data Quality Agent + inbound-email parser) is **shipped on `origin/dev` (commits `80b2798` + `68c711d`) and live-smoke green**. End-to-end audit verified: positive path (president → 8 forms / 3 deadlines / completeness 33%), negative path (staff → HTTP 403 with `required_scope`), webhook parses BIR confirmation emails (form_code + period + reference + TIN extracted), all 7 lookup-driven role gates wired (`birAccess.js` BIR_ROLES). Wiring confirmed across 7 layers: Model → Service → Controller → Route mount → Frontend service → Page → Sidebar → PageGuide banner. J1-J7 (~12 days regulatory tax forms) deferred — see memory `handoff_vip_1_j_phases_j1_j7_apr27_2026.md` and plan `~/.claude/plans/vip-1-j-bir-compliance.md`.
 
 **Locked decisions** (Apr 27 conversation):
 - Filing channel: copy-paste totals into eBIR Forms (no eFPS), `.dat` for Alphalist Data Entry (SAWT/QAP/1604-CF/1604-E), PDF for loose-leaf books.
@@ -5780,3 +5782,40 @@ User context: 2 BDM-promoted staff (Mae Navarro `s3.vippharmacy@gmail.com`, plus
 **Known follow-ups (not in scope)**:
 - [territoryRoutes.js](backend/erp/routes/territoryRoutes.js) POST/PUT still use `roleCheck('admin','finance','president')`. Territories are master data too — same migration could land a future MD-1.b. Skipped because territory CRUD is rare and admin-handled.
 - Existing access templates with `purchasing.product_manage` ticked keep working (dual-accept). When a tenant migrates to the canonical `master.product_manage`, they should re-tick on the new module key. No automatic migration script (low blast radius — president bypass covers admins).
+
+---
+
+## Phase G5 (Customer Globalization) — Index Migration Applied on Dev (Apr 27 2026)
+
+**Status**: code shipped Apr 24-26 (Customer model + controller flipped to Hospital-style global pattern). The Mongo index migration `backend/erp/scripts/migrateCustomerGlobalUnique.js` had not run, so the legacy compound unique `{entity_id, customer_name_clean}` was still co-existing with the new global single-field unique. Closed on dev Apr 27 2026.
+
+**Why this mattered**: Phase G5 controller code allowed cross-entity sales (a BDM tagged to a customer can sell that customer under any working entity). Without the migration, the legacy compound index would have permitted a SECOND customer with the same name in a different entity — exactly the duplicate-master class of bug Phase G5 was meant to prevent. Net-new customers worked because the schema-driven `customer_name_clean_1` global unique was already installed by Mongoose `syncIndexes` on app boot (no dupes existed to block it). The redundant legacy compound just took up space and confused operators reading the index list.
+
+**Run sequence (Apr 27 2026, dev cluster `cluster0.e9wenoo.mongodb.net/vip-pharmacy-crm-dev`)**:
+
+1. **Dry-run** — `node erp/scripts/migrateCustomerGlobalUnique.js`
+   - Result: 0 duplicate `customer_name_clean` groups across entities. 10 indexes present, 3 of them legacy (`entity_id_1_customer_name_clean_1` unique, `entity_id_1_status_1`, `entity_id_1_customer_type_1`).
+2. **Apply** — `node erp/scripts/migrateCustomerGlobalUnique.js --apply`
+   - Dropped 3 legacy indexes; `Customer.syncIndexes()` confirmed Phase-G5 shape.
+   - Final state: 7 indexes, including `customer_name_clean_1` (unique, global), `entity_id_1` (non-unique, home label), `status_1`, `customer_type_1`, `tagged_bdms.bdm_id_1`, text index on `customer_name + customer_aliases`.
+3. **Idempotency check** — re-ran dry-run, output: `✓ No legacy entity-scoped indexes present — nothing to drop.`
+
+**Smoke ratification (Playwright, live HTTP, dev cluster)**:
+- POST `/api/erp/customers` with `X-Entity-Id: <BALAI>` and a `customer_name` matching an existing VIP-home customer → **HTTP 400** `customer_name_clean already exists` (handled via [errorHandler.js handleDuplicateKeyError](backend/middleware/errorHandler.js)). The legacy compound would have allowed this row.
+- GET `/api/erp/customers` with `X-Entity-Id` set successively to VIP / BALAI / MG-and-CO → all three return the same single VIP-home customer (cross-entity visibility, the Phase G5 user-facing win).
+- Customer Management UI ([CustomerList.jsx](frontend/src/erp/pages/CustomerList.jsx)) renders cleanly with the post-MD-1 WorkflowGuide banner intact ("Customers are globally shared across entities").
+
+**Integrity sweep (no consumers depended on the legacy compound)**:
+- All Customer FK refs (`SalesLine.customer_id`, `Collection.customer_id`, `CreditNote.customer_id`, `Collateral.customer_id`, `NonMdPartnerRebateRule`) resolve by `_id` via Mongoose `ref:'Customer'` — unchanged by the index drop.
+- `customerAccess.buildCustomerAccessFilter` is BDM-tagging-driven (`tagged_bdms.bdm_id`), not entity-uniqueness driven.
+- `customerController.upsert` already used `customer_name_clean` global key (line 198) — controller intent matched the now-applied index shape.
+- One residual `Customer.findOne({ entity_id: vip._id })` in [createCsiTestSale.js:76](backend/erp/scripts/createCsiTestSale.js#L76) is a test-fixture script that picks any customer in an entity for sample-data generation — non-production path, not uniqueness-dependent. Left as-is.
+- Phase G6 [resolveEntityScope.js](backend/erp/utils/resolveEntityScope.js) (Apr 27 commit `c106e48`) strips `bdm_id` for master-data scope filters — orthogonal to the migration; both work together.
+
+**Prod gate (NOT shipped this session)**:
+- Mongo Atlas pre-prod snapshot required before `--apply` on prod cluster.
+- Run sequence: backup → `NODE_ENV=production node backend/erp/scripts/migrateCustomerGlobalUnique.js` (dry-run on prod) → review dupe report → if clean, `--apply`.
+- Same idempotency property (re-running is a no-op) means prod run can happen in a maintenance window without coordination concerns beyond the backup.
+- Tracked in `memory/handoff_customer_global_migration_apr27_2026.md` (now updated with the dev result).
+
+**Subscription-ready posture**: the global-unique pattern matches Hospital and is the same shape that will land in subscriber tenants. Customer remains globally shared via `tagged_bdms` for BDM visibility (no `entity_id` filter); selling-entity is sourced from `Sale.entity_id` so AR posts to the correct books regardless of customer home. Same future-tenant-friendly contract as Hospital — see `# Phase (Future) — Unified Party Master` for the roadmap consolidation.

@@ -1,6 +1,7 @@
 # VIP Pharmacy CRM - System Change Requirements & Recommendations
 
 > **Created**: February 16, 2026
+> **Last Audited**: April 27, 2026 — see [PART 4: AUDIT](#part-4-audit-apr-27-2026) for current implementation status (16 of 17 DONE, 1 OPEN)
 > **Purpose**: Document the gap between current implementation and client requirements, with technical recommendations for each change.
 > **Note**: The existing `CLAUDE.md` is very outdated. This document reflects the ACTUAL current state of the codebase.
 
@@ -12,6 +13,7 @@
 2. [Client Requirements → Changes Needed](#part-2-client-requirements--changes-needed)
 3. [Recommendations & Priority Phases](#part-3-recommendations--priority-phases)
 4. [Critical Technical Notes](#critical-technical-notes)
+5. [**AUDIT — April 27, 2026** (current implementation status)](#part-4-audit-apr-27-2026)
 
 ---
 
@@ -766,3 +768,60 @@ This is a **round trip**: CRM → Excel → CRM. The export IS the template for 
 | Roles affected | All 3 (admin, employee, medrep removed) |
 | Implementation phases | 4 (A through D) |
 | Breaking changes | 3 (name split, medrep removal, hospital→clinicOfficeAddress) |
+
+---
+
+## PART 4: AUDIT (Apr 27, 2026)
+
+> **What this is**: A head-to-head audit of all 17 client change requests (PART 2) against the actual repo state. Conducted Apr 27, 2026 by the engineering team. Each row cites verifiable evidence (commit SHA or file:line). Status is determined by Rule #4 (bulletproof bar) — feature must be wired end-to-end with no mock data.
+>
+> **Bottom line: 16 of 17 DONE. 1 OPEN (Change 11 — VIP count minimums). ~30-60 min of work to fully close the spec.**
+
+### Status Table
+
+| # | Change Title | Status | Evidence | Gap (if PARTIAL/OPEN) |
+|---|---|---|---|---|
+| 1 | Remove MedRep Role | ✅ DONE | commits `45b5a42` + `0d39b3c` (bulk role migration). `frontend/src/App.jsx` no longer imports `MedRepDashboard`. `backend/scripts/migrateMedrepUsers.js` exists. `backend/models/ProductAssignment.js:103` accepts `ADMIN` or `CONTRACTOR` (= `staff`). | — *(legacy `MEDREP` constant retained in `roles.js:49` as deprecated alias — harmless)* |
+| 2 | BDM Edit Own Doctors | ✅ DONE | `backend/controllers/doctorController.js:310-315` ownership check on `updateDoctor`. Allowed-fields whitelist (lines 317-340) includes `programsToImplement`, `supportDuringCoverage`, `levelOfEngagement`. `frontend/src/components/employee/DoctorEditForm.jsx` exists; `DoctorList.jsx` opens it. | — |
+| 3 | Doctor Info Page Before Log Visit | ✅ DONE | `frontend/src/pages/employee/DoctorDetailPage.jsx` exists, lazy-imported in `App.jsx:52`, route `/bdm/doctor/:id` mounted at `App.jsx:374-380`. | — |
+| 4 | Product Detail Popup (Tablet-Friendly) | ✅ DONE | `frontend/src/components/employee/ProductDetailModal.jsx` (full-screen overlay, prev/next navigation). `ProductRecommendations.jsx` accepts `onSelectProduct` prop wired to it. | — |
+| 5 | Photo Upload Flexibility | ✅ DONE | `CameraCapture.jsx:476-481` paste-event listener; line 603 gallery file-picker path (`addPhotosFromFiles(files, 'gallery')`). VisitLogger banner (line 690): "Use camera, upload from gallery, or paste from clipboard." | — |
+| 6 | 4-Week Calendar / Scheduling | ✅ DONE | `backend/models/Schedule.js`, `backend/controllers/scheduleController.js`, `backend/routes/scheduleRoutes.js` all present. Schedule-aware visit enforcement at `validateWeeklyVisit.js:242-307`. `frontend/src/components/employee/ScheduleCalendar.jsx` exists. | — |
+| 7 | Call Planning Tool (CPT) | ✅ DONE | `frontend/src/components/employee/CallPlanView.jsx` + `pages/employee/CallPlanPage.jsx` mounted at `/bdm/cpt` (`App.jsx:391-397`). DCR Summary in `DCRSummaryTable.jsx`. Auto-distribute 2x → W1+W3 / W2+W4 in `scheduleController.js:345-348`. Endpoints `/cpt-grid`, `/cpt-grid-summary`, `/cross-bdm-heatmap`. | — |
+| 8 | Excel Upload (Admin) | ✅ DONE | `backend/controllers/importController.js`, `models/ImportBatch.js`, `routes/importRoutes.js`, `utils/excelParser.js` all present (commit `7445499`, uses `exceljs`). Frontend `services/importService.js` + UI in `PendingApprovalsPage.jsx` (now repurposed as Import / Export page — see Change 13). | — |
+| 9 | Doctor Model Field Extensions | ✅ DONE | `backend/models/Doctor.js` contains all 13+ required fields: `firstName/lastName` (lines 20-31), `outletIndicator` (186), `programsToImplement` (191), `supportDuringCoverage` (192), `levelOfEngagement` (194), `secretaryName` (199), `secretaryPhone` (203), `birthday` (226), `anniversary` (229), `otherDetails` (232), `targetProducts` w/ showcasing/accepted statuses (237-252), `isVipAssociated` (254), `clinicOfficeAddress` (47). `specialization` is free-form String (42, no enum). | — |
+| 10 | 2x Alternating Weeks | ✅ DONE *(via Schedule)* | Direct rule deferred per stub comment in `validateWeeklyVisit.js`, but the requirement is satisfied through the Schedule system: `scheduleController.js:345-348` auto-distributes 2x doctors to W1+W3 or W2+W4, and `validateWeeklyVisit.js:252-307` blocks visits to weeks not on schedule. So a 2x doctor with W1+W3 schedule cannot be visited in W2 or W4. | — |
+| 11 | VIP Count Minimums (≥20 / ≥130) | ⚠️ **OPEN** | grep for `VIP_MIN`, `vipMinimum`, `MINIMUM_VIP`, `< 20`, `>= 130` in CRM `frontend/src` returns zero matches in `EmployeeDashboard.jsx`, `AdminDashboard.jsx`, or `StatisticsPage.jsx`. | Add three warning banners: (a) `EmployeeDashboard.jsx` — when BDM has <20 assigned VIPs; (b) `AdminDashboard.jsx` — when system has <130 active VIPs; (c) `StatisticsPage.jsx` — VIP breakdown by 2x vs 4x per BDM. ~30-60 min. |
+| 12 | Level of Engagement (1-5) | ✅ DONE | Schema field `Doctor.js:194-198` (min:1, max:5). Editable via `DoctorEditForm.jsx`. Filter exposed in `DoctorList.jsx` and `DoctorsPage.jsx`. | — |
+| 13 | Repurpose Approvals for Excel Import | ✅ DONE | `frontend/src/pages/admin/PendingApprovalsPage.jsx:2` header confirmed verbatim: `Import / Export Page (formerly PendingApprovalsPage)`. Drives the Change 8 import pipeline. | — |
+| 14 | BDM Self-Service Performance Metrics | ✅ DONE | `frontend/src/pages/employee/MyPerformancePage.jsx` exists. Route `/bdm/performance` at `App.jsx:372` redirects to `/bdm/cpt` (CPT page absorbs the metrics surface — DCR Summary + grid + auto-distribute). Functionality reachable. | — |
+| 15 | Admin Per-BDM Performance | ✅ DONE | `StatisticsPage.jsx:47` imports `DCRSummaryTable`. Lines 1614-1623, 1697-1698, 1851-1852 wire real backend `dcrSummary` + `dcrTotal` per-BDM. Backend endpoint in `scheduleController.js` (`getCPTGridSummary`, `getCrossBdmHeatmap`). No mock data. | — |
+| 16 | Non-VIP Regular Clients Table | ✅ DONE | `backend/models/Client.js`, `controllers/clientController.js`, `routes/clientRoutes.js` (with `getTodayClientVisitCount` for the 30/day cap). `frontend/src/components/employee/ClientList.jsx` + `ClientAddModal.jsx`. `EmployeeDashboard.jsx:943-944` renders "Regular Clients (Extra Calls)" section. | — |
+| 17 | Filter VIP by Support / Program | ✅ DONE | Backend: `doctorController.js:86-95` `?supportDuringCoverage=` and `?programsToImplement=` query filters. Frontend: `DoctorsPage.jsx:503-504, 623-624` (admin) + `DoctorList.jsx:662-781` (BDM). | — |
+
+### Surprises vs prior assumptions
+
+The CLAUDE.md "Next Steps Priority" section flagged Changes 6, 7, 8, 11, 13, 15 as the suspected-still-open work. The audit shows **5 of 6 are actually shipped**. The exceptions:
+
+- **Change 11** (VIP minimums) is the only true open item.
+- **Change 10** (alternating-week rule) was claimed deferred but is now effectively enforced via the Schedule system (auto-distribution of 2x doctors + schedule-aware `canVisit` check). The legacy stub comment in `validateWeeklyVisit.js` is misleading — the requirement is satisfied through a different code path.
+- **Change 13** (repurpose Approvals for import) was claimed open but `PendingApprovalsPage.jsx` was rewritten as the Import / Export page months ago.
+
+### Path forward — Change 11
+
+Single open item. Three banners to add (each is a thin component reading from existing assigned-doctor counts):
+
+1. `frontend/src/pages/employee/EmployeeDashboard.jsx` — banner if BDM's assigned-VIP count < 20
+2. `frontend/src/pages/admin/AdminDashboard.jsx` — banner if system-wide active VIP count < 130
+3. `frontend/src/pages/admin/StatisticsPage.jsx` — VIP breakdown by 2x vs 4x per BDM (already has stats infrastructure; just add this view)
+
+Threshold values (20, 130) should be lookup-driven per Global Rule #3 — store in `Settings` or a `VIP_COUNT_THRESHOLDS` Lookup category so subscribers can configure without code changes. ~30-60 min total.
+
+### Audit methodology
+
+- Cited evidence verified by `Read` and `Grep` on the actual repo state (not memory or commit message text alone).
+- "DONE" requires the feature to work end-to-end — backend handler + route + frontend component + route mount + UI entry point.
+- Three spot-checks performed by founder after agent dispatch: Change 13 line 2 header, Change 8 file presence, Change 11 zero-match confirmation in EmployeeDashboard.jsx. All three confirmed.
+- 17/17 changes investigated. No items skipped.
+
+---
