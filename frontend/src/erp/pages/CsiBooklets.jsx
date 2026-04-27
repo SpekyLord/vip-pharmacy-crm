@@ -16,6 +16,44 @@ import { AuthContext } from '../../context/AuthContextObject';
 import api from '../../services/api';
 
 const pageStyles = `
+  /* Mirrors SalesList .sales-nav-tabs for visual parity (Apr 2026). */
+  .sales-nav-tabs {
+    display: flex;
+    gap: 6px;
+    flex-wrap: nowrap;
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin-bottom: 12px;
+    padding: 6px;
+    border: 1px solid var(--erp-border, #dbe4f0);
+    border-radius: 10px;
+    background: var(--erp-panel, #fff);
+  }
+  .sales-nav-tabs::-webkit-scrollbar { height: 0; }
+  .sales-nav-tab {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    color: var(--erp-text, #132238);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    flex-shrink: 0;
+    background: transparent;
+    cursor: pointer;
+    font-family: inherit;
+    line-height: 1.2;
+  }
+  .sales-nav-tab.active {
+    background: var(--erp-accent, #1e5eff);
+    color: #fff;
+  }
+  .sales-nav-tab:hover {
+    border-color: var(--erp-border, #dbe4f0);
+  }
+
   .booklet-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .booklet-shell { display: flex; flex: 1; min-width: 0; }
   .booklet-main { flex: 1; min-width: 0; overflow-y: auto; padding: 24px; max-width: 1240px; margin: 0 auto; }
@@ -122,6 +160,28 @@ export default function CsiBooklets() {
   const { user } = useContext(AuthContext);
   // Contractor/admin view vs BDM self-service view. Drives page layout.
   const canManage = hasSubPermission('inventory', 'csi_booklets');
+
+  // ── Tab nav (Apr 2026) — splits the busy CSI page into 3 sub-tabs.
+  // Same visual pattern as SalesList/Expenses sales-nav-tabs, but the
+  // tabs are state-driven so they live under one /erp/csi-booklets URL.
+  // Hash-synced so the tab is shareable: /erp/csi-booklets#calibration
+  const VALID_TABS = canManage
+    ? ['drafts', 'booklets', 'calibration']
+    : ['drafts', 'numbers', 'calibration'];
+  const [activeTab, setActiveTab] = useState(() => {
+    const hash = (typeof window !== 'undefined' ? window.location.hash : '').replace('#', '');
+    return VALID_TABS.includes(hash) ? hash : 'drafts';
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (window.location.hash.replace('#', '') === activeTab) return;
+    window.history.replaceState(null, '', `#${activeTab}`);
+  }, [activeTab]);
+  // If role changes (rare), keep tab valid
+  useEffect(() => {
+    if (!VALID_TABS.includes(activeTab)) setActiveTab('drafts');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canManage]);
 
   // ── Phase 15.3 — Drafts Pending Print + Printer Calibration ─────
   const [drafts, setDrafts] = useState([]);
@@ -332,11 +392,47 @@ export default function CsiBooklets() {
         <div className="booklet-main">
           <WorkflowGuide pageKey="csi-booklets" />
 
+          {/* Apr 2026 — sub-tabs (matches SalesList sales-nav-tabs styling) */}
+          <div className="sales-nav-tabs" role="tablist" aria-label="CSI navigation" style={{ marginBottom: 16 }}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'drafts'}
+              className={`sales-nav-tab${activeTab === 'drafts' ? ' active' : ''}`}
+              onClick={() => setActiveTab('drafts')}
+            >Drafts to Print</button>
+            {canManage ? (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'booklets'}
+                className={`sales-nav-tab${activeTab === 'booklets' ? ' active' : ''}`}
+                onClick={() => setActiveTab('booklets')}
+              >Booklets &amp; Allocations</button>
+            ) : (
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeTab === 'numbers'}
+                className={`sales-nav-tab${activeTab === 'numbers' ? ' active' : ''}`}
+                onClick={() => setActiveTab('numbers')}
+              >My CSI Numbers</button>
+            )}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'calibration'}
+              className={`sales-nav-tab${activeTab === 'calibration' ? ' active' : ''}`}
+              onClick={() => setActiveTab('calibration')}
+            >Calibration</button>
+          </div>
+
           {/* Phase 15.3 — Drafts Pending Print */}
+          {activeTab === 'drafts' && (
           <div className="panel" style={{ marginBottom: 16 }}>
             <div className="panel-title-row">
               <div>
-                <h3>📄 Drafts Pending Print</h3>
+                <h3>Drafts Pending Print</h3>
                 <p>
                   Sales keyed in the ERP that still need the BDM to print the overlay PDF onto a
                   BIR booklet page, write the real CSI#, and scan it back.
@@ -404,11 +500,14 @@ export default function CsiBooklets() {
             )}
           </div>
 
+          )}
+
           {/* Phase 15.3 — Printer Calibration */}
+          {activeTab === 'calibration' && (
           <div className="panel" style={{ marginBottom: 16 }}>
             <div className="panel-title-row">
               <div>
-                <h3>🖨 Printer Calibration</h3>
+                <h3>Printer Calibration</h3>
                 <p>
                   Align the overlay with your printer once. Print the calibration grid onto a
                   <strong> blank booklet page</strong>, measure mm delta between the booklet&apos;s
@@ -463,7 +562,9 @@ export default function CsiBooklets() {
               is ±1–3 mm. Larger deltas usually mean wrong paper size selected in the print dialog.
             </div>
           </div>
+          )}
 
+          {(activeTab === 'booklets' || activeTab === 'numbers') && (
           <div className="booklet-header">
             <div>
               <h1>{canManage ? 'CSI Booklets' : 'My CSI Numbers'}</h1>
@@ -473,9 +574,10 @@ export default function CsiBooklets() {
               </p>
             </div>
           </div>
+          )}
 
           {/* BDM self-service view — simple read-only list */}
-          {!canManage && (
+          {!canManage && activeTab === 'numbers' && (
             <div className="panel" style={{ marginTop: 14 }}>
               {loading && <div className="loading">Loading your CSI numbers…</div>}
               {!loading && myAvailable.length === 0 && (
@@ -534,7 +636,7 @@ export default function CsiBooklets() {
           )}
 
           {/* Contractor/admin view — full management UI */}
-          {canManage && <>
+          {canManage && activeTab === 'booklets' && <>
 
 
           <div className="booklet-hero">

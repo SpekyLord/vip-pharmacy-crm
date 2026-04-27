@@ -87,6 +87,32 @@ In practice, the system is dependent on president/admin/finance maintaining clea
 
 ---
 
+## Frontend Design Conventions
+
+Visual consistency rules that apply to every ERP page. New pages MUST follow them; refactors that cross these surfaces should bring them into compliance.
+
+### Tab navigation
+
+There is exactly **one** tab style in the ERP. It comes from `SalesList` / `SalesEntry` / `Expenses` and uses the classes `sales-nav-tabs` (the row) and `sales-nav-tab` (each tab) with `active` toggling the filled-blue state.
+
+**Gotcha — these classes are currently page-scoped, not global.** Each page that uses them injects the rules via its own `<style>{pageStyles}</style>` block (see SalesList.jsx, SalesEntry.jsx, CsiBooklets.jsx). When adding tabs to a new page, **copy the CSS block** from one of those pages or the styles will silently fall through to default browser button/anchor rendering. Long-term cleanup: lift these rules into a shared stylesheet (e.g. `frontend/src/erp/styles/tabs.css` imported once) — until then, copy on each page that needs them.
+
+- **Plain-text labels.** No emojis, no icons inside the tab. Status indicators (counts, badges) are allowed but rare — they go inside the tab as `<span class="badge">`. The Sales row is the visual canon: `Sales · Sales Transactions · Opening AR · Opening AR Transactions · CSI Booklets`.
+- **Two flavors, same look:**
+  - **Route-based tabs** (cross-page navigation) — use `<Link to="/erp/...">` with `aria-current="page"` on the active one. Examples: the Sales nav itself, `Expenses` ↔ `Income` switcher.
+  - **State-based sub-tabs** (intra-page) — use `<button type="button" role="tab" aria-selected={isActive}>` with React state + a `useEffect` that syncs `window.location.hash`. The URL stays at the page's canonical path; the hash names the active tab (e.g. `/erp/csi-booklets#calibration`). Reference implementation: [`CsiBooklets.jsx`](frontend/src/erp/pages/CsiBooklets.jsx).
+- **Active styling is consistent.** The `active` class is what paints the tab blue with white text. Don't introduce alternative active styles (no `aria-pressed`, no `data-active`, no inline color overrides).
+- **Role-aware tab labels** belong inside the same row, not a separate one. Example: `Booklets & Allocations` (admin) vs `My CSI Numbers` (BDM) occupy the same slot in the CSI tab nav, with the conditional resolved at render time. Never render two parallel tab rows for two roles.
+- **No emojis in section headings (`<h3>`) inside ERP pages either.** Drift creeps in fast — the rule is uniform.
+
+### When to add a sub-tab vs a new page
+
+If a section is heavy enough that it has its own data fetch, its own filters, or its own modal stack, prefer **state-based sub-tabs on a single page** (URL hash) over adding a new sidebar entry. Sidebar entries are reserved for distinct workflows.
+
+The CSI Booklets page is the canonical example: drafts / inventory / calibration are three distinct activities sharing one URL, three sub-tabs.
+
+---
+
 ## BIR CAS Readiness (Compliance Risk — not yet a phase)
 
 > **Status (Apr 21, 2026)**: NOT STARTED. High-priority risk. Owner: OM Judy Mae Patrocinio + external BIR-accredited consultant. Target: start filing within 3 months of vippharmacy.online launch.
@@ -269,6 +295,83 @@ Plus: PageGuide banners updated for `bdm-dashboard`, `new-visit`, `partnership-c
 - Healthcheck script `backend/scripts/healthcheckOfflineVisitWiring.js` returns 0
 - Playwright smoke confirms login → close → reopen offline → log visit → reconnect → toast + inbox entry
 - Confirm IndexedDB schema migration v3 → v4 fires cleanly in a Chromium devtools session
+
+---
+
+## Phase 15.4 — CSI Overlay Renderer Field-Tuned + Printer-Aware (April 27, 2026)
+
+Closes the long-standing "CSI alignment is wrong" complaint that turned out to be three separate problems: a missing lookup row, ambiguous coordinate semantics, and printer-specific paper handling. Now field-verified end-to-end on real VIP and MG and CO booklets through a Brother A4 printer. **Uncommitted on `dev`.**
+
+### Root cause: there was no CSI_TEMPLATE row
+
+For the duration of every prior alignment debug, the live cluster had **zero** `CSI_TEMPLATE` rows for any entity. The user was editing a Lookup Manager form that had been pre-populated with seed defaults, but the save path never persisted. The controller correctly returned `CSI_TEMPLATE_NOT_CONFIGURED` (HTTP 400). Re-running `node backend/erp/scripts/seedCsiTemplates.js --apply` finally inserted the rows. **First diagnostic for any future CSI complaint: `node backend/erp/scripts/inspectCsiTemplates.js`.**
+
+### Coordinate semantics — uniform across every field
+
+- **`x`** = LEFT edge of the first character, measured from the left of the page.
+- **`y`** = BASELINE of the letter (the line letters sit on, not the top of the bounding box), measured from the top of the page.
+
+Renderer subtracts the font ascent before handing y to PDFKit (whose native y is the top of the line box) so the calibration crosshair point and the rendered baseline coincide exactly. This applies to header fields, body rows, batch line, expiry line, PO row, notes, and both totals stacks — there is no longer a per-column `align: 'right'` branch; every position is left-edge-anchored.
+
+### Two-layer printer offset model — printer-agnostic
+
+Modern A4 office printers (Brother and most others) **center small paper horizontally** but **feed it from the top edge** for vertical. To compensate without per-printer code branches:
+
+```js
+final_x = lookup.x + tpl.feed_offset.x_mm + user.csi_printer_offset_x_mm
+final_y = lookup.y + tpl.feed_offset.y_mm + user.csi_printer_offset_y_mm
+```
+
+- **`tpl.feed_offset`** (per-template, lookup-driven) — captures the printer behavior shared by everyone in the entity. MG and CO is set to `{ x_mm: 27, y_mm: 0 }` because the booklet is 160 mm wide vs A4's 210 mm: `(210-160)/2 = 25 mm` for the horizontal centering plus 2 mm of empirical tuning, and 0 vertical because the Brother feeds from the top of A4. VIP is `(0, 0)` because its booklet width matches A4 width — no centering shift.
+- **`user.csi_printer_offset_*_mm`** (per-user) — fine-tuning for users whose printer differs from the entity default. The renderer now reads from `req.user` (whoever clicks Print), with fallback to `sale.bdm_id` only if the printing user has no calibration set. Calibrate via the **Calibration** tab on `/erp/csi-booklets`.
+
+### Description format + unit packing
+
+Body description is now `Brand Name (Generic Name) Dosage Strength` (Rule #4 with parens for the generic). When the template has no `cols.unit` (the VIP booklet has no Unit column header), the renderer **packs the unit at the end of the description** so it lands right before the Quantity column. MG and CO has its own Unit column (`cols.unit` defined), so the unit renders in its column instead. Same code path serves both layouts; the renderer picks via `Boolean(cols.description)` vs `cols.articles`.
+
+### Expiry format — matches GRN
+
+`MM/DD/YYYY` (e.g. `12/30/2028`) — matches what the GRN audit and entry pages show via `toLocaleDateString('en-PH')`, so a BDM looking at receiving and selling sees the same date format.
+
+### Field-tuned values (live cluster)
+
+| Field | VIP | MG and CO |
+|---|---|---|
+| `page` | 210 × 297 mm (A4) | 210 × 297 mm (A4) |
+| `name.y` | 45 (was 57; field test) | 39 |
+| `date.y` | 40 | 35 (was 33; field test +2) |
+| `name.x`, all body x | shifted +4 mm from booklet field test | original |
+| `feed_offset` | `(0, 0)` | `(27, 0)` for centering printers |
+
+Both A4 page sizes mean office printers accept the PDF as native paper. Print at **100% / Actual size** with no scaling; the booklet feeds at the top-left of the A4 area (or wherever the printer positions small paper, which the `feed_offset` compensates for).
+
+### CsiBooklets page — sub-tab refactor
+
+The CSI Booklets page was visually messy with three big panels stacked vertically. Refactored to three sub-tabs following the [Frontend Design Conventions](#frontend-design-conventions) (state-based, hash-synced, plain-text labels):
+
+- **Admin / contractor**: `Drafts to Print` · `Booklets & Allocations` · `Calibration`
+- **BDM**: `Drafts to Print` · `My CSI Numbers` · `Calibration`
+
+Tab state syncs to `window.location.hash` so each tab is shareable (`/erp/csi-booklets#calibration`). The proxy-encoded sale flow already worked end-to-end — the BDM's `tenantFilter = { bdm_id: self }` matches a sale where `bdm_id = self` regardless of who keyed it via `recorded_on_behalf_of`.
+
+### Key files
+
+- `backend/erp/services/csiDraftRenderer.js` — drawText baseline math + two-layer offset + uniform left-edge anchor
+- `backend/erp/controllers/salesController.js` — Brand (Generic) Strength desc + printing-user offset wiring
+- `backend/erp/scripts/seedCsiTemplates.js` — seed defaults updated to A4 + field-tuned coordinates
+- `backend/erp/scripts/inspectCsiTemplates.js` — read-only diagnostic (run first for any alignment complaint)
+- `backend/erp/scripts/setMgCsiFeedOffset.js` — canonical script for tuning per-template feed offsets when a new printer is added
+- `backend/erp/scripts/createCsiTestSale.js` — `--mg` flag, idempotent fixture creator
+- `frontend/src/erp/pages/CsiBooklets.jsx` — sub-tab refactor
+
+### Persistent test fixtures (DO NOT DELETE)
+
+- VIP DRAFT sale `69ef2fc2608459fe30339421` (doc_ref `CSI-TEST`)
+- MG and CO DRAFT sale `69ef305849f94f5213c6b32a` (doc_ref `CSI-TEST-MG`)
+
+### Master-data gap surfaced
+
+`ProductMaster.unit` is `undefined` on most products (Viprazole 40 mg confirmed; likely many others). Every sale of these products has to type the unit by hand on each line. A one-pass catalog audit to fill `ProductMaster.unit` removes that risk forever — worth doing before the next CSI rollout phase.
 
 ---
 

@@ -1587,12 +1587,22 @@ const generateCsiDraft = catchAsync(async (req, res) => {
     });
   }
 
-  // Load the owning BDM for printer-offset calibration (not req.user — the
-  // proxy might be keying for someone else, and the BDM's printer is the one
-  // that prints the overlay).
-  const owner = await User.findById(sale.bdm_id)
+  // Load the printing user for the per-user printer offset. The PRINTING
+  // user is whoever clicks Download — that's the printer being used right
+  // now. Falls back to the sale owner if req.user has no calibrated offset
+  // (covers the legacy case where each BDM prints their own sales).
+  const printingUser = await User.findById(req.user._id)
     .select('name csi_printer_offset_x_mm csi_printer_offset_y_mm')
     .lean();
+  let owner = printingUser;
+  if (!printingUser?.csi_printer_offset_x_mm && !printingUser?.csi_printer_offset_y_mm) {
+    const fallback = await User.findById(sale.bdm_id)
+      .select('name csi_printer_offset_x_mm csi_printer_offset_y_mm')
+      .lean();
+    if (fallback?.csi_printer_offset_x_mm || fallback?.csi_printer_offset_y_mm) {
+      owner = fallback;
+    }
+  }
 
   // Resolve product names (Rule #4: brand_name + dosage_strength) and
   // batch expiry dates from InventoryLedger.
@@ -1626,8 +1636,19 @@ const generateCsiDraft = catchAsync(async (req, res) => {
 
   const lineDisplay = sale.line_items.map((li) => {
     const p = productMap.get(String(li.product_id)) || {};
-    const desc = [p.brand_name, p.dosage_strength].filter(Boolean).join(' ') ||
-                 p.generic_name || 'Item';
+    // CSI display format: "Brand Name (Generic Name) Dosage Strength".
+    // Falls back to generic-only when no brand exists, "Item" if neither.
+    let desc;
+    if (p.brand_name) {
+      const parts = [p.brand_name];
+      if (p.generic_name && p.generic_name.trim() !== p.brand_name.trim()) {
+        parts.push(`(${p.generic_name})`);
+      }
+      if (p.dosage_strength) parts.push(p.dosage_strength);
+      desc = parts.join(' ');
+    } else {
+      desc = p.generic_name || 'Item';
+    }
     const key = li.product_id && li.batch_lot_no
       ? `${li.product_id}|${li.batch_lot_no}` : null;
     const exp = key ? expiryMap.get(key) : null;
