@@ -242,7 +242,7 @@ export default function BIRCompliancePage() {
                     )}
                   </>
                 ) : (
-                  <p style={{ fontSize: '0.85rem', color: '#6b7280' }}>No scan yet. Click "Run Scan" to find missing TIN / address records.</p>
+                  <p style={{ fontSize: '0.85rem', color: '#6b7280' }}>No scan yet. Click &quot;Run Scan&quot; to find missing TIN / address records.</p>
                 )}
                 <div className="bir-row" style={{ marginTop: '0.75rem' }}>
                   <button className="bir-btn bir-btn-primary" onClick={onRunScan} disabled={scanRunning}>
