@@ -135,6 +135,15 @@ function initAgentScheduler() {
   cron.schedule('0 3 * * *', () => triggerScheduled('orphan_ledger_audit', 'Orphan Ledger Audit'), { timezone: TIMEZONE });
   console.log('[AgentScheduler]   ✓ #OL Orphan Ledger Audit - daily 3:00 AM');
 
+  // Apr 2026 follow-up — Accounting Integrity. Daily 04:00 Manila, sandwiched
+  // between Orphan Ledger (03:00) and System Integrity (05:00). Verifies the
+  // books actually balance: TB cumulative + per-period, JE-row math, IC
+  // pair-balance, period-close readiness. Sub-ledger VAT/CWT recon is
+  // informational by default — flipped to strict via the lookup once the org
+  // commits to a single recognition basis (accrual or cash, not split).
+  cron.schedule('0 4 * * *', () => triggerScheduled('accounting_integrity', 'Accounting Integrity'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #AI Accounting Integrity - daily 4:00 AM');
+
   const hasAiKey = !!process.env.ANTHROPIC_API_KEY;
 
   if (hasAiKey) {

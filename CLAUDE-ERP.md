@@ -5819,3 +5819,69 @@ User context: 2 BDM-promoted staff (Mae Navarro `s3.vippharmacy@gmail.com`, plus
 - Tracked in `memory/handoff_customer_global_migration_apr27_2026.md` (now updated with the dev result).
 
 **Subscription-ready posture**: the global-unique pattern matches Hospital and is the same shape that will land in subscriber tenants. Customer remains globally shared via `tagged_bdms` for BDM visibility (no `entity_id` filter); selling-entity is sourced from `Sale.entity_id` so AR posts to the correct books regardless of customer home. Same future-tenant-friendly contract as Hospital — see `# Phase (Future) — Unified Party Master` for the roadmap consolidation.
+
+---
+
+## Phase Apr-2026 #1 — Orphan Ledger Audit Agent (shipped Apr 27 2026)
+
+**Goal**: catch the case where a POSTED transactional doc (Sales / Collection / PRF-CALF) has NO corresponding `JournalEntry` because the auto-journal block runs OUTSIDE the POST transaction. Silent JE failures leave `status='POSTED'` with no settlement ledger row — invisible until BIR filing time.
+
+**Files**:
+- [backend/erp/scripts/findOrphanedLedgerEntries.js](backend/erp/scripts/findOrphanedLedgerEntries.js) — read-only sweep: for each entity, finds POSTED rows with `event_id` and non-zero amount, checks for a matching POSTED `JournalEntry.source_event_id`. Exits 1 on any orphan. Flags: `--entity`, `--module`, `--days`, `--csv`.
+- [backend/agents/orphanLedgerAuditAgent.js](backend/agents/orphanLedgerAuditAgent.js) — wraps the script logic. Notifies `PRESIDENT` (in_app + email) + `ALL_ADMINS` (in_app). Priority `'high'` if > 10 orphans, else `'important'`.
+- [backend/scripts/runOrphanLedgerAuditOnce.js](backend/scripts/runOrphanLedgerAuditOnce.js) — manual driver bypassing cron + dispatcher.
+- Registered in [backend/agents/agentRegistry.js](backend/agents/agentRegistry.js) as `orphan_ledger_audit` (FREE tier).
+- Cron: `0 3 * * *` Asia/Manila in [backend/agents/agentScheduler.js](backend/agents/agentScheduler.js) (line ~135).
+
+**Verified Apr 27 2026**: agent.run() against dev DB returns clean baseline: 6 POSTED rows scanned (5 SALES + 1 PRF), 0 orphans. Mirrors `orphanAuditAgent.js` pattern exactly so the two integrity agents stay shape-equivalent.
+
+---
+
+## Phase Apr-2026 #2 — Accounting Integrity Agent (shipped Apr 28 2026)
+
+**Goal**: catch the cases the orphan-ledger sweep can't — where JEs DO exist but the books still go silently wrong. Five strict + one informational check per entity per day.
+
+**Strict checks (count toward `grandFailures`, drive notification priority)**:
+1. **Trial balance balanced** (cumulative + per-period). Σ POSTED `JournalEntry.lines.debit` must equal Σ credit, both all-time and per-month for current + previous period.
+2. **JE-row math sanity**. Per-row `total_debit == total_credit`, AND lines recompute to the same totals (catches direct-DB writes / migrations bypassing the pre-save validator).
+3. **Inter-entity (IC) over-settled detection**. For every directed entity pair (A → B), Σ POSTED `IcTransfer.total_amount` − Σ POSTED `IcSettlement.settled_transfers.amount_settled` ≥ 0. Negative = settled MORE than was transferred — almost always a data-entry or void-and-resubmit bug.
+4. **Period-close readiness**. For previous month, count any DRAFT / VALID / non-POSTED rows in `SalesLine`, `Collection`, `PrfCalf`, `InterCompanyTransfer`, `IcSettlement`, `JournalEntry`. Drafts must be cleared (post or void) before the period lock can flip.
+
+**Informational check (reported daily, never counts as failure unless admin opts in)**:
+5. **Sub-ledger == control account** (cumulative VAT + CWT). The PH JE engine credits OUTPUT_VAT to the GL on Sale POST (accrual basis) but writes the `VatLedger` row only on Collection POST (cash basis, used for BIR 2550Q filing). They diverge by design — the cumulative drift = VAT-portion of open A/R. Operator verifies against open-AR reports. Admin flips `ACCOUNTING_INTEGRITY_THRESHOLDS.DEFAULT.metadata.subledger_enforce = true` to make the recon strict; default `false` because flipping it without a single recognition basis would fire a daily false alarm.
+
+**Files**:
+- [backend/erp/scripts/findAccountingIntegrityIssues.js](backend/erp/scripts/findAccountingIntegrityIssues.js) — standalone script with the same flag conventions: `--entity`, `--period`, `--check`, `--csv`. Exits 1 on any strict failure. Exports `scanAccountingIntegrity` so the agent inherits its findings (single source of truth for the check semantics).
+- [backend/agents/accountingIntegrityAgent.js](backend/agents/accountingIntegrityAgent.js) — wraps the script's pure scan. Notifies `PRESIDENT` (in_app + email) + `ALL_ADMINS` (in_app — already includes admin/finance/president/ceo via `ROLE_SETS.ADMIN_LIKE`). Priority `'high'` if TB out-of-balance OR JE-math drift > 0; `'important'` otherwise.
+- [backend/scripts/runAccountingIntegrityOnce.js](backend/scripts/runAccountingIntegrityOnce.js) — manual driver. Flags: `--entity`, `--period`.
+- Registered in [backend/agents/agentRegistry.js](backend/agents/agentRegistry.js) as `accounting_integrity` (FREE tier, schedule `Daily 4:00 AM`).
+- Cron: `0 4 * * *` Asia/Manila in [backend/agents/agentScheduler.js](backend/agents/agentScheduler.js) (logged as `#AI`).
+- AGENT_META icon/color added to [frontend/src/erp/pages/AgentDashboard.jsx](frontend/src/erp/pages/AgentDashboard.jsx) (`ShieldAlert`, `#1e3a8a`). Same dashboard page also picked up the missing `orphan_audit` and `orphan_ledger_audit` meta entries — they had been auto-rendering with the default Bot icon since shipping.
+- Threshold lookup `ACCOUNTING_INTEGRITY_THRESHOLDS.DEFAULT` seeded in [backend/erp/controllers/lookupGenericController.js](backend/erp/controllers/lookupGenericController.js) with `insert_only_metadata: true`. Defaults: `tb_tolerance=0.01`, `je_math_tolerance=0.01`, `subledger_tolerance=1.00`, `ic_tolerance=1.00`, `subledger_enforce=false`.
+
+**Tolerances (subscriber-configurable)**:
+- TB / JE-math: ₱0.01 — bank rounding to the cent.
+- Sub-ledger / IC: ₱1.00 — peso-rounding cushion across many rows; raise carefully (masks cumulative drift).
+- `subledger_enforce`: false default per the PH cash-vs-accrual basis split. Do NOT flip without a single recognition basis end-to-end.
+
+**Verified Apr 28 2026**:
+- `node erp/scripts/findAccountingIntegrityIssues.js` against dev DB: 0 strict failures (TB balanced ₱483,515 across 13 JEs in VIP, JE-math clean, IC pairs in balance, period-close clean for 2026-03), VAT/CWT informational drift correctly tagged ⓘ (₱32,837.15 GL OUTPUT_VAT vs ₱0 VatLedger = expected open-AR VAT for accrual-basis CSIs not yet collected).
+- UI smoke (Playwright, live dev cluster, logged in as president): /erp/agent-dashboard → Accounting Integrity card renders with FREE badge + "Daily 4:00 AM" schedule → Run Now button triggers /api/erp/agents/run → AgentRun record persists with `status='success'`, all 4 strict-check key findings stored, dashboard re-renders showing `success` + summary in both the card and the Recent Agent Runs table.
+
+**Why both agents and not one**:
+- Orphan-ledger answers "did the JE write at all?" (presence check)
+- Accounting-integrity answers "do the JEs that DID write actually balance and reconcile?" (correctness check)
+
+Different invariants, different repair paths. Bundling them would couple their evolutions and make the priority logic tangled. They run on adjacent slots (03:00 and 04:00 Manila) so admin sees them as a related pair without code coupling.
+
+**Subscription-ready posture**:
+- Both agents are entity-scoped (loop over `Entity.find({})`), so a new tenant onboarded mid-year auto-joins both sweeps.
+- All thresholds are lookup-driven via `ACCOUNTING_INTEGRITY_THRESHOLDS` — subscriber admin edits via Control Center, no code change.
+- Recipient resolution uses the existing `notify()` enums (`PRESIDENT`, `ALL_ADMINS`) — no role hardcoding.
+- COA codes come from `Settings.COA_MAP` (already lookup-driven for the JE engine).
+- The "informational" sub-ledger check is the right posture for v1 PH practice; subscribers in pure-accrual or pure-cash jurisdictions flip the lookup flag to make it strict.
+
+**Known follow-ups (deferred)**:
+- AR / AP sub-ledger recon: requires `outstanding_amount` tracking on `SalesLine` (current schema computes outstanding by joining `Collection` allocations). Defer until either the JE-asymmetry fix step 2 lands (`je_status` + Retry button) or the user prioritizes AR aging reports.
+- Inventory recon (Σ `InventoryLedger.running_balance × unit_cost` vs GL `INVENTORY`): requires standard-cost or weighted-average lookup per product. Deferred — out of scope for v1.
+- Auto-trigger on JE.post (vs scheduled cron): would drop detection latency from 24h to seconds, but adds hot-path cost. v1 cron suffices for the BIR-filing-window protection the user asked for.

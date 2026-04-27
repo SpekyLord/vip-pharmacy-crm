@@ -2297,6 +2297,23 @@ const SEED_DEFAULTS = {
     { code: 'GLOBAL', label: 'Cooldown days between overdue notifications for the same task (0 = no dedup)', insert_only_metadata: true, metadata: { days: 1, value: 1 } },
   ],
 
+  // erp/scripts/findAccountingIntegrityIssues.js → loadThresholds()
+  // Apr 2026 — Accounting Integrity Agent thresholds. Subscriber/admin-editable
+  // via Control Center → Lookup Tables. `insert_only_metadata: true` so admin
+  // edits to tolerances or to subledger_enforce survive auto-seed.
+  //   - tb_tolerance: 0.01 covers bank rounding to the cent.
+  //   - je_math_tolerance: 0.01 same rationale (per-row drift from migrations).
+  //   - subledger_tolerance: ₱1.00 covers Centavo-level rounding aggregated
+  //     across many rows; raise carefully — masks real cumulative drift.
+  //   - ic_tolerance: ₱1.00 same rationale for inter-entity netting.
+  //   - subledger_enforce: false default — PH cash-basis VAT (VatLedger) vs
+  //     accrual GL (journalFromSale credits OUTPUT_VAT on Sale POST) diverge
+  //     by design. Flip to true ONLY after the org commits to a single
+  //     recognition basis end-to-end. Otherwise the agent will alarm daily.
+  ACCOUNTING_INTEGRITY_THRESHOLDS: [
+    { code: 'DEFAULT', label: 'Accounting Integrity tolerances + sub-ledger strictness', insert_only_metadata: true, metadata: { tb_tolerance: 0.01, je_math_tolerance: 0.01, subledger_tolerance: 1.00, ic_tolerance: 1.00, subledger_enforce: false } },
+  ],
+
   // agents/complianceDeadlineAgent.js → loadDeadlines()
   // STRUCTURAL metadata (statutory filing dates don't drift per entity) — re-sync
   // on seedAll is desirable so engineering can correct baseline data centrally.
@@ -2322,6 +2339,27 @@ const SEED_DEFAULTS = {
   // GLOBAL fallback. Per-KPI overrides are additional rows with code = KPI_CODE.
   KPI_VARIANCE_THRESHOLDS: [
     { code: 'GLOBAL', label: 'Fallback variance thresholds (applied when no per-KPI row exists)', insert_only_metadata: true, metadata: { warning_pct: 20, critical_pct: 40 } },
+  ],
+
+  // agents/inventoryReorderAgent.js → loadAlertRecipients()
+  // Defines which sub-permission codes route the ENTITY-WIDE inventory roll-up.
+  // Per-BDM personal alerts (one message to each BDM with their warehouse slice)
+  // are unaffected — those stay scoped to bdm_id directly. This list only
+  // controls the strategic "X critical, Y total across the company" digest
+  // that previously hardcoded PRESIDENT.
+  //
+  // Each row's `code` is an ERP_SUB_PERMISSION code. notificationService.js
+  // resolves it via 'BY_SUB_PERMISSION:CODE_A,CODE_B' → users with any of those
+  // sub-perms ticked on their Access Template AND erp_access.enabled=true.
+  // When the lookup is empty OR no user holds the sub-perms yet, the agent
+  // falls back to PRESIDENT so a misconfigured entity never goes silent.
+  //
+  // Lookup-driven (Rule #3) — admin adds/removes rows in Control Center →
+  // Lookup Tables → INVENTORY_ALERT_RECIPIENTS to re-route without code change.
+  // Same pattern unlocks per-agent routing for credit risk, FEFO, FP&A, etc.
+  INVENTORY_ALERT_RECIPIENTS: [
+    { code: 'PURCHASING__PO_CREATE', label: 'Users who can create POs receive entity-wide inventory roll-ups', insert_only_metadata: true, metadata: { kind: 'sub_permission' } },
+    { code: 'PURCHASING__SUPPLIER_INVOICE', label: 'Supplier-invoice handlers receive entity-wide inventory roll-ups', insert_only_metadata: true, metadata: { kind: 'sub_permission' } },
   ],
 
   // Phase G1.5 (Apr 2026) + Phase G1.6 — Per-Diem Rates per-role, subscription-ready.

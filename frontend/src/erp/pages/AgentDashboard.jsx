@@ -14,6 +14,7 @@ import messageService from '../../services/messageInboxService';
 import { Bot, CheckCircle, AlertTriangle, XCircle, Clock, TrendingUp, Calendar, ShieldAlert, DollarSign, FileSearch, Package, CreditCard, FileWarning, Camera, MapPin, Zap, Wallet, LineChart, ShoppingBag, CalendarClock, Users, Database, PackageCheck, Rocket, Target, TrendingDown, BarChart3, Mail } from 'lucide-react';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError, showSuccess } from '../utils/errorToast';
+import Pagination from '../../components/common/Pagination';
 
 const pageStyles = `
   .agd-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -68,7 +69,14 @@ const pageStyles = `
   .agd-empty { text-align: center; padding: 40px; color: var(--erp-muted); font-size: 13px; }
   .agd-loading { text-align: center; padding: 40px; color: var(--erp-muted); }
 
-  @media(max-width: 768px) { .agd-main { padding: 16px; } .agd-cards { grid-template-columns: 1fr; } }
+  .agd-filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 12px; padding: 12px; background: var(--erp-bg, #f4f7fb); border-radius: 8px; border: 1px solid var(--erp-border, #dbe4f0); }
+  .agd-filter { display: flex; flex-direction: column; gap: 4px; }
+  .agd-filter label { font-size: 10px; font-weight: 600; color: var(--erp-muted); text-transform: uppercase; }
+  .agd-filter select, .agd-filter input { padding: 5px 8px; border: 1px solid var(--erp-border); border-radius: 6px; font-size: 12px; background: #fff; min-width: 140px; }
+  .agd-filter-btn { padding: 6px 12px; border: 1px solid var(--erp-border); border-radius: 6px; font-size: 12px; font-weight: 600; background: #fff; color: var(--erp-muted); cursor: pointer; }
+  .agd-filter-btn:hover { background: var(--erp-accent-soft, #e8efff); color: var(--erp-accent); }
+
+  @media(max-width: 768px) { .agd-main { padding: 16px; } .agd-cards { grid-template-columns: 1fr; } .agd-filter select, .agd-filter input { min-width: 110px; } }
 `;
 
 // ─────────────────────────────────────────────────────────────────────
@@ -117,6 +125,12 @@ const AGENT_META = {
   proxy_sla:             { icon: Clock,         color: '#f59e0b', schedule: 'Every 4 hours' },
   // Phase G9.R8 — Inbox Retention (#MR)
   message_retention:     { icon: Mail,          color: '#475569', schedule: 'Daily 2:00 AM' },
+  // Day-4.5 #3 — Orphan Owner Audit
+  orphan_audit:          { icon: ShieldAlert,   color: '#9f1239', schedule: 'Mon 5:15 AM' },
+  // VIP-1.B follow-up — Orphan Ledger Audit
+  orphan_ledger_audit:   { icon: ShieldAlert,   color: '#7f1d1d', schedule: 'Daily 3:00 AM' },
+  // Apr 2026 follow-up — Accounting Integrity (TB / sub-ledger / IC / period-close)
+  accounting_integrity:  { icon: ShieldAlert,   color: '#1e3a8a', schedule: 'Daily 4:00 AM' },
 };
 const DEFAULT_META = { icon: Bot, color: '#64748b', schedule: 'Scheduled' };
 
@@ -140,6 +154,9 @@ function StatusBadge({ status }) {
 
 function fmtDate(d) { return d ? new Date(d).toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'; }
 
+const RUNS_PER_PAGE = 20;
+const EMPTY_FILTERS = { agent_key: '', status: '', from: '', to: '' };
+
 export default function AgentDashboard() {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
@@ -154,7 +171,31 @@ export default function AgentDashboard() {
   // still render (new agents auto-appear on the dashboard).
   const [registry, setRegistry] = useState([]);
 
+  const [runFilters, setRunFilters] = useState(EMPTY_FILTERS);
+  const [runPage, setRunPage] = useState(1);
+  const [runTotal, setRunTotal] = useState(0);
+  const [runsLoading, setRunsLoading] = useState(false);
+
   const isPresidentOrAdmin = [ROLES.PRESIDENT, ROLES.ADMIN].includes(user?.role);
+
+  const loadRuns = useCallback(async (page, filters) => {
+    setRunsLoading(true);
+    try {
+      const params = { page, limit: RUNS_PER_PAGE };
+      if (filters.agent_key) params.agent_key = filters.agent_key;
+      if (filters.status) params.status = filters.status;
+      if (filters.from) params.from = filters.from;
+      if (filters.to) params.to = filters.to;
+      const res = await api.get('/erp/agents/runs', { params });
+      setRuns(res.data?.data || []);
+      setRunTotal(res.data?.pagination?.total || 0);
+    } catch (err) {
+      console.error('[AgentDashboard.loadRuns]', err.message);
+      setRuns([]);
+      setRunTotal(0);
+    }
+    setRunsLoading(false);
+  }, []);
 
   const handleRunNow = async (agentKey) => {
     if (runningAgent) return;
@@ -163,6 +204,7 @@ export default function AgentDashboard() {
       const res = await api.post(`/erp/agents/run/${agentKey}`);
       showSuccess(res.data?.message || `Agent "${agentKey}" completed`);
       load(); // refresh stats
+      loadRuns(runPage, runFilters);
     } catch (err) {
       showError(err, `Agent "${agentKey}" failed`);
     }
@@ -172,14 +214,12 @@ export default function AgentDashboard() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [statsRes, runsRes, msgRes, regRes] = await Promise.all([
+      const [statsRes, msgRes, regRes] = await Promise.all([
         api.get('/erp/agents/runs/stats'),
-        api.get('/erp/agents/runs?limit=10'),
         messageService.getAll({ category: 'ai_coaching,ai_schedule,ai_alert', limit: 20 }),
         api.get('/erp/agents/registry'),
       ]);
       setStats(statsRes.data?.data || null);
-      setRuns(runsRes.data?.data || []);
       setMessages(msgRes.data || []);
       setRegistry(Array.isArray(regRes.data?.data) ? regRes.data.data : []);
     } catch (err) {
@@ -189,6 +229,18 @@ export default function AgentDashboard() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadRuns(runPage, runFilters); }, [loadRuns, runPage, runFilters]);
+
+  const updateFilter = (key, value) => {
+    setRunPage(1);
+    setRunFilters((prev) => ({ ...prev, [key]: value }));
+  };
+  const resetFilters = () => {
+    setRunPage(1);
+    setRunFilters(EMPTY_FILTERS);
+  };
+  const hasActiveFilters = runFilters.agent_key || runFilters.status || runFilters.from || runFilters.to;
+  const runPages = Math.max(1, Math.ceil(runTotal / RUNS_PER_PAGE));
 
   const filteredMsgs = msgTab === 'all' ? messages : messages.filter(m => m.category === msgTab);
 
@@ -314,43 +366,90 @@ export default function AgentDashboard() {
 
               {/* Recent Runs Table */}
               <div className="agd-section">
-                <h2>Recent Agent Runs</h2>
-                {runs.length === 0 ? (
-                  <div className="agd-empty">No agent runs recorded yet. Runs will appear after the next scheduled execution.</div>
-                ) : (
-                  <table className="agd-table">
-                    <thead>
-                      <tr>
-                        <th>Agent</th>
-                        <th>Date</th>
-                        <th>Status</th>
-                        <th>BDMs</th>
-                        <th>Messages</th>
-                        <th>Alerts</th>
-                        <th>Findings</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {runs.map(r => (
-                        <tr key={r._id}>
-                          <td style={{ fontWeight: 600 }}>{r.agent_label}</td>
-                          <td>{fmtDate(r.run_date)}</td>
-                          <td><StatusBadge status={r.status} /></td>
-                          <td>{r.summary?.bdms_processed || 0}</td>
-                          <td>{r.summary?.messages_sent || 0}</td>
-                          <td>{r.summary?.alerts_generated || 0}</td>
-                          <td>
-                            <div className="agd-findings">
-                              {(r.summary?.key_findings || []).slice(0, 2).map((f, i) => (
-                                <div key={i} className="agd-finding">{f}</div>
-                              ))}
-                              {r.error_msg && <div style={{ color: '#dc2626', fontSize: 11 }}>{r.error_msg}</div>}
-                            </div>
-                          </td>
-                        </tr>
+                <h2>Recent Agent Runs {runTotal > 0 && <span style={{ fontSize: 12, fontWeight: 500, color: '#64748b' }}>({runTotal} total)</span>}</h2>
+
+                <div className="agd-filters">
+                  <div className="agd-filter">
+                    <label htmlFor="agd-f-agent">Agent</label>
+                    <select id="agd-f-agent" value={runFilters.agent_key} onChange={(e) => updateFilter('agent_key', e.target.value)}>
+                      <option value="">All agents</option>
+                      {registry.map((r) => (
+                        <option key={r.key} value={r.key}>{r.label || prettifyKey(r.key)}</option>
                       ))}
-                    </tbody>
-                  </table>
+                    </select>
+                  </div>
+                  <div className="agd-filter">
+                    <label htmlFor="agd-f-status">Status</label>
+                    <select id="agd-f-status" value={runFilters.status} onChange={(e) => updateFilter('status', e.target.value)}>
+                      <option value="">All statuses</option>
+                      <option value="success">Success</option>
+                      <option value="partial">Partial</option>
+                      <option value="error">Error</option>
+                    </select>
+                  </div>
+                  <div className="agd-filter">
+                    <label htmlFor="agd-f-from">From</label>
+                    <input id="agd-f-from" type="date" value={runFilters.from} onChange={(e) => updateFilter('from', e.target.value)} />
+                  </div>
+                  <div className="agd-filter">
+                    <label htmlFor="agd-f-to">To</label>
+                    <input id="agd-f-to" type="date" value={runFilters.to} onChange={(e) => updateFilter('to', e.target.value)} />
+                  </div>
+                  {hasActiveFilters && (
+                    <button type="button" className="agd-filter-btn" onClick={resetFilters}>Reset</button>
+                  )}
+                </div>
+
+                {runsLoading ? (
+                  <div className="agd-loading">Loading runs...</div>
+                ) : runs.length === 0 ? (
+                  <div className="agd-empty">
+                    {hasActiveFilters
+                      ? 'No agent runs match the current filters.'
+                      : 'No agent runs recorded yet. Runs will appear after the next scheduled execution.'}
+                  </div>
+                ) : (
+                  <>
+                    <table className="agd-table">
+                      <thead>
+                        <tr>
+                          <th>Agent</th>
+                          <th>Date</th>
+                          <th>Status</th>
+                          <th>BDMs</th>
+                          <th>Messages</th>
+                          <th>Alerts</th>
+                          <th>Findings</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {runs.map(r => (
+                          <tr key={r._id}>
+                            <td style={{ fontWeight: 600 }}>{r.agent_label}</td>
+                            <td>{fmtDate(r.run_date)}</td>
+                            <td><StatusBadge status={r.status} /></td>
+                            <td>{r.summary?.bdms_processed || 0}</td>
+                            <td>{r.summary?.messages_sent || 0}</td>
+                            <td>{r.summary?.alerts_generated || 0}</td>
+                            <td>
+                              <div className="agd-findings">
+                                {(r.summary?.key_findings || []).slice(0, 2).map((f, i) => (
+                                  <div key={i} className="agd-finding">{f}</div>
+                                ))}
+                                {r.error_msg && <div style={{ color: '#dc2626', fontSize: 11 }}>{r.error_msg}</div>}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <Pagination
+                      page={runPage}
+                      pages={runPages}
+                      total={runTotal}
+                      onPageChange={setRunPage}
+                    />
+                  </>
                 )}
               </div>
 

@@ -63,6 +63,18 @@ const AGENT_DEFINITIONS = {
   // wrote (the JE engine throws OUTSIDE the POST transaction, leaving books
   // silently inconsistent). Daily 03:00 — fast detection of BIR-facing leaks.
   orphan_ledger_audit:   { key: 'orphan_ledger_audit',   label: 'Orphan Ledger Audit',            modulePath: './orphanLedgerAuditAgent',     type: 'FREE', schedule: 'Daily 3:00 AM' },
+  // Apr 2026 follow-up — Accounting Integrity Agent (FREE; no AI)
+  // Five strict + one informational check per entity per day:
+  //   (1) Trial balance balanced — STRICT
+  //   (2) Sub-ledger == control account (VAT/CWT) — INFO by default;
+  //       admin flips ACCOUNTING_INTEGRITY_THRESHOLDS.subledger_enforce=true
+  //       once the org commits to a single recognition basis end-to-end.
+  //   (3) JE-row math sanity — STRICT
+  //   (4) Inter-entity over-settled detection — STRICT
+  //   (5) Period-close readiness (drafts in previous month) — STRICT
+  // Daily 04:00 — sandwiched between Orphan Ledger (03:00) and System
+  // Integrity (05:00) so the morning briefings see fresh integrity data.
+  accounting_integrity:  { key: 'accounting_integrity',  label: 'Accounting Integrity',           modulePath: './accountingIntegrityAgent',   type: 'FREE', schedule: 'Daily 4:00 AM' },
 };
 
 const AGENT_KEYS = Object.keys(AGENT_DEFINITIONS);

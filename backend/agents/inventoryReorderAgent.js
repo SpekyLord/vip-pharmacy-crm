@@ -4,6 +4,38 @@
 
 const { notify, countSuccessfulChannels, getInAppMessageIds } = require('./notificationService');
 
+/**
+ * Lookup-driven recipient routing for the entity-wide inventory roll-up.
+ *
+ * Returns the union of sub-permission codes from INVENTORY_ALERT_RECIPIENTS
+ * across all entities (this agent runs globally, not per-entity). Admin edits
+ * the lookup in Control Center to redirect alerts away from PRESIDENT to a
+ * purchasing officer / inventory manager / eBDM-with-purchasing-add-on.
+ *
+ * Tenant-scoping caveat: the entity-wide roll-up message currently aggregates
+ * alerts from every entity into one body. As long as recipient routing pulls
+ * in a centralized purchasing function (typical for VIP today — purchasing
+ * sits at the parent entity with multi-entity access), no tenant data leaks.
+ * For subsidiary purchasing officers with single-entity access, the next
+ * refactor groups alerts by entity_id and sends one message per entity (so
+ * the recipient resolver's entityId filter can clamp visibility). Tracked
+ * as a follow-up — non-blocking for VIP today.
+ */
+async function loadAlertRecipients() {
+  try {
+    const Lookup = require('../erp/models/Lookup');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- global cron: union sub-perm codes across all entities
+    const rows = await Lookup.find({
+      category: 'INVENTORY_ALERT_RECIPIENTS',
+      is_active: true,
+    }).select('code').lean();
+    return [...new Set(rows.map((r) => r.code).filter(Boolean))];
+  } catch (err) {
+    console.warn('[InventoryReorder] loadAlertRecipients failed, falling back to PRESIDENT:', err.message);
+    return [];
+  }
+}
+
 async function run() {
   console.log('[InventoryReorder] Running...');
 
@@ -170,9 +202,37 @@ async function run() {
       body += '\n';
     }
 
+    // Lookup-driven recipient resolution. Probe-then-route so we don't silently
+    // send to nobody when the lookup is configured but no user yet holds the
+    // sub-permissions — fall back to PRESIDENT in that case (same audience as
+    // pre-Apr 2026 behavior).
+    const subPermCodes = await loadAlertRecipients();
+    let primaryRecipient = 'PRESIDENT';
+    if (subPermCodes.length) {
+      const User = require('../models/User');
+      const probeQuery = {
+        isActive: true,
+        'erp_access.enabled': true,
+        $or: subPermCodes
+          .filter((code) => /^[A-Z]+__[A-Z0-9_]+$/.test(code))
+          .map((code) => {
+            const [moduleKey, ...rest] = code.toLowerCase().split('__');
+            const subKey = rest.join('__');
+            return { [`erp_access.sub_permissions.${moduleKey}.${subKey}`]: true };
+          }),
+      };
+      const probeCount = probeQuery.$or.length ? await User.countDocuments(probeQuery) : 0;
+      if (probeCount > 0) {
+        primaryRecipient = `BY_SUB_PERMISSION:${subPermCodes.join(',')}`;
+        console.log(`[InventoryReorder] Routing entity-wide roll-up to ${probeCount} sub-permission holder(s) — codes: ${subPermCodes.join(', ')}`);
+      } else {
+        console.log('[InventoryReorder] INVENTORY_ALERT_RECIPIENTS configured but no user holds the sub-permissions — falling back to PRESIDENT');
+      }
+    }
+
     notificationResults.push(
       ...(await notify({
-        recipient_id: 'PRESIDENT',
+        recipient_id: primaryRecipient,
         title: `Inventory Alerts (${critical.length} critical, ${alerts.length} total)`,
         body,
         category: 'system',
