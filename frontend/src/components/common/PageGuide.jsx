@@ -52,13 +52,16 @@ const PAGE_GUIDES = {
       'View your assigned VIP Clients and their visit status for this cycle',
       'Check which VIP Clients are due for a visit this week',
       'Tap a VIP Client to view their profile, then log a visit',
+      'You can close the app between clinic visits to save battery — the dashboard caches your VIP Client list locally so the next page (and offline visit logging) still works on weak signal',
+      'When you reconnect, queued offline visits sync automatically. You\'ll see a toast ("Synced N visits") and a copy lands in your Inbox so you can audit data spend later',
+      'If a queued visit can\'t replay (e.g., photos lost from local storage), a red "Sync errors (N)" badge appears next to your name — tap it to review and discard',
     ],
     next: [
       { label: 'Log Visit', path: '/bdm/visit/new' },
       { label: 'My Visits', path: '/bdm/visits' },
       { label: 'Call Plan', path: '/bdm/cpt' },
     ],
-    tip: 'VIP Clients marked "Due" should be visited this week. "Carried" means a missed visit from a previous week.',
+    tip: 'VIP Clients marked "Due" should be visited this week. "Carried" means a missed visit from a previous week. Visit logging + partnership presentations work offline; financial / approval pages need WiFi or cellular.',
   },
   'md-leads': {
     title: 'MD Partner Leads',
@@ -151,13 +154,14 @@ const PAGE_GUIDES = {
       'Capture at least one photo as proof of visit (1-10 photos)',
       'GPS location is captured automatically — ensure location services are on',
       'Select products discussed and add any notes',
+      'Tap "Start Presentation" (after picking products) to walk the VIP Client through the partnership deck — both the visit and the pitch are linked automatically',
       'Submit the visit — it will be validated against weekly/monthly limits',
     ],
     next: [
       { label: 'My Visits', path: '/bdm/visits' },
       { label: 'Dashboard', path: '/bdm' },
     ],
-    tip: 'Maximum one visit per VIP Client per week. Photos and GPS are required for every visit.',
+    tip: 'Offline-friendly: photos and form fields auto-save while you work. Submit while offline to queue the visit; it syncs automatically when you reconnect (you\'ll see a toast + an audit entry in your Inbox showing how much mobile data was used). If the VIP Client doesn\'t appear in the offline picker, open them once while online so the dashboard caches the profile. Maximum one visit per VIP Client per week.',
   },
   'call-plan': {
     title: 'Call Plan (CPT)',
@@ -275,6 +279,7 @@ const PAGE_GUIDES = {
   'communication-log': {
     title: 'Communication Log',
     steps: [
+      'Tap "Generate Deck Link" to create a shareable partnership presentation URL — paste it into Viber/Messenger/WhatsApp so a remote VIP Client can view the slides without logging in',
       'Tap "Log Interaction" to record a Viber, Messenger, WhatsApp, Email, or Google Chat conversation',
       'Select the VIP Client or Regular Client you contacted',
       'Choose the channel used and attach 1-10 screenshots as proof',
@@ -286,7 +291,7 @@ const PAGE_GUIDES = {
       { label: 'My Visits', path: '/bdm/visits' },
       { label: 'Dashboard', path: '/bdm' },
     ],
-    tip: 'Screenshots serve as proof of engagement. Once messaging APIs are connected, sent messages are logged automatically.',
+    tip: 'Generated deck links are anonymous + read-only. The VIP Client opens the URL on any browser — no login required. If you log a CommLog right after generating a link, the two records are joined automatically for analytics.',
   },
   'admin-communication-logs': {
     title: 'Communication Logs Overview',
@@ -480,7 +485,7 @@ const PAGE_GUIDES = {
       { label: 'My Visits', path: '/bdm/visits' },
       { label: 'Dashboard', path: '/bdm' },
     ],
-    tip: 'Each product you select shows on slide 5. Mark which ones the VIP Client was interested in before ending the session. Skipping products is allowed — slide 5 will show a neutral empty-state card instead of specific products. If offline, your drafts sync automatically when connectivity returns.',
+    tip: 'Each product you select shows on slide 5. Mark which ones the VIP Client was interested in before ending the session. Skipping products is allowed — slide 5 will show a neutral empty-state card instead of specific products. If offline, your CLM drafts sync automatically when connectivity returns and you\'ll see a confirmation toast + audit entry in your Inbox.',
   },
   'clm-sessions-admin': {
     title: 'CLM Sessions Overview',

@@ -174,6 +174,28 @@ const visitSchema = new mongoose.Schema(
     nextVisitDate: {
       type: Date,
     },
+
+    // ── Phase N — Offline Visit + CLM Merge linkage ─────────────────
+    // Set when a Visit is created from VisitLogger's "Start Presentation" flow.
+    // The CLM session is the "presentation half" of the same encounter; the
+    // Visit row is the "compliance half". Linkage is bidirectional so admin
+    // analytics can travel either direction without joining on a UUID.
+    // Note: explicit sparse index declared below (visitSchema.index calls)
+    clm_session_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'CLMSession',
+    },
+    // Client-generated UUID (matches CLMSession.idempotencyKey) used to
+    // resolve the FK pair when CLM and Visit are submitted from offline
+    // queue replay. The SW replays CLM first, Visit second; the Visit's
+    // create handler looks up the CLMSession by this group_id and stamps
+    // both halves of the pair before saving. Sparse index supports the
+    // lookup without bloating storage for online-only visits.
+    session_group_id: {
+      type: String,
+      trim: true,
+      maxlength: 128,
+    },
   },
   {
     timestamps: true,
@@ -202,6 +224,9 @@ visitSchema.index({ doctor: 1, user: 1, monthYear: 1 }); // For monthly visit co
 visitSchema.index({ doctor: 1, user: 1, monthYear: 1, status: 1 }); // For filtered monthly count queries
 visitSchema.index({ 'photos.hash': 1 }, { sparse: true }); // For duplicate photo detection
 visitSchema.index({ photoFlags: 1 }, { sparse: true }); // For photo audit queries
+// Phase N — sparse so online-only visits don't bloat the index
+visitSchema.index({ clm_session_id: 1 }, { sparse: true });
+visitSchema.index({ session_group_id: 1 }, { sparse: true });
 
 /**
  * Calculate ISO 8601 week number

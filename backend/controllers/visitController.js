@@ -13,6 +13,7 @@ const Visit = require('../models/Visit');
 const Doctor = require('../models/Doctor');
 const CrmProduct = require('../models/CrmProduct');
 const ClientVisit = require('../models/ClientVisit');
+const CLMSession = require('../models/CLMSession');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
 const { canVisitDoctor, canVisitDoctorsBatch, getComplianceReport, getMonthYear, getScheduleMatchForVisit } = require('../utils/validateWeeklyVisit');
 const { MANILA_OFFSET_MS, getWeekOfMonth, getCycleNumber, getCycleStartDate, getCycleEndDate } = require('../utils/scheduleCycleUtils');
@@ -39,6 +40,11 @@ const createVisit = catchAsync(async (req, res) => {
     notes,
     duration,
     nextVisitDate,
+    // Phase N — merged in-person flow: client passes the UUID it generated for
+    // the linked CLMSession.idempotencyKey. visitController resolves the CLM
+    // session by that key and bidirectionally links it. Both fields trim'd
+    // safely below — never trust raw FormData values.
+    session_group_id,
   } = req.body;
 
   // Parse location if it's a JSON string (from FormData)
@@ -239,7 +245,46 @@ const createVisit = catchAsync(async (req, res) => {
       };
     }
 
+    // Phase N — Resolve linked CLMSession by the client-generated UUID.
+    // The "Start Presentation" flow shares the same UUID across CLMSession.
+    // idempotencyKey and Visit.session_group_id. We look up the CLM session,
+    // stamp the CLM ref onto the Visit BEFORE create (so a single .save() lands
+    // it), and back-stamp the Visit ref onto CLMSession AFTER create.
+    //
+    // Lookup is best-effort — if the CLM session isn't found (BDM submitted
+    // visit before CLM finished syncing, or no CLM was started), the visit
+    // still saves with just session_group_id (treat orphan link as recoverable
+    // — a future cleanup script can sweep matching pairs by group_id).
+    const groupIdRaw = typeof session_group_id === 'string' ? session_group_id.trim() : '';
+    let linkedClm = null;
+    if (groupIdRaw && groupIdRaw.length <= 128) {
+      visitData.session_group_id = groupIdRaw;
+      try {
+        linkedClm = await CLMSession.findOne({ idempotencyKey: groupIdRaw });
+        if (linkedClm) {
+          visitData.clm_session_id = linkedClm._id;
+        }
+      } catch (lookupErr) {
+        // Non-fatal: visit still saves; admin can re-link via group_id later
+        console.error('[Phase N] CLM lookup by session_group_id failed:', lookupErr.message);
+      }
+    }
+
     visit = await Visit.create(visitData);
+
+    // Back-stamp Visit ref on the CLM session. Outside the create txn but
+    // idempotent — only sets visit_id if it's currently null, so a duplicate
+    // sync replay won't overwrite a prior pairing.
+    if (linkedClm && !linkedClm.visit_id) {
+      try {
+        linkedClm.visit_id = visit._id;
+        await linkedClm.save();
+      } catch (linkErr) {
+        // Non-fatal: visit is already saved + carries the back-ref. Admin can
+        // run the orphan-pairs sweep to repair the missing reciprocal link.
+        console.error('[Phase N] Back-stamp CLMSession.visit_id failed:', linkErr.message);
+      }
+    }
   } catch (error) {
     // Handle duplicate key error (race condition - another visit was created first)
     if (error.code === 11000) {

@@ -50,6 +50,8 @@ const {
   getAckStatus,
   runRetentionNow,
   previewRetention,
+  // Phase N offline-first sprint
+  recordSystemEvent,
 } = require('../controllers/messageInboxController');
 
 const { protect } = require('../middleware/auth');
@@ -85,6 +87,11 @@ router.post('/compose', composeMessage);
 // Placed before the single-item PATCH routes so the literal paths match first.
 router.patch('/bulk-archive', bulkArchiveMessages);
 router.patch('/read-all', markAllRead);
+
+// ── Phase N offline-first sprint — Self-DM system event recorder ──
+// Authenticated-only; recipient is forced to req.user._id server-side.
+// event_type is allowlisted: sync_complete | sync_error | visit_draft_lost.
+router.post('/system-event', recordSystemEvent);
 
 // ── Single-item write paths (keep after bulk paths to avoid id-capture) ──
 router.post('/:id/reply', replyToMessage);

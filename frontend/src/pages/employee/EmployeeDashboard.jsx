@@ -26,6 +26,14 @@ import messageService from '../../services/messageInboxService';
 import { getWeekOfMonth, getCycleWeekRange } from '../../utils/cycleUtils';
 import PageGuide from '../../components/common/PageGuide';
 import toast from 'react-hot-toast';
+// Phase N — seed IndexedDB doctor cache so NewVisitPage can render offline
+// for any VIP Client the BDM has seen on the dashboard while online.
+import { offlineStore } from '../../utils/offlineStore';
+// Phase N offline-first sprint — toast + inbox-audit on every sync event.
+// Mounted on the BDM dashboard so it's always loaded while they're working.
+import useOfflineSyncListener from '../../hooks/useOfflineSyncListener';
+// Phase N offline-first sprint — sync_errors badge + drawer for VIP_VISIT_DRAFT_LOST
+import SyncErrorsTray from '../../components/employee/SyncErrorsTray';
 
 const dashboardStyles = `
   .main-content h1 {
@@ -479,6 +487,10 @@ const MOBILE_PAGE_SIZE = 10;
 const EmployeeDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  // Toast + inbox audit on every offline-sync event. Idempotent — mounting
+  // it twice across the app would double-fire, but EmployeeDashboard is the
+  // canonical mount point per useOfflineSyncListener.js docstring.
+  useOfflineSyncListener();
   const [doctors, setDoctors] = useState([]);
   const [clients, setClients] = useState([]);
   const [showAddClient, setShowAddClient] = useState(false);
@@ -554,6 +566,11 @@ const EmployeeDashboard = () => {
 
       if (doctorsResult.status === 'rejected') {
         console.error('Failed to fetch doctors:', doctorsResult.reason);
+      } else if (doctorsList.length > 0) {
+        // Phase N — fire-and-forget cache refresh. NewVisitPage falls back
+        // to this cache when offline so the BDM can still log a visit for
+        // any VIP Client they've seen on this dashboard.
+        offlineStore.cacheDoctors(doctorsList).catch(() => { /* non-critical */ });
       }
 
       // Process today's VIP visits - non-critical, use fallback
@@ -691,7 +708,12 @@ const EmployeeDashboard = () => {
         <Sidebar />
         <main className="main-content">
           <PageGuide pageKey="bdm-dashboard" />
-          <h1>Welcome, {user?.name}</h1>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+            <h1 style={{ margin: 0 }}>Welcome, {user?.name}</h1>
+            {/* Phase N offline-first sprint — sync errors badge. Renders only
+                when there's >0 unresolved row in the local sync_errors store. */}
+            <SyncErrorsTray />
+          </div>
 
           {error && (
             <ErrorMessage

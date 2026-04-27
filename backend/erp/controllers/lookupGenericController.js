@@ -2671,6 +2671,62 @@ const SEED_DEFAULTS = {
     { code: 'IMPORT',               label: 'Bulk Import',          insert_only_metadata: true, metadata: { sort_order: 4, description: 'Loaded via migration script.' } },
     { code: 'OTHER',                label: 'Other',                insert_only_metadata: true, metadata: { sort_order: 5, description: 'Catch-all — note the actual source in attribution notes.' } },
   ],
+
+  // Phase N offline-first sprint — list of URL prefixes the OfflineRouteGuard
+  // blocks when the device is offline. Each `code` is treated as a prefix.
+  // Subscribers can add/remove rows via Control Center → Lookup Tables
+  // without a code deployment (Rule #3, subscription-readiness). Frontend
+  // falls back to DEFAULT_OFFLINE_REQUIRED in OfflineRouteGuard.jsx if the
+  // category is empty/missing — no risk of silently letting financial pages
+  // through during a Lookup outage.
+  //
+  // Rationale for blocking each prefix is on the row's metadata.description.
+  // Lookup-driven so the future Pharmacy SaaS spin-out can start with a
+  // narrower or wider set per tenant.
+  OFFLINE_REQUIRED_PATHS: [
+    { code: '/erp/expenses',          label: 'Expenses (financial — needs Approval Hub)',   insert_only_metadata: true, metadata: { sort_order: 10,  description: 'Expense submission goes through the Approval Hub authority gate. Queueing offline would break period-lock + double-posting guarantees.' } },
+    { code: '/erp/prfcalf',           label: 'PRF / CALF (financial)',                       insert_only_metadata: true, metadata: { sort_order: 20,  description: 'Petty cash + cash advance liquidations route through the same approval engine as expenses. Online-only.' } },
+    { code: '/erp/smer',              label: 'SMER (financial — per-diem)',                  insert_only_metadata: true, metadata: { sort_order: 30,  description: 'Per-diem cycles emit JEs and trigger BIR / payroll touches on submit. Online-only.' } },
+    { code: '/erp/car-logbook',       label: 'Car Logbook (fuel reimbursement)',             insert_only_metadata: true, metadata: { sort_order: 40,  description: 'Fuel receipts post to the per-month car-logbook ledger; queueing is incompatible with monthly close.' } },
+    { code: '/erp/approvals',         label: 'Approval Hub',                                 insert_only_metadata: true, metadata: { sort_order: 50,  description: 'Approve / reject decisions ratify financial postings. Must be done with the authoritative server state.' } },
+    { code: '/erp/control-center',    label: 'ERP Control Center',                           insert_only_metadata: true, metadata: { sort_order: 60,  description: 'Settings / lookups / agent config change shared state. Online-only to keep cache invalidation deterministic.' } },
+    { code: '/erp/people',            label: 'HR — People records',                          insert_only_metadata: true, metadata: { sort_order: 70,  description: 'PII updates need server validation + audit logging.' } },
+    { code: '/erp/payroll',           label: 'Payroll runs',                                 insert_only_metadata: true, metadata: { sort_order: 80,  description: 'Payroll posts JEs + BIR + government contributions. Online-only.' } },
+    { code: '/erp/banking',           label: 'Banking / Bank Accounts',                      insert_only_metadata: true, metadata: { sort_order: 90,  description: 'Bank reconciliation requires live snapshots.' } },
+    { code: '/erp/journal-entries',   label: 'Manual Journal Entries',                       insert_only_metadata: true, metadata: { sort_order: 100, description: 'Custom JEs hit the GL directly.' } },
+    { code: '/erp/period-locks',      label: 'Period Locks',                                 insert_only_metadata: true, metadata: { sort_order: 110, description: 'Lock / unlock decisions affect every poster.' } },
+    { code: '/erp/sales/entry',       label: 'Sales — New CSI',                              insert_only_metadata: true, metadata: { sort_order: 120, description: 'Sales submission posts inventory + AR + JE in one transaction.' } },
+    { code: '/erp/sales/opening-ar',  label: 'Opening AR entry',                             insert_only_metadata: true, metadata: { sort_order: 130, description: 'Opening balances need server-side validation against the entity\'s chart of accounts.' } },
+    { code: '/erp/grn',               label: 'GRN — Goods Receipt',                          insert_only_metadata: true, metadata: { sort_order: 140, description: 'GRN posts inventory + AP. Approval-gated.' } },
+    { code: '/erp/undertaking',       label: 'Undertaking Hub',                              insert_only_metadata: true, metadata: { sort_order: 150, description: 'Undertaking approvals shift stock between BDMs.' } },
+    { code: '/erp/dr',                label: 'Delivery Receipts',                            insert_only_metadata: true, metadata: { sort_order: 160, description: 'DR converts to invoice; needs live customer state.' } },
+    { code: '/erp/collections',       label: 'Collections session / AR',                     insert_only_metadata: true, metadata: { sort_order: 170, description: 'Receipts post to AR + bank ledger.' } },
+    { code: '/erp/transfer-orders',   label: 'IC Transfer Orders',                           insert_only_metadata: true, metadata: { sort_order: 180, description: 'Inter-company transfers cross entity boundaries.' } },
+    { code: '/erp/credit-notes',      label: 'Credit Notes',                                 insert_only_metadata: true, metadata: { sort_order: 190, description: 'Credit notes reverse AR + recompute VAT chain.' } },
+    { code: '/erp/customers',         label: 'Customer Master',                              insert_only_metadata: true, metadata: { sort_order: 200, description: 'Master data writes need entity-scoped validation.' } },
+    { code: '/erp/vendors',           label: 'Vendor Master',                                insert_only_metadata: true, metadata: { sort_order: 210, description: 'Master data writes need entity-scoped validation.' } },
+    { code: '/erp/purchase-orders',   label: 'Purchase Orders',                              insert_only_metadata: true, metadata: { sort_order: 220, description: 'PO posts AP commitments.' } },
+    { code: '/erp/petty-cash',        label: 'Petty Cash',                                   insert_only_metadata: true, metadata: { sort_order: 230, description: 'Cash float reconciliation needs live state.' } },
+    { code: '/erp/income',            label: 'Income (BDM)',                                 insert_only_metadata: true, metadata: { sort_order: 240, description: 'Income posting drives payroll and KPIs.' } },
+    { code: '/admin/control-center',  label: 'Admin Control Center (CRM)',                   insert_only_metadata: true, metadata: { sort_order: 300, description: 'CRM settings change shared state across all BDMs.' } },
+    { code: '/admin/settings',        label: 'CRM Settings',                                 insert_only_metadata: true, metadata: { sort_order: 310, description: 'Same rationale as Control Center — admin writes affect every user.' } },
+  ],
+
+  // Phase N offline-first sprint — title/body templates for the self-DM
+  // system-event endpoint (POST /api/messages/system-event). When an entity
+  // wants to localize the wording or add a custom event_type, edit the rows
+  // here. Server falls back to inline DEFAULT_EVENT_TEMPLATES in
+  // backend/controllers/messageInboxController.js if the lookup is missing.
+  //
+  // Templates use {variable} substitution; the renderer fills:
+  //   {synced} {bytes} {bytes_human} {megabytes} {remaining}
+  //   {draft_id} {reason} {kind_label} {completed_at}
+  // Unknown variables render empty.
+  SYSTEM_EVENT_TEMPLATES: [
+    { code: 'SYNC_COMPLETE', label: 'Auto-sync completed', insert_only_metadata: true, metadata: { sort_order: 10, category: 'system', priority: 'low', titleTemplate: 'Synced {synced} {kind_label} (~{megabytes} MB)', bodyTemplate: 'Your offline drafts replayed automatically when connectivity returned.\n\nItems synced: {synced}\nApprox data used: {megabytes} MB ({bytes_human}).\nPending: {remaining}\nCompleted at: {completed_at}', description: 'Fired after every non-empty replay run. Drives the auto-sync inbox audit trail so BDMs can audit data spend.' } },
+    { code: 'SYNC_ERROR', label: 'Sync error (generic)', insert_only_metadata: true, metadata: { sort_order: 20, category: 'system', priority: 'normal', titleTemplate: 'Offline sync error — {kind_label} could not replay', bodyTemplate: 'A queued offline item could not be restored or accepted by the server.\n\nKind: {kind_label}\nReason: {reason}\nReference: {draft_id}\n\nOpen the Sync Errors tray on your dashboard to retry or discard.', description: 'Generic catch-all for sync failures other than visit-photos-lost.' } },
+    { code: 'VISIT_DRAFT_LOST', label: 'Visit draft photos lost', insert_only_metadata: true, metadata: { sort_order: 30, category: 'system', priority: 'normal', titleTemplate: 'Visit draft photos lost — please re-capture', bodyTemplate: 'A queued offline visit could not be replayed because its photos are no longer available locally (browser storage may have been cleared).\n\nReference: {draft_id}\nReason: {reason}\n\nOpen the Sync Errors tray on your dashboard to dismiss this entry.', description: 'Specifically the VIP_VISIT_DRAFT_LOST path from sw.js when rebuildVisitFormData returns null.' } },
+  ],
 };
 
 // List all distinct categories for current entity
