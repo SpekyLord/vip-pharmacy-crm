@@ -1,7 +1,7 @@
 # VIP ERP - Project Context
 
-> **Last Updated**: April 26, 2026
-> **Version**: 7.2
+> **Last Updated**: April 27, 2026
+> **Version**: 7.3
 > **Status**: Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G6 + G6.1 + G1.5 + H1-H5 + Phase 34 + Phase 3a + Phase 3c Complete. Phase G6.1 (Apr 26, 2026): **People Master Entity Lifecycle** — Transfer Home + Grant/Revoke endpoints + visibility union on People List (home ∪ User.entity_ids span ∪ active FRA holders). Two new danger-baseline sub-perms `people.transfer_entity` + `people.grant_entity`. Lookback days lookup-driven (`PEOPLE_LIFECYCLE_CONFIG.TRANSFER_BLOCK_LOOKBACK_DAYS`, default 90). Three new `AuditLog` enum values for full lineage. Closes the write-side gap left open by Phase G6 (which only made reads honor the entity selector). Phase G6 (Apr 26, 2026): **Master-data entity-scope honoring**. People Master list now respects the top-right entity selector for president-likes (was silently cross-entity). New `resolveEntityScope` helper + `CROSS_ENTITY_VIEW_ROLES` lookup category gate explicit `?cross_entity=true` opt-in by per-module role allowlist (default `['president','ceo']`). 60s cache + bust-on-lookup-write. Pattern ready for vendor/customer/hospital lists. Phase 3c (Apr 18, 2026): **Comprehensive hardcoded-role migration** — 30 destructive endpoints across ~15 modules now use `erpSubAccessCheck(module, key)` instead of `roleCheck('admin','finance','president')`. Baseline danger set grew 1 → 10 keys; 19 new sub-perms appear in the Access Template editor (period force-unlock, year-end, settings write, transfer pricing, people terminate/login mgmt, master data deactivate/delete, lookup deletes, etc.). Phase 3a (Apr 18, 2026): **Lookup-driven Danger Sub-Permission Gate + President-Reverse rollout**. Hardcoded `roleCheck('president')` on destructive endpoints replaced with `erpSubAccessCheck('accounting','reverse_posted')` so subsidiaries can delegate to CFO/Finance via Access Template editor without a code change. Rollout adds per-module `/president-reverse` routes to Expenses (ORE/ACCESS), PRF/CALF, and Petty Cash — on top of the existing Sales + Collection endpoints. Baseline danger set stays hardcoded (platform safety floor); subscribers extend via ERP_DANGER_SUB_PERMISSIONS lookup (5-min cache, busted on lookup write). Phase G5 (Apr 18, 2026): Fixed privileged-user BDM filter fallback bug in 9 ERP endpoints.
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
@@ -215,6 +215,54 @@ When the consultant delivers the gap list, the concrete work gets its own Phase 
 | G1.3 | Employee Payslip `deduction_lines[]` Parity — shared sub-schema + Personal Gas for logbook-eligible employees + `/payroll/:id/breakdown` + lazy backfill for historical payslips | ✅ |
 | G1.4 | Employee DeductionSchedule wiring (INSTALLMENT N/M on Payslip) + Finance per-line add/verify/correct/reject UI + IncomeReport shared-schema convergence | ✅ |
 | S2 | Staff role rename: `employee`/`contractor`/`bdm` → `staff` (User.role + Lookup.metadata.roles). Migration script two-phase atomic. OwnerPicker filter made lookup-driven (Rule #3). ROLES.CONTRACTOR kept as deprecated alias during transition. | ✅ |
+
+---
+
+## Phase N (Offline-First Sprint) — Apr 27, 2026
+
+Built on top of the original Phase N (Offline Visit + CLM Merge + Public Deck, commit `3f1b4a8`). The sprint elevates "offline visit log works" → "BDMs can run their entire field-day on weak Globe signal without touching the server, then audit data spend after they sync."
+
+### Five surface areas shipped on `feat/phase-n-offline-visit-clm-merge`
+
+1. **Foundation unblock** (`a77ae2d`) — `NewVisitPage` now uses `Promise.allSettled` instead of `Promise.all`, falls back to `offlineStore.getCachedDoctors()` on network failure, and stubs `canVisit` so `<VisitLogger>` renders. `EmployeeDashboard` seeds `offlineStore.cacheDoctors()` after the dashboard fetch so the offline picker has data for any VIP Client the BDM has seen.
+2. **Offline auth survival** (`c818b62`) — `vip-offline-data` IndexedDB v3 → v4 with `auth_session` + `sync_errors` stores. `AuthContext.initAuth` distinguishes 401 (genuine logout → /login) from network failure (offline → rehydrate from cache). `login()` writes the profile back so the next reload survives. Logout + forced-logout clear it.
+3. **Auto-sync inbox + toast** (`b09a70f`) — `sw.js` `replayQueue` tracks `{ syncedCount, syncedKinds, approxBytes }` per replay run; broadcasts in `VIP_SYNC_COMPLETE`. `offlineManager` exposes `onSyncComplete(cb)` + `onVisitDraftLost(cb)`. `useOfflineSyncListener` (mounted on `EmployeeDashboard`) renders a toast and POSTs to `/api/messages/system-event` for an inbox audit trail. Backend route + controller `recordSystemEvent` is **self-DM only** (recipient forced to `req.user._id`, event_type allowlisted, title/body rendered server-side from a template — clients can't inject arbitrary inbox content).
+4. **ERP offline-block guard** (`ce219fa`) — single `<OfflineRouteGuard>` wraps `<Routes>` once; reads `useLocation()` and matches against `OFFLINE_REQUIRED_PATHS` lookup (with `DEFAULT_OFFLINE_REQUIRED` inline fallback). When offline + matched, short-circuits to a "needs WiFi or cellular" panel with Back-to-Dashboard / Sync-Now actions. Preserves Visit / CLM / Dashboard / MyVisits as offline-capable.
+5. **Sync errors tray** (`4fbc375`) — `<SyncErrorsTray />` mounts on the BDM dashboard. `<SyncErrorsBadge />` renders only when `sync_errors` store has rows. Drawer lists each failure with Discard / Discard-all (no Retry — the photo blobs are gone by definition; the BDM has to re-capture). Inbox audit copy is preserved on Discard so admin can still see device history.
+
+Plus: PageGuide banners updated for `bdm-dashboard`, `new-visit`, `partnership-clm` + new `sync-errors-tray` key (`32f7f64`); `OFFLINE_REQUIRED_PATHS` + `SYSTEM_EVENT_TEMPLATES` lookups seeded with `insert_only_metadata: true` so admin edits survive re-seeds (`32fd470`).
+
+### Why the lookup-driven posture
+
+`OFFLINE_REQUIRED_PATHS` and `SYSTEM_EVENT_TEMPLATES` both follow the Phase G6 / MD_PARTNER_ROLES pattern: lazy-seeded inline defaults, admin-tunable per entity via Control Center → Lookup Tables, frontend falls back to a hardcoded constant on Lookup outage so the page never silently lets the wrong path through. Future Pharmacy SaaS spin-out tenants can ship with their own offline posture without a code change.
+
+### What stays out of scope (deliberate, per Apr 27 user Q&A)
+
+- **Photo compression** (1080px JPEG Q70 → ~4× data reduction). Recommended, not in this sprint. User can add when needed.
+- **Per-BDM `sync_preference` column** (wifi_only / always / manual). Designed; not built — Globe-prepaid BDMs without home WiFi need `always` as the default and the toggle becomes a guess that orphans corner cases.
+- **Cellular vs WiFi detection via `navigator.connection.type`** — not needed since user picked auto-sync regardless of network type.
+- **Making expenses / approvals offline-capable** — explicitly refused. Approval Hub guarantees + period-lock + double-posting risk make queued financial writes hostile.
+
+### Key files (offline-first sprint scope)
+
+- `frontend/src/utils/offlineStore.js` — IndexedDB schema + auth_session + sync_errors APIs
+- `frontend/src/utils/offlineManager.js` — `onSyncComplete` + `onVisitDraftLost` listener pools
+- `frontend/src/context/AuthContext.jsx` — offline rehydration + cache writes
+- `frontend/src/hooks/useOfflineSyncListener.js` — toast + inbox-audit (mount once)
+- `frontend/src/components/common/OfflineRouteGuard.jsx` — Routes-root guard + `useOfflineBlocked` hook
+- `frontend/src/components/employee/SyncErrorsTray.jsx` — badge + drawer
+- `frontend/public/sw.js` — replay stats tracking, VIP_SYNC_COMPLETE payload
+- `backend/controllers/messageInboxController.js` — `recordSystemEvent` self-DM endpoint
+- `backend/routes/messageInbox.js` — `POST /api/messages/system-event`
+- `backend/erp/controllers/lookupGenericController.js` — `OFFLINE_REQUIRED_PATHS` + `SYSTEM_EVENT_TEMPLATES` SEED_DEFAULTS
+
+### Pre-merge checklist before `dev`
+
+- 3-walk pilot (per the original Phase N handoff guidance)
+- Rebase on top of latest VIP-1.B Phase 4 changes
+- Healthcheck script `backend/scripts/healthcheckOfflineVisitWiring.js` returns 0
+- Playwright smoke confirms login → close → reopen offline → log visit → reconnect → toast + inbox entry
+- Confirm IndexedDB schema migration v3 → v4 fires cleanly in a Chromium devtools session
 
 ---
 

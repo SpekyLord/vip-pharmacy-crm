@@ -8451,3 +8451,98 @@ Phase N is a **CRM-side phase**; full detail lives in `~/.claude/plans/phase-n-o
 - Phase N healthcheck: `node backend/scripts/healthcheckOfflineVisitWiring.js` — 8/8 green at ship.
 - System health: `node scripts/check-system-health.js` baseline preserved (1 pre-existing `orphan_audit` enum mismatch, unrelated to Phase N).
 - Playwright UI smoke: **see Phase N.7** in the plan file.
+
+---
+
+## Phase N — Offline-First Sprint (April 27, 2026) ✅ SHIPPED (CRM-side, branch `feat/phase-n-offline-visit-clm-merge`)
+
+### Goal
+
+Elevate "offline visit log works" → "BDMs can run their entire field-day on weak Globe signal without touching the server, then audit data spend after they sync." Born from a user report that the original Phase N didn't actually let visits be logged offline because `Promise.all([doctorService.getById, visitService.canVisit])` threw on `getById` and the page rendered the error block before `<VisitLogger>` mounted.
+
+### What shipped (in commit order on the worktree)
+
+1. **Foundation unblock** (commit `a77ae2d`)
+   - `NewVisitPage`: `Promise.allSettled` instead of `Promise.all`; on offline + network failure, read the doctor from `offlineStore.getCachedDoctors()` and stub `canVisit: { canVisit: true, offlineFallback: true }` so VisitLogger renders.
+   - `EmployeeDashboard`: seeds `offlineStore.cacheDoctors()` after the dashboard fetch so the offline picker has data for any VIP Client the BDM has seen.
+   - Justification: server-side `Visit` unique index `{doctor, user, yearWeekKey}` enforces weekly limit authoritatively at SW replay time.
+
+2. **Offline auth survival** (commit `c818b62`)
+   - `vip-offline-data` IndexedDB v3 → v4 with `auth_session` (single 'current' row) + `sync_errors` stores.
+   - `AuthContext.initAuth` distinguishes 401 (genuine) from network failure (offline rehydrate from `offlineStore.getCachedCurrentUser()`).
+   - `login()` writes the profile back; logout + forced-logout (auth:logout from API interceptor) clear it.
+   - Server-side role gates remain authoritative — stale cached profiles only affect which UI screens render until the next online API call refreshes.
+
+3. **Auto-sync inbox + toast** (commit `b09a70f`)
+   - `sw.js` `replayQueue` tracks `{ syncedCount, syncedKinds, approxBytes }`; sums photo blob sizes BEFORE deletion so the byte counter is a defensible lower bound. Stats included in `VIP_SYNC_COMPLETE` payload + returned from `replayQueue()`. 4xx drops + 409/E11000 dedups DON'T count toward synced (not user-visible wins).
+   - `offlineManager.onSyncComplete(cb)` channel surfacing full stats; `onVisitDraftLost(cb)` distinct from legacy auth-required bubbler.
+   - **`POST /api/messages/system-event`** — auth-only, recipient FORCED to `req.user._id`, `event_type` allowlist (`sync_complete | sync_error | visit_draft_lost`). Title/body rendered server-side from a template, lookup-driven via `SYSTEM_EVENT_TEMPLATES`. 204 returned on noise events (`sync_complete` with `synced=0`). Standard pre-save hook lands the row in `folderForCategory('system')`.
+   - `useOfflineSyncListener` (mounted on `EmployeeDashboard`) renders toast + writes inbox audit.
+
+4. **ERP offline-block guard** (commit `ce219fa`)
+   - `<OfflineRouteGuard>` wraps `<Routes>` once at the App root.
+   - On offline + path-prefix-match against `OFFLINE_REQUIRED_PATHS` lookup (or inline `DEFAULT_OFFLINE_REQUIRED` fallback), short-circuits to a "needs WiFi or cellular" panel.
+   - Exposes `useOfflineBlocked(pathname)` hook for future sidebar dim-pass.
+   - 26-prefix default list covers all financial / approval / settings surfaces. Visit / CLM / Dashboard / MyVisits remain offline-capable.
+
+5. **Sync errors tray** (commit `4fbc375`)
+   - `<SyncErrorsTray />` mounts on BDM dashboard. `<SyncErrorsBadge />` renders only when `sync_errors` store has rows.
+   - Drawer: each failure shows kind label, message, age, doctor name (if present), draft id hint. Discard / Discard-all actions. **No Retry** — original photo blobs are gone by definition; honest workflow is "re-capture from VisitLogger."
+   - Inbox audit copy preserved on Discard so admin retains device history.
+
+6. **Banner copy + lookup seeds** (commits `32f7f64` + `32fd470`)
+   - PageGuide entries updated for `bdm-dashboard`, `new-visit`, `partnership-clm`; new `sync-errors-tray` pseudo-key.
+   - `OFFLINE_REQUIRED_PATHS` (26 default rows) + `SYSTEM_EVENT_TEMPLATES` (3 default rows) seeded with `insert_only_metadata: true` so admin edits survive future re-seeds. Subscribers tune per-entity via Control Center → Lookup Tables.
+
+### Why no per-feature flag and no WiFi-only default
+
+Per the Apr 27 user Q&A:
+
+- "they close the app during visit to save battery" → app must survive close-and-reopen offline (Item 2)
+- "auto detect" → no manual offline toggle; `offlineManager.init()` listens to `online`/`offline` events
+- "I think auto sync is ok as long as they are informed and message is sent in their inbox" → toast + inbox audit (Item 3)
+- "a [block ERP with clear needs WiFi/cellular message]" → OfflineRouteGuard (Item 4)
+- "b [persistent badge on dashboard, tap to review] then send message to inbox" → SyncErrorsTray (Item 5)
+
+WiFi-only default rejected because BDMs without home WiFi (Globe-prepaid only) would be orphaned. Photo compression + `User.sync_preference` deferred — recommended but not in this sprint.
+
+### Anti-patterns refused
+
+- Making expenses / approvals / settings offline-capable. Approval Hub guarantees + period-locks + double-posting risk make queued financial writes hostile.
+- Background polling on cellular for any feature.
+- Sending raw camera-resolution photos.
+- "Retry" in the sync errors tray when the original photo blobs are gone.
+
+### Files
+
+Frontend:
+- `src/utils/offlineStore.js` — schema bump + auth_session + sync_errors APIs
+- `src/utils/offlineManager.js` — `onSyncComplete` + `onVisitDraftLost` channels
+- `src/context/AuthContext.jsx` — offline rehydration + cache writes
+- `src/hooks/useOfflineSyncListener.js` — toast + inbox-audit (mount once)
+- `src/components/common/OfflineRouteGuard.jsx` — Routes-root guard + `useOfflineBlocked` hook
+- `src/components/employee/SyncErrorsTray.jsx` — badge + drawer
+- `src/pages/employee/NewVisitPage.jsx` — Promise.allSettled + offline fallback
+- `src/pages/employee/EmployeeDashboard.jsx` — seeded cache + `<SyncErrorsTray />` mount + `useOfflineSyncListener()` mount
+- `src/components/common/PageGuide.jsx` — banner copy updates
+- `src/App.jsx` — `<OfflineRouteGuard>` wraps `<Routes>`
+- `public/sw.js` — replay stats tracking
+
+Backend:
+- `controllers/messageInboxController.js` — `recordSystemEvent` self-DM endpoint
+- `routes/messageInbox.js` — `POST /api/messages/system-event`
+- `erp/controllers/lookupGenericController.js` — `OFFLINE_REQUIRED_PATHS` + `SYSTEM_EVENT_TEMPLATES` SEED_DEFAULTS
+
+### Verification
+
+- Build: `npx vite build` clean (~11s).
+- Backend syntax: `node -c` clean across all modified backend files.
+- Phase N healthcheck: `backend/scripts/healthcheckOfflineVisitWiring.js` (existing) still passes — no contract drift.
+- Playwright UI smoke planned (login → close → reopen offline → log visit → reconnect → toast + inbox).
+
+### Pre-merge to dev
+
+- 3-walk pilot per the original Phase N handoff guidance.
+- Rebase on top of latest VIP-1.B Phase 4 changes (this branch is BEHIND dev by all VIP-1.B commits).
+- Confirm IndexedDB schema migration v3 → v4 fires cleanly.
+- DO NOT push without explicit user authorization (this sprint is on a worktree branch).
