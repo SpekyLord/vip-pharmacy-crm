@@ -5582,3 +5582,46 @@ Day 3's observation-mode plugins are now mode-switchable and production-loud:
 - **Day 4.5 #3 — Orphan Audit Agent** ([backend/agents/orphanAuditAgent.js](backend/agents/orphanAuditAgent.js)) wraps the read-only [findOrphanedOwnerRecords.js](backend/erp/scripts/findOrphanedOwnerRecords.js) sweep into a weekly cron (Mon 05:15 Manila, registered as `orphan_audit`). Reuses the same Day-4 `notify()` plumbing — PRESIDENT (in_app + email) + ALL_ADMINS (in_app only), `compliance_alert` category, priority escalates to `high` past 50 orphans. Surfaces silent regressions of the Phase G4.5d / Rule #21 fingerprint without depending on an operator to run the script. See `docs/PHASETASK-ERP.md` (`WEEK-1 STABILIZATION — DAY 4.5 #3`) for the full file list and verification.
 
 See `docs/PHASETASK-ERP.md` (`WEEK-1 STABILIZATION — DAY 4`) for the full file list, the integrity verification (135 tests / 22 suites green), and the recursion-safety trace through `notify → MessageInbox.create → preSaveAckDefault → Lookup.find`.
+
+
+---
+
+## Phase VIP-1.J — BIR Tax Compliance Suite (planned, started Apr 27 2026)
+
+**Goal**: replace the bookkeeper-as-black-box workflow with a president-facing BIR Compliance Dashboard + per-form copy-paste UX into eBIR Forms + `.dat` exports for Alphalist Data Entry + loose-leaf Books of Accounts PDFs. Covers VIP, Balai Lawaan, online pharmacy, MG, CO, and future SaaS subscribers.
+
+**Locked decisions** (Apr 27 conversation):
+- Filing channel: copy-paste totals into eBIR Forms (no eFPS), `.dat` for Alphalist Data Entry (SAWT/QAP/1604-CF/1604-E), PDF for loose-leaf books.
+- All entities are Corporations → 1702 annual income tax, VAT-registered (12
+
+---
+
+## Phase VIP-1.J — BIR Tax Compliance Suite (planned, started Apr 27 2026)
+
+**Goal**: replace the bookkeeper-as-black-box workflow with a president-facing BIR Compliance Dashboard + per-form copy-paste UX into eBIR Forms + `.dat` exports for Alphalist Data Entry + loose-leaf Books of Accounts PDFs. Covers VIP, Balai Lawaan, online pharmacy, MG, CO, and future SaaS subscribers.
+
+**Locked decisions** (Apr 27 conversation):
+- Filing channel: copy-paste totals into eBIR Forms (no eFPS), `.dat` for Alphalist Data Entry (SAWT/QAP/1604-CF/1604-E), PDF for loose-leaf books.
+- All entities are Corporations -> 1702 annual income tax, VAT-registered (12%).
+- Filing chain: President reviews `bir_flag` -> finance bundles -> external bookkeeper files -> BIR confirmation lands in `yourpartner@viosintegrated.net` (CEO inbox).
+- Email-confirmation bridge ON — parser flips dashboard cards FILED -> CONFIRMED.
+- Subscription-ready from day 1 — every artifact entity-scoped, lookup-driven.
+- Withholding on contractors NOT active today; engine built but switch flipped per-entity (`Entity.withholding_active`) and per-contractor (`PeopleMaster.withhold_active`); auto-trips on PS eligibility.
+- Build for rent (1606) and VAT-exempt meds (RA 11534) NOW — pharmacy/SaaS will need them.
+
+**Phasing**: J0 (dashboard + foundation, ~3-4 d) -> J1 (2550M/Q VAT, ~2 d) -> J2 (1601-EQ + 1606 + 2307 + SAWT, ~3 d) -> J3 (1601-C + 1604-CF, ~1.5 d) -> J4 (QAP + 1604-E, ~2 d) -> J5 (Books of Accounts, ~2 d) -> J6 (inbound 2307 reconciliation, ~1 d) -> J7 (1702 helper, ~1.5 d). ~16 working days.
+
+**Why J0 first**: data-quality and visibility are the actual bottleneck, not export logic. Without the dashboard we just hand the bookkeeper more reports and the president still flies blind.
+
+**New surfaces**:
+- Page: `/erp/bir` (president + admin + finance + new `bookkeeper` role)
+- Models: `BirFilingStatus`, `BirDataQualityRun`, `WithholdingLedger`
+- Lookups: `BIR_FORMS_CATALOG`, `BIR_FILING_STATUS`, `BIR_ATC_CODES`, `BIR_ROLES`
+- Helpers: `backend/utils/birAccess.js` (mirrors `scpwdAccess.js`)
+- Agents: `birDataQualityAgent` (nightly + on-demand)
+- Permission: `bookkeeper` role — taxes-only access, no payroll/commission visibility
+- Period-lock module: `BIR_FILING` added to `PeriodLock.module` enum
+
+**Pattern reuse**: `scpwdSalesBookController` + `scpwdReportingService` + `scpwdAccess` are the templates. New BIR module is a generalization of VIP-1.H (which is one of seven forms in this suite).
+
+**Plan**: `~/.claude/plans/vip-1-j-bir-compliance.md` (detailed file-level breakdown, J0-J7 sub-steps, open questions, handoff guidance).
