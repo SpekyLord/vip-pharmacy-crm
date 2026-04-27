@@ -148,16 +148,14 @@ mdProductRebateSchema.pre('save', async function (next) {
       );
     }
 
-    // Gate 3: rebate_pct <= MAX_MD_REBATE_PCT (lookup-driven).
-    // Lazy-import Settings to avoid a startup cycle.
-    const Settings = mongoose.model('Settings');
-    const setting = await Settings.findOne({
-      entity_id: this.entity_id,
-      key: 'MAX_MD_REBATE_PCT',
-    })
-      .select('value')
-      .lean();
-    const max = Number(setting?.value ?? 25); // sane default if the setting row hasn't been seeded
+    // Gate 3: rebate_pct <= MAX_MD_REBATE_PCT.
+    // Settings is the singleton ErpSettings model (registered as 'ErpSettings',
+    // not 'Settings' — caught by Playwright smoke when mongoose.model('Settings')
+    // threw "Schema hasn't been registered"). MAX_MD_REBATE_PCT lives directly
+    // on the singleton schema (default 25); admin raises via Control Center.
+    const Settings = require('./Settings');
+    const settings = await Settings.getSettings();
+    const max = Number(settings?.MAX_MD_REBATE_PCT ?? 25);
     if (this.rebate_pct > max) {
       return next(
         new Error(

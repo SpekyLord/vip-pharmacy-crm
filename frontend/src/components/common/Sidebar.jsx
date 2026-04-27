@@ -1062,6 +1062,14 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
               // Route guard admin-only; backend layers lookup-driven SCPWD_ROLES
               // per gate so finance/president can be added per entity.
               { path: '/admin/scpwd-sales-book', label: 'SC/PWD Sales Book', icon: ShieldCheck },
+              // Phase VIP-1.B Phase 4 — Rebate + Commission matrix admin + Payout ledger.
+              // Route guard admin-only; backend layers lookup-driven
+              // REBATE_ROLES / COMMISSION_ROLES per endpoint.
+              { path: '/admin/rebate-matrix', label: 'MD Rebate Matrix', icon: Target },
+              { path: '/admin/non-md-rebate-matrix', label: 'Non-MD Rebate', icon: Target },
+              { path: '/admin/capitation-rules', label: 'Capitation', icon: Target },
+              { path: '/admin/commission-matrix', label: 'Commission Matrix', icon: Trophy },
+              { path: '/admin/payout-ledger', label: 'Payout Ledger', icon: Wallet },
               { path: '/admin/settings', label: 'Programs', icon: Settings },
             ],
           },
