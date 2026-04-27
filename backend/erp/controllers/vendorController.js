@@ -64,15 +64,26 @@ const create = catchAsync(async (req, res) => {
 
 const update = catchAsync(async (req, res) => {
   req.body.updated_by = req.user._id;
+  // Match create-side normalization: an empty vendor_code must be UNSET, not stored as ''.
+  // The partial unique index `{entity_id, vendor_code}` only fires when vendor_code is a
+  // string, so '' counts and collides with every other vendor that also has '' in the
+  // same entity (legacy rows from before the create-side strip). $unset keeps the field
+  // out of the index entirely.
+  const codeIsBlank = Object.prototype.hasOwnProperty.call(req.body, 'vendor_code')
+    && (!req.body.vendor_code || !String(req.body.vendor_code).trim());
+  if (codeIsBlank) delete req.body.vendor_code;
   // Validate COA code if being updated
   if (req.body.coa_code) {
     const coaCheck = await validateCoaCode(req.body.coa_code, req.entityId);
     if (!coaCheck.valid) return res.status(400).json({ success: false, message: coaCheck.message });
   }
   const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
+  const updateOps = codeIsBlank
+    ? { $set: req.body, $unset: { vendor_code: '' } }
+    : { $set: req.body };
   const vendor = await VendorMaster.findOneAndUpdate(
     { _id: req.params.id, ...entityScope },
-    { $set: req.body },
+    updateOps,
     { new: true, runValidators: true }
   );
   if (!vendor) return res.status(404).json({ success: false, message: 'Vendor not found' });
