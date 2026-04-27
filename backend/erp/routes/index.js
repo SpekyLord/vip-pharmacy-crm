@@ -144,6 +144,14 @@ router.use('/deduction-schedules', erpAccessCheck('reports'), require('./deducti
 // ═══ Phase 8 — Dashboard & Reports ═══
 router.use('/dashboard', erpAccessCheck('reports'), require('./dashboardRoutes'));
 
+// ═══ Phase EC-1 — Executive Cockpit (CFO/CEO/COO at-a-glance) ═══
+// Page-level gate is lookup-driven (EXECUTIVE_COCKPIT_ROLES.VIEW_COCKPIT) per
+// Rule #3, applied inside cockpitRoutes via requireCockpitRole. No
+// erpAccessCheck wrapper here — the cockpit is its own access surface and
+// shouldn't be coupled to the 'reports' module flag (a finance user without
+// the reports module should still see their financial cockpit).
+router.use('/cockpit', require('./cockpitRoutes'));
+
 // ═══ Phase 14 — New Reports & Analytics ═══
 router.use('/reports', erpAccessCheck('reports'), require('./erpReportRoutes'));
 

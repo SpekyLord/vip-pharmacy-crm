@@ -697,12 +697,19 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
   const sections = [];
 
   // ── ERP Home (always visible, no header) ─────────────────────────────────
+  // Phase EC-1 — Executive Cockpit pinned at the top for management roles.
+  // Lookup-driven gate (EXECUTIVE_COCKPIT_ROLES.VIEW_COCKPIT) decides backend
+  // access; sidebar visibility uses ROLE_SETS.MANAGEMENT for fast UI gate.
+  // Subscribers who add a `cfo` or `coo` role to MANAGEMENT will see this
+  // automatically; they extend lookup roles for the backend gate separately.
+  const erpHomeItems = [{ path: '/erp', label: 'ERP Home', icon: Briefcase }];
+  if (ROLE_SETS.MANAGEMENT.includes(role)) {
+    erpHomeItems.unshift({ path: '/erp/cockpit', label: 'Executive Cockpit', icon: BarChart3 });
+  }
   sections.push({
     title: null,
     collapsible: false,
-    items: [
-      { path: '/erp', label: 'ERP Home', icon: Briefcase },
-    ],
+    items: erpHomeItems,
   });
 
   // ── Sales ──────────────────────────────────────────────────────────────────

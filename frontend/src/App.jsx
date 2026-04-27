@@ -199,6 +199,9 @@ const Collaterals = lazyRetry(() => import('./erp/pages/Collaterals'));
 const ControlCenter = lazyRetry(() => import('./erp/pages/ControlCenter'));
 const AgentDashboard = lazyRetry(() => import('./erp/pages/AgentDashboard'));
 
+// Phase EC-1 — Executive Cockpit (CFO/CEO/COO at-a-glance)
+const ExecutiveCockpit = lazyRetry(() => import('./erp/pages/ExecutiveCockpit'));
+
 // Phase 28 — Approval Workflow
 const ApprovalManager = lazyRetry(() => import('./erp/pages/ApprovalManager'));
 
@@ -1071,6 +1074,8 @@ function App() {
           {/* Phase 24 — ERP Control Center + Agent Intelligence */}
           <Route path="/erp/control-center" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><ControlCenter /></ProtectedRoute>} />
           <Route path="/erp/agent-dashboard" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><AgentDashboard /></ProtectedRoute>} />
+          {/* Phase EC-1 — Executive Cockpit. ROLE_SETS.MANAGEMENT covers admin/finance/president; the controller defers to lookup-driven VIEW_COCKPIT for fine-grained access (Rule #3). */}
+          <Route path="/erp/cockpit" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><ExecutiveCockpit /></ProtectedRoute>} />
           <Route path="/erp/approvals" element={<ProtectedRoute requiredErpModule="approvals"><ApprovalManager /></ProtectedRoute>} />
           <Route path="/erp/role-assignments" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><RoleAssignmentManager /></ProtectedRoute>} />
 

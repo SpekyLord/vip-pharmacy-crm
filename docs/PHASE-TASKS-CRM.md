@@ -1346,3 +1346,92 @@ Foundation for the MD-rebate moat. Discovery is automated (Rx OCR + storefront c
 - Click-to-view for run rows (drill into full key_findings + error stack on a single run): deferred. Data is already on `AgentRun.summary` / `AgentRun.error_msg`; UI is one modal away.
 - Sort toggle on Recent Agent Runs (newest first vs by agent name): deferred. Backend already sorts `run_date: -1`; subscribers haven't asked for grouping yet.
 
+---
+
+## Phase EC-1 — Executive Cockpit (CFO/CEO/COO at-a-glance) — April 28, 2026
+
+> **Status**: SHIPPED on `feat/executive-cockpit`. Wiring + syntax verified. Vite full-bundle and Playwright smoke deferred to post-merge (worktree limitation, see Verification section).
+
+### Why
+
+Apr 28 audit of the CRM/ERP dashboard landscape (commit context: post-G9.R10 c7a2bef on `dev`) identified:
+1. **CRM and ERP dashboards correctly separated** — CRM dashboards live under `/admin/*` and `/employee/*`, ERP dashboards live under `/erp/*`. No cross-contamination.
+2. **Real C-suite gap**: 19 ERP dashboards scattered by domain (Sales Goals, Consignment, Expiry, IC AR, Cycle Status, P&L, Agent, etc.) but NO single roll-up surface. CFO/CEO/COO had to click through 5+ dashboards each morning to know "is anything on fire today / are we trending right."
+3. **KPI duplication risk** flagged: visits/engagements counted differently in CRM Visit vs ERP SALES_GOALS_ENGAGEMENT, AR/IC AR overlap, inventory entity- vs warehouse-scoped. The cockpit avoids this by being a pure aggregator over canonical sources — never re-computes, only rolls up.
+4. Four orphan dashboards exist as routes but aren't sidebar-linked (KpiLibrary, KpiSelfRating, CycleReports — each `/erp/*`). Tracked separately, not bundled into EC-1.
+
+### What
+
+Single page at `/erp/cockpit` with 10 tiles in two tiers, lookup-driven role gates, and per-tile error containment.
+
+**Tier-1 (always shown if user has scope)**:
+- Cash position (BankAccount + PettyCashFund) — top-3 accounts
+- AR aging (5 buckets via `arEngine.getArAging`) — over-90% trend + top-3 overdue hospitals
+- AP aging (5 buckets via `apService.getApAging`) — over-90% + top-3 vendors
+- Period close % complete (via `monthEndClose.getCloseProgress`)
+- Approval queue depth + SLA breaches (>48h pending)
+- Agent health (failing/stale per `agent_key` over last 30d)
+
+**Tier-2**:
+- Gross margin % (via `dashboardService.getMtd().gross_margin` — same number as `/erp` shows)
+- Inventory turns + days-on-hand
+- MD partnership funnel (LEAD/CONTACTED/VISITED/PARTNER counts + conversion %)
+- BIR calendar (overdue + due-in-30d + filed-this-quarter)
+
+Every tile is clickable, drilling into the canonical detail page (`/erp/banking`, `/erp/collections/ar`, `/erp/purchasing/ap`, `/erp/month-end-close/:period`, `/erp/approvals`, `/erp/agent-dashboard`, `/erp/pnl`, `/erp/my-stock`, `/admin/md-leads`, `/admin/bir`).
+
+### Files (8 new + 4 modified)
+
+**New**:
+- `backend/utils/executiveCockpitAccess.js` — role-gate helper (mirrors birAccess.js / scpwdAccess.js pattern; 60s cache TTL; lookup-driven)
+- `backend/erp/services/cockpitService.js` — aggregator with `Promise.allSettled` per-tile error containment + 10 individual tile getters
+- `backend/erp/controllers/cockpitController.js` — single endpoint that resolves VIEW_FINANCIAL/VIEW_OPERATIONAL scopes and dispatches to service
+- `backend/erp/routes/cockpitRoutes.js` — mounts `requireCockpitRole('VIEW_COCKPIT')` gate
+- `backend/scripts/healthcheckExecutiveCockpit.js` — 42-assertion static wiring check
+- `frontend/src/erp/pages/ExecutiveCockpit.jsx` — page (Tier-1 + Tier-2 grids, 60s auto-refresh, click-through tiles, color thresholds)
+- `frontend/src/erp/hooks/useCockpit.js` — fetcher
+
+**Modified**:
+- `backend/erp/controllers/lookupGenericController.js` — `EXECUTIVE_COCKPIT_ROLES` SEED_DEFAULTS entry (3 codes: VIEW_COCKPIT, VIEW_FINANCIAL, VIEW_OPERATIONAL) + cache invalidation hooked into all 4 mutation sites
+- `backend/erp/routes/index.js` — mounts `/cockpit` after `/dashboard`
+- `frontend/src/App.jsx` — lazy import + ROLE_SETS.MANAGEMENT-gated route
+- `frontend/src/components/common/Sidebar.jsx` — Executive Cockpit pinned at the top of the ERP sidebar for management roles
+- `frontend/src/erp/components/WorkflowGuide.jsx` — `WORKFLOW_GUIDES['cockpit']` banner with 7 steps + 5 next-step links + tip
+
+### Lookup-driven (Rule #3)
+
+`EXECUTIVE_COCKPIT_ROLES` Lookup category, 3 codes:
+- **VIEW_COCKPIT** — page-level gate. Default: admin/finance/president.
+- **VIEW_FINANCIAL** — gates Cash, AR aging, AP aging, Period close, Margin tiles. Default: same. Subscribers can revoke from operations roles to keep COA confidentiality while granting page access.
+- **VIEW_OPERATIONAL** — gates Approval SLA, Inventory turns, Agent health, Partnership funnel, BIR calendar tiles. Default: same. Branch-manager-style roles can hold this without VIEW_FINANCIAL.
+
+A subscriber adds `cfo` to all three lookup rows + adds `cfo` to `ROLE_SETS.MANAGEMENT` (the only code-side change), and a CFO-role user instantly sees the cockpit. Future refactor: lookup-drive `ROLE_SETS.MANAGEMENT` itself to remove the last code touch (out-of-scope here).
+
+### Subscription-readiness posture (Rule #0d)
+
+- Every tile query is `entity_id`-scoped (the eventual `tenant_id`). No cross-entity bleed.
+- Hardcoded role names appear ONLY in the helper's `DEFAULT_*` arrays, used as fallbacks if the Lookup row is missing or empty (lazy-seed catches this on first read).
+- New tile = new entry in `TILES` registry inside `getCockpit()`. No schema change, no new route.
+- Per-tile error containment = high availability — degraded upstreams don't dark the cockpit.
+- AR aging tile honors Rule #21: privileged users get entity-wide AR (passes `null` bdm_id). Never silently falls back to `req.bdmId`.
+
+### Verification (Rule 0b)
+
+- **Healthcheck**: `node backend/scripts/healthcheckExecutiveCockpit.js` → 42/42 ✓ (access helper exports, lookup invalidation at all 4 sites, SEED_DEFAULTS rows, service exports + Promise.allSettled, controller scope-resolution, route gate, routes/index mount, App.jsx, Sidebar, WorkflowGuide).
+- **Backend syntax**: `node -c` clean on all 8 backend files (helper, service, controller, route, lookupGenericController, routes/index, healthcheck).
+- **Frontend syntax**: `esbuild.transformSync` (the same parser Vite uses) clean on all 5 frontend files (ExecutiveCockpit.jsx, useCockpit.js, WorkflowGuide.jsx, Sidebar.jsx, App.jsx).
+- **Vite full bundle: NOT verified inside the worktree**. Vite walks up to the main repo's root looking for a project root and lands on a `node_modules` that doesn't have vite installed (only `frontend/node_modules` does). Junctions don't help because Vite resolves real paths. Run `npm run build` from `frontend/` after merging to dev to confirm — esbuild parse + healthcheck wiring leave a low residual risk, but it's not zero.
+- **Playwright UI smoke: deferred** — same blocker (no live dev server in the worktree). Smoke checklist (post-merge):
+  1. login as `yourpartner@viosintegrated.net` → ERP sidebar shows "Executive Cockpit" pinned at top
+  2. /erp/cockpit renders Tier-1 grid (6 tiles) and Tier-2 grid (4 tiles)
+  3. auto-refresh ticks at 60s without console error
+  4. tile click-through navigates to detail page
+  5. login as a non-management role (`s3.vippharmacy@gmail.com` BDM) → /erp/cockpit returns 403 from API and the sidebar pin is hidden
+
+### Open items
+
+- Post-merge: run `cd frontend && npm run build` from main repo to validate Vite full bundle.
+- Post-merge: Playwright smoke per checklist above.
+- Future: lookup-drive `ROLE_SETS.MANAGEMENT` so adding a `cfo` role takes zero code changes (currently 1-line edit in `frontend/src/constants/roles.js`).
+- Future: per-user tile preferences (drag-to-reorder, pin/hide). Out-of-scope today; cockpit ships with a fixed Tier-1 → Tier-2 ordering for predictability.
+
