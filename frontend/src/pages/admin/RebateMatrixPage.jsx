@@ -16,7 +16,17 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import PageGuide from '../../components/common/PageGuide';
 import doctorService from '../../services/doctorService';
+import productService from '../../services/productService';
 import rebateCommissionService from '../../erp/services/rebateCommissionService';
+
+// Format real product label per Rule #4: brand + (generic) + dosage
+function formatProductLabel(p) {
+  if (!p) return '';
+  const brand = p.name || '';
+  const generic = p.genericName ? ` (${p.genericName})` : '';
+  const dosage = p.dosage ? ` ${p.dosage}` : '';
+  return `${brand}${generic}${dosage}`.trim();
+}
 
 const fmtPct = (n) => `${(Number(n || 0)).toFixed(2)}%`;
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-PH', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
@@ -28,6 +38,7 @@ export default function RebateMatrixPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [filterActive, setFilterActive] = useState('true'); // 'true' | 'false' | ''
   const [partnerDoctors, setPartnerDoctors] = useState([]);
+  const [products, setProducts] = useState([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -57,8 +68,21 @@ export default function RebateMatrixPage() {
     }
   }, []);
 
+  // Load real products from website DB so admin picks brand+generic+dosage
+  // (Rule #4: never just brand_name — always show full identifier).
+  const loadProducts = useCallback(async () => {
+    try {
+      const res = await productService.getAll({ limit: 1000 });
+      setProducts(res?.data || []);
+    } catch (err) {
+      console.warn('Failed to load products:', err.message);
+      setProducts([]);
+    }
+  }, []);
+
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadPartners(); }, [loadPartners]);
+  useEffect(() => { loadProducts(); }, [loadProducts]);
 
   const handleDeactivate = async (id, label) => {
     if (!window.confirm(`Deactivate "${label}"? Future Collection rebates will stop matching this rule.`)) return;
@@ -180,6 +204,7 @@ export default function RebateMatrixPage() {
       {showCreate && (
         <CreateRebateModal
           partners={partnerDoctors}
+          products={products}
           onClose={() => setShowCreate(false)}
           onCreated={() => { setShowCreate(false); load(); }}
         />
@@ -188,7 +213,7 @@ export default function RebateMatrixPage() {
   );
 }
 
-function CreateRebateModal({ partners, onClose, onCreated }) {
+function CreateRebateModal({ partners, products, onClose, onCreated }) {
   const [form, setForm] = useState({
     doctor_id: '',
     product_id: '',
@@ -263,16 +288,30 @@ function CreateRebateModal({ partners, onClose, onCreated }) {
 
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12, marginBottom: 12 }}>
           <div>
-            <label style={{ display: 'block', fontSize: 12, color: '#475569', marginBottom: 4 }}>Product ID (Mongo ObjectId — copy from /erp/products)</label>
-            <input
-              type="text"
+            <label style={{ display: 'block', fontSize: 12, color: '#475569', marginBottom: 4 }}>Product (brand + generic + dosage)</label>
+            <select
               value={form.product_id}
-              onChange={(e) => setForm({ ...form, product_id: e.target.value })}
+              onChange={(e) => {
+                const pid = e.target.value;
+                const p = products.find(x => x._id === pid);
+                // Auto-fill product_label from real product (Rule #4: brand + generic + dosage).
+                setForm({ ...form, product_id: pid, product_label: formatProductLabel(p) });
+              }}
               required
-              placeholder="65f1...4a2c"
-              pattern="[0-9a-fA-F]{24}"
-              style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #cbd5e1', fontFamily: 'monospace' }}
-            />
+              style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #cbd5e1' }}
+            >
+              <option value="">Select product…</option>
+              {products.map(p => (
+                <option key={p._id} value={p._id}>
+                  {formatProductLabel(p)}
+                </option>
+              ))}
+            </select>
+            {products.length === 0 && (
+              <div style={{ fontSize: 11, color: '#b45309', marginTop: 4 }}>
+                No products loaded. Check /admin/products or website DB connection.
+              </div>
+            )}
           </div>
           <div>
             <label style={{ display: 'block', fontSize: 12, color: '#475569', marginBottom: 4 }}>Rebate %</label>
@@ -288,16 +327,12 @@ function CreateRebateModal({ partners, onClose, onCreated }) {
           </div>
         </div>
 
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', fontSize: 12, color: '#475569', marginBottom: 4 }}>Product label (display)</label>
-          <input
-            type="text"
-            value={form.product_label}
-            onChange={(e) => setForm({ ...form, product_label: e.target.value })}
-            placeholder="Brand 500mg Tablet"
-            style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #cbd5e1' }}
-          />
-        </div>
+        {form.product_label && (
+          <div style={{ marginBottom: 12, padding: '8px 10px', background: '#f1f5f9', borderRadius: 6, fontSize: 12 }}>
+            <span style={{ color: '#64748b' }}>Stored label: </span>
+            <strong>{form.product_label}</strong>
+          </div>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
           <div>

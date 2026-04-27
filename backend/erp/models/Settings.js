@@ -41,6 +41,10 @@ const settingsSchema = new mongoose.Schema({
   // Products
   MD_MAX_PRODUCT_TAGS: { type: Number, default: 3 },
 
+  // Phase VIP-1.B — MD Rebate ceiling (Tier-A 3-gate gate-3). Subscriber/admin
+  // can raise via Control Center → Settings if a special-case MD warrants it.
+  MAX_MD_REBATE_PCT: { type: Number, default: 25 },
+
   // Consignment
   CONSIGNMENT_AGING_DEFAULT: { type: Number, default: 90 },
 
