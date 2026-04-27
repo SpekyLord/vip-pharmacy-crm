@@ -111,6 +111,19 @@ const communicationLogSchema = new mongoose.Schema(
       default: 'logged',
     },
 
+    // ── Phase N — Remote deck link reference ────────────────────────
+    // Set by the BDM CommLog page's "Generate CLM Deck Link" button: a
+    // remote-mode CLMSession is created, the public URL is copied to the
+    // BDM's clipboard for sharing, and the CLMSession._id is stamped here
+    // so analytics can see which CommLogs led to a remote pitch open. The
+    // public deck route updates the CLMSession.deckOpenedAt/deckOpenCount
+    // when the recipient actually loads the link.
+    // Note: explicit sparse index declared below (communicationLogSchema.index calls)
+    clm_session_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'CLMSession',
+    },
+
     // AI-assisted unmatched inbound message fields
     pendingAssignment: { type: Boolean, default: false },
     senderExternalId: { type: String, trim: true },
@@ -163,6 +176,8 @@ communicationLogSchema.index({ channel: 1, contactedAt: -1 });
 communicationLogSchema.index({ user: 1, status: 1, contactedAt: -1 });
 communicationLogSchema.index({ externalMessageId: 1 }, { sparse: true });
 communicationLogSchema.index({ pendingAssignment: 1, contactedAt: -1 }, { sparse: true });
+// Phase N — sparse so non-CLM CommLogs (the majority) don't bloat the index
+communicationLogSchema.index({ clm_session_id: 1 }, { sparse: true });
 
 // ── Virtuals ──
 communicationLogSchema.virtual('clientType').get(function () {

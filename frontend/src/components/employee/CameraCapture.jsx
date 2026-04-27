@@ -12,6 +12,10 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import exifr from 'exifr';
+// Phase N — Optional offline persistence (only triggers when caller passes
+// a draftId prop). Importing eagerly is safe; offlineStore opens IndexedDB
+// lazily on the first call.
+import { offlineStore } from '../../utils/offlineStore';
 
 const cameraStyles = `
   .camera-capture {
@@ -311,7 +315,38 @@ const compressImage = (dataUrl, maxDimension = 1024, quality = 0.5) => {
   });
 };
 
-const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
+// Phase N — convert a data URL to a Blob without going through fetch()
+// (fetch on data: URLs is supported in modern browsers but iOS Safari has
+// occasional flakiness; this synchronous conversion is more reliable).
+const dataUrlToBlob = (dataUrl) => {
+  if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) return null;
+  const [meta, base64] = dataUrl.split(',');
+  if (!base64) return null;
+  const mimeMatch = /data:([^;]+)/.exec(meta);
+  const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+  try {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * @param {object} props
+ * @param {function} props.onCapture - (photos) => void; emits the array
+ *        of captured photos. When draftId is set, each entry carries a
+ *        `photoRef` (photo_<uuid>) pointing at the persisted Blob.
+ * @param {number} [props.maxPhotos=5]
+ * @param {string} [props.draftId] - Phase N: when provided, captured photos
+ *        are immediately persisted as Blobs in offlineStore.visit_photos
+ *        and the `photoRef` is added to each emitted entry. Required for
+ *        the SW's multipart-replay path. Online callers (NewVisitPage)
+ *        omit this prop and continue using the existing data-URL contract.
+ */
+const CameraCapture = ({ onCapture, maxPhotos = 5, draftId }) => {
   const [photos, setPhotos] = useState([]);
   const [isCapturing, setIsCapturing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -517,12 +552,35 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
         // Use device GPS if available, fall back to EXIF GPS from photo
         const photoLocation = cachedLocation || exifMeta.exifLocation || null;
 
-        newPhotoEntries.push({
+        const entry = {
           data: compressedData,
           location: photoLocation,
           capturedAt: exifMeta.capturedAt,
           source,
-        });
+        };
+
+        // Phase N — Offline persistence. Only fires when caller opts in
+        // via draftId. Failures here are non-fatal; the photo still lives
+        // in component state as a data URL, and the online submit path
+        // doesn't depend on the Blob anyway.
+        if (draftId) {
+          try {
+            const blob = dataUrlToBlob(compressedData);
+            if (blob) {
+              const ref = await offlineStore.saveVisitPhoto(blob, {
+                draftId,
+                capturedAt: entry.capturedAt,
+                source,
+                gps: photoLocation,
+              });
+              entry.photoRef = ref;
+            }
+          } catch (persistErr) {
+            console.warn('[CameraCapture] Phase N blob persist failed:', persistErr);
+          }
+        }
+
+        newPhotoEntries.push(entry);
       }
 
       if (newPhotoEntries.length > 0) {
@@ -637,6 +695,24 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
         source: 'camera',
       };
 
+      // Phase N — Offline persistence (opt-in via draftId).
+      if (draftId) {
+        try {
+          const blob = dataUrlToBlob(photoData);
+          if (blob) {
+            const ref = await offlineStore.saveVisitPhoto(blob, {
+              draftId,
+              capturedAt: photoWithGps.capturedAt,
+              source: 'camera',
+              gps: location,
+            });
+            photoWithGps.photoRef = ref;
+          }
+        } catch (persistErr) {
+          console.warn('[CameraCapture] Phase N blob persist failed:', persistErr);
+        }
+      }
+
       const newPhotos = [...photos, photoWithGps];
       setPhotos(newPhotos);
       onCapture?.(newPhotos);
@@ -653,9 +729,18 @@ const CameraCapture = ({ onCapture, maxPhotos = 5 }) => {
   };
 
   const removePhoto = (index) => {
+    const removed = photos[index];
     const newPhotos = photos.filter((_, i) => i !== index);
     setPhotos(newPhotos);
     onCapture?.(newPhotos);
+
+    // Phase N — Drop the persisted Blob too. Best-effort; if it fails the
+    // 7-day age-eviction sweep cleans orphans up.
+    if (removed?.photoRef) {
+      offlineStore.deleteVisitPhoto(removed.photoRef).catch(() => {
+        // ignore — orphan will age out
+      });
+    }
   };
 
   const formatAccuracy = (meters) => {

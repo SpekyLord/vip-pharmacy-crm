@@ -8,8 +8,8 @@
  * 4. After session, record notes + interest level + product interest
  * 5. View past session history
  */
-import { useState, useEffect, useCallback, useMemo } from 'react';
-// react-router-dom navigate available if needed
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import CLMPresenter from '../../components/employee/CLMPresenter';
@@ -47,6 +47,16 @@ import {
 const PartnershipCLM = () => {
   const { user } = useAuth();
   useOffline(); // initializes offline listeners; OfflineBanner consumes state via its own hook
+
+  // Phase N — Query params from VisitLogger's "Start Presentation" jump.
+  // session_group_id is the same UUID that becomes Visit.session_group_id
+  // and CLMSession.idempotencyKey, joining the two halves of the encounter.
+  const [searchParams] = useSearchParams();
+  const incomingDoctorId = searchParams.get('doctorId');
+  const incomingGroupId = searchParams.get('session_group_id');
+  const incomingProductsCsv = searchParams.get('products') || '';
+  // Pin once so the prefill doesn't re-fire on every render — pure observability.
+  const prefilledRef = useRef(false);
 
   // ── State ─────────────────────────────────────────────────────
   const [doctors, setDoctors] = useState([]);
@@ -138,6 +148,28 @@ const PartnershipCLM = () => {
     fetchData();
   }, [fetchData]);
 
+  // Phase N — Auto-prefill when arriving from VisitLogger's "Start
+  // Presentation" jump. Once the doctors + products lists are loaded,
+  // resolve the IDs from the query string and skip straight to step='products'
+  // so the BDM doesn't have to re-pick what they already chose.
+  useEffect(() => {
+    if (prefilledRef.current) return;
+    if (!incomingDoctorId || doctors.length === 0) return;
+    const doc = doctors.find((d) => String(d._id) === String(incomingDoctorId));
+    if (!doc) return;
+    prefilledRef.current = true;
+    setSelectedDoctor(doc);
+    if (incomingProductsCsv) {
+      const ids = incomingProductsCsv
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      setSelectedProductIds(new Set(ids));
+    }
+    setStep('products');
+    setTab('present');
+  }, [incomingDoctorId, incomingProductsCsv, doctors]);
+
   // Fetch per-entity CLM branding once the user is loaded. Fire-and-forget:
   // if this fails (offline, network error), CLMPresenter falls back to
   // CLM_DEFAULTS and the pitch still launches — no blocking.
@@ -219,8 +251,20 @@ const PartnershipCLM = () => {
       const productIds = Array.from(selectedProductIds);
 
       if (navigator.onLine) {
-        // Online: normal API flow
-        const res = await clmService.startSession(selectedDoctor._id, location, productIds);
+        // Online: normal API flow.
+        // Phase N — pass the inbound session_group_id (from VisitLogger
+        // "Start Presentation") as idempotencyKey so visitController can
+        // resolve the linked CLMSession by that same UUID at submit time.
+        // Generates a fresh key when standalone (no incomingGroupId).
+        const idempotencyKey = incomingGroupId
+          || `clm_${Date.now()}_${selectedDoctor._id}_${Math.random().toString(36).slice(2, 10)}`;
+        const res = await clmService.startSession(
+          selectedDoctor._id,
+          location,
+          productIds,
+          idempotencyKey,
+          'in_person',
+        );
         setActiveSession(res.data);
       } else {
         // Offline: create a local draft session

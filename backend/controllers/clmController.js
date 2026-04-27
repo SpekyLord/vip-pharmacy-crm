@@ -68,10 +68,16 @@ const resolveEntityId = (req) => {
 
 // ── Start a new CLM session ───────────────────────────────────────
 const startSession = asyncHandler(async (req, res) => {
-  const { doctorId, location, productIds } = req.body;
+  const { doctorId, location, productIds, mode } = req.body;
   if (!doctorId) {
     return res.status(400).json({ success: false, message: 'doctorId is required' });
   }
+
+  // Phase N — mode validation. 'in_person' (default) keeps the existing
+  // behavior; 'remote' is for shareable deck links sent via Viber/Messenger/
+  // WhatsApp from the BDM's CommLog page. Any other value falls back to
+  // 'in_person' (avoids 400 on a hostile/buggy client value).
+  const sessionMode = mode === 'remote' ? 'remote' : 'in_person';
 
   // Idempotency check — prevent duplicate offline syncs
   // If client sends X-Idempotency-Key header, check if a session with that key already exists.
@@ -121,9 +127,13 @@ const startSession = asyncHandler(async (req, res) => {
       doctor: doctorId,
       ...(entityId ? { entity_id: entityId } : {}),
       startedAt: new Date(),
-      location: location || {},
+      // Remote sessions never carry GPS — they're sent via shareable URL.
+      // Discard any incoming location field so it can't be back-filled by
+      // a hostile client to fake an in-person attribution.
+      location: sessionMode === 'remote' ? {} : (location || {}),
       productsPresented,
       status: 'in_progress',
+      mode: sessionMode,
       ...(idempotencyKey ? { idempotencyKey } : {}),
     });
   } catch (err) {
@@ -328,6 +338,102 @@ const markQrScanned = asyncHandler(async (req, res) => {
   session.qrScannedAt = new Date();
   await session.save();
   res.json({ success: true, data: session });
+});
+
+// ── Phase N — Public deck viewer (anonymous, no JWT) ────────────────
+// GET /api/clm/deck/:id — mounted OUTSIDE router.use(protect). Returns a
+// branding-hydrated payload + a minimal session-view record for read-only
+// rendering by DeckViewerPage.jsx. The endpoint is rate-limited per IP at
+// the route layer (see clmRoutes.js); this handler enforces the data shape
+// guarantees:
+//   - Only sessions in mode='remote' are exposed publicly. in-person sessions
+//     are NEVER returned by this route — those decks are presented live by
+//     the BDM and don't need a shareable URL.
+//   - PII redaction: VIP Client first name only, no BDM email/phone, no GPS.
+//   - Stamps deckOpenedAt + increments deckOpenCount each call. Idempotent
+//     for analytics — even if the same recipient refreshes 10 times we still
+//     count opens (intentional; visibility into engagement matters).
+//   - 404s on bad/expired IDs and on in-person sessions to prevent enumeration.
+const getPublicDeck = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  // Validate ObjectId shape FIRST so we don't leak existence vs malformed-id
+  // distinctions to drive-by attackers.
+  const mongoose = require('mongoose');
+  if (!id || !mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(404).json({ success: false, message: 'Deck not found.' });
+  }
+
+  // Only remote-mode sessions are publicly viewable. in-person sessions
+  // get a 404 even if the ID is correct — keeps the public surface narrow.
+  const session = await CLMSession.findOne({ _id: id, mode: 'remote' })
+    .populate('doctor', 'firstName')
+    .populate('user', 'firstName lastName')
+    .populate('entity_id', 'name');
+
+  if (!session) {
+    return res.status(404).json({ success: false, message: 'Deck not found.' });
+  }
+
+  // Stamp open analytics. Best-effort save — if it fails, still return the
+  // deck (analytics is observability, not a blocker for the recipient).
+  try {
+    session.deckOpenedAt = new Date();
+    session.deckOpenCount = (session.deckOpenCount || 0) + 1;
+    await session.save();
+  } catch (analyticsErr) {
+    console.error('[Phase N] Public deck open analytics save failed:', analyticsErr.message);
+  }
+
+  // Lazy-load Entity branding hydration. Same shape as the authenticated
+  // CLM entity branding endpoint, but executed via the public route — public
+  // viewers SHOULD see the entity's slide content + logos. resolveClmConfig
+  // (frontend) deep-merges this over defaults so any missing field falls
+  // back to the neutral placeholder.
+  let branding = null;
+  if (session.entity_id?._id) {
+    try {
+      const Entity = require('../erp/models/Entity');
+      const entity = await Entity.findById(session.entity_id._id)
+        .select('name clmBranding')
+        .lean();
+      if (entity?.clmBranding) {
+        branding = entity.clmBranding;
+      }
+    } catch (brandingErr) {
+      // Non-fatal: deck still renders with neutral placeholders
+      console.error('[Phase N] Public deck branding hydration failed:', brandingErr.message);
+    }
+  }
+
+  // PII redaction — only first name of doctor and BDM exposed. No email,
+  // no phone, no clinic address, no GPS, no full BDM identity.
+  const doctorFirstName = session.doctor?.firstName || 'there';
+  const bdmFirstName = session.user?.firstName || '';
+
+  res.json({
+    success: true,
+    data: {
+      _id: session._id,
+      mode: session.mode,
+      doctorFirstName,
+      bdmFirstName,
+      productsPresented: (session.productsPresented || []).map((p) => ({
+        productName: p.productName,
+        productGenericName: p.productGenericName,
+        productDosage: p.productDosage,
+        productImage: p.productImage,
+      })),
+      messengerRef: session.messengerRef,
+      branding,
+      // Analytics fields (informational; the public viewer doesn't need them
+      // but exposing them here lets the BDM-side admin UI fetch a single
+      // source of truth without duplicate queries).
+      deckOpenedAt: session.deckOpenedAt,
+      deckOpenCount: session.deckOpenCount,
+      qrScanned: session.qrScanned,
+    },
+  });
 });
 
 // ── Messenger webhook conversion (internal helper, not HTTP) ────────
@@ -561,4 +667,6 @@ module.exports = {
   getAllSessions,
   getSessionById,
   getAnalytics,
+  // Phase N — public deck viewer (anonymous, rate-limited)
+  getPublicDeck,
 };

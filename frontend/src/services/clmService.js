@@ -8,12 +8,27 @@ import api from './api';
 
 const clmService = {
   // ── Session lifecycle ─────────────────────────────────────────────
-  startSession: async (doctorId, location, productIds = [], idempotencyKey = null) => {
+  // Phase N — `mode` accepts 'in_person' (default) or 'remote'. Remote-mode
+  // sessions skip GPS, are publicly viewable via /clm/deck/:id, and back-link
+  // to a CommunicationLog row when generated from the BDM CommLog page.
+  startSession: async (doctorId, location, productIds = [], idempotencyKey = null, mode = 'in_person') => {
     const config = {};
     if (idempotencyKey) {
       config.headers = { 'X-Idempotency-Key': idempotencyKey };
     }
-    const response = await api.post('/clm/sessions', { doctorId, location, productIds }, config);
+    const response = await api.post('/clm/sessions', { doctorId, location, productIds, mode }, config);
+    return response.data;
+  },
+
+  // Phase N — Public deck fetch (anonymous, no JWT). Used by DeckViewerPage.jsx.
+  // Returns 404 on bad ID or non-remote-mode sessions; rate-limited 10 req/min/IP.
+  fetchPublicDeck: async (sessionId) => {
+    const response = await api.get(`/clm/deck/${sessionId}`, {
+      // Don't carry credentials — the public route is intentionally
+      // anonymous; sending a stale cookie would just be ignored, but the
+      // explicit `false` makes the contract clear.
+      withCredentials: false,
+    });
     return response.data;
   },
 

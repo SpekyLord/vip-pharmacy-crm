@@ -219,6 +219,39 @@ const messageService = {
     const res = await api.post(`/messages/${id}/action`, args, { withCredentials: true });
     return res.data;
   },
+
+  /**
+   * Phase N offline-first sprint — record a system event to the caller's
+   * own inbox (self-DM). Used to log auto-sync events ("Synced 3 visits")
+   * and sync errors ("Visit draft photos lost"). Server validates
+   * event_type against an allowlist and renders title/body from a template
+   * — clients cannot inject arbitrary inbox content.
+   *
+   * @param {object} args
+   * @param {('sync_complete'|'sync_error'|'visit_draft_lost')} args.event_type
+   * @param {object} args.payload - shape varies by event_type:
+   *   sync_complete:    { synced, syncedKinds, bytes, remaining, completedAt }
+   *   sync_error:       { kind, draft_id, reason }
+   *   visit_draft_lost: { draft_id, reason }
+   * @returns {Promise<{id, title}|null>}  null when server returns 204 (no-op)
+   */
+  recordSystemEvent: async ({ event_type, payload = {} } = {}) => {
+    try {
+      const res = await api.post(
+        '/messages/system-event',
+        { event_type, payload },
+        { withCredentials: true },
+      );
+      // 204 = server ignored a noise event (e.g. sync_complete with synced=0)
+      if (res.status === 204 || !res.data) return null;
+      return res.data?.data || null;
+    } catch (err) {
+      // Inbox-write is best-effort. Don't surface to user — the toast
+      // already informed them. Log for diagnostics.
+      console.warn('[messageInboxService.recordSystemEvent] write failed:', err?.message);
+      return null;
+    }
+  },
 };
 
 export default messageService;

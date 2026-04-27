@@ -9,6 +9,8 @@
  */
 
 import api from './api';
+import { offlineStore } from '../utils/offlineStore';
+import { offlineManager } from '../utils/offlineManager';
 
 const visitService = {
   getAll: async (params = {}) => {
@@ -21,7 +23,19 @@ const visitService = {
     return response.data;
   },
 
-  // Create visit with FormData (for photo uploads)
+  // Create visit with FormData (for photo uploads).
+  //
+  // Phase N — Online vs offline branch:
+  //   - Online (navigator.onLine === true): existing direct multipart POST.
+  //     Server handles the upload + creates the Visit row + back-stamps the
+  //     CLM session if session_group_id resolves to a CLMSession.idempotencyKey.
+  //   - Offline (navigator.onLine === false): caller must instead provide
+  //     `{ photoRefs, formFields }` via createOffline(), which issues a JSON
+  //     envelope POST that the service worker intercepts + queues.
+  //
+  // Backwards-compatible: existing callers (NewVisitPage online path) still
+  // pass FormData and hit the network path. The offline path is only used
+  // when VisitLogger detects offline state — see Phase N.4 wiring.
   create: async (formData) => {
     const response = await api.post('/visits', formData, {
       headers: {
@@ -30,6 +44,42 @@ const visitService = {
     });
     return response.data;
   },
+
+  /**
+   * Phase N — Offline visit submission via the SW queue.
+   *
+   * Caller is responsible for:
+   *   1. Capturing photos and persisting them to offlineStore.saveVisitPhoto()
+   *      to obtain photo_<uuid> refs.
+   *   2. Building formFields (everything that would have been a field on
+   *      the FormData body — doctor, visitDate, productsDiscussed JSON,
+   *      engagementTypes JSON, photoMetadata JSON, location JSON,
+   *      session_group_id, etc).
+   *   3. Calling this method, then on success deleting the local draft.
+   *
+   * Returns the SW's synthetic { offline: true, offlineQueued: true } response
+   * so the UI can surface "saved offline; will sync" feedback.
+   *
+   * @param {{ photoRefs: string[], formFields: object }} envelope
+   */
+  createOffline: async (envelope) => {
+    return offlineManager.queueVisit(envelope);
+  },
+
+  /**
+   * Phase N — convenience: persist a draft (photos + formFields) without
+   * submitting yet. Used by VisitLogger's auto-save path so a tab close
+   * mid-encounter doesn't lose the BDM's work.
+   *
+   * @param {object} draft - { id, doctorId, photoRefs, formFields }
+   */
+  saveDraft: async (draft) => {
+    await offlineStore.saveVisitDraft(draft);
+  },
+
+  loadDraft: async (id) => offlineStore.getVisitDraft(id),
+  listDrafts: async () => offlineStore.getVisitDrafts(),
+  deleteDraft: async (id) => offlineStore.deleteVisitDraft(id),
 
   update: async (id, visitData) => {
     const response = await api.put(`/visits/${id}`, visitData);

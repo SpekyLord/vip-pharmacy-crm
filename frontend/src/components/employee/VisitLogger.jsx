@@ -11,11 +11,26 @@
 
 import { useState, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
+import { useNavigate } from 'react-router-dom';
 import CameraCapture from './CameraCapture';
 import ProductDetailModal from './ProductDetailModal';
 import EngagementTypeSelector from './EngagementTypeSelector';
 import visitService from '../../services/visitService';
 import productService from '../../services/productService';
+// Phase N — offline persistence (auto-save draft + offline envelope submit)
+import { offlineStore } from '../../utils/offlineStore';
+import { offlineManager } from '../../utils/offlineManager';
+
+// Phase N — generate a stable client-side UUID for both the visit_drafts
+// keyPath and the linked CLMSession.idempotencyKey. The same UUID lands
+// on Visit.session_group_id at submit time so the server can pair the
+// two halves of a merged in-person encounter.
+const generateUuid = () => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+};
 
 import SelectField from '../common/Select';
 
@@ -262,6 +277,7 @@ const visitLoggerStyles = `
 `;
 
 const VisitLogger = ({ doctor, onSuccess }) => {
+  const navigate = useNavigate();
   const [photos, setPhotos] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -277,6 +293,78 @@ const VisitLogger = ({ doctor, onSuccess }) => {
     notes: '',
     nextVisitDate: '',
   });
+
+  // Phase N — Stable draft ID for this encounter. Pinned by useRef so it
+  // doesn't change on re-render; the same UUID is used for:
+  //   - offlineStore.visit_drafts keyPath (draft persistence)
+  //   - CameraCapture's draftId prop (Blob persistence)
+  //   - Visit.session_group_id at submit time (server-side CLM linkage)
+  //   - CLMSession.idempotencyKey when "Start Presentation" is invoked
+  const draftIdRef = useRef(generateUuid());
+
+  // Phase N — Online/offline awareness. The submit branch reads this; the
+  // banner text adapts; auto-save only fires when there's something worth
+  // saving (photos OR a non-empty form field).
+  const [isOnline, setIsOnline] = useState(offlineManager.isOnline);
+  useEffect(() => {
+    const unsub = offlineManager.onStatusChange(setIsOnline);
+    return () => { try { unsub(); } catch { /* ignore */ } };
+  }, []);
+
+  // Phase N — Restore draft if VisitLogger remounts after a tab close.
+  // Match by doctor._id so re-opening a different VIP Client starts fresh.
+  useEffect(() => {
+    if (!doctor?._id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const drafts = await offlineStore.getVisitDrafts();
+        const match = drafts.find((d) => d.doctorId === doctor._id);
+        if (match && !cancelled) {
+          draftIdRef.current = match.id;
+          if (match.formFields) {
+            setFormData((prev) => ({ ...prev, ...match.formFields }));
+          }
+          // Photo restoration — re-hydrate object URLs for each persisted ref.
+          if (Array.isArray(match.photoRefs) && match.photoRefs.length > 0) {
+            const restored = [];
+            for (const ref of match.photoRefs) {
+              const url = await offlineStore.getVisitPhotoUrl(ref);
+              if (url) restored.push({ data: url, photoRef: ref, source: 'restored' });
+            }
+            if (!cancelled && restored.length > 0) {
+              setPhotos(restored);
+              toast.success(`Restored ${restored.length} photo(s) from a saved draft.`, { duration: 4000 });
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[VisitLogger] Phase N draft restore failed:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [doctor?._id]);
+
+  // Phase N — Auto-save the draft on photos / formData change. Debounced
+  // by useEffect's natural batching; a real user types or captures slowly
+  // enough that this is fine without a setTimeout. Skip when there's
+  // nothing meaningful to save (avoid creating empty drafts on first mount).
+  useEffect(() => {
+    if (!doctor?._id) return;
+    const photoRefs = photos.map((p) => p.photoRef).filter(Boolean);
+    const hasContent = photoRefs.length > 0 ||
+      Object.values(formData).some((v) =>
+        Array.isArray(v) ? v.length > 0 : (typeof v === 'string' ? v.trim().length > 0 : false)
+      );
+    if (!hasContent) return;
+    offlineStore.saveVisitDraft({
+      id: draftIdRef.current,
+      doctorId: doctor._id,
+      photoRefs,
+      formFields: { ...formData },
+      createdAt: new Date().toISOString(),
+    }).catch((err) => console.warn('[VisitLogger] Phase N auto-save failed:', err));
+  }, [photos, formData, doctor?._id]);
 
   // Fetch products by doctor's specialization (fallback to all)
   useEffect(() => {
@@ -375,13 +463,70 @@ const VisitLogger = ({ doctor, onSuccess }) => {
     setLoading(true);
 
     try {
-      // Create FormData for multipart upload
+      // Phase N — Branch on online/offline. Both paths include
+      // session_group_id so the server can resolve a linked CLMSession by
+      // idempotencyKey if the BDM ran "Start Presentation" earlier in
+      // this encounter.
+      const sessionGroupId = draftIdRef.current;
+      const photoRefs = photos.map((p) => p.photoRef).filter(Boolean);
+
+      // Phase N — Offline submit envelope. Photos already live in IndexedDB
+      // as Blobs (CameraCapture persisted them via draftId prop); the SW
+      // intercepts the JSON envelope POST, queues it, and rebuilds FormData
+      // on replay.
+      if (!isOnline) {
+        if (photoRefs.length !== photos.length) {
+          // Mixed state: some photos didn't persist as blobs (rare — failure
+          // path of CameraCapture). Surface clearly instead of submitting
+          // a partial offline envelope.
+          toast.error('Some photos failed to save offline. Please re-capture and try again.');
+          return;
+        }
+        const offlineFields = {
+          doctor: doctor._id,
+          visitType: formData.visitType,
+          purpose: formData.purpose || '',
+          doctorFeedback: formData.doctorFeedback || '',
+          notes: formData.notes || '',
+          session_group_id: sessionGroupId,
+          location: visitLocation ? {
+            latitude: visitLocation.latitude,
+            longitude: visitLocation.longitude,
+            accuracy: visitLocation.accuracy,
+            capturedAt: photos[0].capturedAt,
+          } : null,
+          photoMetadata: photos.map((p, i) => ({
+            index: i,
+            capturedAt: p.capturedAt,
+            source: p.source || 'camera',
+            hasGps: !!p.location,
+          })),
+          productsDiscussed: formData.productsDiscussed.length > 0
+            ? formData.productsDiscussed.map((id) => ({ product: id, presented: true }))
+            : [],
+          engagementTypes: formData.engagementTypes,
+          nextVisitDate: formData.nextVisitDate || null,
+        };
+        await visitService.createOffline({ photoRefs, formFields: offlineFields });
+        toast.success('Visit saved offline. It will sync when connectivity returns.', { duration: 5000 });
+        // Keep the draft until a successful sync — the SW post-message
+        // VIP_SYNC_COMPLETE notifies; the simplest contract is "leave draft
+        // intact, BDM can revisit if sync fails terminally". Auto-eviction
+        // in 7 days handles abandoned drafts.
+        onSuccess?.();
+        return;
+      }
+
+      // Online path — original FormData multipart POST.
       const submitData = new FormData();
       submitData.append('doctor', doctor._id);
       submitData.append('visitType', formData.visitType);
       submitData.append('purpose', formData.purpose);
       submitData.append('doctorFeedback', formData.doctorFeedback);
       submitData.append('notes', formData.notes);
+      // Phase N — propagate session_group_id so the server can resolve a
+      // linked CLMSession (started earlier via "Start Presentation").
+      submitData.append('session_group_id', sessionGroupId);
 
       // Add location as JSON string (optional — attached when available)
       if (visitLocation) {
@@ -446,6 +591,8 @@ const VisitLogger = ({ doctor, onSuccess }) => {
 
       await visitService.create(submitData);
       toast.success('Visit logged successfully!');
+      // Phase N — Drop the persisted draft + photos on successful sync.
+      try { await offlineStore.deleteVisitDraft(draftIdRef.current); } catch { /* ignore */ }
       onSuccess?.();
     } catch (err) {
       console.error('Failed to log visit:', err);
@@ -482,7 +629,60 @@ const VisitLogger = ({ doctor, onSuccess }) => {
         <span className="visit-frequency-badge">
           {doctor?.visitFrequency}x per month
         </span>
+        {/* Phase N — Offline indicator. Banner copy inside reassures the BDM
+            that work is being saved and will sync when connectivity returns. */}
+        {!isOnline && (
+          <div style={{
+            marginTop: 12,
+            padding: '8px 12px',
+            background: 'rgba(255,255,255,0.18)',
+            borderRadius: 8,
+            fontSize: 12,
+            lineHeight: 1.5,
+          }}>
+            <strong>Offline.</strong> Photos and form fields are auto-saved.
+            Submit will queue until you&apos;re back online.
+          </div>
+        )}
       </div>
+
+      {/* Phase N — "Start Presentation" — bridges the Visit and CLM into a
+          single encounter. The same UUID (draftIdRef) lands on both
+          CLMSession.idempotencyKey and Visit.session_group_id so admin
+          analytics can travel either direction. Available once a doctor
+          and at least one product are picked. */}
+      {doctor?._id && formData.productsDiscussed.length > 0 && (
+        <div className="form-section" style={{ background: '#fef3c7', borderColor: '#fcd34d' }}>
+          <h3 style={{ borderColor: '#fcd34d' }}>Run Partnership Presentation</h3>
+          <p style={{ color: '#78350f', fontSize: 13, marginTop: 0 }}>
+            Take this VIP Client through the partnership deck before logging
+            the visit. Slide events and product interest are captured to the
+            same encounter (linked by ID).
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              navigate(
+                `/bdm/partnership?doctorId=${doctor._id}` +
+                `&session_group_id=${draftIdRef.current}` +
+                `&products=${formData.productsDiscussed.join(',')}`,
+              );
+            }}
+            style={{
+              padding: '10px 18px',
+              background: '#d97706',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 8,
+              fontSize: 14,
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            ▶ Start Presentation
+          </button>
+        </div>
+      )}
       {/* Photo Capture Section */}
       <div className="form-section">
         <h3>Photo Proof *</h3>
@@ -492,6 +692,7 @@ const VisitLogger = ({ doctor, onSuccess }) => {
         <CameraCapture
           onCapture={handlePhotosChange}
           maxPhotos={5}
+          draftId={draftIdRef.current}
         />
       </div>
       {/* Visit Details */}

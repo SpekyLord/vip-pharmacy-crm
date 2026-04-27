@@ -46,7 +46,7 @@ const formStyles = `
   body.dark-mode .clf-photo-add { border-color: #334155; color: #64748b; }
 `;
 
-const CommLogForm = ({ onSuccess, preselectedDoctor }) => {
+const CommLogForm = ({ onSuccess, preselectedDoctor, clmSessionId }) => {
   const { options: channelOpts } = useLookupOptions('COMM_CHANNEL');
 
   // Form state
@@ -153,6 +153,13 @@ const CommLogForm = ({ onSuccess, preselectedDoctor }) => {
       formData.append('direction', direction);
       if (notes.trim()) formData.append('notes', notes);
       formData.append('contactedAt', new Date(contactedAt).toISOString());
+      // Phase N — Tag this CommLog with the just-generated remote-mode CLM
+      // session, so analytics can join "deck opened" back to the channel
+      // it was sent through. Backend trims + ObjectId-validates this field
+      // before persisting.
+      if (clmSessionId) {
+        formData.append('clm_session_id', clmSessionId);
+      }
 
       for (const photo of photos) {
         const file = photo.file instanceof File
