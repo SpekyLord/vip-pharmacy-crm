@@ -1304,3 +1304,45 @@ Foundation for the MD-rebate moat. Discovery is automated (Rx OCR + storefront c
 - VIP-1.B will introduce `MdProductRebate`, `NonMdPartnerRebateRule`, `MdCapitationRule`, `StaffCommissionRule` — all of these read `Doctor.partnership_status === 'PARTNER'` and `Doctor.partner_agreement_date` set as gates. The 3-gate guardrail (PARTNER + agreement_date + consent_log) is enforced at MdProductRebate / MdCapitationRule pre-save in VIP-1.B.
 
 
+
+## Phase G9.R10 — Agent Dashboard Audit Surface (April 28, 2026)
+
+**Status**: SHIPPED uncommitted on `dev`. Build green. Runs-side Playwright-smoked; messages-side build-green only (MCP lock prevented live smoke — manual smoke queued in `memory/handoff_phase_g9_r10_apr28_2026.md`).
+
+### What changed
+
+`/erp/agent-dashboard` is now a real audit surface. Two sections of the page got server-side filters + pagination + (for messages) click-to-view. The page no longer caps history at 10/20 rows and the Lookup Tables surface gets one new admin-tunable category.
+
+### Files touched
+
+1. `frontend/src/erp/pages/AgentDashboard.jsx` — split runs/messages into their own `loadRuns(page, filters)` / `loadMessages(page, filters)` callbacks; added filter bars, pagination via the shared `<Pagination>` component, and a click-to-view modal for messages with sender/recipient/priority metadata + an "Open in Inbox" link. Lookup-driven category labels via `useLookupOptions("AGENT_MESSAGE_CATEGORIES")` + inline `CAT_FALLBACK` so the page never goes dark on a Lookup outage.
+2. `backend/controllers/messageInboxController.js` — `getInboxMessages` now accepts `?from=YYYY-MM-DD&to=YYYY-MM-DD`. Inclusive day boundaries on `createdAt`. Invalid dates are silently dropped.
+3. `backend/erp/controllers/lookupGenericController.js` — new `AGENT_MESSAGE_CATEGORIES` SEED_DEFAULTS entry (3 rows: ai_coaching / ai_schedule / ai_alert with bg/fg/icon/sort_order metadata). Lazy-seeded on first GET per entity.
+4. `frontend/src/erp/components/WorkflowGuide.jsx` — `agent-dashboard` banner expanded with the new filter / pagination steps and 2 new "Next steps" links (Inbox + Lookup Tables).
+
+### Lookup-driven (Rule #3)
+
+- Category pill labels + colors: `AGENT_MESSAGE_CATEGORIES` Lookup category (rows: `ai_coaching` / `ai_schedule` / `ai_alert`). Subscribers re-color or re-label without a code deploy.
+- Schema enum `MessageInbox.category` is the validation gate (admin cannot introduce a code the schema rejects); the Lookup only supplies display metadata. Same split as VIP-1.A `partnership_status` / `DOCTOR_PARTNERSHIP_STATUS`.
+- Recent Agent Runs agent dropdown: driven by backend `agentRegistry.AGENT_DEFINITIONS` via `/erp/agents/registry`. New agents auto-surface.
+
+### Subscription-readiness posture
+
+- Filters honor entity scope through existing `tenantFilter` on `/api/messages` and the `adminOnly` gate on `/erp/agents/runs` (Phase G9.R4 + Rule #21). A subscriber's president sees only their own entity's agent messages.
+- Page-size constants (`RUNS_PER_PAGE=20`, `MSGS_PER_PAGE=15`) are platform UX choices, not subscriber-tunable. Defer Settings exposure until requested.
+
+### Verification (Rule 0b)
+
+- Backend syntax: `node -c` clean on `messageInboxController.js` + `lookupGenericController.js`.
+- Frontend build: `npx vite build` → green, 11.02s, no errors.
+- Removed `msgTab` state + orphan `filteredMsgs` computation. `grep` clean.
+- Runs-side Playwright smoke (Apr 28 2026): filter narrows rows + total counter, Reset restores 28-of-28 + hides Reset button, Pagination Next loads page 2 with 8 remaining rows, empty-with-filters branch shows correct copy. Zero console errors.
+- Messages-side smoke: BLOCKED on Playwright MCP profile lock at smoke time. Build-green only. The messages-side wiring mirrors the runs-side line-for-line — failure modes should be identical. Manual smoke checklist in handoff.
+
+### Open items
+
+- Manual Playwright smoke of the messages section (filter, pagination, click-to-view modal, mark-as-read on open). Walked into the handoff note.
+- Seed `AGENT_MESSAGE_CATEGORIES` to the live cluster so the labels/colors honor the lookup instead of falling back to `CAT_FALLBACK`. The seed kicks in lazily on the first GET — no manual action needed unless admin wants to customize before the first lookup-fetch. To customize: Control Center → Lookup Tables → AGENT_MESSAGE_CATEGORIES → edit the 3 rows.
+- Click-to-view for run rows (drill into full key_findings + error stack on a single run): deferred. Data is already on `AgentRun.summary` / `AgentRun.error_msg`; UI is one modal away.
+- Sort toggle on Recent Agent Runs (newest first vs by agent name): deferred. Backend already sorts `run_date: -1`; subscribers haven't asked for grouping yet.
+

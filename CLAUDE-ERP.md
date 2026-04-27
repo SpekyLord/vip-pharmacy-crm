@@ -5922,3 +5922,49 @@ Different invariants, different repair paths. Bundling them would couple their e
 - AR / AP sub-ledger recon: requires `outstanding_amount` tracking on `SalesLine` (current schema computes outstanding by joining `Collection` allocations). Defer until either the JE-asymmetry fix step 2 lands (`je_status` + Retry button) or the user prioritizes AR aging reports.
 - Inventory recon (Σ `InventoryLedger.running_balance × unit_cost` vs GL `INVENTORY`): requires standard-cost or weighted-average lookup per product. Deferred — out of scope for v1.
 - Auto-trigger on JE.post (vs scheduled cron): would drop detection latency from 24h to seconds, but adds hot-path cost. v1 cron suffices for the BIR-filing-window protection the user asked for.
+
+---
+
+## Phase G9.R10 — Agent Dashboard Audit Surface (April 28, 2026)
+
+**Goal**: turn `/erp/agent-dashboard` into a real audit surface for the AI agent fleet, not a 10-row teaser. Two sections of the page (Recent Agent Runs, Agent Messages) were capped at 10 / 20 rows with client-only filtering and no drill-in. Both are now server-side filtered, paginated, and (for messages) click-to-view.
+
+**Why**: the user's complaint was "the audit goes to my inbox, not the dashboard." Truth is the audit IS on the dashboard — the run history and message history are both there — but the surface didn't expose enough of it to feel auditable. Build the screen out instead of moving data away from inbox (which would break the actionable workflow for non-admin recipients).
+
+**Files**:
+- [frontend/src/erp/pages/AgentDashboard.jsx](frontend/src/erp/pages/AgentDashboard.jsx) — the dashboard page itself.
+  - `loadRuns(page, filters)` callback: GETs `/erp/agents/runs?agent_key=&status=&from=&to=&page=&limit=20`. Decoupled from the stats/registry/messages fetch so changing run filters does NOT refetch unrelated sections.
+  - `loadMessages(page, filters)` callback: GETs `/api/messages?category=&from=&to=&page=&limit=15`. Constant base filter `category=ai_coaching,ai_schedule,ai_alert` so non-agent messages never bleed in. User's category single-select narrows further; empty defaults back to all three.
+  - Filter bars (CSS class `agd-filters`) above each section. Run section: agent dropdown driven by backend registry (33 agents Apr 28 2026), status enum, From / To date pickers, Reset button when any filter is active. Message section: category dropdown driven by the AGENT_MESSAGE_CATEGORIES lookup, From / To date pickers, Reset button.
+  - `Pagination` component (existing shared) wired to both sections (`runPage`/`runPages`, `msgPage`/`msgPages`).
+  - Click-to-view modal (`agd-modal-overlay` / `agd-modal`) for messages: full body, sender + recipient + sent + priority metadata, "Open in Inbox" link, overlay-click closes. Opening calls `messageService.markRead(id)` so the dashboard read-state and inbox read-state stay in sync. Best-effort — if markRead fails the modal still opens (read-state is cosmetic on a monitor view).
+  - `getCatMeta(code, lookupOptions)` helper — pulls label / bg / fg / leftBorder from the `AGENT_MESSAGE_CATEGORIES` Lookup row when present, otherwise from the inline `CAT_FALLBACK` table. Page never goes dark on a Lookup outage (mirrors the VIP-1.A `STATUS_META_FALLBACK` pattern in MdLeadsPage).
+- [backend/controllers/messageInboxController.js](backend/controllers/messageInboxController.js) — `getInboxMessages` now accepts `?from=YYYY-MM-DD&to=YYYY-MM-DD`. Inclusive 00:00:00 .. 23:59:59 day boundaries on `createdAt`. Invalid dates are silently dropped (treated as "no filter"). The existing `category` (comma-multi), `page`, `limit`, `status`, `search`, `folder`, `requires_action`, `thread_id` filters are unchanged.
+- [backend/erp/controllers/lookupGenericController.js](backend/erp/controllers/lookupGenericController.js) — new `AGENT_MESSAGE_CATEGORIES` seed entry in `SEED_DEFAULTS`. Three rows (`ai_coaching` / `ai_schedule` / `ai_alert`) each with `metadata: { description, sort_order, bg, fg, icon }`. Lazy-seeded on first GET per entity.
+- [frontend/src/erp/components/WorkflowGuide.jsx](frontend/src/erp/components/WorkflowGuide.jsx) — `agent-dashboard` banner expanded with the new filter / pagination steps and two new "Next steps" links (Inbox + Lookup Tables).
+
+**Lookup-driven (Rule #3)**:
+- `AGENT_MESSAGE_CATEGORIES` Lookup category drives the pill color, label, and the dropdown options for the message filter. A future Vios SaaS subscriber can rename "Coaching" → "Mentoring" and re-color the alert pill blue without a code deploy.
+- `MessageInbox.category` enum stays as the validation gate (so admin can't introduce a category code the schema rejects); the lookup only supplies display metadata. Same split as VIP-1.A `partnership_status` (schema enum) ↔ `DOCTOR_PARTNERSHIP_STATUS` (display lookup).
+- The agent dropdown on Recent Agent Runs is driven entirely by `agentRegistry.AGENT_DEFINITIONS` via `/erp/agents/registry`. Adding a new agent surfaces it in the dropdown automatically — no frontend edit.
+
+**Subscription-readiness posture**:
+- All filters scope correctly through the existing `tenantFilter` / `entity_id` middleware on `/api/messages` (Phase G9.R4 + Rule #21). A subscriber's president sees only their own entity's agent messages.
+- The runs endpoint is admin-gated (`adminOnly` = admin/finance/president per agentRoutes.js). No new permission needed.
+- No hardcoded business values introduced. Page-size constants (`RUNS_PER_PAGE=20`, `MSGS_PER_PAGE=15`) are platform UX choices, not subscriber-tunable values — defer to Settings only if a tenant complains, per Rule 0 (don't add features beyond what's needed).
+
+**Wiring verified**:
+- Backend syntax: `node -c` green on both `messageInboxController.js` and `lookupGenericController.js`.
+- Frontend build: `npx vite build` green (11.02s, no errors, no warnings).
+- Date-range filter: validates against the existing index `{ entity_id, folder, createdAt }` — no new index needed, MongoDB picks up the createdAt range as the secondary key.
+- Removed `msgTab` state and orphan `filteredMsgs` computation that the old client-only tab filter relied on. No remaining references (`grep` clean).
+- Modal a11y: `role="dialog"`, `aria-modal="true"`, `aria-labelledby`, overlay-click closes. Keyboard activation supported via Enter / Space on message rows (`role="button"` + `tabIndex={0}`).
+
+**Browser smoke (Apr 28 2026, partial)**:
+- Runs section was Playwright-smoked earlier in the same session — filter changes the row count + total counter, Reset clears all filters + hides Reset button, pagination Next loads page 2 with 8 remaining of 28, "(N total)" header counter is accurate, empty-with-filters message renders with reset button visible, zero console errors throughout.
+- Messages section was NOT browser-smoked (Playwright MCP profile lock stuck after the runs smoke; build-green only). The implementation mirrors the runs section line-for-line, so the failure modes should be identical, but a manual smoke is queued for the next session — see deferred handoff `memory/handoff_phase_g9_r10_apr28_2026.md`.
+
+**Known follow-ups**:
+- The "Recent Agent Runs" section header doesn't yet show a "newest first" / "by agent name" sort toggle. Backend already sorts `run_date: -1`; if subscribers want by-agent grouping, that's a one-line frontend toggle.
+- Click-to-view on a RUN row (not just a message) would let admin see the full agent run detail (full key_findings list, error stack, payload metadata) inline. The data is already on `AgentRun.summary` / `AgentRun.error_msg`. Defer until requested.
+- Bulk archive / mark-all-read on the messages monitor view: deferred — those operations live in the Inbox surface where they belong.

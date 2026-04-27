@@ -93,12 +93,33 @@ export async function compute2550Q(year, quarter) {
  *
  * Returns { blob, filename, contentHash } so the page can show toast
  * confirmation that includes the content hash (audit visibility).
+ *
+ * On error: axios returns the error body as a Blob (because responseType
+ * is blob), which would surface as a generic "Request failed with status
+ * code N" toast. We re-parse the blob as JSON and rethrow with a normal
+ * `response.data.message` shape so the page's catch block can surface the
+ * server's actual reason (e.g., "Forbidden — BIR EXPORT_FORM permission
+ * required.").
  */
 export async function exportVatReturnCsv(formCode, year, period) {
-  const response = await api.get(
-    `${BASE}/forms/${formCode}/${year}/${period}/export.csv`,
-    { responseType: 'blob' },
-  );
+  let response;
+  try {
+    response = await api.get(
+      `${BASE}/forms/${formCode}/${year}/${period}/export.csv`,
+      { responseType: 'blob' },
+    );
+  } catch (err) {
+    if (err?.response?.data instanceof Blob) {
+      try {
+        const text = await err.response.data.text();
+        const parsed = JSON.parse(text);
+        err.response.data = parsed; // mutate so callers get the JSON shape
+      } catch {
+        // Body wasn't JSON — leave the original error alone.
+      }
+    }
+    throw err;
+  }
   const blob = response.data;
   // Server emits the filename via Content-Disposition; fall back to a
   // sane default if the header isn't surfaced (some browsers strip it
