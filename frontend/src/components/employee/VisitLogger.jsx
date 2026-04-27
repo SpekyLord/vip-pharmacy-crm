@@ -641,7 +641,7 @@ const VisitLogger = ({ doctor, onSuccess }) => {
             lineHeight: 1.5,
           }}>
             <strong>Offline.</strong> Photos and form fields are auto-saved.
-            Submit will queue until you're back online.
+            Submit will queue until you&apos;re back online.
           </div>
         )}
       </div>

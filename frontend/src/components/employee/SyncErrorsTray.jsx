@@ -30,8 +30,8 @@
  *     archive.
  */
 import { useEffect, useState, useCallback } from 'react';
-import offlineManager from '../../utils/offlineManager';
 import offlineStore from '../../utils/offlineStore';
+import useSyncErrorsCount from '../../hooks/useSyncErrorsCount';
 
 const styles = `
   .sync-err-badge { display: inline-flex; align-items: center; gap: 6px;
@@ -87,35 +87,6 @@ const KIND_LABELS = {
   visit_draft_lost: 'Visit photos lost',
   sync_error: 'Sync error',
 };
-
-/**
- * Hook that exposes the live sync_errors row count + a refresh function.
- * Re-fetches whenever the SW emits VIP_VISIT_DRAFT_LOST (live update) and
- * on a 30s polling interval (handles cross-tab writes from other surfaces).
- */
-export function useSyncErrorsCount() {
-  const [count, setCount] = useState(0);
-  const refresh = useCallback(async () => {
-    try {
-      const rows = await offlineStore.getSyncErrors();
-      setCount(rows.length);
-    } catch {
-      setCount(0);
-    }
-  }, []);
-
-  useEffect(() => {
-    refresh();
-    const unsub = offlineManager.onVisitDraftLost(() => refresh());
-    const t = setInterval(refresh, 30_000);
-    return () => {
-      unsub();
-      clearInterval(t);
-    };
-  }, [refresh]);
-
-  return { count, refresh };
-}
 
 export function SyncErrorsBadge({ onClick }) {
   const { count } = useSyncErrorsCount();

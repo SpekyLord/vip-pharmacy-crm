@@ -11,66 +11,32 @@
  * OFFLINE_REQUIRED_PATHS lookup category. Each lookup row's `code` is a
  * URL prefix (e.g. `/erp/`, `/admin/control-center`). When the lookup is
  * empty / errors, we fall back to the inline DEFAULT_OFFLINE_REQUIRED list
- * so the page never silently lets BDMs into Expenses while offline because
- * a Lookup outage stripped the guard.
+ * (in offlineRouteGuardConfig.js) so the page never silently lets BDMs into
+ * Expenses while offline because a Lookup outage stripped the guard.
  *
  * Why a single guard, not per-route boilerplate:
  *   - 100+ ERP routes already use ProtectedRoute. Adding a second wrapper
  *     to each line is noise + drift risk (someone adds a new ERP route
- *     and forgets the guard → silent leak).
+ *     and forgets the guard → silent leak that lets BDM submit an expense
+ *     offline, queueing it behind the SW envelope path that would bypass
+ *     period locks + Approval Hub guarantees).
  *   - The guard reads `useLocation()` once per render and consults the
  *     prefix list. Cheap; no per-page work.
  *   - Subscribers in the future SaaS spin-out can configure their own
  *     "offline-required" set without touching code.
  *
- * Anti-pattern this avoids: making expenses / approvals / settings
- * "offline-capable" by queueing their submits in the SW. Per Apr 27 user
- * decision (feedback_offline_first_globe_data_savings.md): expenses MUST
- * be online — Approval Hub guarantees + double-posting risk make queued
- * financial writes hostile.
- *
- * Children that don't match an offline-required prefix render normally
- * regardless of online state (Visit, CLM, Dashboard, MyVisits all stay
- * fully offline-capable).
+ * Helpers + the default-prefix list live in `utils/offlineRouteGuardConfig.js`
+ * so this file exports only a component (lint rule
+ * react-refresh/only-export-components).
  */
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import offlineManager from '../../utils/offlineManager';
 import { useLookupOptions } from '../../erp/hooks/useLookups';
-
-// Inline fallback. Order doesn't matter — first matching prefix wins.
-// Keep this list narrow: only routes that NEED a server round-trip on
-// every interaction belong here. Read-only viewers that could cache a
-// snapshot should NOT be here even if they currently fetch live (they
-// can be made offline-capable without a behaviour change for online users).
-export const DEFAULT_OFFLINE_REQUIRED = Object.freeze([
-  '/erp/expenses',
-  '/erp/prfcalf',
-  '/erp/smer',
-  '/erp/car-logbook',
-  '/erp/approvals',
-  '/erp/control-center',
-  '/erp/people',
-  '/erp/payroll',
-  '/erp/banking',
-  '/erp/journal-entries',
-  '/erp/period-locks',
-  '/erp/sales/entry',
-  '/erp/sales/opening-ar',
-  '/erp/grn',
-  '/erp/undertaking',
-  '/erp/dr',
-  '/erp/collections',
-  '/erp/transfer-orders',
-  '/erp/credit-notes',
-  '/erp/customers',
-  '/erp/vendors',
-  '/erp/purchase-orders',
-  '/erp/petty-cash',
-  '/erp/income',
-  '/admin/control-center',
-  '/admin/settings',
-]);
+import {
+  DEFAULT_OFFLINE_REQUIRED,
+  pathMatchesAny,
+} from '../../utils/offlineRouteGuardConfig';
 
 const styles = `
   .off-block { max-width: 720px; margin: 48px auto; padding: 32px;
@@ -88,33 +54,6 @@ const styles = `
     border-radius: 10px; padding: 12px 16px; margin-top: 14px; font-size: 13px; }
   .off-block .off-list strong { color: #1f2937; }
 `;
-
-function pathMatchesAny(pathname, prefixes) {
-  if (!pathname) return false;
-  for (const p of prefixes) {
-    if (typeof p !== 'string' || !p) continue;
-    if (pathname === p) return true;
-    if (pathname.startsWith(p.endsWith('/') ? p : `${p}/`)) return true;
-  }
-  return false;
-}
-
-/**
- * Hook so other components (e.g. a sidebar that wants to dim ERP links
- * while offline) can ask "would the user be blocked from this path?".
- */
-export function useOfflineBlocked(pathname) {
-  const [online, setOnline] = useState(offlineManager.isOnline);
-  const { options } = useLookupOptions('OFFLINE_REQUIRED_PATHS');
-  useEffect(() => offlineManager.onStatusChange(setOnline), []);
-  if (online) return { blocked: false, reason: null, prefixList: [] };
-  const lookupPrefixes = (options || [])
-    .map((o) => o?.code)
-    .filter((c) => typeof c === 'string' && c.length > 0);
-  const prefixes = lookupPrefixes.length ? lookupPrefixes : DEFAULT_OFFLINE_REQUIRED;
-  const blocked = pathMatchesAny(pathname, prefixes);
-  return { blocked, prefixList: prefixes, reason: blocked ? 'offline' : null };
-}
 
 export default function OfflineRouteGuard({ children }) {
   const location = useLocation();
@@ -146,8 +85,8 @@ export default function OfflineRouteGuard({ children }) {
         <div className="off-icon" aria-hidden="true">⚠</div>
         <h2>This page needs WiFi or cellular</h2>
         <p>
-          You're offline right now. Expenses, approvals, settings, and
-          financial pages can't be edited without a server round-trip — every
+          You&apos;re offline right now. Expenses, approvals, settings, and
+          financial pages can&apos;t be edited without a server round-trip — every
           submit needs to clear authority gates and period locks before it
           posts.
         </p>
@@ -158,14 +97,14 @@ export default function OfflineRouteGuard({ children }) {
         </p>
         <div className="off-list">
           <p style={{ margin: 0 }}><strong>Tip:</strong> turn on cellular
-          data, find a WiFi hotspot, or wait until you're back at the office.
+          data, find a WiFi hotspot, or wait until you&apos;re back at the office.
           You can keep working in the BDM dashboard meanwhile.</p>
         </div>
         <div className="off-actions">
           <button onClick={() => navigate('/employee')}>Back to Dashboard</button>
           <button className="secondary" onClick={() => navigate(-1)}>Go Back</button>
           <button className="secondary" onClick={() => offlineManager.triggerSync()}>
-            Sync Now (if you're actually online)
+            Sync Now (if you&apos;re actually online)
           </button>
         </div>
       </div>
