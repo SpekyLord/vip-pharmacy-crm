@@ -192,6 +192,16 @@ export function SyncErrorsDrawer({ open, onClose }) {
             <h3>Sync Errors ({rows.length})</h3>
             <button type="button" className="close-btn" onClick={onClose} aria-label="Close">×</button>
           </header>
+          <div style={{
+            padding: '10px 16px',
+            background: '#fff7ed',
+            borderBottom: '1px solid #fed7aa',
+            fontSize: 12,
+            color: '#7c2d12',
+            lineHeight: 1.5,
+          }}>
+            <strong>What is this?</strong> Each row is an offline visit draft that could not be replayed when connectivity returned (typically because the browser cleared its blob storage between capture and sync). Discarding clears the local row but leaves a copy in your Inbox so admin can audit. There is no Retry — the original photos are gone, so re-capture from the New Visit page.
+          </div>
           <div className="body">
             {rows.length === 0 ? (
               <div className="sync-err-empty">No outstanding sync errors. Your offline drafts are syncing cleanly.</div>

@@ -198,24 +198,6 @@ const PAGE_GUIDES = {
     ],
     tip: 'Hospital HEAT data appears automatically when a VIP Client has hospital affiliations set by admin.',
   },
-  // Phase N offline-first sprint — pseudo-page key for the sync errors tray.
-  // The tray itself is a drawer (no dedicated route), so this entry surfaces
-  // contextually inside the drawer's header tooltip if a future iteration
-  // wants to render PageGuide there. Kept here so the wiring contract holds.
-  'sync-errors-tray': {
-    title: 'Sync Errors',
-    steps: [
-      'Each row is an offline visit draft that could not be replayed when connectivity returned',
-      'The most common cause is "photos lost" — your browser cleared its local blob storage between offline capture and the next sync',
-      'Tap "Discard" to clear the local row. A copy stays in your Inbox so admin can still see what happened',
-      'There is no "Retry" because the original photo blobs are gone by definition. Re-capture the visit from the New Visit page',
-    ],
-    next: [
-      { label: 'Log Visit', path: '/bdm/visit/new' },
-      { label: 'Inbox', path: '/employee/inbox' },
-    ],
-    tip: 'Sync errors are device-local. Each device tracks its own outstanding failures so you can clean up per-device without affecting your inbox audit trail.',
-  },
   'inbox': {
     title: 'Unified Inbox',
     steps: [
