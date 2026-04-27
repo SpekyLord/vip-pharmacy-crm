@@ -97,11 +97,16 @@ function invalidateCrossEntityRolesCache(entityId = null) {
 async function resolveEntityScope(req, moduleKey) {
   const base = { ...(req.tenantFilter || {}) };
 
-  // Strip bdm_id for privileged users — they're not BDMs, and master-data
-  // tables (PeopleMaster, Vendor, Customer, Hospital) don't carry bdm_id.
-  // tenantFilter only sets bdm_id for contractors; for admin/finance the
-  // field is already absent. Defensive delete keeps callers honest.
-  if (req.isAdmin || req.isFinance || req.isPresident) delete base.bdm_id;
+  // Strip bdm_id unconditionally. Master-data tables (PeopleMaster, Vendor,
+  // Customer, Hospital) don't carry bdm_id, so the field should never appear
+  // in a master-data scope filter. tenantFilter sets bdm_id for staff/BDM
+  // roles (transactional scoping); for admin/finance/president the field is
+  // already absent.
+  // Apr 27 2026: prior condition only stripped for privileged users, which
+  // silently zeroed out master-data lists for staff callers (e.g. OwnerPicker
+  // proxy dropdown empty for an eBDM with PROXY_ENTRY_ROLES.SALES granted —
+  // the bdm_id leak matched zero PeopleMaster docs).
+  delete base.bdm_id;
 
   // Non-president callers: tenantFilter already correctly scopes them by
   // entity_id (admin/finance) or entity_id+bdm_id (contractor). No widening
