@@ -80,6 +80,21 @@ const PAGE_GUIDES = {
     ],
     tip: 'Same content lives in docs/BDM-OFFLINE-FIELD-GUIDE.md so admin onboarding for new BDMs uses the same playbook. If something is unclear or wrong on your phone, screenshot it and tell admin via Comm Log.',
   },
+  'md-merge': {
+    title: 'MD Merge Tool (Canonical De-dup)',
+    steps: [
+      'Pick a "Duplicate Candidates" group — each row is a Doctor that shares a canonical name key (lastname|firstname) with at least one other live Doctor.',
+      'Pick the Winner (the survivor — usually the record with the most visit / CLM / commission history) and the Loser (the absorbed duplicate). The two cannot be the same record.',
+      'Click "Preview merge" to see the cascade blast radius — how many Visit / Schedule / ProductAssignment / CommunicationLog / CLMSession / InviteLink / ERP Collection / MdProductRebate / MdCapitationRule / PrfCalf / PatientMdAttribution rows will be re-pointed, and any uniqueness collisions that need defusing.',
+      'Add a Reason (required, audit-logged) and click "Merge now". The cascade runs inside a MongoDB transaction when supported (Atlas replica set), then the loser is soft-deleted (mergedInto + isActive=false). Rollback grace is 30 days; daily cron hard-deletes after.',
+      'The "Merge History" tab lists past merges with a Rollback button for APPLIED rows. Rollback re-points cascaded FKs back, restores collision sentinels, re-activates deactivated rows.',
+    ],
+    next: [
+      { label: 'VIP Clients', path: '/admin/doctors' },
+      { label: 'MD Leads', path: '/admin/md-leads' },
+    ],
+    tip: 'The unique-index flip on Doctor.vip_client_name_clean (Phase A.5.2) is gated on this tool — until duplicates are merged, the unique constraint cannot be applied. Default role gates: admin + president for view/execute/rollback; president-only for hard-delete (which bypasses the 30-day grace). Subscribers reconfigure per entity via Control Center → Lookup Tables → VIP_CLIENT_LIFECYCLE_ROLES.',
+  },
   'md-leads': {
     title: 'MD Partner Leads',
     steps: [
@@ -112,6 +127,23 @@ const PAGE_GUIDES = {
       { label: 'Trial Balance', path: '/erp/accounting' },
     ],
     tip: 'The dashboard is your accountant view — no BIR form ships from VIP CRM directly to BIR (we have no eFPS integration). The deliverable is a copy-paste UX into eBIR Forms for monthly + quarterly forms, .dat files for Alphalist Data Entry (SAWT, QAP, 1604-CF, 1604-E), and PDFs for the loose-leaf Books of Accounts. Phases J1-J7 add the per-form aggregators + serializers; J0 ships the dashboard, data-quality agent, and tax-config UI.',
+  },
+  'bir-vat-return': {
+    title: 'BIR 2550M / 2550Q VAT Return',
+    steps: [
+      'Click "Recompute" if the heatmap looked stale or if you tagged new VAT entries (INCLUDE / EXCLUDE / DEFER) since arriving on this page. The aggregator pulls from VatLedger + SalesBookSCPWD using only INCLUDE-tagged rows.',
+      'Each card is one BIR field. Click the copy icon, then paste directly into the matching eBIRForms 7.x box. Vatable Sales (13A) → Output Tax Due (18A) → Input Tax Carryover (20A) + Input Tax Current (20B) → Net VAT Payable (22A) is the order eBIRForms expects.',
+      'For a paper trail, click "Export CSV" — it downloads the form with a SHA-256 content hash, refreshes the dashboard heatmap, and appends to the export audit log on this page. The hash matches the X-Content-Hash response header so you can re-verify integrity later.',
+      'Once president has reviewed the numbers, click "Mark Reviewed". Bookkeeper then submits via eBIRForms 7.x and clicks "Mark Filed" with the BIR reference number from the eBIR receipt.',
+      'Forward the BIR confirmation email to your entity\'s tax filing email (set under Tax Config). The auto-confirm bridge parses the email and flips the status to CONFIRMED. If the parser cannot match (subject-line variance), use "Mark Confirmed" manually with the reference number.',
+      'After CONFIRMED, the period locks (PeriodLock module = BIR_FILING). To revise, finance + president must reopen the period.',
+    ],
+    next: [
+      { label: 'BIR Compliance Dashboard', path: '/admin/bir' },
+      { label: 'SC/PWD Sales Book', path: '/admin/scpwd-sales-book' },
+      { label: 'Period Locks (ERP)', path: '/erp/period-locks' },
+    ],
+    tip: 'Phase J1 stubs Zero-Rated Sales (14A) and Sales to Government (16A) at 0 — Phase J1.1 wires the customer.vat_status / customer_type joins. If your entity has either, manually adjust the eBIRForms boxes; export CSV still records what was computed, so the audit trail is honest about the J1 surface.',
   },
   'scpwd-sales-book': {
     title: 'SC / PWD Sales Book (BIR-mandated)',

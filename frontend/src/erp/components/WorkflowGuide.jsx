@@ -611,12 +611,16 @@ const WORKFLOW_GUIDES = {
       'View status of every registered agent (Claude AI + rule-based), sourced from the backend agent registry so new agents surface here automatically',
       'Check recent runs, alerts generated, messages sent, and key findings per agent',
       'Click "Run Now" on any agent for an on-demand execution (president/admin only)',
+      'Recent Agent Runs — filter by agent, status, or date range. 20 runs per page. The full audit history is queryable here, not just the last 10.',
+      'Agent Messages — read-only mirror of agent-generated alerts in your inbox. Filter by category (Coaching / Schedule / Alert) or date range. Click any row to view the full body; opening marks it read.',
       'Configure enable/disable, notification routing, and run agents from Control Center → Intelligence',
     ],
     next: [
       { label: 'Control Center', path: '/erp/control-center?section=agent-settings' },
+      { label: 'Inbox (acknowledge / reply / archive)', path: '/erp/inbox' },
+      { label: 'Lookup Tables (rebrand category labels)', path: '/erp/control-center?section=lookups' },
     ],
-    tip: 'Rule-based agents always run on schedule (no cost). Claude AI agents require ANTHROPIC_API_KEY and a funded AI budget cap (Control Center → AI Budget). Every agent schedule is governed by the central cron in backend/agents/agentScheduler.js — per-agent thresholds and toggles live in Lookup Tables (subscription-ready, no code changes needed).',
+    tip: 'Rule-based agents always run on schedule (no cost). Claude AI agents require ANTHROPIC_API_KEY and a funded AI budget cap (Control Center → AI Budget). Every agent schedule is governed by the central cron in backend/agents/agentScheduler.js — per-agent thresholds and toggles live in Lookup Tables (subscription-ready, no code changes needed). Agent message category labels and pill colors come from the AGENT_MESSAGE_CATEGORIES lookup so subscribers can rebrand them without a code deploy.',
   },
   'approval-manager': {
     title: 'Universal Approval Hub',

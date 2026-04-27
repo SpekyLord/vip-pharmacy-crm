@@ -74,6 +74,55 @@ export async function createOrUpdateDraft(payload) {
   return data?.data || null;
 }
 
+// ── Phase J1 — 2550M / 2550Q VAT return endpoints ─────────────────────
+export async function compute2550M(year, month) {
+  const { data } = await api.get(`${BASE}/forms/2550M/${year}/${month}/compute`);
+  return data?.data || null;
+}
+
+export async function compute2550Q(year, quarter) {
+  const { data } = await api.get(`${BASE}/forms/2550Q/${year}/${quarter}/compute`);
+  return data?.data || null;
+}
+
+/**
+ * Trigger a CSV download for 2550M or 2550Q. Uses the underlying axios
+ * instance to inherit auth cookies + interceptors, then opens the CSV
+ * via a synthetic anchor + URL.createObjectURL so the browser downloads
+ * with the BIR-compliant filename emitted by the server.
+ *
+ * Returns { blob, filename, contentHash } so the page can show toast
+ * confirmation that includes the content hash (audit visibility).
+ */
+export async function exportVatReturnCsv(formCode, year, period) {
+  const response = await api.get(
+    `${BASE}/forms/${formCode}/${year}/${period}/export.csv`,
+    { responseType: 'blob' },
+  );
+  const blob = response.data;
+  // Server emits the filename via Content-Disposition; fall back to a
+  // sane default if the header isn't surfaced (some browsers strip it
+  // when CORS preflight doesn't list it).
+  const cd = response.headers?.['content-disposition'] || '';
+  const match = cd.match(/filename="([^"]+)"/);
+  const filename = match
+    ? match[1]
+    : (formCode === '2550M' ? `2550M_${year}-${String(period).padStart(2, '0')}.csv` : `2550Q_${year}-Q${period}.csv`);
+  const contentHash = response.headers?.['x-content-hash'] || null;
+
+  // Trigger client download.
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+
+  return { blob, filename, contentHash };
+}
+
 export default {
   getDashboard,
   getEntityConfig,
@@ -86,4 +135,7 @@ export default {
   markFiled,
   markConfirmed,
   createOrUpdateDraft,
+  compute2550M,
+  compute2550Q,
+  exportVatReturnCsv,
 };

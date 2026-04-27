@@ -1072,6 +1072,10 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
               // Phase VIP-1.A — MD Partner Lead pipeline. Admin/president-only by default;
               // backend gate is lookup-driven via MD_PARTNER_ROLES.
               { path: '/admin/md-leads', label: 'MD Leads', icon: Handshake },
+              // Phase A.5.5 — Canonical VIP-Client merge tool. Admin/president-only
+              // by default; backend gate is lookup-driven via VIP_CLIENT_LIFECYCLE_ROLES.
+              // Unblocks A.5.2 unique-index flip after admin de-dups duplicates.
+              { path: '/admin/md-merge', label: 'MD Merge Tool', icon: ArrowLeftRight },
               { path: '/admin/employees', label: 'BDMs', icon: Users },
               { path: '/admin/products', label: 'Products', icon: Package },
             ],

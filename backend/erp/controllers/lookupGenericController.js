@@ -2125,6 +2125,58 @@ const SEED_DEFAULTS = {
   ],
 
   // ─────────────────────────────────────────────────────────────────────
+  // Phase G9.R10 (Apr 28 2026) — Agent Message Categories
+  //
+  // Display metadata for the three agent-message categories that flow into
+  // both the user's Inbox and the Agent Dashboard "Agent Messages" feed.
+  // Subscribers (e.g. Vios SaaS tenants) can recolor / re-label without a
+  // code change. Codes match the MessageInbox.category enum exactly.
+  //
+  // metadata: { description, sort_order, bg, fg, icon }
+  //   bg/fg → CSS color tokens applied to the category pill in the
+  //           dashboard feed and the per-message modal header
+  //   icon  → lucide-react icon name (default fallback if unknown)
+  //
+  // The dashboard renders a STATIC fallback table when the lookup is empty
+  // (Lookup outage / fresh tenant) so the screen never goes dark.
+  // ─────────────────────────────────────────────────────────────────────
+  AGENT_MESSAGE_CATEGORIES: [
+    {
+      code: 'ai_coaching',
+      label: 'Coaching',
+      metadata: {
+        description: 'Per-BDM coaching nudges from the Performance Coach / Engagement Decay / Visit Planner agents.',
+        sort_order: 1,
+        bg: '#dbeafe',
+        fg: '#1e40af',
+        icon: 'TrendingUp',
+      },
+    },
+    {
+      code: 'ai_schedule',
+      label: 'Schedule',
+      metadata: {
+        description: 'Visit-plan and weekly schedule output from Smart Visit Planner.',
+        sort_order: 2,
+        bg: '#dcfce7',
+        fg: '#166534',
+        icon: 'Calendar',
+      },
+    },
+    {
+      code: 'ai_alert',
+      label: 'Alert',
+      metadata: {
+        description: 'Time-sensitive alerts (engagement decay, document expiry, FEFO, dispute SLA, etc.).',
+        sort_order: 3,
+        bg: '#fee2e2',
+        fg: '#991b1b',
+        icon: 'AlertTriangle',
+      },
+    },
+  ],
+
+  // ─────────────────────────────────────────────────────────────────────
   // Phase G8 (P2-20 through P2-22) — AI toggle + HR bluntness lookups
   //
   // Three lookup categories that let subscribers flip individual agent AI
@@ -2658,6 +2710,23 @@ const SEED_DEFAULTS = {
     { code: 'VIEW_LEADS',         label: 'View MD Lead pipeline',                 insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 1, description: 'See /admin/md-leads + counts. BDMs view their own assignees from VIP Client list regardless.' } },
     { code: 'MANAGE_PARTNERSHIP', label: 'Drive LEAD/CONTACTED/VISITED transitions', insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 2, description: 'Cross-record management. BDM-on-own-record bypass enforced separately in controller.' } },
     { code: 'SET_AGREEMENT_DATE', label: 'Promote to PARTNER (rebate gate #2)',   insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 3, description: 'Locks rebate eligibility — keep narrow. President-only is a safer posture once VIP-1.B ships.' } },
+  ],
+  // ── Phase A.5 (Apr 2026) — Canonical VIP-Client (Doctor) lifecycle role gates ──
+  // Backs backend/utils/resolveVipClientLifecycleRole.js with 60s TTL cache.
+  // Defaults match the inline DEFAULT_* constants in that file so a Lookup
+  // outage falls back to admin/president (HARD_DELETE narrows to president —
+  // it bypasses the 30-day rollback grace window).
+  // Codes 1-4 are A.5.5 (this phase). Codes 5-7 are forward-compat placeholders
+  // for A.5.4 (assignedTo scalar→array flip) so admin can configure them ahead
+  // of the controller wiring; until A.5.4 ships these codes are inert.
+  VIP_CLIENT_LIFECYCLE_ROLES: [
+    { code: 'VIEW_MERGE_TOOL',       label: 'View MD Merge Tool + history',                    insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 1, description: 'Lists duplicate canonical-key groups + rollback queue. Read-only — does not perform merges.' } },
+    { code: 'EXECUTE_MERGE',         label: 'Execute MD merge (cascade winner ← loser)',       insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 2, description: 'Re-points 13+ FK references across CRM + ERP collections. Soft-deletes loser; rollback available 30 days.' } },
+    { code: 'ROLLBACK_MERGE',        label: 'Rollback an APPLIED merge within 30-day grace',   insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 3, description: 'Restores loser + re-points cascaded FKs back. Audit-logged with rollback reason.' } },
+    { code: 'HARD_DELETE_MERGED',    label: 'Hard-delete merged records (bypass 30-day grace)', insert_only_metadata: true, metadata: { roles: ['president'], sort_order: 4, description: 'Manual override of the daily cron purge. President-only by default — destroys rollback option immediately.' } },
+    { code: 'REASSIGN_PRIMARY',      label: 'Reassign primaryAssignee on a merged-survivor MD', insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 5, description: 'Forward-compat for A.5.4 (assignedTo scalar→array flip). Inert until A.5.4 ships.' } },
+    { code: 'JOIN_COVERAGE_AUTO',    label: 'Auto-join an MD into a BDM\'s coverage list',     insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 6, description: 'Forward-compat for A.5.4. Inert until A.5.4 ships.' } },
+    { code: 'JOIN_COVERAGE_APPROVAL',label: 'Approve a join-coverage request from a BDM',      insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 7, description: 'Forward-compat for A.5.4. Inert until A.5.4 ships.' } },
   ],
   // ── Phase VIP-1.H (Apr 2026) — SC/PWD Sales Book + BIR Sales Book exports ──
   // scpwdAccess.js reads metadata.roles for each code with 60s TTL cache.

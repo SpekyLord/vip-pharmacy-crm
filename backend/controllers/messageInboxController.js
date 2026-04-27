@@ -238,6 +238,32 @@ const getInboxMessages = catchAsync(async (req, res) => {
     filter.thread_id = new mongoose.Types.ObjectId(threadId);
   }
 
+  // Date-range filter on createdAt. `from` = inclusive 00:00 of the day,
+  // `to` = inclusive 23:59:59.999 of the day, so calendar-day inputs from
+  // <input type="date"> Just Work without the caller doing tz arithmetic.
+  // Invalid dates are silently ignored (treated as "no filter") rather than
+  // surfacing a 400 — the UI side can't always validate every browser quirk.
+  const fromRaw = (req.query.from || '').trim();
+  const toRaw = (req.query.to || '').trim();
+  if (fromRaw || toRaw) {
+    const range = {};
+    if (fromRaw) {
+      const d = new Date(fromRaw);
+      if (!Number.isNaN(d.getTime())) {
+        d.setHours(0, 0, 0, 0);
+        range.$gte = d;
+      }
+    }
+    if (toRaw) {
+      const d = new Date(toRaw);
+      if (!Number.isNaN(d.getTime())) {
+        d.setHours(23, 59, 59, 999);
+        range.$lte = d;
+      }
+    }
+    if (Object.keys(range).length) filter.createdAt = range;
+  }
+
   if (search) {
     // search is overlaid on top of the audience filter — combine with $and
     // since both branches use $or
