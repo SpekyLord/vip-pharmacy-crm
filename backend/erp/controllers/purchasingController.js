@@ -255,13 +255,15 @@ const addPOActivity = catchAsync(async (req, res) => {
   if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
 
   const { message, courier_waybill } = req.body;
-  if (!message || !message.trim()) {
-    return res.status(400).json({ success: false, message: 'Message is required' });
+  const trimmedMsg = (message || '').trim();
+  const trimmedWaybill = (courier_waybill || '').trim();
+  if (!trimmedMsg && !trimmedWaybill) {
+    return res.status(400).json({ success: false, message: 'Message or courier waybill is required' });
   }
 
   po.activity_log.push({
-    message: message.trim(),
-    courier_waybill: courier_waybill?.trim() || undefined,
+    message: trimmedMsg || `Waybill updated: ${trimmedWaybill}`,
+    courier_waybill: trimmedWaybill || undefined,
     status_snapshot: po.status,
     created_by: req.user._id
   });
