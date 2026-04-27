@@ -58,6 +58,11 @@ const AGENT_DEFINITIONS = {
   // transactional collections has a `bdm_id` pointing to a non-BDM user.
   // Reuses Day-4 notify() plumbing (PRESIDENT + ALL_ADMINS).
   orphan_audit:          { key: 'orphan_audit',          label: 'Orphan Owner Audit',             modulePath: './orphanAuditAgent',           type: 'FREE', schedule: 'Mon 5:15 AM' },
+  // VIP-1.B follow-up — Orphan Ledger Audit (FREE; no AI)
+  // Catches POSTED Sales/Collections/PRF whose settlement JournalEntry never
+  // wrote (the JE engine throws OUTSIDE the POST transaction, leaving books
+  // silently inconsistent). Daily 03:00 — fast detection of BIR-facing leaks.
+  orphan_ledger_audit:   { key: 'orphan_ledger_audit',   label: 'Orphan Ledger Audit',            modulePath: './orphanLedgerAuditAgent',     type: 'FREE', schedule: 'Daily 3:00 AM' },
 };
 
 const AGENT_KEYS = Object.keys(AGENT_DEFINITIONS);

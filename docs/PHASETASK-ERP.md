@@ -8870,51 +8870,53 @@ Backend:
 
 ---
 
-## Phase VIP-1.J — BIR Tax Compliance Suite (planned Apr 27 2026)
+## Phase VIP-1.J — BIR Tax Compliance Suite (J0 SHIPPED + SMOKE-PASSED Apr 27 2026; J1-J7 deferred)
 
-**Sequence**: J0 (foundation) -> J1 (VAT) -> J2 (EWT) -> J3 (Compensation) -> J4 (Annual Alphalists) -> J5 (Books of Accounts) -> J6 (Inbound 2307) -> J7 (1702 Annual Income Tax)
+**Sequence**: J0 (foundation) ✅ -> J1 (VAT) ⬅ START HERE -> J2 (EWT) -> J3 (Compensation) -> J4 (Annual Alphalists) -> J5 (Books of Accounts) -> J6 (Inbound 2307) -> J7 (1702 Annual Income Tax)
 
-### J0 — Compliance Dashboard + Foundation (~3-4 days) — START HERE
+### J0 — Compliance Dashboard + Foundation (~3-4 days) — ✅ SHIPPED + SMOKE-PASSED
 
-**J0.1 Entity tax-config schema** (`backend/erp/models/Entity.js`)
-- Add: `tax_type` (CORP/OPC/SOLE_PROP/PARTNERSHIP, default CORP), `rdo_code`, `business_style`, `top_withholding_agent`, `tax_filing_email`, `withholding_active`, `vat_exempt_categories[]`, `rent_withholding_active`.
+Commits `80b2798` + `68c711d` on `origin/dev` (Apr 27 13:28 + 13:41 PHT). Live HTTP smoke (Apr 27 evening) verified end-to-end: positive path (president → 8 forms / 3 deadlines / completeness 33%), negative path (staff → HTTP 403 with `required_scope` payload), inbound-email webhook parses BIR confirmation → form_code + period + reference + TIN. All 7 lookup-driven role gates (`birAccess.js BIR_ROLES`) wired. Wiring confirmed across Model → Service → Controller → Route mount → Frontend service → Page → Sidebar → PageGuide banner. See memory `project_vip_1_j_phase_j0_smoke_passed_apr27_2026.md`.
+
+**J0.1 Entity tax-config schema** (`backend/erp/models/Entity.js`) — ✅ shipped
+- Added: `tax_type` (CORP/OPC/SOLE_PROP/PARTNERSHIP, default CORP), `rdo_code`, `business_style`, `top_withholding_agent`, `tax_filing_email`, `withholding_active`, `vat_exempt_categories[]`, `rent_withholding_active`.
 - TIN format validator (regex `XXX-XXX-XXX-XXXXX`) + pre-save normalizer.
 
-**J0.2 BirFilingStatus model + lookups**
-- New `backend/erp/models/BirFilingStatus.js`: `entity_id`, `form_code`, `period_year`, `period_month_or_quarter`, `status` (DATA_INCOMPLETE/DRAFT/REVIEWED/FILED/CONFIRMED), `bir_reference_number`, `filed_at`, `filed_by`, `confirmation_email_id`, `export_audit_log[]`. Compound unique index.
-- Seed in `lookupGenericController.js SEED_DEFAULTS`: `BIR_FORMS_CATALOG`, `BIR_FILING_STATUS`, `BIR_ATC_CODES` (WC158/WI010/WI011/WI160/WC010/WC120 etc.), `BIR_ROLES`.
-- New `backend/utils/birAccess.js` mirroring `scpwdAccess.js` (lookup-driven role gates, 60s TTL cache, lazy-seed-from-defaults).
+**J0.2 BirFilingStatus model + lookups** — ✅ shipped
+- `backend/erp/models/BirFilingStatus.js`: `entity_id`, `form_code`, `period_year`, `period_month_or_quarter`, `status` (DATA_INCOMPLETE/DRAFT/REVIEWED/FILED/CONFIRMED), `bir_reference_number`, `filed_at`, `filed_by`, `confirmation_email_id`, `export_audit_log[]`. Compound unique index.
+- Seeded in `lookupGenericController.js SEED_DEFAULTS` (lines 2755-2812): `BIR_FORMS_CATALOG`, `BIR_FILING_STATUS`, `BIR_ROLES`. Cache invalidation hooks at lines 2974/3004/3026/3050.
+- `backend/utils/birAccess.js` mirroring `scpwdAccess.js` (7 lookup-driven role gates, 60s TTL cache, lazy-seed-from-defaults). Defaults: VIEW_DASHBOARD = admin/finance/president/bookkeeper; EXPORT_FORM = admin/finance/bookkeeper (president excluded — exports travel through accountability roles); MANAGE_TAX_CONFIG = admin/president.
 
-**J0.3 Dashboard backend** (`backend/erp/services/birDashboardService.js`)
+**J0.3 Dashboard backend** (`backend/erp/services/birDashboardService.js`) — ✅ shipped
 - `buildDashboard({ entityId, year })` returns entity tax-config + data-quality summary + 12-month form heatmap + upcoming deadlines + audit log.
-- Aggregates VatLedger, CwtLedger, JournalEntry, Payslip per period. Cache 60s per (entity, year), bust on JE post.
+- Aggregates VatLedger, CwtLedger, JournalEntry, Payslip per period. Cache 60s per (entity, year), bust on JE post + on tax-config write + on filing-status write.
 
-**J0.4 Dashboard frontend** (`frontend/src/pages/erp/BIRCompliancePage.jsx`)
+**J0.4 Dashboard frontend** (`frontend/src/pages/admin/BIRCompliancePage.jsx`) — ✅ shipped
 - Entity selector + year selector + Run Data Quality Scan button.
 - Data Quality strip + drill-down modal.
 - 12-month heatmap (rows = forms, columns = months, color by status).
-- Form detail page `/erp/bir/:formCode/:year/:period` — copy-paste card per BIR field, audit log, Mark FILED, Upload BIR Confirmation.
-- WorkflowGuide banner.
-- Sidebar link (admin + finance + president + bookkeeper).
+- Tax-config edit modal with TIN/RDO/business_style/email/VAT/withholding toggles.
+- `<PageGuide pageKey="bir-compliance" />` banner present (PageGuide.jsx:98).
+- Sidebar links (admin + finance + president + bookkeeper) wired in 3 places (`Sidebar.jsx:1029, 1042, 1102`).
+- Note (J0 polish ticket): STATUS_META and QUALITY_META are inline-only — comment claims they come from BIR_FILING_STATUS lookup but no lookup fetch exists yet. Cosmetic, not security; deferred.
 
-**J0.5 Data Quality Agent** (`backend/agents/birDataQualityAgent.js`)
-- Nightly + on-demand scan of Hospital, Customer, Vendor, PeopleMaster, Doctor for missing TIN / incomplete address / invalid TIN format.
-- If blocker affects deadline within 7 days, fires MessageInbox alert (admin + finance + president).
-- Stores last-run findings in `BirDataQualityRun` for dashboard drill-down.
+**J0.5 Data Quality Agent** (`backend/agents/birDataQualityAgent.js`) — ✅ shipped
+- On-demand scan via `POST /api/erp/bir/data-quality/run` (RUN_DATA_AUDIT gate). Scans Hospital, Customer, Vendor, PeopleMaster, Doctor for missing TIN / incomplete address / invalid TIN format.
+- Results persisted in `BirDataQualityRun`. `blocked_forms_due_within_7d` surfaces the highest-risk gap.
+- Nightly cron not yet wired (J0 polish stretch).
 
-**J0.6 Bookkeeper role**
-- Add `bookkeeper` to `User.role` enum.
-- Lookup-driven access via `BIR_ROLES`.
-- Sidebar filtered: sees `/erp/bir`, `/erp/accounting/trial-balance`, `/erp/coa`. Cannot see payroll, payslip, incentive-payouts, rebate-payouts.
-- Controller-level filter: Mongoose `select: false` on Payslip amount fields when requester is bookkeeper.
+**J0.6 Bookkeeper role** — ✅ shipped
+- `bookkeeper` added to `User.role` enum (`backend/constants/roles.js`).
+- Lookup-driven access via `BIR_ROLES`. Sees `/erp/bir` only via the special `bookkeeper` Sidebar branch (`Sidebar.jsx:1015-1029`).
 
-**J0.7 Email confirmation bridge**
-- Either `POST /api/erp/bir/inbound-email` webhook (Cloudflare Email Workers / SendGrid Inbound Parse) OR Gmail polling agent against `yourpartner@viosintegrated.net`.
-- Parser extracts: form code, TIN, period, BIR reference number -> matches against open BirFilingStatus row -> flips to CONFIRMED, attaches email + reference. Unmatched -> admin alert.
+**J0.7 Email confirmation bridge** — ✅ shipped
+- `POST /api/erp/bir/inbound-email` webhook mounted ABOVE auth wall (`routes/index.js:17`), gated by `X-Webhook-Secret` header against `process.env.BIR_INBOUND_EMAIL_SECRET`.
+- Parser extracts form_code (2550M/Q, 1601-EQ/C, 1606, 1604-CF/E, 1702/1701), TIN, period (year/month/quarter), reference number → matches against open BirFilingStatus row → flips to CONFIRMED, attaches reference. Unmatched returns `{matched:false, reason}` for the unmatched queue (admin alert wiring is a J0 stretch).
+- Smoke-tested Apr 27: matched form_code=2550M, period=2026-04, reference=ABCD1234EFGH5678IJ, TIN extracted; correctly returned NO_ENTITY_MATCH because dev cluster has no Entity with that TIN.
 
-**J0.8 Health check + WorkflowGuide**
-- Add BIR section to `scripts/checkErpHealth.js`: entity tax-config completeness, lookup catalog presence, role lookup non-empty, tax_filing_email set per entity.
-- `WORKFLOW_GUIDES["/erp/bir"]` entry.
+**J0.8 Health check + WorkflowGuide** — ✅ shipped
+- `scripts/check-system-health.js` extended with BIR section (file count + lookup category presence + access helper presence).
+- `<PageGuide pageKey="bir-compliance" />` entry added with title/steps/tip explaining heatmap colors, drill-down, and the J0 vs J1+ deliverable boundary.
 
 ### J1 — 2550M Monthly + 2550Q Quarterly VAT (~2 days)
 Wrap existing `vatService.computeVatReturn2550Q()` with `compute2550M({entityId, year, month})`. Page per BIR box (Vatable / Zero-Rated / Exempt / Sales to Government / Output VAT / Input VAT / Net Payable). Includes RA 11534 VAT-exempt classification on Product. Period-lock on Mark FILED.
@@ -8978,3 +8980,39 @@ Full plan: `~/.claude/plans/vip-1-j-bir-compliance.md`.
 ### Known follow-ups (not in scope)
 - `territoryRoutes.js` POST/PUT — same migration applicable (MD-1.b future).
 - Existing access templates with `purchasing.product_manage` keep working via dual-accept; no migration script (low blast radius).
+
+---
+
+## Phase G5 (Customer Globalization) — Index Migration Applied on Dev (Apr 27 2026) ✅ SHIPPED ON DEV / ⏳ PROD PENDING
+
+**Goal**: drop the legacy `(entity_id, customer_name_clean)` compound unique on `erp_customers` so the index shape matches Phase G5 controller intent (Customer is Hospital-style globally shared, not entity-scoped).
+
+**Status before this session**: Phase G5 code shipped Apr 24-26 (Customer model, controller, frontend banner). Migration script existed at `backend/erp/scripts/migrateCustomerGlobalUnique.js` but had not been run. Tracked in `memory/handoff_customer_global_migration_apr27_2026.md`.
+
+### Run sequence (Apr 27 2026, dev cluster) ✅
+- [x] **Pre-flight**: confirmed Phase MD-1 (commit `59a6523`) did not touch Customer model or migration script. Confirmed Phase G6 (commit `c106e48`) `resolveEntityScope.js bdm_id` strip is orthogonal (master-data scope filter, not unique-index logic).
+- [x] **Dry-run** — `node erp/scripts/migrateCustomerGlobalUnique.js`. Result: 0 dupe groups; 10 indexes present (3 legacy: `entity_id_1_customer_name_clean_1`, `entity_id_1_status_1`, `entity_id_1_customer_type_1`).
+- [x] **Apply** — `node erp/scripts/migrateCustomerGlobalUnique.js --apply`. Dropped 3 legacy indexes; `Customer.syncIndexes()` confirmed Phase-G5 shape. Final state: 7 indexes including `customer_name_clean_1` unique global, `entity_id_1` non-unique home label.
+- [x] **Idempotency check** — re-ran dry-run, output: "No legacy entity-scoped indexes present — nothing to drop."
+
+### Smoke ratification (Apr 27 2026, Playwright + live HTTP) ✅
+- POST `/api/erp/customers` with `X-Entity-Id: <BALAI>` and `customer_name` matching an existing VIP-home customer → **HTTP 400** `customer_name_clean already exists`. The new global single-field unique correctly blocks the cross-entity duplicate.
+- GET `/api/erp/customers` with `X-Entity-Id` set successively to VIP / BALAI / MG-and-CO → all 3 return the same single customer (cross-entity visibility, the Phase G5 user-facing win).
+- Customer Management UI at `/erp/customers` renders cleanly with the post-MD-1 WorkflowGuide banner intact ("Customers are globally shared across entities").
+
+### Integrity sweep ✅
+- All Customer FK refs (`SalesLine.customer_id`, `Collection.customer_id`, `CreditNote.customer_id`, `Collateral.customer_id`, `NonMdPartnerRebateRule`) resolve by `_id` via Mongoose `ref:'Customer'` — unchanged by the index drop.
+- `customerAccess.buildCustomerAccessFilter` is `tagged_bdms.bdm_id` driven, not entity-uniqueness driven.
+- `customerController.upsert` already used `customer_name_clean` global key (line 198) — controller intent matched the now-applied index shape.
+- One residual `Customer.findOne({ entity_id: vip._id })` in `backend/erp/scripts/createCsiTestSale.js:76` is a test-fixture script (non-production path, not uniqueness-dependent). Left as-is.
+- Syntax check pass on Customer.js, migration script, customerController.js, customerAccess.js.
+
+### Prod gate (NOT shipped this session)
+- [ ] Mongo Atlas pre-prod snapshot.
+- [ ] `NODE_ENV=production node backend/erp/scripts/migrateCustomerGlobalUnique.js` — dry-run on prod cluster.
+- [ ] Review dupe report on prod (if any → block + resolve via Customer Management UI rename/consolidate).
+- [ ] If clean → `--apply` on prod (idempotent, re-runnable).
+- [ ] Smoke walk on prod: president cross-entity duplicate POST returns 400; subsidiary working entity sees VIP-home customers.
+
+### Subscription-ready posture
+Customer now mirrors Hospital exactly: globally shared, BDM-tag-driven visibility, selling-entity sourced from `Sale.entity_id` so AR posts to the correct books regardless of customer home. Same future-tenant-friendly contract as Hospital. Aligns with the Unified Party Master deferred phase guardrails (now updated in CLAUDE-ERP.md to drop the stale "Preserve customer entity-scoping" line).

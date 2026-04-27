@@ -127,6 +127,14 @@ function initAgentScheduler() {
   cron.schedule('15 5 * * 1', () => triggerScheduled('orphan_audit', 'Orphan Owner Audit'), { timezone: TIMEZONE });
   console.log('[AgentScheduler]   ✓ #OA Orphan Audit - Monday 5:15 AM');
 
+  // VIP-1.B follow-up — Orphan Ledger Audit. Daily 03:00 Manila — clean
+  // pre-morning slot. Catches POSTED docs (Sales/Collection/PRF) whose
+  // settlement JE silently failed because the auto-journal block runs
+  // OUTSIDE the POST transaction. Window: scans ALL POSTED rows (not a
+  // rolling window) so persistent orphans keep alerting until fixed.
+  cron.schedule('0 3 * * *', () => triggerScheduled('orphan_ledger_audit', 'Orphan Ledger Audit'), { timezone: TIMEZONE });
+  console.log('[AgentScheduler]   ✓ #OL Orphan Ledger Audit - daily 3:00 AM');
+
   const hasAiKey = !!process.env.ANTHROPIC_API_KEY;
 
   if (hasAiKey) {
