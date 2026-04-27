@@ -19,7 +19,17 @@
 const DB_NAME = 'vip-offline-data';
 // v1 → v2: product_images store
 // v2 → v3 (Phase N): visit_drafts + visit_photos stores
-const DB_VERSION = 3;
+// v3 → v4 (Phase N offline-first sprint, Apr 27 2026):
+//   + auth_session  — keyPath:'kind' (single 'current' row). Survives the page
+//     reload that the BDM does between visits when AuthContext.getProfile()
+//     can't reach /api/users/profile because the radio is off. Without it,
+//     AuthContext bounces to /login and the queued offline drafts can never
+//     be replayed under the right owner.
+//   + sync_errors   — keyPath:'id'. Persisted record of every VIP_VISIT_DRAFT_LOST
+//     event the SW emits. Drives the SyncErrorsTray badge on the BDM dashboard
+//     so failed sync events stop being a transient toast and become an
+//     auditable inbox the BDM can review + retry / discard.
+const DB_VERSION = 4;
 
 const STORES = {
   DOCTORS: 'doctors',
@@ -32,6 +42,9 @@ const STORES = {
   // used as the SW queue's session_group_id). Photos are keyed by `photo_<uuid>`.
   VISIT_DRAFTS: 'visit_drafts',
   VISIT_PHOTOS: 'visit_photos',
+  // Phase N offline-first sprint — see DB_VERSION comment.
+  AUTH_SESSION: 'auth_session',
+  SYNC_ERRORS: 'sync_errors',
 };
 
 // Phase N — Constants the SW reads (must stay in sync with sw.js)
@@ -67,6 +80,22 @@ function openDB() {
       if (!db.objectStoreNames.contains(STORES.VISIT_PHOTOS)) {
         const photoStore = db.createObjectStore(STORES.VISIT_PHOTOS, { keyPath: 'ref' });
         photoStore.createIndex('byDraft', 'draftId', { unique: false });
+      }
+      // Phase N offline-first sprint — single-row "current login session"
+      // cache. Stores the User profile object verbatim (sans tokens — those
+      // live in httpOnly cookies) keyed by `kind:'current'`. AuthContext
+      // reads it when /api/users/profile fails AND navigator is offline.
+      if (!db.objectStoreNames.contains(STORES.AUTH_SESSION)) {
+        db.createObjectStore(STORES.AUTH_SESSION, { keyPath: 'kind' });
+      }
+      // Phase N offline-first sprint — sync errors store. SW posts
+      // VIP_VISIT_DRAFT_LOST messages on photo-loss; offlineManager catches
+      // them and writes a row here so SyncErrorsTray.jsx can render the
+      // outstanding failure list across reloads. Indexed by createdAt so
+      // the tray sorts most-recent-first without an extra sort pass.
+      if (!db.objectStoreNames.contains(STORES.SYNC_ERRORS)) {
+        const errStore = db.createObjectStore(STORES.SYNC_ERRORS, { keyPath: 'id' });
+        errStore.createIndex('byCreatedAt', 'createdAt', { unique: false });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -392,6 +421,128 @@ const offlineStore = {
       await deleteOne(STORES.VISIT_PHOTOS, ref);
     } catch (err) {
       console.warn('[OfflineStore] Failed to delete visit photo:', err);
+    }
+  },
+
+  // ── Phase N offline-first sprint — Auth session cache ────────────
+  /**
+   * Persist the currently-logged-in user's PROFILE OBJECT (no tokens —
+   * those live in httpOnly cookies which the browser handles itself).
+   * AuthContext calls this on successful login and on session bootstrap
+   * when /api/users/profile returns OK. When the BDM closes the tab,
+   * walks 30 minutes to the next clinic and reopens the app on weak
+   * signal, AuthContext can rehydrate from this entry instead of dumping
+   * them on /login (and orphaning their queued offline drafts).
+   *
+   * @param {object} user - the User profile DTO (must carry _id + role)
+   */
+  async cacheCurrentUser(user) {
+    if (!user || !user._id) return;
+    try {
+      await putOne(STORES.AUTH_SESSION, {
+        kind: 'current',
+        user,
+        cachedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn('[OfflineStore] Failed to cache current user:', err);
+    }
+  },
+
+  /**
+   * Read the cached current-user row. Returns the User profile DTO or null.
+   * AuthContext only consults this when navigator.onLine === false AND
+   * /api/users/profile failed; never as a primary source of truth.
+   * Stale-by-design — admins can rotate roles while a BDM is offline; the
+   * authoritative role gate runs server-side on the next request anyway,
+   * so a stale cached profile only affects which UI screens render until
+   * the next online getProfile() refresh.
+   *
+   * @returns {Promise<object|null>}
+   */
+  async getCachedCurrentUser() {
+    try {
+      const row = await getOne(STORES.AUTH_SESSION, 'current');
+      return row?.user || null;
+    } catch {
+      return null;
+    }
+  },
+
+  /**
+   * Drop the cached current-user row. Called on logout AND on auth:logout
+   * forced eviction (token revoked server-side). Failing to clear here
+   * would let the next person who logs in on the same device briefly see
+   * the previous BDM's profile until their own getProfile() call resolved.
+   */
+  async clearCachedCurrentUser() {
+    try {
+      await deleteOne(STORES.AUTH_SESSION, 'current');
+    } catch (err) {
+      console.warn('[OfflineStore] Failed to clear cached current user:', err);
+    }
+  },
+
+  // ── Phase N offline-first sprint — Sync errors tray ──────────────
+  /**
+   * Record a sync failure (typically VIP_VISIT_DRAFT_LOST from the SW).
+   * Each row carries enough context for the BDM to decide retry vs discard.
+   *
+   * @param {object} entry - { kind, draftId, doctorName?, message, createdAt? }
+   * @returns {Promise<string>} the generated id
+   */
+  async recordSyncError(entry) {
+    if (!entry?.kind) throw new Error('recordSyncError requires { kind }');
+    const id = entry.id || (typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `err_${Date.now()}_${Math.random().toString(36).slice(2)}`);
+    try {
+      await putOne(STORES.SYNC_ERRORS, {
+        id,
+        kind: entry.kind,
+        draftId: entry.draftId || null,
+        doctorName: entry.doctorName || null,
+        doctorId: entry.doctorId || null,
+        message: entry.message || 'Sync failed.',
+        createdAt: entry.createdAt || new Date().toISOString(),
+        userId: entry.userId || null,
+      });
+    } catch (err) {
+      console.warn('[OfflineStore] Failed to record sync error:', err);
+    }
+    return id;
+  },
+
+  /** Newest-first list of unresolved sync errors. */
+  async getSyncErrors() {
+    try {
+      const rows = await getAll(STORES.SYNC_ERRORS);
+      return rows.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+    } catch {
+      return [];
+    }
+  },
+
+  async deleteSyncError(id) {
+    try {
+      await deleteOne(STORES.SYNC_ERRORS, id);
+    } catch (err) {
+      console.warn('[OfflineStore] Failed to delete sync error:', err);
+    }
+  },
+
+  async clearAllSyncErrors() {
+    try {
+      const db = await openDB();
+      const tx = db.transaction(STORES.SYNC_ERRORS, 'readwrite');
+      tx.objectStore(STORES.SYNC_ERRORS).clear();
+      await new Promise((resolve, reject) => {
+        tx.oncomplete = resolve;
+        tx.onerror = reject;
+      });
+      db.close();
+    } catch (err) {
+      console.warn('[OfflineStore] Failed to clear sync errors:', err);
     }
   },
 };
