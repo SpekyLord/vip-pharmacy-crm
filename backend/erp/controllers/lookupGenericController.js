@@ -742,6 +742,17 @@ const SEED_DEFAULTS = {
     { code: 'MASTER__HOSPITAL_DEACTIVATE', label: 'Deactivate Hospital Record (DANGER)', metadata: { module: 'master', key: 'hospital_deactivate', sort_order: 4 } },
     { code: 'MASTER__HOSPITAL_ALIAS_DELETE', label: 'Delete Hospital Alias (DANGER)', metadata: { module: 'master', key: 'hospital_alias_delete', sort_order: 5 } },
     { code: 'MASTER__TERRITORY_DELETE', label: 'Delete Territory Record (DANGER)', metadata: { module: 'master', key: 'territory_delete', sort_order: 6 } },
+    // Phase MD-1 (Apr 27, 2026) — Positive Add/Edit grants for Master Data. Without these, the
+    // pre-MD-1 roleCheck('admin','finance','president') hardcode meant Master Data → FULL was a
+    // no-op for staff (legacy governance gap). These are NON-danger sub-perms so they're delegable.
+    // The cross_entity_write flag widens ProductMaster create/update to any entity (Hospital and
+    // Customer are already globally shared so the flag is informational for them).
+    // Lookup-driven so subscribers can grant a specific staff role limited Master Data write
+    // without bundling the danger keys (deactivate/delete) above.
+    { code: 'MASTER__HOSPITAL_MANAGE', label: 'Add/Edit Hospitals (incl. aliases, BDM/warehouse assignment)', metadata: { module: 'master', key: 'hospital_manage', sort_order: 7 } },
+    { code: 'MASTER__CUSTOMER_MANAGE', label: 'Add/Edit Customers (incl. BDM tagging)', metadata: { module: 'master', key: 'customer_manage', sort_order: 8 } },
+    { code: 'MASTER__PRODUCT_MANAGE', label: 'Add/Edit Product Master', metadata: { module: 'master', key: 'product_manage', sort_order: 9 } },
+    { code: 'MASTER__CROSS_ENTITY_WRITE', label: 'Edit Master Data across entities (parent + subsidiary catalogs)', metadata: { module: 'master', key: 'cross_entity_write', sort_order: 10 } },
     // Phase 3c — ERP Access governance (delegating the delegator is intentionally NOT here —
     // user access GET/SET is still admin/president-only; only template-delete is delegable.)
     { code: 'ERP_ACCESS__TEMPLATE_DELETE', label: 'Delete ERP Access Template (DANGER)', metadata: { module: 'erp_access', key: 'template_delete', sort_order: 1 } },

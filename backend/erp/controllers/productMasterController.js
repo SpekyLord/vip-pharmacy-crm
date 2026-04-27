@@ -6,6 +6,7 @@ const Entity = require('../models/Entity');
 const Lookup = require('../models/Lookup');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { ROLES } = require('../../constants/roles');
+const { hasCrossEntityMasterData } = require('../middleware/erpAccessCheck');
 
 /**
  * Resolve entity IDs to query for products.
@@ -124,7 +125,9 @@ const getAll = catchAsync(async (req, res) => {
 
 const getById = catchAsync(async (req, res) => {
   const filter = { _id: req.params.id };
-  if (!req.isPresident) filter.entity_id = req.entityId;
+  // Phase MD-1 — cross-entity readers also see foreign-entity products by id (consistent
+  // with their write capability — preventing read after write would be a footgun).
+  if (!hasCrossEntityMasterData(req.user)) filter.entity_id = req.entityId;
   const product = await ProductMaster.findOne(filter).lean();
   if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
   res.json({ success: true, data: product });
@@ -149,7 +152,11 @@ function pickFields(body, fields) {
 
 const create = catchAsync(async (req, res) => {
   const data = pickFields(req.body, EDITABLE_FIELDS);
-  data.entity_id = req.entityId;
+  // Phase MD-1 (Apr 2026) — cross-entity write: caller with master.cross_entity_write
+  // (or president) may pass req.body.entity_id to create the product under another entity.
+  // Without the flag, entity is forced to the working entity (req.entityId).
+  const canCrossEntity = hasCrossEntityMasterData(req.user);
+  data.entity_id = (canCrossEntity && req.body.entity_id) ? req.body.entity_id : req.entityId;
   data.added_by = req.user._id;
   const product = await ProductMaster.create(data);
   res.status(201).json({ success: true, data: product });
@@ -157,7 +164,9 @@ const create = catchAsync(async (req, res) => {
 
 const update = catchAsync(async (req, res) => {
   const filter = { _id: req.params.id };
-  if (!req.isPresident) filter.entity_id = req.entityId;
+  // Phase MD-1 (Apr 2026) — cross-entity write replaces president-only bypass.
+  // hasCrossEntityMasterData returns true for president OR explicit master.cross_entity_write grant.
+  if (!hasCrossEntityMasterData(req.user)) filter.entity_id = req.entityId;
   const data = pickFields(req.body, EDITABLE_FIELDS);
   const product = await ProductMaster.findOneAndUpdate(
     filter,
@@ -175,7 +184,8 @@ const deactivate = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid product ID: ' + req.params.id });
     }
     const filter = { _id: req.params.id };
-    if (!req.isPresident) filter.entity_id = req.entityId;
+    // Phase MD-1 — cross-entity write applies to deactivate as well (consistent with update).
+    if (!hasCrossEntityMasterData(req.user)) filter.entity_id = req.entityId;
     const product = await ProductMaster.findOneAndUpdate(
       filter,
       { $set: { is_active: false } },
@@ -196,7 +206,8 @@ const updateReorderQty = catchAsync(async (req, res) => {
   const { reorder_min_qty, reorder_qty, safety_stock_qty, lead_time_days } = req.body;
 
   const reorderFilter = { _id: req.params.id };
-  if (!req.isPresident) reorderFilter.entity_id = req.entityId;
+  // Phase MD-1 — cross-entity write applies to reorder-qty as well (consistent with update).
+  if (!hasCrossEntityMasterData(req.user)) reorderFilter.entity_id = req.entityId;
   const product = await ProductMaster.findOne(reorderFilter);
   if (!product) return res.status(404).json({ success: false, message: 'Product not found' });
 
@@ -590,7 +601,10 @@ const refreshProducts = catchAsync(async (req, res) => {
 const deleteProduct = async (req, res) => {
   try {
     const filter = { _id: req.params.id };
-    if (!req.isPresident) filter.entity_id = req.entityId;
+    // Phase MD-1 — hard-delete is gated by master.product_delete (Tier 1 baseline danger
+    // sub-perm) at the route level; the cross-entity flag here lets the explicit grantee
+    // delete a foreign-entity product if they were also given cross_entity_write.
+    if (!hasCrossEntityMasterData(req.user)) filter.entity_id = req.entityId;
 
     const product = await ProductMaster.findOne(filter);
     if (!product) return res.status(404).json({ success: false, message: 'Product not found' });

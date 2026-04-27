@@ -285,4 +285,69 @@ const erpAnySubAccessCheck = (...pairs) => {
   };
 };
 
-module.exports = { erpAccessCheck, erpSubAccessCheck, erpAnySubAccessCheck, approvalCheck };
+/**
+ * Phase MD-1 (Apr 2026) — Composition: legacy role bypass OR sub-permission grant.
+ *
+ * Used during sub-permission migrations to preserve hardcoded role behavior (the
+ * old roleCheck('admin','finance','president') ungated everyone in those roles)
+ * while adding lookup-driven delegation to other roles.
+ *
+ * Calls erpSubAccessCheck under the hood when the role does not match — meaning
+ * the danger-fallback gate, ADMIN-without-erp_access fallthrough, and CEO block
+ * all still apply for non-bypass paths.
+ *
+ * Use only for NON-DANGER sub-permissions where you want the legacy role list
+ * to keep working. Do NOT use for danger keys (hospital_deactivate, product_delete,
+ * etc.) — those must always require explicit grant.
+ *
+ * Example:
+ *   router.post('/', erpRoleOrSubAccessCheck(['admin','finance','president'], 'master', 'hospital_manage'), c.create);
+ *
+ * @param {string[]} roles - bypass roles (typically ['admin','finance','president'])
+ * @param {string} module - one of the 10 ERP module keys
+ * @param {string} subKey - specific sub-permission key
+ */
+const erpRoleOrSubAccessCheck = (roles, module, subKey) => {
+  const subCheck = erpSubAccessCheck(module, subKey);
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+    if (roles.includes(req.user.role)) return next();
+    return subCheck(req, res, next);
+  };
+};
+
+/**
+ * Phase MD-1 (Apr 2026) — Cross-Entity Master Data write capability.
+ *
+ * Returns true when the user is permitted to write Master Data (ProductMaster
+ * primarily) outside their working entity's scope. Hospital and Customer are
+ * globally shared by design — the flag is informational for those resources.
+ *
+ * Eligibility:
+ *   - President: always (governs every entity by definition)
+ *   - Anyone with `erp_access.sub_permissions.master.cross_entity_write === true`
+ *
+ * Admin/Finance do NOT auto-pass — explicit grant via Access Template is required
+ * (Rule #3 lookup-driven). This keeps the high-trust capability opt-in even for
+ * management roles, mirroring the danger-fallback design philosophy.
+ *
+ * Used in productMasterController.create/update/updateReorderQty/deactivate to
+ * bypass the `filter.entity_id = req.entityId` clause and to honor an explicit
+ * `req.body.entity_id` on create.
+ */
+function hasCrossEntityMasterData(user) {
+  if (!user) return false;
+  if (user.role === ROLES.PRESIDENT) return true;
+  return user.erp_access?.sub_permissions?.master?.cross_entity_write === true;
+}
+
+module.exports = {
+  erpAccessCheck,
+  erpSubAccessCheck,
+  erpAnySubAccessCheck,
+  erpRoleOrSubAccessCheck,
+  approvalCheck,
+  hasCrossEntityMasterData,
+};

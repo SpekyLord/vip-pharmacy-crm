@@ -1390,7 +1390,7 @@ Lookup-driven parent product inheritance. When a subsidiary user accesses produc
 - **Entity resolution**: `resolveProductEntityIds()` helper in `productMasterController.js` checks Entity model for `entity_type: 'SUBSIDIARY'` + `parent_entity_id`, then queries Lookup for access.
 - **Catalog mode**: All product-browsing pages pass `catalog=true` (PO, GRN, Transfer Orders, Product Master). Stock/inventory views remain entity-scoped.
 - **Product Master UI**: Inherited parent products show a "Parent" badge and "Managed by parent" in the actions column (read-only). Subsidiary can still add their own products with "+ New Product".
-- **Sub-permission access**: Product CRUD gated by `erpSubAccessCheck('purchasing', 'product_manage')` — replaces hardcoded `roleCheck`. Add/edit for purchasing users; deactivate/delete stays admin/finance/president only. Frontend mirrors this: `hasProductManage()` checks `erp_access.sub_permissions.purchasing.product_manage` and gates Add/Edit/Import/Export/Refresh buttons accordingly (VIEW-only users see product list but no write controls).
+- **Sub-permission access**: Product CRUD now gated by `erpAnySubAccessCheck(['master','product_manage'], ['purchasing','product_manage'])` (Phase MD-1, Apr 2026). The `master` namespace is canonical going forward; `purchasing` kept for backwards compatibility with existing access templates. Frontend `canAddEdit` accepts either grant. Cross-entity write requires the additional `master.cross_entity_write` flag (controller honors `req.body.entity_id` on create + bypasses the `entity_id` filter on update/deactivate/delete/getById). Deactivate / hard-delete stay on the danger sub-perms (`master.product_deactivate` Tier 2 / `master.product_delete` Tier 1 baseline).
 - **Field whitelisting**: Controller `create`/`update` use `pickFields(req.body, EDITABLE_FIELDS)` — prevents injection of `entity_id`, `is_active`, `added_by`, or other protected fields via raw request body.
 - **Schema validation**: `dosage_strength` is `required: true` — all products must have brand_name + dosage_strength. `item_key` is auto-generated as `"BrandName|DosageStrength"` (unique per entity). Pre-save AND pre-findOneAndUpdate hooks keep `item_key`, `brand_name_clean`, and `unit_code` in sync on both creates and edits.
 - **Cross-module routes**: Batch Trace and GRN routes accept `requiredErpModule: ["inventory", "purchasing"]` — purchasing users can access without needing inventory module. `ProtectedRoute` now supports array of modules (OR logic).
@@ -5728,3 +5728,55 @@ See `docs/PHASETASK-ERP.md` (`WEEK-1 STABILIZATION — DAY 4`) for the full file
 **Pattern reuse**: `scpwdSalesBookController` + `scpwdReportingService` + `scpwdAccess` are the templates. New BIR module is a generalization of VIP-1.H (which is one of seven forms in this suite).
 
 **Plan**: `~/.claude/plans/vip-1-j-bir-compliance.md` (detailed file-level breakdown, J0-J7 sub-steps, open questions, handoff guidance).
+
+---
+
+## Phase MD-1 — Master Data Positive Sub-Permissions + Cross-Entity Write (Apr 27 2026)
+
+**Why**: Pre-MD-1, the Master Data module's "FULL" toggle had **no positive sub-permissions** — only DANGER toggles (deactivate/delete). Setting `Master Data: FULL` on a `staff` user did nothing for Hospital + Customer Add/Edit because those routes were hardcoded to `roleCheck('admin','finance','president')` in [hospitalRoutes.js](backend/erp/routes/hospitalRoutes.js) / [customerRoutes.js](backend/erp/routes/customerRoutes.js). Legacy governance gap from Phase 18 — single-record CRUD never migrated to the modern `erpSubAccessCheck` infrastructure. ProductMaster lived under the wrong module (`purchasing.product_manage` instead of `master.product_manage`) and was president-only for cross-entity writes (line `if (!req.isPresident) filter.entity_id = req.entityId`).
+
+User context: 2 BDM-promoted staff (Mae Navarro `s3.vippharmacy@gmail.com`, plus a future second hire) need to maintain Hospital/Customer/ProductMaster across all entities without bundling admin role. Lookup-driven and subscription-ready per Rule #3 + Phase 0d roadmap.
+
+**What shipped**:
+
+1. **4 new sub-permissions** in [lookupGenericController.js SEED_DEFAULTS](backend/erp/controllers/lookupGenericController.js) under `master`:
+   - `MASTER__HOSPITAL_MANAGE` (key `hospital_manage`, sort_order 7) — Add/Edit Hospitals incl. aliases + warehouse assignment
+   - `MASTER__CUSTOMER_MANAGE` (key `customer_manage`, sort_order 8) — Add/Edit Customers incl. BDM tagging
+   - `MASTER__PRODUCT_MANAGE` (key `product_manage`, sort_order 9) — Add/Edit Product Master
+   - `MASTER__CROSS_ENTITY_WRITE` (key `cross_entity_write`, sort_order 10) — Edit Master Data across entities (parent + subsidiary catalogs)
+   All NON-danger so they're delegable via Access Template without explicit-grant friction. Seeded across every entity via `node backend/erp/scripts/seedAllLookups.js` (idempotent `$setOnInsert`).
+
+2. **Two new helpers** in [erpAccessCheck.js](backend/erp/middleware/erpAccessCheck.js):
+   - `erpRoleOrSubAccessCheck(roles, module, subKey)` — composition: legacy role bypass OR sub-permission grant. Used to migrate routes from hardcoded `roleCheck` without regressing legacy admin/finance/president callers whose Access Template might be in explicit-grant mode (which would otherwise cause `master = FULL + some-sub-perms-ticked` admins to lose write access).
+   - `hasCrossEntityMasterData(user)` — returns true for President OR explicit `master.cross_entity_write` grant. Admin/Finance do **not** auto-pass — explicit grant required (Rule #3 lookup-driven). Mirrors danger-fallback design philosophy: high-trust capability is opt-in.
+
+3. **Route migrations**:
+   - [hospitalRoutes.js](backend/erp/routes/hospitalRoutes.js): POST `/`, PUT `/:id`, POST `/:id/alias` → `erpRoleOrSubAccessCheck(['admin','finance','president'], 'master', 'hospital_manage')`. Bulk export/import stay role-gated (admin-grade Excel round-trip).
+   - [customerRoutes.js](backend/erp/routes/customerRoutes.js): POST `/`, PUT `/:id`, POST `/:id/tag-bdm`, POST `/:id/untag-bdm` → `erpRoleOrSubAccessCheck(...,'master','customer_manage')`. Bulk export/import stay role-gated.
+   - [productMasterRoutes.js](backend/erp/routes/productMasterRoutes.js): all write routes (POST `/`, PUT `/:id`, POST `/tag-warehouse`, PATCH `/:id/reorder-qty`, GET/PUT `/export-prices` `/import-prices` `/refresh`) → `erpAnySubAccessCheck(['master','product_manage'], ['purchasing','product_manage'])` so existing access templates keep working AND new staff can use the canonical Master Data namespace.
+
+4. **Cross-entity flag plumbing** in [productMasterController.js](backend/erp/controllers/productMasterController.js):
+   - `create`: when `hasCrossEntityMasterData(req.user)` AND `req.body.entity_id` provided, the product is created under that target entity (instead of being forced to `req.entityId`).
+   - `update`, `updateReorderQty`, `deactivate`, `deleteProduct`, `getById`: replaced `if (!req.isPresident) filter.entity_id = req.entityId` with `if (!hasCrossEntityMasterData(req.user)) ...`. President bypass preserved (PRESIDENT now flows through `hasCrossEntityMasterData` which short-circuits true for that role).
+   - **Not** changed: `tagToWarehouse` warehouse entity validation (line 264) and `getProductWarehouses` ledger scope (line 307) still use `req.isPresident`. Cross-entity master-data write should not implicitly grant cross-entity warehouse poisoning or InventoryLedger probing — those are separate trust surfaces.
+
+5. **Frontend banners + gating**:
+   - [HospitalList.jsx](frontend/src/erp/pages/HospitalList.jsx): hardcoded `ROLE_SETS.MANAGEMENT.includes(user?.role)` button gates replaced with `canManageHospitals = ROLE_SETS.MANAGEMENT.includes(...) || hasSubPermission('master','hospital_manage')`. Backwards-compat: management roles keep working even before their Access Template is reconfigured; staff with the new explicit grant get the buttons too.
+   - [ProductMaster.jsx](frontend/src/erp/pages/ProductMaster.jsx): `canAddEdit` now mirrors the backend dual-accept (`master.product_manage || purchasing.product_manage`).
+   - [CustomerList.jsx](frontend/src/erp/pages/CustomerList.jsx): no frontend role gate to remove (Add/Edit buttons were ungated; backend was the only enforcement).
+   - [WorkflowGuide.jsx](frontend/src/erp/components/WorkflowGuide.jsx): `hospitals`, `customer-list`, `product-master` banners updated with explicit Phase MD-1 step and `tip` referencing the new sub-permissions.
+
+**Smoke ratification (Apr 27 2026, Playwright + live HTTP)**:
+- Mae (BDM, granted 4 sub-perms) — Hospital create/update/alias-add 200/201, Customer create 201, ProductMaster own-entity create 201, ProductMaster cross-entity create (target=MG-and-CO from VIP working) 201, cross-entity update 200. ✓
+- s19 (BDM, no grants) — all 3 Add endpoints correctly 403 with precise messages ("No access to master module" / "Access denied: requires master.product_manage or purchasing.product_manage permission"). ✓
+- President — Hospital create 201 (no regression). ✓
+- Lookup UI render — all 4 new sub-perms visible in PersonDetail Access Manager after running `seedAllLookups.js`. ✓
+- Build clean: `npx vite build` 10.76s, `npx eslint` clean (backend EXIT=0, frontend EXIT=0), `node scripts/startupCheck.js` passed.
+
+**Subscription-ready**: every gate is lookup-driven. A subscriber spinning up a new tenant gets the 4 sub-perms seeded automatically (lazy-seed on first GET per entity, OR explicit `seedAllLookups.js` on bootstrap). Subscribers can revoke any sub-perm without code changes — Access Template editor honors all toggles. Bulk Import/Export remain admin-grade because they bypass per-record audit; granting them to non-admins would break Rule #20 audit trail.
+
+**Why a composition helper instead of pure `erpSubAccessCheck`**: legacy admin/finance/president might have their Access Template in "explicit-grant mode" (any single sub-perm ticked under `master`). In that mode, `erpSubAccessCheck` requires the specific key. An admin who only ticked `master.hospital_alias_delete` would suddenly lose Add/Edit hospital — silent regression. `erpRoleOrSubAccessCheck` short-circuits the legacy roles before reaching the explicit-grant gate, preserving pre-MD-1 behavior exactly.
+
+**Known follow-ups (not in scope)**:
+- [territoryRoutes.js](backend/erp/routes/territoryRoutes.js) POST/PUT still use `roleCheck('admin','finance','president')`. Territories are master data too — same migration could land a future MD-1.b. Skipped because territory CRUD is rare and admin-handled.
+- Existing access templates with `purchasing.product_manage` ticked keep working (dual-accept). When a tenant migrates to the canonical `master.product_manage`, they should re-tick on the new module key. No automatic migration script (low blast radius — president bypass covers admins).
