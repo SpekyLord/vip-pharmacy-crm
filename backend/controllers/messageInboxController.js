@@ -1242,6 +1242,184 @@ const getFolders = catchAsync(async (req, res) => {
   });
 });
 
+/* ------------------------------------------------------------------ */
+/* POST /api/messages/system-event                                    */
+/*                                                                    */
+/* Phase N offline-first sprint (Apr 27 2026)                         */
+/*                                                                    */
+/* Self-DM endpoint for system-generated events (sync complete /      */
+/* sync error / draft lost). The CALLER is BOTH sender and recipient  */
+/* — the entry lands in their own inbox so they can audit how often   */
+/* their device burned mobile data syncing offline drafts.            */
+/*                                                                    */
+/* SECURITY:                                                          */
+/*   - protect middleware required (req.user populated)               */
+/*   - event_type is server-side allowlisted; client cannot inject    */
+/*     arbitrary inbox content                                        */
+/*   - title/body templates are server-side, only numeric / scalar    */
+/*     payload values land in the formatted text                      */
+/*   - recipient is FORCED to req.user._id; can't be spoofed          */
+/*                                                                    */
+/* Lookup-driven (Rule #3): the event-type → template mapping comes   */
+/* from the SYSTEM_EVENT_TEMPLATES Lookup category if present (per    */
+/* entity), otherwise the inline DEFAULT_EVENT_TEMPLATES below kick   */
+/* in so a Lookup outage never breaks the sync feedback loop.         */
+/* ------------------------------------------------------------------ */
+
+const Lookup = require('../erp/models/Lookup');
+
+const DEFAULT_EVENT_TEMPLATES = Object.freeze({
+  sync_complete: {
+    category: 'system',
+    priority: 'low',
+    titleTemplate: 'Synced {synced} {kind_label} (~{megabytes} MB)',
+    bodyTemplate:
+      'Your offline drafts replayed automatically when connectivity returned.\n\n' +
+      'Items synced: {synced}\nApprox data used: {megabytes} MB ({bytes_human}).\n' +
+      'Pending: {remaining}\nCompleted at: {completed_at}',
+  },
+  sync_error: {
+    category: 'system',
+    priority: 'normal',
+    titleTemplate: 'Offline sync error — {kind_label} could not replay',
+    bodyTemplate:
+      'A queued offline item could not be restored or accepted by the server.\n\n' +
+      'Kind: {kind_label}\nReason: {reason}\nReference: {draft_id}\n\n' +
+      'Open the Sync Errors tray on your dashboard to retry or discard.',
+  },
+  visit_draft_lost: {
+    category: 'system',
+    priority: 'normal',
+    titleTemplate: 'Visit draft photos lost — please re-capture',
+    bodyTemplate:
+      'A queued offline visit could not be replayed because its photos are no longer available locally (browser storage may have been cleared).\n\n' +
+      'Reference: {draft_id}\n' +
+      'Reason: {reason}\n\n' +
+      'Open the Sync Errors tray on your dashboard to dismiss this entry.',
+  },
+});
+
+const KIND_LABELS = Object.freeze({
+  visit: 'visit',
+  visits: 'visits',
+  clm: 'CLM session',
+  commLog: 'communication log',
+  other: 'item',
+});
+
+function pluralizeKind(syncedKinds, totalSynced) {
+  // syncedKinds is the SW's per-kind counter, e.g. { visit: 3 }. Pick the
+  // dominant kind for the user-facing sentence; mixed runs default to 'item(s)'.
+  if (!syncedKinds || typeof syncedKinds !== 'object') {
+    return totalSynced === 1 ? 'item' : 'items';
+  }
+  const entries = Object.entries(syncedKinds).filter(([, n]) => Number(n) > 0);
+  if (entries.length === 1) {
+    const [k, n] = entries[0];
+    const base = KIND_LABELS[k] || KIND_LABELS.other;
+    return Number(n) === 1 ? base : (base === 'CLM session' ? 'CLM sessions' : `${base}s`);
+  }
+  return totalSynced === 1 ? 'item' : 'items';
+}
+
+function bytesHuman(n) {
+  const b = Number(n) || 0;
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function fillTemplate(tpl, vars) {
+  return String(tpl).replace(/\{([a-z_]+)\}/g, (_, key) => {
+    const v = vars[key];
+    return v === null || v === undefined ? '' : String(v);
+  });
+}
+
+async function resolveEventTemplate(category, eventType, fallback) {
+  // Allow per-entity admin overrides via Lookup. Failures fall back silently.
+  try {
+    const filter = { category: 'SYSTEM_EVENT_TEMPLATES', code: String(eventType).toUpperCase(), is_active: true };
+    if (category) filter.entity_id = category;
+    const row = await Lookup.findOne(filter).lean();
+    if (row?.metadata?.titleTemplate && row?.metadata?.bodyTemplate) {
+      return {
+        category: row.metadata.category || fallback.category,
+        priority: row.metadata.priority || fallback.priority,
+        titleTemplate: row.metadata.titleTemplate,
+        bodyTemplate: row.metadata.bodyTemplate,
+      };
+    }
+  } catch { /* lookup outage — use defaults */ }
+  return fallback;
+}
+
+const recordSystemEvent = catchAsync(async (req, res) => {
+  const Message = getMessageModel();
+  const { event_type, payload = {} } = req.body || {};
+  const allowed = Object.keys(DEFAULT_EVENT_TEMPLATES);
+  if (!event_type || !allowed.includes(event_type)) {
+    return res.status(400).json({
+      success: false,
+      message: `event_type must be one of: ${allowed.join(', ')}`,
+    });
+  }
+
+  // Drop pure-noise events server-side: sync_complete with synced=0 means the
+  // queue was already empty (user hit Sync Now while online and idle). No
+  // value in spamming the inbox with "synced 0 items".
+  if (event_type === 'sync_complete' && Number(payload.synced || 0) === 0) {
+    return res.status(204).end();
+  }
+
+  const fallback = DEFAULT_EVENT_TEMPLATES[event_type];
+  const entityId = req.user.entity_id
+    || (Array.isArray(req.user.entity_ids) && req.user.entity_ids.length > 0 ? req.user.entity_ids[0] : null);
+  const tpl = await resolveEventTemplate(entityId, event_type, fallback);
+
+  const synced = Number(payload.synced || 0);
+  const bytes = Number(payload.bytes || 0);
+  const remaining = Number(payload.remaining || 0);
+  const draftId = String(payload.draft_id || payload.draftId || '').slice(0, 100);
+  const reason = String(payload.reason || '').slice(0, 300);
+  const kindLabel = pluralizeKind(payload.syncedKinds, synced) || 'items';
+
+  const vars = {
+    synced,
+    bytes,
+    bytes_human: bytesHuman(bytes),
+    megabytes: (bytes / (1024 * 1024)).toFixed(2),
+    remaining,
+    draft_id: draftId,
+    reason: reason || 'unknown',
+    kind_label: kindLabel,
+    completed_at: payload.completedAt || new Date().toISOString(),
+  };
+
+  const docPayload = {
+    senderName: 'VIP CRM (system)',
+    senderRole: 'system',
+    senderUserId: null,
+    title: fillTemplate(tpl.titleTemplate, vars).slice(0, 200),
+    body: fillTemplate(tpl.bodyTemplate, vars).slice(0, 5000),
+    category: tpl.category || 'system',
+    priority: tpl.priority || 'low',
+    recipientRole: req.user.role,
+    recipientUserId: req.user._id,
+    readBy: [],
+    archivedBy: [],
+    acknowledgedBy: [],
+    entity_id: entityId,
+    folder: folderForCategory(tpl.category || 'system'),
+  };
+
+  const doc = await Message.create(docPayload);
+  doc.thread_id = doc._id;
+  await doc.save();
+
+  res.status(201).json({ success: true, data: { id: doc._id, title: doc.title } });
+});
+
 module.exports = {
   getInboxMessages,
   getSentMessages,
@@ -1264,4 +1442,6 @@ module.exports = {
   getAckStatus,
   runRetentionNow,
   previewRetention,
+  // Phase N offline-first sprint
+  recordSystemEvent,
 };

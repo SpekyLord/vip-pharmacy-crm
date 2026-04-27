@@ -23,6 +23,17 @@ let swRegistration = null;
 let isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
 let queueCount = 0;
 const queueListeners = new Set();
+// Phase N offline-first sprint — listeners that want the FULL VIP_SYNC_COMPLETE
+// stats payload, not just the queueCount derivative. Used by EmployeeDashboard
+// to render a "Synced N visits (~X MB)" toast and write a sync-event entry to
+// the BDM's inbox once per non-empty replay run.
+const syncCompleteListeners = new Set();
+// Phase N offline-first sprint — distinct listener channel for visit-draft-lost
+// events. Previously they were bubbled through authListeners (shared UX) which
+// made it hard for SyncErrorsTray to subscribe ONLY to draft-lost. This pool
+// is fired in addition to the legacy authListeners broadcast, so existing
+// subscribers continue to see them — just with a more specific path available.
+const visitDraftLostListeners = new Set();
 
 // iOS Safari detection — needed because it lacks Background Sync API
 const isIOSSafari = typeof navigator !== 'undefined' &&
@@ -152,6 +163,33 @@ const offlineManager = {
   onAuthRequired(callback) {
     authListeners.add(callback);
     return () => authListeners.delete(callback);
+  },
+
+  /**
+   * Phase N offline-first sprint — subscribe to FULL sync-completion stats.
+   * Fires once per VIP_SYNC_COMPLETE message from the SW. Callback receives
+   * `{ synced, syncedKinds, bytes, remaining, completedAt }`. Use this when
+   * you want to render a per-run notification ("Synced 3 visits (~5.4 MB)")
+   * or audit data spend — onQueueChange only tells you how many are LEFT.
+   * @param {function} callback
+   * @returns {function} unsubscribe
+   */
+  onSyncComplete(callback) {
+    syncCompleteListeners.add(callback);
+    return () => syncCompleteListeners.delete(callback);
+  },
+
+  /**
+   * Phase N offline-first sprint — subscribe to VIP_VISIT_DRAFT_LOST events
+   * SPECIFICALLY (legacy onAuthRequired channel still also fires for
+   * backwards compat with VisitLogger). Use for the SyncErrorsTray drawer.
+   * Callback receives `{ message, draftId }`.
+   * @param {function} callback
+   * @returns {function} unsubscribe
+   */
+  onVisitDraftLost(callback) {
+    visitDraftLostListeners.add(callback);
+    return () => visitDraftLostListeners.delete(callback);
   },
 
   /** Manually trigger sync (e.g., when user taps "Sync Now") */
@@ -298,6 +336,20 @@ function handleSWMessage(event) {
     queueListeners.forEach((cb) => {
       try { cb(queueCount); } catch { /* ignore */ }
     });
+    // Phase N offline-first sprint — emit the full stats payload so listeners
+    // that care about per-run results (toast, inbox audit) get the breakdown
+    // without having to diff successive queueCount snapshots.
+    syncCompleteListeners.forEach((cb) => {
+      try {
+        cb({
+          synced: Number(data.synced || 0),
+          syncedKinds: data.syncedKinds || {},
+          bytes: Number(data.bytes || 0),
+          remaining: Number(data.remaining || 0),
+          completedAt: data.completedAt || new Date().toISOString(),
+        });
+      } catch { /* ignore */ }
+    });
     // If queue is drained, stop periodic sync
     offlineManager._managePeriodicSync();
   }
@@ -322,11 +374,16 @@ function handleSWMessage(event) {
   // the auth-required listener pool because both events share the same UX
   // contract: a toast that asks the BDM to take some recovery action.
   // Subscribers can distinguish on data.type if they need to.
+  // Phase N offline-first sprint — also fire visitDraftLostListeners so
+  // the SyncErrorsTray drawer can subscribe specifically without seeing
+  // unrelated VIP_SYNC_AUTH_REQUIRED events.
   if (data.type === 'VIP_VISIT_DRAFT_LOST') {
+    const message = data.message || 'Offline visit data was lost. Please re-capture and re-submit.';
     authListeners.forEach((cb) => {
-      try {
-        cb(data.message || 'Offline visit data was lost. Please re-capture and re-submit.');
-      } catch { /* ignore */ }
+      try { cb(message); } catch { /* ignore */ }
+    });
+    visitDraftLostListeners.forEach((cb) => {
+      try { cb({ message, draftId: data.draftId || null }); } catch { /* ignore */ }
     });
   }
 }

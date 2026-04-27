@@ -543,7 +543,7 @@ async function attemptTokenRefresh() {
 
 async function replayQueue() {
   const queued = await getQueuedRequests();
-  if (!queued.length) return;
+  if (!queued.length) return { synced: 0, syncedKinds: {}, bytes: 0 };
 
   tokenRefreshAttempted = false;
 
@@ -555,6 +555,14 @@ async function replayQueue() {
   // untagged items through so upgrades don't orphan in-flight drafts.
   const currentUserId = await getCurrentUserId();
   const now = Date.now();
+
+  // Phase N offline-first sprint — track per-run sync stats so the page can
+  // toast "Synced N items (~X MB)" and write a self-DM to the BDM's inbox.
+  // bytes is BEST-EFFORT — we count visit photo blob sizes from each draft
+  // (the dominant payload) plus an estimated 1 KB per metadata line.
+  let syncedCount = 0;
+  const syncedKinds = {}; // { visit: 2, clm: 1, ... }
+  let approxBytes = 0;
 
   for (const item of queued) {
     // Age eviction — drop anything older than QUEUE_MAX_AGE_MS regardless
@@ -616,14 +624,27 @@ async function replayQueue() {
       });
 
       if (response.ok || (response.status >= 200 && response.status < 400)) {
-        // Visit replay success — clean up the photo blobs so they don't
-        // accumulate. Best-effort; any orphans get age-evicted on next
-        // openVipDataDB cycle.
+        // Visit replay success — sum photo sizes for the per-run sync stat
+        // BEFORE deleting blobs. Then clean up the photo blobs so they
+        // don't accumulate. Best-effort; any orphans get age-evicted on
+        // next openVipDataDB cycle.
         if (item.kind === 'visit' && Array.isArray(item.photoRefs)) {
           for (const ref of item.photoRefs) {
+            try {
+              const rec = await readVisitPhotoBlob(ref);
+              approxBytes += (rec?.size || rec?.blob?.size || 0);
+            } catch { /* size accounting is best-effort */ }
             await deleteVisitPhotoBlob(ref);
           }
+        } else {
+          // metadata-only payloads (legacy CLM / commLog queued items) —
+          // estimate ~1 KB so the cumulative byte counter is a defensible
+          // lower bound rather than 0.
+          approxBytes += 1024;
         }
+        syncedCount += 1;
+        const k = item.kind || 'other';
+        syncedKinds[k] = (syncedKinds[k] || 0) + 1;
         await removeQueuedRequest(item.id);
         continue;
       }
@@ -653,9 +674,18 @@ async function replayQueue() {
           if (retryResponse.ok || (retryResponse.status >= 200 && retryResponse.status < 400)) {
             if (item.kind === 'visit' && Array.isArray(item.photoRefs)) {
               for (const ref of item.photoRefs) {
+                try {
+                  const rec = await readVisitPhotoBlob(ref);
+                  approxBytes += (rec?.size || rec?.blob?.size || 0);
+                } catch { /* size accounting is best-effort */ }
                 await deleteVisitPhotoBlob(ref);
               }
+            } else {
+              approxBytes += 1024;
             }
+            syncedCount += 1;
+            const k = item.kind || 'other';
+            syncedKinds[k] = (syncedKinds[k] || 0) + 1;
             await removeQueuedRequest(item.id);
             continue;
           }
@@ -726,22 +756,43 @@ async function replayQueue() {
     }
   }
 
-  // Notify all clients about sync completion
+  // Notify all clients about sync completion. Stats payload lets the page
+  // render a precise toast ("Synced 3 visits (~5.4 MB)") and write a
+  // self-DM into the BDM's inbox for auditability of mobile-data spend.
   const remaining = await getQueuedRequests();
   const clients = await self.clients.matchAll();
+  const stats = {
+    type: 'VIP_SYNC_COMPLETE',
+    remaining: remaining.length,
+    synced: syncedCount,
+    syncedKinds,
+    bytes: approxBytes,
+    completedAt: new Date().toISOString(),
+  };
   clients.forEach((client) => {
-    client.postMessage({ type: 'VIP_SYNC_COMPLETE', remaining: remaining.length });
+    client.postMessage(stats);
   });
+  return { synced: syncedCount, syncedKinds, bytes: approxBytes };
 }
 
 // ── Periodic sync check (fallback for browsers without Background Sync) ──
 self.addEventListener('message', (event) => {
   if (event.data?.type === 'VIP_TRIGGER_SYNC') {
-    replayQueue().then(async () => {
+    replayQueue().then(async (replayStats) => {
+      // replayQueue already broadcasts VIP_SYNC_COMPLETE to all clients
+      // when items were processed. The redundant per-source post here is
+      // for the empty-queue case (replayStats === undefined when queue
+      // was already drained at entry) so the page can dismiss its
+      // "syncing…" indicator deterministically. Carry the same stats
+      // shape both ways so listeners don't have to dual-mode.
       const remaining = await getQueuedRequests();
       event.source?.postMessage({
         type: 'VIP_SYNC_COMPLETE',
         remaining: remaining.length,
+        synced: replayStats?.synced || 0,
+        syncedKinds: replayStats?.syncedKinds || {},
+        bytes: replayStats?.bytes || 0,
+        completedAt: new Date().toISOString(),
       });
     });
   }

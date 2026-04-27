@@ -29,6 +29,9 @@ import toast from 'react-hot-toast';
 // Phase N — seed IndexedDB doctor cache so NewVisitPage can render offline
 // for any VIP Client the BDM has seen on the dashboard while online.
 import { offlineStore } from '../../utils/offlineStore';
+// Phase N offline-first sprint — toast + inbox-audit on every sync event.
+// Mounted on the BDM dashboard so it's always loaded while they're working.
+import useOfflineSyncListener from '../../hooks/useOfflineSyncListener';
 
 const dashboardStyles = `
   .main-content h1 {
@@ -482,6 +485,10 @@ const MOBILE_PAGE_SIZE = 10;
 const EmployeeDashboard = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  // Toast + inbox audit on every offline-sync event. Idempotent — mounting
+  // it twice across the app would double-fire, but EmployeeDashboard is the
+  // canonical mount point per useOfflineSyncListener.js docstring.
+  useOfflineSyncListener();
   const [doctors, setDoctors] = useState([]);
   const [clients, setClients] = useState([]);
   const [showAddClient, setShowAddClient] = useState(false);
