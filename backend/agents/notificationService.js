@@ -182,11 +182,54 @@ async function sendMessenger({ recipientFbId, body }) {
 // Main notify() function
 // ═══════════════════════════════════════════
 
+// Sub-permission-driven recipient routing (Apr 2026). Lets agents target
+// "everyone with PURCHASING__PO_CREATE granted" instead of hardcoding
+// PRESIDENT or ALL_ADMINS. Configured via Lookup categories like
+// INVENTORY_ALERT_RECIPIENTS — admin edits the lookup in Control Center,
+// no code change to re-route.
+//
+// Convention: lookup code IS the ERP_SUB_PERMISSION code (e.g.
+// PURCHASING__PO_CREATE). We split on '__' and lower-case →
+// erp_access.sub_permissions.purchasing.po_create must be ticked on the
+// user's Access Template for them to match.
+const SUB_PERM_PREFIX = 'BY_SUB_PERMISSION:';
+
+function buildSubPermissionQuery(codes, { entityId } = {}) {
+  if (!Array.isArray(codes) || !codes.length) return null;
+  const orPaths = codes
+    .map((code) => String(code || '').trim().toUpperCase())
+    .filter((code) => /^[A-Z]+__[A-Z0-9_]+$/.test(code))
+    .map((code) => {
+      const [moduleKey, ...rest] = code.toLowerCase().split('__');
+      const subKey = rest.join('__');
+      return { [`erp_access.sub_permissions.${moduleKey}.${subKey}`]: true };
+    });
+  if (!orPaths.length) return null;
+  const query = {
+    isActive: true,
+    'erp_access.enabled': true,
+    $or: orPaths,
+  };
+  if (entityId) {
+    // Tenant safety: a purchasing user at MG/CO must not be paged for VIP
+    // inventory. Restrict to users whose entity scope (primary or
+    // multi-entity set) includes the alert's entity.
+    query.$and = [{
+      $or: [
+        { entity_id: entityId },
+        { entity_ids: entityId },
+      ],
+    }];
+  }
+  return query;
+}
+
 /**
  * Resolve recipient_id to user(s)
- * Supports: ObjectId (single user), 'PRESIDENT', 'ALL_BDMS', 'ALL_ADMINS'
+ * Supports: ObjectId (single user), 'PRESIDENT', 'ALL_BDMS', 'ALL_ADMINS',
+ * or 'BY_SUB_PERMISSION:CODE_A,CODE_B' (lookup-driven sub-permission routing).
  */
-async function resolveRecipients(recipientId) {
+async function resolveRecipients(recipientId, opts = {}) {
   if (recipientId === 'PRESIDENT') {
     // Only PARENT-entity presidents/CEOs — subsidiary presidents (e.g. BLW's
     // Angeline) must not receive broadcasts meant for the company owner.
@@ -204,6 +247,16 @@ async function resolveRecipients(recipientId) {
   if (recipientId === 'ALL_ADMINS') {
     return await User.find({ role: { $in: ROLE_SETS.ADMIN_LIKE }, isActive: true }).lean();
   }
+  if (typeof recipientId === 'string' && recipientId.startsWith(SUB_PERM_PREFIX)) {
+    const codes = recipientId
+      .slice(SUB_PERM_PREFIX.length)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const query = buildSubPermissionQuery(codes, { entityId: opts.entityId });
+    if (!query) return [];
+    return await User.find(query).lean();
+  }
   // Single user
   const user = await User.findById(recipientId).lean();
   return user ? [user] : [];
@@ -215,7 +268,7 @@ async function resolveRecipients(recipientId) {
 async function notify({ recipient_id, title, body, category, priority, channels, agent, entity_id, folder }) {
   const defaultChannels = ['in_app', 'email'];
   const activeChannels = channels || defaultChannels;
-  const recipients = await resolveRecipients(recipient_id);
+  const recipients = await resolveRecipients(recipient_id, { entityId: entity_id });
 
   if (!recipients.length) {
     console.warn(`[Agent ${agent}] No recipients found for: ${recipient_id}`);
