@@ -1012,6 +1012,38 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
 };
 
 const getCrmMenuConfig = (role, unreadCount = 0) => {
+  // Phase VIP-1.J — Bookkeeper auth tier sees ONLY the BIR compliance surface
+  // (dashboard + Trial Balance + COA). No payroll, no commissions, no
+  // rebate visibility — those are gated by their own role-sets and would not
+  // appear here even if we left the default branch open. We early-return so
+  // the bookkeeper can't see any other CRM/admin surfaces.
+  if (role === ROLES.BOOKKEEPER) {
+    return {
+      roleTitle: 'Bookkeeper',
+      roleSubtitle: 'BIR Compliance',
+      roleIcon: ShieldCheck,
+      sections: [
+        {
+          title: 'BIR Filing',
+          items: [
+            { path: '/admin/bir', label: 'BIR Compliance', icon: ShieldCheck },
+            { path: '/admin/scpwd-sales-book', label: 'SC/PWD Sales Book', icon: ShieldCheck },
+          ],
+        },
+        {
+          title: 'Accounting (read)',
+          items: [
+            { path: '/erp/accounting', label: 'Trial Balance', icon: FileText },
+            { path: '/erp/coa', label: 'Chart of Accounts', icon: FileText },
+          ],
+        },
+      ],
+      bottomTabs: [
+        { path: '/admin/bir', label: 'BIR', icon: ShieldCheck, end: true },
+      ],
+    };
+  }
+
   switch (role) {
     case ROLES.ADMIN:
     case ROLES.FINANCE:
@@ -1062,6 +1094,12 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
               // Route guard admin-only; backend layers lookup-driven SCPWD_ROLES
               // per gate so finance/president can be added per entity.
               { path: '/admin/scpwd-sales-book', label: 'SC/PWD Sales Book', icon: ShieldCheck },
+              // Phase VIP-1.J — BIR Compliance Dashboard (the accountant
+              // dashboard). Tracks every BIR obligation × entity × period;
+              // copy-paste UX into eBIR Forms; .dat for Alphalist Data Entry;
+              // PDF for loose-leaf books. Route guard is BIR_FILING set;
+              // backend layers lookup-driven BIR_ROLES per gate.
+              { path: '/admin/bir', label: 'BIR Compliance', icon: ShieldCheck },
               // Phase VIP-1.B Phase 4 — Rebate + Commission matrix admin + Payout ledger.
               // Route guard admin-only; backend layers lookup-driven
               // REBATE_ROLES / COMMISSION_ROLES per endpoint.
@@ -1102,6 +1140,7 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
               { path: '/bdm/visits', label: 'My Visits', icon: ClipboardCheck },
               { path: '/bdm/comm-log', label: 'Comm Log', icon: MessageSquare },
               { path: '/bdm/partnership', label: 'Partnership', icon: Handshake },
+              { path: '/bdm/field-guide', label: 'Field Guide', icon: BookOpen },
             ],
           },
         ],

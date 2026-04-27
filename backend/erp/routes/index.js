@@ -8,6 +8,14 @@ const router = express.Router();
 // ═══ Public routes (no auth required) ═══
 router.get('/po/share/:token', require('../controllers/printController').getSharedPOHtml);
 
+// ═══ Phase VIP-1.J — BIR inbound-email webhook (no auth, shared-secret) ═══
+// Receives forwarded BIR confirmation emails from SendGrid Inbound Parse /
+// Cloudflare Email Workers / Mailgun. Auth is via X-Webhook-Secret header
+// matched against process.env.BIR_INBOUND_EMAIL_SECRET. Mounted ABOVE the
+// protect/tenantFilter wall because email providers don't carry session
+// cookies. Body parser limits the payload to standard email size.
+router.post('/bir/inbound-email', require('../controllers/birController').inboundEmail);
+
 // ═══ Phase 1 — OCR (no tenant filter needed for OCR test) ═══
 router.use('/ocr', require('./ocrRoutes'));
 
@@ -195,6 +203,15 @@ router.use('/recurring-journals', erpAccessCheck('accounting'), require('./recur
 // erpAccessCheck — the lookup-driven gates supersede module-level auth and
 // keep this Rule #3-aligned (subscriber-configurable per entity).
 router.use('/scpwd-sales-book', require('./scpwdSalesBookRoutes'));
+
+// ═══ Phase VIP-1.J — BIR Tax Compliance Suite (J0 dashboard + foundation) ═══
+// Full form universe: 2550M/Q VAT, 1601-EQ/C, 1606, 2307 in/out, SAWT, QAP,
+// 1604-CF/E, 1702/1701, Books of Accounts. J0 ships the dashboard + Data
+// Quality Agent + tax-config UI; J1+ add per-form aggregators + serializers.
+// Role gates are lookup-driven inside birController via BIR_ROLES
+// (birAccess.js) — no module-level erpAccessCheck so subscribers configure
+// per-entity gates including the new bookkeeper role without code deploys.
+router.use('/bir', require('./birRoutes'));
 
 // ═══ Phase VIP-1.B — Rebate + Commission Matrices + Payout Ledgers ═══
 // Tier-A per-MD per-product rebates + Non-MD partner rebates + Tier-B

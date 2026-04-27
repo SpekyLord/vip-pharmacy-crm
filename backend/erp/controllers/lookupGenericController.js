@@ -10,6 +10,7 @@ const { invalidateProxyRolesCache, invalidateValidOwnerRolesCache } = require('.
 const { invalidateCrossEntityRolesCache } = require('../utils/resolveEntityScope');
 const { invalidate: invalidateScpwdRolesCache } = require('../../utils/scpwdAccess');
 const { invalidate: invalidateRebateCommissionCache } = require('../../utils/rebateCommissionAccess');
+const { invalidate: invalidateBirRolesCache } = require('../../utils/birAccess');
 
 // Categories whose changes must bust the OR parser's lookup cache (couriers/payment keywords)
 const OR_PARSER_LOOKUP_CATEGORIES = new Set(['OCR_COURIER_ALIASES', 'OCR_PAYMENT_KEYWORDS']);
@@ -53,6 +54,12 @@ const SCPWD_ROLES_CATEGORIES = new Set(['SCPWD_ROLES']);
 // Partner — without this hook, a fresh role addition would wait up to 60s
 // before propagating to the rebate matrix or commission matrix UI gates.
 const REBATE_COMMISSION_ROLES_CATEGORIES = new Set(['REBATE_ROLES', 'COMMISSION_ROLES']);
+
+// Phase VIP-1.J (Apr 2026) — bust the BIR compliance role cache when admin
+// edits BIR_ROLES. Same 60s TTL invariant; without this hook a fresh role
+// addition (e.g., adding bookkeeper to MARK_FILED) would wait up to 60s
+// before being honored by the BIR dashboard.
+const BIR_ROLES_CATEGORIES = new Set(['BIR_ROLES']);
 
 // Phase G6.10/G7 — categories whose seeded rows must default is_active: false so
 // subscribers explicitly opt in (Anthropic-billable features, spend caps that
@@ -2727,6 +2734,80 @@ const SEED_DEFAULTS = {
     { code: 'SYNC_ERROR', label: 'Sync error (generic)', insert_only_metadata: true, metadata: { sort_order: 20, category: 'system', priority: 'normal', titleTemplate: 'Offline sync error — {kind_label} could not replay', bodyTemplate: 'A queued offline item could not be restored or accepted by the server.\n\nKind: {kind_label}\nReason: {reason}\nReference: {draft_id}\n\nOpen the Sync Errors tray on your dashboard to retry or discard.', description: 'Generic catch-all for sync failures other than visit-photos-lost.' } },
     { code: 'VISIT_DRAFT_LOST', label: 'Visit draft photos lost', insert_only_metadata: true, metadata: { sort_order: 30, category: 'system', priority: 'normal', titleTemplate: 'Visit draft photos lost — please re-capture', bodyTemplate: 'A queued offline visit could not be replayed because its photos are no longer available locally (browser storage may have been cleared).\n\nReference: {draft_id}\nReason: {reason}\n\nOpen the Sync Errors tray on your dashboard to dismiss this entry.', description: 'Specifically the VIP_VISIT_DRAFT_LOST path from sw.js when rebuildVisitFormData returns null.' } },
   ],
+
+  // ── Phase VIP-1.J (Apr 2026) — BIR Compliance Suite (J0 foundation) ──
+  // Four lookup categories drive the BIR Compliance Dashboard at /erp/bir.
+  // Subscribers configure per-entity via Control Center → Lookup Tables; the
+  // birAccess.js helper falls back to inline DEFAULTS if the lookup is
+  // unreachable so the dashboard never goes dark on a Lookup outage.
+  //
+  // BIR_FORMS_CATALOG — every BIR form the dashboard tracks. Subscribers in
+  // jurisdictions outside PH disable rows by setting is_active: false; new
+  // jurisdictions add rows with their own form codes (RA-pillar-portable).
+  BIR_FORMS_CATALOG: [
+    { code: '2550M',    label: 'BIR 2550M — Monthly VAT Declaration',           insert_only_metadata: true, metadata: { sort_order: 10,  frequency: 'MONTHLY',   due_day: 25, channel: 'eBIRForms_typed', requires_vat: true,          tax_types: ['CORP', 'OPC', 'SOLE_PROP', 'PARTNERSHIP'], description: 'Monthly VAT — vatable, zero-rated, exempt sales + input VAT credit. Phase J1.' } },
+    { code: '2550Q',    label: 'BIR 2550Q — Quarterly VAT Return',              insert_only_metadata: true, metadata: { sort_order: 20,  frequency: 'QUARTERLY', due_day: 25, channel: 'eBIRForms_typed', requires_vat: true,          tax_types: ['CORP', 'OPC', 'SOLE_PROP', 'PARTNERSHIP'], description: 'Quarterly VAT consolidating three monthly 2550M filings. Phase J1.' } },
+    { code: '1601-EQ',  label: 'BIR 1601-EQ — Quarterly Expanded Withholding',  insert_only_metadata: true, metadata: { sort_order: 30,  frequency: 'QUARTERLY', due_day: 31, channel: 'eBIRForms_typed', requires_withholding: true,  tax_types: ['CORP', 'OPC', 'SOLE_PROP', 'PARTNERSHIP'], description: 'EWT on professional fees, rent, contractor payments. Phase J2.' } },
+    { code: '1601-C',   label: 'BIR 1601-C — Monthly Compensation Withholding', insert_only_metadata: true, metadata: { sort_order: 40,  frequency: 'MONTHLY',   due_day: 10, channel: 'eBIRForms_typed', requires_payroll: true,      tax_types: ['CORP', 'OPC', 'SOLE_PROP', 'PARTNERSHIP'], description: 'Withholding on regular employee compensation. Phase J3.' } },
+    { code: '1606',     label: 'BIR 1606 — Withholding on Real Property',       insert_only_metadata: true, metadata: { sort_order: 50,  frequency: 'MONTHLY',   due_day: 10, channel: 'eBIRForms_typed', requires_rent: true,         tax_types: ['CORP', 'OPC', 'SOLE_PROP', 'PARTNERSHIP'], description: '5% withholding on rent paid to landlords. Phase J2.' } },
+    { code: '2307-OUT', label: 'BIR 2307 (outbound) — CWT Certificate to Payee', insert_only_metadata: true, metadata: { sort_order: 60, frequency: 'PER_PAYEE', due_day: 20, channel: 'PDF',             requires_withholding: true,  tax_types: ['CORP', 'OPC', 'SOLE_PROP', 'PARTNERSHIP'], description: 'PDF certificate issued to each payee from whom we withheld. Phase J2.' } },
+    { code: '2307-IN',  label: 'BIR 2307 (inbound) — CWT Certificates Received', insert_only_metadata: true, metadata: { sort_order: 70, frequency: 'PER_PAYOR', due_day: 0,  channel: 'INTERNAL',         requires_collections: true,  tax_types: ['CORP', 'OPC', 'SOLE_PROP', 'PARTNERSHIP'], description: 'Tracking 2307s received from hospitals; rolled into 1702 income tax credit. Phase J6.' } },
+    { code: 'SAWT',     label: 'SAWT — Summary Alphalist of Withholding Tax',   insert_only_metadata: true, metadata: { sort_order: 80,  frequency: 'QUARTERLY', due_day: 31, channel: 'ADE_dat',          requires_withholding: true,  tax_types: ['CORP', 'OPC', 'SOLE_PROP', 'PARTNERSHIP'], description: 'Quarterly alphalist .dat file imported into Alphalist Data Entry. Phase J2.' } },
+    { code: 'QAP',      label: 'QAP — Quarterly Alphalist of Payees',           insert_only_metadata: true, metadata: { sort_order: 90,  frequency: 'QUARTERLY', due_day: 31, channel: 'ADE_dat',          requires_withholding: true,  tax_types: ['CORP', 'OPC', 'SOLE_PROP', 'PARTNERSHIP'], description: 'Quarterly alphalist of all payees from whom we withheld. Phase J4.' } },
+    { code: '1604-CF',  label: 'BIR 1604-CF — Annual Compensation Alphalist',   insert_only_metadata: true, metadata: { sort_order: 100, frequency: 'ANNUAL',    due_month: 1, due_day: 31, channel: 'ADE_dat', requires_payroll: true, tax_types: ['CORP', 'OPC', 'SOLE_PROP', 'PARTNERSHIP'], description: 'Annual alphalist for employees (Schedules 7.1, 7.2, 7.3). Phase J3.' } },
+    { code: '1604-E',   label: 'BIR 1604-E — Annual Expanded Alphalist',        insert_only_metadata: true, metadata: { sort_order: 110, frequency: 'ANNUAL',    due_month: 3, due_day: 1,  channel: 'ADE_dat', requires_withholding: true, tax_types: ['CORP', 'OPC', 'SOLE_PROP', 'PARTNERSHIP'], description: 'Annual alphalist for non-employee payees (vendors, contractors, hospitals). Phase J4.' } },
+    { code: 'SCPWD',    label: 'SC/PWD Sales Book (RR 7-2010)',                  insert_only_metadata: true, metadata: { sort_order: 120, frequency: 'MONTHLY',   due_day: 25, channel: 'BIR_LOOSELEAF',    requires_storefront: true,   tax_types: ['CORP', 'OPC', 'SOLE_PROP', 'PARTNERSHIP'], description: 'Already shipped in VIP-1.H. Surfaced on dashboard for status visibility.' } },
+    { code: '1702',     label: 'BIR 1702 — Annual Income Tax Return (Corp)',    insert_only_metadata: true, metadata: { sort_order: 200, frequency: 'ANNUAL',    due_month: 4, due_day: 15, channel: 'eBIRForms_typed', tax_types: ['CORP', 'OPC', 'PARTNERSHIP'],                description: 'Annual income tax for corporations. Phase J7.' } },
+    { code: '1701',     label: 'BIR 1701 — Annual Income Tax Return (Indiv)',   insert_only_metadata: true, metadata: { sort_order: 210, frequency: 'ANNUAL',    due_month: 4, due_day: 15, channel: 'eBIRForms_typed', tax_types: ['SOLE_PROP'],                                description: 'Annual income tax for sole proprietorships. Phase J7 (stub if no SOLE_PROP entity).' } },
+    { code: 'BOOKS',    label: 'Books of Accounts (Loose-Leaf)',                 insert_only_metadata: true, metadata: { sort_order: 300, frequency: 'ANNUAL',    due_month: 12, due_day: 31, channel: 'BIR_LOOSELEAF', tax_types: ['CORP', 'OPC', 'SOLE_PROP', 'PARTNERSHIP'],   description: 'Sales / Purchase / GJ / GL / Cash Receipts / Cash Disbursements PDFs. Phase J5.' } },
+  ],
+
+  // BIR_FILING_STATUS — status colors + transitions for the dashboard heatmap.
+  // Editable so subscribers can localize labels.
+  BIR_FILING_STATUS: [
+    { code: 'DATA_INCOMPLETE', label: 'Data Incomplete', insert_only_metadata: true, metadata: { sort_order: 10, bg: '#fef2f2', fg: '#991b1b', description: 'TIN/address blockers prevent export. Run the Data Quality scan.' } },
+    { code: 'DRAFT',           label: 'Draft',           insert_only_metadata: true, metadata: { sort_order: 20, bg: '#fef9c3', fg: '#854d0e', description: 'Numbers computed; awaiting president review before export.' } },
+    { code: 'REVIEWED',        label: 'Reviewed',        insert_only_metadata: true, metadata: { sort_order: 30, bg: '#dbeafe', fg: '#1e40af', description: 'President signed off; bookkeeper may export and file.' } },
+    { code: 'FILED',           label: 'Filed',           insert_only_metadata: true, metadata: { sort_order: 40, bg: '#e0e7ff', fg: '#3730a3', description: 'Bookkeeper marked filed. Awaiting BIR confirmation email.' } },
+    { code: 'CONFIRMED',       label: 'Confirmed',       insert_only_metadata: true, metadata: { sort_order: 50, bg: '#dcfce7', fg: '#15803d', description: 'BIR confirmation email parsed; reference number stored. Period locked.' } },
+    { code: 'OVERDUE',         label: 'Overdue',         insert_only_metadata: true, metadata: { sort_order: 60, bg: '#fee2e2', fg: '#b91c1c', description: 'Past due date and not FILED. Surfaced for escalation.' } },
+  ],
+
+  // BIR_ATC_CODES — the BIR Alphanumeric Tax Code catalog. Drives ATC selection
+  // on WithholdingLedger entries (Phase J2). Subscribers can extend per their
+  // own jurisdiction; the inline list covers the most common pharma/distribution
+  // touch points. Rate is the standard percentage (override per-payee allowed
+  // when a payee certifies a different rate via BIR Form 1901/1902/1905).
+  BIR_ATC_CODES: [
+    { code: 'WC158', label: 'WC158 — Income payments to medical practitioners (1%)',                    insert_only_metadata: true, metadata: { sort_order: 10,  rate: 0.01,  applies_to: 'HOSPITAL', form: '2307', description: 'Hospital pays VIP for products → hospital withholds 1% of payment. INBOUND for VIP.' } },
+    { code: 'WI010', label: 'WI010 — Professional fees (individual, ≤ ₱720k YTD: 5%)',                   insert_only_metadata: true, metadata: { sort_order: 20,  rate: 0.05,  applies_to: 'CONTRACTOR_INDIV_LOW',  form: '1601-EQ', description: 'BDMs, pharmacists, individual consultants below threshold. Phase J2.' } },
+    { code: 'WI011', label: 'WI011 — Professional fees (individual, > ₱720k YTD: 10%)',                  insert_only_metadata: true, metadata: { sort_order: 30,  rate: 0.10,  applies_to: 'CONTRACTOR_INDIV_HIGH', form: '1601-EQ', description: 'Same payee crossing the YTD threshold flips to 10%.' } },
+    { code: 'WC010', label: 'WC010 — Professional fees (juridical, ≤ ₱720k YTD: 10%)',                   insert_only_metadata: true, metadata: { sort_order: 40,  rate: 0.10,  applies_to: 'CONTRACTOR_CORP_LOW',   form: '1601-EQ', description: 'Corporate consultant payee.' } },
+    { code: 'WC011', label: 'WC011 — Professional fees (juridical, > ₱720k YTD: 15%)',                   insert_only_metadata: true, metadata: { sort_order: 50,  rate: 0.15,  applies_to: 'CONTRACTOR_CORP_HIGH',  form: '1601-EQ', description: 'Corporate payee above the threshold.' } },
+    { code: 'WI160', label: 'WI160 — Rent (real property, individual lessor: 5%)',                       insert_only_metadata: true, metadata: { sort_order: 60,  rate: 0.05,  applies_to: 'LANDLORD_INDIV',        form: '1606',     description: 'Office/warehouse/retail space rent paid to an individual landlord.' } },
+    { code: 'WC160', label: 'WC160 — Rent (real property, corporate lessor: 5%)',                        insert_only_metadata: true, metadata: { sort_order: 70,  rate: 0.05,  applies_to: 'LANDLORD_CORP',         form: '1606',     description: 'Rent paid to a corporate landlord.' } },
+    { code: 'WI100', label: 'WI100 — Compensation (regular employee — graduated table)',                 insert_only_metadata: true, metadata: { sort_order: 80,  rate: 'GRADUATED', applies_to: 'EMPLOYEE',          form: '1601-C',   description: 'Compensation withholding via BIR graduated tax table. Computed in payslipCalc.js.' } },
+    { code: 'WC120', label: 'WC120 — 13th-month + bonuses exceeding ₱90,000',                            insert_only_metadata: true, metadata: { sort_order: 90,  rate: 'GRADUATED', applies_to: 'EMPLOYEE_BONUS',    form: '1601-C',   description: 'Excess over the 13th-month exemption is taxable compensation income.' } },
+    { code: 'WI080', label: 'WI080 — Goods purchased from top-withholding-agent payees (1%)',            insert_only_metadata: true, metadata: { sort_order: 100, rate: 0.01,  applies_to: 'TWA_GOODS',             form: '1601-EQ', description: 'Only applies if Entity.top_withholding_agent = true.' } },
+    { code: 'WI081', label: 'WI081 — Services purchased from top-withholding-agent payees (2%)',         insert_only_metadata: true, metadata: { sort_order: 110, rate: 0.02,  applies_to: 'TWA_SERVICES',          form: '1601-EQ', description: 'Only applies if Entity.top_withholding_agent = true.' } },
+  ],
+
+  // BIR_ROLES — lookup-driven access gates per scope. Mirrors SCPWD_ROLES
+  // pattern (lazy-seed-from-defaults, 60s TTL cache, lookup edits invalidate).
+  // Default posture: admin + finance own everything; president has VIEW; the
+  // new bookkeeper role is added per-entity via the Lookup Manager when a
+  // subscriber hires a bookkeeper. Subscribers can add bookkeeper to MARK_FILED
+  // without granting them any payroll/commission access (those gates are
+  // separate; see BIR_FILING role-set in roles.js for sidebar visibility).
+  BIR_ROLES: [
+    { code: 'VIEW_DASHBOARD',    label: 'View BIR Compliance Dashboard',                  insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president', 'bookkeeper'], sort_order: 1, description: 'Read-only access to /erp/bir + form detail pages. Wider than FILED/CONFIRMED gates.' } },
+    { code: 'EXPORT_FORM',       label: 'Export BIR form (CSV / PDF / .dat)',             insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'bookkeeper'],              sort_order: 2, description: 'Download form artifacts. Audit-logged with content hash so re-exports are detectable.' } },
+    { code: 'MARK_REVIEWED',     label: 'Mark form REVIEWED (president sign-off)',         insert_only_metadata: true, metadata: { roles: ['admin', 'president'],                          sort_order: 3, description: 'President-style review gate before bookkeeper files. Subscriber can collapse to admin-only.' } },
+    { code: 'MARK_FILED',        label: 'Mark form FILED (after eBIR submission)',         insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'bookkeeper'],              sort_order: 4, description: 'Bookkeeper records that they submitted via eBIR Forms. Stores BIR reference number.' } },
+    { code: 'MARK_CONFIRMED',    label: 'Mark form CONFIRMED (manual override)',           insert_only_metadata: true, metadata: { roles: ['admin', 'finance'],                            sort_order: 5, description: 'Manual confirmation when the email-parser bridge cannot match (e.g., subject-line variance).' } },
+    { code: 'RUN_DATA_AUDIT',    label: 'Trigger Data Quality scan on demand',             insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president', 'bookkeeper'], sort_order: 6, description: 'Run the TIN + address completeness sweep ad-hoc. Nightly cron always runs regardless.' } },
+    { code: 'MANAGE_TAX_CONFIG', label: 'Edit per-entity tax config (TIN, RDO, tax_type)', insert_only_metadata: true, metadata: { roles: ['admin', 'president'],                          sort_order: 7, description: 'Senior gate — wrong TIN/RDO breaks every export and every alphalist row.' } },
+  ],
 };
 
 // List all distinct categories for current entity
@@ -2879,6 +2960,7 @@ exports.create = catchAsync(async (req, res) => {
   if (CROSS_ENTITY_VIEW_ROLES_CATEGORIES.has(cat)) invalidateCrossEntityRolesCache(req.entityId);
   if (SCPWD_ROLES_CATEGORIES.has(cat)) invalidateScpwdRolesCache(req.entityId);
   if (REBATE_COMMISSION_ROLES_CATEGORIES.has(cat)) invalidateRebateCommissionCache(req.entityId);
+  if (BIR_ROLES_CATEGORIES.has(cat)) invalidateBirRolesCache(req.entityId);
   res.status(201).json({ success: true, data: item });
 });
 
@@ -2908,6 +2990,7 @@ exports.update = catchAsync(async (req, res) => {
   if (CROSS_ENTITY_VIEW_ROLES_CATEGORIES.has(item.category)) invalidateCrossEntityRolesCache(item.entity_id);
   if (SCPWD_ROLES_CATEGORIES.has(item.category)) invalidateScpwdRolesCache(item.entity_id);
   if (REBATE_COMMISSION_ROLES_CATEGORIES.has(item.category)) invalidateRebateCommissionCache(item.entity_id);
+  if (BIR_ROLES_CATEGORIES.has(item.category)) invalidateBirRolesCache(item.entity_id);
   res.json({ success: true, data: item });
 });
 
@@ -2929,6 +3012,7 @@ exports.remove = catchAsync(async (req, res) => {
   if (CROSS_ENTITY_VIEW_ROLES_CATEGORIES.has(item.category)) invalidateCrossEntityRolesCache(item.entity_id);
   if (SCPWD_ROLES_CATEGORIES.has(item.category)) invalidateScpwdRolesCache(item.entity_id);
   if (REBATE_COMMISSION_ROLES_CATEGORIES.has(item.category)) invalidateRebateCommissionCache(item.entity_id);
+  if (BIR_ROLES_CATEGORIES.has(item.category)) invalidateBirRolesCache(item.entity_id);
   res.json({ success: true, data: item, message: 'Item deactivated' });
 });
 
@@ -2952,6 +3036,7 @@ exports.seedCategory = catchAsync(async (req, res) => {
   if (CROSS_ENTITY_VIEW_ROLES_CATEGORIES.has(category)) invalidateCrossEntityRolesCache(req.entityId);
   if (SCPWD_ROLES_CATEGORIES.has(category)) invalidateScpwdRolesCache(req.entityId);
   if (REBATE_COMMISSION_ROLES_CATEGORIES.has(category)) invalidateRebateCommissionCache(req.entityId);
+  if (BIR_ROLES_CATEGORIES.has(category)) invalidateBirRolesCache(req.entityId);
   const items = await Lookup.find({ entity_id: req.entityId, category }).sort({ sort_order: 1 }).lean();
   res.json({ success: true, data: items, message: `Seeded ${defaults.length} defaults for ${category}` });
 });

@@ -10,10 +10,15 @@
  *                same regardless of employment type. Employment nature
  *                (contractor vs. employee) lives on PeopleMaster.employment_type
  *                (REGULAR / PROBATIONARY / CONTRACTUAL / CONSULTANT / PARTNERSHIP).
- *   - admin:     System administrator
- *   - finance:   Finance/accounting manager
- *   - president: Company president — full cross-entity access
- *   - ceo:       Chief Executive — view-only on ERP
+ *   - admin:      System administrator
+ *   - finance:    Finance/accounting manager
+ *   - president:  Company president — full cross-entity access
+ *   - ceo:        Chief Executive — view-only on ERP
+ *   - bookkeeper: External or in-house BIR filing operator. Phase VIP-1.J
+ *                 (Apr 2026). Sees /erp/bir + Trial Balance + COA. Cannot
+ *                 see payroll, payslips, incentive-payouts, rebate-payouts.
+ *                 Lookup-driven access via BIR_ROLES so subscribers configure
+ *                 per-entity gates without a code deployment.
  *
  * ── Legacy strings (migrated away in Phase S2, Apr 2026) ──
  *   'contractor' and 'employee' were both renamed to 'staff'. The migration
@@ -40,13 +45,14 @@ const ROLES = Object.freeze({
   FINANCE: 'finance',
   PRESIDENT: 'president',
   CEO: 'ceo',
+  BOOKKEEPER: 'bookkeeper',   // Phase VIP-1.J — taxes-only auth tier (BIR filing operator)
   MEDREP: 'medrep',           // legacy CRM role (being removed in CRM Phase A, Change 1)
 });
 
 // All valid system roles (used by User.js enum — rejects legacy strings).
 // STAFF is listed once; CONTRACTOR alias shares the same value so Object.values
 // would de-dup to the same set.
-const ALL_ROLES = [ROLES.ADMIN, ROLES.STAFF, ROLES.FINANCE, ROLES.PRESIDENT, ROLES.CEO, ROLES.MEDREP];
+const ALL_ROLES = [ROLES.ADMIN, ROLES.STAFF, ROLES.FINANCE, ROLES.PRESIDENT, ROLES.CEO, ROLES.BOOKKEEPER, ROLES.MEDREP];
 
 // ── Named Permission Sets ──────────────────────────────────────────
 const ROLE_SETS = Object.freeze({
@@ -73,6 +79,10 @@ const ROLE_SETS = Object.freeze({
 
   // Management: admin + finance + president (write access to config)
   MANAGEMENT: [ROLES.ADMIN, ROLES.FINANCE, ROLES.PRESIDENT],
+
+  // BIR-only auth tiers — sees /erp/bir + Trial Balance + COA, nothing else.
+  // Bookkeeper-level read; admin/finance/president retain full access.
+  BIR_FILING: [ROLES.ADMIN, ROLES.FINANCE, ROLES.PRESIDENT, ROLES.BOOKKEEPER],
 });
 
 // ── Helper Functions ───────────────────────────────────────────────

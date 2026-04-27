@@ -1019,6 +1019,84 @@ function checkCsiDraftOverlay() {
   if (issues === startIssues) console.log('  ✓ CSI Draft Overlay wiring intact (Phase 15.3)');
 }
 
+// ═══ Phase VIP-1.J — BIR Compliance wiring ═══
+function checkBirComplianceWiring() {
+  console.log('\n10. BIR Compliance (Phase VIP-1.J) Wiring');
+  console.log('─'.repeat(40));
+
+  // Backend module + helper presence
+  const required = [
+    ['backend/erp/models/Entity.js',                  ['tax_type', 'rdo_code', 'top_withholding_agent', 'tax_filing_email', 'withholding_active', 'rent_withholding_active', 'vat_exempt_categories', 'pre(\'validate\'']],
+    ['backend/erp/models/PeriodLock.js',              ['BIR_FILING']],
+    ['backend/erp/models/BirFilingStatus.js',         ['form_code', 'period_year', 'export_audit_log', 'idx_unique_filing_period']],
+    ['backend/erp/models/BirDataQualityRun.js',       ['summary', 'findings', 'blocked_forms_due_within_7d', 'expireAfterSeconds']],
+    ['backend/utils/birAccess.js',                    ['VIEW_DASHBOARD', 'EXPORT_FORM', 'MARK_FILED', 'invalidate', 'requireBirRole']],
+    ['backend/erp/services/birDashboardService.js',   ['buildDashboard', 'computeDueDate', 'computeConfigCompleteness', 'invalidate']],
+    ['backend/agents/birDataQualityAgent.js',         ['runScan', 'runScanAll', 'evaluateTin', 'evaluateAddress']],
+    ['backend/erp/controllers/birController.js',      ['getDashboard', 'runDataQuality', 'markFiled', 'markConfirmed', 'inboundEmail', 'updateEntityConfig']],
+    ['backend/erp/routes/birRoutes.js',               ['/dashboard', '/data-quality/run', '/forms', '/entity-config', '/mark-filed']],
+    ['backend/constants/roles.js',                    ['BOOKKEEPER', 'BIR_FILING']],
+  ];
+
+  for (const [file, needles] of required) {
+    const full = path.join(ROOT, file);
+    if (!fs.existsSync(full)) {
+      warn('BIR-WIRING', `MISSING file: ${file}`);
+      continue;
+    }
+    const content = fs.readFileSync(full, 'utf-8');
+    for (const needle of needles) {
+      if (!content.includes(needle)) {
+        warn('BIR-WIRING', `${file} missing token "${needle}"`);
+      }
+    }
+  }
+
+  // Lookup categories present in SEED_DEFAULTS
+  const lookupFile = path.join(ROOT, 'backend/erp/controllers/lookupGenericController.js');
+  if (fs.existsSync(lookupFile)) {
+    const content = fs.readFileSync(lookupFile, 'utf-8');
+    const required = ['BIR_FORMS_CATALOG', 'BIR_FILING_STATUS', 'BIR_ATC_CODES', 'BIR_ROLES', 'BIR_ROLES_CATEGORIES', 'invalidateBirRolesCache'];
+    for (const needle of required) {
+      if (!content.includes(needle)) {
+        warn('BIR-WIRING', `lookupGenericController missing "${needle}"`);
+      }
+    }
+  }
+
+  // Route mount in routes/index.js
+  const idx = path.join(ROOT, 'backend/erp/routes/index.js');
+  if (fs.existsSync(idx)) {
+    const content = fs.readFileSync(idx, 'utf-8');
+    if (!content.includes('/bir/inbound-email')) warn('BIR-WIRING', 'routes/index.js missing /bir/inbound-email mount');
+    if (!content.includes("router.use('/bir',")) warn('BIR-WIRING', 'routes/index.js missing /bir mount');
+  }
+
+  // Frontend wiring
+  const frontendFiles = [
+    ['frontend/src/pages/admin/BIRCompliancePage.jsx',   ['birService', 'BIRCompliancePage', 'getDashboard']],
+    ['frontend/src/erp/services/birService.js',          ["BASE = '/erp/bir'", 'runDataQuality', 'markFiled', 'updateEntityConfig', 'getDashboard']],
+    ['frontend/src/App.jsx',                             ['/admin/bir', 'BIRCompliancePage', 'BIR_FILING']],
+    ['frontend/src/components/common/Sidebar.jsx',       ['/admin/bir', 'BIR Compliance', 'BOOKKEEPER']],
+    ['frontend/src/components/common/PageGuide.jsx',     ["'bir-compliance'"]],
+  ];
+  for (const [file, needles] of frontendFiles) {
+    const full = path.join(ROOT, file);
+    if (!fs.existsSync(full)) {
+      warn('BIR-WIRING', `MISSING frontend file: ${file}`);
+      continue;
+    }
+    const content = fs.readFileSync(full, 'utf-8');
+    for (const needle of needles) {
+      if (!content.includes(needle)) {
+        warn('BIR-WIRING', `${file} missing token "${needle}"`);
+      }
+    }
+  }
+
+  console.log(`  Checked ${required.length + frontendFiles.length} files.`);
+}
+
 // ═══ Run all checks ═══
 console.log('System Health Check');
 console.log('═'.repeat(40));
@@ -1033,6 +1111,7 @@ checkFraEntityIdsSync();
 checkCaptureSubmissionWiring();
 checkCalfOneAckFlow();
 checkCsiDraftOverlay();
+checkBirComplianceWiring();
 
 console.log('\n' + '═'.repeat(40));
 if (issues > beforeIssues) {

@@ -8866,3 +8866,76 @@ Backend:
 - Rebase on top of latest VIP-1.B Phase 4 changes (this branch is BEHIND dev by all VIP-1.B commits).
 - Confirm IndexedDB schema migration v3 → v4 fires cleanly.
 - DO NOT push without explicit user authorization (this sprint is on a worktree branch).
+
+
+---
+
+## Phase VIP-1.J — BIR Tax Compliance Suite (planned Apr 27 2026)
+
+**Sequence**: J0 (foundation) -> J1 (VAT) -> J2 (EWT) -> J3 (Compensation) -> J4 (Annual Alphalists) -> J5 (Books of Accounts) -> J6 (Inbound 2307) -> J7 (1702 Annual Income Tax)
+
+### J0 — Compliance Dashboard + Foundation (~3-4 days) — START HERE
+
+**J0.1 Entity tax-config schema** (`backend/erp/models/Entity.js`)
+- Add: `tax_type` (CORP/OPC/SOLE_PROP/PARTNERSHIP, default CORP), `rdo_code`, `business_style`, `top_withholding_agent`, `tax_filing_email`, `withholding_active`, `vat_exempt_categories[]`, `rent_withholding_active`.
+- TIN format validator (regex `XXX-XXX-XXX-XXXXX`) + pre-save normalizer.
+
+**J0.2 BirFilingStatus model + lookups**
+- New `backend/erp/models/BirFilingStatus.js`: `entity_id`, `form_code`, `period_year`, `period_month_or_quarter`, `status` (DATA_INCOMPLETE/DRAFT/REVIEWED/FILED/CONFIRMED), `bir_reference_number`, `filed_at`, `filed_by`, `confirmation_email_id`, `export_audit_log[]`. Compound unique index.
+- Seed in `lookupGenericController.js SEED_DEFAULTS`: `BIR_FORMS_CATALOG`, `BIR_FILING_STATUS`, `BIR_ATC_CODES` (WC158/WI010/WI011/WI160/WC010/WC120 etc.), `BIR_ROLES`.
+- New `backend/utils/birAccess.js` mirroring `scpwdAccess.js` (lookup-driven role gates, 60s TTL cache, lazy-seed-from-defaults).
+
+**J0.3 Dashboard backend** (`backend/erp/services/birDashboardService.js`)
+- `buildDashboard({ entityId, year })` returns entity tax-config + data-quality summary + 12-month form heatmap + upcoming deadlines + audit log.
+- Aggregates VatLedger, CwtLedger, JournalEntry, Payslip per period. Cache 60s per (entity, year), bust on JE post.
+
+**J0.4 Dashboard frontend** (`frontend/src/pages/erp/BIRCompliancePage.jsx`)
+- Entity selector + year selector + Run Data Quality Scan button.
+- Data Quality strip + drill-down modal.
+- 12-month heatmap (rows = forms, columns = months, color by status).
+- Form detail page `/erp/bir/:formCode/:year/:period` — copy-paste card per BIR field, audit log, Mark FILED, Upload BIR Confirmation.
+- WorkflowGuide banner.
+- Sidebar link (admin + finance + president + bookkeeper).
+
+**J0.5 Data Quality Agent** (`backend/agents/birDataQualityAgent.js`)
+- Nightly + on-demand scan of Hospital, Customer, Vendor, PeopleMaster, Doctor for missing TIN / incomplete address / invalid TIN format.
+- If blocker affects deadline within 7 days, fires MessageInbox alert (admin + finance + president).
+- Stores last-run findings in `BirDataQualityRun` for dashboard drill-down.
+
+**J0.6 Bookkeeper role**
+- Add `bookkeeper` to `User.role` enum.
+- Lookup-driven access via `BIR_ROLES`.
+- Sidebar filtered: sees `/erp/bir`, `/erp/accounting/trial-balance`, `/erp/coa`. Cannot see payroll, payslip, incentive-payouts, rebate-payouts.
+- Controller-level filter: Mongoose `select: false` on Payslip amount fields when requester is bookkeeper.
+
+**J0.7 Email confirmation bridge**
+- Either `POST /api/erp/bir/inbound-email` webhook (Cloudflare Email Workers / SendGrid Inbound Parse) OR Gmail polling agent against `yourpartner@viosintegrated.net`.
+- Parser extracts: form code, TIN, period, BIR reference number -> matches against open BirFilingStatus row -> flips to CONFIRMED, attaches email + reference. Unmatched -> admin alert.
+
+**J0.8 Health check + WorkflowGuide**
+- Add BIR section to `scripts/checkErpHealth.js`: entity tax-config completeness, lookup catalog presence, role lookup non-empty, tax_filing_email set per entity.
+- `WORKFLOW_GUIDES["/erp/bir"]` entry.
+
+### J1 — 2550M Monthly + 2550Q Quarterly VAT (~2 days)
+Wrap existing `vatService.computeVatReturn2550Q()` with `compute2550M({entityId, year, month})`. Page per BIR box (Vatable / Zero-Rated / Exempt / Sales to Government / Output VAT / Input VAT / Net Payable). Includes RA 11534 VAT-exempt classification on Product. Period-lock on Mark FILED.
+
+### J2 — 1601-EQ + 1606 + Outbound 2307 + SAWT (~3 days)
+New `WithholdingLedger` model (direction OUTBOUND, ATC code, payee, period). Engine triggers on Payroll post (contractors, when active) + Expense post (rent line). 1601-EQ + 1606 copy-paste pages. Outbound 2307 PDF per contractor per quarter. SAWT `.dat` writer with golden-file fixtures. Withholding Posture card on dashboard. PS-eligibility auto-flip.
+
+### J3 — 1601-C + 1604-CF (~1.5 days)
+Payslip -> WithholdingLedger bridge (direction COMPENSATION). 1601-C copy-paste page. 1604-CF Annual Alphalist `.dat` writer (Schedules 7.1 / 7.2 / 7.3).
+
+### J4 — QAP + 1604-E (~2 days)
+QAP quarterly `.dat` writer. 1604-E annual `.dat` writer. Cross-references VIP-1.B rebate payouts.
+
+### J5 — Books of Accounts loose-leaf PDFs (~2 days)
+`bookOfAccountsService.js` generates Sales / Purchase / General / GL / Cash Receipts / Cash Disbursements PDFs per entity per period. BIR-required header. Annual binding PDF + sworn declaration template.
+
+### J6 — Inbound 2307 Reconciliation (~1 day)
+Surface "Hospitals withheld but no 2307 received" gap. Quarterly CWT credit summary. Workflow: PENDING_2307 -> RECEIVED on PDF upload -> roll-up to 1702.
+
+### J7 — 1702 Annual Income Tax (~1.5 days)
+Trial Balance -> adjusting entries -> Gross Income -> Allowable Deductions -> Taxable Income -> Tax Due -> less Creditable Tax Withheld (J6) + Quarterly Income Tax Paid -> Net Payable. Copy-paste page per BIR field.
+
+### Plan + handoff
+Full plan: `~/.claude/plans/vip-1-j-bir-compliance.md`.

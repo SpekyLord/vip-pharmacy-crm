@@ -55,13 +55,30 @@ const PAGE_GUIDES = {
       'You can close the app between clinic visits to save battery — the dashboard caches your VIP Client list locally so the next page (and offline visit logging) still works on weak signal',
       'When you reconnect, queued offline visits sync automatically. You\'ll see a toast ("Synced N visits") and a copy lands in your Inbox so you can audit data spend later',
       'If a queued visit can\'t replay (e.g., photos lost from local storage), a red "Sync errors (N)" badge appears next to your name — tap it to review and discard',
+      'New here? Open the Field Guide from the sidebar for the full offline-visit + Partnership-deck walkthrough — bookmark it and revisit before each field day until it\'s second nature',
     ],
     next: [
       { label: 'Log Visit', path: '/bdm/visit/new' },
       { label: 'My Visits', path: '/bdm/visits' },
       { label: 'Call Plan', path: '/bdm/cpt' },
+      { label: 'Field Guide', path: '/bdm/field-guide' },
     ],
-    tip: 'VIP Clients marked "Due" should be visited this week. "Carried" means a missed visit from a previous week. Visit logging + partnership presentations work offline; financial / approval pages need WiFi or cellular.',
+    tip: 'VIP Clients marked "Due" should be visited this week. "Carried" means a missed visit from a previous week. Visit logging + partnership presentations work offline; financial / approval pages need WiFi or cellular. Open the Field Guide for the full offline workflow reference.',
+  },
+  'field-guide': {
+    title: 'BDM Offline Field Guide',
+    steps: [
+      'Bookmark this page — it covers offline visit logging, in-person CLM (Start Presentation), remote deck links, photo proof, sync errors, and which pages need WiFi',
+      'Read once before your first field day, then revisit any time you forget a step',
+      'Sections 1-4 are the everyday workflow; sections 5-7 are the troubleshooting + tips you\'ll want when something looks off',
+      'Section 8 covers what admin expects from pilot BDMs during rollout week',
+    ],
+    next: [
+      { label: 'Log Visit', path: '/bdm/visit/new' },
+      { label: 'Comm Log', path: '/bdm/comm-log' },
+      { label: 'Dashboard', path: '/bdm' },
+    ],
+    tip: 'Same content lives in docs/BDM-OFFLINE-FIELD-GUIDE.md so admin onboarding for new BDMs uses the same playbook. If something is unclear or wrong on your phone, screenshot it and tell admin via Comm Log.',
   },
   'md-leads': {
     title: 'MD Partner Leads',
@@ -77,6 +94,24 @@ const PAGE_GUIDES = {
       { label: 'BDMs', path: '/admin/employees' },
     ],
     tip: 'New auto-discovered MDs (Rx OCR + storefront customer attestation, ships in VIP-1.D/E) land here as LEAD. Existing pre-VIP-1.A doctors save as PARTNER on next save (legacy assumption: anyone in CRM is at least at VISITED). Demote via the action menu if wrong.',
+  },
+  'bir-compliance': {
+    title: 'BIR Compliance Dashboard',
+    steps: [
+      'Set the year filter at the top — the heatmap, deadlines, and recent exports refilter on the chosen year.',
+      'Open "Tax Config" to enter the entity TIN, RDO code, business style, VAT registration, and filing email. Address must be complete (street, barangay, city, province, ZIP) for alphalists to import into Alphalist Data Entry.',
+      'Click "Run Scan" to refresh the Data Quality strip — it sweeps every Hospital, Customer, Vendor, PeopleMaster, and Doctor for missing TIN / address. BLOCK status means a deadline within 7 days is data-blocked; act on it first.',
+      'Use "Drill-down" to see the exact records failing the scan. Have staff fix the missing TIN/address fields, then re-run the scan.',
+      'The Filing Heatmap shows every BIR form × period × status. Green = CONFIRMED (BIR receipt parsed from email), blue = FILED, indigo = REVIEWED, yellow = DRAFT, red = OVERDUE or DATA INCOMPLETE.',
+      'Click any cell to drill into the form detail page (Phase J1+ surfaces copy-paste boxes for each BIR field). Today (J0) the cells are status indicators only.',
+      'When you receive a BIR email confirmation in your inbox, the parser auto-flips the matching cell from FILED to CONFIRMED. If the parser cannot match (subject-line variance), the email lands in the unmatched queue for manual confirmation.',
+    ],
+    next: [
+      { label: 'SC/PWD Sales Book', path: '/admin/scpwd-sales-book' },
+      { label: 'Period Locks (ERP)', path: '/erp/period-locks' },
+      { label: 'Trial Balance', path: '/erp/accounting' },
+    ],
+    tip: 'The dashboard is your accountant view — no BIR form ships from VIP CRM directly to BIR (we have no eFPS integration). The deliverable is a copy-paste UX into eBIR Forms for monthly + quarterly forms, .dat files for Alphalist Data Entry (SAWT, QAP, 1604-CF, 1604-E), and PDFs for the loose-leaf Books of Accounts. Phases J1-J7 add the per-form aggregators + serializers; J0 ships the dashboard, data-quality agent, and tax-config UI.',
   },
   'scpwd-sales-book': {
     title: 'SC / PWD Sales Book (BIR-mandated)',
