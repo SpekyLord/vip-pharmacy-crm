@@ -825,10 +825,16 @@ See `docs/CHANGE_LOG.md` for full details on all 17 client-requested changes.
 
 ## Test Credentials
 
+> **Dev / localhost only.** Use for Playwright smoke walks against
+> `localhost:5173` (frontend) / `localhost:5000` (backend) when the
+> dev stack is bound to the live Atlas dev cluster. Verified working
+> Apr 27 2026.
+
 | Role | Email | Password |
 |------|-------|----------|
-| Admin | admin@vipcrm.com | Admin123!@# |
-| MedRep | medrep@vipcrm.com | Medrep123!@# |
-| BDM | juan@vipcrm.com | BDM123!@# |
-| BDM | maria@vipcrm.com | BDM123!@# |
-| BDM | pedro@vipcrm.com | BDM123!@# |
+| Admin / President | yourpartner@viosintegrated.net | DevPass123!@# |
+| BDM / Staff | s3.vippharmacy@gmail.com | DevPass123!@# |
+| BDM / Staff | s19.vippharmacy@gmail.com | DevPass123!@# |
+
+> Legacy aspirational seeds (`admin@vipcrm.com`, `juan@vipcrm.com`,
+> etc.) were never applied to the live cluster — ignore them.

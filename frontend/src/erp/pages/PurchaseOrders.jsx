@@ -305,7 +305,8 @@ export default function PurchaseOrders() {
   };
 
   const handleAddActivity = async () => {
-    if (!activityMsg.trim() || !showDetail) return;
+    if (!showDetail) return;
+    if (!activityMsg.trim() && !activityWaybill.trim()) return;
     setActivitySaving(true);
     try {
       const res = await api.addPOActivity(showDetail._id, { message: activityMsg, courier_waybill: activityWaybill || undefined });
@@ -680,14 +681,14 @@ export default function PurchaseOrders() {
                         )}
                         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
                           <div style={{ flex: 1, minWidth: 180 }}>
-                            <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 2 }}>Note *</label>
-                            <textarea rows={2} value={activityMsg} onChange={e => setActivityMsg(e.target.value)} placeholder="Status update, delivery info..." style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid var(--erp-border, #e2e8f0)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }} />
+                            <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 2 }}>Note</label>
+                            <textarea rows={2} value={activityMsg} onChange={e => setActivityMsg(e.target.value)} placeholder="Status update, delivery info... (optional if waybill is filled)" style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid var(--erp-border, #e2e8f0)', fontSize: 12, resize: 'vertical', boxSizing: 'border-box' }} />
                           </div>
                           <div style={{ width: 160 }}>
                             <label style={{ fontSize: 11, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 2 }}>Courier Waybill</label>
                             <input value={activityWaybill} onChange={e => setActivityWaybill(e.target.value)} placeholder="Tracking #" style={{ width: '100%', padding: '6px 8px', borderRadius: 6, border: '1px solid var(--erp-border, #e2e8f0)', fontSize: 12, boxSizing: 'border-box' }} />
                           </div>
-                          <button className="btn btn-primary btn-sm" onClick={handleAddActivity} disabled={activitySaving || !activityMsg.trim()} style={{ height: 34 }}>{activitySaving ? 'Saving...' : 'Add Note'}</button>
+                          <button className="btn btn-primary btn-sm" onClick={handleAddActivity} disabled={activitySaving || (!activityMsg.trim() && !activityWaybill.trim())} style={{ height: 34 }}>{activitySaving ? 'Saving...' : 'Add Note'}</button>
                         </div>
                       </div>
                     </>
