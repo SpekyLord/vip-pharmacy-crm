@@ -22,14 +22,32 @@ const Lookup = require('../models/Lookup');
 // ─── Template definitions ────────────────────────────────────────────
 // Each coordinate is in millimeters. PDF renderer converts to points via
 // mm * 2.8346. Row indices are 1-based, counted from `first_row_y_mm`.
+//
+// Coordinate semantics (Apr 27 2026):
+//   x → LEFT edge of the first character (left-aligned fields) OR
+//       RIGHT edge of the last character (right-aligned fields).
+//   y → BASELINE of the text (the line letters sit on, NOT the top
+//       of the bounding box). The renderer subtracts the font ascent
+//       so the baseline lands at this value, matching the calibration
+//       crosshair point.
+//
+// Pre-existing rows authored under old "y = top of box" semantics will
+// render ~2.5 mm higher than before until re-tuned via the calibration
+// grid → My CSI panel. Re-seed is non-destructive ($setOnInsert), so
+// admin edits via Lookup Manager remain authoritative.
 
 const VIP_TEMPLATE = {
-  page: { width_mm: 210, height_mm: 260 },
+  // Defaults updated 2026-04-27 from booklet #004804 field test:
+  //   • name.y 57 → 45 (booklet "Registered Name" line)
+  //   • all x values shifted +4 mm to land on the booklet's columns
+  //   • page → A4 so office printers accept it as native paper; the
+  //     booklet feeds at the top-left of the A4 area.
+  page: { width_mm: 210, height_mm: 297 },
   header: {
-    name:    { x: 45,  y: 57, label_hint: 'Registered Name' },
-    date:    { x: 167, y: 40 },
-    address: { x: 45,  y: 53 },
-    terms:   { x: 145, y: 53 },
+    name:    { x: 49,  y: 45, label_hint: 'Registered Name' },
+    date:    { x: 171, y: 40 },
+    address: { x: 49,  y: 53 },
+    terms:   { x: 149, y: 53 },
   },
   body: {
     first_row_y_mm: 68,
@@ -37,23 +55,28 @@ const VIP_TEMPLATE = {
     row_count: 20,
     max_items_per_page: 3,
     columns: {
-      description: { x: 10,  align: 'left' },
-      unit:        { x: 113, align: 'left' },
-      quantity:    { x: 126, align: 'right' },
-      unit_cost:   { x: 142, align: 'right' },
-      amount:      { x: 166, align: 'right' },
+      description: { x: 14,  align: 'left' },
+      unit:        { x: 117, align: 'left' },
+      quantity:    { x: 130, align: 'right' },
+      unit_cost:   { x: 146, align: 'right' },
+      amount:      { x: 170, align: 'right' },
     },
     po_row_index: 18,
     note_row_start_index: 19,
     note_row_count: 2,
   },
   totals: {
+    // totals.right is right-aligned at x=171 to match the date column
+    // (date.x = 171) — so the rightmost digit of every total line stacks
+    // exactly under the rightmost character of the date.
+    // totals.left sits in the VAT-summary column on the lower left at
+    // x=46 (after the +4 mm field-test shift).
     left: {
-      start_y_mm: 182, row_height_mm: 5, x_mm: 42, align: 'right',
+      start_y_mm: 182, row_height_mm: 5, x_mm: 46, align: 'right',
       fields: ['vatable_sales', 'vat', 'zero_rated', 'vat_exempt'],
     },
     right: {
-      start_y_mm: 182, row_height_mm: 5, x_mm: 167, align: 'right',
+      start_y_mm: 182, row_height_mm: 5, x_mm: 171, align: 'right',
       fields: [
         'total_sales_vat_inclusive', 'less_vat', 'amount_net_of_vat',
         'less_discount', 'add_vat', 'less_withholding_tax', 'total_amount_due',
@@ -77,10 +100,14 @@ const VIP_TEMPLATE = {
 };
 
 const MG_TEMPLATE = {
-  page: { width_mm: 160, height_mm: 202 },
+  // Page set to A4 so office printers accept it as native paper. The
+  // physical MG and CO booklet (160×202 mm) feeds at the top-left of
+  // the A4 sheet; coordinates below are absolute from page top-left,
+  // so they remain valid.
+  page: { width_mm: 210, height_mm: 297 },
   header: {
     name:    { x: 25,  y: 39, label_hint: 'Charged to' },
-    date:    { x: 125, y: 33 },
+    date:    { x: 125, y: 35 },  // +2 mm from booklet #419 field test (Apr 27 2026)
     address: { x: 22,  y: 43 },
     terms:   { x: 129, y: 44 },
   },

@@ -11,6 +11,19 @@
  * (metadata shape in seedCsiTemplates.js). Caller is responsible for
  * loading and shaping the inputs — this renderer is pure layout.
  *
+ * ── Coordinate semantics (Apr 27 2026) ──────────────────────────────
+ * Uniform across every field — header, body rows, batch line, expiry
+ * line, PO row, notes, both totals stacks:
+ *   x = LEFT edge of the first character, measured from the left of the page.
+ *   y = BASELINE of the letter (the line letters sit on, not the top of
+ *       the bounding box), measured from the top of the page.
+ * Renderer compensates by subtracting the font ascent before handing y to
+ * PDFKit (which expects y at the top of the line box). The calibration
+ * crosshair is geometric (no font), so its (x, y) point coincides exactly
+ * with the rendered baseline of the first character.
+ * The legacy `align` field on each column/totals block is now ignored —
+ * everything is left-edge anchored.
+ *
  * ── Callers ─────────────────────────────────────────────────────────
  *   renderCsiDraft({ sale, entity, template, user, customerLabel,
  *                    customerAddress, lineDisplay, terms })
@@ -45,8 +58,21 @@ async function renderCsiDraft({
   }
 
   const tpl = template.metadata || template;
-  const offsetX = Number(user?.csi_printer_offset_x_mm) || 0;
-  const offsetY = Number(user?.csi_printer_offset_y_mm) || 0;
+  // Two-layer offset model — printer-agnostic CSI output:
+  //   1) tpl.feed_offset = where the booklet sits on the page for the
+  //      entity's PRIMARY printer (e.g. (25, 47.5) for a Brother that
+  //      centers a 160×202 booklet on A4). Lookup-driven, configurable
+  //      via Lookup Manager — same printer = same value for everyone.
+  //   2) user.csi_printer_offset_*_mm = per-user fine tuning for
+  //      printers that differ from the primary (different brand, drift,
+  //      manual calibration). Defaults to 0 if the user never calibrated.
+  // Final = lookup x + feed_offset + user_offset.
+  const feedOffsetX = Number(tpl.feed_offset?.x_mm) || 0;
+  const feedOffsetY = Number(tpl.feed_offset?.y_mm) || 0;
+  const userOffsetX = Number(user?.csi_printer_offset_x_mm) || 0;
+  const userOffsetY = Number(user?.csi_printer_offset_y_mm) || 0;
+  const offsetX = feedOffsetX + userOffsetX;
+  const offsetY = feedOffsetY + userOffsetY;
 
   const pageSize = [mm(tpl.page.width_mm), mm(tpl.page.height_mm)];
   const doc = new PDFDocument({ size: pageSize, margin: 0, autoFirstPage: false });
@@ -85,8 +111,14 @@ async function renderCsiDraft({
 async function renderCalibrationGrid({ template, user }) {
   if (!template) throw new Error('CSI_TEMPLATE_NOT_CONFIGURED');
   const tpl = template.metadata || template;
-  const offsetX = Number(user?.csi_printer_offset_x_mm) || 0;
-  const offsetY = Number(user?.csi_printer_offset_y_mm) || 0;
+  // Same two-layer offset model as renderCsiDraft so the calibration
+  // crosshair lands exactly where the booklet content will land.
+  const feedOffsetX = Number(tpl.feed_offset?.x_mm) || 0;
+  const feedOffsetY = Number(tpl.feed_offset?.y_mm) || 0;
+  const userOffsetX = Number(user?.csi_printer_offset_x_mm) || 0;
+  const userOffsetY = Number(user?.csi_printer_offset_y_mm) || 0;
+  const offsetX = feedOffsetX + userOffsetX;
+  const offsetY = feedOffsetY + userOffsetY;
 
   const pageSize = [mm(tpl.page.width_mm), mm(tpl.page.height_mm)];
   const doc = new PDFDocument({ size: pageSize, margin: 0, autoFirstPage: true });
@@ -204,10 +236,13 @@ function drawPage({ doc, tpl, offsetX, offsetY, customerLabel, customerAddress,
     const unitAbbr = abbreviateUnit(line.unit, abbrevOpts);
 
     if (isVipShape) {
-      // VIP: Item Description · Unit · Quantity · Unit Cost · Amount
-      // Unit column added Apr 2026 at x=113mm (between description and quantity).
-      // Older Lookup rows without cols.unit still render — just skip unit.
-      drawText(doc, safe(line.description), px(cols.description.x), py(itemYmm));
+      // VIP: Item Description · Quantity · Unit Cost · Amount
+      // The booklet has NO dedicated Unit column — pack the unit (AMP/BOT/...)
+      // at the end of the description so it lands right before Quantity.
+      // If a template still defines cols.unit (legacy), honor it instead.
+      const descBase = safe(line.description);
+      const desc = (cols.unit || !unitAbbr) ? descBase : `${descBase} ${unitAbbr}`;
+      drawText(doc, desc, px(cols.description.x), py(itemYmm));
       if (cols.unit) {
         drawText(doc, unitAbbr,             px(cols.unit.x),        py(itemYmm), { align: cols.unit.align || 'left' });
       }
@@ -296,16 +331,19 @@ function buildTotalsView(sale, allLines) {
 
 // ─── Helpers ────────────────────────────────────────────────────────
 
-function drawText(doc, text, x, y, opts = {}) {
+function drawText(doc, text, x, y /* , opts unused */) {
   if (text === undefined || text === null || text === '') return;
   const str = String(text);
-  const align = opts.align || 'left';
-  if (align === 'right') {
-    const w = doc.widthOfString(str);
-    doc.text(str, x - w, y, { lineBreak: false });
-  } else {
-    doc.text(str, x, y, { lineBreak: false });
-  }
+  // Lookup convention (uniform for every field):
+  //   x = LEFT edge of the first character, measured from the left of the page
+  //   y = BASELINE of the letter, measured from the top of the page
+  // PDFKit's native y is the top of the line box, so we subtract the font's
+  // ascent so the baseline lands at the lookup-supplied y. The calibration
+  // crosshair is geometric (no font), so its (x, y) point coincides with
+  // the rendered baseline.
+  const ascent = ((doc._font && doc._font.ascender) || 718) / 1000 * doc._fontSize;
+  const drawY = y - ascent;
+  doc.text(str, x, drawY, { lineBreak: false });
 }
 
 function safe(v) {
@@ -325,8 +363,12 @@ function formatExpiry(d) {
   if (!d) return '';
   const date = d instanceof Date ? d : new Date(d);
   if (isNaN(date.getTime())) return '';
+  // MM/DD/YYYY — matches what the GRN audit / entry pages render via
+  // toLocaleDateString('en-PH'), keeping the operator's mental model
+  // consistent across receiving and selling.
   const mm = String(date.getMonth() + 1).padStart(2, '0');
-  return `${mm}/${date.getFullYear()}`;
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${mm}/${dd}/${date.getFullYear()}`;
 }
 
 function formatMoney(n) {
