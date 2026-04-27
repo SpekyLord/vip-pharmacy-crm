@@ -8939,3 +8939,42 @@ Trial Balance -> adjusting entries -> Gross Income -> Allowable Deductions -> Ta
 
 ### Plan + handoff
 Full plan: `~/.claude/plans/vip-1-j-bir-compliance.md`.
+
+---
+
+## Phase MD-1 — Master Data Positive Sub-Permissions + Cross-Entity Write (Apr 27 2026) ✅ SHIPPED
+
+**Goal**: Let admin delegate Hospital + Customer + ProductMaster Add/Edit to non-admin roles via Access Template, optionally with cross-entity write capability. Closes the legacy governance gap where the Master Data module only had DANGER sub-permissions.
+
+### MD-1.1 — Lookup-driven sub-permissions ✅
+- 4 new entries in `ERP_SUB_PERMISSION` SEED_DEFAULTS (`MASTER__HOSPITAL_MANAGE`, `MASTER__CUSTOMER_MANAGE`, `MASTER__PRODUCT_MANAGE`, `MASTER__CROSS_ENTITY_WRITE`).
+- All NON-danger so they're delegable without explicit-grant friction.
+- Seeded across every entity via `node backend/erp/scripts/seedAllLookups.js` (idempotent `$setOnInsert`).
+
+### MD-1.2 — Composition + cross-entity helpers ✅
+- `erpRoleOrSubAccessCheck(roles, module, subKey)` — composition middleware: legacy role bypass OR sub-permission grant. Used in route migrations to preserve admin/finance/president pre-MD-1 behavior while adding lookup-driven delegation.
+- `hasCrossEntityMasterData(user)` — President OR explicit `master.cross_entity_write` grant. Admin/Finance need explicit grant (Rule #3 lookup-driven; high-trust capability is opt-in).
+
+### MD-1.3 — Route migrations ✅
+- `hospitalRoutes.js`: POST/PUT/alias-add → `erpRoleOrSubAccessCheck(...,'master','hospital_manage')`. Bulk export/import stay role-gated.
+- `customerRoutes.js`: POST/PUT/tag-bdm/untag-bdm → `erpRoleOrSubAccessCheck(...,'master','customer_manage')`.
+- `productMasterRoutes.js`: all writes → `erpAnySubAccessCheck(['master','product_manage'], ['purchasing','product_manage'])` (dual-accept for backwards compat).
+
+### MD-1.4 — ProductMaster cross-entity flag ✅
+- `productMasterController.create/update/updateReorderQty/deactivate/deleteProduct/getById`: replaced `req.isPresident` checks with `hasCrossEntityMasterData(req.user)` so cross-entity-grantees bypass `entity_id` filter and can pass `req.body.entity_id` on create.
+- `tagToWarehouse` warehouse validation + `getProductWarehouses` ledger scope intentionally NOT widened (separate trust surfaces — cross-entity master data write doesn't grant cross-entity warehouse poisoning).
+
+### MD-1.5 — Frontend gates + banners ✅
+- `HospitalList.jsx` — button gates: `ROLE_SETS.MANAGEMENT.includes(...) || hasSubPermission('master','hospital_manage')`.
+- `ProductMaster.jsx` — `canAddEdit` mirrors backend dual-accept.
+- `WorkflowGuide.jsx` — `hospitals`, `customer-list`, `product-master` banners updated with Phase MD-1 step + tip.
+
+### Smoke ratification (Apr 27 2026, Playwright + live HTTP) ✅
+- Mae (BDM, granted 4 sub-perms) → Hospital create/update/alias 200/201, Customer create 201, Product own-entity 201, Product cross-entity (VIP→MG and CO.) 201, cross-entity update 200.
+- s19 (BDM, no grants) → 403 on all 3 creates with precise messages.
+- President → 201 (no regression).
+- Build clean: vite 10.76s, eslint EXIT=0, startup check passed.
+
+### Known follow-ups (not in scope)
+- `territoryRoutes.js` POST/PUT — same migration applicable (MD-1.b future).
+- Existing access templates with `purchasing.product_manage` keep working via dual-accept; no migration script (low blast radius).

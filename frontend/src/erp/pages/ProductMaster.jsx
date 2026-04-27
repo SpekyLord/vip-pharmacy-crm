@@ -260,7 +260,13 @@ function ProductModal({ open, onClose, onSave, editItem, vatOptions, unitCodes =
 export function ProductMasterPageContent({ stockType: fixedStockType } = {}) {
   const api = useErpApi();
   const { hasSubPermission } = useErpSubAccess();
-  const canAddEdit = hasSubPermission('purchasing', 'product_manage');
+  // Phase MD-1 (Apr 2026) — Add/Edit accepts either MASTER__PRODUCT_MANAGE (canonical
+  // Master Data grant) OR PURCHASING__PRODUCT_MANAGE (legacy grant kept for backwards
+  // compatibility). Mirrors the dual-accept pattern in productMasterRoutes.js so the
+  // frontend never hides the button from a user the backend would let in.
+  const canAddEdit =
+    hasSubPermission('master', 'product_manage') ||
+    hasSubPermission('purchasing', 'product_manage');
   // Phase 3c — deactivate (Tier 2 lookup-only) and delete (Tier 1 baseline) gated separately.
   // Mirrors backend productMasterRoutes /:id/deactivate (master.product_deactivate) +
   // /:id DELETE (master.product_delete). Replaces hardcoded DEACTIVATE_ROLES role list.

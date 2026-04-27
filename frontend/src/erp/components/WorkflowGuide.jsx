@@ -456,19 +456,20 @@ const WORKFLOW_GUIDES = {
     title: 'Product Master',
     steps: [
       'Search/filter products by name, status, or stock type (Pharma, F&B, Office)',
-      'Subsidiary entities see parent company products tagged "Parent" (read-only) — you can add your own products with "+ New Product"',
+      'Subsidiary entities see parent company products tagged "Parent" (read-only by default) — you can add your own products with "+ New Product"',
       'Click "+ New Product" to add — set prices, VAT status, and unit',
       'Set Purchase UOM + Selling UOM + Conversion Factor when supplier unit differs from selling unit (e.g., 1 CASE = 10 BOX)',
       'Use Export/Import Prices buttons for bulk price updates via Excel',
       'Use "Refresh Master" to sync from the cleaned Item Master CSV — deduplicates, updates, and deactivates stale products',
       'Tag products to warehouses for inventory tracking',
+      'Phase MD-1 (Apr 2026): Add/Edit gate accepts EITHER MASTER__PRODUCT_MANAGE (canonical Master Data grant) OR PURCHASING__PRODUCT_MANAGE (legacy). New staff get master.product_manage; existing purchasing-template users keep working without migration. Tick MASTER__CROSS_ENTITY_WRITE additionally to let a non-president edit any entity\'s catalog (parent + every subsidiary) from a single working entity context.',
     ],
     next: [
       { label: 'My Stock', path: '/erp/my-stock' },
       { label: 'GRN', path: '/erp/grn' },
       { label: 'Transfer Prices', path: '/erp/control-center?section=transfer-prices' },
     ],
-    tip: 'Products tagged "Parent" are inherited from the parent entity — you can use them in POs and GRNs but only the parent admin can edit them. Click "+ New Product" to add entity-specific products. Set Purchase UOM when your supplier sells in a different unit than inventory.',
+    tip: 'Products tagged "Parent" are inherited from the parent entity — you can use them in POs and GRNs but only the parent admin (or a cross-entity-write grantee) can edit them. Click "+ New Product" to add entity-specific products. Set Purchase UOM when your supplier sells in a different unit than inventory. Cross-entity write also honors `req.body.entity_id` on create — a grantee can create products under any entity by setting the working entity context.',
   },
   'grn-entry': {
     title: 'Goods Receipt Note (GRN) — Capture',
@@ -582,12 +583,13 @@ const WORKFLOW_GUIDES = {
       'Set financial terms (payment days, VAT, CWT, credit limit)',
       'Assign hospitals to warehouses — BDMs automatically see hospitals in their warehouse',
       'Export/Import via Excel for bulk updates (include Warehouse Codes column)',
+      'Phase MD-1 (Apr 2026): Add/Edit and Alias-add are now lookup-driven via the MASTER__HOSPITAL_MANAGE sub-permission. Admin tick this on a staff/contractor Access Template (Master Data → Sub-Permissions → "Add/Edit Hospitals") to delegate hospital maintenance without granting the full management role. Hospitals are globally shared, so the grant works across every entity automatically.',
     ],
     next: [
       { label: 'New Sale', path: '/erp/sales/entry' },
       { label: 'Collections', path: '/erp/collections' },
     ],
-    tip: 'Assign warehouses instead of tagging individual BDMs — scales automatically when BDMs change. Use BDM overrides only for edge cases.',
+    tip: 'Assign warehouses instead of tagging individual BDMs — scales automatically when BDMs change. Use BDM overrides only for edge cases. Bulk Import/Export remain admin/finance/president only — single-record CRUD is delegable via master.hospital_manage.',
   },
   'transfer-price-manager': {
     title: 'Transfer Price Manager',
@@ -1114,13 +1116,14 @@ const WORKFLOW_GUIDES = {
       'Create new customers or edit existing ones via the modal form',
       'Tag BDMs to customers — tagging is the visibility control, not entity',
       'Customers are globally shared across entities (same pattern as hospitals). A customer created under VIP remains sellable by a tagged BDM working in any subsidiary — AR posts to the selling entity.',
+      'Phase MD-1 (Apr 2026): Add/Edit and BDM tag/untag are now lookup-driven via the MASTER__CUSTOMER_MANAGE sub-permission. Admin tick this on a staff Access Template (Master Data → Sub-Permissions → "Add/Edit Customers") to delegate customer maintenance. Customers are globally shared, so a single grant covers every entity.',
     ],
     next: [
       { label: 'New Sale', path: '/erp/sales/entry' },
       { label: 'Collections', path: '/erp/collections' },
       { label: 'Hospitals', path: '/erp/hospitals' },
     ],
-    tip: 'Customer names must be globally unique (Phase G5). Use aliases for alternate spellings instead of creating duplicates. Entity label on each row marks the "home entity" for reporting only — it does not restrict who can sell to the customer.',
+    tip: 'Customer names must be globally unique (Phase G5). Use aliases for alternate spellings instead of creating duplicates. Entity label on each row marks the "home entity" for reporting only — it does not restrict who can sell to the customer. Bulk Import/Export remain admin/finance/president only.',
   },
 
   // ═══ Accounting & Financial Setup ═══

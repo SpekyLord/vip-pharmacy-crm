@@ -12,12 +12,22 @@ import useHospitals from '../hooks/useHospitals';
 import usePeople from '../hooks/usePeople';
 import useWarehouses from '../hooks/useWarehouses';
 import useErpApi from '../hooks/useErpApi';
+import useErpSubAccess from '../hooks/useErpSubAccess';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError, showSuccess } from '../utils/errorToast';
 
 export function HospitalListContent() {
   const { user } = useAuth();
   const { hospitals, loading, refresh } = useHospitals();
+  // Phase MD-1 (Apr 2026) — Add/Edit/Assign now lookup-driven via master.hospital_manage.
+  // Backwards-compat: management roles (admin/finance/president) implicitly pass via the
+  // backend role-bypass in erpSubAccessCheck, so the UI keeps the legacy MANAGEMENT
+  // fallback to avoid hiding buttons from admins who haven't been re-assigned an
+  // access template yet. Staff with the explicit grant get the buttons too.
+  const { hasSubPermission } = useErpSubAccess();
+  const canManageHospitals =
+    ROLE_SETS.MANAGEMENT.includes(user?.role) ||
+    hasSubPermission('master', 'hospital_manage');
   const erpApi = useErpApi();
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
@@ -220,10 +230,10 @@ export function HospitalListContent() {
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button style={{ ...styles.btn, ...styles.btnOutline }} onClick={handleExport}>Export Excel</button>
-              {ROLE_SETS.MANAGEMENT.includes(user?.role) && (
+              {canManageHospitals && (
                 <label style={{ ...styles.btn, ...styles.btnOutline, cursor: 'pointer' }}>Import Excel<input type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleImport} /></label>
               )}
-              {ROLE_SETS.MANAGEMENT.includes(user?.role) && (
+              {canManageHospitals && (
                 <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={openCreate}>+ New Hospital</button>
               )}
             </div>
@@ -265,7 +275,7 @@ export function HospitalListContent() {
                   </td>
                   <td style={styles.td}>
                     <div style={{ display: 'flex', gap: 4 }}>
-                      {ROLE_SETS.MANAGEMENT.includes(user?.role) && (
+                      {canManageHospitals && (
                         <>
                           <button style={{ ...styles.btn, ...styles.btnOutline }} onClick={() => openEdit(h)}>Edit</button>
                           <button style={{ ...styles.btn, ...styles.btnSuccess }} onClick={() => { setAssignModal(h); setShowBdmOverrides(false); }}>Assign</button>
@@ -310,7 +320,7 @@ export function HospitalListContent() {
                   {!(h.warehouse_ids || []).length && <span style={{ color: '#9ca3af', fontSize: 12 }}>None</span>}
                 </div>
 
-                {ROLE_SETS.MANAGEMENT.includes(user?.role) && (
+                {canManageHospitals && (
                   <div className="hospital-card-actions">
                     <button style={{ ...styles.btn, ...styles.btnOutline, flex: 1 }} onClick={() => openEdit(h)}>Edit</button>
                     <button style={{ ...styles.btn, ...styles.btnSuccess, flex: 1 }} onClick={() => { setAssignModal(h); setShowBdmOverrides(false); }}>Assign</button>
