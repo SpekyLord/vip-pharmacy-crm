@@ -1336,11 +1336,19 @@ function fillTemplate(tpl, vars) {
   });
 }
 
-async function resolveEventTemplate(category, eventType, fallback) {
-  // Allow per-entity admin overrides via Lookup. Failures fall back silently.
+async function resolveEventTemplate(entityId, eventType, fallback) {
+  // Allow per-entity admin overrides via the SYSTEM_EVENT_TEMPLATES Lookup
+  // category (seeded in lookupGenericController.js SEED_DEFAULTS). Failures
+  // fall back silently to the inline DEFAULT_EVENT_TEMPLATES so a Lookup
+  // outage never breaks the auto-sync inbox flow. eventType is uppercased
+  // to match the seed row codes (sync_complete → SYNC_COMPLETE).
   try {
-    const filter = { category: 'SYSTEM_EVENT_TEMPLATES', code: String(eventType).toUpperCase(), is_active: true };
-    if (category) filter.entity_id = category;
+    const filter = {
+      category: 'SYSTEM_EVENT_TEMPLATES',
+      code: String(eventType).toUpperCase(),
+      is_active: true,
+    };
+    if (entityId) filter.entity_id = entityId;
     const row = await Lookup.findOne(filter).lean();
     if (row?.metadata?.titleTemplate && row?.metadata?.bodyTemplate) {
       return {
