@@ -12,7 +12,7 @@ const PurchaseOrder = require('../models/PurchaseOrder');
 const TransactionEvent = require('../models/TransactionEvent');
 const Settings = require('../models/Settings');
 const ErpAuditLog = require('../models/ErpAuditLog');
-const { resolveOwnerForWrite, widenFilterForProxy } = require('../utils/resolveOwnerScope');
+const { resolveOwnerForWrite, widenFilterForProxy, canProxyEntry } = require('../utils/resolveOwnerScope');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { getMyStock: getMyStockAgg, getAvailableBatches } = require('../services/fifoEngine');
 const { cleanBatchNo } = require('../utils/normalize');
@@ -26,13 +26,18 @@ const { createAndPostJournal } = require('../services/journalEngine');
  * Admin/Finance: pass ?bdm_id=X to view any BDM's stock.
  */
 const getMyStock = catchAsync(async (req, res) => {
-  // President/admin/finance: use query.bdm_id if provided, else null (entity-wide)
-  const bdmId = (req.isAdmin || req.isFinance || req.isPresident)
-    ? (req.query.bdm_id || null)
-    : req.bdmId;
+  // President/admin/finance always widen. Phase G4.5 — a BDM with proxy
+  // entry rights for inventory (PROXY_ENTRY_ROLES.INVENTORY lookup +
+  // sub_permissions.inventory.grn_proxy_entry) also widens, so they can
+  // see any owner's batches and fix typo'd batch metadata via MyStock.
+  const privileged = req.isAdmin || req.isFinance || req.isPresident;
+  const { canProxy: hasProxy } = await canProxyEntry(req, 'inventory', { subKey: 'grn_proxy_entry' });
+  const widenScope = privileged || hasProxy;
+  const bdmId = widenScope ? (req.query.bdm_id || null) : req.bdmId;
 
-  // Allow privileged users to query a different entity's stock (for IC transfers)
-  const entityId = (req.isAdmin || req.isFinance || req.isPresident) && req.query.entity_id
+  // Cross-entity scope (?entity_id=) stays admin/finance/president-only —
+  // proxy widens BDM scope only, never crosses entities.
+  const entityId = privileged && req.query.entity_id
     ? req.query.entity_id
     : req.entityId;
 
@@ -40,7 +45,7 @@ const getMyStock = catchAsync(async (req, res) => {
   const warehouseId = req.query.warehouse_id;
   const opts = warehouseId ? { warehouseId } : undefined;
 
-  if (!bdmId && !warehouseId && !(req.isAdmin || req.isFinance || req.isPresident)) {
+  if (!bdmId && !warehouseId && !widenScope) {
     return res.status(400).json({ success: false, message: 'BDM ID or Warehouse ID required' });
   }
 
@@ -1391,10 +1396,16 @@ const correctBatchMetadata = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'new_expiry_date is not a valid date' });
   }
 
-  // Scope — privileged users may target any bdm (entity-wide if omitted);
-  // non-privileged users are pinned to their own bdm_id.
+  // Scope — privileged users (admin/finance/president) may target any bdm
+  // (entity-wide if omitted). Phase G4.5 — a BDM with proxy entry rights for
+  // inventory (PROXY_ENTRY_ROLES.INVENTORY lookup + sub_permissions
+  // .inventory.grn_proxy_entry) also widens; this is what lets a back-office
+  // BDM fix typo'd batch metadata that was filed against another BDM's stock.
+  // Non-eligible callers stay pinned to their own bdm_id.
   const privileged = req.isAdmin || req.isFinance || req.isPresident;
-  const effectiveBdmId = privileged ? (bodyBdmId || null) : req.bdmId;
+  const { canProxy: hasProxy } = await canProxyEntry(req, 'inventory', { subKey: 'grn_proxy_entry' });
+  const widenScope = privileged || hasProxy;
+  const effectiveBdmId = widenScope ? (bodyBdmId || null) : req.bdmId;
 
   const scopeFilter = {
     entity_id: new mongoose.Types.ObjectId(req.entityId),
@@ -1468,7 +1479,7 @@ const correctBatchMetadata = catchAsync(async (req, res) => {
     'line_items.batch_lot_no': normalizedOld,
   };
   if (warehouse_id) grnFilter.warehouse_id = new mongoose.Types.ObjectId(warehouse_id);
-  if (!privileged && req.bdmId) grnFilter.bdm_id = new mongoose.Types.ObjectId(req.bdmId);
+  if (!widenScope && req.bdmId) grnFilter.bdm_id = new mongoose.Types.ObjectId(req.bdmId);
 
   const grnResult = await GrnEntry.updateMany(grnFilter, { $set: grnSet }, { arrayFilters: [grnArrayFilter] });
 

@@ -145,5 +145,31 @@ console.log('\n[12/12] WorkflowGuide entry');
 const wfg = readSafe(path.join(FRONTEND, 'src', 'erp', 'components', 'WorkflowGuide.jsx'));
 check("WORKFLOW_GUIDES['cockpit']", () => wfg && /['"]cockpit['"]:\s*\{/.test(wfg));
 
+// 13. Phase EC-1.1 — Persona taxonomy (CFO/CEO/COO tags on each tile).
+// Forward-compat for SaaS Year-2 role-filtered views.
+console.log('\n[13/13] Persona taxonomy (Phase EC-1.1)');
+const tileCodes = ['cash', 'ar_aging', 'ap_aging', 'period_close', 'approval_sla', 'agent_health', 'margin', 'inventory_turns', 'partnership_funnel', 'bir_calendar'];
+tileCodes.forEach((code) => {
+  check(`cockpitService TILES row '${code}' has personas array`, () => {
+    if (!cockpitSvc) return 'service file missing';
+    // Match the tile row line plus the inline `personas:` field.
+    const re = new RegExp(`code:\\s*['"]${code}['"][^\\n]*personas:\\s*\\[`);
+    return re.test(cockpitSvc) || `personas not declared on row ${code}`;
+  });
+});
+check('cockpit response includes personas in tile result', () =>
+  cockpitSvc && /tiles\[tile\.code\]\s*=\s*\{[^}]*personas:\s*tile\.personas/.test(cockpitSvc));
+check('SEED_DEFAULTS has EXECUTIVE_COCKPIT_TILE_PERSONAS', () =>
+  lookupCtrl && /EXECUTIVE_COCKPIT_TILE_PERSONAS:\s*\[/.test(lookupCtrl));
+tileCodes.forEach((code) => {
+  const upper = code.toUpperCase();
+  check(`SEED_DEFAULTS persona row '${upper}'`, () => {
+    if (!lookupCtrl) return 'lookup controller missing';
+    // Look for the row's code + a personas array inside metadata.
+    const re = new RegExp(`code:\\s*['"]${upper}['"][^\\n]*personas:\\s*\\[`);
+    return re.test(lookupCtrl) || `row ${upper} or personas missing`;
+  });
+});
+
 console.log(`\n=== Result: ${issues === 0 ? '✓ ALL CLEAN' : `✗ ${issues} ISSUE(S) FOUND`} (${checked} checks) ===\n`);
 process.exit(issues === 0 ? 0 : 1);
