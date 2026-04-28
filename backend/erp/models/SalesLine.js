@@ -18,7 +18,16 @@ const lineItemSchema = new mongoose.Schema({
   fifo_override: { type: Boolean, default: false },
   override_reason: {
     type: String
-  } // Lookup: OVERRIDE_REASON
+  }, // Lookup: OVERRIDE_REASON
+  // Phase CSI-X1 — link this CSI line to a HospitalPOLine. When set, posting
+  // the parent CSI auto-increments HospitalPOLine.qty_served by item.qty
+  // and recomputes parent HospitalPO.status. Optional — direct (non-PO) sales
+  // continue to work unchanged.
+  po_line_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'HospitalPOLine',
+    default: null
+  }
 }, { _id: true });
 
 const salesLineSchema = new mongoose.Schema({
@@ -79,6 +88,15 @@ const salesLineSchema = new mongoose.Schema({
   // Phase 15.3: optional PO# written on the physical CSI booklet (overlay draft source).
   // Not system-generated; captured at entry when the customer provided a PO reference.
   po_number: { type: String, trim: true },
+  // Phase CSI-X1: link to the HospitalPO this CSI fulfills (full or partial).
+  // When set, the per-line `po_line_id` on each line_items entry decrements
+  // the corresponding HospitalPOLine.qty_served on POST. Denormalizing the
+  // header link enables fast "all CSIs for this PO" queries on the PO detail page.
+  po_id: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'HospitalPO',
+    default: null
+  },
   // Direct petty cash routing for CASH_RECEIPT/SERVICE_INVOICE with cash payment
   // When set, sale bypasses AR and deposits directly to the fund
   petty_cash_fund_id: { type: mongoose.Schema.Types.ObjectId, ref: 'PettyCashFund' },

@@ -252,6 +252,44 @@ const postSaleRow = async (row, userId, opts = {}) => {
           await createAndPostJournal(row.entity_id, cogsData, { session });
         }
       }
+
+      // ───────────────────────────────────────────────────────────────────
+      // Phase CSI-X1 — Hospital PO line decrement
+      // ───────────────────────────────────────────────────────────────────
+      // When the CSI is linked to a HospitalPO, walk line_items and
+      // increment qty_served on each linked HospitalPOLine atomically (same
+      // session as JE-TX). Recompute parent HospitalPO status + totals from
+      // the line aggregate. If any of this fails, the entire sale post rolls
+      // back together with FIFO + JE — no orphaned PO state.
+      if (row.po_id && Array.isArray(row.line_items) && row.line_items.length) {
+        const { HospitalPO, HospitalPOLine } = require('../models/HospitalPO');
+        const touchedPoIds = new Set([String(row.po_id)]);
+        for (const item of row.line_items) {
+          if (!item.po_line_id) continue;
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- po_line_id is globally unique; entity scope enforced by HospitalPO header
+          const line = await HospitalPOLine.findById(item.po_line_id).session(session);
+          if (!line) {
+            throw new Error(`Linked HospitalPOLine ${item.po_line_id} not found — refusing to post`);
+          }
+          if (String(line.entity_id) !== String(row.entity_id)) {
+            throw new Error('HospitalPOLine entity mismatch — refusing to post');
+          }
+          if (String(line.po_id) !== String(row.po_id)) {
+            throw new Error(`HospitalPOLine ${item.po_line_id} does not belong to PO ${row.po_id}`);
+          }
+          if (String(line.product_id) !== String(item.product_id)) {
+            throw new Error(`HospitalPOLine product mismatch on ${item.po_line_id}`);
+          }
+          line.qty_served = (line.qty_served || 0) + (item.qty || 0);
+          // Pre-save hook recomputes qty_unserved + line status
+          await line.save({ session });
+          touchedPoIds.add(String(line.po_id));
+        }
+        // Recompute parent PO aggregate(s)
+        for (const poId of touchedPoIds) {
+          await HospitalPO.recomputeFromLines(poId, session);
+        }
+      }
     });
 
     // 6. Link DocumentAttachments — outside transaction, non-blocking. A linker
@@ -1230,6 +1268,27 @@ const reopenSales = catchAsync(async (req, res) => {
           }
         }
 
+        // Phase CSI-X1 — Hospital PO line giveback on reopen. Mirrors the
+        // increment in postSaleRow: walk line_items, decrement qty_served on
+        // each linked HospitalPOLine, recompute parent HospitalPO. Inside the
+        // same session as the FIFO + JE reversals so failures roll back together.
+        if (row.po_id && Array.isArray(row.line_items) && row.line_items.length) {
+          const { HospitalPO, HospitalPOLine } = require('../models/HospitalPO');
+          const touchedPoIds = new Set([String(row.po_id)]);
+          for (const item of row.line_items) {
+            if (!item.po_line_id) continue;
+            // eslint-disable-next-line vip-tenant/require-entity-filter -- po_line_id globally unique; entity scope on header
+            const line = await HospitalPOLine.findById(item.po_line_id).session(session);
+            if (!line) continue;  // line may have been cancelled — non-blocking on reopen
+            line.qty_served = Math.max(0, (line.qty_served || 0) - (item.qty || 0));
+            await line.save({ session });
+            touchedPoIds.add(String(line.po_id));
+          }
+          for (const poId of touchedPoIds) {
+            await HospitalPO.recomputeFromLines(poId, session);
+          }
+        }
+
         // Update SalesLine
         row.status = 'DRAFT';
         row.reopen_count += 1;
@@ -1394,6 +1453,36 @@ const approveDeletion = catchAsync(async (req, res) => {
       }
     } catch (jeErr) {
       console.error('JE reversal failed for sale deletion:', sale._id, jeErr.message);
+    }
+  }
+
+  // Phase CSI-X1 — Hospital PO line giveback on deletion-approve. Best-effort:
+  // approveDeletion does not run inside a Mongo session, so a giveback failure
+  // is logged but does not unwind the SAP Storno (which has already happened).
+  if (sale.po_id && Array.isArray(sale.line_items) && sale.line_items.length) {
+    try {
+      const { HospitalPO, HospitalPOLine } = require('../models/HospitalPO');
+      const touchedPoIds = new Set([String(sale.po_id)]);
+      for (const item of sale.line_items) {
+        if (!item.po_line_id) continue;
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- po_line_id globally unique
+        const line = await HospitalPOLine.findById(item.po_line_id);
+        if (!line) continue;
+        line.qty_served = Math.max(0, (line.qty_served || 0) - (item.qty || 0));
+        await line.save();
+        touchedPoIds.add(String(line.po_id));
+      }
+      for (const poId of touchedPoIds) {
+        await HospitalPO.recomputeFromLines(poId);
+      }
+    } catch (poErr) {
+      console.error('[approveDeletion] HospitalPO giveback failed (non-blocking):', sale._id, poErr.message);
+      await ErpAuditLog.logChange({
+        entity_id: sale.entity_id, bdm_id: sale.bdm_id,
+        log_type: 'LEDGER_ERROR', target_ref: sale._id.toString(),
+        target_model: 'SalesLine', changed_by: req.user._id,
+        note: `HospitalPO giveback failed on deletion approval: ${poErr.message}`
+      }).catch(() => {});
     }
   }
 

@@ -99,6 +99,70 @@ const WORKFLOW_GUIDES = {
     ],
     tip: 'Complete all DRAFT documents before end of day. Unfinished drafts will not appear in reports.',
   },
+  // Phase CSI-X1 (Apr 2026) — Hospital PO + Hospital Contract Pricing
+  'hospital-po-backlog': {
+    title: 'Hospital PO Backlog — Open Orders Awaiting Fulfillment',
+    steps: [
+      'Every PO captured here links one hospital order to one or more CSIs (Sales). When a CSI posts, its line qty decrements the linked HospitalPOLine.qty_served and the parent PO status auto-updates (OPEN → PARTIAL → FULFILLED).',
+      'Top tiles show the operational backlog: total open POs, top hospital by unserved ₱, top unserved SKU. Use top-unserved-SKU to prioritise vendor reorders — it answers "what stock arrival clears the most backlog?"',
+      'Use filters to narrow: by hospital (your account list), by status (OPEN / PARTIAL / etc), by date range. Click any row to open the PO detail with line-level qty_unserved.',
+      'Expire Stale POs button: scans for OPEN/PARTIAL POs whose expiry_date has passed (PO_EXPIRY_DAYS lookup, default 90 days) and flags them EXPIRED. Hospital + BDM are notified out-of-band — system does not auto-cancel because cancellation is a relationship event, not a system event.',
+      'New Hospital PO button (Iloilo encoders + BDMs): creates a fresh PO from Messenger text / formal PDF / verbal order. Phase X2 will paste-parse Messenger text into line items automatically.',
+    ],
+    next: [
+      { label: 'New Hospital PO', path: '/erp/hospital-pos/entry' },
+      { label: 'Sales Entry', path: '/erp/sales/entry' },
+      { label: 'Hospital Contract Prices', path: '/erp/hospital-contract-prices' },
+    ],
+    tip: 'PO# prints on every linked CSI overlay. The CSI booklet number is separate; PO# is the hospital\'s reference. Both appear on the printable CSI per Phase 15.3 + CSI-X1.',
+  },
+  'hospital-po-entry': {
+    title: 'New Hospital PO — Capture an Order',
+    steps: [
+      'Step 1 — Hospital + PO# + Date. PO# is the hospital\'s reference (their internal PO ledger number). It must be unique per hospital within this entity. The system auto-cleans it (uppercases, strips spaces) for the unique check.',
+      'Step 2 — Owner BDM. Iloilo office encoders pick the BDM who owns this hospital (proxy entry, Phase G4.5a). When set, the audit trail records "entered by you on behalf of BDM X". BDMs entering their own POs leave this blank.',
+      'Step 3 — Source. Where did the order come from? Messenger text / formal PDF / email / verbal / other. Used by audit and DPA review.',
+      'Step 4 — Line items. Pick the product (brand + dosage shown). Qty is required. Unit price auto-resolves from HospitalContractPrice for this hospital + product; if no contract, falls back to ProductMaster.SRP. Override-with-reason is allowed but logged. The "Source" column shows CONTRACT / SRP / MANUAL_OVERRIDE so the encoder sees why each price was applied.',
+      'Step 5 — Save. The PO opens as OPEN status. Linked CSIs (Sales Entry) decrement qty_served on each line. The parent PO transitions to PARTIAL when any qty_served > 0, FULFILLED when all lines fully served, EXPIRED when past PO_EXPIRY_DAYS (lookup-driven default 90), or CANCELLED via admin.',
+    ],
+    next: [
+      { label: 'Backlog', path: '/erp/hospital-pos/backlog' },
+      { label: 'Hospital Contract Prices', path: '/erp/hospital-contract-prices' },
+    ],
+    tip: 'Phase X2 next sprint adds a Messenger-paste parser: pasting "1. Amoxicillin 500mg x 50 boxes" auto-fills the structured line items below. Until then, encoders type the line items manually — the structured form is always the source of truth.',
+  },
+  'hospital-po-detail': {
+    title: 'Hospital PO Detail',
+    steps: [
+      'Status pill (top right) shows the current PO state. Tile row beneath shows total ordered ₱, total served ₱, total unserved ₱, PO date, expiry date.',
+      'Line table shows each line\'s qty_ordered (locked at PO entry) vs qty_served (auto-incremented when linked CSIs post). qty_unserved = ordered − served and drives reorder priority. Price source column records how each unit_price was resolved at PO entry — CONTRACT (HospitalContractPrice match), SRP (ProductMaster fallback), or MANUAL_OVERRIDE.',
+      'Cancel a single line if a hospital cancels just that SKU. Cancel the whole PO via the bottom-right button. Cancellation is a relationship event — system never auto-cancels.',
+      'Continue with CSI button (admin/finance/staff): navigates to Sales Entry pre-filled with this PO\'s hospital + PO# + line items. Each posted CSI line increments qty_served on its linked HospitalPOLine and refreshes this page next visit.',
+      'Source text panel: shows the original Messenger text or email body if captured. Forms part of the audit chain (BIR / FDA / hospital dispute resolution).',
+    ],
+    next: [
+      { label: 'Backlog', path: '/erp/hospital-pos/backlog' },
+      { label: 'Sales Entry', path: '/erp/sales/entry' },
+    ],
+    tip: 'Reopening a posted CSI gives back qty_served to its linked PO line atomically (same Mongo transaction as JE reversal). Approved-deletion does the same on a best-effort basis.',
+  },
+  'hospital-contract-prices': {
+    title: 'Hospital Contract Prices — BDM-Negotiated Per-Hospital Rates',
+    steps: [
+      'Each row is a BDM-negotiated price for one (hospital + product). When a CSI is created for that hospital and product, the system resolves the unit_price from the most-recent ACTIVE row whose effective_from ≤ today AND (effective_to null OR ≥ today). Falls back to ProductMaster.selling_price if no active contract.',
+      'Resolution rule is lookup-driven (PRICE_RESOLUTION_RULES). Default CONTRACT_FIRST. Admin can flip to SRP_ONLY per entity to disable contract resolution entirely (e.g., during a SaaS pilot for a subscriber that has not rolled out per-hospital pricing yet).',
+      'Creating a new row: BDM proposes via this form. If your role is in MODULE_DEFAULT_ROLES.PRICE_LIST (default admin/finance/president), the row goes ACTIVE immediately. Otherwise it routes through the Approval Hub (HTTP 202).',
+      'Price changes are NEVER edited in place — that would corrupt the audit trail. To change a price, create a new row with a new effective_from. The system auto-flags overlapping prior ACTIVE rows as SUPERSEDED (sets effective_to = new effective_from − 1ms).',
+      'Cancel pulls a price (e.g., contract terminated). Status flips to CANCELLED with a reason. The price resolver no longer sees this row; sales fall back to SRP (or another active contract row).',
+      'PO line locks unit_price at PO entry. Renegotiation = new HospitalContractPrice + new HospitalPO. The old PO\'s unserved lines retain the old contract price (audit posture).',
+    ],
+    next: [
+      { label: 'Hospital PO Backlog', path: '/erp/hospital-pos/backlog' },
+      { label: 'Sales Entry', path: '/erp/sales/entry' },
+      { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
+    ],
+    tip: 'LGU and sub-distributor pricing is a separate concern (Main Warehouse pricing tier, deferred to Phase X3+). This surface covers BDM-negotiated hospital contract rates only.',
+  },
   // Phase EC-1 — Executive Cockpit (CFO/CEO/COO at-a-glance)
   'cockpit': {
     title: 'Executive Cockpit — CFO · CEO · COO daily roll-up',
