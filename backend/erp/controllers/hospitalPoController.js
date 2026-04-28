@@ -207,13 +207,18 @@ const createHospitalPo = catchAsync(async (req, res) => {
         const overridePrice = (typeof ln.unit_price === 'number' && ln.unit_price >= 0) ? ln.unit_price : null;
         const unitPrice = overridePrice != null ? overridePrice : (resolved.price != null ? resolved.price : 0);
         const priceSource = overridePrice != null ? 'MANUAL_OVERRIDE' : (resolved.source === 'CONTRACT' ? 'CONTRACT' : 'SRP');
+        const qtyOrdered = Number(ln.qty_ordered);
         return {
           entity_id: req.entityId,
           po_id: poDoc._id,
           hospital_id,
           product_id: ln.product_id,
-          qty_ordered: Number(ln.qty_ordered),
+          qty_ordered: qtyOrdered,
           qty_served: 0,
+          // Pre-compute qty_unserved here because insertMany skips the
+          // line's pre('save') hook. Subsequent .save() calls (post-CSI
+          // increment, reopen giveback) recompute correctly via the hook.
+          qty_unserved: qtyOrdered,
           unit_price: unitPrice,
           contract_price_ref: resolved.contract_price_ref,
           price_source: priceSource,
@@ -335,10 +340,15 @@ const cancelHospitalPoLine = catchAsync(async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────
 const getBacklogSummary = catchAsync(async (req, res) => {
   const scope = await widenFilterForProxy(req, 'sales', { subKey: 'proxy_entry', lookupCode: 'HOSPITAL_PO' });
-  const baseMatch = {
-    ...scope,
-    status: { $in: ['OPEN', 'PARTIAL'] }
-  };
+  // Build matches conditionally — president's tenantFilter has no entity_id
+  // (global scope), and Mongo's aggregate $match treats { entity_id: undefined }
+  // as "match documents where the field is missing", which excludes everything.
+  const baseMatch = { status: { $in: ['OPEN', 'PARTIAL'] } };
+  if (scope.entity_id) baseMatch.entity_id = scope.entity_id;
+  if (scope.bdm_id) baseMatch.bdm_id = scope.bdm_id;
+  const lineMatch = { status: { $in: ['OPEN', 'PARTIAL'] }, qty_unserved: { $gt: 0 } };
+  if (scope.entity_id) lineMatch.entity_id = scope.entity_id;
+  // HospitalPOLine has no bdm_id; hospital_id denormalized from header drives BDM scope via PO list.
 
   const [openCount, byHospital, topUnservedSkus] = await Promise.all([
     HospitalPO.countDocuments(baseMatch),
@@ -374,13 +384,7 @@ const getBacklogSummary = catchAsync(async (req, res) => {
       }
     ]),
     HospitalPOLine.aggregate([
-      {
-        $match: {
-          entity_id: scope.entity_id,
-          status: { $in: ['OPEN', 'PARTIAL'] },
-          qty_unserved: { $gt: 0 }
-        }
-      },
+      { $match: lineMatch },
       {
         $group: {
           _id: '$product_id',
