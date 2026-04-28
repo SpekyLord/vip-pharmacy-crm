@@ -38,7 +38,7 @@ export default function HospitalPoDetail() {
     }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [id]);
+  useEffect(() => { load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCancel = async () => {
     const reason = window.prompt('Reason for cancelling this PO:');

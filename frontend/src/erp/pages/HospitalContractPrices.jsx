@@ -57,7 +57,7 @@ export default function HospitalContractPrices() {
     }
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [filters.hospital_id, filters.product_id, filters.status]);
+  useEffect(() => { load(); }, [filters.hospital_id, filters.product_id, filters.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -148,7 +148,7 @@ export default function HospitalContractPrices() {
       {loading && <div>Loading…</div>}
       {!loading && rows.length === 0 && (
         <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8' }}>
-          No contract prices yet. Click "New Contract Price" to create one.
+          No contract prices yet. Click &quot;New Contract Price&quot; to create one.
         </div>
       )}
       {!loading && rows.length > 0 && (

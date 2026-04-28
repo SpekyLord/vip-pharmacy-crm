@@ -83,7 +83,7 @@ export default function HospitalPoEntry() {
         updateLine(idx, 'unit_price', String(result.price));
         updateLine(idx, 'price_source', result.source);
       }
-    } catch (e) {
+    } catch {
       // silent — encoder can still type a price manually
     }
   };

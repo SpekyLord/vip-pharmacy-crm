@@ -56,7 +56,7 @@ export default function HospitalPoBacklog() {
     }
   };
 
-  useEffect(() => { loadAll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [filters.hospital_id, filters.status, filters.from, filters.to]);
+  useEffect(() => { loadAll(); }, [filters.hospital_id, filters.status, filters.from, filters.to]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleExpireStale = async () => {
     if (!window.confirm('Flag stale POs (past expiry_date) as EXPIRED?')) return;
