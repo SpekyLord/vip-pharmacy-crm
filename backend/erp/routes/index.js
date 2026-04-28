@@ -114,6 +114,15 @@ router.use('/sales', erpAccessCheck('sales'), require('./salesRoutes'));
 router.use('/credit-notes', erpAccessCheck('sales'), require('./creditNoteRoutes'));
 router.use('/inventory', erpAccessCheck('inventory'), require('./inventoryRoutes'));
 
+// ═══ Phase CSI-X1 — Hospital Contract Pricing + PO Tracking ═══
+// Per-hospital BDM-negotiated contract pricing (resolves before
+// ProductMaster.selling_price for the hospital). Hospital purchase order
+// capture + unserved-backlog tracking per warehouse/hospital.
+// Both gated by 'sales' module access at the mount; per-action authorization
+// is lookup-driven inside controllers (Rule #3).
+router.use('/hospital-contract-prices', erpAccessCheck('sales'), require('./hospitalContractPriceRoutes'));
+router.use('/hospital-pos', erpAccessCheck('sales'), require('./hospitalPoRoutes'));
+
 // Phase 32 — Undertaking (GRN receipt confirmation)
 router.use('/undertaking', erpAccessCheck('inventory'), require('./undertakingRoutes'));
 

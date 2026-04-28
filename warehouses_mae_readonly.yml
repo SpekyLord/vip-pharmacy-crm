@@ -1,0 +1,490 @@
+- generic [ref=e7]:
+  - navigation [ref=e8]:
+    - generic [ref=e9]:
+      - img "VIP" [ref=e11]
+      - generic "Platform switch" [ref=e12]:
+        - link "CRM" [ref=e13] [cursor=pointer]:
+          - /url: /bdm
+          - img [ref=e15]
+          - text: CRM
+        - link "ERP" [ref=e20] [cursor=pointer]:
+          - /url: /erp
+          - img [ref=e22]
+          - text: ERP
+    - generic [ref=e25]:
+      - img [ref=e27]
+      - generic "ERP tabs" [ref=e32]:
+        - link "Dashboard" [ref=e33] [cursor=pointer]:
+          - /url: /erp
+          - img [ref=e35]
+          - generic [ref=e40]: Dashboard
+        - link "Sales" [ref=e41] [cursor=pointer]:
+          - /url: /erp/sales
+          - img [ref=e43]
+          - generic [ref=e47]: Sales
+        - link "Inventory" [ref=e48] [cursor=pointer]:
+          - /url: /erp/my-stock
+          - img [ref=e50]
+          - generic [ref=e54]: Inventory
+        - link "Transfers" [ref=e55] [cursor=pointer]:
+          - /url: /erp/transfers
+          - img [ref=e57]
+          - generic [ref=e62]: Transfers
+        - link "Collections" [ref=e63] [cursor=pointer]:
+          - /url: /erp/collections
+          - img [ref=e65]
+          - generic [ref=e68]: Collections
+        - link "Expenses" [ref=e69] [cursor=pointer]:
+          - /url: /erp/expenses
+          - img [ref=e71]
+          - generic [ref=e74]: Expenses
+        - link "Reports" [ref=e75] [cursor=pointer]:
+          - /url: /erp/reports
+          - img [ref=e77]
+          - generic [ref=e79]: Reports
+    - generic [ref=e80]:
+      - button "Toggle dark mode" [ref=e81] [cursor=pointer]:
+        - img [ref=e82]
+      - link "Inbox — 1 unread" [ref=e85] [cursor=pointer]:
+        - /url: /inbox
+        - img [ref=e86]
+        - generic: "1"
+      - generic [ref=e90]:
+        - generic [ref=e91]: MN
+        - generic [ref=e92]:
+          - generic [ref=e93]: Mae Navarro
+          - generic [ref=e94]: BDM
+      - button "Logout" [ref=e95] [cursor=pointer]:
+        - img [ref=e96]
+        - generic [ref=e99]: Logout
+  - generic [ref=e100]:
+    - complementary [ref=e101]:
+      - button [ref=e102] [cursor=pointer]:
+        - img [ref=e103]
+      - navigation [ref=e105]:
+        - link "ERP Home" [ref=e108] [cursor=pointer]:
+          - /url: /erp
+          - img [ref=e110]
+          - generic [ref=e113]: ERP Home
+        - generic [ref=e114]:
+          - button "Administration" [ref=e115] [cursor=pointer]:
+            - generic [ref=e116]: Administration
+            - img [ref=e117]
+          - generic [ref=e119]:
+            - link "Customers" [ref=e120] [cursor=pointer]:
+              - /url: /erp/customers
+              - img [ref=e122]
+              - generic [ref=e127]: Customers
+            - link "Hospitals" [ref=e128] [cursor=pointer]:
+              - /url: /erp/hospitals
+              - img [ref=e130]
+              - generic [ref=e134]: Hospitals
+            - link "Inbox 1" [ref=e135] [cursor=pointer]:
+              - /url: /inbox
+              - img [ref=e137]
+              - generic [ref=e140]: Inbox
+              - generic [ref=e141]: "1"
+            - link "My Tasks" [ref=e142] [cursor=pointer]:
+              - /url: /erp/tasks
+              - img [ref=e144]
+              - generic [ref=e148]: My Tasks
+            - link "Product Master" [ref=e149] [cursor=pointer]:
+              - /url: /erp/products
+              - img [ref=e151]
+              - generic [ref=e155]: Product Master
+        - generic [ref=e156]:
+          - button "Sales" [ref=e157] [cursor=pointer]:
+            - generic [ref=e158]: Sales
+            - img [ref=e159]
+          - generic [ref=e161]:
+            - link "Sales" [ref=e162] [cursor=pointer]:
+              - /url: /erp/sales/entry
+              - img [ref=e164]
+              - generic [ref=e167]: Sales
+            - link "Sales Transactions" [ref=e168] [cursor=pointer]:
+              - /url: /erp/sales
+              - img [ref=e170]
+              - generic [ref=e173]: Sales Transactions
+            - link "Opening AR" [ref=e174] [cursor=pointer]:
+              - /url: /erp/sales/opening-ar
+              - img [ref=e176]
+              - generic [ref=e180]: Opening AR
+            - link "Opening AR Transactions" [ref=e181] [cursor=pointer]:
+              - /url: /erp/sales/opening-ar/list
+              - img [ref=e183]
+              - generic [ref=e186]: Opening AR Transactions
+            - link "Returns / CN" [ref=e187] [cursor=pointer]:
+              - /url: /erp/credit-notes
+              - img [ref=e189]
+              - generic [ref=e192]: Returns / CN
+        - generic [ref=e193]:
+          - button "Inventory" [ref=e194] [cursor=pointer]:
+            - generic [ref=e195]: Inventory
+            - img [ref=e196]
+          - generic [ref=e198]:
+            - link "Batch Trace" [ref=e199] [cursor=pointer]:
+              - /url: /erp/batch-trace
+              - img [ref=e201]
+              - generic [ref=e204]: Batch Trace
+            - link "Expiry Mgmt" [ref=e205] [cursor=pointer]:
+              - /url: /erp/expiry-dashboard
+              - img [ref=e207]
+              - generic [ref=e209]: Expiry Mgmt
+            - link "GRN Entry" [ref=e210] [cursor=pointer]:
+              - /url: /erp/grn
+              - img [ref=e212]
+              - generic [ref=e216]: GRN Entry
+            - link "Inventory" [ref=e217] [cursor=pointer]:
+              - /url: /erp/my-stock
+              - img [ref=e219]
+              - generic [ref=e223]: Inventory
+            - link "My CSI" [ref=e224] [cursor=pointer]:
+              - /url: /erp/csi-booklets
+              - img [ref=e226]
+              - generic [ref=e228]: My CSI
+            - link "Undertaking (Receipt)" [ref=e229] [cursor=pointer]:
+              - /url: /erp/undertaking
+              - img [ref=e231]
+              - generic [ref=e235]: Undertaking (Receipt)
+        - generic [ref=e236]:
+          - button "Collections" [ref=e237] [cursor=pointer]:
+            - generic [ref=e238]: Collections
+            - img [ref=e239]
+          - generic [ref=e241]:
+            - link "AR Aging" [ref=e242] [cursor=pointer]:
+              - /url: /erp/collections/ar
+              - img [ref=e244]
+              - generic [ref=e246]: AR Aging
+            - link "Collections" [ref=e247] [cursor=pointer]:
+              - /url: /erp/collections
+              - img [ref=e249]
+              - generic [ref=e252]: Collections
+        - generic [ref=e253]:
+          - button "Expenses" [ref=e254] [cursor=pointer]:
+            - generic [ref=e255]: Expenses
+            - img [ref=e256]
+          - link "Expenses" [ref=e259] [cursor=pointer]:
+            - /url: /erp/expenses
+            - img [ref=e261]
+            - generic [ref=e263]: Expenses
+        - button "Capture Hub" [ref=e265] [cursor=pointer]:
+          - generic [ref=e266]: Capture Hub
+          - img [ref=e267]
+        - generic [ref=e269]:
+          - button "My Income" [ref=e270] [cursor=pointer]:
+            - generic [ref=e271]: My Income
+            - img [ref=e272]
+          - link "My Income" [ref=e275] [cursor=pointer]:
+            - /url: /erp/my-income
+            - img [ref=e277]
+            - generic [ref=e279]: My Income
+        - button "Reports" [ref=e281] [cursor=pointer]:
+          - generic [ref=e282]: Reports
+          - img [ref=e283]
+    - generic [ref=e285]:
+      - button [ref=e287] [cursor=pointer]:
+        - img [ref=e288]
+      - generic "Platform switch" [ref=e291]:
+        - link "CRM" [ref=e292] [cursor=pointer]:
+          - /url: /bdm
+        - link "ERP" [ref=e293] [cursor=pointer]:
+          - /url: /erp
+      - navigation [ref=e294]:
+        - button "ERP Home" [ref=e297] [cursor=pointer]:
+          - img [ref=e299]
+          - generic [ref=e302]: ERP Home
+        - generic [ref=e303]:
+          - button "Administration" [ref=e304] [cursor=pointer]:
+            - generic [ref=e305]: Administration
+            - img [ref=e306]
+          - generic [ref=e308]:
+            - button "Customers" [ref=e309] [cursor=pointer]:
+              - img [ref=e311]
+              - generic [ref=e316]: Customers
+            - button "Hospitals" [ref=e317] [cursor=pointer]:
+              - img [ref=e319]
+              - generic [ref=e323]: Hospitals
+            - button "Inbox 1" [ref=e324] [cursor=pointer]:
+              - img [ref=e326]
+              - generic [ref=e329]: Inbox
+              - generic [ref=e330]: "1"
+            - button "My Tasks" [ref=e331] [cursor=pointer]:
+              - img [ref=e333]
+              - generic [ref=e337]: My Tasks
+            - button "Product Master" [ref=e338] [cursor=pointer]:
+              - img [ref=e340]
+              - generic [ref=e344]: Product Master
+        - generic [ref=e345]:
+          - button "Sales" [ref=e346] [cursor=pointer]:
+            - generic [ref=e347]: Sales
+            - img [ref=e348]
+          - generic [ref=e350]:
+            - button "Sales" [ref=e351] [cursor=pointer]:
+              - img [ref=e353]
+              - generic [ref=e356]: Sales
+            - button "Sales Transactions" [ref=e357] [cursor=pointer]:
+              - img [ref=e359]
+              - generic [ref=e362]: Sales Transactions
+            - button "Opening AR" [ref=e363] [cursor=pointer]:
+              - img [ref=e365]
+              - generic [ref=e369]: Opening AR
+            - button "Opening AR Transactions" [ref=e370] [cursor=pointer]:
+              - img [ref=e372]
+              - generic [ref=e375]: Opening AR Transactions
+            - button "Returns / CN" [ref=e376] [cursor=pointer]:
+              - img [ref=e378]
+              - generic [ref=e381]: Returns / CN
+        - generic [ref=e382]:
+          - button "Inventory" [ref=e383] [cursor=pointer]:
+            - generic [ref=e384]: Inventory
+            - img [ref=e385]
+          - generic [ref=e387]:
+            - button "Batch Trace" [ref=e388] [cursor=pointer]:
+              - img [ref=e390]
+              - generic [ref=e393]: Batch Trace
+            - button "Expiry Mgmt" [ref=e394] [cursor=pointer]:
+              - img [ref=e396]
+              - generic [ref=e398]: Expiry Mgmt
+            - button "GRN Entry" [ref=e399] [cursor=pointer]:
+              - img [ref=e401]
+              - generic [ref=e405]: GRN Entry
+            - button "Inventory" [ref=e406] [cursor=pointer]:
+              - img [ref=e408]
+              - generic [ref=e412]: Inventory
+            - button "My CSI" [ref=e413] [cursor=pointer]:
+              - img [ref=e415]
+              - generic [ref=e417]: My CSI
+            - button "Undertaking (Receipt)" [ref=e418] [cursor=pointer]:
+              - img [ref=e420]
+              - generic [ref=e424]: Undertaking (Receipt)
+        - generic [ref=e425]:
+          - button "Collections" [ref=e426] [cursor=pointer]:
+            - generic [ref=e427]: Collections
+            - img [ref=e428]
+          - generic [ref=e430]:
+            - button "AR Aging" [ref=e431] [cursor=pointer]:
+              - img [ref=e433]
+              - generic [ref=e435]: AR Aging
+            - button "Collections" [ref=e436] [cursor=pointer]:
+              - img [ref=e438]
+              - generic [ref=e441]: Collections
+        - generic [ref=e442]:
+          - button "Expenses" [ref=e443] [cursor=pointer]:
+            - generic [ref=e444]: Expenses
+            - img [ref=e445]
+          - button "Expenses" [ref=e448] [cursor=pointer]:
+            - img [ref=e450]
+            - generic [ref=e452]: Expenses
+        - button "Capture Hub" [ref=e454] [cursor=pointer]:
+          - generic [ref=e455]: Capture Hub
+          - img [ref=e456]
+        - generic [ref=e458]:
+          - button "My Income" [ref=e459] [cursor=pointer]:
+            - generic [ref=e460]: My Income
+            - img [ref=e461]
+          - button "My Income" [ref=e464] [cursor=pointer]:
+            - img [ref=e466]
+            - generic [ref=e468]: My Income
+        - button "Reports" [ref=e470] [cursor=pointer]:
+          - generic [ref=e471]: Reports
+          - img [ref=e472]
+    - main [ref=e474]:
+      - generic [ref=e475]:
+        - button "×" [ref=e476] [cursor=pointer]
+        - generic [ref=e477]:
+          - img [ref=e478]
+          - text: Warehouse Management
+        - generic [ref=e480]:
+          - generic [ref=e481]:
+            - generic [ref=e482]: "1"
+            - generic [ref=e483]: Create and manage warehouse locations per entity
+          - generic [ref=e484]:
+            - generic [ref=e485]: "2"
+            - generic [ref=e486]: Use "Import Opening Stock" to seed stock on hand from CSV — matches products by brand + dosage, creates OPENING_BALANCE entries per warehouse
+          - generic [ref=e487]:
+            - generic [ref=e488]: "3"
+            - generic [ref=e489]: Tag products to specific warehouses for inventory tracking
+          - generic [ref=e490]:
+            - generic [ref=e491]: "4"
+            - generic [ref=e492]: View stock levels by warehouse
+        - generic [ref=e493]:
+          - generic [ref=e494]: "Next steps:"
+          - button "My Stock →" [ref=e495] [cursor=pointer]
+          - button "Products →" [ref=e496] [cursor=pointer]
+        - generic [ref=e497]: 💡 Refresh the Product Master before importing stock — unmatched products will be skipped. Duplicate imports are safely ignored.
+      - generic [ref=e498]:
+        - heading "Warehouse Management" [level=2] [ref=e499]
+        - button "Import Opening Stock" [ref=e501] [cursor=pointer]
+      - generic [ref=e502]:
+        - generic [ref=e503]:
+          - generic [ref=e504]:
+            - generic [ref=e505]:
+              - heading "Iloilo Main Warehouse" [level=3] [ref=e506]
+              - text: ILO-MAIN
+            - generic [ref=e507]: Main Warehouse
+          - generic [ref=e508]:
+            - text: "Manager:"
+            - strong [ref=e509]: Gregg Louie Vios
+          - generic [ref=e510]: "Location: Iloilo City, Iloilo, Region 6"
+          - generic [ref=e511]:
+            - text: "Stock Type:"
+            - strong [ref=e512]: PHARMA
+          - generic [ref=e513]:
+            - generic [ref=e514]: Default Receiving
+            - generic [ref=e515]: GRN
+            - generic [ref=e516]: Transfer Out
+        - generic [ref=e517]:
+          - generic [ref=e518]:
+            - generic [ref=e519]:
+              - heading "Shared Services" [level=3] [ref=e520]
+              - text: ACC
+            - generic [ref=e521]: Territory
+          - generic [ref=e522]:
+            - text: "Manager:"
+            - strong [ref=e523]: Judy Mae Patrocinio
+          - generic [ref=e524]: "Location: Iloilo City"
+          - generic [ref=e525]:
+            - text: "Stock Type:"
+            - strong [ref=e526]: PHARMA
+          - generic [ref=e528]: Transfer Out
+        - generic [ref=e529]:
+          - generic [ref=e530]:
+            - generic [ref=e531]:
+              - heading "VIP Bacolod" [level=3] [ref=e532]
+              - text: BAC
+            - generic [ref=e533]: Territory
+          - generic [ref=e534]:
+            - text: "Manager:"
+            - strong [ref=e535]: Mae Navarro
+          - generic [ref=e536]: "Location: Bacolod City, NIR"
+          - generic [ref=e537]:
+            - text: "Stock Type:"
+            - strong [ref=e538]: PHARMA
+          - generic [ref=e539]:
+            - generic [ref=e540]: GRN
+            - generic [ref=e541]: Transfer Out
+        - generic [ref=e542]:
+          - generic [ref=e543]:
+            - generic [ref=e544]:
+              - heading "VIP Cagayan de Oro" [level=3] [ref=e545]
+              - text: CDO
+            - generic [ref=e546]: Territory
+          - generic [ref=e547]:
+            - text: "Manager:"
+            - strong [ref=e548]: TEST ACCOUNT BDM
+          - generic [ref=e549]: "Location: Cagayan de Oro"
+          - generic [ref=e550]:
+            - text: "Stock Type:"
+            - strong [ref=e551]: PHARMA
+          - generic [ref=e553]: Transfer Out
+        - generic [ref=e554]:
+          - generic [ref=e555]:
+            - generic [ref=e556]:
+              - heading "VIP Davao" [level=3] [ref=e557]
+              - text: DIG
+            - generic [ref=e558]: Territory
+          - generic [ref=e559]:
+            - text: "Manager:"
+            - strong [ref=e560]: Menivie Daniela
+          - generic [ref=e561]: "Location: Davao City"
+          - generic [ref=e562]:
+            - text: "Stock Type:"
+            - strong [ref=e563]: PHARMA
+          - generic [ref=e564]:
+            - generic [ref=e565]: GRN
+            - generic [ref=e566]: Transfer Out
+        - generic [ref=e567]:
+          - generic [ref=e568]:
+            - generic [ref=e569]:
+              - heading "VIP Dumaguete" [level=3] [ref=e570]
+              - text: DUM
+            - generic [ref=e571]: Territory
+          - generic [ref=e572]:
+            - text: "Manager:"
+            - strong [ref=e573]: Edcel Mae Arespacochaga
+          - generic [ref=e574]: "Location: Dumaguete City"
+          - generic [ref=e575]:
+            - text: "Stock Type:"
+            - strong [ref=e576]: PHARMA
+          - generic [ref=e577]:
+            - generic [ref=e578]: GRN
+            - generic [ref=e579]: Transfer Out
+        - generic [ref=e580]:
+          - generic [ref=e581]:
+            - generic [ref=e582]:
+              - heading "VIP Gensan" [level=3] [ref=e583]
+              - text: GSC
+            - generic [ref=e584]: Territory
+          - generic [ref=e585]:
+            - text: "Manager:"
+            - strong [ref=e586]: Cristina Salila
+          - generic [ref=e587]: "Location: General Santos"
+          - generic [ref=e588]:
+            - text: "Stock Type:"
+            - strong [ref=e589]: PHARMA
+          - generic [ref=e590]:
+            - generic [ref=e591]: GRN
+            - generic [ref=e592]: Transfer Out
+        - generic [ref=e593]:
+          - generic [ref=e594]:
+            - generic [ref=e595]:
+              - heading "eBDM 1 Iloilo" [level=3] [ref=e596]
+              - text: ILO1
+            - generic [ref=e597]: Territory
+          - generic [ref=e598]:
+            - text: "Manager:"
+            - strong [ref=e599]: —
+          - generic [ref=e600]: "Location: Iloilo City"
+          - generic [ref=e601]:
+            - text: "Stock Type:"
+            - strong [ref=e602]: PHARMA
+          - generic [ref=e603]: "Assigned: Jay Ann Protacio"
+          - generic [ref=e604]:
+            - generic [ref=e605]: Transfer Out
+            - generic [ref=e606]: "Draws from: ILO-MAIN"
+        - generic [ref=e607]:
+          - generic [ref=e608]:
+            - generic [ref=e609]:
+              - heading "eBDM 2 Iloilo" [level=3] [ref=e610]
+              - text: ILO2
+            - generic [ref=e611]: Territory
+          - generic [ref=e612]:
+            - text: "Manager:"
+            - strong [ref=e613]: Jenny Rose Jacosalem
+          - generic [ref=e614]: "Location: Iloilo City"
+          - generic [ref=e615]:
+            - text: "Stock Type:"
+            - strong [ref=e616]: PHARMA
+          - generic [ref=e617]:
+            - generic [ref=e618]: Transfer Out
+            - generic [ref=e619]: "Draws from: ILO-MAIN"
+        - generic [ref=e620]:
+          - generic [ref=e621]:
+            - generic [ref=e622]:
+              - heading "VIP Ozamiz" [level=3] [ref=e623]
+              - text: OZA
+            - generic [ref=e624]: Territory
+          - generic [ref=e625]:
+            - text: "Manager:"
+            - strong [ref=e626]: Roman Mabanag
+          - generic [ref=e627]: "Location: Ozamiz City"
+          - generic [ref=e628]:
+            - text: "Stock Type:"
+            - strong [ref=e629]: PHARMA
+          - generic [ref=e630]:
+            - generic [ref=e631]: GRN
+            - generic [ref=e632]: Transfer Out
+        - generic [ref=e633]:
+          - generic [ref=e634]:
+            - generic [ref=e635]:
+              - heading "VIP Panay" [level=3] [ref=e636]
+              - text: PAN
+            - generic [ref=e637]: Territory
+          - generic [ref=e638]:
+            - text: "Manager:"
+            - strong [ref=e639]: Romela Shen Herrera
+          - generic [ref=e640]: "Location: Panay"
+          - generic [ref=e641]:
+            - text: "Stock Type:"
+            - strong [ref=e642]: PHARMA
+          - generic [ref=e644]: Transfer Out

@@ -735,6 +735,15 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     }
     // Sub-permission gated — also visible to contractors with purchasing.credit_notes
     if (hasSub('sales', 'credit_notes') || hasSub('purchasing', 'credit_notes')) salesItems.push({ path: '/erp/credit-notes', label: 'Returns / CN', icon: RotateCcw });
+    // Phase CSI-X1 — Hospital PO Backlog + entry surface. Visible to anyone in
+    // the sales module so BDMs see their own POs and Iloilo proxies see all.
+    salesItems.push({ path: '/erp/hospital-pos/backlog', label: 'Hospital PO Backlog', icon: FileText });
+    salesItems.push({ path: '/erp/hospital-pos/entry', label: 'New Hospital PO', icon: FileInput });
+    // Per-hospital BDM-negotiated contract pricing. Admin/finance see this; BDMs
+    // can browse but writes route through gateApproval('PRICE_LIST').
+    if (isAdmin || ROLE_SETS.MANAGEMENT.includes(role)) {
+      salesItems.push({ path: '/erp/hospital-contract-prices', label: 'Hospital Contract Prices', icon: Receipt });
+    }
     sections.push({
       title: 'Sales',
       collapsible: true,
@@ -765,7 +774,7 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     if (isAdmin) invItems.push({ path: '/erp/dr', label: 'DR / Consignment', icon: Truck });
     invItems.push({ path: '/erp/expiry-dashboard', label: 'Expiry Mgmt', icon: AlertTriangle });
     invItems.push({ path: '/erp/batch-trace', label: 'Batch Trace', icon: Search });
-    if ([ROLES.ADMIN, ROLES.PRESIDENT].includes(role)) {
+    if (isAdmin || hasSub('inventory', 'warehouse_manage')) {
       invItems.push({ path: '/erp/warehouses', label: 'Warehouses', icon: Package });
     }
     // Sort alphabetically
@@ -991,11 +1000,19 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
       // Visibility = MANAGEMENT role; backend enforces sub-permission gating
       // (accounting.reversal_console / accounting.reverse_posted).
       adminItems.push({ path: '/erp/president/reversals', label: 'Reversal Console', icon: AlertTriangle });
-      if (isAdmin) {
-        adminItems.push({ path: '/erp/customers', label: 'Customers', icon: Users });
-        adminItems.push({ path: '/erp/hospitals', label: 'Hospitals', icon: Stethoscope });
-        adminItems.push({ path: '/erp/products', label: 'Product Master', icon: ShoppingCart });
-      }
+    }
+    // Master Data — gated by Phase MD-1 positive sub-permissions so staff
+    // explicitly granted master.customer_manage / hospital_manage / product_manage
+    // see the link without admin role. isAdmin keeps legacy admin-always-on
+    // behavior (admin sees the link even with no sub-perm ticked).
+    if (isAdmin || hasSub('master', 'customer_manage')) {
+      adminItems.push({ path: '/erp/customers', label: 'Customers', icon: Users });
+    }
+    if (isAdmin || hasSub('master', 'hospital_manage')) {
+      adminItems.push({ path: '/erp/hospitals', label: 'Hospitals', icon: Stethoscope });
+    }
+    if (isAdmin || hasSub('master', 'product_manage')) {
+      adminItems.push({ path: '/erp/products', label: 'Product Master', icon: ShoppingCart });
     }
     // Phase G9.R8 — Inbox Retention shortcut. AND-gated on MANAGEMENT (matches
     // ControlCenter + the App.jsx redirect route) AND the messaging.retention_manage

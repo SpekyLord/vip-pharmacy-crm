@@ -402,7 +402,8 @@ export default function GrnEntry() {
   // Per-entity capture settings (expiry floor, variance tolerance, waybill required)
   const [grnSettings, setGrnSettings] = useState({ minExpiryDays: 30, varianceTolerancePct: 10, waybillRequired: true, requireBatch: true, requireExpiry: true });
 
-  const waybillRef = useRef(null);
+  const waybillCameraRef = useRef(null);
+  const waybillGalleryRef = useRef(null);
 
   const productOptions = useMemo(() => (products || []).filter(p => p.is_active !== false), [products]);
   const grnStats = useMemo(() => {
@@ -755,16 +756,26 @@ export default function GrnEntry() {
                   Upload the courier&apos;s delivery waybill (proof the goods physically arrived).
                 </div>
                 <input
-                  ref={waybillRef}
+                  ref={waybillCameraRef}
                   type="file"
                   accept="image/*"
                   capture="environment"
                   style={{ display: 'none' }}
-                  onChange={e => handleWaybillUpload(e.target.files?.[0])}
+                  onChange={e => { handleWaybillUpload(e.target.files?.[0]); e.target.value = ''; }}
+                />
+                <input
+                  ref={waybillGalleryRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={e => { handleWaybillUpload(e.target.files?.[0]); e.target.value = ''; }}
                 />
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button type="button" className="btn btn-outline btn-sm" onClick={() => waybillRef.current?.click()} disabled={waybillUploading}>
-                    {waybillUploading ? 'Uploading…' : (waybillPhotoUrl ? 'Replace Waybill' : 'Take/Choose Photo')}
+                  <button type="button" className="btn btn-outline btn-sm" onClick={() => waybillCameraRef.current?.click()} disabled={waybillUploading}>
+                    {waybillUploading ? 'Uploading…' : (waybillPhotoUrl ? '📷 Replace (Camera)' : '📷 Take Photo')}
+                  </button>
+                  <button type="button" className="btn btn-outline btn-sm" onClick={() => waybillGalleryRef.current?.click()} disabled={waybillUploading}>
+                    {waybillPhotoUrl ? '📁 Replace (Gallery)' : '📁 Choose from Gallery'}
                   </button>
                   {waybillPhotoUrl && (
                     <button type="button" className="btn-remove-line" onClick={() => { setWaybillPhotoUrl(''); setWaybillPreview(''); }} title="Remove waybill">×</button>

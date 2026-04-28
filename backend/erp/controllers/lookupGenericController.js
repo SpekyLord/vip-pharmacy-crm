@@ -12,6 +12,7 @@ const { invalidate: invalidateScpwdRolesCache } = require('../../utils/scpwdAcce
 const { invalidate: invalidateRebateCommissionCache } = require('../../utils/rebateCommissionAccess');
 const { invalidate: invalidateBirRolesCache } = require('../../utils/birAccess');
 const { invalidate: invalidateCockpitRolesCache } = require('../../utils/executiveCockpitAccess');
+const { invalidatePriceCache } = require('../services/priceResolver');
 
 // Categories whose changes must bust the OR parser's lookup cache (couriers/payment keywords)
 const OR_PARSER_LOOKUP_CATEGORIES = new Set(['OCR_COURIER_ALIASES', 'OCR_PAYMENT_KEYWORDS']);
@@ -67,6 +68,12 @@ const BIR_ROLES_CATEGORIES = new Set(['BIR_ROLES']);
 // fresh role addition (e.g., adding `cfo` to VIEW_FINANCIAL) would wait up
 // to 60s before being honored by the cockpit page.
 const EXECUTIVE_COCKPIT_ROLES_CATEGORIES = new Set(['EXECUTIVE_COCKPIT_ROLES']);
+
+// Phase CSI-X1 (Apr 28 2026) — bust the price resolver cache when admin edits
+// PRICE_RESOLUTION_RULES (rule code) or any HospitalContractPrice configuration
+// flag. Without this hook a flip from CONTRACT_FIRST → SRP_ONLY would wait up
+// to 5min before sales picked up the new rule.
+const PRICE_RESOLVER_CATEGORIES = new Set(['PRICE_RESOLUTION_RULES']);
 
 // Phase G6.10/G7 — categories whose seeded rows must default is_active: false so
 // subscribers explicitly opt in (Anthropic-billable features, spend caps that
@@ -1132,6 +1139,11 @@ const SEED_DEFAULTS = {
     // (anyone can DM anyone). Combine with MESSAGE_ACCESS_ROLES lookup for
     // per-role can_dm_roles / can_broadcast / can_cross_entity rules.
     { code: 'MESSAGING', label: 'Messaging / Inbox', metadata: { roles: ['president', 'ceo', 'admin', 'finance', 'staff'], description: 'Allow this role to use the unified Inbox. Per-role DM matrix lives in MESSAGE_ACCESS_ROLES; sub-perm grants in ERP_SUB_PERMISSION (messaging.*).' } },
+    // Phase CSI-X1 (Apr 28 2026) — HospitalContractPrice (per-hospital BDM-negotiated
+    // pricing). BDMs propose price changes; admin/finance/president approve via the
+    // Approval Hub. Surgical price increases ≠ BDM self-service. Subscribers tighten
+    // or open via Control Center.
+    { code: 'PRICE_LIST', label: 'Hospital Contract Price', metadata: { roles: ['admin', 'finance', 'president'], description: 'Approve per-hospital negotiated contract prices. Resolves before ProductMaster.selling_price for sales to that hospital.' } },
   ],
   // Phase 32R (Apr 2026) — GRN capture thresholds. Per-entity configurable via
   // Control Center → Lookup Tables → GRN_SETTINGS. The service reads
@@ -2643,6 +2655,11 @@ const SEED_DEFAULTS = {
     // 'staff' to metadata.roles in Control Center so eBDMs (Judy / Jay
     // Ann) with the EXPENSES__SMER_PROXY sub-perm can proxy.
     { code: 'SMER', label: 'SMER (per-diem cycle + per-day override)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 9 } },
+    // Phase CSI-X1 (Apr 28 2026) — Hospital PO proxy entry. Iloilo office encoders
+    // create POs on behalf of BDMs from Messenger text / formal hospital PDFs.
+    // Subscribers add 'staff' here only when a back-office clerk role exists that
+    // should also proxy.
+    { code: 'HOSPITAL_PO', label: 'Hospital PO Entry (incl. Iloilo office proxy)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 10 } },
   ],
   // Phase G4.5a follow-up — which roles are valid OWNERS of a proxied record
   // per module. Defaults to BDM-shaped roles (['staff']); admin/
@@ -2669,6 +2686,9 @@ const SEED_DEFAULTS = {
     // CompProfile thresholds, and revolving-fund draws all key on bdm_id —
     // letting an admin or finance be a SMER owner would corrupt these.
     { code: 'SMER', label: 'Valid proxy targets — SMER', insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 9 } },
+    // Phase CSI-X1 — Hospital PO ownership stays BDM-shaped. Per-BDM open-backlog
+    // KPIs, hospital relationship reports, and rebate gates all key on bdm_id.
+    { code: 'HOSPITAL_PO', label: 'Valid proxy targets — Hospital PO', insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 10 } },
   ],
   // Phase P1 — Proxy SLA thresholds. Lookup-driven so subscribers can tune
   // without code changes. pending_alert_hours = when to alert office lead;
@@ -2946,6 +2966,70 @@ const SEED_DEFAULTS = {
     { code: 'VIEW_FINANCIAL',   label: 'View financial tiles (Cash / AR / AP / Margin / Close)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 2, description: 'CFO surface. Bank balances, AR aging, AP aging, gross margin %, period-close progress. Subscribers can revoke from operations roles to keep COA confidentiality.' } },
     { code: 'VIEW_OPERATIONAL', label: 'View operational tiles (Approvals / Inventory / Agents)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 3, description: 'COO/CEO surface. Approval SLA, inventory turns, agent health, partnership funnel, BIR calendar. Safe to grant to branch managers without exposing financials.' } },
   ],
+
+  // EXECUTIVE_COCKPIT_TILE_PERSONAS — Phase EC-1.1 (Apr 2026). Decision-domain
+  // taxonomy mapping each cockpit tile to one or more C-suite personas
+  // (CFO/CEO/COO). VIP today (one human wearing all three hats) ignores this —
+  // every tile renders. Year-2 SaaS spin-out (per CLAUDE.md Rule #0d), where
+  // tenant pharmacies have separate CFO/CEO/COO humans, will read this taxonomy
+  // to power role-filtered views (e.g., /erp/cockpit/cfo shows only CFO tiles)
+  // without a service rewrite.
+  //
+  // The same defaults are baked into cockpitService.js TILES inline. Keeping
+  // both in sync is admin's responsibility once they edit a row here — the
+  // inline fallback is what the API returns today; the lookup row is the
+  // forward-compat surface that subscribers customize via Control Center
+  // when role-filtered views ship. No runtime resolution wired yet (deferred
+  // until the consumer exists; see cockpitService TILES comment).
+  EXECUTIVE_COCKPIT_TILE_PERSONAS: [
+    { code: 'CASH',               label: 'Cash position tile',                  insert_only_metadata: true, metadata: { personas: ['CFO'],              tier: 1, scope: 'financial',   sort_order: 1,  description: 'Bank + petty cash totals. CFO core — treasury visibility.' } },
+    { code: 'AR_AGING',           label: 'AR aging tile',                       insert_only_metadata: true, metadata: { personas: ['CFO', 'CEO'],       tier: 1, scope: 'financial',   sort_order: 2,  description: 'Outstanding receivables by age bucket. CFO primary; CEO needs collections health for board reporting.' } },
+    { code: 'AP_AGING',           label: 'AP aging tile',                       insert_only_metadata: true, metadata: { personas: ['CFO'],              tier: 1, scope: 'financial',   sort_order: 3,  description: 'Outstanding payables by age bucket. CFO/treasury — vendor relationship and cash-out planning.' } },
+    { code: 'PERIOD_CLOSE',       label: 'Month-end close progress tile',       insert_only_metadata: true, metadata: { personas: ['CFO'],              tier: 1, scope: 'financial',   sort_order: 4,  description: 'Steps complete vs. total for current period. CFO ownership — close calendar accountability.' } },
+    { code: 'APPROVAL_SLA',       label: 'Approval queue SLA tile',             insert_only_metadata: true, metadata: { personas: ['CFO', 'CEO', 'COO'], tier: 1, scope: 'operational', sort_order: 5,  description: 'Pending approvals / breached SLA / oldest age. Crosses all three personas — financial threshold escalations (CFO), policy escalations (CEO), operational holds (COO).' } },
+    { code: 'AGENT_HEALTH',       label: 'Agent health tile',                   insert_only_metadata: true, metadata: { personas: ['COO'],              tier: 1, scope: 'operational', sort_order: 6,  description: 'Last-run status per scheduled agent. COO concern — system uptime and monitoring.' } },
+    { code: 'MARGIN',             label: 'Gross margin MTD tile',               insert_only_metadata: true, metadata: { personas: ['CFO', 'CEO'],       tier: 2, scope: 'financial',   sort_order: 7,  description: 'GP%, MTD sales, collection rate, DSO. CFO and CEO blended — profitability is shared accountability.' } },
+    { code: 'INVENTORY_TURNS',    label: 'Inventory turns tile',                insert_only_metadata: true, metadata: { personas: ['COO'],              tier: 2, scope: 'operational', sort_order: 8,  description: 'Annualized turns + days-on-hand. COO core — inventory throughput and FEFO compliance.' } },
+    { code: 'PARTNERSHIP_FUNNEL', label: 'MD partnership funnel tile',          insert_only_metadata: true, metadata: { personas: ['CEO'],              tier: 2, scope: 'operational', sort_order: 9,  description: 'LEAD→CONTACTED→VISITED→PARTNER conversion. CEO core — strategic growth and BDM productivity signal.' } },
+    { code: 'BIR_CALENDAR',       label: 'BIR filing calendar tile',            insert_only_metadata: true, metadata: { personas: ['CFO'],              tier: 2, scope: 'operational', sort_order: 10, description: 'Overdue + due-30d + filed-this-quarter. CFO ownership — regulatory finance and compliance posture.' } },
+  ],
+  // ─────────────────────────────────────────────────────────────────────────
+  // Phase CSI-X1 (Apr 28 2026) — Hospital Contract Pricing + PO Tracking
+  // ─────────────────────────────────────────────────────────────────────────
+  // Resolution rule for unit_price when hospital + product is picked. Default
+  // CONTRACT_FIRST: HospitalContractPrice (most-recent ACTIVE) wins, fall back
+  // to ProductMaster.selling_price. Subscribers may flip to SRP_ONLY (skip
+  // contract layer) per entity. The price resolver picks the most-recently
+  // updated row in this category as the active rule.
+  PRICE_RESOLUTION_RULES: [
+    { code: 'CONTRACT_FIRST', label: 'Contract price first, SRP fallback', insert_only_metadata: true, metadata: { sort_order: 1, description: 'Resolve from most-recent ACTIVE HospitalContractPrice; fall back to ProductMaster.selling_price.' } },
+    { code: 'SRP_ONLY',       label: 'Always use ProductMaster.selling_price', insert_only_metadata: true, metadata: { sort_order: 2, description: 'Skip contract layer entirely. Useful for entities that have not yet rolled out per-hospital pricing.' } },
+  ],
+  // Validity window for a hospital PO before it auto-flags as EXPIRED. Per
+  // entity. Subscribers tighten or extend via Control Center. The X1 admin UI
+  // exposes a "Expire stale POs" button; X3 will wire a daily cron.
+  PO_EXPIRY_DAYS: [
+    { code: 'DEFAULT', label: 'Hospital PO validity window (days)', insert_only_metadata: true, metadata: { days: 90, description: 'Open / Partial POs older than this auto-flag as EXPIRED. Cancellation requires admin action; expiry is system-driven.' } },
+  ],
+  // Display labels + colors for HospitalPO.status. Schema enum is the
+  // validation gate; the lookup drives UI presentation only (Rule #3 — admin
+  // can recolor / relabel without a deploy).
+  HOSPITAL_PO_STATUS: [
+    { code: 'OPEN',       label: 'Open',       insert_only_metadata: true, metadata: { bg: '#dbeafe', fg: '#1d4ed8', sort_order: 1, description: 'No CSI has consumed this PO yet.' } },
+    { code: 'PARTIAL',    label: 'Partial',    insert_only_metadata: true, metadata: { bg: '#fef3c7', fg: '#b45309', sort_order: 2, description: 'At least one line has qty_served > 0 but the PO is not fully fulfilled.' } },
+    { code: 'FULFILLED',  label: 'Fulfilled',  insert_only_metadata: true, metadata: { bg: '#dcfce7', fg: '#15803d', sort_order: 3, description: 'All non-cancelled lines fully served.' } },
+    { code: 'CANCELLED',  label: 'Cancelled',  insert_only_metadata: true, metadata: { bg: '#f3f4f6', fg: '#6b7280', sort_order: 4, description: 'PO cancelled by admin or hospital.' } },
+    { code: 'EXPIRED',    label: 'Expired',    insert_only_metadata: true, metadata: { bg: '#fee2e2', fg: '#b91c1c', sort_order: 5, description: 'PO aged past PO_EXPIRY_DAYS without full fulfillment.' } },
+  ],
+  // Source-channel labels for HospitalPO.source_kind. Tells admin where the
+  // PO came from for audit / DPA review.
+  HOSPITAL_PO_SOURCE_KIND: [
+    { code: 'MESSENGER_TEXT', label: 'Messenger text',    insert_only_metadata: true, metadata: { sort_order: 1, description: 'BDM / Iloilo encoder pasted Messenger thread text.' } },
+    { code: 'FORMAL_PDF',     label: 'Formal PDF / scan', insert_only_metadata: true, metadata: { sort_order: 2, description: 'Hospital sent a stamped PDF or scanned PO.' } },
+    { code: 'EMAIL',          label: 'Email',             insert_only_metadata: true, metadata: { sort_order: 3, description: 'PO body received by email.' } },
+    { code: 'VERBAL',         label: 'Verbal',            insert_only_metadata: true, metadata: { sort_order: 4, description: 'Phone call or in-person — entered from BDM dictation.' } },
+    { code: 'OTHER',          label: 'Other',             insert_only_metadata: true, metadata: { sort_order: 5, description: 'Source not specified.' } },
+  ],
 };
 
 // List all distinct categories for current entity
@@ -3100,6 +3184,7 @@ exports.create = catchAsync(async (req, res) => {
   if (REBATE_COMMISSION_ROLES_CATEGORIES.has(cat)) invalidateRebateCommissionCache(req.entityId);
   if (BIR_ROLES_CATEGORIES.has(cat)) invalidateBirRolesCache(req.entityId);
   if (EXECUTIVE_COCKPIT_ROLES_CATEGORIES.has(cat)) invalidateCockpitRolesCache(req.entityId);
+  if (PRICE_RESOLVER_CATEGORIES.has(cat)) invalidatePriceCache(req.entityId);
   res.status(201).json({ success: true, data: item });
 });
 
@@ -3131,6 +3216,7 @@ exports.update = catchAsync(async (req, res) => {
   if (REBATE_COMMISSION_ROLES_CATEGORIES.has(item.category)) invalidateRebateCommissionCache(item.entity_id);
   if (BIR_ROLES_CATEGORIES.has(item.category)) invalidateBirRolesCache(item.entity_id);
   if (EXECUTIVE_COCKPIT_ROLES_CATEGORIES.has(item.category)) invalidateCockpitRolesCache(item.entity_id);
+  if (PRICE_RESOLVER_CATEGORIES.has(item.category)) invalidatePriceCache(item.entity_id);
   res.json({ success: true, data: item });
 });
 
@@ -3154,6 +3240,7 @@ exports.remove = catchAsync(async (req, res) => {
   if (REBATE_COMMISSION_ROLES_CATEGORIES.has(item.category)) invalidateRebateCommissionCache(item.entity_id);
   if (BIR_ROLES_CATEGORIES.has(item.category)) invalidateBirRolesCache(item.entity_id);
   if (EXECUTIVE_COCKPIT_ROLES_CATEGORIES.has(item.category)) invalidateCockpitRolesCache(item.entity_id);
+  if (PRICE_RESOLVER_CATEGORIES.has(item.category)) invalidatePriceCache(item.entity_id);
   res.json({ success: true, data: item, message: 'Item deactivated' });
 });
 
@@ -3179,6 +3266,7 @@ exports.seedCategory = catchAsync(async (req, res) => {
   if (REBATE_COMMISSION_ROLES_CATEGORIES.has(category)) invalidateRebateCommissionCache(req.entityId);
   if (BIR_ROLES_CATEGORIES.has(category)) invalidateBirRolesCache(req.entityId);
   if (EXECUTIVE_COCKPIT_ROLES_CATEGORIES.has(category)) invalidateCockpitRolesCache(req.entityId);
+  if (PRICE_RESOLVER_CATEGORIES.has(category)) invalidatePriceCache(req.entityId);
   const items = await Lookup.find({ entity_id: req.entityId, category }).sort({ sort_order: 1 }).lean();
   res.json({ success: true, data: items, message: `Seeded ${defaults.length} defaults for ${category}` });
 });

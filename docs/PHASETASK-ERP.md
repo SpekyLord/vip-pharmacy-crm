@@ -9121,3 +9121,81 @@ Customer now mirrors Hospital exactly: globally shared, BDM-tag-driven visibilit
 - AR / AP sub-ledger recon (needs `outstanding_amount` tracking on SalesLine).
 - Inventory recon (needs standard-cost lookup per product).
 - Auto-trigger on JE.post for sub-second detection (v1 cron suffices for BIR filing-window protection).
+
+---
+
+## PHASE CSI-X1 — Hospital Contract Pricing + Hospital PO Tracking + Unserved Backlog ✅ COMPLETE (Apr 28 2026)
+
+**Goal**: Replace the fragile handwritten-CSI flow (BDM hand-fills → BDM scans → Iloilo manually retypes) with a centralized, auditable pipeline. Capture hospital purchase orders once, link CSIs to PO lines, decrement `qty_served` atomically on Sales POST, and surface the unserved backlog per warehouse / hospital so it drives reorder priority.
+
+**Premise** — three pain points the client raised:
+1. Handwritten CSI is the only audit artifact today (BIR / FDA / customer dispute risk).
+2. No system memory of hospital orders that exceeded available stock — the unserved 40 boxes lived only in the BDM's head.
+3. No per-hospital negotiated pricing — Iloilo encoders default to `ProductMaster.selling_price` and either get the price wrong or have to phone the BDM mid-encoding.
+
+### What X1 ships
+
+#### Backend models
+- **`HospitalContractPrice`** ([backend/erp/models/HospitalContractPrice.js](backend/erp/models/HospitalContractPrice.js)) — entity_id + hospital_id + product_id + contract_price + effective window + status (ACTIVE/SUPERSEDED/EXPIRED/CANCELLED) + audit (negotiated_by/approved_by/change_reason). Multiple historic rows preserved per (hospital, product); resolver picks the most-recent ACTIVE matching the as-of date.
+- **`HospitalPO`** + **`HospitalPOLine`** ([backend/erp/models/HospitalPO.js](backend/erp/models/HospitalPO.js)) — header carries po_number_clean (compound-unique with `(entity_id, hospital_id)`), status, expiry_date, source_kind, source_text, source_attachments, totals. Line carries qty_ordered (locked), qty_served (auto-incremented), qty_unserved (computed pre-save), unit_price (locked), contract_price_ref + price_source (audit). Static `recomputeFromLines(poId, session)` rolls line aggregates onto the parent.
+- **`SalesLine` extension** ([backend/erp/models/SalesLine.js](backend/erp/models/SalesLine.js)) — added `po_id` (header) + per-line `po_line_id`.
+
+#### Backend service
+- **`priceResolver`** ([backend/erp/services/priceResolver.js](backend/erp/services/priceResolver.js)) — `resolveContractPrice(entityId, hospitalId, productId, asOfDate)` returns `{ price, source, contract_price_ref }` where source ∈ {CONTRACT, SRP, NONE}. Honors `PRICE_RESOLUTION_RULES` lookup (default `CONTRACT_FIRST`, alt `SRP_ONLY`). 5-min in-memory cache busted on lookup edits and on contract-price writes.
+
+#### Backend controllers + routes
+- **`hospitalContractPriceController`** + `hospitalContractPriceRoutes` mounted at `/api/erp/hospital-contract-prices`. Create gated by `gateApproval('PRICE_LIST')`.
+- **`hospitalPoController`** + `hospitalPoRoutes` mounted at `/api/erp/hospital-pos`. Atomic header+lines via `withTransaction`. Phase G4.5a `resolveOwnerForWrite` for Iloilo proxy entry (lookupCode `HOSPITAL_PO`).
+- Both modules go through `erpAccessCheck('sales')` at the route mount.
+
+#### JE-TX wiring (atomic) — [salesController.js](backend/erp/controllers/salesController.js)
+- **`postSaleRow`**: after JE posts inside the existing `withTransaction`, walks `row.line_items`. For each item with `po_line_id`, validates entity + parent PO + product match, increments `qty_served`, calls `HospitalPO.recomputeFromLines(poId, session)`. Same session as JE-TX → all-or-nothing rollback.
+- **`reopenSales`**: mirrors as a `qty_served` giveback inside the same transaction as FIFO + JE reversals.
+- **`approveDeletion`**: best-effort giveback after SAP Storno; failures log via `LEDGER_ERROR` audit but do not unwind the storno.
+
+#### Lookups (subscription-ready, all `insert_only_metadata: true`)
+- `MODULE_DEFAULT_ROLES.PRICE_LIST` — default `[admin, finance, president]`
+- `PROXY_ENTRY_ROLES.HOSPITAL_PO` + `VALID_OWNER_ROLES.HOSPITAL_PO` (default proxy targets `[staff]`)
+- `PRICE_RESOLUTION_RULES` — `CONTRACT_FIRST` (default) + `SRP_ONLY`
+- `PO_EXPIRY_DAYS.DEFAULT` — `metadata.days = 90`
+- `HOSPITAL_PO_STATUS` — display labels + colors for OPEN/PARTIAL/FULFILLED/CANCELLED/EXPIRED
+- `HOSPITAL_PO_SOURCE_KIND` — MESSENGER_TEXT / FORMAL_PDF / EMAIL / VERBAL / OTHER
+
+#### Frontend services + pages
+- Services: [hospitalContractPriceService.js](frontend/src/erp/services/hospitalContractPriceService.js) + [hospitalPoService.js](frontend/src/erp/services/hospitalPoService.js).
+- Pages (lazy-imported in App.jsx):
+  - [HospitalContractPrices.jsx](frontend/src/erp/pages/HospitalContractPrices.jsx) at `/erp/hospital-contract-prices`
+  - [HospitalPoBacklog.jsx](frontend/src/erp/pages/HospitalPoBacklog.jsx) at `/erp/hospital-pos/backlog`
+  - [HospitalPoEntry.jsx](frontend/src/erp/pages/HospitalPoEntry.jsx) at `/erp/hospital-pos/entry`
+  - [HospitalPoDetail.jsx](frontend/src/erp/pages/HospitalPoDetail.jsx) at `/erp/hospital-pos/:id`
+- 3 sidebar entries under SALES section.
+- 4 banner entries in `WORKFLOW_GUIDES`.
+
+#### CSI overlay PO# (already wired pre-X1)
+- `csi.po_number` already prints on the CSI overlay at [csiDraftRenderer.js:271-277](backend/erp/services/csiDraftRenderer.js#L271-L277). X1 only needed to ensure SalesLine.po_number survives the draft → posted lifecycle.
+
+### Edge case decisions (locked Apr 28 2026)
+1. **Cross-warehouse fulfillment**: PO is warehouse-agnostic; each linked CSI picks its own warehouse. qty_served aggregates across all warehouses.
+2. **Substitution**: NOT in X1 — line stays unserved or is cancelled. Substitution metadata + audit deferred to X4.
+3. **Price lock**: PO line locks unit_price at entry. Renegotiation = new HospitalContractPrice + new HospitalPO. Old PO's unserved lines retain old price.
+4. **Expiry**: lookup-driven `PO_EXPIRY_DAYS` default 90; admin button `Expire Stale POs` flips OPEN/PARTIAL → EXPIRED. Cron deferred to X3.
+5. **PO# uniqueness**: compound unique `(entity_id, hospital_id, po_number_clean)`, duplicate → HTTP 400.
+6. **Line-level cancellation**: allowed; recomputes parent PO status (CANCELLED if all cancelled, PARTIAL if mix).
+
+### Verification (Rule #4 bulletproof bar)
+- Healthcheck `node backend/scripts/healthcheckHospitalPoWiring.js` — 60 static checks across models, controllers, routes, lookups, JE-TX hooks, frontend services, pages, App.jsx routes, Sidebar, WorkflowGuide. **Exit 0**.
+- Node syntax check on 11 modified backend files. **All PASS**.
+- Vite full build green in 43.04s. 4 new lazy bundles emitted (HospitalContractPrices, HospitalPoBacklog, HospitalPoEntry, HospitalPoDetail).
+- Playwright smoke (live dev stack via `localhost:5173` + `localhost:5000`):
+  - Admin login → success.
+  - `/erp/hospital-pos/backlog` — 0 console errors, 122-hospital filter dropdown rendered, 3 summary tiles, banner present, `+ New Hospital PO` button visible.
+  - `/erp/hospital-contract-prices` — 0 console errors, hospital + product filter dropdowns + status filter, banner present.
+  - `/erp/hospital-pos/entry` — 0 console errors, structured form rendered, line-items table, `+ Add Line` button.
+  - `GET /api/erp/hospital-pos/summary/backlog` returns 200 with shape `{open_po_count, by_hospital, top_unserved_skus, generated_at}`.
+
+### Deferred to X2-X4
+- **X2** (~3-5 days): Messenger paste-text parser (regex first, Claude Haiku 4.5 LLM fallback with prompt caching) auto-fills the structured form below the textbox. Structured form is source of truth; parser disagreement triggers diff banner + override_reason audit.
+- **X3** (~3 days): Cockpit KPI tiles (open backlog peso, fill rate 7d/30d, avg days-to-fulfill, top unserved SKUs). Daily cron auto-flags `PO_EXPIRY_DAYS`-stale POs as EXPIRED. Stock-arrival notifications when GRN clears an open PO line.
+- **X4** (~1 day): Audit-trail polish — Messenger screenshot upload to S3, hospital PDF as evidence (NOT parsed), approval-view diff of parsed-vs-confirmed lines, substitution metadata.
+
+**Plan**: `~/.claude/plans/phase-csi-x1-hospital-po-pricing.md`.

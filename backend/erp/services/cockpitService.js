@@ -467,22 +467,38 @@ async function getCockpit(ctx) {
   const { entityId, bdmId, isAdmin, isPresident, includeFinancial, includeOperational } = ctx;
   const adminLike = !!(isAdmin || isPresident);
 
-  // Tile registry: code → { tier, scope, runner }. Adding a new tile = adding
-  // a row here. Frontend does not need to be redeployed if the new tile is in
-  // a scope the user already holds — it just shows up.
+  // Tile registry: code → { tier, scope, personas, runner }.
+  //
+  // `scope` ('financial' | 'operational') controls *visibility* — gated by the
+  // EXECUTIVE_COCKPIT_ROLES lookup (VIEW_FINANCIAL / VIEW_OPERATIONAL).
+  //
+  // `personas` ('CFO' | 'CEO' | 'COO') is decision-domain *taxonomy* — passed
+  // through in the API response so a future role-filtered view (Year-2 SaaS,
+  // when tenant pharmacies have separate CFO/COO/CEO humans) can show one
+  // persona's tiles without rebuilding the cockpit. VIP today, where one
+  // person wears all three hats, ignores this field — every tile renders.
+  //
+  // Defaults below are subscriber-tunable via the EXECUTIVE_COCKPIT_TILE_PERSONAS
+  // Lookup category (see lookupGenericController SEED_DEFAULTS). Runtime
+  // override resolution is deferred until the first SaaS tenant ships a
+  // role-filtered cockpit — adding it then keeps today's response shape
+  // identical so no frontend rev is required to *introduce* the tag.
+  //
+  // Adding a new tile = adding a row here. No frontend redeploy needed if the
+  // new tile is in a scope the user already holds — it just shows up.
   const TILES = [
     // Tier-1
-    { code: 'cash',             tier: 1, scope: 'financial',   run: () => getCash(entityId) },
-    { code: 'ar_aging',         tier: 1, scope: 'financial',   run: () => getArAgingRollup(entityId, bdmId, adminLike) },
-    { code: 'ap_aging',         tier: 1, scope: 'financial',   run: () => getApAgingRollup(entityId) },
-    { code: 'period_close',     tier: 1, scope: 'financial',   run: () => getPeriodCloseStatus(entityId) },
-    { code: 'approval_sla',     tier: 1, scope: 'operational', run: () => getApprovalSla(entityId) },
-    { code: 'agent_health',     tier: 1, scope: 'operational', run: () => getAgentHealth(entityId) },
+    { code: 'cash',               tier: 1, scope: 'financial',   personas: ['CFO'],              run: () => getCash(entityId) },
+    { code: 'ar_aging',           tier: 1, scope: 'financial',   personas: ['CFO', 'CEO'],       run: () => getArAgingRollup(entityId, bdmId, adminLike) },
+    { code: 'ap_aging',           tier: 1, scope: 'financial',   personas: ['CFO'],              run: () => getApAgingRollup(entityId) },
+    { code: 'period_close',       tier: 1, scope: 'financial',   personas: ['CFO'],              run: () => getPeriodCloseStatus(entityId) },
+    { code: 'approval_sla',       tier: 1, scope: 'operational', personas: ['CFO', 'CEO', 'COO'], run: () => getApprovalSla(entityId) },
+    { code: 'agent_health',       tier: 1, scope: 'operational', personas: ['COO'],              run: () => getAgentHealth(entityId) },
     // Tier-2
-    { code: 'margin',           tier: 2, scope: 'financial',   run: () => getMargin(entityId, bdmId, adminLike) },
-    { code: 'inventory_turns',  tier: 2, scope: 'operational', run: () => getInventoryTurns(entityId) },
-    { code: 'partnership_funnel', tier: 2, scope: 'operational', run: () => getPartnershipFunnel() },
-    { code: 'bir_calendar',     tier: 2, scope: 'operational', run: () => getBirCalendar(entityId) },
+    { code: 'margin',             tier: 2, scope: 'financial',   personas: ['CFO', 'CEO'],       run: () => getMargin(entityId, bdmId, adminLike) },
+    { code: 'inventory_turns',    tier: 2, scope: 'operational', personas: ['COO'],              run: () => getInventoryTurns(entityId) },
+    { code: 'partnership_funnel', tier: 2, scope: 'operational', personas: ['CEO'],              run: () => getPartnershipFunnel() },
+    { code: 'bir_calendar',       tier: 2, scope: 'operational', personas: ['CFO'],              run: () => getBirCalendar(entityId) },
   ];
 
   const visible = TILES.filter((t) => {
@@ -497,12 +513,13 @@ async function getCockpit(ctx) {
   results.forEach((r, i) => {
     const tile = visible[i];
     if (r.status === 'fulfilled') {
-      tiles[tile.code] = { status: 'ok', tier: tile.tier, scope: tile.scope, value: r.value };
+      tiles[tile.code] = { status: 'ok', tier: tile.tier, scope: tile.scope, personas: tile.personas, value: r.value };
     } else {
       tiles[tile.code] = {
         status: 'error',
         tier: tile.tier,
         scope: tile.scope,
+        personas: tile.personas,
         message: r.reason?.message || String(r.reason || 'unknown error'),
       };
     }

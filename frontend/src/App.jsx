@@ -97,6 +97,11 @@ const PayoutLedgerPage = lazyRetry(() => import('./pages/admin/PayoutLedgerPage'
 // ERP pages
 const ErpDashboard = lazyRetry(() => import('./erp/pages/ErpDashboard'));
 const SalesEntry = lazyRetry(() => import('./erp/pages/SalesEntry'));
+// Phase CSI-X1 — Hospital PO + Hospital Contract Pricing pages
+const HospitalContractPrices = lazyRetry(() => import('./erp/pages/HospitalContractPrices'));
+const HospitalPoBacklog = lazyRetry(() => import('./erp/pages/HospitalPoBacklog'));
+const HospitalPoEntry = lazyRetry(() => import('./erp/pages/HospitalPoEntry'));
+const HospitalPoDetail = lazyRetry(() => import('./erp/pages/HospitalPoDetail'));
 const OpeningArEntry = lazyRetry(() => import('./erp/pages/OpeningArEntry'));
 const OpeningArList = lazyRetry(() => import('./erp/pages/OpeningArList'));
 const SalesList = lazyRetry(() => import('./erp/pages/SalesList'));
@@ -730,6 +735,39 @@ function App() {
               </ProtectedRoute>
             }
           />
+          {/* Phase CSI-X1 — Hospital Contract Pricing + Hospital PO Tracking */}
+          <Route
+            path="/erp/hospital-contract-prices"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.ERP_FINANCE} requiredErpModule="sales">
+                <HospitalContractPrices />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/hospital-pos/backlog"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BDM_ADMIN} requiredErpModule="sales">
+                <HospitalPoBacklog />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/hospital-pos/entry"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BDM_ADMIN} requiredErpModule="sales">
+                <HospitalPoEntry />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/hospital-pos/:id"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BDM_ADMIN} requiredErpModule="sales">
+                <HospitalPoDetail />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/erp/my-stock"
             element={
@@ -886,7 +924,7 @@ function App() {
           <Route
             path="/erp/warehouses"
             element={
-              <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_ONLY}>
+              <ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL}>
                 <WarehouseManager />
               </ProtectedRoute>
             }

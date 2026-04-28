@@ -21,6 +21,9 @@ router.post('/physical-count', protect, c.recordPhysicalCount);
 // Metadata correction — fix wrong batch_lot_no / expiry_date on stock already on hand.
 // Narrow, audited, no GL impact. President + anyone with explicit
 // `inventory.edit_batch_metadata` (or module-level FULL fall-through) may use it.
+// Cross-BDM scope (correcting another owner's batch) requires a SECOND key:
+// PROXY_ENTRY_ROLES.INVENTORY lookup + sub_permissions.inventory.grn_proxy_entry.
+// Without proxy, the caller is hard-pinned to their own bdm_id by the controller.
 router.patch('/batches/correct-metadata', protect, erpSubAccessCheck('inventory', 'edit_batch_metadata'), c.correctBatchMetadata);
 
 // Phase 4 — GRN workflow + alerts
