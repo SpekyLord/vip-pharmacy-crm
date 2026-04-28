@@ -1615,26 +1615,75 @@ const generateCsiDraft = catchAsync(async (req, res) => {
     : [];
   const productMap = new Map(products.map((p) => [String(p._id), p]));
 
-  const expiryLookups = sale.line_items
-    .filter((li) => li.product_id && li.batch_lot_no)
-    .map((li) => ({
-      entity_id: sale.entity_id,
-      product_id: li.product_id,
-      batch_lot_no: li.batch_lot_no,
-    }));
+  // Resolve batch + expiry per line. FIFO is allocated at POST time, not at
+  // line-entry time, so SalesLine.line_items[].batch_lot_no is empty for the
+  // common auto-FIFO path. Two truth sources, picked by status:
+  //   POSTED → InventoryLedger by event_id (actual batches that shipped)
+  //   DRAFT/VALID → consumeFIFO() preview (read-only) for the batch we WILL
+  //                 ship; InventoryLedger lookup honored when fifo_override
+  //                 set the batch manually.
+  // Renderer prints one Batch+Exp pair per line, so when FIFO splits a line
+  // across batches we display the oldest-expiry batch (FEFO order).
+  const batchByLineIdx = new Map();
 
-  let expiryMap = new Map();
-  if (expiryLookups.length) {
-    // eslint-disable-next-line vip-tenant/require-entity-filter -- each $or branch carries entity_id from sale.entity_id (built above); rule can't see through .map()
-    const ledgerRows = await InventoryLedger.find({ $or: expiryLookups })
+  if (sale.status === 'POSTED' && sale.event_id) {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id explicit; event_id scopes to this sale's posting
+    const ledgerRows = await InventoryLedger.find({
+      entity_id: sale.entity_id,
+      event_id: sale.event_id,
+      transaction_type: 'CSI',
+    })
       .select('product_id batch_lot_no expiry_date')
+      .sort({ expiry_date: 1 })
       .lean();
-    expiryMap = new Map(
-      ledgerRows.map((r) => [`${r.product_id}|${r.batch_lot_no}`, r.expiry_date])
-    );
+    const byProduct = new Map();
+    for (const r of ledgerRows) {
+      const pid = String(r.product_id);
+      if (!byProduct.has(pid)) byProduct.set(pid, r); // first = oldest expiry
+    }
+    sale.line_items.forEach((li, idx) => {
+      const r = byProduct.get(String(li.product_id));
+      if (r) batchByLineIdx.set(idx, { batch_lot_no: r.batch_lot_no, expiry_date: r.expiry_date });
+    });
+  } else {
+    // DRAFT/VALID — project the batch the customer will receive at post time
+    const fifoOpts = sale.warehouse_id ? { warehouseId: sale.warehouse_id.toString() } : {};
+    for (let idx = 0; idx < sale.line_items.length; idx++) {
+      const li = sale.line_items[idx];
+      if (!li.product_id || !li.qty) continue;
+      if (li.fifo_override && li.batch_lot_no) {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id explicit
+        const r = await InventoryLedger.findOne({
+          entity_id: sale.entity_id,
+          product_id: li.product_id,
+          batch_lot_no: li.batch_lot_no,
+        }).select('batch_lot_no expiry_date').lean();
+        batchByLineIdx.set(idx, {
+          batch_lot_no: li.batch_lot_no,
+          expiry_date: r?.expiry_date || null,
+        });
+        continue;
+      }
+      try {
+        const consumed = await consumeFIFO(sale.entity_id, sale.bdm_id, li.product_id, li.qty, fifoOpts);
+        if (consumed.length) {
+          batchByLineIdx.set(idx, {
+            batch_lot_no: consumed[0].batch_lot_no,
+            expiry_date: consumed[0].expiry_date,
+          });
+        }
+      } catch (err) {
+        // Insufficient stock during preview shouldn't fail PDF — render blank
+        // batch row so the BDM still gets the layout. The submit-time gate
+        // will block the actual post if stock truly isn't there.
+        if (err.code !== 'INSUFFICIENT_STOCK') {
+          console.warn('[generateCsiDraft] FIFO preview failed for line', idx, err.message);
+        }
+      }
+    }
   }
 
-  const lineDisplay = sale.line_items.map((li) => {
+  const lineDisplay = sale.line_items.map((li, idx) => {
     const p = productMap.get(String(li.product_id)) || {};
     // CSI display format: "Brand Name (Generic Name) Dosage Strength".
     // Falls back to generic-only when no brand exists, "Item" if neither.
@@ -1649,17 +1698,15 @@ const generateCsiDraft = catchAsync(async (req, res) => {
     } else {
       desc = p.generic_name || 'Item';
     }
-    const key = li.product_id && li.batch_lot_no
-      ? `${li.product_id}|${li.batch_lot_no}` : null;
-    const exp = key ? expiryMap.get(key) : null;
+    const resolved = batchByLineIdx.get(idx) || {};
     return {
       description: desc,
       qty: li.qty,
       unit: li.unit || '',
       unit_price: li.unit_price,
       amount: li.line_total,
-      batch_lot_no: li.batch_lot_no,
-      exp_date: exp,
+      batch_lot_no: resolved.batch_lot_no || li.batch_lot_no || null,
+      exp_date: resolved.expiry_date || null,
     };
   });
 
