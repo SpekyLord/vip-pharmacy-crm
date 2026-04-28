@@ -673,6 +673,13 @@ const SEED_DEFAULTS = {
     // the `inventory` module namespace (key 'grn_proxy_entry') because GRN does not
     // have its own ERP access module. See backend/erp/utils/resolveOwnerScope.js.
     { code: 'INVENTORY__GRN_PROXY_ENTRY', label: 'Record GRN on behalf of another BDM', metadata: { module: 'inventory', key: 'grn_proxy_entry', sort_order: 7 } },
+    // Phase G4.5 — Edit batch_lot_no / expiry_date on existing stock-on-hand
+    // (rewrites InventoryLedger + GrnEntry.line_items, no GL impact). Cross-BDM
+    // scope additionally requires inventory.grn_proxy_entry + a 'staff' (or other
+    // BDM role) entry in PROXY_ENTRY_ROLES.INVENTORY. Surfaces the Edit button on
+    // /erp/my-stock → Stock on Hand → batch row. See backend/erp/controllers/
+    // inventoryController.js correctBatchMetadata.
+    { code: 'INVENTORY__EDIT_BATCH_METADATA', label: 'Correct Batch Metadata (typo fix on existing stock)', metadata: { module: 'inventory', key: 'edit_batch_metadata', sort_order: 9 } },
     // Phase G4.5e — Proxy Entry for Undertaking. Undertaking's bdm_id is
     // inherited from its linked GRN (autoUndertakingForGrn), so the proxy
     // applies only to READ (list/detail) and SUBMIT (DRAFT→SUBMITTED). No
