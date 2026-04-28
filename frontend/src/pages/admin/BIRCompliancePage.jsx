@@ -19,6 +19,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ShieldCheck, RefreshCw, AlertTriangle, CheckCircle2, XCircle, Clock,
   FileText, Calendar, Loader, Settings as SettingsIcon, X, Save,
@@ -85,6 +86,7 @@ const styles = `
 `;
 
 export default function BIRCompliancePage() {
+  const navigate = useNavigate();
   const [year, setYear] = useState(new Date().getFullYear());
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -293,12 +295,36 @@ export default function BIRCompliancePage() {
                       <div /> {/* spacer for label column alignment */}
                       {f.cells.map(c => {
                         const meta = STATUS_META[c.status] || STATUS_META.DRAFT;
+                        // Phase VIP-1.J / J1: 2550M and 2550Q have a form-detail page;
+                        // other forms (J2+) drill-down lands here later. Cell is
+                        // clickable only when the target exists, so the user does
+                        // not get a 404 on unbuilt forms.
+                        const period = c.period_month || c.period_quarter;
+                        const isClickable = period && (f.form_code === '2550M' || f.form_code === '2550Q');
+                        const target = isClickable
+                          ? `/admin/bir/${f.form_code}/${year}/${period}`
+                          : null;
+                        const cellTitle = `${c.period_label} — ${meta.label}${c.due_date ? `\nDue ${new Date(c.due_date).toLocaleDateString()}` : ''}${isClickable ? '\n(Click to open form detail)' : ''}`;
                         return (
                           <div
                             key={c.period_label}
                             className="bir-cell"
-                            style={{ background: meta.bg, color: meta.fg }}
-                            title={`${c.period_label} — ${meta.label}${c.due_date ? `\nDue ${new Date(c.due_date).toLocaleDateString()}` : ''}`}
+                            role={isClickable ? 'button' : undefined}
+                            tabIndex={isClickable ? 0 : undefined}
+                            style={{
+                              background: meta.bg,
+                              color: meta.fg,
+                              cursor: isClickable ? 'pointer' : 'default',
+                              outline: 'none',
+                            }}
+                            title={cellTitle}
+                            onClick={isClickable ? () => navigate(target) : undefined}
+                            onKeyDown={isClickable ? (e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                navigate(target);
+                              }
+                            } : undefined}
                           >
                             <div style={{ fontSize: '0.7rem', opacity: 0.85 }}>{c.period_label}</div>
                             <div style={{ fontWeight: 600 }}>{meta.label}</div>

@@ -11,6 +11,7 @@ const { invalidateCrossEntityRolesCache } = require('../utils/resolveEntityScope
 const { invalidate: invalidateScpwdRolesCache } = require('../../utils/scpwdAccess');
 const { invalidate: invalidateRebateCommissionCache } = require('../../utils/rebateCommissionAccess');
 const { invalidate: invalidateBirRolesCache } = require('../../utils/birAccess');
+const { invalidate: invalidateCockpitRolesCache } = require('../../utils/executiveCockpitAccess');
 
 // Categories whose changes must bust the OR parser's lookup cache (couriers/payment keywords)
 const OR_PARSER_LOOKUP_CATEGORIES = new Set(['OCR_COURIER_ALIASES', 'OCR_PAYMENT_KEYWORDS']);
@@ -60,6 +61,12 @@ const REBATE_COMMISSION_ROLES_CATEGORIES = new Set(['REBATE_ROLES', 'COMMISSION_
 // addition (e.g., adding bookkeeper to MARK_FILED) would wait up to 60s
 // before being honored by the BIR dashboard.
 const BIR_ROLES_CATEGORIES = new Set(['BIR_ROLES']);
+
+// Phase EC-1 (Apr 2026) — bust the executive-cockpit role cache when admin
+// edits EXECUTIVE_COCKPIT_ROLES. Same 60s TTL invariant; without this hook a
+// fresh role addition (e.g., adding `cfo` to VIEW_FINANCIAL) would wait up
+// to 60s before being honored by the cockpit page.
+const EXECUTIVE_COCKPIT_ROLES_CATEGORIES = new Set(['EXECUTIVE_COCKPIT_ROLES']);
 
 // Phase G6.10/G7 — categories whose seeded rows must default is_active: false so
 // subscribers explicitly opt in (Anthropic-billable features, spend caps that
@@ -2125,6 +2132,58 @@ const SEED_DEFAULTS = {
   ],
 
   // ─────────────────────────────────────────────────────────────────────
+  // Phase G9.R10 (Apr 28 2026) — Agent Message Categories
+  //
+  // Display metadata for the three agent-message categories that flow into
+  // both the user's Inbox and the Agent Dashboard "Agent Messages" feed.
+  // Subscribers (e.g. Vios SaaS tenants) can recolor / re-label without a
+  // code change. Codes match the MessageInbox.category enum exactly.
+  //
+  // metadata: { description, sort_order, bg, fg, icon }
+  //   bg/fg → CSS color tokens applied to the category pill in the
+  //           dashboard feed and the per-message modal header
+  //   icon  → lucide-react icon name (default fallback if unknown)
+  //
+  // The dashboard renders a STATIC fallback table when the lookup is empty
+  // (Lookup outage / fresh tenant) so the screen never goes dark.
+  // ─────────────────────────────────────────────────────────────────────
+  AGENT_MESSAGE_CATEGORIES: [
+    {
+      code: 'ai_coaching',
+      label: 'Coaching',
+      metadata: {
+        description: 'Per-BDM coaching nudges from the Performance Coach / Engagement Decay / Visit Planner agents.',
+        sort_order: 1,
+        bg: '#dbeafe',
+        fg: '#1e40af',
+        icon: 'TrendingUp',
+      },
+    },
+    {
+      code: 'ai_schedule',
+      label: 'Schedule',
+      metadata: {
+        description: 'Visit-plan and weekly schedule output from Smart Visit Planner.',
+        sort_order: 2,
+        bg: '#dcfce7',
+        fg: '#166534',
+        icon: 'Calendar',
+      },
+    },
+    {
+      code: 'ai_alert',
+      label: 'Alert',
+      metadata: {
+        description: 'Time-sensitive alerts (engagement decay, document expiry, FEFO, dispute SLA, etc.).',
+        sort_order: 3,
+        bg: '#fee2e2',
+        fg: '#991b1b',
+        icon: 'AlertTriangle',
+      },
+    },
+  ],
+
+  // ─────────────────────────────────────────────────────────────────────
   // Phase G8 (P2-20 through P2-22) — AI toggle + HR bluntness lookups
   //
   // Three lookup categories that let subscribers flip individual agent AI
@@ -2659,6 +2718,23 @@ const SEED_DEFAULTS = {
     { code: 'MANAGE_PARTNERSHIP', label: 'Drive LEAD/CONTACTED/VISITED transitions', insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 2, description: 'Cross-record management. BDM-on-own-record bypass enforced separately in controller.' } },
     { code: 'SET_AGREEMENT_DATE', label: 'Promote to PARTNER (rebate gate #2)',   insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 3, description: 'Locks rebate eligibility — keep narrow. President-only is a safer posture once VIP-1.B ships.' } },
   ],
+  // ── Phase A.5 (Apr 2026) — Canonical VIP-Client (Doctor) lifecycle role gates ──
+  // Backs backend/utils/resolveVipClientLifecycleRole.js with 60s TTL cache.
+  // Defaults match the inline DEFAULT_* constants in that file so a Lookup
+  // outage falls back to admin/president (HARD_DELETE narrows to president —
+  // it bypasses the 30-day rollback grace window).
+  // Codes 1-4 are A.5.5 (this phase). Codes 5-7 are forward-compat placeholders
+  // for A.5.4 (assignedTo scalar→array flip) so admin can configure them ahead
+  // of the controller wiring; until A.5.4 ships these codes are inert.
+  VIP_CLIENT_LIFECYCLE_ROLES: [
+    { code: 'VIEW_MERGE_TOOL',       label: 'View MD Merge Tool + history',                    insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 1, description: 'Lists duplicate canonical-key groups + rollback queue. Read-only — does not perform merges.' } },
+    { code: 'EXECUTE_MERGE',         label: 'Execute MD merge (cascade winner ← loser)',       insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 2, description: 'Re-points 13+ FK references across CRM + ERP collections. Soft-deletes loser; rollback available 30 days.' } },
+    { code: 'ROLLBACK_MERGE',        label: 'Rollback an APPLIED merge within 30-day grace',   insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 3, description: 'Restores loser + re-points cascaded FKs back. Audit-logged with rollback reason.' } },
+    { code: 'HARD_DELETE_MERGED',    label: 'Hard-delete merged records (bypass 30-day grace)', insert_only_metadata: true, metadata: { roles: ['president'], sort_order: 4, description: 'Manual override of the daily cron purge. President-only by default — destroys rollback option immediately.' } },
+    { code: 'REASSIGN_PRIMARY',      label: 'Reassign primaryAssignee on a merged-survivor MD', insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 5, description: 'Forward-compat for A.5.4 (assignedTo scalar→array flip). Inert until A.5.4 ships.' } },
+    { code: 'JOIN_COVERAGE_AUTO',    label: 'Auto-join an MD into a BDM\'s coverage list',     insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 6, description: 'Forward-compat for A.5.4. Inert until A.5.4 ships.' } },
+    { code: 'JOIN_COVERAGE_APPROVAL',label: 'Approve a join-coverage request from a BDM',      insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 7, description: 'Forward-compat for A.5.4. Inert until A.5.4 ships.' } },
+  ],
   // ── Phase VIP-1.H (Apr 2026) — SC/PWD Sales Book + BIR Sales Book exports ──
   // scpwdAccess.js reads metadata.roles for each code with 60s TTL cache.
   // Default posture is admin + finance (NOT president) — BIR audit-reportable
@@ -2857,6 +2933,19 @@ const SEED_DEFAULTS = {
     { code: 'RUN_DATA_AUDIT',    label: 'Trigger Data Quality scan on demand',             insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president', 'bookkeeper'], sort_order: 6, description: 'Run the TIN + address completeness sweep ad-hoc. Nightly cron always runs regardless.' } },
     { code: 'MANAGE_TAX_CONFIG', label: 'Edit per-entity tax config (TIN, RDO, tax_type)', insert_only_metadata: true, metadata: { roles: ['admin', 'president'],                          sort_order: 7, description: 'Senior gate — wrong TIN/RDO breaks every export and every alphalist row.' } },
   ],
+
+  // EXECUTIVE_COCKPIT_ROLES — Phase EC-1 (Apr 2026). Lookup-driven access
+  // gates for the C-suite Executive Cockpit at /erp/cockpit. Mirrors the
+  // BIR_ROLES pattern (lazy-seed-from-defaults, 60s TTL cache, lookup edits
+  // invalidate). VIEW_COCKPIT is the page-level gate; the two scoped gates
+  // (FINANCIAL / OPERATIONAL) let subscribers grant a "branch manager" role
+  // operational visibility (approvals, inventory turns, agents) without
+  // exposing financial roll-ups (cash, AR/AP aging, margin) — Rule #3.
+  EXECUTIVE_COCKPIT_ROLES: [
+    { code: 'VIEW_COCKPIT',     label: 'View Executive Cockpit page',                            insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 1, description: 'Base page access. Without this, /erp/cockpit returns 403. Tile visibility is gated separately by VIEW_FINANCIAL / VIEW_OPERATIONAL.' } },
+    { code: 'VIEW_FINANCIAL',   label: 'View financial tiles (Cash / AR / AP / Margin / Close)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 2, description: 'CFO surface. Bank balances, AR aging, AP aging, gross margin %, period-close progress. Subscribers can revoke from operations roles to keep COA confidentiality.' } },
+    { code: 'VIEW_OPERATIONAL', label: 'View operational tiles (Approvals / Inventory / Agents)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 3, description: 'COO/CEO surface. Approval SLA, inventory turns, agent health, partnership funnel, BIR calendar. Safe to grant to branch managers without exposing financials.' } },
+  ],
 };
 
 // List all distinct categories for current entity
@@ -3010,6 +3099,7 @@ exports.create = catchAsync(async (req, res) => {
   if (SCPWD_ROLES_CATEGORIES.has(cat)) invalidateScpwdRolesCache(req.entityId);
   if (REBATE_COMMISSION_ROLES_CATEGORIES.has(cat)) invalidateRebateCommissionCache(req.entityId);
   if (BIR_ROLES_CATEGORIES.has(cat)) invalidateBirRolesCache(req.entityId);
+  if (EXECUTIVE_COCKPIT_ROLES_CATEGORIES.has(cat)) invalidateCockpitRolesCache(req.entityId);
   res.status(201).json({ success: true, data: item });
 });
 
@@ -3040,6 +3130,7 @@ exports.update = catchAsync(async (req, res) => {
   if (SCPWD_ROLES_CATEGORIES.has(item.category)) invalidateScpwdRolesCache(item.entity_id);
   if (REBATE_COMMISSION_ROLES_CATEGORIES.has(item.category)) invalidateRebateCommissionCache(item.entity_id);
   if (BIR_ROLES_CATEGORIES.has(item.category)) invalidateBirRolesCache(item.entity_id);
+  if (EXECUTIVE_COCKPIT_ROLES_CATEGORIES.has(item.category)) invalidateCockpitRolesCache(item.entity_id);
   res.json({ success: true, data: item });
 });
 
@@ -3062,6 +3153,7 @@ exports.remove = catchAsync(async (req, res) => {
   if (SCPWD_ROLES_CATEGORIES.has(item.category)) invalidateScpwdRolesCache(item.entity_id);
   if (REBATE_COMMISSION_ROLES_CATEGORIES.has(item.category)) invalidateRebateCommissionCache(item.entity_id);
   if (BIR_ROLES_CATEGORIES.has(item.category)) invalidateBirRolesCache(item.entity_id);
+  if (EXECUTIVE_COCKPIT_ROLES_CATEGORIES.has(item.category)) invalidateCockpitRolesCache(item.entity_id);
   res.json({ success: true, data: item, message: 'Item deactivated' });
 });
 
@@ -3086,6 +3178,7 @@ exports.seedCategory = catchAsync(async (req, res) => {
   if (SCPWD_ROLES_CATEGORIES.has(category)) invalidateScpwdRolesCache(req.entityId);
   if (REBATE_COMMISSION_ROLES_CATEGORIES.has(category)) invalidateRebateCommissionCache(req.entityId);
   if (BIR_ROLES_CATEGORIES.has(category)) invalidateBirRolesCache(req.entityId);
+  if (EXECUTIVE_COCKPIT_ROLES_CATEGORIES.has(category)) invalidateCockpitRolesCache(req.entityId);
   const items = await Lookup.find({ entity_id: req.entityId, category }).sort({ sort_order: 1 }).lean();
   res.json({ success: true, data: items, message: `Seeded ${defaults.length} defaults for ${category}` });
 });

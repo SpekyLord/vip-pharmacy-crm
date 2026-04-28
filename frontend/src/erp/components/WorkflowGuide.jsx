@@ -99,6 +99,27 @@ const WORKFLOW_GUIDES = {
     ],
     tip: 'Complete all DRAFT documents before end of day. Unfinished drafts will not appear in reports.',
   },
+  // Phase EC-1 — Executive Cockpit (CFO/CEO/COO at-a-glance)
+  'cockpit': {
+    title: 'Executive Cockpit — CFO · CEO · COO daily roll-up',
+    steps: [
+      'Tier-1 tiles answer "is anything on fire today?": Cash position, AR aging (overdue % over 90 d), AP aging, period-close progress, approval queue + SLA breaches, agent health.',
+      'Tier-2 tiles answer "are we trending in the right direction?": gross margin %, inventory turns / days on hand, MD partnership funnel, BIR filing calendar.',
+      'Click any tile to drill into the canonical detail page — Cash → Banking, AR → AR Aging, AP → AP Aging, Approvals → Approval Hub, Agents → AI Agents, Margin → P&L, BIR → Compliance dashboard.',
+      'Numbers come from the same canonical sources the detail pages use (arEngine.getArAging, apService.getApAging, monthEndClose.getCloseProgress, dashboardService.getMtd) — if a cockpit tile disagrees with its detail page, file a bug; the cockpit never re-computes, only rolls up.',
+      'Per-tile error containment: a single broken upstream returns a red ⚠ X on its tile, the other 9 still render. Page never goes dark.',
+      'Auto-refreshes every 60 s. Use the "Refresh" button for an immediate pull (e.g. after approving a stack of items in the Approval Hub).',
+      'Lookup-driven role gates: VIEW_COCKPIT for the page itself, VIEW_FINANCIAL for cash/AR/AP/margin/close tiles, VIEW_OPERATIONAL for approvals/inventory/agents/funnel/BIR. Edit roles per-entity via Control Center → Lookup Tables → EXECUTIVE_COCKPIT_ROLES (Rule #3 — no code change needed to give a new role like cfo/coo access).',
+    ],
+    next: [
+      { label: 'AR Aging detail', path: '/erp/collections/ar' },
+      { label: 'AP Aging detail', path: '/erp/purchasing/ap' },
+      { label: 'Approval Hub', path: '/erp/approvals' },
+      { label: 'AI Agents', path: '/erp/agent-dashboard' },
+      { label: 'BIR Compliance', path: '/admin/bir' },
+    ],
+    tip: 'Cockpit is read-only. To act on a number, click through. To change WHO sees the page or specific tiles, edit EXECUTIVE_COCKPIT_ROLES in Control Center → Lookup Tables — defaults are admin + finance + president.',
+  },
   'sales-opening-ar': {
     title: 'Opening AR Entry — Pre-Go-Live CSIs',
     steps: [
@@ -611,12 +632,16 @@ const WORKFLOW_GUIDES = {
       'View status of every registered agent (Claude AI + rule-based), sourced from the backend agent registry so new agents surface here automatically',
       'Check recent runs, alerts generated, messages sent, and key findings per agent',
       'Click "Run Now" on any agent for an on-demand execution (president/admin only)',
+      'Recent Agent Runs — filter by agent, status, or date range. 20 runs per page. The full audit history is queryable here, not just the last 10.',
+      'Agent Messages — read-only mirror of agent-generated alerts in your inbox. Filter by category (Coaching / Schedule / Alert) or date range. Click any row to view the full body; opening marks it read.',
       'Configure enable/disable, notification routing, and run agents from Control Center → Intelligence',
     ],
     next: [
       { label: 'Control Center', path: '/erp/control-center?section=agent-settings' },
+      { label: 'Inbox (acknowledge / reply / archive)', path: '/erp/inbox' },
+      { label: 'Lookup Tables (rebrand category labels)', path: '/erp/control-center?section=lookups' },
     ],
-    tip: 'Rule-based agents always run on schedule (no cost). Claude AI agents require ANTHROPIC_API_KEY and a funded AI budget cap (Control Center → AI Budget). Every agent schedule is governed by the central cron in backend/agents/agentScheduler.js — per-agent thresholds and toggles live in Lookup Tables (subscription-ready, no code changes needed).',
+    tip: 'Rule-based agents always run on schedule (no cost). Claude AI agents require ANTHROPIC_API_KEY and a funded AI budget cap (Control Center → AI Budget). Every agent schedule is governed by the central cron in backend/agents/agentScheduler.js — per-agent thresholds and toggles live in Lookup Tables (subscription-ready, no code changes needed). Agent message category labels and pill colors come from the AGENT_MESSAGE_CATEGORIES lookup so subscribers can rebrand them without a code deploy.',
   },
   'approval-manager': {
     title: 'Universal Approval Hub',

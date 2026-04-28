@@ -169,6 +169,8 @@ When the consultant delivers the gap list, the concrete work gets its own Phase 
 
 ## ERP Phases
 
+> **CRM-side phase note (April 28, 2026 — Phase A.5.5)**: The canonical VIP-Client (Doctor) **merge tool shipped** on the CRM side. Admin operator surface at [/admin/md-merge](frontend/src/pages/admin/MdMergePage.jsx) with a 3-step UX (pick winner + loser → preview cascade blast radius → confirm with required reason). The cascade engine ([backend/services/doctorMergeService.js](backend/services/doctorMergeService.js)) re-points 13 FK paths — including **6 ERP-side fields** that any ERP-aware change must keep on the manifest: `Collection.settled_csis.partner_tags.doctor_id`, `Collection.settled_csis.md_rebate_lines.md_id`, `MdProductRebate.doctor_id`, `MdCapitationRule.doctor_id`, `PrfCalf.partner_id`, `PatientMdAttribution.doctor_id`. Cascade runs inside Mongoose `withTransaction` when Atlas is detected; collisions on `PatientMdAttribution`'s unique `(entity_id, patient_id, doctor_id)` defuse by deactivating the loser's row (rollback re-activates if winner side is unchanged). Lookup-driven gates: `VIP_CLIENT_LIFECYCLE_ROLES.{VIEW_MERGE_TOOL, EXECUTE_MERGE, ROLLBACK_MERGE, HARD_DELETE_MERGED}` (admin + president defaults; HARD_DELETE narrows to president-only). Audit row on every merge ([DoctorMergeAudit](backend/models/DoctorMergeAudit.js)) captures per-model id arrays so rollback is surgical, not "guess from current state". 30-day grace before hard-delete cron runs (cron not yet wired — first audit row aged-out is the trigger). **ERP impact for Phase 38 PeopleMaster merge** (queued separately): fork this service shape — `buildCascadeManifest()` + per-kind `applyX` functions are the reusable spine.
+>
 > **CRM-side phase note (April 26, 2026)**: Phase **VIP-1.A** shipped on the CRM side — `Doctor` extended with `partnership_status` (LEAD/CONTACTED/VISITED/PARTNER/INACTIVE), `lead_source`, `partner_agreement_date`, `prc_license_number` (sparse), `partnership_notes` + new admin page `/admin/md-leads` + `backend/utils/mdPartnerAccess.js` (lookup-driven role gates: `MD_PARTNER_ROLES.{VIEW_LEADS,MANAGE_PARTNERSHIP,SET_AGREEMENT_DATE}` with inline `[admin, president]` defaults). ERP integration lands in **VIP-1.B** (`PatientMdAttribution` + `MdProductRebate` + `MdCapitationRule` + `StaffCommissionRule`) and **VIP-1.F** (rebate accrual on Collection POSTED → ERP Approval Hub → BIR 2307 service-fee export with `bir_flag: 'INTERNAL'` stamping). The 3-gate guardrail enforces, in MdProductRebate / MdCapitationRule pre-save: (a) `Doctor.partnership_status === 'PARTNER'`, (b) `Doctor.partner_agreement_date` set, (c) `PatientMdAttribution.attribution_consent_log.timestamp` present — all three before a single peso accrues. See `docs/PHASE-TASKS-CRM.md` §VIP-1.A for the schema/controller/route detail and `~/.claude/plans/vip-1-integrated-build-plan.md` for the full roadmap. Per-tenant note: `MdProductRebate` schema must NEVER allow `product_id` filtering (per-patient capitation only — RA 6675 / FDA 2011-002 compliance).
 
 > **Phase note (April 26, 2026 — Phase 4 ACTIVATION shipped)**: Phase **VIP-1.B Phase 4** wired the foundation built in Phases 0/1A/2/3 into live behavior. (1) [backend/erp/models/Collection.js](backend/erp/models/Collection.js) gained `md_rebate_lines[]` subschema + `total_md_rebates` roll-up + `commission_rule_id` / `partner_tags[].rule_id` provenance; pre-save now walks 3 matrices (MdProductRebate Tier-A per `SalesLine.line_items[]`, NonMdPartnerRebateRule, StaffCommissionRule with CompProfile fallback) and excludes Tier-A products from Non-MD partner rebate base. (2) [backend/erp/controllers/collectionController.js](backend/erp/controllers/collectionController.js) `submitCollections` and `postSingleCollection` (Approval Hub) now call `routePrfsForCollection` INSIDE the existing JE-TX session — atomic with the Collection POST; failure aborts the whole transaction. Reopen path cleans DRAFT auto-PRFs so re-submit produces fresh ones. (3) [backend/erp/models/PrfCalf.js](backend/erp/models/PrfCalf.js) gained `metadata: Mixed` field + sparse compound index on `{entity_id, doc_type, period, metadata.source_collection_id, metadata.payee_id}` (autoPrfRouting idempotency lookup) — fixes a latent bug where Mongoose silently dropped the metadata write. (4) 6 new ERP routes mounted at `/api/erp/{md-product-rebates, non-md-partner-rebate-rules, md-capitation-rules, staff-commission-rules, rebate-payouts, commission-payouts}` with lookup-driven role gates (REBATE_ROLES + COMMISSION_ROLES). (5) 5 admin pages live: `/admin/{rebate-matrix, non-md-rebate-matrix, capitation-rules, commission-matrix, payout-ledger}` + 5 PageGuide entries + 5 Sidebar entries under Operations. **Idempotency invariant**: re-routing a POSTED Collection produces 0 new PRFs (queries by `metadata.source_collection_id`); pre-save bridge clears `md_rebate_lines` first then re-walks (manual partner_tags[].rebate_pct overrides preserved when > 0). **Tier-A exclusion**: `Map<product_id, line_item.net_of_vat>` tracks the per-product covered amount; `partnerBase = max(0, csi.net_of_vat − sum(tierAExcludedNet))`. Auto-fill at entry time only fires when commission_rate / rebate_pct is 0/unset — manual overrides win. **Out of scope (future)**: storefront `Order.paid` listener (VIP-1.D), AREA_BDM Territory schema extension (provinces[]/area_bdm_user_id), nightly excluded_product_ids sync job, BIR Form 2307 export (VIP-1.F), `attribution_consent_log` field on PatientMdAttribution (waiting on user decision per handoff). See `docs/PHASETASK-ERP.md` §VIP-1.B Phase 4 for the full file inventory and Playwright smoke results.
@@ -5699,11 +5701,46 @@ See `docs/PHASETASK-ERP.md` (`WEEK-1 STABILIZATION — DAY 4`) for the full file
 
 ---
 
-## Phase VIP-1.J — BIR Tax Compliance Suite (J0 SHIPPED + SMOKE-PASSED Apr 27 2026, J1-J7 deferred)
+## Phase VIP-1.J — BIR Tax Compliance Suite (J0 + J1 SHIPPED Apr 27-28 2026, J2-J7 deferred)
 
 **Goal**: replace the bookkeeper-as-black-box workflow with a president-facing BIR Compliance Dashboard + per-form copy-paste UX into eBIR Forms + `.dat` exports for Alphalist Data Entry + loose-leaf Books of Accounts PDFs. Covers VIP, Balai Lawaan, online pharmacy, MG, CO, and future SaaS subscribers.
 
-**Status (Apr 27 2026 evening)**: J0 (Compliance Dashboard + Foundation + Data Quality Agent + inbound-email parser) is **shipped on `origin/dev` (commits `80b2798` + `68c711d`) and live-smoke green**. End-to-end audit verified: positive path (president → 8 forms / 3 deadlines / completeness 33%), negative path (staff → HTTP 403 with `required_scope`), webhook parses BIR confirmation emails (form_code + period + reference + TIN extracted), all 7 lookup-driven role gates wired (`birAccess.js` BIR_ROLES). Wiring confirmed across 7 layers: Model → Service → Controller → Route mount → Frontend service → Page → Sidebar → PageGuide banner. J1-J7 (~12 days regulatory tax forms) deferred — see memory `handoff_vip_1_j_phases_j1_j7_apr27_2026.md` and plan `~/.claude/plans/vip-1-j-bir-compliance.md`.
+**Status (Apr 28 2026)**: J0 + J1 shipped. J0 (Compliance Dashboard + Foundation + Data Quality Agent + inbound-email parser) is on `origin/dev` (commits `80b2798` + `68c711d`) and live-smoke green — see Apr 27 entry below. **J1 (2550M Monthly + 2550Q Quarterly VAT compute + CSV export) is uncommitted on `dev`** — `vatReturnService` aggregator + 3 new endpoints + `BirVatReturnDetailPage` + heatmap cell-click drill-down + 39-check wiring healthcheck (passing). J2-J7 (~10 working days regulatory tax forms) still deferred — see memory `handoff_vip_1_j_phases_j1_j7_apr27_2026.md` and plan `~/.claude/plans/vip-1-j-bir-compliance.md`.
+
+### J1 — 2550M / 2550Q VAT Return (Apr 28 2026, uncommitted on dev)
+
+**What shipped**:
+
+1. **`backend/erp/services/vatReturnService.js`** (new) — entity-scoped VAT return aggregator:
+   - `compute2550M({ entityId, year, month })` — pulls VatLedger OUTPUT/INPUT rows (`finance_tag='INCLUDE'`) + SalesBookSCPWD POSTED rows for the period; returns the 10 BIR boxes 13A/14A/15A/16A/17A/18A/20A/20B/20G/22A. Carryover (20A) reads previous month's `BirFilingStatus.totals_snapshot.net_vat_payable` (negatives carry as input-VAT credit).
+   - `compute2550Q({ entityId, year, quarter })` — sums three monthly `VatLedger.period` rows + SCPWD per quarter; same 10-box layout.
+   - `exportFormCsv(...)` — CSV streamed with header lines (entity, TIN, RDO, generated-at). Computes SHA-256 of the bytes, appends to `BirFilingStatus.export_audit_log` (artifact_kind='CSV', filename, content_hash, byte_length), and refreshes `totals_snapshot` so the heatmap reflects fresh numbers without forcing mark-reviewed.
+   - Box layout is BIR-fixed (RR 16-2005 + TRAIN amendments), inlined as constants — NOT lookup-driven, because subscriber re-skinning a BIR field name is a wrong-form risk. The `BIR_FORMS_CATALOG` lookup remains the right level for subscriber-tunable form-level metadata (frequency, due_day, channel).
+   - **J1 stubs (return 0, surfaced in UI banner)**: `zero_rated_sales` (14A) and `sales_to_government` (16A) — Phase J1.1 will join `Sale.customer.vat_status='ZERO_RATED'` + `Customer.customer_type='GOVERNMENT'`. Bookkeeper manually adjusts these boxes in eBIRForms when applicable; CSV is honest about what was computed.
+2. **3 new endpoints** in [birController.js](backend/erp/controllers/birController.js):
+   - `GET /api/erp/bir/forms/2550M/:year/:month/compute` — VIEW_DASHBOARD scope. Returns `{ totals, meta, filing_row }`.
+   - `GET /api/erp/bir/forms/2550Q/:year/:quarter/compute` — VIEW_DASHBOARD scope.
+   - `GET /api/erp/bir/forms/:formCode/:year/:period/export.csv` — EXPORT_FORM scope. Streams CSV + sets `Content-Disposition` (filename `2550M_YYYY-MM.csv` / `2550Q_YYYY-QN.csv`) + `X-Content-Hash` (SHA-256). Logs to console for ops audit (mirrors SCPWD pattern).
+   - Routes wired in [birRoutes.js](backend/erp/routes/birRoutes.js) **BEFORE** the catch-all `GET /forms/:id` so Express doesn't try to look up "2550M" as a Mongo `_id`. Health check enforces this ordering.
+3. **CORS exposed-headers extended** in [server.js](backend/server.js) `buildCorsOptions`: added `Content-Disposition` + `X-Content-Hash` to `exposedHeaders` so the browser can read filename + content hash on the CSV response. Without this, axios cannot surface the headers to the page (silent fail in production behind real CORS — works in dev only because dev origin policy is permissive).
+4. **`frontend/src/pages/admin/BirVatReturnDetailPage.jsx`** (new) — copy-paste UI. One card per BIR box (label + value + copy-icon button), grouped by section (SALES / OUTPUT / INPUT / PAYABLE) preserving the eBIRForms 7.x flow. Lifecycle buttons (Mark Reviewed / Mark Filed / Mark Confirmed) call the J0 endpoints. Export CSV uses synthetic `<a>` + `URL.createObjectURL` to trigger the download. PageGuide key `bir-vat-return` (registered in [PageGuide.jsx](frontend/src/components/common/PageGuide.jsx)).
+5. **App.jsx route**: `/admin/bir/:formCode/:year/:period` lazy-imports `BirVatReturnDetailPage`. Same `ROLE_SETS.BIR_FILING` guard as the J0 dashboard (admin / finance / president / bookkeeper); per-endpoint scope is enforced backend-side via `birAccess.userHasBirRole`.
+6. **Heatmap cell-click navigation** in [BIRCompliancePage.jsx](frontend/src/pages/admin/BIRCompliancePage.jsx) — cells for `2550M` and `2550Q` are `role="button"`, keyboard-accessible (Enter/Space), navigate to `/admin/bir/{form}/{year}/{period}`. Other forms (J2+) remain visual-only until their detail pages ship — no 404 surprise.
+7. **Health check**: [backend/scripts/healthcheckBirVatReturnWiring.js](backend/scripts/healthcheckBirVatReturnWiring.js) — 39 assertions across 12 sections (service exports, controller methods, route ordering, CORS headers, frontend service, page wiring, App.jsx route, heatmap navigation, PageGuide entry, lookup catalog, PeriodLock enum, audit-log fields). Exit 1 on first failure → CI gate. **Verified passing Apr 28 2026.**
+
+**Subscription-readiness checklist (Rule #3 + Rule #19)**:
+- All reads scoped via `req.entityId` — verified in `compute2550M` / `compute2550Q` / `exportFormCsv`.
+- Form catalog driven by `BIR_FORMS_CATALOG` lookup (subscriber can disable 2550M for non-VAT entities).
+- Role gates driven by `BIR_ROLES` lookup (`VIEW_DASHBOARD` for compute, `EXPORT_FORM` for CSV) — subscriber adds `bookkeeper` to `EXPORT_FORM` per entity without code changes.
+- Period-lock middleware `BIR_FILING` already in `PeriodLock.module` enum (J0 prereq); `mark-filed` honors it (J0).
+- Box layout is BIR-fixed (intentionally NOT lookup-driven — see J1 step 1 above).
+
+**Open follow-ups (J1.x polish, not blocking J2)**:
+- **J1.1 — customer-type joins**: 14A (zero-rated) + 16A (government) currently stubbed at 0. Wire `Sale.customer.vat_status` + `Customer.customer_type` joins (~2 hours).
+- **J1.2 — eBIRForms XML import**: eBIR Forms 7.9 supports `File → Open` for some forms via XML. Stretch goal once bookkeeper confirms it's stable.
+- **J1.3 — golden-file fixture tests**: lock the CSV byte format with a snapshot in `backend/erp/services/__fixtures__/`. Detects accidental column re-orders on regression.
+
+### J0 — BIR Compliance Dashboard (shipped Apr 27 2026, smoke green)
 
 **Locked decisions** (Apr 27 conversation):
 - Filing channel: copy-paste totals into eBIR Forms (no eFPS), `.dat` for Alphalist Data Entry (SAWT/QAP/1604-CF/1604-E), PDF for loose-leaf books.
@@ -5885,3 +5922,123 @@ Different invariants, different repair paths. Bundling them would couple their e
 - AR / AP sub-ledger recon: requires `outstanding_amount` tracking on `SalesLine` (current schema computes outstanding by joining `Collection` allocations). Defer until either the JE-asymmetry fix step 2 lands (`je_status` + Retry button) or the user prioritizes AR aging reports.
 - Inventory recon (Σ `InventoryLedger.running_balance × unit_cost` vs GL `INVENTORY`): requires standard-cost or weighted-average lookup per product. Deferred — out of scope for v1.
 - Auto-trigger on JE.post (vs scheduled cron): would drop detection latency from 24h to seconds, but adds hot-path cost. v1 cron suffices for the BIR-filing-window protection the user asked for.
+
+---
+
+## Phase G9.R10 — Agent Dashboard Audit Surface (April 28, 2026)
+
+**Goal**: turn `/erp/agent-dashboard` into a real audit surface for the AI agent fleet, not a 10-row teaser. Two sections of the page (Recent Agent Runs, Agent Messages) were capped at 10 / 20 rows with client-only filtering and no drill-in. Both are now server-side filtered, paginated, and (for messages) click-to-view.
+
+**Why**: the user's complaint was "the audit goes to my inbox, not the dashboard." Truth is the audit IS on the dashboard — the run history and message history are both there — but the surface didn't expose enough of it to feel auditable. Build the screen out instead of moving data away from inbox (which would break the actionable workflow for non-admin recipients).
+
+**Files**:
+- [frontend/src/erp/pages/AgentDashboard.jsx](frontend/src/erp/pages/AgentDashboard.jsx) — the dashboard page itself.
+  - `loadRuns(page, filters)` callback: GETs `/erp/agents/runs?agent_key=&status=&from=&to=&page=&limit=20`. Decoupled from the stats/registry/messages fetch so changing run filters does NOT refetch unrelated sections.
+  - `loadMessages(page, filters)` callback: GETs `/api/messages?category=&from=&to=&page=&limit=15`. Constant base filter `category=ai_coaching,ai_schedule,ai_alert` so non-agent messages never bleed in. User's category single-select narrows further; empty defaults back to all three.
+  - Filter bars (CSS class `agd-filters`) above each section. Run section: agent dropdown driven by backend registry (33 agents Apr 28 2026), status enum, From / To date pickers, Reset button when any filter is active. Message section: category dropdown driven by the AGENT_MESSAGE_CATEGORIES lookup, From / To date pickers, Reset button.
+  - `Pagination` component (existing shared) wired to both sections (`runPage`/`runPages`, `msgPage`/`msgPages`).
+  - Click-to-view modal (`agd-modal-overlay` / `agd-modal`) for messages: full body, sender + recipient + sent + priority metadata, "Open in Inbox" link, overlay-click closes. Opening calls `messageService.markRead(id)` so the dashboard read-state and inbox read-state stay in sync. Best-effort — if markRead fails the modal still opens (read-state is cosmetic on a monitor view).
+  - `getCatMeta(code, lookupOptions)` helper — pulls label / bg / fg / leftBorder from the `AGENT_MESSAGE_CATEGORIES` Lookup row when present, otherwise from the inline `CAT_FALLBACK` table. Page never goes dark on a Lookup outage (mirrors the VIP-1.A `STATUS_META_FALLBACK` pattern in MdLeadsPage).
+- [backend/controllers/messageInboxController.js](backend/controllers/messageInboxController.js) — `getInboxMessages` now accepts `?from=YYYY-MM-DD&to=YYYY-MM-DD`. Inclusive 00:00:00 .. 23:59:59 day boundaries on `createdAt`. Invalid dates are silently dropped (treated as "no filter"). The existing `category` (comma-multi), `page`, `limit`, `status`, `search`, `folder`, `requires_action`, `thread_id` filters are unchanged.
+- [backend/erp/controllers/lookupGenericController.js](backend/erp/controllers/lookupGenericController.js) — new `AGENT_MESSAGE_CATEGORIES` seed entry in `SEED_DEFAULTS`. Three rows (`ai_coaching` / `ai_schedule` / `ai_alert`) each with `metadata: { description, sort_order, bg, fg, icon }`. Lazy-seeded on first GET per entity.
+- [frontend/src/erp/components/WorkflowGuide.jsx](frontend/src/erp/components/WorkflowGuide.jsx) — `agent-dashboard` banner expanded with the new filter / pagination steps and two new "Next steps" links (Inbox + Lookup Tables).
+
+**Lookup-driven (Rule #3)**:
+- `AGENT_MESSAGE_CATEGORIES` Lookup category drives the pill color, label, and the dropdown options for the message filter. A future Vios SaaS subscriber can rename "Coaching" → "Mentoring" and re-color the alert pill blue without a code deploy.
+- `MessageInbox.category` enum stays as the validation gate (so admin can't introduce a category code the schema rejects); the lookup only supplies display metadata. Same split as VIP-1.A `partnership_status` (schema enum) ↔ `DOCTOR_PARTNERSHIP_STATUS` (display lookup).
+- The agent dropdown on Recent Agent Runs is driven entirely by `agentRegistry.AGENT_DEFINITIONS` via `/erp/agents/registry`. Adding a new agent surfaces it in the dropdown automatically — no frontend edit.
+
+**Subscription-readiness posture**:
+- All filters scope correctly through the existing `tenantFilter` / `entity_id` middleware on `/api/messages` (Phase G9.R4 + Rule #21). A subscriber's president sees only their own entity's agent messages.
+- The runs endpoint is admin-gated (`adminOnly` = admin/finance/president per agentRoutes.js). No new permission needed.
+- No hardcoded business values introduced. Page-size constants (`RUNS_PER_PAGE=20`, `MSGS_PER_PAGE=15`) are platform UX choices, not subscriber-tunable values — defer to Settings only if a tenant complains, per Rule 0 (don't add features beyond what's needed).
+
+**Wiring verified**:
+- Backend syntax: `node -c` green on both `messageInboxController.js` and `lookupGenericController.js`.
+- Frontend build: `npx vite build` green (11.02s, no errors, no warnings).
+- Date-range filter: validates against the existing index `{ entity_id, folder, createdAt }` — no new index needed, MongoDB picks up the createdAt range as the secondary key.
+- Removed `msgTab` state and orphan `filteredMsgs` computation that the old client-only tab filter relied on. No remaining references (`grep` clean).
+- Modal a11y: `role="dialog"`, `aria-modal="true"`, `aria-labelledby`, overlay-click closes. Keyboard activation supported via Enter / Space on message rows (`role="button"` + `tabIndex={0}`).
+
+**Browser smoke (Apr 28 2026, partial)**:
+- Runs section was Playwright-smoked earlier in the same session — filter changes the row count + total counter, Reset clears all filters + hides Reset button, pagination Next loads page 2 with 8 remaining of 28, "(N total)" header counter is accurate, empty-with-filters message renders with reset button visible, zero console errors throughout.
+- Messages section was NOT browser-smoked (Playwright MCP profile lock stuck after the runs smoke; build-green only). The implementation mirrors the runs section line-for-line, so the failure modes should be identical, but a manual smoke is queued for the next session — see deferred handoff `memory/handoff_phase_g9_r10_apr28_2026.md`.
+
+**Known follow-ups**:
+- The "Recent Agent Runs" section header doesn't yet show a "newest first" / "by agent name" sort toggle. Backend already sorts `run_date: -1`; if subscribers want by-agent grouping, that's a one-line frontend toggle.
+- Click-to-view on a RUN row (not just a message) would let admin see the full agent run detail (full key_findings list, error stack, payload metadata) inline. The data is already on `AgentRun.summary` / `AgentRun.error_msg`. Defer until requested.
+- Bulk archive / mark-all-read on the messages monitor view: deferred — those operations live in the Inbox surface where they belong.
+
+---
+
+## Phase EC-1 — Executive Cockpit (CFO/CEO/COO at-a-glance) — April 28, 2026
+
+**Why**: Apr 28 audit of CRM/ERP dashboards (commit context: post-G9.R10) found that ERP exposed 4 MTD cards on `/erp` and 19 other dashboards scattered by domain (Sales Goals, Consignment, Expiry, IC AR, Cycle Status, P&L, Agent, etc.) but **no single C-suite roll-up surface**. CFO/CEO/COO had to click through 5+ dashboards each morning to know "is anything on fire today / are we trending the right direction." The audit also flagged real KPI duplication risk (visits/engagements counted differently in CRM vs ERP, AR/IC AR overlap, inventory entity- vs warehouse-scoped). The cockpit is a pure aggregator over the canonical sources — it never re-computes a metric, only rolls up — so cockpit ↔ detail-page disagreement is impossible by construction.
+
+**Where**:
+- Page route `/erp/cockpit` ([frontend/src/erp/pages/ExecutiveCockpit.jsx](frontend/src/erp/pages/ExecutiveCockpit.jsx)) — pinned at the top of the ERP sidebar above "ERP Home" for `ROLE_SETS.MANAGEMENT` (admin/finance/president). Lookup-driven backend gate `EXECUTIVE_COCKPIT_ROLES.VIEW_COCKPIT` decides whether the API answers; sidebar visibility and React-route gate use the role-set for fast UI. Subscribers add a `cfo`/`coo` role to MANAGEMENT and to the lookup row to extend without code change.
+- Backend single endpoint `GET /api/erp/cockpit` ([backend/erp/routes/cockpitRoutes.js](backend/erp/routes/cockpitRoutes.js) → [controller](backend/erp/controllers/cockpitController.js) → [service](backend/erp/services/cockpitService.js)).
+
+**Tiles (10 total, organized in two tiers)**:
+- **Tier 1 — At-a-glance**:
+  - `cash` → `BankAccount.current_balance` + `PettyCashFund.current_balance`, top-3 accounts
+  - `ar_aging` → `arEngine.getArAging(entityId, bdmId, null)` rolled to 5 buckets + over-90% + top-3 overdue hospitals
+  - `ap_aging` → `apService.getApAging(entityId)` same shape, top-3 vendors
+  - `period_close` → `monthEndClose.getCloseProgress(entityId, current_period)` → % steps complete + error count
+  - `approval_sla` → `ApprovalRequest.find({status:'PENDING'})` aggregation: pending, breached SLA (>48h), oldest age, top-5 by module
+  - `agent_health` → `AgentRun` aggregation per `agent_key` over last 30d: failing/stale counts + per-agent last status
+- **Tier 2 — Depth**:
+  - `margin` → `dashboardService.getMtd().gross_margin` (canonical, same formula the existing ERP dashboard renders)
+  - `inventory_turns` → `InventoryLedger` annualized turns + days-on-hand (entity-scoped)
+  - `partnership_funnel` → `Doctor.partnership_status` aggregation (LEAD/CONTACTED/VISITED/PARTNER counts + conversion %)
+  - `bir_calendar` → `BirFilingStatus` overdue + due-in-30d + filed-this-quarter + next-5 upcoming
+
+**Per-tile error containment** ([cockpitService.js](backend/erp/services/cockpitService.js) `getCockpit()`): every tile runs under `Promise.allSettled`. A failing tile returns `{ status: 'error', message }` — the page renders ⚠ on that one tile and renders the other 9 normally. Critical for a CEO surface that must remain available even if one upstream is degraded (e.g., the BIR table is empty for a fresh tenant — partnership_funnel still renders).
+
+**Lookup-driven role gates (Rule #3)** — three codes in `EXECUTIVE_COCKPIT_ROLES` (lazy-seeded from [SEED_DEFAULTS](backend/erp/controllers/lookupGenericController.js), 60s cache TTL via [executiveCockpitAccess.js](backend/utils/executiveCockpitAccess.js)):
+- `VIEW_COCKPIT` (default admin/finance/president) — page-level gate. `requireCockpitRole('VIEW_COCKPIT')` returns 403 with `required_scope` if the user's role isn't in the lookup row.
+- `VIEW_FINANCIAL` (default same) — controls cash/AR/AP/period-close/margin tiles. Subscribers can revoke from operations roles to keep COA confidentiality while still granting cockpit access.
+- `VIEW_OPERATIONAL` (default same) — controls approvals/inventory/agents/funnel/BIR. Branch-manager-style roles can hold this without VIEW_FINANCIAL.
+
+The controller resolves both flags via `userHasCockpitRole(req, 'VIEW_FINANCIAL' | 'VIEW_OPERATIONAL')` and only ships tiles inside the granted scopes. Frontend renders an info banner if both flags arrive false.
+
+**Cache invalidation** wired into [lookupGenericController.js](backend/erp/controllers/lookupGenericController.js) at all 4 mutation sites (create/update/remove/seedCategory) via `EXECUTIVE_COCKPIT_ROLES_CATEGORIES` set + `invalidateCockpitRolesCache(entityId)`. Same 60s TTL invariant as BIR_ROLES / SCPWD_ROLES — admin role-list edits propagate within one cache cycle, instantly on the writing instance.
+
+**Frontend pattern** ([ExecutiveCockpit.jsx](frontend/src/erp/pages/ExecutiveCockpit.jsx)):
+- 60-second auto-refresh + manual refresh button.
+- Click-through on every tile: Cash → /erp/banking, AR → /erp/collections/ar, AP → /erp/purchasing/ap, Period Close → /erp/month-end-close/:period, Approvals → /erp/approvals, Agents → /erp/agent-dashboard, Margin → /erp/pnl, Inventory → /erp/my-stock, Funnel → /admin/md-leads, BIR → /admin/bir.
+- Color thresholds for trends: AR over-90% green/<10%/yellow/<20%/red; gross margin green/≥30%, yellow/≥15%, red/<15%; inventory days-on-hand green/≤60d, yellow/≤120d, red/>120d; agent failing red, stale yellow.
+- Tier-2 banner copy explains scope-level access and points users to Control Center → Lookup Tables for role edits ([WORKFLOW_GUIDES['cockpit']](frontend/src/erp/components/WorkflowGuide.jsx)).
+
+**Subscription-readiness posture** (Rule #0d):
+- Every tile query is `entity_id`-scoped (the eventual `tenant_id`). No cross-entity bleed.
+- Hardcoded role names appear ONLY in the helper's `DEFAULT_*` arrays, used as fallbacks if the Lookup row is missing or empty (lazy-seed catches this on first read).
+- New tile = new entry in `TILES` registry inside `getCockpit()`. No schema change, no new route.
+- New scope = new code in `EXECUTIVE_COCKPIT_ROLES` lookup + new getter in [executiveCockpitAccess.js](backend/utils/executiveCockpitAccess.js). Subscribers extend without a code change once the helper is generic — currently the helper hard-codes 3 codes, mirroring birAccess.js. If we hit a fourth, refactor to a code → defaults map (one-liner change).
+- AR aging tile honors Rule #21: privileged users get entity-wide AR by passing `null` bdm_id. Never silently falls back to `req.bdmId` (which would be the privileged user's own user-id, not a BDM, returning empty results).
+
+**Files touched (8 new + 4 modified)**:
+- new: [backend/utils/executiveCockpitAccess.js](backend/utils/executiveCockpitAccess.js)
+- new: [backend/erp/services/cockpitService.js](backend/erp/services/cockpitService.js)
+- new: [backend/erp/controllers/cockpitController.js](backend/erp/controllers/cockpitController.js)
+- new: [backend/erp/routes/cockpitRoutes.js](backend/erp/routes/cockpitRoutes.js)
+- new: [backend/scripts/healthcheckExecutiveCockpit.js](backend/scripts/healthcheckExecutiveCockpit.js) — 42 wiring assertions, exit code = 0 when clean.
+- new: [frontend/src/erp/pages/ExecutiveCockpit.jsx](frontend/src/erp/pages/ExecutiveCockpit.jsx)
+- new: [frontend/src/erp/hooks/useCockpit.js](frontend/src/erp/hooks/useCockpit.js)
+- modified: [backend/erp/controllers/lookupGenericController.js](backend/erp/controllers/lookupGenericController.js) — `EXECUTIVE_COCKPIT_ROLES` SEED_DEFAULTS row + 4 invalidation hooks
+- modified: [backend/erp/routes/index.js](backend/erp/routes/index.js) — mounts `/cockpit` after `/dashboard`
+- modified: [frontend/src/App.jsx](frontend/src/App.jsx) — lazy import + ROLE_SETS.MANAGEMENT route guard
+- modified: [frontend/src/components/common/Sidebar.jsx](frontend/src/components/common/Sidebar.jsx) — pin Executive Cockpit at top for management roles
+- modified: [frontend/src/erp/components/WorkflowGuide.jsx](frontend/src/erp/components/WorkflowGuide.jsx) — `WORKFLOW_GUIDES['cockpit']` banner
+
+**Wiring verified**:
+- [healthcheck](backend/scripts/healthcheckExecutiveCockpit.js): `node backend/scripts/healthcheckExecutiveCockpit.js` → 42/42 ✓ (access helper exports, lookup invalidation at all 4 sites, SEED_DEFAULTS rows for VIEW_COCKPIT/FINANCIAL/OPERATIONAL, service exports getCockpit + 10 tile getters + Promise.allSettled, controller resolves both scopes, route applies requireCockpitRole, routes/index.js mounts /cockpit, App.jsx lazy import + ROLE_SETS.MANAGEMENT, Sidebar pin, WORKFLOW_GUIDES entry).
+- Backend syntax: `node -c` green on all 8 backend files (helper, service, controller, route, lookupGenericController, routes/index, healthcheck).
+- Frontend syntax: `esbuild.transformSync` (the same parser Vite uses) green on all 5 frontend files (ExecutiveCockpit.jsx, useCockpit.js, WorkflowGuide.jsx, Sidebar.jsx, App.jsx).
+- **Vite full bundle: NOT verified inside the worktree** (Vite walks up `.worktrees/executive-cockpit` → `.worktrees` → `vip-pharmacy-crm` to find a project root and lands on the main repo's root `node_modules` which doesn't have vite installed — junctions don't help because Vite resolves real paths). Run `npm run build` from `frontend/` after merging this branch to dev to confirm — esbuild parse + healthcheck wiring leave a low residual risk, but it's not zero.
+- **Playwright UI smoke: deferred** — same blocker (no live dev server in the worktree). Smoke checklist queued for after merge: (1) login as `yourpartner@viosintegrated.net` → sidebar shows "Executive Cockpit" at top → (2) /erp/cockpit renders Tier-1 grid and Tier-2 grid → (3) auto-refresh ticks at 60s without console error → (4) tile click-through navigates to detail page → (5) login as a non-management role (`s3.vippharmacy@gmail.com` BDM) → /erp/cockpit returns 403 from API and the React route guard hides the link.
+
+**Known follow-ups**:
+- Healthcheck integration into the global `npm run healthcheck` runner (if/when one exists). Standalone-runnable today.
+- A future "tile-level preferences" surface (drag-to-reorder, per-user pin/hide) would be the natural next step once subscribers ask. Not built today — single ordered render keeps the page bulletproof and free of state-store overhead.
+- Cockpit AGREES with detail pages by construction (it calls the same aggregators). If a tile shows wrong numbers, the bug is in the underlying service — not in cockpit roll-up. Worth restating in any future bug-triage path.

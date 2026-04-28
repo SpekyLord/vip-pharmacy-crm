@@ -152,6 +152,11 @@ const buildCorsOptions = () => ({
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id', 'X-Entity-Id', 'X-Idempotency-Key'],
+  // Phase VIP-1.J / J1 — exposed so the browser can read these on
+  // BIR form CSV exports (Content-Disposition for the filename and
+  // X-Content-Hash for the audit-trail SHA-256). Add new exposed
+  // headers here when a new export route surfaces them.
+  exposedHeaders: ['Content-Disposition', 'X-Content-Hash'],
 });
 
 const createRateLimiters = () => {
@@ -333,6 +338,11 @@ const createApp = () => {
   app.use('/api/invites', userLimiter, require('./routes/inviteRoutes'));
   app.use('/api/message-templates', userLimiter, require('./routes/messageTemplateRoutes'));
   app.use('/api/sent', userLimiter, require('./routes/sentRoutes'));
+  // ═══ Phase A.5.5 — Admin VIP-Client (MD) Merge Tool ═══
+  // Lookup-gated via VIP_CLIENT_LIFECYCLE_ROLES; default admin/president.
+  // Cascades 13+ FK references across CRM + ERP collections; soft-deletes
+  // the loser with 30-day rollback grace before cron hard-deletes.
+  app.use('/api/admin/md-merge', userLimiter, require('./routes/doctorMergeRoutes'));
   app.use('/api/erp', userLimiter, require('./erp/routes'));
   // ═══ CLM — Closed Loop Marketing (Partnership Presentation) ═══
   app.use('/api/clm', userLimiter, require('./routes/clmRoutes'));

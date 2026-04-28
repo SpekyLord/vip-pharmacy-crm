@@ -7905,7 +7905,7 @@ docs/PHASETASK-ERP.md                                       (this section)
 ### Why deferred (not blocking)
 - Phase 37 closed the immediate UX bug. Admins can SEE what's scoped and toggle out of it; the wrong-roster confusion is gone.
 - Day-to-day operations are driven by `User` + Functional Role Assignments + Approval Hub, not direct PeopleMaster reads. Drift hasn't bitten anyone yet.
-- The CRM has the **identical pattern** queued as Phase A.5 (canonical VIP Client merge — "one human, multiple records"). Per memory: A.5.5 ships the merge tool, A.5.2 flips the unique index. **Reuse Phase A.5.5's merge UX** for PeopleMaster — building two merge tools is wasteful.
+- The CRM has the **identical pattern** queued as Phase A.5 (canonical VIP Client merge — "one human, multiple records"). **Phase A.5.5 SHIPPED Apr 28 2026** — admin tool at [/admin/md-merge](../frontend/src/pages/admin/MdMergePage.jsx); manifest-driven cascade in [backend/services/doctorMergeService.js](../backend/services/doctorMergeService.js); audit model [DoctorMergeAudit](../backend/models/DoctorMergeAudit.js); lookup-gated via `VIP_CLIENT_LIFECYCLE_ROLES` ([resolveVipClientLifecycleRole.js](../backend/utils/resolveVipClientLifecycleRole.js)). Phase 38b should **fork the same service shape** — `buildCascadeManifest()` + `applySimple/applyNestedArray/etc.` — but swap the FK target list to PeopleMaster's. Building two merge tools is wasteful.
 
 ### Plan (5 sub-phases)
 
@@ -8870,9 +8870,9 @@ Backend:
 
 ---
 
-## Phase VIP-1.J — BIR Tax Compliance Suite (J0 SHIPPED + SMOKE-PASSED Apr 27 2026; J1-J7 deferred)
+## Phase VIP-1.J — BIR Tax Compliance Suite (J0 SHIPPED + SMOKE-PASSED Apr 27 2026; J1 SHIPPED Apr 28 2026; J2-J7 deferred)
 
-**Sequence**: J0 (foundation) ✅ -> J1 (VAT) ⬅ START HERE -> J2 (EWT) -> J3 (Compensation) -> J4 (Annual Alphalists) -> J5 (Books of Accounts) -> J6 (Inbound 2307) -> J7 (1702 Annual Income Tax)
+**Sequence**: J0 (foundation) ✅ -> J1 (VAT) ✅ -> J2 (EWT) ⬅ START HERE -> J3 (Compensation) -> J4 (Annual Alphalists) -> J5 (Books of Accounts) -> J6 (Inbound 2307) -> J7 (1702 Annual Income Tax)
 
 ### J0 — Compliance Dashboard + Foundation (~3-4 days) — ✅ SHIPPED + SMOKE-PASSED
 
@@ -8918,8 +8918,49 @@ Commits `80b2798` + `68c711d` on `origin/dev` (Apr 27 13:28 + 13:41 PHT). Live H
 - `scripts/check-system-health.js` extended with BIR section (file count + lookup category presence + access helper presence).
 - `<PageGuide pageKey="bir-compliance" />` entry added with title/steps/tip explaining heatmap colors, drill-down, and the J0 vs J1+ deliverable boundary.
 
-### J1 — 2550M Monthly + 2550Q Quarterly VAT (~2 days)
-Wrap existing `vatService.computeVatReturn2550Q()` with `compute2550M({entityId, year, month})`. Page per BIR box (Vatable / Zero-Rated / Exempt / Sales to Government / Output VAT / Input VAT / Net Payable). Includes RA 11534 VAT-exempt classification on Product. Period-lock on Mark FILED.
+### J1 — 2550M Monthly + 2550Q Quarterly VAT (~2 days) — ✅ SHIPPED Apr 28 2026 (uncommitted on dev)
+
+**J1.1 vatReturnService aggregator** (`backend/erp/services/vatReturnService.js`) — ✅ shipped
+- `compute2550M({ entityId, year, month })` returns 10-box BIR layout (13A/14A/15A/16A/17A/18A/20A/20B/20G/22A) + meta (source counts, computed_at, pending_j11 flags).
+- `compute2550Q({ entityId, year, quarter })` aggregates the three monthly periods.
+- Pulls VatLedger OUTPUT/INPUT (`finance_tag='INCLUDE'`) + SalesBookSCPWD POSTED rows. Carryover (20A) reads previous-period BirFilingStatus totals_snapshot.
+- `exportFormCsv(...)` SHA-256-hashes the CSV bytes, appends to `BirFilingStatus.export_audit_log`, refreshes `totals_snapshot` so the dashboard heatmap stays current.
+- Box layout is BIR-fixed (RR 16-2005 + TRAIN), inlined as a constant — NOT lookup-driven.
+
+**J1.2 Controller endpoints** (`backend/erp/controllers/birController.js`) — ✅ shipped
+- `compute2550M` / `compute2550Q` — VIEW_DASHBOARD scope (lookup-driven via birAccess).
+- `exportVatReturnCsv` — EXPORT_FORM scope. Sets Content-Disposition + X-Content-Hash response headers; logs `[BIR_EXPORT_VAT_RETURN]` for ops audit.
+
+**J1.3 Routes** (`backend/erp/routes/birRoutes.js`) — ✅ shipped
+- `GET /forms/2550M/:year/:month/compute`
+- `GET /forms/2550Q/:year/:quarter/compute`
+- `GET /forms/:formCode/:year/:period/export.csv`
+- All three declared BEFORE the catch-all `GET /forms/:id` so Express routes correctly. Health check enforces ordering.
+
+**J1.4 CORS exposed-headers** (`backend/server.js`) — ✅ shipped
+- Added `Content-Disposition` + `X-Content-Hash` to `buildCorsOptions().exposedHeaders` so axios can read filename + hash on the CSV response. Without this, production behind real CORS silently drops the headers.
+
+**J1.5 Frontend page** (`frontend/src/pages/admin/BirVatReturnDetailPage.jsx`) — ✅ shipped
+- Routes: `/admin/bir/2550M/:year/:month` and `/admin/bir/2550Q/:year/:quarter`.
+- One copyable card per BIR box, grouped by section (SALES → OUTPUT → INPUT → PAYABLE) preserving eBIRForms 7.x flow.
+- Lifecycle buttons (Mark Reviewed / Mark Filed / Mark Confirmed) call J0 endpoints.
+- Export CSV via synthetic `<a>` + `URL.createObjectURL`. Toast surfaces filename + first 12 hex of content hash.
+- Export audit log displayed inline (last 10 entries) for traceability.
+
+**J1.6 Service hooks + heatmap navigation** — ✅ shipped
+- `frontend/src/erp/services/birService.js`: `compute2550M`, `compute2550Q`, `exportVatReturnCsv` (uses `responseType: 'blob'`).
+- `frontend/src/pages/admin/BIRCompliancePage.jsx`: heatmap cells for 2550M/Q are role="button" + keyboard-accessible; navigate to detail page on click. Other forms remain visual-only until J2+ ships.
+
+**J1.7 PageGuide entry** (`frontend/src/components/common/PageGuide.jsx`) — ✅ shipped
+- New key `bir-vat-return` with 6 steps + 3 next-links + tip explaining J1.1 stubs.
+
+**J1.8 Health check** (`backend/scripts/healthcheckBirVatReturnWiring.js`) — ✅ shipped
+- 39 assertions across 12 sections. Verified passing Apr 28 2026: `node backend/scripts/healthcheckBirVatReturnWiring.js` → `✓ All Phase VIP-1.J / J1 wiring checks passed`.
+
+**Open follow-ups (not blocking J2)**:
+- **J1.1.x — customer-type joins**: 14A (zero-rated) + 16A (government) currently stub at 0. Wire `Sale.customer.vat_status='ZERO_RATED'` + `Customer.customer_type='GOVERNMENT'` joins. UI surfaces a yellow `pending_j11` warning so bookkeeper knows to manually adjust.
+- **J1.2.x — eBIRForms XML import**: stretch goal once bookkeeper confirms format stability.
+- **J1.3.x — golden-file fixture tests**: lock CSV byte format with snapshot in `backend/erp/services/__fixtures__/`.
 
 ### J2 — 1601-EQ + 1606 + Outbound 2307 + SAWT (~3 days)
 New `WithholdingLedger` model (direction OUTBOUND, ATC code, payee, period). Engine triggers on Payroll post (contractors, when active) + Expense post (rent line). 1601-EQ + 1606 copy-paste pages. Outbound 2307 PDF per contractor per quarter. SAWT `.dat` writer with golden-file fixtures. Withholding Posture card on dashboard. PS-eligibility auto-flip.

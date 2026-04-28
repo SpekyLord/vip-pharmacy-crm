@@ -78,10 +78,15 @@ const CLMSessionsPage = lazyRetry(() => import('./pages/admin/CLMSessionsPage'))
 const ClmBrandingPage = lazyRetry(() => import('./pages/admin/ClmBrandingPage'));
 // Phase VIP-1.A — MD Partner Lead Pipeline
 const MdLeadsPage = lazyRetry(() => import('./pages/admin/MdLeadsPage'));
+// Phase A.5.5 — Canonical VIP-Client (MD) Merge Tool. Lookup-gated via
+// VIP_CLIENT_LIFECYCLE_ROLES; cascades 13+ FK references across CRM + ERP.
+const MdMergePage = lazyRetry(() => import('./pages/admin/MdMergePage'));
 // Phase VIP-1.H — SC/PWD Sales Book + BIR exports (RA 9994 + RR 7-2010)
 const SCPWDSalesBookPage = lazyRetry(() => import('./pages/admin/SCPWDSalesBookPage'));
 // Phase VIP-1.J — BIR Compliance Dashboard (12+ forms, accountant view)
 const BIRCompliancePage = lazyRetry(() => import('./pages/admin/BIRCompliancePage'));
+// Phase VIP-1.J / J1 — 2550M / 2550Q VAT return form-detail page
+const BirVatReturnDetailPage = lazyRetry(() => import('./pages/admin/BirVatReturnDetailPage'));
 // Phase VIP-1.B Phase 4 — Rebate + Commission matrix admin + Payout ledger
 const RebateMatrixPage = lazyRetry(() => import('./pages/admin/RebateMatrixPage'));
 const NonMdRebateMatrixPage = lazyRetry(() => import('./pages/admin/NonMdRebateMatrixPage'));
@@ -193,6 +198,9 @@ const Collaterals = lazyRetry(() => import('./erp/pages/Collaterals'));
 // Phase 24 — ERP Control Center + Agent Intelligence
 const ControlCenter = lazyRetry(() => import('./erp/pages/ControlCenter'));
 const AgentDashboard = lazyRetry(() => import('./erp/pages/AgentDashboard'));
+
+// Phase EC-1 — Executive Cockpit (CFO/CEO/COO at-a-glance)
+const ExecutiveCockpit = lazyRetry(() => import('./erp/pages/ExecutiveCockpit'));
 
 // Phase 28 — Approval Workflow
 const ApprovalManager = lazyRetry(() => import('./erp/pages/ApprovalManager'));
@@ -575,6 +583,19 @@ function App() {
             }
           />
 
+          {/* Phase A.5.5 — Canonical VIP-Client (MD) Merge Tool. Route guard
+              is admin-like (CRM admin pages are ROLE_SETS.ADMIN_ONLY today);
+              backend doctorMergeController re-checks via VIP_CLIENT_LIFECYCLE_ROLES
+              lookup per action (view / execute / rollback / hard-delete). */}
+          <Route
+            path="/admin/md-merge"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_ONLY}>
+                <MdMergePage />
+              </ProtectedRoute>
+            }
+          />
+
           {/* Phase VIP-1.H — SC/PWD Sales Book + BIR exports. Route guard is
               admin-like to keep customer SC/PWD IDs off BDM eyeballs; backend
               endpoints layer on lookup-driven SCPWD_ROLES per gate (view /
@@ -601,6 +622,18 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.BIR_FILING}>
                 <BIRCompliancePage />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Phase VIP-1.J / J1 — 2550M / 2550Q form-detail page.
+              Same BIR_FILING role-set guard; backend layers VIEW_DASHBOARD +
+              EXPORT_FORM scopes per route via birAccess.userHasBirRole(). */}
+          <Route
+            path="/admin/bir/:formCode/:year/:period"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BIR_FILING}>
+                <BirVatReturnDetailPage />
               </ProtectedRoute>
             }
           />
@@ -1041,6 +1074,8 @@ function App() {
           {/* Phase 24 — ERP Control Center + Agent Intelligence */}
           <Route path="/erp/control-center" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><ControlCenter /></ProtectedRoute>} />
           <Route path="/erp/agent-dashboard" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><AgentDashboard /></ProtectedRoute>} />
+          {/* Phase EC-1 — Executive Cockpit. ROLE_SETS.MANAGEMENT covers admin/finance/president; the controller defers to lookup-driven VIEW_COCKPIT for fine-grained access (Rule #3). */}
+          <Route path="/erp/cockpit" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><ExecutiveCockpit /></ProtectedRoute>} />
           <Route path="/erp/approvals" element={<ProtectedRoute requiredErpModule="approvals"><ApprovalManager /></ProtectedRoute>} />
           <Route path="/erp/role-assignments" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><RoleAssignmentManager /></ProtectedRoute>} />
 

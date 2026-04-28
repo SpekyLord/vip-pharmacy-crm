@@ -11,10 +11,11 @@ import { useAuth } from '../../hooks/useAuth';
 import { ROLES } from '../../constants/roles';
 import api from '../../services/api';
 import messageService from '../../services/messageInboxService';
-import { Bot, CheckCircle, AlertTriangle, XCircle, Clock, TrendingUp, Calendar, ShieldAlert, DollarSign, FileSearch, Package, CreditCard, FileWarning, Camera, MapPin, Zap, Wallet, LineChart, ShoppingBag, CalendarClock, Users, Database, PackageCheck, Rocket, Target, TrendingDown, BarChart3, Mail } from 'lucide-react';
+import { Bot, CheckCircle, AlertTriangle, XCircle, Clock, TrendingUp, Calendar, ShieldAlert, DollarSign, FileSearch, Package, CreditCard, FileWarning, Camera, MapPin, Zap, Wallet, LineChart, ShoppingBag, CalendarClock, Users, Database, PackageCheck, Rocket, Target, TrendingDown, BarChart3, Mail, X, ExternalLink } from 'lucide-react';
 import WorkflowGuide from '../components/WorkflowGuide';
 import { showError, showSuccess } from '../utils/errorToast';
 import Pagination from '../../components/common/Pagination';
+import { useLookupOptions } from '../hooks/useLookups';
 
 const pageStyles = `
   .agd-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -53,18 +54,30 @@ const pageStyles = `
   .agd-finding::before { content: '•'; color: var(--erp-accent); font-weight: 700; }
 
   .agd-msg-feed { display: flex; flex-direction: column; gap: 10px; }
-  .agd-msg { padding: 12px 16px; background: var(--erp-bg); border-radius: 10px; border-left: 3px solid var(--erp-accent); }
-  .agd-msg-title { font-size: 13px; font-weight: 600; color: var(--erp-text); margin-bottom: 4px; }
+  .agd-msg { padding: 12px 16px; background: var(--erp-bg); border-radius: 10px; border-left: 3px solid var(--erp-accent); cursor: pointer; transition: background 0.12s, transform 0.12s; position: relative; }
+  .agd-msg:hover { background: var(--erp-accent-soft, #e8efff); transform: translateX(2px); }
+  .agd-msg-unread { font-weight: 700; }
+  .agd-msg-unread::after { content: ''; position: absolute; top: 14px; right: 14px; width: 8px; height: 8px; border-radius: 50%; background: var(--erp-accent, #1e5eff); }
+  .agd-msg-title { font-size: 13px; font-weight: 600; color: var(--erp-text); margin-bottom: 4px; padding-right: 18px; }
   .agd-msg-body { font-size: 12px; color: var(--erp-muted); line-height: 1.5; max-height: 80px; overflow: hidden; }
   .agd-msg-meta { font-size: 11px; color: #94a3b8; margin-top: 6px; }
   .agd-msg-cat { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 600; margin-right: 6px; }
-  .agd-msg-cat-coaching { background: #dbeafe; color: #1e40af; }
-  .agd-msg-cat-schedule { background: #dcfce7; color: #166534; }
-  .agd-msg-cat-alert { background: #fee2e2; color: #991b1b; }
 
-  .agd-tabs { display: flex; gap: 4px; margin-bottom: 14px; }
-  .agd-tab { padding: 6px 14px; border-radius: 6px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; background: var(--erp-bg); color: var(--erp-muted); }
-  .agd-tab.active { background: var(--erp-accent); color: #fff; }
+  .agd-helper-note { font-size: 12px; color: var(--erp-muted); margin: -6px 0 12px; padding: 8px 12px; background: var(--erp-accent-soft, #e8efff); border-radius: 6px; border-left: 3px solid var(--erp-accent, #1e5eff); }
+  .agd-helper-note a { color: var(--erp-accent); text-decoration: underline; }
+
+  .agd-modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.55); display: flex; align-items: flex-start; justify-content: center; z-index: 100; padding: 40px 16px; overflow-y: auto; }
+  .agd-modal { background: #fff; border-radius: 14px; max-width: 640px; width: 100%; box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25); display: flex; flex-direction: column; max-height: calc(100vh - 80px); }
+  .agd-modal-header { padding: 18px 22px 14px; border-bottom: 1px solid var(--erp-border); display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .agd-modal-header h3 { margin: 0; font-size: 16px; font-weight: 700; color: var(--erp-text); line-height: 1.4; }
+  .agd-modal-close { background: transparent; border: none; cursor: pointer; padding: 4px; border-radius: 6px; color: var(--erp-muted); flex-shrink: 0; }
+  .agd-modal-close:hover { background: var(--erp-bg); color: var(--erp-text); }
+  .agd-modal-meta { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 22px; border-bottom: 1px solid var(--erp-border); background: var(--erp-bg); font-size: 12px; color: var(--erp-muted); }
+  .agd-modal-meta strong { color: var(--erp-text); font-weight: 600; }
+  .agd-modal-body { padding: 18px 22px; overflow-y: auto; font-size: 13px; line-height: 1.6; color: var(--erp-text); white-space: pre-wrap; word-break: break-word; }
+  .agd-modal-footer { padding: 12px 22px; border-top: 1px solid var(--erp-border); display: flex; justify-content: flex-end; gap: 8px; }
+  .agd-modal-footer .agd-link-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--erp-border); background: #fff; color: var(--erp-accent); font-size: 12px; font-weight: 600; text-decoration: none; cursor: pointer; }
+  .agd-modal-footer .agd-link-btn:hover { background: var(--erp-accent-soft); }
 
   .agd-empty { text-align: center; padding: 40px; color: var(--erp-muted); font-size: 13px; }
   .agd-loading { text-align: center; padding: 40px; color: var(--erp-muted); }
@@ -140,8 +153,31 @@ function prettifyKey(k) {
   return String(k).replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-const CAT_LABELS = { ai_coaching: 'Coaching', ai_schedule: 'Schedule', ai_alert: 'Alert' };
-const CAT_CSS = { ai_coaching: 'coaching', ai_schedule: 'schedule', ai_alert: 'alert' };
+// Phase G9.R10 — category display metadata is lookup-driven via the
+// AGENT_MESSAGE_CATEGORIES Lookup category (Rule #3 — subscription-ready).
+// CAT_FALLBACK is the static safety net so a Lookup outage never leaves the
+// page with unlabelled / uncolored category pills. Codes match the
+// MessageInbox.category enum exactly.
+const CAT_FALLBACK = {
+  ai_coaching: { label: 'Coaching', bg: '#dbeafe', fg: '#1e40af', leftBorder: '#6366f1' },
+  ai_schedule: { label: 'Schedule', bg: '#dcfce7', fg: '#166534', leftBorder: '#10b981' },
+  ai_alert:    { label: 'Alert',    bg: '#fee2e2', fg: '#991b1b', leftBorder: '#ef4444' },
+};
+const ALL_AGENT_CATEGORIES = Object.keys(CAT_FALLBACK).join(',');
+
+function getCatMeta(code, lookupOptions) {
+  const fromLookup = lookupOptions?.find((o) => o.code === code);
+  if (fromLookup) {
+    const m = fromLookup.metadata || {};
+    return {
+      label: fromLookup.label || CAT_FALLBACK[code]?.label || code,
+      bg: m.bg || CAT_FALLBACK[code]?.bg || '#f1f5f9',
+      fg: m.fg || CAT_FALLBACK[code]?.fg || '#475569',
+      leftBorder: m.fg || CAT_FALLBACK[code]?.leftBorder || '#94a3b8',
+    };
+  }
+  return CAT_FALLBACK[code] || { label: code, bg: '#f1f5f9', fg: '#475569', leftBorder: '#94a3b8' };
+}
 
  
 function StatusBadge({ status }) {
@@ -157,13 +193,16 @@ function fmtDate(d) { return d ? new Date(d).toLocaleString('en-PH', { month: 's
 const RUNS_PER_PAGE = 20;
 const EMPTY_FILTERS = { agent_key: '', status: '', from: '', to: '' };
 
+// Phase G9.R10 — message-feed pagination + filters, parallel to runs.
+const MSGS_PER_PAGE = 15;
+const EMPTY_MSG_FILTERS = { category: '', from: '', to: '' };
+
 export default function AgentDashboard() {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
   const [runs, setRuns] = useState([]);
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [msgTab, setMsgTab] = useState('all');
   const [runningAgent, setRunningAgent] = useState(null);
   // Phase G8 — agent list sourced from backend registry (no hardcoded list).
   // Each entry: { key, label, type: 'AI'|'FREE' }. UI metadata joined from
@@ -175,6 +214,19 @@ export default function AgentDashboard() {
   const [runPage, setRunPage] = useState(1);
   const [runTotal, setRunTotal] = useState(0);
   const [runsLoading, setRunsLoading] = useState(false);
+
+  // Phase G9.R10 — messages section now mirrors runs: server-side filter +
+  // pagination + click-to-view modal. msgTab is replaced by msgFilters.category
+  // (server-side filter) so the source of truth is one query string.
+  const [msgFilters, setMsgFilters] = useState(EMPTY_MSG_FILTERS);
+  const [msgPage, setMsgPage] = useState(1);
+  const [msgTotal, setMsgTotal] = useState(0);
+  const [msgLoading, setMsgLoading] = useState(false);
+  const [selectedMessage, setSelectedMessage] = useState(null);
+
+  // Lookup-driven category metadata (Rule #3). Falls back to CAT_FALLBACK
+  // when the category is empty (Lookup outage / fresh tenant).
+  const { options: catLookupOptions } = useLookupOptions('AGENT_MESSAGE_CATEGORIES');
 
   const isPresidentOrAdmin = [ROLES.PRESIDENT, ROLES.ADMIN].includes(user?.role);
 
@@ -197,6 +249,32 @@ export default function AgentDashboard() {
     setRunsLoading(false);
   }, []);
 
+  // Phase G9.R10 — agent messages loader. Mirrors loadRuns but hits
+  // /api/messages with the agent-category multi-filter as the constant base.
+  // The user-controlled filters (category single-select, date range) layer on
+  // top. If category single-select is empty we fall back to the full set so
+  // "All" shows ai_coaching + ai_schedule + ai_alert.
+  const loadMessages = useCallback(async (page, filters) => {
+    setMsgLoading(true);
+    try {
+      const params = {
+        page,
+        limit: MSGS_PER_PAGE,
+        category: filters.category || ALL_AGENT_CATEGORIES,
+      };
+      if (filters.from) params.from = filters.from;
+      if (filters.to) params.to = filters.to;
+      const res = await messageService.getAll(params);
+      setMessages(res?.data || []);
+      setMsgTotal(res?.pagination?.total || 0);
+    } catch (err) {
+      console.error('[AgentDashboard.loadMessages]', err.message);
+      setMessages([]);
+      setMsgTotal(0);
+    }
+    setMsgLoading(false);
+  }, []);
+
   const handleRunNow = async (agentKey) => {
     if (runningAgent) return;
     setRunningAgent(agentKey);
@@ -214,13 +292,11 @@ export default function AgentDashboard() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [statsRes, msgRes, regRes] = await Promise.all([
+      const [statsRes, regRes] = await Promise.all([
         api.get('/erp/agents/runs/stats'),
-        messageService.getAll({ category: 'ai_coaching,ai_schedule,ai_alert', limit: 20 }),
         api.get('/erp/agents/registry'),
       ]);
       setStats(statsRes.data?.data || null);
-      setMessages(msgRes.data || []);
       setRegistry(Array.isArray(regRes.data?.data) ? regRes.data.data : []);
     } catch (err) {
       console.error('[AgentDashboard]', err.message);
@@ -230,6 +306,7 @@ export default function AgentDashboard() {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadRuns(runPage, runFilters); }, [loadRuns, runPage, runFilters]);
+  useEffect(() => { loadMessages(msgPage, msgFilters); }, [loadMessages, msgPage, msgFilters]);
 
   const updateFilter = (key, value) => {
     setRunPage(1);
@@ -242,7 +319,33 @@ export default function AgentDashboard() {
   const hasActiveFilters = runFilters.agent_key || runFilters.status || runFilters.from || runFilters.to;
   const runPages = Math.max(1, Math.ceil(runTotal / RUNS_PER_PAGE));
 
-  const filteredMsgs = msgTab === 'all' ? messages : messages.filter(m => m.category === msgTab);
+  // Phase G9.R10 — message filter + modal handlers.
+  const updateMsgFilter = (key, value) => {
+    setMsgPage(1);
+    setMsgFilters((prev) => ({ ...prev, [key]: value }));
+  };
+  const resetMsgFilters = () => {
+    setMsgPage(1);
+    setMsgFilters(EMPTY_MSG_FILTERS);
+  };
+  const hasActiveMsgFilters = msgFilters.category || msgFilters.from || msgFilters.to;
+  const msgPages = Math.max(1, Math.ceil(msgTotal / MSGS_PER_PAGE));
+
+  const openMessage = async (m) => {
+    setSelectedMessage(m);
+    // Mark as read when opening — matches inbox UX. Best-effort; if the user
+    // is already in readBy or the call fails, we still show the modal.
+    if (!m.read) {
+      try {
+        await messageService.markRead(m._id);
+        setMessages((prev) => prev.map((x) => (x._id === m._id ? { ...x, read: true } : x)));
+      } catch (err) {
+        // Silent — read state is cosmetic on a monitor view
+        console.warn('[AgentDashboard.markRead]', err.message);
+      }
+    }
+  };
+  const closeMessage = () => setSelectedMessage(null);
 
   return (
     <div className="agd-page">
@@ -455,29 +558,133 @@ export default function AgentDashboard() {
 
               {/* Agent Messages Feed */}
               <div className="agd-section">
-                <h2>Agent Messages</h2>
-                <div className="agd-tabs">
-                  {[['all', 'All'], ['ai_coaching', 'Coaching'], ['ai_schedule', 'Schedules'], ['ai_alert', 'Alerts']].map(([key, label]) => (
-                    <button key={key} className={`agd-tab ${msgTab === key ? 'active' : ''}`} onClick={() => setMsgTab(key)}>{label}</button>
-                  ))}
+                <h2>
+                  Agent Messages
+                  {msgTotal > 0 && <span style={{ fontSize: 12, fontWeight: 500, color: '#64748b', marginLeft: 8 }}>({msgTotal} total)</span>}
+                </h2>
+
+                <div className="agd-helper-note">
+                  Read-only mirror of agent-generated alerts in your inbox. Click any row to read the full message — opening will mark it read.
+                  {' '}
+                  Use the <a href="/erp/inbox">Inbox</a> to acknowledge, reply, or archive.
                 </div>
-                {filteredMsgs.length === 0 ? (
-                  <div className="agd-empty">No agent messages yet.</div>
-                ) : (
-                  <div className="agd-msg-feed">
-                    {filteredMsgs.slice(0, 10).map(m => (
-                      <div className="agd-msg" key={m._id} style={{ borderLeftColor: m.category === 'ai_alert' ? '#ef4444' : m.category === 'ai_schedule' ? '#10b981' : '#6366f1' }}>
-                        <div className="agd-msg-title">
-                          <span className={`agd-msg-cat agd-msg-cat-${CAT_CSS[m.category] || 'coaching'}`}>{CAT_LABELS[m.category] || m.category}</span>
-                          {m.title}
-                        </div>
-                        <div className="agd-msg-body">{m.body?.slice(0, 200)}{m.body?.length > 200 ? '...' : ''}</div>
-                        <div className="agd-msg-meta">{fmtDate(m.createdAt)} • {m.recipientRole} {m.recipientUserId ? '(targeted)' : '(broadcast)'}</div>
-                      </div>
-                    ))}
+
+                <div className="agd-filters">
+                  <div className="agd-filter">
+                    <label htmlFor="agd-mf-cat">Category</label>
+                    <select id="agd-mf-cat" value={msgFilters.category} onChange={(e) => updateMsgFilter('category', e.target.value)}>
+                      <option value="">All categories</option>
+                      {Object.keys(CAT_FALLBACK).map((code) => {
+                        const meta = getCatMeta(code, catLookupOptions);
+                        return <option key={code} value={code}>{meta.label}</option>;
+                      })}
+                    </select>
                   </div>
+                  <div className="agd-filter">
+                    <label htmlFor="agd-mf-from">From</label>
+                    <input id="agd-mf-from" type="date" value={msgFilters.from} onChange={(e) => updateMsgFilter('from', e.target.value)} />
+                  </div>
+                  <div className="agd-filter">
+                    <label htmlFor="agd-mf-to">To</label>
+                    <input id="agd-mf-to" type="date" value={msgFilters.to} onChange={(e) => updateMsgFilter('to', e.target.value)} />
+                  </div>
+                  {hasActiveMsgFilters && (
+                    <button type="button" className="agd-filter-btn" onClick={resetMsgFilters}>Reset</button>
+                  )}
+                </div>
+
+                {msgLoading ? (
+                  <div className="agd-loading">Loading messages...</div>
+                ) : messages.length === 0 ? (
+                  <div className="agd-empty">
+                    {hasActiveMsgFilters
+                      ? 'No agent messages match the current filters.'
+                      : 'No agent messages yet. They will appear here as agents run on schedule.'}
+                  </div>
+                ) : (
+                  <>
+                    <div className="agd-msg-feed">
+                      {messages.map((m) => {
+                        const meta = getCatMeta(m.category, catLookupOptions);
+                        const isUnread = !m.read;
+                        return (
+                          <div
+                            className={`agd-msg ${isUnread ? 'agd-msg-unread' : ''}`}
+                            key={m._id}
+                            style={{ borderLeftColor: meta.leftBorder }}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => openMessage(m)}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openMessage(m); } }}
+                          >
+                            <div className="agd-msg-title">
+                              <span className="agd-msg-cat" style={{ background: meta.bg, color: meta.fg }}>{meta.label}</span>
+                              {m.title}
+                            </div>
+                            <div className="agd-msg-body">{m.body?.slice(0, 200)}{m.body?.length > 200 ? '...' : ''}</div>
+                            <div className="agd-msg-meta">
+                              {fmtDate(m.createdAt)} • {m.recipientRole}
+                              {m.recipientUserId ? ' (targeted)' : ' (broadcast)'}
+                              {' • '}
+                              <span style={{ color: m.priority === 'high' || m.priority === 'urgent' ? '#dc2626' : '#94a3b8' }}>
+                                {m.priority || 'normal'}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <Pagination
+                      page={msgPage}
+                      pages={msgPages}
+                      total={msgTotal}
+                      onPageChange={setMsgPage}
+                    />
+                  </>
                 )}
               </div>
+
+              {/* Phase G9.R10 — Click-to-view modal. Read-only on this page;
+                   for ack/reply/archive the user goes to /erp/inbox. */}
+              {selectedMessage && (() => {
+                const meta = getCatMeta(selectedMessage.category, catLookupOptions);
+                return (
+                  <div
+                    className="agd-modal-overlay"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="agd-modal-title"
+                    onClick={(e) => { if (e.target === e.currentTarget) closeMessage(); }}
+                  >
+                    <div className="agd-modal">
+                      <div className="agd-modal-header">
+                        <div>
+                          <span className="agd-msg-cat" style={{ background: meta.bg, color: meta.fg, marginRight: 8 }}>
+                            {meta.label}
+                          </span>
+                          <h3 id="agd-modal-title" style={{ display: 'inline' }}>{selectedMessage.title}</h3>
+                        </div>
+                        <button type="button" className="agd-modal-close" onClick={closeMessage} aria-label="Close">
+                          <X size={18} />
+                        </button>
+                      </div>
+                      <div className="agd-modal-meta">
+                        <div><strong>From:</strong> {selectedMessage.senderName || '—'}{selectedMessage.senderRole ? ` (${selectedMessage.senderRole})` : ''}</div>
+                        <div><strong>To:</strong> {selectedMessage.recipientRole}{selectedMessage.recipientUserId ? ' — targeted' : ' — broadcast'}</div>
+                        <div><strong>Sent:</strong> {fmtDate(selectedMessage.createdAt)}</div>
+                        <div><strong>Priority:</strong> {selectedMessage.priority || 'normal'}</div>
+                      </div>
+                      <div className="agd-modal-body">{selectedMessage.body || '(no body)'}</div>
+                      <div className="agd-modal-footer">
+                        <a className="agd-link-btn" href="/erp/inbox" target="_blank" rel="noreferrer">
+                          <ExternalLink size={14} /> Open in Inbox
+                        </a>
+                        <button type="button" className="agd-link-btn" onClick={closeMessage}>Close</button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </>
           )}
         </main>

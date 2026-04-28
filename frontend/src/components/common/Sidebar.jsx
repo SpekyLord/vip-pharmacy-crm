@@ -697,12 +697,19 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
   const sections = [];
 
   // ── ERP Home (always visible, no header) ─────────────────────────────────
+  // Phase EC-1 — Executive Cockpit pinned at the top for management roles.
+  // Lookup-driven gate (EXECUTIVE_COCKPIT_ROLES.VIEW_COCKPIT) decides backend
+  // access; sidebar visibility uses ROLE_SETS.MANAGEMENT for fast UI gate.
+  // Subscribers who add a `cfo` or `coo` role to MANAGEMENT will see this
+  // automatically; they extend lookup roles for the backend gate separately.
+  const erpHomeItems = [{ path: '/erp', label: 'ERP Home', icon: Briefcase }];
+  if (ROLE_SETS.MANAGEMENT.includes(role)) {
+    erpHomeItems.unshift({ path: '/erp/cockpit', label: 'Executive Cockpit', icon: BarChart3 });
+  }
   sections.push({
     title: null,
     collapsible: false,
-    items: [
-      { path: '/erp', label: 'ERP Home', icon: Briefcase },
-    ],
+    items: erpHomeItems,
   });
 
   // ── Sales ──────────────────────────────────────────────────────────────────
@@ -1072,6 +1079,10 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
               // Phase VIP-1.A — MD Partner Lead pipeline. Admin/president-only by default;
               // backend gate is lookup-driven via MD_PARTNER_ROLES.
               { path: '/admin/md-leads', label: 'MD Leads', icon: Handshake },
+              // Phase A.5.5 — Canonical VIP-Client merge tool. Admin/president-only
+              // by default; backend gate is lookup-driven via VIP_CLIENT_LIFECYCLE_ROLES.
+              // Unblocks A.5.2 unique-index flip after admin de-dups duplicates.
+              { path: '/admin/md-merge', label: 'MD Merge Tool', icon: ArrowLeftRight },
               { path: '/admin/employees', label: 'BDMs', icon: Users },
               { path: '/admin/products', label: 'Products', icon: Package },
             ],

@@ -26,6 +26,7 @@ const BirFilingStatus = require('../models/BirFilingStatus');
 const BirDataQualityRun = require('../models/BirDataQualityRun');
 const birDashboardService = require('../services/birDashboardService');
 const birDataQualityAgent = require('../../agents/birDataQualityAgent');
+const vatReturnService = require('../services/vatReturnService');
 const { userHasBirRole } = require('../../utils/birAccess');
 
 function requireEntity(req, res) {
@@ -432,6 +433,142 @@ exports.updateEntityConfig = catchAsync(async (req, res) => {
       config_completeness: birDashboardService.computeConfigCompleteness(e),
     },
   });
+});
+
+// ── Phase J1 — 2550M / 2550Q VAT return aggregator + CSV export ────────
+//
+// VIEW_DASHBOARD gates the compute endpoints (read-only aggregation).
+// EXPORT_FORM gates the CSV download because it appends a SHA-256 hash
+// to BirFilingStatus.export_audit_log; the row mutation must be tied to
+// an accountable role per Rule #20.
+//
+// Period encoding mirrors the BirFilingStatus model:
+//   2550M → period_year + period_month (1-12)
+//   2550Q → period_year + period_quarter (1-4)
+
+function parseYear(v) {
+  const y = parseInt(v, 10);
+  return Number.isInteger(y) && y >= 2024 && y <= 2099 ? y : null;
+}
+
+function parseMonth(v) {
+  const m = parseInt(v, 10);
+  return Number.isInteger(m) && m >= 1 && m <= 12 ? m : null;
+}
+
+function parseQuarter(v) {
+  const q = parseInt(v, 10);
+  return Number.isInteger(q) && q >= 1 && q <= 4 ? q : null;
+}
+
+exports.compute2550M = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.params.year);
+  const month = parseMonth(req.params.month);
+  if (!year || !month) {
+    return res.status(400).json({ success: false, message: 'Invalid year/month. Year ≥ 2024, month 1-12.' });
+  }
+  const result = await vatReturnService.compute2550M({ entityId: req.entityId, year, month });
+  // Surface stored filing-row status alongside the live computation so the
+  // frontend can render the lifecycle pill without a second round trip.
+  const row = await BirFilingStatus.findOne({
+    entity_id: req.entityId, form_code: '2550M',
+    period_year: year, period_month: month, period_quarter: null, period_payee_id: null,
+  }).lean();
+  res.json({
+    success: true,
+    data: {
+      ...result,
+      filing_row: row || null,
+    },
+  });
+});
+
+exports.compute2550Q = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.params.year);
+  const quarter = parseQuarter(req.params.quarter);
+  if (!year || !quarter) {
+    return res.status(400).json({ success: false, message: 'Invalid year/quarter. Year ≥ 2024, quarter 1-4.' });
+  }
+  const result = await vatReturnService.compute2550Q({ entityId: req.entityId, year, quarter });
+  const row = await BirFilingStatus.findOne({
+    entity_id: req.entityId, form_code: '2550Q',
+    period_year: year, period_quarter: quarter, period_month: null, period_payee_id: null,
+  }).lean();
+  res.json({
+    success: true,
+    data: {
+      ...result,
+      filing_row: row || null,
+    },
+  });
+});
+
+/**
+ * CSV export for 2550M and 2550Q. Streams the CSV with Content-Disposition
+ * attachment + appends an export entry (SHA-256 hash + byte length + user)
+ * to BirFilingStatus.export_audit_log per Rule #20 audit posture.
+ *
+ * Side-effect: also REFRESHES totals_snapshot on the BirFilingStatus row so
+ * the dashboard heatmap reflects the latest numbers without waiting for
+ * mark-reviewed. Status itself is NOT changed.
+ */
+exports.exportVatReturnCsv = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'EXPORT_FORM'))) return;
+
+  const formCode = req.params.formCode;
+  if (formCode !== '2550M' && formCode !== '2550Q') {
+    return res.status(400).json({ success: false, message: `Export not implemented for ${formCode}. Phase J1 supports 2550M / 2550Q only.` });
+  }
+
+  const year = parseYear(req.params.year);
+  if (!year) return res.status(400).json({ success: false, message: 'Invalid year. Must be ≥ 2024.' });
+
+  let periodMonthOrQuarter;
+  if (formCode === '2550M') {
+    periodMonthOrQuarter = parseMonth(req.params.period);
+    if (!periodMonthOrQuarter) return res.status(400).json({ success: false, message: 'Invalid month. Must be 1-12.' });
+  } else {
+    periodMonthOrQuarter = parseQuarter(req.params.period);
+    if (!periodMonthOrQuarter) return res.status(400).json({ success: false, message: 'Invalid quarter. Must be 1-4.' });
+  }
+
+  const entity = await Entity.findById(req.entityId).lean();
+  if (!entity) return res.status(404).json({ success: false, message: 'Entity not found.' });
+
+  const { csvContent, contentHash, filename } = await vatReturnService.exportFormCsv({
+    formCode,
+    entityId: req.entityId,
+    year,
+    periodMonthOrQuarter,
+    userId: req.user?._id,
+    entity,
+  });
+
+  birDashboardService.invalidate(req.entityId);
+
+  // Server-side audit trail for ops monitoring (mirror SCPWD pattern).
+  console.log('[BIR_EXPORT_VAT_RETURN]', JSON.stringify({
+    user: req.user?.email,
+    role: req.user?.role,
+    entity_id: String(req.entityId),
+    form_code: formCode,
+    year,
+    period: periodMonthOrQuarter,
+    content_hash: contentHash,
+    byte_length: Buffer.byteLength(csvContent, 'utf8'),
+    ip: req.ip,
+    ts: new Date().toISOString(),
+  }));
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('X-Content-Hash', contentHash);
+  res.send(csvContent);
 });
 
 exports._test = { parseBirConfirmation };

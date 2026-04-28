@@ -27,6 +27,15 @@ router.get('/data-quality/findings', ctrl.getDataQualityFindings);
 
 // Filings
 router.get('/forms', ctrl.listFilings);
+
+// ── Phase J1 — 2550M/Q VAT return aggregator + export ──
+// MUST be declared BEFORE the catch-all `/forms/:id` GET so Express
+// routes "2550M/2026/4/compute" to compute2550M instead of trying to
+// look up a Mongo _id named "2550M".
+router.get('/forms/2550M/:year/:month/compute', ctrl.compute2550M);
+router.get('/forms/2550Q/:year/:quarter/compute', ctrl.compute2550Q);
+router.get('/forms/:formCode/:year/:period/export.csv', ctrl.exportVatReturnCsv);
+
 router.get('/forms/:id', ctrl.getFiling);
 router.post('/forms/draft', ctrl.createOrUpdateDraft);
 router.post('/forms/:id/mark-reviewed', ctrl.markReviewed);
