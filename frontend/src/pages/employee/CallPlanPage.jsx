@@ -75,21 +75,18 @@ const pageStyles = `
   .cpt-layout {
     display: flex;
     flex-direction: column;
-    height: 100vh;
+    min-height: 100vh;
     background: #f3f4f6;
-    overflow: hidden;
   }
 
   .cpt-content {
     display: flex;
     flex: 1;
-    overflow: hidden;
   }
 
   .cpt-main {
     flex: 1;
     padding: 24px;
-    overflow-y: auto;
   }
 
   .cpt-page-header {

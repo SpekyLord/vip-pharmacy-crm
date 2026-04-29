@@ -21,18 +21,16 @@ import PageGuide from '../../components/common/PageGuide';
 
 const doctorsPageStyles = `
   .doctors-layout {
-    height: 100vh;
+    min-height: 100vh;
     display: flex;
     flex-direction: column;
     background: #f3f4f6;
-    overflow: hidden;
   }
 
   .doctors-content {
     display: flex;
     flex: 1;
     min-height: 0;
-    overflow: hidden;
   }
 
   .doctors-main {
@@ -41,7 +39,6 @@ const doctorsPageStyles = `
     min-width: 0;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
   }
 
   /* Page Header */
@@ -163,7 +160,6 @@ const doctorsPageStyles = `
   .doctors-main > :last-child {
     flex: 1;
     min-height: 0;
-    overflow: hidden;
   }
 
   .error-banner {

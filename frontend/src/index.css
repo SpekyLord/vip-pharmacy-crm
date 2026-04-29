@@ -275,16 +275,19 @@ body.dark-mode .vip-select__option--is-focused {
   color: #e2e8f0;
 }
 
-/* Shared page layout (used by Admin, BDM, and ERP pages) */
+/* Shared page layout (used by Admin, BDM, and ERP pages).
+   Apr 29 2026 — removed desktop height:100vh + overflow:hidden lock so the
+   page scrolls naturally on body. Some inner content (BDM list, dashboard
+   stats grid, agent runs) was being clipped at viewport bottom on laptop
+   because the shell was locked to 100vh. Body-scroll is the universally safe
+   pattern; pages that need an internal scroll region (data tables, feeds)
+   already wire their own overflow-y: auto on the inner element. */
 .admin-page {
   min-height: 100vh;
-  height: 100vh;
-  height: 100dvh;
   background: var(--page-bg, var(--gray-50));
   transition: background-color 0.3s;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
   --mobile-navbar-offset: 112px;
 }
 
@@ -297,13 +300,6 @@ body.dark-mode .vip-select__option--is-focused {
   display: flex;
   flex: 1;
   min-height: 0;
-  overflow: hidden;
-}
-
-@media (max-width: 900px) {
-  .admin-page { height: auto; min-height: 100vh; overflow-y: auto; }
-  .admin-layout { overflow: visible; }
-  .admin-content { overflow: visible; }
 }
 
 @media (max-width: 768px) {

@@ -19,18 +19,16 @@ import PageGuide from '../../components/common/PageGuide';
 
 const employeesPageStyles = `
   .employees-layout {
-    height: 100vh;
+    min-height: 100vh;
     display: flex;
     flex-direction: column;
     background: #f3f4f6;
-    overflow: hidden;
   }
 
   .employees-content {
     display: flex;
     flex: 1;
     min-height: 0;
-    overflow: hidden;
   }
 
   .employees-main {
@@ -39,7 +37,6 @@ const employeesPageStyles = `
     min-width: 0;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
   }
 
   /* Page Header */
@@ -155,7 +152,6 @@ const employeesPageStyles = `
   .employees-main > :last-child {
     flex: 1;
     min-height: 0;
-    overflow: hidden;
   }
 
   .error-banner {
