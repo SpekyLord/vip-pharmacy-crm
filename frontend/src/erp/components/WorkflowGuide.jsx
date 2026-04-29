@@ -487,6 +487,7 @@ const WORKFLOW_GUIDES = {
       '5. Click "View Breakdown" on any payslip to see detailed source data — SMER daily entries with per diem tiers, collection-level commission (CR# and CSI details), car logbook gas computation (daily odometer + fuel), ORE receipts, and CALF documents.',
       '6. When Finance marks your payslip REVIEWED, review final numbers and click "Confirm". Once confirmed, payslip is locked.',
       '7. Finance credits your confirmed payslip. Travel advance auto-resolves from your CompProfile revolving fund amount.',
+      '8. eBDMs / back-office (Phase G4.5aa, Apr 29 2026): if you hold the payroll.income_proxy or payroll.deduction_schedule_proxy sub-permission, a "Record on behalf of" dropdown appears at the top of each tab. Pick a target BDM to view their payslip context, generate their report, add deduction lines for them, or file deduction schedules under their name. Every proxy write is audit-stamped (report.bdm_id = target, created_by = you). President + admin/finance bypass the sub-perm; staff must have the key plus a "staff" entry in PROXY_ENTRY_ROLES.INCOME / .DEDUCTION_SCHEDULE.',
     ],
     next: [
       { label: 'Expenses', path: '/erp/expenses' },
@@ -504,6 +505,7 @@ const WORKFLOW_GUIDES = {
       '4. Approved schedule installments auto-inject into payslips when generated. Use bulk approve to process multiple pending schedules at once. Finance-created schedules (POST /finance-create) bypass the gate and activate immediately.',
       '5. Auto-deductions: CALF settlement (excess returned or shortfall reimbursed) and Personal Gas usage are computed automatically on each generation.',
       '6. Click "View Breakdown" to drill into source data for any payslip — verify SMER daily entries, per diem overrides, commission per CR/CSI, car logbook gas computation, ORE receipts, and CALF documents.',
+      '7. Phase G4.5aa (Apr 29 2026): an eBDM (back-office staff) with payroll.income_proxy or payroll.deduction_schedule_proxy can now generate IncomeReports and create DeductionSchedules on behalf of field BDMs from their My Income page — no Finance round-trip required. President + admin/finance/president still bypass the sub-perm; staff role must hold the key AND have a "staff" entry in PROXY_ENTRY_ROLES.<INCOME|DEDUCTION_SCHEDULE>. Configure both via Control Center → Lookup Tables.',
     ],
     next: [
       { label: 'View P&L', path: '/erp/pnl' },

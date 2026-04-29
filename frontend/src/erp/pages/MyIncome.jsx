@@ -17,6 +17,10 @@ import { showError, showSuccess, showApprovalPending, isApprovalPending } from '
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
 import RejectionBanner from '../components/RejectionBanner';
+// Phase G4.5aa (Apr 29, 2026) — OwnerPicker drops onto BOTH tabs so an eBDM
+// (back-office staff with payroll.income_proxy or .deduction_schedule_proxy)
+// can act on behalf of a field BDM. Renders null when caller is not eligible.
+import OwnerPicker from '../components/OwnerPicker';
 
 const pageStyles = `
   .my-income-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -156,6 +160,10 @@ export default function MyIncome() {
   const [period, setPeriod] = useState(getCurrentPeriod());
   const [cycle, setCycle] = useState('ALL');
   const [loading, setLoading] = useState(false);
+  // Phase G4.5aa — proxy target BDM. Empty string = self-flow. Set by OwnerPicker
+  // when caller is an eligible proxy. State is page-level so a target chosen on
+  // one tab persists onto the other (the eBDM works on one BDM at a time).
+  const [targetBdmId, setTargetBdmId] = useState('');
 
   // ── Payslip state ──
   const [reports, setReports] = useState([]);
@@ -188,11 +196,16 @@ export default function MyIncome() {
     try {
       const params = { period };
       if (cycle !== 'ALL') params.cycle = cycle;
+      // Phase G4.5aa — when proxy has selected a target, scope list to that BDM.
+      // Backend widens the filter when caller has payroll.income_proxy + matching
+      // PROXY_ENTRY_ROLES.INCOME row; without proxy this param is ignored server-
+      // side (falls back to req.bdmId).
+      if (targetBdmId) params.bdm_id = targetBdmId;
       const res = await inc.getIncomeList(params);
       setReports(res?.data || []);
     } catch (err) { showError(err, 'Could not load payslips'); }
     setLoading(false);
-  }, [period, cycle]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [period, cycle, targetBdmId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Load schedules ──
   const loadSchedules = useCallback(async () => {
@@ -200,22 +213,29 @@ export default function MyIncome() {
     try {
       const params = {};
       if (schedStatusFilter) params.status = schedStatusFilter;
+      // Phase G4.5aa — proxy filter for deduction schedules (mirrors loadReports).
+      if (targetBdmId) params.bdm_id = targetBdmId;
       const res = await sched.getMySchedules(params);
       setSchedules(res?.data || []);
     } catch (err) { showError(err, 'Could not load schedules'); }
     setLoading(false);
-  }, [schedStatusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [schedStatusFilter, targetBdmId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Load projection ──
   const loadProjection = useCallback(async () => {
     if (cycle === 'ALL') { setProjection(null); return; }
     setProjLoading(true);
     try {
-      const res = await inc.getIncomeProjection({ period, cycle });
+      const projParams = { period, cycle };
+      // Phase G4.5aa — projection endpoint already supports bdm_id for privileged
+      // viewers (incomeController.getIncomeProjection). Forward the target so the
+      // proxy sees the TARGET BDM's projection, not their own.
+      if (targetBdmId) projParams.bdm_id = targetBdmId;
+      const res = await inc.getIncomeProjection(projParams);
       setProjection(res?.data || null);
     } catch { setProjection(null); }
     setProjLoading(false);
-  }, [period, cycle]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [period, cycle, targetBdmId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (activeTab === 'payslips') { loadReports(); loadProjection(); }
@@ -227,7 +247,12 @@ export default function MyIncome() {
     if (cycle === 'ALL') { showError(null, 'Select a specific cycle (C1, C2, or Monthly)'); return; }
     setLoading(true);
     try {
-      await inc.requestIncomeGeneration({ period, cycle });
+      // Phase G4.5aa — when proxy has chosen a target BDM, file on their behalf.
+      // Backend's resolveOwnerForWrite gates the assigned_to and stamps the
+      // generated report under the target's bdm_id (created_by stays as proxy).
+      const payload = { period, cycle };
+      if (targetBdmId) payload.assigned_to = targetBdmId;
+      await inc.requestIncomeGeneration(payload);
       await loadReports();
       await loadProjection();
     } catch (err) { showError(err, 'Could not generate payslip'); }
@@ -349,9 +374,14 @@ export default function MyIncome() {
       };
       let result;
       if (editingScheduleId) {
+        // Phase G4.5aa — edit path uses peek-bdm-id pattern in the backend; no
+        // assigned_to needed because the schedule already carries its bdm_id.
         result = await sched.editSchedule(editingScheduleId, payload);
       } else {
-        result = await sched.createSchedule(payload);
+        // Phase G4.5aa — proxy-create. assigned_to stamps the schedule under the
+        // target BDM. resolveOwnerForWrite gates this server-side.
+        const createPayload = targetBdmId ? { ...payload, assigned_to: targetBdmId } : payload;
+        result = await sched.createSchedule(createPayload);
       }
       // Phase G4.2 — createSchedule may return HTTP 202 approval_pending when the
       // BDM's role isn't in MODULE_DEFAULT_ROLES.DEDUCTION_SCHEDULE. Surface the
@@ -446,6 +476,37 @@ export default function MyIncome() {
               onClick={() => { setActiveTab('schedules'); setSelectedSched(null); }}>
               My Deduction Schedules
             </button>
+          </div>
+
+          {/* Phase G4.5aa — Proxy target picker. Renders null for non-eligible
+              callers; for eBDMs (staff with payroll.income_proxy on Payslips
+              tab, or payroll.deduction_schedule_proxy on Schedules tab),
+              surfaces a "Record on behalf of" dropdown that filters the
+              list AND stamps the target BDM on subsequent writes. State
+              is shared across tabs so an eBDM can act on one BDM's full
+              context without re-picking. */}
+          <div style={{ marginBottom: 12 }}>
+            {activeTab === 'payslips' ? (
+              <OwnerPicker
+                module="payroll"
+                subKey="income_proxy"
+                moduleLookupCode="INCOME"
+                value={targetBdmId}
+                onChange={setTargetBdmId}
+                disabled={loading}
+                label="Record Income on behalf of"
+              />
+            ) : (
+              <OwnerPicker
+                module="payroll"
+                subKey="deduction_schedule_proxy"
+                moduleLookupCode="DEDUCTION_SCHEDULE"
+                value={targetBdmId}
+                onChange={setTargetBdmId}
+                disabled={loading}
+                label="Record Deduction Schedule on behalf of"
+              />
+            )}
           </div>
 
           {loading && <div style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>Loading...</div>}

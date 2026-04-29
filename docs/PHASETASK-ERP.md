@@ -7753,6 +7753,95 @@ While walking the Reversal Console for the mis-approved GRN, the detail panel th
 
 ---
 
+## Phase G4.5aa — BDM Income & Deduction Schedule Proxy + Payslip Deduction Sub-Perm Gate (Apr 29 2026)
+
+### Problem
+An Apr 29 2026 audit found that the BDM income / payroll surfaces were **completely unguarded for proxy entry**, despite the codebase shipping a robust proxy pattern from Phases G4.5a → G4.5z for Sales / Collections / Expenses / SMER / Car Logbook / PRF-CALF / Undertaking / Hospital PO / GRN / Inventory:
+
+- `incomeController.requestIncomeGeneration` / `addDeductionLine` / `removeDeductionLine` were locked to `req.bdmId` self-flow with no `assigned_to` resolver and no widened scope for back-office staff.
+- `deductionScheduleController.createSchedule` / `withdrawSchedule` / `editPendingSchedule` had strict service-layer ownership guards (`schedule.bdm_id === req.bdmId`) that rejected any cross-BDM call, even from an admin or an eBDM.
+- `payrollController.financeAddDeductionLine` / `verifyDeductionLine` / `removeDeductionLine` (employee Payslip surface) were `roleCheck('admin', 'finance', 'president')` — no path to delegate to a non-management Finance clerk without granting full PAYROLL FULL.
+- No matching `PROXY_ENTRY_ROLES.<INCOME|DEDUCTION_SCHEDULE>` lookups, no matching `*_PROXY` sub-perm rows.
+
+User constraint: BDMs are now CRM-only (per Apr 23 2026 BDMs→CRM-only / eBDMs→ERP-proxy policy). An eBDM must be able to generate the field BDM's IncomeReport, record CALF/cash-advance deduction schedules under their name, and add ad-hoc deduction lines on their behalf.
+
+### Shipped (Apr 29 2026)
+
+#### Lookup seeds (`backend/erp/controllers/lookupGenericController.js`)
+- New `ERP_SUB_PERMISSION` rows (3):
+  - `PAYROLL__INCOME_PROXY` — generate IncomeReport + add/remove deduction lines on behalf of another BDM
+  - `PAYROLL__DEDUCTION_SCHEDULE_PROXY` — create / edit pending / withdraw DeductionSchedule on behalf of another BDM
+  - `PAYROLL__PAYSLIP_DEDUCTION_WRITE` — opens employee Payslip per-line CRUD without granting PAYROLL FULL
+- New `PROXY_ENTRY_ROLES` rows (2): `INCOME`, `DEDUCTION_SCHEDULE`. Default `[admin, finance, president]`. `insert_only_metadata: true` so admin overrides survive `seedAll` re-runs (Rule #3 + the recurring `metadata.roles` revert footgun documented on the existing rows).
+- New `VALID_OWNER_ROLES` rows (2): `INCOME`, `DEDUCTION_SCHEDULE`. Default `[staff]` — admin/finance/president can NEVER own per-BDM income (would corrupt commission, profit share, and per-BDM rebate computations).
+
+#### Backend controllers
+- **`backend/erp/controllers/incomeController.js`**: imports `resolveOwnerForWrite` + `widenFilterForProxy` + `canProxyEntry`; defines `INCOME_PROXY_OPTS = { subKey: 'income_proxy', lookupCode: 'INCOME' }`.
+  - `requestIncomeGeneration` — wraps `resolveOwnerForWrite(req, 'payroll', INCOME_PROXY_OPTS)` so a body `assigned_to` field stamps the report under the target BDM (`generateIncomeReport(entityId, owner.ownerId, period, cycle, req.user._id)`). 400 (Rule #21) if a non-BDM caller forgets `assigned_to`; 403 if the proxy gate fails. Pre-existing report dupe-check pivots from `req.bdmId` to `owner.ownerId` so a proxy can't accidentally regenerate a credited target's payslip.
+  - `addDeductionLine` — `widenFilterForProxy` strips `bdm_id` from the report-fetch scope when caller has `payroll.income_proxy` ticked. `entered_by` stays `req.user._id` so the line is audit-stamped to the proxy.
+  - `removeDeductionLine` — same widening; existing `entered_by === req.user._id` removal guard ensures a proxy can never delete another user's line even with proxy rights.
+  - `getIncomeList` — extends the existing `canViewOther` (admin/finance/president) path with `canProxyEntry`. Caller can narrow via `?bdm_id=`.
+  - `getIncomeBreakdown` — same `canProxyEntry` extension lifts the BDM 403 for proxy callers.
+
+- **`backend/erp/controllers/deductionScheduleController.js`**: imports the same helpers; defines `DEDUCTION_PROXY_OPTS = { subKey: 'deduction_schedule_proxy', lookupCode: 'DEDUCTION_SCHEDULE' }`.
+  - `createSchedule` — `resolveOwnerForWrite` gate; passes `{ bdm_id: owner.ownerId }` to `createScheduleSvc`. Approval Hub routing via `gateApproval('DEDUCTION_SCHEDULE')` is unchanged (Phase G4.2 contract).
+  - `getMySchedules` — `canProxyEntry` widens `bdm_id` filter for proxies; supports `?bdm_id=<target>` to focus on one BDM.
+  - `withdrawSchedule` + `editPendingSchedule` — peek-bdm-id pattern: if proxy-eligible, look up the schedule's `bdm_id` first and pass it to the service so the service-level strict `schedule.bdm_id === bdmId` ownership check passes. Without proxy, falls back to `req.bdmId`. Service layer untouched.
+
+#### Backend routes
+- **`backend/erp/routes/payrollRoutes.js`**: new inline `payslipDeductionWriteGate` middleware (admit `req.isAdmin || req.isFinance || req.isPresident || sub_permissions.payroll.payslip_deduction_write`). Replaces `roleCheck('admin', 'finance', 'president')` on:
+  - `POST /:id/deduction-line`
+  - `POST /:id/deduction-line/:lineId/verify`
+  - `DELETE /:id/deduction-line/:lineId`
+
+  Note: NO OwnerPicker for Payslips. Payslips are owned by `person_id` (PeopleMaster, employees), NOT `bdm_id`. The existing `entity_id` scope filter remains the only tenant boundary; the sub-perm just opens delegation to a non-management clerk.
+
+#### Frontend
+- **`frontend/src/erp/pages/MyIncome.jsx`**:
+  - Imports `OwnerPicker` from `../components/OwnerPicker`.
+  - Adds `targetBdmId` page-level state (defaults `''`).
+  - Renders ONE `OwnerPicker` per active tab (Payslips → `subKey="income_proxy"` `moduleLookupCode="INCOME"`; Schedules → `subKey="deduction_schedule_proxy"` `moduleLookupCode="DEDUCTION_SCHEDULE"`). Both share `targetBdmId` so the eBDM works on one BDM's full context across tabs without re-picking.
+  - `loadReports` / `loadSchedules` / `loadProjection` forward `bdm_id: targetBdmId` to backend list/projection endpoints.
+  - `handleRequestGeneration` and the `createSchedule` branch of `handleSaveSchedule` stamp `assigned_to: targetBdmId` so the backend resolver flows.
+  - Edit + withdraw paths NOT touched on the frontend — they ride the backend peek-bdm-id pattern.
+
+- **`frontend/src/erp/components/WorkflowGuide.jsx`**: two banner updates.
+  - `myIncome` step 8 explains the "Record on behalf of" dropdown for eBDMs.
+  - `income` (Finance view) step 7 mirrors the announcement so finance knows eBDMs can self-serve generation.
+
+#### Validation
+- Healthcheck `node backend/scripts/healthcheckIncomeProxy.js` — **32/32 PASS** (sub-perm seeds, lookup row metadata, controller imports, controller call sites, route gates, frontend OwnerPicker mount + payload propagation, banner updates, resolver export contract).
+- Backend syntax `node -c` clean on all 5 touched backend files.
+- Frontend Vite build green in **40.37s**; `MyIncome` chunk 56.04 kB, `Income` chunk 59.29 kB.
+
+### Audit + scope decisions
+- **People-Master proxy SKIPPED** — admin-owned per Rule #8 (Master Data Governance). PEOPLE__TERMINATE / PEOPLE__MANAGE_LOGIN already cover the destructive cases.
+- **Payroll bulk `computePayroll` proxy SKIPPED** — entity-level batch operation, not per-BDM. Adding proxy doesn't fit the model.
+- **Income Finance-side `verifyDeductionLine` / `financeAddDeductionLine` NOT widened to staff** — those routes stay admin/finance/president because the proxy use case (eBDM) flows through the BDM-side endpoints (`addDeductionLine`). Finance approval remains a separate role gate.
+- **No schema changes** — `created_by` already serves as proxy attribution audit (= proxy id); `bdm_id` (or `person_id`) stays the target.
+
+### Subscription readiness
+- All gates lookup-driven (Rule #3). New subscribers configure proxy rosters via Control Center → Lookup Tables → `PROXY_ENTRY_ROLES.INCOME` + `.DEDUCTION_SCHEDULE` without code deployment. Lazy-seed: lookup rows materialize on first `GET /lookup/:category` per entity.
+- Cross-entity defense in depth: `resolveOwnerForWrite` validates the target BDM is active AND assigned to `req.entityId` (resolveOwnerScope.js:211-218). A proxy cannot file under a target who lives in a different entity.
+- President + admin/finance bypass the sub-perm in all new gates — matches the rest of G4.5a-z policy.
+
+### How to grant
+1. Lookup Tables → `PROXY_ENTRY_ROLES` → edit `INCOME` (and/or `DEDUCTION_SCHEDULE`) → append `'staff'` to `metadata.roles`. Save.
+2. People → eBDM person → ERP Access → tick `payroll.income_proxy` (and/or `payroll.deduction_schedule_proxy`). Save.
+3. eBDM logs into `/erp/my-income` — "Record on behalf of" dropdown appears at the top of each tab. Pick a field BDM, generate / add deduction / create schedule.
+
+### Files touched
+- `backend/erp/controllers/lookupGenericController.js`
+- `backend/erp/controllers/incomeController.js`
+- `backend/erp/controllers/deductionScheduleController.js`
+- `backend/erp/routes/payrollRoutes.js`
+- `frontend/src/erp/pages/MyIncome.jsx`
+- `frontend/src/erp/components/WorkflowGuide.jsx`
+- `backend/scripts/healthcheckIncomeProxy.js` (NEW)
+- `CLAUDE-ERP.md` + `docs/PHASETASK-ERP.md` (this section)
+
+---
+
 ## Phase G4.5h-W — GRN Undertaking Waybill Recovery (Apr 29 2026)
 
 ### Problem
