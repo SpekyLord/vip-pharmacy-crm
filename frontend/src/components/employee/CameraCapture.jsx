@@ -354,6 +354,8 @@ const CameraCapture = ({ onCapture, maxPhotos = 5, draftId }) => {
   const [gpsStatus, setGpsStatus] = useState('acquiring');
   const [cachedLocation, setCachedLocation] = useState(null);
   const [isVideoReady, setIsVideoReady] = useState(false);
+  const [facingMode, setFacingMode] = useState('environment');
+  const [isSwitchingCamera, setIsSwitchingCamera] = useState(false);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const gpsWatchId = useRef(null);
@@ -629,17 +631,67 @@ const CameraCapture = ({ onCapture, maxPhotos = 5, draftId }) => {
     }
   };
 
-  const startCamera = async () => {
+  const startCamera = async (mode = facingMode) => {
     try {
       setError(null);
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' },
+        video: { facingMode: mode },
       });
       streamRef.current = stream;
       setIsCapturing(true);
     } catch (err) {
       console.error('Error accessing camera:', err);
       setError('Unable to access camera. Please allow camera permission.');
+    }
+  };
+
+  // Switch between front (user) and back (environment) cameras.
+  // Stops the current track and starts a new one with the toggled facing mode.
+  // Falls back to the previous camera if the requested one is unavailable
+  // (e.g., laptops with only a front camera).
+  const switchCamera = async () => {
+    const nextMode = facingMode === 'environment' ? 'user' : 'environment';
+    setIsSwitchingCamera(true);
+    setIsVideoReady(false);
+    setError(null);
+
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: nextMode },
+      });
+      streamRef.current = stream;
+      setFacingMode(nextMode);
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+      }
+    } catch (err) {
+      console.error('Error switching camera:', err);
+      setError(
+        nextMode === 'user'
+          ? 'Front camera unavailable on this device.'
+          : 'Back camera unavailable on this device.'
+      );
+      try {
+        const fallback = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode },
+        });
+        streamRef.current = fallback;
+        if (videoRef.current) {
+          videoRef.current.srcObject = fallback;
+        }
+      } catch {
+        setIsCapturing(false);
+      }
+    } finally {
+      setIsSwitchingCamera(false);
     }
   };
 
@@ -856,9 +908,22 @@ const CameraCapture = ({ onCapture, maxPhotos = 5, draftId }) => {
               type="button"
               onClick={capturePhoto}
               className="btn-capture"
-              disabled={isLoading || !isVideoReady}
+              disabled={isLoading || !isVideoReady || isSwitchingCamera}
             >
               {!isVideoReady ? 'Loading camera...' : getCaptureButtonText()}
+            </button>
+            <button
+              type="button"
+              onClick={switchCamera}
+              className="btn-cancel"
+              disabled={isSwitchingCamera || isLoading}
+              title={facingMode === 'environment' ? 'Switch to front camera' : 'Switch to back camera'}
+            >
+              {isSwitchingCamera
+                ? 'Switching...'
+                : facingMode === 'environment'
+                ? 'Switch to Front'
+                : 'Switch to Back'}
             </button>
             <button type="button" onClick={stopCamera} className="btn-cancel">
               Cancel
