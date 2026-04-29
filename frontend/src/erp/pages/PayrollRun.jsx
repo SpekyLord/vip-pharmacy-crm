@@ -85,7 +85,7 @@ export default function PayrollRun() {
       try {
         const res = await api.getMyPayslipProxyRoster();
         if (alive) setRoster(res?.data || null);
-      } catch (err) {
+      } catch {
         // Silent — older backend without the route → no chip, page still works.
         if (alive) setRoster(null);
       }
