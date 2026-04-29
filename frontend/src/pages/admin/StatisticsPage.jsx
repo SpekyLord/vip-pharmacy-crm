@@ -822,6 +822,17 @@ const statisticsPageStyles = `
     background: transparent;
   }
 
+  /* Team Activity Cockpit (Apr 2026) — clickable rows need a hover affordance */
+  .team-activity-table tbody tr:hover {
+    background: rgba(59, 130, 246, 0.06);
+  }
+  body.dark-mode .statistics-layout .team-activity-table tbody tr:hover {
+    background: rgba(96, 165, 250, 0.10);
+  }
+  .team-activity-table th {
+    user-select: none;
+  }
+
   .employee-cell {
     display: flex;
     flex-direction: column;
@@ -1575,6 +1586,10 @@ const StatisticsPage = () => {
   // Heatmap tab
   const [heatmapData, setHeatmapData] = useState(null);
 
+  // Team Activity tab — Apr 2026 (COO daily-scan surface, lookup-driven thresholds)
+  const [teamActivity, setTeamActivity] = useState(null);
+  const [teamActivityLoading, setTeamActivityLoading] = useState(false);
+
   // BDM Performance tab
   const [bdmEmployees, setBdmEmployees] = useState([]);
   const [selectedBdmId, setSelectedBdmId] = useState('');
@@ -1619,6 +1634,9 @@ const StatisticsPage = () => {
         if (rate >= 80) onTrack++;
         else behind++;
         perBdmCallRates.push({
+          // userId carries the BDM through to the bar chart so a bar click
+          // can drill into the BDM Performance tab pre-selected (Apr 29 2026).
+          userId: bdm.userId,
           name: bdm.firstName || bdm.name?.split(' ')[0] || 'BDM',
           callRate: rate,
         });
@@ -1669,6 +1687,19 @@ const StatisticsPage = () => {
     } catch { /* silent */ }
   };
 
+  // Team Activity tab — Apr 2026. Pulls one row per active BDM with today /
+  // this week / this month / cycle counts + last-visit recency + red-flag.
+  // Thresholds resolved server-side from TEAM_ACTIVITY_THRESHOLDS lookup.
+  const fetchTeamActivity = async () => {
+    try {
+      setTeamActivityLoading(true);
+      const res = await scheduleService.getTeamActivity().catch(() => ({ data: null }));
+      setTeamActivity(res.data || null);
+    } finally {
+      setTeamActivityLoading(false);
+    }
+  };
+
   // Load overview on mount
   useEffect(() => {
     loadedTabsRef.current.add('overview');
@@ -1684,6 +1715,7 @@ const StatisticsPage = () => {
     if (activeTab === 'programs') fetchProgramsData();
     else if (activeTab === 'products') fetchProductsData();
     else if (activeTab === 'heatmap') fetchHeatmapData();
+    else if (activeTab === 'team-activity') fetchTeamActivity();
   }, [activeTab]);
 
   // Fetch DCR data when BDM or cycle changes
@@ -1734,6 +1766,8 @@ const StatisticsPage = () => {
       fetchProductsData();
     } else if (activeTab === 'heatmap') {
       fetchHeatmapData();
+    } else if (activeTab === 'team-activity') {
+      fetchTeamActivity();
     }
   };
 
@@ -1748,6 +1782,21 @@ const StatisticsPage = () => {
 
   const handleBdmCycleChange = (delta) => {
     setBdmCycleNumber((prev) => (prev != null ? prev + delta : delta));
+  };
+
+  // Drill-down: clicking a BDM in the Overview bar chart (or a Team Activity
+  // row) opens the BDM Performance tab pre-selected on the current cycle.
+  // Resets cycle so the BDM-DCR fetch picks the freshly-computed cycle from
+  // the API response (matches handleBdmChange behavior).
+  const handleBdmDrillDown = (userId) => {
+    if (!userId) return;
+    setSelectedBdmId(userId);
+    setBdmCycleNumber(null);
+    setBdmDcrSummary([]);
+    setBdmDcrTotal({});
+    setBdmSummary({});
+    setBdmDoctors([]);
+    setActiveTab('bdm-performance');
   };
 
   /* ---------------------------------------------------------------------------
@@ -1798,6 +1847,20 @@ const StatisticsPage = () => {
           <div className="tabs-container">
             <div className="tabs-header">
               <button
+                className={`tab-btn ${activeTab === 'team-activity' ? 'active' : ''}`}
+                onClick={() => setActiveTab('team-activity')}
+                title="COO daily-scan: today / week / month / cycle per BDM with red-flag rule"
+              >
+                <Users size={18} />
+                Team Activity
+                {teamActivity?.rows && (
+                  (() => {
+                    const rf = teamActivity.rows.filter((r) => r.flag === 'redflag' || r.flag === 'never').length;
+                    return rf > 0 ? <span className="tab-badge" style={{ background: '#dc2626' }}>{rf}</span> : null;
+                  })()
+                )}
+              </button>
+              <button
                 className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
                 onClick={() => setActiveTab('overview')}
               >
@@ -1837,8 +1900,16 @@ const StatisticsPage = () => {
             </div>
 
             <div className="tabs-content">
+              {activeTab === 'team-activity' && (
+                <TeamActivityTab
+                  data={teamActivity}
+                  loading={teamActivityLoading}
+                  onBdmDrillDown={handleBdmDrillDown}
+                />
+              )}
+
               {activeTab === 'overview' && overviewStats && (
-                <OverviewTab stats={overviewStats} />
+                <OverviewTab stats={overviewStats} onBdmDrillDown={handleBdmDrillDown} />
               )}
 
               {activeTab === 'bdm-performance' && (
@@ -1883,7 +1954,7 @@ const StatisticsPage = () => {
    High-level metrics and per-BDM call rate chart.
    ============================================================================= */
 
-const OverviewTab = ({ stats }) => {
+const OverviewTab = ({ stats, onBdmDrillDown }) => {
   // Team average call rate for reference line
   const avgCallRate = useMemo(() => {
     const rates = stats.perBdmCallRates || [];
@@ -1967,6 +2038,11 @@ const OverviewTab = ({ stats }) => {
                 <Activity size={18} />
                 Per-BDM Call Rates (Current Cycle)
               </div>
+              {stats.perBdmCallRates?.length > 0 && onBdmDrillDown && (
+                <span style={{ fontSize: 11, color: 'var(--ink-500)', fontStyle: 'italic' }}>
+                  Click a bar to drill into that BDM's DCR
+                </span>
+              )}
             </div>
             {stats.perBdmCallRates?.length > 0 ? (
               <ResponsiveContainer width="100%" height={280}>
@@ -2009,6 +2085,13 @@ const OverviewTab = ({ stats }) => {
                     fill={CHART_COLORS.primary}
                     radius={[4, 4, 0, 0]}
                     maxBarSize={50}
+                    cursor={onBdmDrillDown ? 'pointer' : 'default'}
+                    onClick={(data) => {
+                      // Recharts <Bar> onClick fires with the row payload as
+                      // the first arg. userId was added in fetchOverviewData.
+                      // Guard against entries with no resolved userId.
+                      if (onBdmDrillDown && data?.userId) onBdmDrillDown(data.userId);
+                    }}
                   />
                 </BarChart>
               </ResponsiveContainer>
@@ -2096,6 +2179,220 @@ const OverviewTab = ({ stats }) => {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+/* =============================================================================
+   COMPONENT: TeamActivityTab — COO daily-scan surface (Apr 2026)
+   One row per active BDM with today / week / month / cycle visit counts plus
+   last-visit recency and a 🚩 red-flag column. Sortable; click a row to drill
+   into BDM Performance pre-selected. Red-flag thresholds come from
+   TEAM_ACTIVITY_THRESHOLDS lookup so subscribers tune without a code deploy.
+   ============================================================================= */
+
+const FLAG_PILL = {
+  redflag:  { bg: '#fee2e2', fg: '#991b1b', icon: '🚩', label: 'Idle ≥2 workdays' },
+  never:    { bg: '#fef3c7', fg: '#92400e', icon: '◯',  label: 'No visits this cycle' },
+  warning:  { bg: '#fef9c3', fg: '#854d0e', icon: '⚠',  label: '1 workday gap' },
+  ok:       { bg: '#dcfce7', fg: '#14532d', icon: '✓',  label: 'On cadence' },
+};
+
+const formatRelativeDate = (iso) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '—';
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffDays = Math.floor(diffMs / (24 * 60 * 60 * 1000));
+  if (diffDays <= 0) return 'today';
+  if (diffDays === 1) return 'yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  return d.toLocaleDateString('en-PH', { month: 'short', day: 'numeric' });
+};
+
+const TeamActivityTab = ({ data, loading, onBdmDrillDown }) => {
+  const [sortKey, setSortKey] = useState('flag'); // default: worst-first (flag asc)
+  const [sortDir, setSortDir] = useState('asc');
+
+  const rows = useMemo(() => {
+    if (!data?.rows) return [];
+    const FLAG_ORDER = { redflag: 0, never: 1, warning: 2, ok: 3 };
+    const arr = [...data.rows];
+    const dir = sortDir === 'asc' ? 1 : -1;
+    arr.sort((a, b) => {
+      const av = sortKey === 'flag' ? FLAG_ORDER[a.flag] ?? 99 : (a[sortKey] ?? 0);
+      const bv = sortKey === 'flag' ? FLAG_ORDER[b.flag] ?? 99 : (b[sortKey] ?? 0);
+      if (sortKey === 'name') {
+        return dir * String(a.name || '').localeCompare(String(b.name || ''));
+      }
+      if (sortKey === 'lastVisitDate') {
+        const at = a.lastVisitDate ? new Date(a.lastVisitDate).getTime() : 0;
+        const bt = b.lastVisitDate ? new Date(b.lastVisitDate).getTime() : 0;
+        return dir * (at - bt);
+      }
+      if (av === bv) return 0;
+      return dir * (av < bv ? -1 : 1);
+    });
+    return arr;
+  }, [data, sortKey, sortDir]);
+
+  const summary = useMemo(() => {
+    if (!data?.rows) return null;
+    const counts = { redflag: 0, never: 0, warning: 0, ok: 0 };
+    let totalToday = 0;
+    let totalThisWeek = 0;
+    data.rows.forEach((r) => {
+      counts[r.flag] = (counts[r.flag] || 0) + 1;
+      totalToday += r.today || 0;
+      totalThisWeek += r.thisWeek || 0;
+    });
+    return { counts, totalToday, totalThisWeek, total: data.rows.length };
+  }, [data]);
+
+  const handleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'name' ? 'asc' : 'desc');
+    }
+  };
+
+  const sortIndicator = (key) => sortKey !== key ? '' : (sortDir === 'asc' ? ' ▲' : ' ▼');
+
+  if (loading && !data) {
+    return (
+      <div style={{ textAlign: 'center', padding: '48px 0' }}>
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  if (!data || rows.length === 0) {
+    return (
+      <div className="empty-state">
+        <div className="empty-state-icon">
+          <Users size={28} />
+        </div>
+        <h3>No active BDMs</h3>
+        <p>Add staff with role &ldquo;staff&rdquo; in BDM Management to see their daily activity here.</p>
+      </div>
+    );
+  }
+
+  const thr = data.thresholds || {};
+
+  return (
+    <div>
+      {/* Top summary strip */}
+      <div className="overview-grid" style={{ marginBottom: 16 }}>
+        <div className="stat-card">
+          <div className="stat-card-header">
+            <div className="stat-card-icon red"><AlertCircle size={22} /></div>
+          </div>
+          <div className="stat-card-value">{summary?.counts.redflag || 0}</div>
+          <div className="stat-card-label">🚩 Red-flagged</div>
+          <div className="stat-card-sublabel">Idle ≥{thr.red_flag_consecutive_workdays ?? 2} workdays</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card-header">
+            <div className="stat-card-icon yellow"><Clock size={22} /></div>
+          </div>
+          <div className="stat-card-value">{summary?.counts.warning || 0}</div>
+          <div className="stat-card-label">⚠ Warning</div>
+          <div className="stat-card-sublabel">≥{thr.gap_warning_workdays ?? 1} workday gap</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card-header">
+            <div className="stat-card-icon green"><CheckCircle size={22} /></div>
+          </div>
+          <div className="stat-card-value">{summary?.counts.ok || 0}</div>
+          <div className="stat-card-label">✓ On cadence</div>
+          <div className="stat-card-sublabel">of {summary?.total || 0} BDMs</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-card-header">
+            <div className="stat-card-icon blue"><Activity size={22} /></div>
+          </div>
+          <div className="stat-card-value">{summary?.totalToday || 0}</div>
+          <div className="stat-card-label">Visits today</div>
+          <div className="stat-card-sublabel">{summary?.totalThisWeek || 0} this week</div>
+        </div>
+      </div>
+
+      <div className="chart-card" style={{ overflowX: 'auto' }}>
+        <div className="chart-card-header">
+          <div className="chart-card-title">
+            <Users size={18} />
+            Per-BDM Activity (Cycle {data.cycleNumber != null ? data.cycleNumber + 1 : '—'})
+          </div>
+          {onBdmDrillDown && (
+            <span style={{ fontSize: 11, color: 'var(--ink-500)', fontStyle: 'italic' }}>
+              Click a row to drill into that BDM's DCR
+            </span>
+          )}
+        </div>
+
+        <table className="data-table team-activity-table">
+          <thead>
+            <tr>
+              <th onClick={() => handleSort('flag')} style={{ cursor: 'pointer' }}>Flag{sortIndicator('flag')}</th>
+              <th onClick={() => handleSort('name')} style={{ cursor: 'pointer' }}>BDM{sortIndicator('name')}</th>
+              <th onClick={() => handleSort('today')} style={{ cursor: 'pointer', textAlign: 'right' }}>Today{sortIndicator('today')}</th>
+              <th onClick={() => handleSort('thisWeek')} style={{ cursor: 'pointer', textAlign: 'right' }}>This Week{sortIndicator('thisWeek')}</th>
+              <th onClick={() => handleSort('thisMonth')} style={{ cursor: 'pointer', textAlign: 'right' }}>This Month{sortIndicator('thisMonth')}</th>
+              <th onClick={() => handleSort('cycle')} style={{ cursor: 'pointer', textAlign: 'right' }}>Cycle{sortIndicator('cycle')}</th>
+              <th onClick={() => handleSort('callRate')} style={{ cursor: 'pointer', textAlign: 'right' }}>Call Rate{sortIndicator('callRate')}</th>
+              <th onClick={() => handleSort('lastVisitDate')} style={{ cursor: 'pointer' }}>Last Visit{sortIndicator('lastVisitDate')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => {
+              const pill = FLAG_PILL[row.flag] || FLAG_PILL.ok;
+              const callRateColor = row.callRate >= (thr.target_call_rate ?? 80) ? '#16a34a' : row.callRate >= 50 ? '#d97706' : '#dc2626';
+              return (
+                <tr
+                  key={row.userId}
+                  onClick={() => onBdmDrillDown && onBdmDrillDown(row.userId)}
+                  style={{ cursor: onBdmDrillDown ? 'pointer' : 'default' }}
+                  title={`${pill.label} — ${row.gapWorkdays} workday gap`}
+                >
+                  <td>
+                    <span style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '3px 8px',
+                      borderRadius: 12,
+                      background: pill.bg,
+                      color: pill.fg,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      whiteSpace: 'nowrap',
+                    }}>
+                      {pill.icon} {pill.label}
+                    </span>
+                  </td>
+                  <td style={{ fontWeight: 600 }}>{row.name}</td>
+                  <td style={{ textAlign: 'right' }}>{row.today}</td>
+                  <td style={{ textAlign: 'right' }}>{row.thisWeek}</td>
+                  <td style={{ textAlign: 'right' }}>{row.thisMonth}</td>
+                  <td style={{ textAlign: 'right' }}>{row.cycle}{row.cycleTarget > 0 ? <span style={{ color: 'var(--ink-500)', fontSize: 11 }}> / {row.cycleTarget}</span> : null}</td>
+                  <td style={{ textAlign: 'right', color: callRateColor, fontWeight: 600 }}>{row.callRate}%</td>
+                  <td>{formatRelativeDate(row.lastVisitDate)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+
+        <div style={{ marginTop: 12, fontSize: 11, color: 'var(--ink-500)', fontStyle: 'italic' }}>
+          Thresholds: 🚩 ≥{thr.red_flag_consecutive_workdays ?? 2} consecutive idle workdays · ⚠ ≥{thr.gap_warning_workdays ?? 1} workday gap · target call rate {thr.target_call_rate ?? 80}%.
+          Tune via Control Center → Lookup Tables → TEAM_ACTIVITY_THRESHOLDS.
         </div>
       </div>
     </div>
