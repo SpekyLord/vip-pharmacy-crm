@@ -47,9 +47,7 @@ const dashboardStyles = `
     padding: 12px 20px 0;
     align-items: start;
     width: 100%;
-    height: 100%;
     min-height: 0;
-    overflow: hidden;
     background: var(--bg);
   }
 

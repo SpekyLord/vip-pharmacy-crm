@@ -273,7 +273,7 @@ const pageStyles = `
     }
 
     .admin-main {
-      overflow: hidden;
+      overflow-y: auto;
       padding-bottom: 16px;
     }
 
