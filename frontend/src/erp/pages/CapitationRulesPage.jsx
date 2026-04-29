@@ -5,7 +5,7 @@
  * agreement_date) as Tier-A. Excluded products view shows the active
  * MdProductRebate union for the same MD (computed at apply-time).
  *
- * Route: /admin/capitation-rules
+ * Route: /erp/capitation-rules
  */
 import { useState, useEffect, useCallback } from 'react';
 import { Heart, RefreshCw, Plus, X, AlertTriangle, Loader, Trash2, Eye } from 'lucide-react';

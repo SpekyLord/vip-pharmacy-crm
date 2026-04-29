@@ -103,7 +103,7 @@ expect(/export default[\s\S]+compute2550M[\s\S]+compute2550Q[\s\S]+exportVatRetu
   'birService default export includes J1 functions');
 
 // ── 6. Frontend page exists and uses PageGuide ───────────────────────────
-const pageJsx = read('frontend/src/pages/admin/BirVatReturnDetailPage.jsx');
+const pageJsx = read('frontend/src/erp/pages/BirVatReturnDetailPage.jsx');
 expect(pageJsx.includes('export default function BirVatReturnDetailPage'),
   'BirVatReturnDetailPage default-exports the component');
 expect(pageJsx.includes("pageKey=\"bir-vat-return\""),
@@ -117,13 +117,13 @@ expect(pageJsx.includes('birService.exportVatReturnCsv'),
 const appJsx = read('frontend/src/App.jsx');
 expect(appJsx.includes("BirVatReturnDetailPage = lazyRetry"),
   'App.jsx lazy-imports BirVatReturnDetailPage');
-expect(appJsx.includes('"/admin/bir/:formCode/:year/:period"'),
-  'App.jsx wires /admin/bir/:formCode/:year/:period route');
-expect(/path="\/admin\/bir\/:formCode[\s\S]{0,400}ROLE_SETS\.BIR_FILING/.test(appJsx),
+expect(appJsx.includes('"/erp/bir/:formCode/:year/:period"'),
+  'App.jsx wires /erp/bir/:formCode/:year/:period route');
+expect(/path="\/erp\/bir\/:formCode[\s\S]{0,400}ROLE_SETS\.BIR_FILING/.test(appJsx),
   'BirVatReturnDetailPage route guard is BIR_FILING role-set');
 
 // ── 8. BIRCompliancePage heatmap cells navigate to detail page ──────────
-const dashJsx = read('frontend/src/pages/admin/BIRCompliancePage.jsx');
+const dashJsx = read('frontend/src/erp/pages/BIRCompliancePage.jsx');
 expect(dashJsx.includes("import { useNavigate }") || dashJsx.includes("useNavigate }"),
   'BIRCompliancePage imports useNavigate for cell-click drill-down');
 expect(dashJsx.includes("'2550M'") && dashJsx.includes("'2550Q'") && dashJsx.includes('isClickable'),

@@ -109,11 +109,11 @@ expect(collCtrl.includes("'metadata.auto_generated_by': 'autoPrfRouting'"), 'col
 // ── 7. Frontend App.jsx routes ──────────────────────────────────────────
 const appJsx = read('frontend/src/App.jsx');
 [
-  '/admin/rebate-matrix',
-  '/admin/non-md-rebate-matrix',
-  '/admin/capitation-rules',
-  '/admin/commission-matrix',
-  '/admin/payout-ledger',
+  '/erp/rebate-matrix',
+  '/erp/non-md-rebate-matrix',
+  '/erp/capitation-rules',
+  '/erp/commission-matrix',
+  '/erp/payout-ledger',
 ].forEach(p => expect(appJsx.includes(`path="${p}"`), `App.jsx route ${p}`));
 [
   'RebateMatrixPage',
@@ -126,11 +126,11 @@ const appJsx = read('frontend/src/App.jsx');
 // ── 8. Sidebar entries ──────────────────────────────────────────────────
 const sidebar = read('frontend/src/components/common/Sidebar.jsx');
 [
-  '/admin/rebate-matrix',
-  '/admin/non-md-rebate-matrix',
-  '/admin/capitation-rules',
-  '/admin/commission-matrix',
-  '/admin/payout-ledger',
+  '/erp/rebate-matrix',
+  '/erp/non-md-rebate-matrix',
+  '/erp/capitation-rules',
+  '/erp/commission-matrix',
+  '/erp/payout-ledger',
 ].forEach(p => expect(sidebar.includes(p), `Sidebar links ${p}`));
 
 // ── 9. PageGuide entries ────────────────────────────────────────────────

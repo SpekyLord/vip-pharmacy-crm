@@ -5,7 +5,7 @@
  * walk happens at apply-time in matrixWalker; admin just maintains the
  * rule rows. Lookup-driven role gate REBATE_ROLES.MANAGE_NONMD_MATRIX.
  *
- * Route: /admin/non-md-rebate-matrix
+ * Route: /erp/non-md-rebate-matrix
  */
 import { useState, useEffect, useCallback } from 'react';
 import { Users, RefreshCw, Plus, X, AlertTriangle, Loader, Trash2 } from 'lucide-react';

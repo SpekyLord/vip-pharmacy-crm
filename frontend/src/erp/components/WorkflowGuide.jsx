@@ -181,7 +181,7 @@ const WORKFLOW_GUIDES = {
       { label: 'AP Aging detail', path: '/erp/purchasing/ap' },
       { label: 'Approval Hub', path: '/erp/approvals' },
       { label: 'AI Agents', path: '/erp/agent-dashboard' },
-      { label: 'BIR Compliance', path: '/admin/bir' },
+      { label: 'BIR Compliance', path: '/erp/bir' },
     ],
     tip: 'Cockpit is read-only. To act on a number, click through. To change WHO sees the page or specific tiles, edit EXECUTIVE_COCKPIT_ROLES in Control Center → Lookup Tables — defaults are admin + finance + president.',
   },

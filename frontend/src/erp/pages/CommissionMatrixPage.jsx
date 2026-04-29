@@ -4,7 +4,7 @@
  * BDM/ECOMM_REP/AREA_BDM commission rule matrix. Tabs by payee_role.
  * Lookup-driven role gate COMMISSION_ROLES.MANAGE_RULES.
  *
- * Route: /admin/commission-matrix
+ * Route: /erp/commission-matrix
  */
 import { useState, useEffect, useCallback } from 'react';
 import { Trophy, RefreshCw, Plus, X, AlertTriangle, Loader, Trash2 } from 'lucide-react';

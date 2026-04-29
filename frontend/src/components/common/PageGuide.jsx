@@ -122,7 +122,7 @@ const PAGE_GUIDES = {
       'When you receive a BIR email confirmation in your inbox, the parser auto-flips the matching cell from FILED to CONFIRMED. If the parser cannot match (subject-line variance), the email lands in the unmatched queue for manual confirmation.',
     ],
     next: [
-      { label: 'SC/PWD Sales Book', path: '/admin/scpwd-sales-book' },
+      { label: 'SC/PWD Sales Book', path: '/erp/scpwd-sales-book' },
       { label: 'Period Locks (ERP)', path: '/erp/period-locks' },
       { label: 'Trial Balance', path: '/erp/accounting' },
     ],
@@ -139,8 +139,8 @@ const PAGE_GUIDES = {
       'After CONFIRMED, the period locks (PeriodLock module = BIR_FILING). To revise, finance + president must reopen the period.',
     ],
     next: [
-      { label: 'BIR Compliance Dashboard', path: '/admin/bir' },
-      { label: 'SC/PWD Sales Book', path: '/admin/scpwd-sales-book' },
+      { label: 'BIR Compliance Dashboard', path: '/erp/bir' },
+      { label: 'SC/PWD Sales Book', path: '/erp/scpwd-sales-book' },
       { label: 'Period Locks (ERP)', path: '/erp/period-locks' },
     ],
     tip: 'Phase J1 stubs Zero-Rated Sales (14A) and Sales to Government (16A) at 0 — Phase J1.1 wires the customer.vat_status / customer_type joins. If your entity has either, manually adjust the eBIRForms boxes; export CSV still records what was computed, so the audit trail is honest about the J1 surface.',
@@ -596,8 +596,8 @@ const PAGE_GUIDES = {
     ],
     next: [
       { label: 'MD Leads', path: '/admin/md-leads' },
-      { label: 'Capitation Rules', path: '/admin/capitation-rules' },
-      { label: 'Payout Ledger', path: '/admin/payout-ledger' },
+      { label: 'Capitation Rules', path: '/erp/capitation-rules' },
+      { label: 'Payout Ledger', path: '/erp/payout-ledger' },
     ],
     tip: 'Tier-A wins over Non-MD partner rebates per product. Add a Tier-B capitation rule for the same MD if you want monthly per-patient pay on products the MD does NOT have a Tier-A row for.',
   },
@@ -611,8 +611,8 @@ const PAGE_GUIDES = {
       'Deactivate sets is_active=false; manual rebate_pct overrides on existing partner_tags are preserved.',
     ],
     next: [
-      { label: 'MD Rebate Matrix', path: '/admin/rebate-matrix' },
-      { label: 'Payout Ledger', path: '/admin/payout-ledger' },
+      { label: 'MD Rebate Matrix', path: '/erp/rebate-matrix' },
+      { label: 'Payout Ledger', path: '/erp/payout-ledger' },
     ],
     tip: 'Manual rebate_pct on a partner_tags row at Collection entry takes precedence over the matrix. Use this for one-off arrangements.',
   },
@@ -626,8 +626,8 @@ const PAGE_GUIDES = {
       'Deactivate stops new accruals; existing PAID payouts are unaffected.',
     ],
     next: [
-      { label: 'MD Rebate Matrix', path: '/admin/rebate-matrix' },
-      { label: 'Payout Ledger', path: '/admin/payout-ledger' },
+      { label: 'MD Rebate Matrix', path: '/erp/rebate-matrix' },
+      { label: 'Payout Ledger', path: '/erp/payout-ledger' },
     ],
     tip: 'Capitation excels for relationships where the MD steers patients to your pharmacy regardless of the specific product. Tier-A excels for product-specific deals.',
   },
@@ -641,7 +641,7 @@ const PAGE_GUIDES = {
       'Manual commission_rate override at the CSI level beats the matrix — Finance retains override authority via COMMISSION_ROLES.OVERRIDE_AUTO_RATES.',
     ],
     next: [
-      { label: 'Payout Ledger', path: '/admin/payout-ledger' },
+      { label: 'Payout Ledger', path: '/erp/payout-ledger' },
       { label: 'BDM Mgmt', path: '/admin/employees' },
     ],
     tip: 'AREA_BDM accruals require Territory.area_bdm_user_id (not yet wired in this phase — defer until storefront launches).',
@@ -657,7 +657,7 @@ const PAGE_GUIDES = {
     ],
     next: [
       { label: 'PRF / CALF', path: '/erp/prf-calf' },
-      { label: 'MD Rebate Matrix', path: '/admin/rebate-matrix' },
+      { label: 'MD Rebate Matrix', path: '/erp/rebate-matrix' },
     ],
     tip: 'Discrepancy between the ledger and posted PRFs usually means a manual PRF was created outside autoPrfRouting. Check the PRF\'s metadata.auto_generated_by field.',
   },

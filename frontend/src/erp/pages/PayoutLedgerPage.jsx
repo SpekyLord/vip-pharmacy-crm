@@ -6,7 +6,7 @@
  * Rebate ledger supports inline transitions ACCRUING → READY_TO_PAY → PAID
  * (gated by lookup-driven REBATE_ROLES.RUN_MONTHLY_CLOSE / MARK_PAID).
  *
- * Route: /admin/payout-ledger
+ * Route: /erp/payout-ledger
  */
 import { useState, useEffect, useCallback } from 'react';
 import { Wallet, RefreshCw, AlertTriangle, Loader, CheckCircle2, XCircle, Coins } from 'lucide-react';

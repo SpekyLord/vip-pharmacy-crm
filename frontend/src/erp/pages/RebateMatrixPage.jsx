@@ -7,7 +7,7 @@
  * (we surface the error verbatim — keep error messaging consistent with
  * the matrix's authoritative source of truth).
  *
- * Route: /admin/rebate-matrix
+ * Route: /erp/rebate-matrix
  */
 import { useState, useEffect, useCallback } from 'react';
 import { Handshake, RefreshCw, Plus, X, AlertTriangle, Loader, Trash2 } from 'lucide-react';
