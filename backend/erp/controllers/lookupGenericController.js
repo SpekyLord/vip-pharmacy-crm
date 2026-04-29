@@ -673,6 +673,13 @@ const SEED_DEFAULTS = {
     // the `inventory` module namespace (key 'grn_proxy_entry') because GRN does not
     // have its own ERP access module. See backend/erp/utils/resolveOwnerScope.js.
     { code: 'INVENTORY__GRN_PROXY_ENTRY', label: 'Record GRN on behalf of another BDM', metadata: { module: 'inventory', key: 'grn_proxy_entry', sort_order: 7 } },
+    // Phase G4.5 — Edit batch_lot_no / expiry_date on existing stock-on-hand
+    // (rewrites InventoryLedger + GrnEntry.line_items, no GL impact). Cross-BDM
+    // scope additionally requires inventory.grn_proxy_entry + a 'staff' (or other
+    // BDM role) entry in PROXY_ENTRY_ROLES.INVENTORY. Surfaces the Edit button on
+    // /erp/my-stock → Stock on Hand → batch row. See backend/erp/controllers/
+    // inventoryController.js correctBatchMetadata.
+    { code: 'INVENTORY__EDIT_BATCH_METADATA', label: 'Correct Batch Metadata (typo fix on existing stock)', metadata: { module: 'inventory', key: 'edit_batch_metadata', sort_order: 9 } },
     // Phase G4.5e — Proxy Entry for Undertaking. Undertaking's bdm_id is
     // inherited from its linked GRN (autoUndertakingForGrn), so the proxy
     // applies only to READ (list/detail) and SUBMIT (DRAFT→SUBMITTED). No
@@ -3010,6 +3017,24 @@ const SEED_DEFAULTS = {
   // exposes a "Expire stale POs" button; X3 will wire a daily cron.
   PO_EXPIRY_DAYS: [
     { code: 'DEFAULT', label: 'Hospital PO validity window (days)', insert_only_metadata: true, metadata: { days: 90, description: 'Open / Partial POs older than this auto-flag as EXPIRED. Cancellation requires admin action; expiry is system-driven.' } },
+  ],
+  // Phase CSI-X2 — Paste-text parser config. Drives the regex pre-pass +
+  // LLM fallback wired in hospitalPoController.parsePoText. All thresholds
+  // are 0..1 floats; LLM fallback toggles on enable_llm_fallback. Subscribers
+  // tune via Control Center → Lookup Tables. Cache busts after a 5-min TTL.
+  // See backend/erp/services/poTextParser.js + poLlmParser.js.
+  PO_TEXT_PARSER: [
+    { code: 'DEFAULT', label: 'Hospital PO paste-text parser config', insert_only_metadata: true, metadata: {
+      regex_match_threshold: 0.65,
+      regex_ambiguous_threshold: 0.4,
+      coverage_threshold: 0.7,
+      avg_confidence_threshold: 0.75,
+      enable_llm_fallback: true,
+      llm_model: 'claude-haiku-4-5-20251001',
+      llm_max_input_chars: 8000,
+      llm_max_tokens: 2048,
+      description: 'Phase X2 paste-text parser thresholds. Regex pass runs first; LLM fallback (Haiku 4.5 + prompt-cached product list) triggers when coverage < coverage_threshold OR avg_confidence < avg_confidence_threshold. Set enable_llm_fallback=false to disable AI parsing entirely.'
+    } },
   ],
   // Display labels + colors for HospitalPO.status. Schema enum is the
   // validation gate; the lookup drives UI presentation only (Rule #3 — admin

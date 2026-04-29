@@ -18,6 +18,10 @@ const ctrl = require('../controllers/hospitalPoController');
 // SUMMARY — backlog tiles (must come before /:id to avoid route shadowing)
 router.get('/summary/backlog', ctrl.getBacklogSummary);
 
+// PARSE — Phase X2 paste-text parser (regex + LLM fallback). Must come
+// before /:id so the literal "parse" doesn't get treated as an ObjectId.
+router.post('/parse', ctrl.parsePoText);
+
 // LIST + CRUD
 router.get('/', ctrl.listHospitalPos);
 router.get('/:id', ctrl.getHospitalPoById);

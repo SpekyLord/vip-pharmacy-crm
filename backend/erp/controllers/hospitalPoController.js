@@ -22,6 +22,8 @@ const Lookup = require('../models/Lookup');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { resolveOwnerForWrite, widenFilterForProxy } = require('../utils/resolveOwnerScope');
 const { resolveContractPrice } = require('../services/priceResolver');
+const { parsePoTextRegex } = require('../services/poTextParser');
+const { parsePoTextLlm } = require('../services/poLlmParser');
 
 // ─────────────────────────────────────────────────────────────────────────
 // Helper — read PO_EXPIRY_DAYS from Lookup (per-entity, lookup-driven)
@@ -445,6 +447,162 @@ const expireStalePos = catchAsync(async (req, res) => {
   });
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// PARSE PASTE TEXT — Phase CSI-X2 (Apr 2026)
+// Regex parser first → LLM fallback when coverage/confidence below threshold.
+// Lookup-driven config in PO_TEXT_PARSER category.
+// ─────────────────────────────────────────────────────────────────────────
+const _parserConfigCache = new Map();
+const PARSER_CONFIG_TTL_MS = 5 * 60 * 1000;
+async function getParserConfig(entityId) {
+  const key = String(entityId);
+  const cached = _parserConfigCache.get(key);
+  if (cached && Date.now() - cached.ts < PARSER_CONFIG_TTL_MS) return cached.cfg;
+
+  const defaults = {
+    regex_match_threshold: 0.65,
+    regex_ambiguous_threshold: 0.4,
+    coverage_threshold: 0.7,
+    avg_confidence_threshold: 0.75,
+    enable_llm_fallback: true,
+    llm_model: 'claude-haiku-4-5-20251001',
+    llm_max_input_chars: 8000,
+    llm_max_tokens: 2048
+  };
+  let cfg = { ...defaults };
+  try {
+    const doc = await Lookup.findOne({
+      entity_id: entityId,
+      category: 'PO_TEXT_PARSER',
+      code: 'DEFAULT',
+      is_active: true
+    }).lean();
+    if (doc?.metadata) {
+      for (const k of Object.keys(defaults)) {
+        if (doc.metadata[k] != null) cfg[k] = doc.metadata[k];
+      }
+    }
+  } catch {
+    // fall back silently
+  }
+  _parserConfigCache.set(key, { ts: Date.now(), cfg });
+  return cfg;
+}
+
+const parsePoText = catchAsync(async (req, res) => {
+  const { source_text, hospital_id } = req.body || {};
+  if (!source_text || typeof source_text !== 'string') {
+    return res.status(400).json({ success: false, message: 'source_text is required' });
+  }
+  const cfg = await getParserConfig(req.entityId);
+
+  // Hard cap input size to keep cost + latency bounded
+  const trimmed = source_text.length > cfg.llm_max_input_chars
+    ? source_text.slice(0, cfg.llm_max_input_chars)
+    : source_text;
+
+  // Pull product slice for this entity (brand_name + dosage_strength + generic_name)
+  // Scoped by entity_id only; X2 v1.1 may layer BDM-assigned product filtering.
+  const products = await ProductMaster.find({ entity_id: req.entityId })
+    .select('_id brand_name generic_name dosage_strength')
+    .lean();
+
+  // Stage 1 — regex pass
+  const regex = parsePoTextRegex(trimmed, products, {
+    matchThreshold: cfg.regex_match_threshold,
+    ambiguousThreshold: cfg.regex_ambiguous_threshold
+  });
+
+  const avgConfidence = regex.matched.length
+    ? regex.matched.reduce((s, m) => s + m.confidence, 0) / regex.matched.length
+    : 0;
+
+  const needsLlm = cfg.enable_llm_fallback && (
+    regex.coverage < cfg.coverage_threshold ||
+    (regex.matched.length > 0 && avgConfidence < cfg.avg_confidence_threshold) ||
+    (regex.ambiguous.length > 0 && regex.matched.length === 0)
+  );
+
+  // No-fallback short-circuit
+  if (!needsLlm) {
+    return res.json({
+      success: true,
+      data: {
+        matched: regex.matched,
+        ambiguous: regex.ambiguous,
+        unmatched: regex.unmatched,
+        meta: {
+          stage: 'regex',
+          coverage: regex.coverage,
+          avg_confidence: Number(avgConfidence.toFixed(3)),
+          total_lines: regex.total_lines,
+          used_llm: false
+        }
+      }
+    });
+  }
+
+  // Stage 2 — LLM fallback
+  let llm = null;
+  let llmError = null;
+  try {
+    llm = await parsePoTextLlm({
+      text: trimmed,
+      products,
+      regex_residual: [...regex.ambiguous, ...regex.unmatched].map(r => ({
+        raw_line: r.raw_line,
+        reason: r.reason || 'ambiguous match'
+      })),
+      model: cfg.llm_model,
+      max_tokens: cfg.llm_max_tokens
+    });
+  } catch (err) {
+    llmError = err.message;
+    // Fall through — degrade gracefully to regex-only result
+  }
+
+  // Merge: prefer LLM matched lines (they saw the residuals); supplement
+  // with regex matched lines whose raw_line is not already present.
+  let merged;
+  if (llm) {
+    const llmRawSet = new Set(llm.matched.map(m => m.raw_line));
+    const supplemental = regex.matched.filter(m => !llmRawSet.has(m.raw_line));
+    merged = {
+      matched: [...llm.matched, ...supplemental],
+      ambiguous: llm.ambiguous,
+      unmatched: regex.unmatched.filter(u =>
+        !llm.matched.some(m => m.raw_line === u.raw_line) &&
+        !llm.ambiguous.some(a => a.raw_line === u.raw_line)
+      )
+    };
+  } else {
+    merged = {
+      matched: regex.matched,
+      ambiguous: regex.ambiguous,
+      unmatched: regex.unmatched
+    };
+  }
+
+  res.json({
+    success: true,
+    data: {
+      matched: merged.matched,
+      ambiguous: merged.ambiguous,
+      unmatched: merged.unmatched,
+      meta: {
+        stage: llm ? 'llm' : 'regex_only_llm_failed',
+        coverage: regex.coverage,
+        avg_confidence: Number(avgConfidence.toFixed(3)),
+        total_lines: regex.total_lines,
+        used_llm: !!llm,
+        llm_usage: llm ? llm.usage : null,
+        llm_latency_ms: llm ? llm.latency_ms : null,
+        llm_error: llmError
+      }
+    }
+  });
+});
+
 module.exports = {
   listHospitalPos,
   getHospitalPoById,
@@ -452,5 +610,6 @@ module.exports = {
   cancelHospitalPo,
   cancelHospitalPoLine,
   getBacklogSummary,
-  expireStalePos
+  expireStalePos,
+  parsePoText
 };

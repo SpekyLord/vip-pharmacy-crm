@@ -122,14 +122,15 @@ const WORKFLOW_GUIDES = {
       'Step 1 — Hospital + PO# + Date. PO# is the hospital\'s reference (their internal PO ledger number). It must be unique per hospital within this entity. The system auto-cleans it (uppercases, strips spaces) for the unique check.',
       'Step 2 — Owner BDM. Iloilo office encoders pick the BDM who owns this hospital (proxy entry, Phase G4.5a). When set, the audit trail records "entered by you on behalf of BDM X". BDMs entering their own POs leave this blank.',
       'Step 3 — Source. Where did the order come from? Messenger text / formal PDF / email / verbal / other. Used by audit and DPA review.',
-      'Step 4 — Line items. Pick the product (brand + dosage shown). Qty is required. Unit price auto-resolves from HospitalContractPrice for this hospital + product; if no contract, falls back to ProductMaster.SRP. Override-with-reason is allowed but logged. The "Source" column shows CONTRACT / SRP / MANUAL_OVERRIDE so the encoder sees why each price was applied.',
-      'Step 5 — Save. The PO opens as OPEN status. Linked CSIs (Sales Entry) decrement qty_served on each line. The parent PO transitions to PARTIAL when any qty_served > 0, FULFILLED when all lines fully served, EXPIRED when past PO_EXPIRY_DAYS (lookup-driven default 90), or CANCELLED via admin.',
+      'Step 4 — (Phase X2) When source is Messenger / Email, paste the raw order body into Source Text and click "Parse paste → line items". A regex pre-pass auto-fills every confidently matched line; an AI fallback (Claude Haiku 4.5 with prompt-cached product list) handles ambiguous lines. Each parsed row gets a confidence pill (High / Medium / Low). Lines the parser cannot match surface in a Needs Review panel for manual pickup.',
+      'Step 5 — Line items. Pick the product (brand + dosage shown). Qty is required. Unit price auto-resolves from HospitalContractPrice for this hospital + product; if no contract, falls back to ProductMaster.SRP. Override-with-reason is allowed but logged. The "Source" column shows CONTRACT / SRP / MANUAL_OVERRIDE so the encoder sees why each price was applied. Editing a parser-suggested product or qty highlights the row amber and tags the line note with [parser-override] for the audit trail — the structured form is always the source of truth.',
+      'Step 6 — Save. The PO opens as OPEN status. Linked CSIs (Sales Entry) decrement qty_served on each line. The parent PO transitions to PARTIAL when any qty_served > 0, FULFILLED when all lines fully served, EXPIRED when past PO_EXPIRY_DAYS (lookup-driven default 90), or CANCELLED via admin.',
     ],
     next: [
       { label: 'Backlog', path: '/erp/hospital-pos/backlog' },
       { label: 'Hospital Contract Prices', path: '/erp/hospital-contract-prices' },
     ],
-    tip: 'Phase X2 next sprint adds a Messenger-paste parser: pasting "1. Amoxicillin 500mg x 50 boxes" auto-fills the structured line items below. Until then, encoders type the line items manually — the structured form is always the source of truth.',
+    tip: 'Parser thresholds (confidence floor, AI-fallback toggle, model) live in the PO_TEXT_PARSER lookup category — admin can disable AI parsing or tighten the regex confidence floor without a code deploy.',
   },
   'hospital-po-detail': {
     title: 'Hospital PO Detail',

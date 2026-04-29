@@ -44,3 +44,10 @@ export async function expireStalePos() {
   const { data } = await api.post(`${BASE}/maintenance/expire-stale`);
   return data;
 }
+
+// Phase X2 — paste-text → structured PO line items.
+// Returns: { matched, ambiguous, unmatched, meta: { stage, used_llm, ... } }
+export async function parsePoText({ source_text, hospital_id }) {
+  const { data } = await api.post(`${BASE}/parse`, { source_text, hospital_id });
+  return data?.data || null;
+}
