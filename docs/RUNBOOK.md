@@ -538,6 +538,117 @@ Edit via Control Center → Lookup Tables → `ACCOUNTING_INTEGRITY_THRESHOLDS` 
 
 ---
 
+## SECTION 11 — Operational Quickstart: Granting eBDM Proxy Access
+
+> Operational, not disaster recovery. Lives in this RUNBOOK because it's the single
+> page operators reach for when "set up a new clerk" comes in. Reflects every proxy
+> phase shipped through Apr 29 2026 (G4.5a → G4.5bb).
+
+### 11a. The proxy access model in one paragraph
+
+The ERP has a two-layer gate for "do work on behalf of someone else" (proxy entry):
+
+1. **Role gate** — the caller's role must appear in the `PROXY_ENTRY_ROLES.<MODULE>` lookup row's `metadata.roles` array (default `['admin', 'finance', 'president']`). To allow `staff` (eBDM) through, admin appends `'staff'` to that array.
+2. **Sub-permission gate** — the caller's user record must have the matching sub-permission ticked under ERP Access Template (e.g. `expenses.proxy_entry`, `payroll.income_proxy`, `payroll.payslip_deduction_write`).
+
+President and admin/finance always bypass both layers. CEO is always denied (view-only role).
+
+For modules where the target is a BDM-shaped record (sales / collections / expenses / SMER / car logbook / PRF-CALF / undertaking / hospital PO / GRN / inventory / income / deduction schedule), the page also shows an `OwnerPicker` "Record on behalf of" dropdown so the proxy chooses the target BDM at write time.
+
+### 11b. 3-step quickstart for a new eBDM clerk
+
+> Goal: clerk `s22.vippharmacy@gmail.com` (role: staff) should be able to record expenses + sales + IncomeReports + DeductionSchedules on behalf of any field BDM, AND maintain the deduction lines on EMPLOYEE-type payslips for the Sales department.
+
+#### Step 1 — Append `'staff'` to the `PROXY_ENTRY_ROLES` rows for the modules you want to delegate
+
+Control Center → Lookup Tables → `PROXY_ENTRY_ROLES` → for each module the clerk needs (one row per code):
+
+| Code | What it gates |
+|---|---|
+| `SALES` | Live CSI entry on behalf of a BDM |
+| `OPENING_AR` | Pre-cutover CSI entry |
+| `COLLECTIONS` | Collection receipts |
+| `EXPENSES` | Expense Entry / OR |
+| `GRN` | Goods Receipt |
+| `CAR_LOGBOOK` | Daily driver log + per-fuel approvals |
+| `PRF_CALF` | Partner rebate / CALF cash advance liquidation |
+| `UNDERTAKING` | GRN receipt confirmation |
+| `SMER` | Per-diem cycle + per-day override |
+| `HOSPITAL_PO` | Hospital PO entry (Iloilo office proxy) |
+| `INVENTORY` | Batch metadata + physical count (legacy bundled key) |
+| `INCOME` | IncomeReport generation + manual deduction lines |
+| `DEDUCTION_SCHEDULE` | Cash-advance / loan amortization schedules |
+
+Edit each row → metadata → `roles` → append `"staff"`. Save. (Caches bust within milliseconds via the registered hot-reload set.)
+
+#### Step 2 — Tick the matching sub-permissions on the clerk's ERP Access Template
+
+People → `s22 Vip Pharmacy` → ERP Access Template → tick the sub-permissions:
+
+| Module | Sub-permission key | Phase |
+|---|---|---|
+| `expenses` | `proxy_entry` | G4.5a |
+| `expenses` | `car_logbook_proxy` | G4.5e |
+| `expenses` | `prf_calf_proxy` | G4.5e |
+| `expenses` | `smer_proxy` | G4.5f |
+| `expenses` | `undertaking_proxy` | G4.5e |
+| `sales` | `proxy_entry` | G4.5a |
+| `sales` | `opening_ar_proxy` | G4.5a |
+| `sales` | `hospital_po_proxy` | CSI-X1 |
+| `collections` | `proxy_entry` | G4.5b |
+| `inventory` | `grn_proxy_entry` | G4.5b |
+| `inventory` | `batch_metadata_proxy` | G4.5z (split from legacy key) |
+| `inventory` | `physical_count_proxy` | G4.5z (split from legacy key) |
+| `payroll` | `income_proxy` | G4.5aa |
+| `payroll` | `deduction_schedule_proxy` | G4.5aa |
+| `payroll` | `payslip_deduction_write` | G4.5aa |
+
+Save the user. The clerk now has the role half AND the sub-permission half of every gate they need.
+
+#### Step 3 — (Optional, payslip-only) Constrain the clerk's payslip roster
+
+For Phase G4.5bb (Apr 29 2026): if the clerk should only mutate deduction lines on a SUBSET of payslips (not entity-wide), add a row to `PAYSLIP_PROXY_ROSTER`.
+
+Control Center → Lookup Tables → `PAYSLIP_PROXY_ROSTER` → `+ Add row`:
+
+| Field | Value |
+|---|---|
+| `code` | The clerk's User `_id` as a string (copy from `/admin/employees` URL or DB) |
+| `label` | Human-readable: e.g. `s22 — Sales department roster` |
+| `metadata.scope_mode` | `ALL` (no constraint) · `PERSON_IDS` (specific employees) · `PERSON_TYPES` (e.g. `EMPLOYEE` only — exclude DIRECTOR/CONSULTANT) |
+| `metadata.person_ids` | If scope_mode is `PERSON_IDS`: array of PeopleMaster `_id` strings |
+| `metadata.person_types` | If scope_mode is `PERSON_TYPES`: e.g. `["EMPLOYEE"]` |
+| `metadata.note` | Optional free text shown on the chip / banner |
+| `is_active` | `true` |
+
+**No row** = `scope_mode='ALL'` (entity-wide write — the G4.5aa default). The roster is opt-in, not required.
+
+When restrictive, the staging list at `/erp/payroll` filters server-side to the roster, a purple chip explains the constraint, and any out-of-roster payslip opens read-only with a yellow banner.
+
+### 11c. Verify the grant worked
+
+1. Log in as the clerk.
+2. Open the page they're now allowed to proxy — e.g. `/erp/expenses` or `/erp/my-income`.
+3. Confirm a "Record on behalf of" dropdown is visible (purple border = optional self-fill, amber border = mandatory pick).
+4. Pick a target BDM, file a record, watch it land under the target's `bdm_id` while audit fields (`created_by`, `proxied_by`, `entered_by`) reflect the clerk.
+5. For payslip work: confirm the chip on `/erp/payroll` shows the roster scope, and that an out-of-roster payslip opens read-only.
+
+### 11d. Revoke a grant
+
+- Untick the sub-permissions on the user's Access Template → routes immediately reject with 403.
+- OR remove `'staff'` from the relevant `PROXY_ENTRY_ROLES.<MODULE>` row → all staff-shaped users lose proxy access for that module simultaneously.
+- OR set the clerk's `PAYSLIP_PROXY_ROSTER` row `is_active=false` → falls back to G4.5aa entity-wide behavior (the row is now ignored).
+
+### 11e. Cache TTLs (for ops debugging)
+
+- `PROXY_ENTRY_ROLES` / `VALID_OWNER_ROLES`: 60s cache, busted on lookup CRUD.
+- `PAYSLIP_PROXY_ROSTER`: 60s cache per `(entityId, userId)`, busted on lookup CRUD.
+- `ERP_DANGER_SUB_PERMISSIONS`: 5min cache.
+
+If a grant doesn't take effect within ~10 seconds, check the lookup CRUD path actually hit the bust (server logs will show `invalidatePayslipRosterCache` calls). Worst case: bounce the backend pod.
+
+---
+
 ## END OF RUNBOOK
 
 **Print this document. Two physical copies: one home, one office safe.**

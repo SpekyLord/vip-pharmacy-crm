@@ -7842,6 +7842,109 @@ User constraint: BDMs are now CRM-only (per Apr 23 2026 BDMs→CRM-only / eBDMs�
 
 ---
 
+## Phase G4.5bb — Employee Payslip Person-ID Proxy Roster (Apr 29 2026)
+
+### Problem
+Phase G4.5aa shipped a new sub-perm `payroll.payslip_deduction_write` that opened employee Payslip per-line deduction CRUD to non-management staff. The intent was a non-management Finance clerk who can add/verify/remove deduction lines without granting `PAYROLL FULL` (which would also grant Compute / Approve / Post). The sub-perm did the role half of the gate but it did **not** constrain WHICH employees that clerk could mutate — it was entity-wide.
+
+That was correct as a Phase 1 (broad clerk delegation), but real subscribers asked for tighter scoping:
+- A bookkeeper hired only for the Sales department's payslips shouldn't be able to mutate Director payslips.
+- A field-office clerk handling 5 specific employees' deductions shouldn't be able to mutate the other 50.
+- The constraint must be subscriber-tunable without a code deploy (Rule #3) and survive future re-seeds (Rule #3 corollary — the recurring `metadata.roles` revert footgun).
+
+### Shipped (Apr 29 2026, embedded follow-up to G4.5aa)
+
+#### Lookup category (`backend/erp/controllers/lookupGenericController.js`)
+- New `PAYSLIP_PROXY_ROSTER` category. Empty `SEED_DEFAULTS` array — admins create rows on demand (one per clerk).
+- Schema (per row):
+  - `code` = clerk's User `_id` as a string (one row per clerk)
+  - `metadata.scope_mode`: `'ALL'` | `'PERSON_IDS'` | `'PERSON_TYPES'`
+  - `metadata.person_ids`: `[ObjectId-string, ...]` (used when `scope_mode = 'PERSON_IDS'`)
+  - `metadata.person_types`: `['EMPLOYEE', 'CONSULTANT', 'DIRECTOR']` (used when `scope_mode = 'PERSON_TYPES'`)
+  - `metadata.note`: optional human-readable description (rendered on the chip / banner)
+  - `insert_only_metadata: true` so admin edits to scope_mode survive future re-seeds (matches PROXY_ENTRY_ROLES posture).
+- New `PAYSLIP_PROXY_ROSTER_CATEGORIES` cache-bust set wired into the create / update / remove / seedAll handlers — flips `invalidatePayslipRosterCache(entityId, code?)` so role/scope changes propagate within milliseconds.
+
+#### Backend helper (`backend/erp/utils/resolvePayslipProxy.js`, NEW)
+Sibling of `resolveOwnerScope.js` (which handles `bdm_id`-owned records). Payslips are owned by `person_id` (PeopleMaster), not bdm_id, so this helper is structurally different — there's no target-pick on a write (the URL `:id` already implies the target). Instead it constrains WHICH payslips a clerk may mutate.
+- Exports:
+  - `getEffectiveRoster(req)` — pure read, returns `{ allowed, privileged?, scope_mode, has_row, person_ids, person_types, note }` or `{ allowed: false, reason }`. Privileged callers (admin/finance/president) always allowed with `scope_mode='ALL'`.
+  - `canWritePayslipDeduction(req, payslip)` — decision per specific payslip. Joins `getEffectiveRoster` with the payslip's resolved `person_id` + `person_type` (handles populated and raw shapes). Fails-closed on unknown `scope_mode` so misconfiguration doesn't silently widen access.
+  - `buildRosterFilterFragment(req)` — for list endpoints (`getPayrollStaging`). Returns `{ }` for privileged + ALL, `{ person_id: { $in: [...] } }` for PERSON_IDS, or a sentinel `{ __scope_mode: 'PERSON_TYPES', __person_types: [...] }` for PERSON_TYPES (because Mongo can't filter populated fields directly — controller post-filters).
+  - `invalidatePayslipRosterCache(entityId?, userId?)` — granular cache buster. Empty args = clear all.
+- Internal: 60s TTL `Map`-cache keyed `${entityId}::${userId}` (matches the rest of the proxy resolver family).
+
+#### Backend routes (`backend/erp/routes/payrollRoutes.js`)
+- `payslipDeductionWriteGate` middleware **upgraded async**. Two-layer gate (in order):
+  1. Privileged (admin/finance/president) → `next()`.
+  2. Staff with `payroll.payslip_deduction_write`:
+     - Pull `:id` payslip, validate ObjectId, populate only `person_id.person_type` (lean).
+     - Tenant guard: refuse cross-entity payslips with 404 (don't leak existence).
+     - `canWritePayslipDeduction(req, peek)` — return 403 with `scope_mode` when out-of-roster.
+- New route `GET /payroll/proxy-roster/me` registered BEFORE `/:id` so Express resolves the literal first. Backed by the new controller.
+
+#### Backend controller (`backend/erp/controllers/payrollController.js`)
+- `getPayrollStaging` enhanced: pulls `buildRosterFilterFragment(req)`, merges into the Mongo filter for `PERSON_IDS`, post-filters in JS for `PERSON_TYPES`. Privileged callers + ALL-scope clerks get an empty fragment (no extra filter — G4.5aa entity-wide behavior preserved).
+- `getMyPayslipProxyRoster` (NEW): calls `getEffectiveRoster(req)`. Returns 200 with `{ allowed: false, reason }` for non-eligible callers (frontend treats as "no chip, no banner"). For PERSON_IDS, hydrates `people: [{_id, full_name, person_type}]` so the frontend chip can show employee names without a second round-trip. Tenant-scoped to `req.entityId`.
+
+#### Frontend
+- **`frontend/src/erp/hooks/usePayroll.js`**: new `getMyPayslipProxyRoster()` returning the eff roster.
+- **`frontend/src/erp/pages/PayrollRun.jsx`**:
+  - Fetches roster on mount (silent failure tolerant — older backend without route still works).
+  - Renders a purple chip above the period bar when `scope_mode` is `PERSON_IDS` / `PERSON_TYPES` (privileged + ALL → no chip). PERSON_IDS chip shows employee count + names; PERSON_TYPES chip shows the type allowlist; both render the optional `metadata.note`.
+- **`frontend/src/erp/pages/PayslipView.jsx`**:
+  - Fetches roster on mount.
+  - Computes `rosterAllowsThisPayslip` against the loaded payslip (handles both populated `person_id._id` + `person_type` and raw shapes).
+  - `canEdit` now factors in: management role OR (sub-perm AND roster allows AND status is COMPUTED/REVIEWED). When `blockedByRoster` (clerk with sub-perm but out-of-roster), action buttons hide and a yellow banner explains why + how admin extends the roster.
+- **`frontend/src/erp/components/WorkflowGuide.jsx`**: `payroll-run` step 5 + `payslip-view` step 6 explain the new behavior. Both link to Lookup Tables in the `next` array.
+
+#### Healthcheck
+- `backend/scripts/healthcheckPayslipProxyRoster.js` (NEW). 31 static checks covering helper exports + scope_mode branches + lookup category seed + cache hooks (4 paths) + route gate + 3 deduction-line gating points + controller staging filter + getMyPayslipProxyRoster + frontend hook + chip render + read-only banner + canEdit logic + WorkflowGuide steps. **PASSES 31/31.**
+
+### Validation
+- Backend syntax `node -c` clean on resolvePayslipProxy.js + lookupGenericController.js + payrollRoutes.js + payrollController.js.
+- `node backend/scripts/healthcheckPayslipProxyRoster.js` → **31/31 PASS**.
+- `node backend/scripts/healthcheckIncomeProxy.js` → **32/32 PASS** (G4.5aa regression confirmed).
+- `npx vite build` → green in **16.87s**.
+- Playwright UI smoke — see "How to test" below.
+
+### Subscription readiness
+- All gates lookup-driven (Rule #3). Subscribers configure clerk rosters via Control Center → Lookup Tables → `PAYSLIP_PROXY_ROSTER` without code deploy. `insert_only_metadata: true` shields admin scope edits from re-seed clobber.
+- Cache bust: 60s TTL + immediate invalidation on lookup CRUD via the registered cache-bust set. Edits propagate instantly.
+- Backwards-compatible default: a clerk with `payroll.payslip_deduction_write` and no roster row keeps G4.5aa entity-wide behavior — the new restriction is opt-in by admin.
+- Multi-tenant SaaS posture (CLAUDE.md §0d): the helper keys cache by `entityId + userId` so a future tenant_id rename is a one-line change.
+
+### How to test (positive Playwright smoke)
+1. Log in as president (`yourpartner@viosintegrated.net`).
+2. Pick a staff persona (`s22.vippharmacy@gmail.com`). On their People → ERP Access, tick `payroll.payslip_deduction_write`. Save.
+3. Control Center → Lookup Tables → `PAYSLIP_PROXY_ROSTER` → `+ Add row`:
+   - `code` = the staff user's `_id` (copy from People → URL or DB)
+   - `label` = `s22 — Sales department roster`
+   - `metadata.scope_mode` = `PERSON_TYPES`
+   - `metadata.person_types` = `['EMPLOYEE']`
+   - Save.
+4. Switch to s22. `/erp/payroll` should render the purple chip "Payslip Proxy Roster: Limited to person types: EMPLOYEE". The staging list should hide CONSULTANT/DIRECTOR rows.
+5. Open an EMPLOYEE payslip → COMPUTED/REVIEWED status — Add Deduction Line button visible, action buttons render.
+6. Open a DIRECTOR payslip → yellow banner "Read-only — not on your payslip-proxy roster" + person_type explanation; action buttons hidden.
+
+### Files touched (9)
+- `backend/erp/utils/resolvePayslipProxy.js` (NEW)
+- `backend/erp/controllers/lookupGenericController.js`
+- `backend/erp/routes/payrollRoutes.js`
+- `backend/erp/controllers/payrollController.js`
+- `frontend/src/erp/hooks/usePayroll.js`
+- `frontend/src/erp/pages/PayrollRun.jsx`
+- `frontend/src/erp/pages/PayslipView.jsx`
+- `frontend/src/erp/components/WorkflowGuide.jsx`
+- `backend/scripts/healthcheckPayslipProxyRoster.js` (NEW)
+- `CLAUDE-ERP.md` + `docs/PHASETASK-ERP.md` + `docs/RUNBOOK.md` (this section + RUNBOOK quickstart)
+
+### Future Phase G4.5cc candidate (DEFERRED)
+- Per-department roster: rather than per-employee or per-person_type, allow `metadata.departments: ['SALES','FINANCE']`. Requires the resolver to populate `person_id.department` (currently we only populate `person_type`). Defer until a subscriber asks.
+- Time-bounded roster: `metadata.valid_from` / `metadata.valid_until` for temp clerk delegations. Same pattern as PERIOD_RANGE_OVERRIDE. Defer.
+
+---
+
 ## Phase G4.5h-W — GRN Undertaking Waybill Recovery (Apr 29 2026)
 
 ### Problem

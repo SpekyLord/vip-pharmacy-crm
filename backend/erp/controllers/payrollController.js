@@ -17,6 +17,11 @@ const { syncInstallmentStatusForPayslip } = require('../services/deductionSchedu
 const { checkPeriodOpen } = require('../utils/periodLock');
 const ErpAuditLog = require('../models/ErpAuditLog');
 const { notifyPayrollPosted } = require('../services/erpNotificationService');
+// Phase G4.5bb (Apr 29, 2026) — payslip person-id proxy roster.
+const {
+  getEffectiveRoster,
+  buildRosterFilterFragment,
+} = require('../utils/resolvePayslipProxy');
 
 // BDMs use Income Reports, not payroll — excluded from GENERATOR_MAP
 const GENERATOR_MAP = {
@@ -84,10 +89,31 @@ const getPayrollStaging = catchAsync(async (req, res) => {
     filter.deletion_event_id = { $exists: false };
   }
 
-  const payslips = await Payslip.find(filter)
+  // Phase G4.5bb (Apr 29, 2026) — for non-management staff with the
+  // payslip_deduction_write sub-perm, narrow the staging list to the clerk's
+  // PAYSLIP_PROXY_ROSTER. Privileged roles + clerks with no row / scope_mode
+  // ALL get an empty fragment (no extra filter — matches G4.5aa). The
+  // PERSON_TYPES branch returns a sentinel because we can't filter populated
+  // person_id.person_type at the DB layer; we post-filter the result instead.
+  const rosterFragment = await buildRosterFilterFragment(req);
+  let postFilterPersonTypes = null;
+  if (rosterFragment.__scope_mode === 'PERSON_TYPES') {
+    postFilterPersonTypes = rosterFragment.__person_types;
+  } else {
+    Object.assign(filter, rosterFragment);
+  }
+
+  let payslips = await Payslip.find(filter)
     .populate('person_id', 'full_name person_type department')
     .sort({ 'person_id.full_name': 1 })
     .lean();
+
+  if (postFilterPersonTypes) {
+    payslips = payslips.filter(ps => {
+      const pt = String(ps.person_id?.person_type || '').toUpperCase();
+      return postFilterPersonTypes.includes(pt);
+    });
+  }
 
   // Compute totals
   let totalGross = 0, totalDeductions = 0, totalNet = 0, totalEmployer = 0;
@@ -539,6 +565,46 @@ const removeDeductionLine = catchAsync(async (req, res) => {
 const { buildPresidentReverseHandler } = require('../services/documentReversalService');
 const presidentReversePayslip = buildPresidentReverseHandler('PAYSLIP');
 
+// ═══════════════════════════════════════════
+// Phase G4.5bb (Apr 29, 2026) — current-user payslip-proxy roster preview.
+// ═══════════════════════════════════════════
+//
+// Frontend reads this on PayrollRun (to render the roster chip) and PayslipView
+// (to decide whether to show the read-only banner when the clerk is gated).
+// Privileged callers always see scope_mode='ALL'. Staff without the sub-perm
+// see allowed=false. Staff with the sub-perm see the resolved scope_mode +
+// person_ids[] / person_types[] (whichever the lookup row defines), or
+// scope_mode='ALL' if no row exists yet.
+//
+// Hydrates person_ids → minimal {_id, full_name, person_type} for the chip.
+const getMyPayslipProxyRoster = catchAsync(async (req, res) => {
+  const eff = await getEffectiveRoster(req);
+  if (!eff.allowed) {
+    // 200 with allowed=false — frontend treats this as "no chip, no banner".
+    return res.json({ success: true, data: { allowed: false, reason: eff.reason || null } });
+  }
+  let people = [];
+  if (eff.scope_mode === 'PERSON_IDS' && Array.isArray(eff.person_ids) && eff.person_ids.length) {
+    people = await PeopleMaster.find({
+      entity_id: req.entityId,
+      _id: { $in: eff.person_ids },
+    }).select('full_name person_type department').lean();
+  }
+  res.json({
+    success: true,
+    data: {
+      allowed: true,
+      privileged: !!eff.privileged,
+      scope_mode: eff.scope_mode,
+      has_row: !!eff.has_row,
+      person_ids: eff.person_ids || [],
+      person_types: eff.person_types || [],
+      people, // hydrated for PERSON_IDS only — small payload, fine to send
+      note: eff.note || null,
+    },
+  });
+});
+
 module.exports = {
   computePayroll,
   getPayrollStaging,
@@ -554,4 +620,6 @@ module.exports = {
   financeAddDeductionLine,
   verifyDeductionLine,
   removeDeductionLine,
+  // Phase G4.5bb — payslip-proxy roster preview
+  getMyPayslipProxyRoster,
 };

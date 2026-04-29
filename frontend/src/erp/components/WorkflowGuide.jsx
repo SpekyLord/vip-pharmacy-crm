@@ -892,12 +892,15 @@ const WORKFLOW_GUIDES = {
       'Compute — calculates gross, deductions, net per employee',
       'Review and adjust if needed (COMPUTED → REVIEWED)',
       'Approve and Post — creates payroll journal entries',
+      // Phase G4.5bb (Apr 29, 2026)
+      'Phase G4.5bb: a back-office clerk with the payroll.payslip_deduction_write sub-perm can be constrained to a roster of specific employees (or person types). Admin manages the roster in Control Center → Lookup Tables → PAYSLIP_PROXY_ROSTER (one row per clerk, code = clerk\'s user id, scope_mode = ALL / PERSON_IDS / PERSON_TYPES). When restrictive, the staging list filters server-side and a purple chip explains the constraint above the period bar.',
     ],
     next: [
       { label: 'Payslips', path: '/erp/payroll' },
       { label: 'Journal Entries', path: '/erp/journals' },
+      { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
     ],
-    tip: 'Government rates (SSS, PhilHealth, PagIBIG) are pulled from Settings automatically.',
+    tip: 'Government rates (SSS, PhilHealth, PagIBIG) are pulled from Settings automatically. PAYSLIP_PROXY_ROSTER (G4.5bb) is lookup-driven — subscribers tune per-clerk allowlists without a code deploy.',
   },
   'office-supplies': {
     title: 'Office Supplies',
@@ -1084,6 +1087,8 @@ const WORKFLOW_GUIDES = {
       'Use **+ Add Deduction Line** for HMO co-pays, uniforms, one-off adjustments, and anything the auto-compute missed. Type is lookup-driven (EMPLOYEE_DEDUCTION_TYPE) so subscribers can extend via Control Center. Lines added by Finance are VERIFIED immediately.',
       'Employee Deduction Schedules — Finance creates from the Schedules tab (/erp/deduction-schedules) with person_id; after Approval Hub approval they auto-inject one installment per matching period+cycle. Rejecting a schedule-sourced line here cascades CANCELLED back to the DeductionSchedule installment.',
       'Download or print the payslip for records after POST.',
+      // Phase G4.5bb (Apr 29, 2026)
+      'Phase G4.5bb: a non-management clerk holding payroll.payslip_deduction_write may also edit lines, but only on payslips inside their PAYSLIP_PROXY_ROSTER. If you see a yellow read-only banner, this employee\'s person_id (or person_type) is NOT on your roster — ask admin to add it via Control Center → Lookup Tables → PAYSLIP_PROXY_ROSTER (code = your user id). Privileged roles (admin/finance/president) bypass the roster.',
     ],
     next: [
       { label: 'Payroll Run', path: '/erp/payroll' },
