@@ -39,6 +39,10 @@ const TYPE_TO_MODULE = {
   expense_entry: 'EXPENSES',
   prf_calf: 'PRF_CALF',
   payslip: 'PAYROLL',
+  // Phase G4.5cc (Apr 29, 2026) — clerk-submitted payroll run. The MODULE_AUTO_POST
+  // hook below dispatches to this `type` so admin's single Hub approval cascades
+  // every matching payslip COMPUTED→REVIEWED→APPROVED→POSTED + emits a payroll JE.
+  payroll_run: 'PAYROLL',
   kpi_rating: 'KPI',
   income_report: 'INCOME',
   deduction_schedule: 'DEDUCTION_SCHEDULE',
@@ -100,6 +104,16 @@ const MODULE_AUTO_POST = {
   // Keyed here by doc_type so the auto-post dispatcher (below) routes to the
   // fuel_entry handler, not the generic expense_entry one.
   FUEL_ENTRY:  { type: 'fuel_entry',    action: 'post' },
+  // Phase G4.5cc (Apr 29, 2026) — clerk-run payroll. PAYROLL was previously
+  // excluded from auto-post on the grounds that per-payslip review/approve
+  // semantics required explicit acknowledgement. With G4.5cc, a clerk submits
+  // the WHOLE RUN (period+cycle) for posting via gateApproval; admin's single
+  // Hub approval should cascade every matching payslip from COMPUTED to POSTED
+  // + emit JEs. The `payroll_run` handler reads metadata.run_period / run_cycle
+  // off the ApprovalRequest so it re-resolves the full payslip set on approval.
+  // Per-payslip Hub items (the legacy MODULE_QUERIES.PAYROLL surface) are still
+  // available for management-driven manual review when admin chooses.
+  PAYROLL:     { type: 'payroll_run',   action: 'post' },
 };
 
 // Module-specific approval handlers (lazy-loaded to avoid circular deps)
@@ -541,6 +555,127 @@ const approvalHandlers = {
     }
     await payslip.save();
     return payslip;
+  },
+
+  // Phase G4.5cc (Apr 29, 2026) — clerk-run payroll cascade.
+  //
+  // Triggered by MODULE_AUTO_POST.PAYROLL when admin approves a clerk-submitted
+  // payroll run in the Approval Hub. The dispatcher passes `id` = the seed
+  // payslip's _id (set by gateApproval in postPayroll → candidates[0]._id);
+  // we re-resolve period+cycle off that payslip and bulk-cascade ALL sibling
+  // payslips through COMPUTED → REVIEWED → APPROVED → POSTED, emitting one
+  // payroll JE per posted slip. The state-machine transitions are the same
+  // ones reviewPayslip / approvePayslip / postPayroll already use, so single
+  // entry point. Per-payslip failures (state-mismatch, JE error) are captured
+  // and surfaced in the result; they do NOT abort the cascade — the approval
+  // decision is already persisted on the ApprovalRequest and must stand.
+  //
+  // Why we don't pass the metadata.run_period/run_cycle from the request: the
+  // dispatcher in approvalHandlers.approval_request only forwards `req.doc_id`,
+  // not the full request. Reading the seed payslip's period/cycle gives the
+  // same answer with one extra round-trip and survives a mid-flight rename of
+  // the metadata shape. (Defensive: even if metadata is wiped or stale, we
+  // still cascade the right run.)
+  payroll_run: async (id, action, userId, reason) => {
+    if (action !== 'post') {
+      throw new Error(`payroll_run: unsupported action '${action}' (only 'post' is allowed)`);
+    }
+
+    const Payslip = require('../models/Payslip');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub cascade: id from gated approver via entity-scoped list; see top-of-file note
+    const seed = await Payslip.findById(id).lean();
+    if (!seed) throw new Error('Seed payslip not found for payroll run cascade');
+
+    const { entity_id, period, cycle } = seed;
+
+    // Period lock — if the period was closed between submit and approve, fail
+    // loudly. Admin must reopen the period before re-approving (matches the
+    // direct postPayroll path).
+    const { checkPeriodOpen } = require('../utils/periodLock');
+    if (period) await checkPeriodOpen(entity_id, period);
+
+    const { transitionPayslipStatus } = require('../services/payslipCalc');
+    const { journalFromPayroll, resolveFundingCoa } = require('../services/autoJournal');
+    const { createAndPostJournal } = require('../services/journalEngine');
+    const ErpAuditLog = require('../models/ErpAuditLog');
+
+    const candidates = await Payslip.find({
+      entity_id,
+      period,
+      cycle,
+      status: { $in: ['COMPUTED', 'REVIEWED', 'APPROVED'] },
+      deletion_event_id: { $exists: false },
+    });
+
+    let posted = 0;
+    const errors = [];
+
+    for (const ps of candidates) {
+      try {
+        // Cascade through the state machine. Each step is enforced by
+        // VALID_TRANSITIONS in payslipCalc — we only call the next step if
+        // the current status matches.
+        if (ps.status === 'COMPUTED') {
+          await transitionPayslipStatus(ps._id, 'review', userId);
+        }
+        // Re-fetch status (the transition mutated the doc in-DB; ps in memory is stale).
+        let cur = await Payslip.findById(ps._id).select('status').lean();
+        if (cur?.status === 'REVIEWED') {
+          await transitionPayslipStatus(ps._id, 'approve', userId);
+        }
+        cur = await Payslip.findById(ps._id).select('status').lean();
+        if (cur?.status === 'APPROVED') {
+          await transitionPayslipStatus(ps._id, 'post', userId);
+          posted++;
+
+          // Emit JE — same logic as postPayroll's loop. Failure logs but does
+          // not roll back the POSTED transition (matches direct postPayroll).
+          let fullPs = null;
+          try {
+            // eslint-disable-next-line vip-tenant/require-entity-filter -- by-key re-fetch with populates; ps._id from entity-scoped find above
+            fullPs = await Payslip.findById(ps._id)
+              .populate('person_id', 'full_name')
+              .lean();
+            const bankCoa = await resolveFundingCoa({ payment_mode: 'BANK_TRANSFER' });
+            const jeData = await journalFromPayroll(
+              { ...fullPs, employee_name: fullPs.person_id?.full_name || '' },
+              bankCoa.coa_code, bankCoa.coa_name, userId
+            );
+            await createAndPostJournal(fullPs.entity_id, jeData);
+          } catch (jeErr) {
+            console.error('[G4.5cc CASCADE AUTO_JOURNAL_FAILURE] Payslip', String(ps._id), jeErr.message);
+            ErpAuditLog.logChange({
+              entity_id: fullPs?.entity_id || ps.entity_id,
+              log_type: 'LEDGER_ERROR',
+              target_ref: ps._id?.toString(),
+              target_model: 'JournalEntry',
+              field_changed: 'auto_journal',
+              new_value: jeErr.message,
+              changed_by: userId,
+              note: `Auto-journal failed for payslip ${fullPs?.employee_name || ps._id} (G4.5cc clerk-run cascade)`,
+            }).catch(() => {});
+          }
+        }
+      } catch (err) {
+        errors.push({ payslip_id: ps._id?.toString(), error: err.message });
+      }
+    }
+
+    // Audit the cascade itself (one row per run) so admin can trace which Hub
+    // approval rolled which payslips forward.
+    ErpAuditLog.logChange({
+      entity_id,
+      log_type: 'WORKFLOW',
+      target_ref: id?.toString(),
+      target_model: 'Payslip',
+      field_changed: 'payroll_run_cascade',
+      old_value: `period=${period} cycle=${cycle} candidates=${candidates.length}`,
+      new_value: `posted=${posted} errors=${errors.length}`,
+      changed_by: userId,
+      note: `G4.5cc clerk-run cascade — ${reason || 'admin Hub approval'}`,
+    }).catch(() => {});
+
+    return { posted, total: candidates.length, errors };
   },
 
   kpi_rating: async (id, action, userId, reason) => {

@@ -87,12 +87,53 @@ const payslipDeductionWriteGate = async (req, res, next) => {
   }
 };
 
-// ═══ Payroll Operations (Finance/Admin) ═══
-router.post('/compute', roleCheck('admin', 'finance', 'president'), computePayroll);
+// ═══ Payroll Operations ═══
+//
+// Phase G4.5cc (Apr 29, 2026) — Compute + Post are gated through `payrollRunProxyGate`
+// instead of a hardcoded roleCheck so a finance clerk (User.role='staff') with the new
+// `payroll.run_proxy` sub-perm can run Friday payroll. Privileged callers
+// (admin/finance/president) short-circuit. Per-line ack transitions (/:id/review,
+// /:id/approve) and /thirteenth-month keep their existing roleCheck because they are
+// statutory transitions that must remain admin-owned.
+//
+// Two separate doctrines collide here. We separate them cleanly:
+//   * "Who can RUN compute/post" → this gate (sub-perm tick + privileged shortcut).
+//   * "Who AUTHORIZES the run on the Hub" → MODULE_DEFAULT_ROLES.PAYROLL (untouched
+//     by this phase; defaults to admin/finance/president). Conflating the two would
+//     mean adding 'staff' to MODULE_DEFAULT_ROLES.PAYROLL — which would (a) let
+//     clerks direct-post (gateApproval would treat them as authorized) and (b)
+//     notify every staff user as a potential approver. Both wrong. The fix is the
+//     sub-perm tick alone for the run gate, and forceApproval=true inside
+//     postPayroll to guarantee Hub routing for non-privileged callers regardless
+//     of authorizer-list membership.
+const payrollRunProxyGate = async (req, res, next) => {
+  try {
+    // Layer 0: privileged shortcut — admin/finance/president keep current behavior.
+    if (req.isAdmin || req.isFinance || req.isPresident) return next();
+
+    // Layer 1: explicit sub-perm tick. Subscription-ready — admin grants per-clerk
+    // via the Access Template editor (Control Center → Access Templates), no code
+    // change required.
+    const subs = req.user?.erp_access?.sub_permissions?.payroll;
+    if (!subs?.run_proxy) {
+      return res.status(403).json({
+        success: false,
+        message: 'Payroll Compute / Post requires admin / finance / president role OR payroll.run_proxy sub-permission.',
+      });
+    }
+
+    return next();
+  } catch (err) {
+    console.error('[payrollRunProxyGate] error:', err.message);
+    return res.status(500).json({ success: false, message: 'Payroll run gate error' });
+  }
+};
+
+router.post('/compute', payrollRunProxyGate, computePayroll);
 router.get('/staging', getPayrollStaging);
 router.post('/:id/review', roleCheck('admin', 'finance', 'president'), reviewPayslip);
 router.post('/:id/approve', roleCheck('admin', 'president'), approvePayslip);
-router.post('/post', roleCheck('admin', 'finance', 'president'), postPayroll);
+router.post('/post', payrollRunProxyGate, postPayroll);
 router.post('/thirteenth-month', roleCheck('admin', 'finance', 'president'), computeThirteenthMonth);
 
 // Phase G4.5bb (Apr 29, 2026) — current-user payslip-proxy roster preview.

@@ -602,8 +602,34 @@ People → `s22 Vip Pharmacy` → ERP Access Template → tick the sub-permissio
 | `payroll` | `income_proxy` | G4.5aa |
 | `payroll` | `deduction_schedule_proxy` | G4.5aa |
 | `payroll` | `payslip_deduction_write` | G4.5aa |
+| `payroll` | `run_proxy` | G4.5cc (Compute + Submit Payroll Run for Approval Hub) |
 
 Save the user. The clerk now has the role half AND the sub-permission half of every gate they need.
+
+#### Step 2.5 — (Phase G4.5cc) Friday-payroll authority for the clerk
+
+Phase G4.5cc lets a finance clerk run payroll and submit it for posting. Authority chain is split
+cleanly: the `payroll.run_proxy` sub-perm tick is "who can RUN" (subscription-tunable per clerk),
+while `MODULE_DEFAULT_ROLES.PAYROLL.metadata.roles` keeps its original meaning ("who AUTHORIZES on
+the Hub" — admin/finance/president by default).
+
+**To onboard a clerk on Friday-payroll authority:**
+
+1. Tick `payroll.run_proxy` on the clerk's Access Template (Step 2 table above).
+2. **Do NOT** add `'staff'` to `MODULE_DEFAULT_ROLES.PAYROLL.metadata.roles`. Doing so would let
+   the clerk direct-post (gateApproval would treat them as authorized) AND would notify every
+   staff user as a potential Hub approver. Both wrong.
+
+That's it — one tick.
+
+When the clerk submits a run, `postPayroll` calls `gateApproval` with `forceApproval=true` for
+non-privileged callers, so the Hub holds the submission regardless of authorizer-list membership.
+Admin / finance / president opens `/erp/approvals` on phone, sees ONE row "Post N payslips (total
+₱X) — Submitted by <clerk>" (per-payslip rows are hidden by the run-cover dedup in
+`MODULE_QUERIES.PAYROLL.query`), taps Approve, and the cascade handler (`payroll_run` in
+`universalApprovalController.js`, registered in `MODULE_AUTO_POST.PAYROLL`) walks every matching
+payslip COMPUTED → REVIEWED → APPROVED → POSTED with auto-emitted JEs in one round trip. Failures
+are logged per-payslip; the approval decision is never rolled back.
 
 #### Step 3 — (Optional, payslip-only) Constrain the clerk's payslip roster
 

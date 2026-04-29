@@ -268,6 +268,60 @@ const MODULE_QUERIES = [
         .populate('approved_by', 'name')
         .sort({ updatedAt: -1 })
         .lean();
+
+      // Phase G4.5cc (Apr 29, 2026) — when a payslip's run (entity_id + period +
+      // cycle) has an active gateApproval-spawned ApprovalRequest, hide the
+      // per-payslip Hub row. Admin should see the ONE run-level "Approve Payroll
+      // Run" item instead — a single tap cascades the whole run via the
+      // payroll_run handler. Without this filter, the Hub's doc_id dedup would
+      // drop the run-level ApprovalRequest in favor of the per-payslip rows
+      // (because both share the seed payslip's _id), and admin would have to
+      // walk the per-line review/approve flow, defeating the clerk-run design.
+      // Privileged callers who want manual per-line review can still use the
+      // /erp/payroll page directly — only the Hub view is filtered.
+      try {
+        const ApprovalRequest = getModel('ApprovalRequest');
+        if (ApprovalRequest) {
+          const periodCycleKeys = new Set(items.map(it => `${it.period}::${it.cycle || 'MONTHLY'}`));
+          if (periodCycleKeys.size > 0) {
+            const activeRuns = await ApprovalRequest.find({
+              entity_id: entityId,
+              module: 'PAYROLL',
+              status: 'PENDING',
+            }).select('metadata').lean();
+            const coveredKeys = new Set();
+            for (const r of activeRuns) {
+              const m = r.metadata || {};
+              if (m.run_period) coveredKeys.add(`${m.run_period}::${m.run_cycle || 'MONTHLY'}`);
+            }
+            if (coveredKeys.size > 0) {
+              return items
+                .filter(it => !coveredKeys.has(`${it.period}::${it.cycle || 'MONTHLY'}`))
+                .map(item => ({
+                  id: `PAYROLL:${item._id}`,
+                  module: 'PAYROLL',
+                  doc_type: 'PAYSLIP',
+                  doc_id: item._id,
+                  doc_ref: `${item.period}-${item.cycle || 'MONTHLY'}`,
+                  description: `${item.person_id?.full_name || 'Employee'} — ${item.period} — Net: ₱${(item.net_pay || 0).toLocaleString()}`,
+                  amount: item.net_pay || 0,
+                  submitted_by: item.person_id?.full_name || 'Unknown',
+                  submitted_at: item.updatedAt,
+                  status: item.status === 'COMPUTED' ? 'PENDING_REVIEW' : 'PENDING_APPROVAL',
+                  current_action: item.status === 'COMPUTED' ? 'Review' : 'Approve',
+                  action_key: item.status === 'COMPUTED' ? 'REVIEW' : 'APPROVE',
+                  approve_data: { type: 'payslip', id: item._id, action: item.status === 'COMPUTED' ? 'review' : 'approve' },
+                  details: buildDocumentDetails('PAYROLL', item),
+                }));
+            }
+          }
+        }
+      } catch (err) {
+        // Non-blocking: if the run-cover lookup fails, fall through to surfacing
+        // every per-payslip row as before. Logged for ops visibility.
+        console.error('PAYROLL Hub query: run-cover dedup failed:', err.message);
+      }
+
       return items.map(item => ({
         id: `PAYROLL:${item._id}`,
         module: 'PAYROLL',

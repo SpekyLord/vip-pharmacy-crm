@@ -411,7 +411,7 @@ export default function PayslipView() {
       <div className="admin-layout">
         <Sidebar />
         <main className="psv-main">
-          <span className="psv-back" onClick={() => navigate(-1)}>\u2190 Back</span>
+          <span className="psv-back" onClick={() => navigate(-1)}>{'\u2190'} Back</span>
           <WorkflowGuide pageKey="payslip-view" />
 
           <RejectionBanner
@@ -435,14 +435,14 @@ export default function PayslipView() {
             }}>
               <span style={{ fontSize: 16 }}>{'\u26a0'}</span>
               <div>
-                <div style={{ fontWeight: 700, marginBottom: 2 }}>Read-only \u2014 not on your payslip-proxy roster</div>
+                <div style={{ fontWeight: 700, marginBottom: 2 }}>Read-only {'\u2014'} not on your payslip-proxy roster</div>
                 <div style={{ fontSize: 12 }}>
-                  This payslip\u2019s{' '}
+                  This payslip{"'"}s{' '}
                   {roster?.scope_mode === 'PERSON_TYPES'
                     ? <>person type (<strong>{(ps.person_id?.person_type || '').replace(/_/g, ' ')}</strong>) is not in your roster of: <strong>{(roster.person_types || []).join(', ')}</strong>.</>
                     : <>employee is not in your <strong>PAYSLIP_PROXY_ROSTER</strong> allowlist.</>
                   }{' '}
-                  Ask admin to add this employee (or person type) to your roster row in Control Center \u2192 Lookup Tables \u2192 PAYSLIP_PROXY_ROSTER.
+                  Ask admin to add this employee (or person type) to your roster row in Control Center {'\u2192'} Lookup Tables {'\u2192'} PAYSLIP_PROXY_ROSTER.
                 </div>
               </div>
             </div>
