@@ -764,6 +764,23 @@ const SEED_DEFAULTS = {
     // Phase 3c — Payroll danger sub-permission
     { code: 'PAYROLL__GOV_RATE_DELETE', label: 'Delete Government Tax/BIR Rate Row (DANGER)', metadata: { module: 'payroll', key: 'gov_rate_delete', sort_order: 1 } },
     { code: 'PAYROLL__INSURANCE_DELETE', label: 'Delete Insurance Policy (DANGER)', metadata: { module: 'payroll', key: 'insurance_delete', sort_order: 2 } },
+    // Phase G4.5aa (Apr 29, 2026) — BDM Income & Deduction Schedule proxy entry.
+    // Closes the gap surfaced Apr 29: an eBDM (back-office staff) had no path to
+    // generate Income reports or record Deduction schedules on behalf of field BDMs.
+    // Pre-G4.5aa, financeAddDeductionLine + financeCreateSchedule were admin/finance/
+    // president-only and the BDM self-service paths were locked to req.bdmId. After
+    // G4.5aa: ticking these sub-perms + adding 'staff' to the matching PROXY_ENTRY_ROLES
+    // row lets an eBDM proxy. Pairs with VALID_OWNER_ROLES.INCOME / .DEDUCTION_SCHEDULE
+    // (BDM-shaped owners only — admin/finance/president can never own per-BDM income).
+    // President always bypasses both layers.
+    //
+    // PAYSLIP_DEDUCTION_WRITE is a separate sub-perm because employee Payslips are
+    // owned by `person_id` (PeopleMaster), NOT bdm_id — so there's no OwnerPicker. It
+    // simply opens financeAddDeductionLine / verifyDeductionLine / removeDeductionLine
+    // to staff who hold the sub-perm without granting them PAYROLL FULL.
+    { code: 'PAYROLL__INCOME_PROXY', label: 'Generate Income Report + record deductions on behalf of another BDM', metadata: { module: 'payroll', key: 'income_proxy', sort_order: 3 } },
+    { code: 'PAYROLL__DEDUCTION_SCHEDULE_PROXY', label: 'Create / Edit / Withdraw Deduction Schedule on behalf of another BDM', metadata: { module: 'payroll', key: 'deduction_schedule_proxy', sort_order: 4 } },
+    { code: 'PAYROLL__PAYSLIP_DEDUCTION_WRITE', label: 'Add / Verify / Remove employee Payslip deduction lines (without PAYROLL FULL)', metadata: { module: 'payroll', key: 'payslip_deduction_write', sort_order: 5 } },
     // Phase 3c — Master Data sub-permissions. All gated through the danger layer (baseline OR
     // ERP_DANGER_SUB_PERMISSIONS lookup) so module-FULL does NOT inherit them — explicit grant required.
     { code: 'MASTER__PRODUCT_DELETE', label: 'Hard-Delete Product Master Row (DANGER)', metadata: { module: 'master', key: 'product_delete', sort_order: 1 } },
@@ -2702,6 +2719,15 @@ const SEED_DEFAULTS = {
     // warehouse. ADJUSTMENT row + auto-journal attribute to the warehouse owner
     // (target BDM) via per-batch derivation in inventoryController.recordPhysicalCount.
     { code: 'INVENTORY', label: 'Inventory (batch metadata correction + physical count proxy)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 11 } },
+    // Phase G4.5aa (Apr 29 2026) — BDM Income Report + Deduction Schedule proxy.
+    // Subscribers append 'staff' to metadata.roles in Control Center so an eBDM
+    // (back-office BDM) with PAYROLL__INCOME_PROXY / PAYROLL__DEDUCTION_SCHEDULE_PROXY
+    // can generate Income reports and record Deduction schedules on behalf of
+    // field BDMs. Closes the BDMs→CRM-only / eBDMs→ERP-proxy gap for monthly
+    // payroll cadence. Pairs with VALID_OWNER_ROLES.INCOME / .DEDUCTION_SCHEDULE
+    // (BDM-shaped owners only). President always bypasses.
+    { code: 'INCOME', label: 'Income Report (per-BDM payslip + manual deduction lines)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 12 } },
+    { code: 'DEDUCTION_SCHEDULE', label: 'Deduction Schedule (BDM cash advance / loan amortization)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 13 } },
   ],
   // Phase G4.5a follow-up — which roles are valid OWNERS of a proxied record
   // per module. Defaults to BDM-shaped roles (['staff']); admin/

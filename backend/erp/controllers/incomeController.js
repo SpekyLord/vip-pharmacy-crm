@@ -18,6 +18,16 @@ const {
 } = require('../services/pnlCalc');
 const { evaluateEligibility } = require('../services/profitShareEngine');
 const { syncInstallmentStatus } = require('../services/deductionScheduleService');
+const { resolveOwnerForWrite, widenFilterForProxy, canProxyEntry } = require('../utils/resolveOwnerScope');
+
+// Phase G4.5aa (Apr 29, 2026) — proxy entry on Income Report (BDM payslip).
+// Sub-perm `payroll.income_proxy` + PROXY_ENTRY_ROLES.INCOME (admin/finance/
+// president by default; subscribers append 'staff' for eBDMs in Control Center).
+// VALID_OWNER_ROLES.INCOME defaults to 'staff' — admin/finance/president can
+// never own per-BDM income reports (would corrupt per-BDM commission/profit
+// share computations downstream). Caller's own role must be a valid owner OR
+// they must pass body.assigned_to (Rule #21 — no silent self-fill).
+const INCOME_PROXY_OPTS = { subKey: 'income_proxy', lookupCode: 'INCOME' };
 
 // ═══════════════════════════════════════════
 // INCOME REPORT ENDPOINTS
@@ -56,13 +66,27 @@ const requestIncomeGeneration = catchAsync(async (req, res) => {
   if (!period || !cycle) {
     return res.status(400).json({ success: false, message: 'period and cycle are required' });
   }
-  if (!req.bdmId) {
-    return res.status(400).json({ success: false, message: 'No BDM profile linked to this user' });
+
+  // Phase G4.5aa \u2014 proxy resolver. Self-flow: staff caller with no assigned_to \u2192
+  // owner = self (req.user._id, which equals req.bdmId for staff). Proxy flow:
+  // staff with payroll.income_proxy + body.assigned_to \u2192 owner = target BDM,
+  // created_by = proxy (audit). Throws 400 (Rule #21) if a non-BDM caller omits
+  // assigned_to and 403 if proxy gate fails.
+  let owner;
+  try {
+    owner = await resolveOwnerForWrite(req, 'payroll', INCOME_PROXY_OPTS);
+  } catch (err) {
+    if (err.statusCode === 400 || err.statusCode === 403) {
+      return res.status(err.statusCode).json({ success: false, message: err.message });
+    }
+    throw err;
   }
 
-  // Check if report already exists and is past BDM-editable status
+  // Check if report already exists and is past BDM-editable status. Pre-G4.5aa
+  // the dupe check used req.bdmId; for proxy we must check the TARGET BDM's
+  // existing report so a proxy can't accidentally regenerate a credited payslip.
   const existing = await IncomeReport.findOne({
-    entity_id: req.entityId, bdm_id: req.bdmId, period, cycle
+    entity_id: req.entityId, bdm_id: owner.ownerId, period, cycle
   }).lean();
 
   if (existing && ['BDM_CONFIRMED', 'CREDITED'].includes(existing.status)) {
@@ -72,17 +96,23 @@ const requestIncomeGeneration = catchAsync(async (req, res) => {
     });
   }
 
-  // BDM can generate/regenerate when: no report, GENERATED, RETURNED, or REVIEWED
-  const report = await generateIncomeReport(req.entityId, req.bdmId, period, cycle, req.user._id);
+  // BDM can generate/regenerate when: no report, GENERATED, RETURNED, or REVIEWED.
+  // For proxy filing, generateIncomeReport service is bdm-id-driven (target BDM's
+  // SMER/Collections/CALF aggregate), so no recompute logic change is needed.
+  const report = await generateIncomeReport(req.entityId, owner.ownerId, period, cycle, req.user._id);
   res.status(201).json({ success: true, data: report });
 });
 
 const getIncomeList = catchAsync(async (req, res) => {
   const filter = { ...req.tenantFilter };
-  // BDMs only see their own income reports
+  // BDMs only see their own income reports — UNLESS they hold the proxy sub-perm,
+  // in which case they see all BDMs in their entity (Phase G4.5aa). Privileged
+  // roles (admin/finance/president) keep the existing wide-scope path.
   const canViewOther = req.isAdmin || req.isFinance || req.isPresident;
-  if (req.query.bdm_id && canViewOther) filter.bdm_id = req.query.bdm_id;
-  else if (!canViewOther && req.bdmId) filter.bdm_id = req.bdmId;
+  const { canProxy: canProxyIncome } = await canProxyEntry(req, 'payroll', INCOME_PROXY_OPTS);
+  if (req.query.bdm_id && (canViewOther || canProxyIncome)) filter.bdm_id = req.query.bdm_id;
+  else if (!canViewOther && !canProxyIncome && req.bdmId) filter.bdm_id = req.bdmId;
+  else if (canProxyIncome && !req.query.bdm_id) delete filter.bdm_id; // proxy with no specific filter = see all BDMs in entity
   if (req.query.period) filter.period = req.query.period;
   if (req.query.cycle) filter.cycle = req.query.cycle;
   if (req.query.status) filter.status = req.query.status;
@@ -117,9 +147,18 @@ const getIncomeBreakdown = catchAsync(async (req, res) => {
   if (!report) {
     return res.status(404).json({ success: false, message: 'Income report not found' });
   }
-  // BDM can only see their own breakdown
+  // BDM can only see their own breakdown — UNLESS they hold the proxy sub-perm
+  // (Phase G4.5aa). Privileged roles (admin/finance/president) keep their wide
+  // view. For staff with payroll.income_proxy + 'staff' added to PROXY_ENTRY_
+  // ROLES.INCOME, breakdown for any BDM in their entity is visible.
   const canViewOther = req.isAdmin || req.isFinance || req.isPresident;
-  if (!canViewOther && report.bdm_id?._id?.toString() !== req.bdmId?.toString()) {
+  const ownsReport = report.bdm_id?._id?.toString() === req.bdmId?.toString();
+  let canView = canViewOther || ownsReport;
+  if (!canView) {
+    const { canProxy } = await canProxyEntry(req, 'payroll', INCOME_PROXY_OPTS);
+    canView = canProxy;
+  }
+  if (!canView) {
     return res.status(403).json({ success: false, message: 'Cannot view breakdown for another BDM' });
   }
   const breakdown = await fetchIncomeBreakdown(report);
@@ -177,17 +216,33 @@ const addDeductionLine = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'amount must be a non-negative number' });
   }
 
-  const report = await IncomeReport.findOne({
+  // Phase G4.5aa — widen scope for proxy callers (staff with payroll.income_proxy
+  // + 'staff' added to PROXY_ENTRY_ROLES.INCOME). For self-filers, scope retains
+  // bdm_id from req.tenantFilter so a regular BDM can only mutate her own report.
+  const proxyScope = await widenFilterForProxy(req, 'payroll', INCOME_PROXY_OPTS);
+  const reportFilter = {
     _id: req.params.id,
     entity_id: req.entityId,
-    bdm_id: req.bdmId,
     status: 'GENERATED'
-  });
+  };
+  // Self-flow: scope.bdm_id is set to caller's id → enforce it. Proxy: scope.bdm_id
+  // was stripped → no bdm_id constraint, any BDM in entity is fair game (gated by
+  // sub-perm above via widenFilterForProxy).
+  if (proxyScope.bdm_id) reportFilter.bdm_id = proxyScope.bdm_id;
+  // Defense in depth — also fall back to req.bdmId if widenFilterForProxy returned
+  // no bdm_id but caller is NOT actually proxy-eligible (e.g. tenantFilter never
+  // stamped bdm_id for some edge-case role).
+  else if (!proxyScope.bdm_id) {
+    const { canProxy } = await canProxyEntry(req, 'payroll', INCOME_PROXY_OPTS);
+    if (!canProxy && req.bdmId) reportFilter.bdm_id = req.bdmId;
+  }
+
+  const report = await IncomeReport.findOne(reportFilter);
 
   if (!report) {
     return res.status(404).json({
       success: false,
-      message: 'Income report not found, not yours, or not in GENERATED status'
+      message: 'Income report not found, outside your scope, or not in GENERATED status'
     });
   }
 
@@ -196,7 +251,7 @@ const addDeductionLine = catchAsync(async (req, res) => {
     deduction_label,
     amount: Math.round(amount * 100) / 100,
     description: description || '',
-    entered_by: req.user._id,
+    entered_by: req.user._id, // proxy attribution — entered_by == proxy id, report.bdm_id == target
     entered_at: new Date(),
     status: 'PENDING',
     auto_source: null
@@ -221,17 +276,28 @@ const addDeductionLine = catchAsync(async (req, res) => {
 const removeDeductionLine = catchAsync(async (req, res) => {
   const { lineId } = req.params;
 
-  const report = await IncomeReport.findOne({
+  // Phase G4.5aa — same widening pattern as addDeductionLine. Proxy can remove
+  // lines THEY entered on a target BDM's report; self-filer can only touch their
+  // own report. The entered_by equality check below enforces the deeper safety
+  // (you can never remove a line another user entered, even with proxy rights).
+  const proxyScope = await widenFilterForProxy(req, 'payroll', INCOME_PROXY_OPTS);
+  const reportFilter = {
     _id: req.params.id,
     entity_id: req.entityId,
-    bdm_id: req.bdmId,
     status: 'GENERATED'
-  });
+  };
+  if (proxyScope.bdm_id) reportFilter.bdm_id = proxyScope.bdm_id;
+  else {
+    const { canProxy } = await canProxyEntry(req, 'payroll', INCOME_PROXY_OPTS);
+    if (!canProxy && req.bdmId) reportFilter.bdm_id = req.bdmId;
+  }
+
+  const report = await IncomeReport.findOne(reportFilter);
 
   if (!report) {
     return res.status(404).json({
       success: false,
-      message: 'Income report not found, not yours, or not in GENERATED status'
+      message: 'Income report not found, outside your scope, or not in GENERATED status'
     });
   }
 

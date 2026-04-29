@@ -17,15 +17,44 @@ const {
   withdrawSchedule: withdrawScheduleSvc,
   editPendingSchedule: editPendingScheduleSvc
 } = require('../services/deductionScheduleService');
+const { resolveOwnerForWrite, widenFilterForProxy, canProxyEntry } = require('../utils/resolveOwnerScope');
+
+// Phase G4.5aa (Apr 29, 2026) — proxy entry on Deduction Schedule (BDM cash
+// advance / loan amortization plans). Sub-perm `payroll.deduction_schedule_proxy`
+// + PROXY_ENTRY_ROLES.DEDUCTION_SCHEDULE (admin/finance/president by default;
+// subscribers append 'staff' for eBDMs in Control Center). VALID_OWNER_ROLES.
+// DEDUCTION_SCHEDULE defaults to 'staff' — admin/finance/president can never own
+// a per-BDM deduction schedule (it would corrupt the BDM's payslip injection).
+//
+// NOTE: This module's namespace is `payroll` for the sub-perm metadata (matches
+// the page where Deduction Schedule lives — the Income page Schedules tab) but
+// the lookup code is DEDUCTION_SCHEDULE so subscribers can configure proxy
+// rosters independently from Income proxy.
+const DEDUCTION_PROXY_OPTS = { subKey: 'deduction_schedule_proxy', lookupCode: 'DEDUCTION_SCHEDULE' };
 
 // ═══ BDM Endpoints ═══
 
 const createSchedule = catchAsync(async (req, res) => {
+  // Phase G4.5aa — proxy resolver. Self-flow: staff caller with no assigned_to →
+  // owner = self (req.user._id, which equals req.bdmId for staff). Proxy flow:
+  // staff with payroll.deduction_schedule_proxy + body.assigned_to → owner =
+  // target BDM, created_by = proxy. Throws 400 (Rule #21) if a non-BDM caller
+  // omits assigned_to and 403 if proxy gate fails.
+  let owner;
+  try {
+    owner = await resolveOwnerForWrite(req, 'payroll', DEDUCTION_PROXY_OPTS);
+  } catch (err) {
+    if (err.statusCode === 400 || err.statusCode === 403) {
+      return res.status(err.statusCode).json({ success: false, message: err.message });
+    }
+    throw err;
+  }
   // BDM self-service path — explicit owner disambiguation (object form) so the
-  // XOR invariant is machine-checked in the service even if the route is ever
-  // opened to non-contractor roles. req.bdmId is set by tenantFilter.
+  // XOR invariant is machine-checked in the service. For proxy, owner.ownerId
+  // is the TARGET BDM. The service's bdm_id field gets stamped accordingly;
+  // installments will inject into the target's IncomeReport on payroll cycles.
   const schedule = await createScheduleSvc(
-    req.entityId, { bdm_id: req.bdmId }, req.body, req.user._id, false
+    req.entityId, { bdm_id: owner.ownerId }, req.body, req.user._id, false
   );
 
   // Phase G4.2 — unify with the Approval Hub. Route a PENDING_APPROVAL schedule
@@ -63,6 +92,14 @@ const createSchedule = catchAsync(async (req, res) => {
 
 const getMySchedules = catchAsync(async (req, res) => {
   const filter = { entity_id: req.entityId, bdm_id: req.bdmId };
+  // Phase G4.5aa — staff with payroll.deduction_schedule_proxy + 'staff' added to
+  // PROXY_ENTRY_ROLES.DEDUCTION_SCHEDULE see all BDMs in their entity. Caller can
+  // narrow back via ?bdm_id=<target> to focus on a specific BDM's plan list.
+  const { canProxy } = await canProxyEntry(req, 'payroll', DEDUCTION_PROXY_OPTS);
+  if (canProxy) {
+    if (req.query.bdm_id) filter.bdm_id = req.query.bdm_id;
+    else delete filter.bdm_id;
+  }
   if (req.query.status) filter.status = req.query.status;
   if (req.query.deduction_type) filter.deduction_type = req.query.deduction_type;
 
@@ -179,12 +216,31 @@ const financeCreateSchedule = catchAsync(async (req, res) => {
 // ═══ BDM Self-Service ═══
 
 const withdrawSchedule = catchAsync(async (req, res) => {
-  const schedule = await withdrawScheduleSvc(req.params.id, req.bdmId, req.entityId);
+  // Phase G4.5aa — for proxy callers, peek the schedule's bdm_id and pass that
+  // as the ownership param so the service's strict ownership guard
+  // (schedule.bdm_id === bdmId) accepts the proxy. The proxy gate is enforced
+  // here at the controller level via canProxyEntry; only proxy-eligible callers
+  // can override req.bdmId.
+  const { canProxy } = await canProxyEntry(req, 'payroll', DEDUCTION_PROXY_OPTS);
+  let bdmId = req.bdmId;
+  if (canProxy) {
+    const peek = await DeductionSchedule.findOne({ _id: req.params.id, entity_id: req.entityId }).select('bdm_id').lean();
+    if (peek?.bdm_id) bdmId = peek.bdm_id;
+  }
+  const schedule = await withdrawScheduleSvc(req.params.id, bdmId, req.entityId);
   res.json({ success: true, data: schedule, message: 'Schedule withdrawn' });
 });
 
 const editPendingSchedule = catchAsync(async (req, res) => {
-  const schedule = await editPendingScheduleSvc(req.params.id, req.bdmId, req.entityId, req.body);
+  // Phase G4.5aa — same pattern as withdrawSchedule. Proxy callers can edit a
+  // PENDING_APPROVAL schedule on behalf of the target BDM.
+  const { canProxy } = await canProxyEntry(req, 'payroll', DEDUCTION_PROXY_OPTS);
+  let bdmId = req.bdmId;
+  if (canProxy) {
+    const peek = await DeductionSchedule.findOne({ _id: req.params.id, entity_id: req.entityId }).select('bdm_id').lean();
+    if (peek?.bdm_id) bdmId = peek.bdm_id;
+  }
+  const schedule = await editPendingScheduleSvc(req.params.id, bdmId, req.entityId, req.body);
   res.json({ success: true, data: schedule, message: 'Schedule updated' });
 });
 

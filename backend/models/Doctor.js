@@ -410,14 +410,20 @@ doctorSchema.methods.isAvailableOnDay = function (dayOfWeek) {
 // Pre-save hook: auto-clean firstName/lastName to proper case (lookup-driven)
 // + Phase A.5 (Apr 2026): maintain vip_client_name_clean canonical key.
 // + Phase VIP-1.A (Apr 2026): default partnership_status — LEAD for new docs,
-//   PARTNER for legacy docs being saved without the field set. Runs before the
-//   name-not-modified early-return so it triggers even on partnership-only saves.
+//   VISITED for legacy docs being saved without the field set (flipped Apr 29
+//   from PARTNER to match the corrective migration; PARTNER status now
+//   requires explicit admin promotion + partner_agreement_date). Runs before
+//   the name-not-modified early-return so it triggers even on partnership-only
+//   saves.
 // Key shape: `lastname|firstname` (lowercased, inner whitespace collapsed).
 // Mirrors Customer.customer_name_clean / Hospital.hospital_name_clean pattern.
 doctorSchema.pre('save', async function (next) {
-  // Phase VIP-1.A — partnership_status default
+  // Phase VIP-1.A — partnership_status default.
+  // Apr 29 2026: legacy fallback flipped from PARTNER → VISITED to match the
+  // corrective migration (migrateLegacyPartnersToVisited.js). PARTNER status
+  // requires admin promotion via /admin/md-leads + partner_agreement_date.
   if (this.partnership_status == null) {
-    this.partnership_status = this.isNew ? 'LEAD' : 'PARTNER';
+    this.partnership_status = this.isNew ? 'LEAD' : 'VISITED';
   }
 
   const nameModified = this.isModified('firstName') || this.isModified('lastName');
