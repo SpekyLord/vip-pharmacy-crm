@@ -26,6 +26,13 @@ router.post('/:id/submit', protect, c.submitUndertaking);
 router.post('/:id/acknowledge', protect, c.acknowledgeUndertaking);
 router.post('/:id/reject', protect, c.rejectUndertaking);
 
+// Phase G4.5h-W (Apr 29, 2026) — Re-upload waybill recovery path.
+// Authorization is enforced inside the controller (owner / proxy / management),
+// using the lookup-driven PROXY_ENTRY_ROLES.UNDERTAKING + inventory.undertaking_proxy
+// sub-perm so subscribers can configure who can recover without code changes.
+// Period-lock runs inside the controller.
+router.post('/:id/waybill', protect, c.reuploadWaybill);
+
 // Danger — cascade reverses linked GRN if APPROVED.
 // Sub-perm key: `inventory.reverse_undertaking` (seeded in ERP_DANGER_SUB_PERMISSIONS).
 router.post('/:id/president-reverse', protect, erpSubAccessCheck('inventory', 'reverse_undertaking'), c.presidentReverseUndertaking);

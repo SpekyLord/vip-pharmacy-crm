@@ -111,7 +111,12 @@ async function autoUndertakingForGrn(grn, { session } = {}) {
     warehouse_id: grn.warehouse_id,
     linked_grn_id: grn._id,
     receipt_date: grn.grn_date,
+    // Mirror BOTH proof attachments from the GRN. The GRN remains the source of
+    // truth; the UT's mirror is the fail-soft fallback used by buildUndertakingDetails
+    // and the UT detail page so the Approval Hub never false-positives on a missing
+    // waybill when the linked-GRN populate is partial / stale (Phase G4.5h-W).
     waybill_photo_url: grn.waybill_photo_url || null,
+    undertaking_photo_url: grn.undertaking_photo_url || null,
     line_items: lineItems,
     status: 'DRAFT', // BDM reviews + submits from UT page
     created_by: grn.created_by || grn.bdm_id,

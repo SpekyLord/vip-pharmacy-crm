@@ -9,6 +9,7 @@ import { showError } from '../utils/errorToast';
 import WorkflowGuide from '../components/WorkflowGuide';
 import DocumentDetailPanel from '../components/DocumentDetailPanel';
 import toast from 'react-hot-toast';
+import { getGrnSettings } from '../services/undertakingService';
 
 
 export default function ApprovalManager() {
@@ -57,6 +58,14 @@ export default function ApprovalManager() {
 
   const [hubModuleFilter, setHubModuleFilter] = useState('');
   const [expandedItem, setExpandedItem] = useState(null); // item.id to expand
+  // Phase G4.5h-W (Apr 29, 2026) — lookup-driven waybill-required flag for
+  // UNDERTAKING rows. Subscribers who don't require courier waybills (internal-
+  // only workflows) shouldn't see "approval will be blocked" warnings. Reads
+  // GRN_SETTINGS.WAYBILL_REQUIRED via the cached settings fetcher.
+  const [waybillRequired, setWaybillRequired] = useState(true);
+  useEffect(() => {
+    getGrnSettings().then(s => setWaybillRequired(!!s?.waybillRequired)).catch(() => {});
+  }, []);
 
   // Phase G3: Quick-edit state
   const [editingItem, setEditingItem] = useState(null);   // item.id being edited
@@ -357,7 +366,15 @@ export default function ApprovalManager() {
                       waybill thumbnail on the row itself. The president-level bug this
                       closes: approving the wrong UT because the approver couldn't tell
                       two Hub rows apart without expanding, and the waybill was only
-                      visible inside DocumentDetailPanel. */}
+                      visible inside DocumentDetailPanel.
+                      Phase G4.5h-W (Apr 29, 2026) — buildUndertakingDetails now falls
+                      back to the UT's own waybill mirror when the linked-GRN populate
+                      is partial. The "approval will be blocked" warning is gated on
+                      GRN_SETTINGS.WAYBILL_REQUIRED so non-pharmacy subscribers
+                      who don't capture courier waybills don't see false-positives, and
+                      it links the approver back to the UT page where they can re-upload
+                      the waybill (the GRN has no edit endpoint — UT recovery is the
+                      only path). */}
                   {item.module === 'UNDERTAKING' && (
                     <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 10, padding: 8, background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 6 }}>
                       {d.waybill_photo_url ? (
@@ -368,8 +385,8 @@ export default function ApprovalManager() {
                           style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 4, cursor: 'pointer', border: '1px solid #d97706', flexShrink: 0 }}
                         />
                       ) : (
-                        <div title="Missing waybill photo" style={{ width: 56, height: 56, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fee2e2', borderRadius: 4, border: '1px solid #dc2626', color: '#dc2626', fontSize: 20, fontWeight: 700, flexShrink: 0 }}>
-                          ⚠
+                        <div title={waybillRequired ? 'Missing waybill photo' : 'No waybill on file (not required by GRN settings)'} style={{ width: 56, height: 56, display: 'flex', alignItems: 'center', justifyContent: 'center', background: waybillRequired ? '#fee2e2' : '#f1f5f9', borderRadius: 4, border: `1px solid ${waybillRequired ? '#dc2626' : '#94a3b8'}`, color: waybillRequired ? '#dc2626' : '#475569', fontSize: 20, fontWeight: 700, flexShrink: 0 }}>
+                          {waybillRequired ? '⚠' : '–'}
                         </div>
                       )}
                       <div style={{ fontSize: 12, flex: 1, lineHeight: 1.5 }}>
@@ -380,9 +397,16 @@ export default function ApprovalManager() {
                           GRN {d.linked_grn?.grn_number || '—'}
                           {d.linked_grn?.vendor_name && <> · {d.linked_grn.vendor_name}</>}
                         </div>
-                        {!d.waybill_photo_url && (
+                        {!d.waybill_photo_url && waybillRequired && (
                           <div style={{ color: '#dc2626', fontWeight: 700, marginTop: 2 }}>
-                            No waybill photo — approval will be blocked
+                            No waybill photo — approval will be blocked.{' '}
+                            <a
+                              href={`/erp/undertaking/${item.doc_id}`}
+                              onClick={(e) => e.stopPropagation()}
+                              style={{ color: '#dc2626', textDecoration: 'underline' }}
+                            >
+                              Open UT to upload →
+                            </a>
                           </div>
                         )}
                       </div>
