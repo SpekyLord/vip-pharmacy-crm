@@ -37,18 +37,16 @@ import visitService from '../../services/visitService';
 
 const pageStyles = `
   .activity-monitor-layout {
-    height: 100vh;
+    min-height: 100vh;
     display: flex;
     flex-direction: column;
     background: #f3f4f6;
-    overflow: hidden;
   }
 
   .activity-monitor-content {
     display: flex;
     flex: 1;
     min-height: 0;
-    overflow: hidden;
   }
 
   .activity-monitor-main {
@@ -57,7 +55,6 @@ const pageStyles = `
     min-width: 0;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
   }
 
   .page-header {
@@ -189,7 +186,6 @@ const pageStyles = `
   .activity-monitor-main > :last-child {
     flex: 1;
     min-height: 0;
-    overflow: hidden;
   }
 
   /* Responsive */
