@@ -59,6 +59,13 @@ export default function PayrollRun() {
   const [msg, setMsg] = useState(null);
   const [loading, setLoading] = useState(false);
   const isFinance = ROLE_SETS.MANAGEMENT.includes(user?.role);
+  // Phase G4.5cc (Apr 29, 2026) — clerk-run authority. canRunPayroll widens
+  // the Compute + Post button visibility from `isFinance` (admin/finance/
+  // president) to anyone holding payroll.run_proxy. Per-payslip Review/Approve
+  // remains gated on `isFinance` because those statutory transitions are still
+  // admin-owned (Phase G4 doctrine — clerks SUBMIT the run; admin OWNS the
+  // line transitions when they want manual review).
+  const { canRunPayroll, hasRunProxy, isPrivileged } = api;
   // Phase G4.5bb — proxy-roster preview for the read-only banner / chip. The
   // backend already filters /payroll/staging by roster server-side; this is a
   // surface so the clerk knows WHY their list is shorter than entity-wide.
@@ -103,6 +110,9 @@ export default function PayrollRun() {
       setMsg({ type: 'ok', text: res?.message || 'Payroll computed' });
       loadStaging();
     } catch (e) {
+      // Phase G4.5cc — surface 403s from payrollRunProxyGate verbatim so the
+      // clerk knows whether the issue is the sub-perm or the
+      // MODULE_DEFAULT_ROLES.PAYROLL lookup widening.
       setMsg({ type: 'err', text: e.response?.data?.message || 'Failed to compute' });
     }
   };
@@ -135,6 +145,32 @@ export default function PayrollRun() {
         <Sidebar />
         <main className="pr-main">
           <WorkflowGuide pageKey="payroll-run" />
+
+          {/* Phase G4.5cc — purple banner explains the clerk-run authority chain
+              when the caller is non-privileged but holds payroll.run_proxy. The
+              copy intentionally names the lookup category so admin can find it
+              without rummaging through Access Templates. */}
+          {hasRunProxy && !isPrivileged && (
+            <div style={{
+              background: '#f3e8ff', border: '1px solid #c4b5fd', borderRadius: 8,
+              padding: '10px 14px', marginBottom: 12, fontSize: 13, color: '#5b21b6',
+              display: 'flex', alignItems: 'flex-start', gap: 10,
+            }}>
+              <span style={{ fontSize: 16 }}>{'✨'}</span>
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 2 }}>Payroll Run Proxy {'—'} clerk authority</div>
+                <div style={{ fontSize: 12 }}>
+                  You can Compute the run and Submit it for posting. Submitted runs are always
+                  held in the <strong>Approval Hub</strong> for admin / finance / president to
+                  authorize on phone {'—'} their single tap cascades every matching payslip
+                  through Reviewed {'→'} Approved {'→'} Posted with auto-emitted payroll JEs.
+                  Authorizer list is lookup-driven via <strong>MODULE_DEFAULT_ROLES.PAYROLL</strong>
+                  {' '}(Control Center {'→'} Lookup Tables) {'—'} independently tunable.
+                </div>
+              </div>
+            </div>
+          )}
+
           {showRosterChip && (
             <div style={{
               background: '#f3e8ff', border: '1px solid #c4b5fd', borderRadius: 8,
@@ -170,8 +206,15 @@ export default function PayrollRun() {
               <option value="C2">C2 (2nd half)</option>
             </SelectField>
             <button className="btn btn-primary" onClick={loadStaging}>Load Staging</button>
-            {isFinance && <button className="btn btn-warning" onClick={handleCompute}>Compute Payroll</button>}
-            {isFinance && <button className="btn btn-success" onClick={handlePostAll}>Post All Approved</button>}
+            {/* Phase G4.5cc — Compute + Post are open to canRunPayroll
+                (privileged OR payroll.run_proxy). Per-row Review/Approve below
+                stay on isFinance because those line transitions are admin-owned. */}
+            {canRunPayroll && <button className="btn btn-warning" onClick={handleCompute}>Compute Payroll</button>}
+            {canRunPayroll && (
+              <button className="btn btn-success" onClick={handlePostAll}>
+                {isPrivileged ? 'Post All Approved' : 'Submit Run for Approval'}
+              </button>
+            )}
           </div>
 
           {msg && <div className={`pr-msg ${msg.type === 'ok' ? 'pr-msg-ok' : 'pr-msg-err'}`}>{msg.text}</div>}

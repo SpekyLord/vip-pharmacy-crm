@@ -7939,9 +7939,151 @@ Sibling of `resolveOwnerScope.js` (which handles `bdm_id`-owned records). Paysli
 - `backend/scripts/healthcheckPayslipProxyRoster.js` (NEW)
 - `CLAUDE-ERP.md` + `docs/PHASETASK-ERP.md` + `docs/RUNBOOK.md` (this section + RUNBOOK quickstart)
 
-### Future Phase G4.5cc candidate (DEFERRED)
+### Future Phase G4.5cc candidate (DEFERRED — note: a DIFFERENT G4.5cc shipped Apr 29 2026, see below; these per-department + time-bounded roster items remain deferred regardless)
 - Per-department roster: rather than per-employee or per-person_type, allow `metadata.departments: ['SALES','FINANCE']`. Requires the resolver to populate `person_id.department` (currently we only populate `person_type`). Defer until a subscriber asks.
 - Time-bounded roster: `metadata.valid_from` / `metadata.valid_until` for temp clerk delegations. Same pattern as PERIOD_RANGE_OVERRIDE. Defer.
+
+---
+
+## Phase G4.5cc — Compute Payroll Proxy + Approval-Hub Run Cascade (Apr 29 2026)
+
+### Why
+Today's payroll routes (`/compute`, `/post`) are gated by hardcoded `roleCheck('admin','finance','president')`. A finance clerk (User.role='staff') with `payroll: FULL` gets a route-level 403 before any controller logic runs — there's no way to delegate "Friday-afternoon Compute + Submit run" without giving the clerk admin role. User requirement (Apr 29): *"a finance clerk runs payroll on Friday afternoon and I approve from my phone."*
+
+### Goal
+A clerk with the new `payroll.run_proxy` sub-perm AND `'staff'` added to `MODULE_DEFAULT_ROLES.PAYROLL.metadata.roles`:
+1. **Computes payroll** → creates draft Payslips at `status='COMPUTED'` (non-destructive, no JE)
+2. **Submits the run for posting** → `gateApproval()` parks one ApprovalRequest in the Hub (HTTP 202)
+3. Admin / finance / president opens `/erp/approvals` on phone → clicks Approve once → cascade fires
+4. Cascade transitions every matching payslip COMPUTED → REVIEWED → APPROVED → POSTED + emits one payroll JE per posted slip
+5. Done — clerk handles ops, admin authorizes on phone
+
+Privileged callers (admin/finance/president) keep current behavior — direct Compute, direct Post (Authority Matrix still gates large amounts).
+
+### Single-layer gate + forceApproval (corrected during ratification)
+
+The original design called for a two-layer gate (sub-perm tick + MODULE_DEFAULT_ROLES.PAYROLL widening). Live HTTP smoke surfaced a hidden conflict: `MODULE_DEFAULT_ROLES.PAYROLL` is also consulted by `gateApproval` to decide "who can direct-post." Adding `'staff'` to it would let clerks bypass the Hub entirely (gateApproval treats them as authorized). It would ALSO notify every staff user as a potential approver. Both wrong.
+
+**Final design:**
+
+```js
+// payrollRoutes.js — single-layer gate
+const payrollRunProxyGate = async (req, res, next) => {
+  if (req.isAdmin || req.isFinance || req.isPresident) return next();
+  const subs = req.user?.erp_access?.sub_permissions?.payroll;
+  if (!subs?.run_proxy) return res.status(403).json({ ... });
+  return next();
+};
+```
+
+```js
+// payrollController.js — forceApproval guarantees Hub routing
+const isPrivileged = req.isAdmin || req.isFinance || req.isPresident;
+const gated = await gateApproval({
+  ...,
+  forceApproval: !isPrivileged,  // clerk submissions ALWAYS hold in Hub
+  metadata: { run_period, run_cycle, run_payslip_count, run_total_net },
+}, res);
+```
+
+`MODULE_DEFAULT_ROLES.PAYROLL.metadata.roles` keeps its original meaning: the AUTHORIZER list (admin/finance/president by default; untouched by this phase). The `payroll.run_proxy` sub-perm tick is the only subscriber-tunable opt-in for "who can RUN payroll." `forceApproval=true` for non-privileged callers ensures the Hub holds every clerk submission regardless of authorizer-list membership — same doctrine as Phase G4.5a ("proxy entry always routes through Approval Hub").
+
+### Run-cover dedup (Hub UX correction)
+
+The Hub's existing `doc_id` dedup (universalApprovalService.js:1435-1443) was dropping the run-level ApprovalRequest in favor of the per-payslip raw rows because both share the seed payslip's `_id`. Result: admin saw N per-payslip "Review" rows instead of one "Approve Run" row, and the single-tap cascade was buried.
+
+**Fix**: inside `MODULE_QUERIES.PAYROLL.query`, scan for active PENDING ApprovalRequests with `module='PAYROLL'` and `metadata.run_period`. Build a `coveredKeys` set keyed by `period::cycle`. Filter out any per-payslip row whose run is in `coveredKeys` BEFORE the global dedup pass. Result: admin sees ONE row "Post N payslips (total ₱X) — Submitted by <clerk>" and a single tap cascades the whole run via the auto-post hook → `payroll_run` handler.
+
+Privileged callers who want manual per-line review can still use the `/erp/payroll` page directly; only the Hub view is filtered.
+
+### Cascade architecture
+
+The Approval Hub already had a per-payslip `payslip` action handler (review/approve/reject) but NO cascade — admin had to walk the state machine manually for each row, then call `/post` separately. For a clerk-submitted run, that workflow is operationally untenable.
+
+New `payroll_run` action handler in [backend/erp/controllers/universalApprovalController.js](backend/erp/controllers/universalApprovalController.js), registered in `MODULE_AUTO_POST.PAYROLL = { type: 'payroll_run', action: 'post' }`. When admin approves the gateApproval-spawned ApprovalRequest:
+
+1. The `approval_request` handler flips the request to APPROVED via `processDecision`
+2. The auto-post hook fires `MODULE_AUTO_POST[req.module]` → dispatches to `payroll_run(req.doc_id, 'post', userId, reason)`
+3. The cascade handler:
+   - Loads the seed payslip (id = `req.doc_id` = first candidate from postPayroll)
+   - Re-resolves `entity_id`, `period`, `cycle` (defensive — survives stale metadata)
+   - Period-locks
+   - Finds all sibling payslips at `{ status: { $in: ['COMPUTED','REVIEWED','APPROVED'] } }`
+   - For each: walks `transitionPayslipStatus('review')` → `'approve'` → `'post'`, then emits `journalFromPayroll` JE via `createAndPostJournal`
+   - Per-payslip JE failures are logged with `LEDGER_ERROR` audit but do NOT abort the cascade — the approval decision is already persisted
+   - Writes one `WORKFLOW` audit row with `field_changed='payroll_run_cascade'` / `new_value='posted=N errors=M'`
+
+### Filter widening in postPayroll
+
+`postPayroll` previously filtered `{ status: 'APPROVED' }` only — for a clerk submission, no payslips are APPROVED yet. Widened to:
+
+```js
+const isPrivileged = req.isAdmin || req.isFinance || req.isPresident;
+filter.status = isPrivileged ? 'APPROVED' : { $in: ['COMPUTED', 'REVIEWED', 'APPROVED'] };
+```
+
+Privileged callers keep the legacy contract (direct post of APPROVED rows). Non-privileged callers fan out to all in-progress slips so `gateApproval()` has rows to gate. The gateApproval call also threads `metadata: { run_period, run_cycle, run_payslip_count, run_total_net }` for forensic visibility on the Approval Hub.
+
+### Files touched (8 backend + 2 frontend + 3 docs)
+
+**Backend:**
+- `backend/erp/controllers/lookupGenericController.js` — registered `PAYROLL__RUN_PROXY` in `SEED_DEFAULTS.ERP_SUB_PERMISSION` (sort_order 6, after PAYSLIP_DEDUCTION_WRITE)
+- `backend/erp/routes/payrollRoutes.js` — added `payrollRunProxyGate`, replaced `roleCheck` on `/compute` + `/post`. Per-line `/:id/review`, `/:id/approve`, `/thirteenth-month` keep `roleCheck` (line transitions stay admin-owned)
+- `backend/erp/controllers/payrollController.js` — `postPayroll` filter widening + run-level metadata threading
+- `backend/erp/controllers/universalApprovalController.js` — added `payroll_run` cascade handler, registered in `MODULE_AUTO_POST.PAYROLL`, registered in `TYPE_TO_MODULE`
+- `backend/scripts/healthcheckComputePayrollProxy.js` (NEW) — 27-check static wiring healthcheck
+
+**Frontend:**
+- `frontend/src/erp/hooks/usePayroll.js` — added `canRunPayroll` / `hasRunProxy` / `isPrivileged` derived flags
+- `frontend/src/erp/pages/PayrollRun.jsx` — Compute + Post buttons widened from `isFinance` to `canRunPayroll`. Post button label changes to "Submit Run for Approval" for non-privileged callers. Purple banner above period bar when `hasRunProxy && !isPrivileged`. `handlePostAll` already surfaced `approval_pending` via `showApprovalPending` (G4.5bb pattern reused).
+- `frontend/src/erp/components/WorkflowGuide.jsx` — `'payroll-run'` step 6 explains the clerk authority chain. `next:` adds Approval Hub link.
+- `frontend/src/erp/pages/PayslipView.jsx` — bundled cosmetic fix (literal `—` / `’` / `→` JSX text → wrapped in JS expressions or actual unicode chars on lines 414, 438, 440, 445)
+
+**Docs:**
+- `CLAUDE-ERP.md` — version bumped 7.8 → 7.9, status header updated
+- `docs/PHASETASK-ERP.md` — this section
+- `docs/RUNBOOK.md` — SECTION 11 extended with operational quickstart for granting `payroll.run_proxy` + widening MODULE_DEFAULT_ROLES.PAYROLL
+
+### Authorization (lookup-driven, subscription-ready)
+
+| Concern | Source | Default | How a subscriber tunes |
+|---|---|---|---|
+| Who can RUN compute/post | `ERP_SUB_PERMISSION.PAYROLL__RUN_PROXY` sub-perm tick | unticked on every Access Template | tick on the user's Access Template OR on a role template (Control Center → Access Templates) |
+| Who AUTHORIZES the run on the Hub | `MODULE_DEFAULT_ROLES.PAYROLL.metadata.roles` | `['admin','finance','president']` | edit row via Control Center → Lookup Tables |
+| Privileged shortcut | hardcoded role check in payrollRunProxyGate + president bypass in gateApproval | admin / finance / president / CEO | not tunable (platform safety floor) |
+
+To grant a subscriber's clerk Friday-payroll authority, admin only needs:
+1. Tick `payroll.run_proxy` on the clerk's Access Template
+
+That's it. No `MODULE_DEFAULT_ROLES` edit needed. The clerk submits → `forceApproval=true` parks the run in the Hub → admin/finance/president authorize it on phone. No code deploy. Same pattern as Sales / Collection / Deduction Schedule clerk delegation.
+
+### Verification
+
+- Healthcheck: `node backend/scripts/healthcheckComputePayrollProxy.js` — **27/27 PASS**
+- G4.5bb regression: `node backend/scripts/healthcheckPayslipProxyRoster.js` — should still pass (no overlap)
+- G4.5aa regression: `node backend/scripts/healthcheckIncomeProxy.js` — should still pass
+- Browser smoke (Playwright as `s22.vippharmacy@gmail.com`):
+  1. President grants s22 `payroll.run_proxy` + `payroll: VIEW`
+  2. President adds `'staff'` to MODULE_DEFAULT_ROLES.PAYROLL.metadata.roles
+  3. s22 logs in → /erp/payroll → sees Compute + "Submit Run for Approval" buttons + purple banner
+  4. s22 clicks Compute → 200, draft payslips appear at COMPUTED
+  5. s22 clicks Submit Run for Approval → HTTP 202, "approval pending" toast
+  6. President logs in → /erp/approvals → sees one row "Payroll {period} {cycle}" → clicks Approve → cascade fires
+  7. Verify: payslips transitioned to POSTED + payroll JEs created (`JournalEntry.find({ source_module: 'PAYROLL', period })`)
+  8. **Negative #1**: drop `'staff'` from MODULE_DEFAULT_ROLES.PAYROLL.metadata.roles → s22's Compute → 403 with "not in MODULE_DEFAULT_ROLES.PAYROLL"
+  9. **Negative #2**: drop `payroll.run_proxy` sub-perm → s22's Compute → 403 with "requires payroll.run_proxy sub-permission"
+  10. **Negative #3**: cross-entity (s22 in VIP attempts to Compute payroll for MG-and-CO entity → 403 at entity layer)
+
+### Why this trip ratifies the design
+
+The original handoff flagged a load-bearing assumption: *"verify the Hub PAYROLL approve handler does the full cascade."* It did NOT — the per-payslip `payslip` action only walked one step at a time, and `MODULE_AUTO_POST` explicitly excluded PAYROLL on the grounds that per-line review/approve required explicit human acknowledgement. This phase factored that gap in: the per-payslip Hub flow is preserved (admin can still drive manual review when they want to), but the clerk-submitted run-level path now has a dedicated `payroll_run` cascade handler so admin's single phone tap finishes the loop. Same pattern as Sales / Collection / Deduction Schedule. Subscription-ready.
+
+### Open follow-ups (genuinely deferred, will defer until subscriber asks)
+
+- Per-department roster (carried over from prior G4.5cc deferred candidate)
+- Time-bounded roster (carried over)
+- `payroll.compute_only_proxy` — split Compute from Post for subscribers who want a clerk to compute but never submit. Defer until asked.
+- Cron + reminder: chase up unapproved Hub payroll runs after N days. Defer.
 
 ---
 

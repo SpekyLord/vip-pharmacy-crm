@@ -151,29 +151,70 @@ const approvePayslip = catchAsync(async (req, res) => {
 
 const postPayroll = catchAsync(async (req, res) => {
   const { period, cycle = 'MONTHLY' } = req.body;
-  const filter = { entity_id: req.entityId, status: 'APPROVED' };
+
+  // Phase G4.5cc (Apr 29, 2026) — clerk-submitted runs widen the candidate filter.
+  // A clerk with payroll.run_proxy + MODULE_DEFAULT_ROLES.PAYROLL widened can submit
+  // a run while payslips are still at COMPUTED/REVIEWED. gateApproval below parks
+  // the request in the Approval Hub; admin's single approval cascades all matching
+  // payslips through the COMPUTED→REVIEWED→APPROVED→POSTED state machine and emits
+  // JEs via the `payroll_run` handler in universalApprovalController.js (registered
+  // in MODULE_AUTO_POST.PAYROLL). Privileged callers keep the legacy APPROVED-only
+  // path so the per-payslip review/approve flow is preserved when they want to drive
+  // it manually.
+  const isPrivileged = req.isAdmin || req.isFinance || req.isPresident;
+  const filter = { entity_id: req.entityId };
+  filter.status = isPrivileged ? 'APPROVED' : { $in: ['COMPUTED', 'REVIEWED', 'APPROVED'] };
   if (period) filter.period = period;
   if (cycle) filter.cycle = cycle;
 
-  const approved = await Payslip.find(filter);
+  const candidates = await Payslip.find(filter);
 
-  // Authority matrix gate
-  if (approved.length) {
+  // Authority matrix gate + Phase G4 default-roles gate.
+  //
+  // Phase G4.5cc (Apr 29, 2026): for non-privileged callers, set forceApproval=true
+  // so the Approval Hub ALWAYS holds the submission — even if 'staff' is in
+  // MODULE_DEFAULT_ROLES.PAYROLL. Mirrors the Phase G4.5a doctrine ("proxy entry
+  // always routes through Approval Hub"): a clerk keying under their own user but
+  // with run_proxy authority is four-eyes territory, so the run posts under admin's
+  // signature, not the clerk's. MODULE_DEFAULT_ROLES.PAYROLL still gates WHO is
+  // allowed to RUN compute/post (the route-level payrollRunProxyGate's Layer 2),
+  // but the ACT of POSTING is reserved for admin/finance/president via the Hub.
+  if (candidates.length) {
     const { gateApproval } = require('../services/approvalService');
-    const payrollTotal = approved.reduce((sum, ps) => sum + (ps.net_pay || 0), 0);
+    const payrollTotal = candidates.reduce((sum, ps) => sum + (ps.net_pay || 0), 0);
     const gated = await gateApproval({
       entityId: req.entityId,
       module: 'PAYROLL',
       docType: 'PAYSLIP',
-      docId: approved[0]._id,
+      docId: candidates[0]._id,
       docRef: `Payroll ${period || ''} ${cycle}`.trim(),
       amount: payrollTotal,
-      description: `Post ${approved.length} payslip${approved.length === 1 ? '' : 's'} (total ₱${payrollTotal.toLocaleString()})`,
+      description: `Post ${candidates.length} payslip${candidates.length === 1 ? '' : 's'} (total ₱${payrollTotal.toLocaleString()})`,
+      // Phase G4.5cc — thread the run-level period/cycle so the cascade handler
+      // can re-resolve the full payslip set on approval (avoids stale doc_id race
+      // when a payslip is added/removed between submit and admin approval).
+      metadata: {
+        run_period: period || null,
+        run_cycle: cycle,
+        run_payslip_count: candidates.length,
+        run_total_net: payrollTotal,
+      },
+      // Phase G4.5cc — clerk-submitted runs are ALWAYS held in the Hub. Privileged
+      // callers (admin/finance/president) keep the legacy direct-post path unless
+      // an Authority Matrix rule applies.
+      forceApproval: !isPrivileged,
       requesterId: req.user._id,
       requesterName: req.user.name || req.user.email,
     }, res);
     if (gated) return;
   }
+
+  // Privileged direct-post path: re-narrow to APPROVED (the legacy contract).
+  // candidates already === APPROVED set when isPrivileged, so this is a no-op
+  // assignment for clarity.
+  const approved = isPrivileged
+    ? candidates
+    : await Payslip.find({ ...filter, status: 'APPROVED' });
 
   // Period lock check — prevent posting payroll to closed periods
   if (period) {

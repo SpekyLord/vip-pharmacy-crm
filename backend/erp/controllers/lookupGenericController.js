@@ -790,6 +790,14 @@ const SEED_DEFAULTS = {
     { code: 'PAYROLL__INCOME_PROXY', label: 'Generate Income Report + record deductions on behalf of another BDM', metadata: { module: 'payroll', key: 'income_proxy', sort_order: 3 } },
     { code: 'PAYROLL__DEDUCTION_SCHEDULE_PROXY', label: 'Create / Edit / Withdraw Deduction Schedule on behalf of another BDM', metadata: { module: 'payroll', key: 'deduction_schedule_proxy', sort_order: 4 } },
     { code: 'PAYROLL__PAYSLIP_DEDUCTION_WRITE', label: 'Add / Verify / Remove employee Payslip deduction lines (without PAYROLL FULL)', metadata: { module: 'payroll', key: 'payslip_deduction_write', sort_order: 5 } },
+    // Phase G4.5cc (Apr 29, 2026) — Run Compute Payroll + Submit Run for Posting. Subscription-ready
+    // proxy that lets a finance clerk run Friday-afternoon payroll and have admin/finance/president
+    // approve on phone via the Approval Hub. Two-layer gate: this sub-perm + Phase G4
+    // MODULE_DEFAULT_ROLES.PAYROLL.metadata.roles (admin adds 'staff' to that lookup row to onboard
+    // a clerk without code change). Submission is held by gateApproval (HTTP 202) and admin's single
+    // approval cascades all matching payslips COMPUTED→REVIEWED→APPROVED→POSTED + emits payroll JEs
+    // (see MODULE_AUTO_POST.PAYROLL → payroll_run handler in universalApprovalController.js).
+    { code: 'PAYROLL__RUN_PROXY', label: 'Run Compute Payroll + Submit Run for Posting (Hub-approved by admin/finance/president)', metadata: { module: 'payroll', key: 'run_proxy', sort_order: 6 } },
     // Phase 3c — Master Data sub-permissions. All gated through the danger layer (baseline OR
     // ERP_DANGER_SUB_PERMISSIONS lookup) so module-FULL does NOT inherit them — explicit grant required.
     { code: 'MASTER__PRODUCT_DELETE', label: 'Hard-Delete Product Master Row (DANGER)', metadata: { module: 'master', key: 'product_delete', sort_order: 1 } },

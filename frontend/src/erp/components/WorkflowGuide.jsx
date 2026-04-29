@@ -894,13 +894,16 @@ const WORKFLOW_GUIDES = {
       'Approve and Post — creates payroll journal entries',
       // Phase G4.5bb (Apr 29, 2026)
       'Phase G4.5bb: a back-office clerk with the payroll.payslip_deduction_write sub-perm can be constrained to a roster of specific employees (or person types). Admin manages the roster in Control Center → Lookup Tables → PAYSLIP_PROXY_ROSTER (one row per clerk, code = clerk\'s user id, scope_mode = ALL / PERSON_IDS / PERSON_TYPES). When restrictive, the staging list filters server-side and a purple chip explains the constraint above the period bar.',
+      // Phase G4.5cc (Apr 29, 2026)
+      'Phase G4.5cc: a finance clerk holding payroll.run_proxy can Compute Payroll and Submit the run for posting. Submission is always held in the Approval Hub — admin / finance / president authorize on phone, and a single approval cascades every matching payslip COMPUTED → REVIEWED → APPROVED → POSTED with auto-emitted payroll JEs. Subscriber control: tick the payroll.run_proxy sub-perm in Control Center → Access Templates. The Hub authorizer list (MODULE_DEFAULT_ROLES.PAYROLL — defaults to admin / finance / president) is independently tunable via Control Center → Lookup Tables — no code deploy.',
     ],
     next: [
       { label: 'Payslips', path: '/erp/payroll' },
       { label: 'Journal Entries', path: '/erp/journals' },
+      { label: 'Approval Hub', path: '/erp/approvals' },
       { label: 'Lookup Tables', path: '/erp/control-center?section=lookups' },
     ],
-    tip: 'Government rates (SSS, PhilHealth, PagIBIG) are pulled from Settings automatically. PAYSLIP_PROXY_ROSTER (G4.5bb) is lookup-driven — subscribers tune per-clerk allowlists without a code deploy.',
+    tip: 'Government rates (SSS, PhilHealth, PagIBIG) are pulled from Settings automatically. PAYSLIP_PROXY_ROSTER (G4.5bb) and MODULE_DEFAULT_ROLES.PAYROLL (G4.5cc) are both lookup-driven — subscribers tune per-clerk allowlists and authority lists without a code deploy.',
   },
   'office-supplies': {
     title: 'Office Supplies',
