@@ -1,9 +1,18 @@
 /**
- * CapitationRulesPage — Phase VIP-1.B Phase 4
+ * CapitationRulesPage — Phase VIP-1.B / Phase R1 (Apr 2026)
  *
  * Tier-B per-MD per-patient capitation rules. Same 3-gate (PARTNER +
  * agreement_date) as Tier-A. Excluded products view shows the active
  * MdProductRebate union for the same MD (computed at apply-time).
+ *
+ * Phase R1 (Apr 29 2026):
+ *   - Surface labels updated to operator vocabulary:
+ *       "Rule name" → "Program label"
+ *       "Frequency window" → "Cadence"
+ *   - Added "Online Pharmacy only — VIP-1.D" dependency banner so admin
+ *     understands rules created here are dormant until VIP-1.D ships the
+ *     storefront patient attribution + Order.paid listener.
+ *   - Schema unchanged (no migration needed) — labels-only refresh.
  *
  * Route: /erp/capitation-rules
  */
@@ -73,6 +82,18 @@ export default function CapitationRulesPage() {
         <Navbar />
         <main style={{ padding: 20, maxWidth: 1400, margin: '0 auto', width: '100%' }}>
           <PageGuide pageKey="capitation-rules" />
+
+          {/* Phase R1 — VIP-1.D dependency banner. Capitation rules are
+              dormant until the storefront patient attribution + Order.paid
+              listener ships. Admins can stage rules now; the rebate engine
+              picks them up automatically once VIP-1.D activates. */}
+          <div style={{ padding: 12, background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 8, marginBottom: 16, fontSize: 13, color: '#78350f' }}>
+            <strong>Online Pharmacy only — activates with VIP-1.D.</strong> Capitation
+            accruals fire on storefront <code>Order.paid</code> events via the patient ↔ MD
+            attribution pipeline. Rules staged here are inert in the ERP until VIP-1.D
+            ships the storefront listener. Tier-A (per-product) rebates are unaffected.
+          </div>
+
           <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
             <h1 style={{ fontSize: 22, fontWeight: 700, display: 'flex', gap: 8, alignItems: 'center' }}>
               <Heart size={22} /> Tier-B MD Capitation Rules
@@ -186,8 +207,17 @@ function CreateCapitationModal({ partners, onClose, onCreated }) {
           </select>
         </div>
         <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', fontSize: 12, marginBottom: 4 }}>Rule name</label>
-          <input type="text" value={form.rule_name} onChange={(e) => setForm({ ...form, rule_name: e.target.value })} required placeholder="e.g. Diabetes panel ₱100/patient/month" style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #cbd5e1' }} />
+          {/* Phase R1: relabeled "Rule name" → "Program label" — operator
+              vocabulary that matches how admin actually thinks about these. */}
+          <label style={{ display: 'block', fontSize: 12, marginBottom: 4 }}>Program label</label>
+          <input
+            type="text"
+            value={form.rule_name}
+            onChange={(e) => setForm({ ...form, rule_name: e.target.value })}
+            required
+            placeholder="e.g. Dr. Reyes — Diabetes panel (Q2 2026)"
+            style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #cbd5e1' }}
+          />
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
           <div>
@@ -206,7 +236,8 @@ function CreateCapitationModal({ partners, onClose, onCreated }) {
           </div>
         </div>
         <div style={{ marginBottom: 12 }}>
-          <label style={{ display: 'block', fontSize: 12, marginBottom: 4 }}>Frequency window</label>
+          {/* Phase R1: relabeled "Frequency window" → "Cadence". */}
+          <label style={{ display: 'block', fontSize: 12, marginBottom: 4 }}>Cadence</label>
           <select value={form.frequency_window} onChange={(e) => setForm({ ...form, frequency_window: e.target.value })} style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #cbd5e1' }}>
             {Object.entries(FREQ_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>

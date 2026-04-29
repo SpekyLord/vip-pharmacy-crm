@@ -16,7 +16,13 @@ const partnerTagSchema = new mongoose.Schema({
   // the rebate_pct was sourced from this rule, not manually overridden by the
   // BDM at entry time). Used by the Collections UI to show a "from rule X"
   // tooltip + by future audit reports to flag manual vs auto rates.
-  rule_id: { type: mongoose.Schema.Types.ObjectId, ref: 'NonMdPartnerRebateRule', default: null }
+  rule_id: { type: mongoose.Schema.Types.ObjectId, ref: 'NonMdPartnerRebateRule', default: null },
+  // Phase R1 (Apr 29 2026) — denormalized calculation_mode from the matched
+  // NonMdPartnerRebateRule. Drives the rebate_amount math at save time
+  // (EXCLUDE_MD_COVERED → exclude Tier-A-covered net; TOTAL_COLLECTION →
+  // pct of full net_of_vat). Captured per-tag (not per-collection) so two
+  // partners on the same CSI can use different modes independently.
+  calculation_mode: { type: String, default: 'EXCLUDE_MD_COVERED' }
 }, { _id: false });
 
 // Phase VIP-1.B — Tier-A MD rebate line. One row per (CSI, MD, line_item.product_id)
@@ -29,6 +35,11 @@ const mdRebateLineSchema = new mongoose.Schema({
   md_name: { type: String, trim: true },
   product_id: { type: mongoose.Schema.Types.ObjectId, required: true },
   product_label: { type: String, trim: true },
+  // Phase R1 (Apr 29 2026) — captures the hospital that anchored this Tier-A
+  // match (sourced from SalesLine.hospital_id || Collection.hospital_id during
+  // the bridge walk). Audit trail: lets reports show "MD X earned ₱Y from
+  // hospital Z's rule" when the same MD has different rates per institution.
+  hospital_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null },
   rebate_pct: { type: Number, default: 0 },
   rebate_amount: { type: Number, default: 0 },
   base_amount: { type: Number, default: 0 }, // line_item.net_of_vat
@@ -166,8 +177,8 @@ collectionSchema.pre('save', async function () {
     const SalesLine = require('./SalesLine');
     const Doctor = require('../../models/Doctor');
     const {
-      matchMdProductRebate,
-      matchNonMdPartnerRebateRule,
+      matchAllMdProductRebates,
+      matchAllNonMdPartnerRebateRules,
       matchStaffCommissionRule,
     } = require('../services/matrixWalker');
     let CompProfile;
@@ -210,43 +221,60 @@ collectionSchema.pre('save', async function () {
       const sl = slMap.get(String(csi.sales_line_id));
       const lineItems = sl?.line_items || [];
 
-      // ── Tier-A walk: md_rebate_lines per (MD × product_id) ───────────────
+      // ── Tier-A walk: md_rebate_lines per (MD × hospital × product_id) ────
+      // Phase R1 (Apr 29 2026): hospital_id is the additional match dimension.
+      // The collection's hospital (or the SalesLine's, if present) scopes the
+      // Tier-A rules eligible to fire. Same MD at a different hospital with a
+      // different rate must NOT fire on this CSI — different MOA, different
+      // institution.
+      //
+      // Multiple matches at the same (MD × hospital × product) all earn full %
+      // independently — `matchAllMdProductRebates` returns the array, the
+      // bridge pushes one md_rebate_lines entry per matched rule.
+      //
       // Re-walk every time so admin matrix edits + reopen-resubmit cycles
       // pick up rule changes. (Manual edits to md_rebate_lines are not a
       // supported workflow — admin owns the matrix, BDM sees the result.)
       csi.md_rebate_lines = [];
       const tierAExcludedNet = new Map(); // product_id_str → cumulative net_of_vat covered
+      const csiHospitalId = sl?.hospital_id || this.hospital_id || null;
 
-      if (sl && candidateMds.length && lineItems.length) {
+      if (csiHospitalId && sl && candidateMds.length && lineItems.length) {
         for (const item of lineItems) {
           if (!item.product_id) continue;
           const itemNet = Number(item.net_of_vat || 0);
           if (!(itemNet > 0)) continue;
           for (const md of candidateMds) {
-            const rule = await matchMdProductRebate({
+            const rules = await matchAllMdProductRebates({
               entity_id: this.entity_id,
               doctor_id: md._id,
+              hospital_id: csiHospitalId,
               product_id: item.product_id,
               asOfDate: this.cr_date,
             });
-            if (!rule) continue;
-            const rebateAmt = Math.round(itemNet * (Number(rule.rebate_pct || 0) / 100) * 100) / 100;
-            if (!(rebateAmt > 0)) continue;
-            csi.md_rebate_lines.push({
-              md_id: md._id,
-              md_name: `${md.firstName || ''} ${md.lastName || ''}`.trim(),
-              product_id: item.product_id,
-              product_label: rule.product_label || '',
-              rebate_pct: rule.rebate_pct,
-              rebate_amount: rebateAmt,
-              base_amount: itemNet,
-              rule_id: rule._id,
-            });
-            totalMdRebates += rebateAmt;
+            if (!rules.length) continue;
+            for (const rule of rules) {
+              const rebateAmt = Math.round(itemNet * (Number(rule.rebate_pct || 0) / 100) * 100) / 100;
+              if (!(rebateAmt > 0)) continue;
+              csi.md_rebate_lines.push({
+                md_id: md._id,
+                md_name: `${md.firstName || ''} ${md.lastName || ''}`.trim(),
+                product_id: item.product_id,
+                product_label: rule.product_label || '',
+                hospital_id: csiHospitalId,
+                rebate_pct: rule.rebate_pct,
+                rebate_amount: rebateAmt,
+                base_amount: itemNet,
+                rule_id: rule._id,
+              });
+              totalMdRebates += rebateAmt;
+            }
             // Track the line_item.net_of_vat covered by Tier-A so partner_tags
-            // can subtract it. Multiple PARTNER MDs covering the same product
-            // each get full rebate (independent obligations) but the partner_tags
-            // base is only reduced once per product_id.
+            // (calculation_mode=EXCLUDE_MD_COVERED) can subtract it.
+            // Multiple matches against the same product still only consume the
+            // line_item.net_of_vat once toward the EXCLUDE base — admin pays
+            // the multiple-rule cost on the rebate side, not by inflating the
+            // exclude base.
             const key = String(item.product_id);
             if (!tierAExcludedNet.has(key)) tierAExcludedNet.set(key, itemNet);
           }
@@ -298,27 +326,44 @@ collectionSchema.pre('save', async function () {
         }
       }
 
-      // ── partner_tags rebate_pct auto-fill (NonMdPartnerRebateRule) ───────
+      // ── partner_tags rebate_pct + calculation_mode auto-fill ─────────────
+      // Phase R1 (Apr 29 2026): each partner_tag carries its own
+      // calculation_mode (sourced from its NonMdPartnerRebateRule), and
+      // hospital_id is the only match dimension besides partner. Multiple
+      // partners at the same hospital each earn full % independently per
+      // their own mode (no winner-take-all).
       if (csi.partner_tags?.length) {
         for (const tag of csi.partner_tags) {
-          if (tag.rebate_pct && tag.rebate_pct > 0) continue; // manual override respected
+          if (tag.rebate_pct && tag.rebate_pct > 0 && tag.calculation_mode) continue; // manual override respected
           if (!tag.doctor_id) continue;
           let partnerRule = null;
           try {
+            // matchNonMdPartnerRebateRule returns the most-recently-created
+            // active rule. matchAllNonMdPartnerRebateRules returns all of
+            // them — but partner_tags is keyed by doctor_id (one tag per
+            // partner), so the single-match API is the right shape here.
+            // For multiple effective-dated rules at the same key, the
+            // most-recent wins on the tag.
+            const { matchNonMdPartnerRebateRule } = require('../services/matrixWalker');
             partnerRule = await matchNonMdPartnerRebateRule({
               entity_id: this.entity_id,
               partner_id: tag.doctor_id,
-              hospital_id: sl?.hospital_id || this.hospital_id || undefined,
-              customer_id: sl?.customer_id || this.customer_id || undefined,
-              product_code: lineItems[0]?.product_id ? String(lineItems[0].product_id) : undefined,
+              hospital_id: csiHospitalId || undefined,
               asOfDate: this.cr_date,
             });
           } catch (err) {
             console.warn('[Collection bridge] NonMdPartnerRebateRule walk failed:', err.message);
           }
           if (partnerRule) {
-            tag.rebate_pct = partnerRule.rebate_pct;
+            if (!tag.rebate_pct || tag.rebate_pct === 0) {
+              tag.rebate_pct = partnerRule.rebate_pct;
+            }
             tag.rule_id = partnerRule._id;
+            // Phase R1: capture the rule's calculation_mode on the tag so the
+            // amount math below knows which base to use. Default safety:
+            // EXCLUDE_MD_COVERED if the rule somehow lacks the field (legacy
+            // rows pre-migration script).
+            tag.calculation_mode = partnerRule.calculation_mode || 'EXCLUDE_MD_COVERED';
           }
         }
       }
@@ -329,13 +374,22 @@ collectionSchema.pre('save', async function () {
         : 0;
       totalComm += csi.commission_amount;
 
-      // ── Compute partner_tags rebate amount (with Tier-A exclusion) ───────
+      // ── Compute partner_tags rebate amount (per-tag calculation_mode) ────
+      // Phase R1 branching:
+      //   EXCLUDE_MD_COVERED → base = net_of_vat − Σ tierAExcludedNet
+      //   TOTAL_COLLECTION   → base = net_of_vat (regardless of MD overlap)
+      // Locked design (Apr 29 2026): both modes can coexist on the same CSI;
+      // each non-MD partner earns full % per its own mode. Doubled cost on
+      // overlap with TOTAL_COLLECTION is accepted business policy.
       const tierAExcludedTotal = Array.from(tierAExcludedNet.values())
         .reduce((s, v) => s + v, 0);
-      const partnerBase = Math.max(0, csi.net_of_vat - tierAExcludedTotal);
+      const partnerBaseExclude = Math.max(0, csi.net_of_vat - tierAExcludedTotal);
+      const partnerBaseTotal = Math.max(0, csi.net_of_vat);
       if (csi.partner_tags?.length) {
         for (const tag of csi.partner_tags) {
-          tag.rebate_amount = Math.round(partnerBase * ((tag.rebate_pct || 0) / 100) * 100) / 100;
+          const mode = tag.calculation_mode || 'EXCLUDE_MD_COVERED';
+          const base = mode === 'TOTAL_COLLECTION' ? partnerBaseTotal : partnerBaseExclude;
+          tag.rebate_amount = Math.round(base * ((tag.rebate_pct || 0) / 100) * 100) / 100;
           totalRebates += tag.rebate_amount;
         }
       }

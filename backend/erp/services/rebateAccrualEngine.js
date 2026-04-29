@@ -20,8 +20,16 @@
  *     1. Look up the patient's MD attribution(s) via PatientMdAttribution.
  *        If the patient has no MD attribution, no rebate accrues.
  *     2. For each attributed MD, walk MdProductRebate matrix for
- *        (entity, doctor, product). If found AND active AND 3-gate passes,
- *        accrue Tier-A rebate (line_subtotal × rebate_pct).
+ *        (entity, doctor, hospital, product). If found AND active AND
+ *        3-gate passes, accrue Tier-A rebate (line_subtotal × rebate_pct).
+ *
+ *        Phase R1 (Apr 29 2026): hospital_id is sourced from the patient's
+ *        attribution row (PatientMdAttribution.hospital_id when set) — the
+ *        institution at which the MD-patient relationship was formed. When
+ *        the attribution lacks a hospital, the engine falls back to the
+ *        MD's PRIMARY hospital (Doctor.hospitals[0]). If neither yields a
+ *        hospital, Tier-A is skipped for that line — locked design (Apr 29
+ *        2026) makes hospital scoping mandatory for Tier-A.
  *
  * Tier-B path:
  *   For each Order line NOT covered by Tier-A:
@@ -44,6 +52,21 @@
  *
  * BIR_FLAG: rebate JEs land via PRF posting later (autoJournal.js), which
  * stamps INTERNAL post-Phase 0. The Payout row itself doesn't carry bir_flag.
+ *
+ * Phase R1 (Apr 29 2026) — single-flow PRF/CALF routing (locked design):
+ *   ALL rebate accruals (MD Tier-A, MD Tier-B Capitation, Non-MD partner)
+ *   converge on PrfCalf as the payment instruction artifact. RebatePayout
+ *   is the immutable per-line audit ledger; PrfCalf is the per-payee /
+ *   per-period payment bucket. autoPrfRouting (Collection POSTED path)
+ *   already writes both atomically. This engine (Order.paid path, dormant
+ *   until VIP-1.D activates) writes the RebatePayout ledger only — period
+ *   close runs the storefront equivalent of autoPrfRouting to roll up
+ *   payouts into PrfCalf. BIR_FLAG on every PRF defaults to INTERNAL
+ *   (PrfCalf model schema default + autoJournal.journalFromPrfCalf), and
+ *   STAYS INTERNAL even after disbursement to MD or non-MD recipients —
+ *   internal cost allocation, never on BIR P&L. PRC Code of Ethics
+ *   kickback exposure is avoided by sourcing all outflows from the PRF
+ *   bucket (CME, advisory honoraria with formal MOA, patient programs).
  *
  * Subscription posture:
  *   - entity_id required on every accrual write.
@@ -75,7 +98,14 @@ function derivePeriod(asOfDate) {
  * recently active attribution. VIP-1.D may upgrade to confidence-weighted
  * priority resolver.
  *
- * @returns {Promise<{doctor_id, ship_to_province}|null>}
+ * Phase R1 (Apr 29 2026): also resolves the MD's primary hospital_id (from
+ * Doctor.hospitals[0]) so the rebate engine can scope Tier-A walks per
+ * hospital. PatientMdAttribution doesn't carry hospital_id today; VIP-1.D
+ * may add it. Until then, the MD's first hospital is the deterministic
+ * fallback. If the MD has no hospitals[], hospital_id is null and Tier-A
+ * is skipped (locked design — hospital scoping is mandatory).
+ *
+ * @returns {Promise<{doctor_id, hospital_id, ship_to_province}|null>}
  */
 async function resolvePatientMd({ entity_id, patient_id, session }) {
   if (!entity_id || !patient_id) return null;
@@ -87,7 +117,24 @@ async function resolvePatientMd({ entity_id, patient_id, session }) {
     .sort({ last_seen_date: -1 })
     .session(session || null)
     .lean();
-  return att ? { doctor_id: att.doctor_id, ship_to_province: att.ship_to_province } : null;
+  if (!att) return null;
+  // Resolve hospital from the MD's primary hospital (Doctor.hospitals[0]).
+  // Phase R1: hospital scoping is mandatory for Tier-A. When PatientMdAttribution
+  // is upgraded in VIP-1.D to carry an explicit hospital_id (the institution
+  // where the MD-patient relationship was established), prefer that.
+  let hospital_id = att.hospital_id || null;
+  if (!hospital_id) {
+    const md = await Doctor.findById(att.doctor_id)
+      .select('hospitals')
+      .session(session || null)
+      .lean();
+    hospital_id = md?.hospitals?.[0] || null;
+  }
+  return {
+    doctor_id: att.doctor_id,
+    hospital_id,
+    ship_to_province: att.ship_to_province,
+  };
 }
 
 /**
@@ -197,12 +244,17 @@ async function accrueForOrder({ order, userId, session } = {}) {
   if (!md) return { tierA: 0, tierB: 0, skipped: order.items?.length || 0, errors: [] };
 
   // Pre-fetch the active Tier-A product set so the Tier-B path can exclude
-  // them in O(1).
-  const tierAProductIds = await getActiveTierAProductIds({
-    entity_id,
-    doctor_id: md.doctor_id,
-    asOfDate: order.paid_at,
-  });
+  // them in O(1). Phase R1 (Apr 29 2026): scope the exclusion set to the
+  // MD's resolved hospital so a different hospital's Tier-A rules don't
+  // suppress capitation accrual on the patient's order.
+  const tierAProductIds = md.hospital_id
+    ? await getActiveTierAProductIds({
+        entity_id,
+        doctor_id: md.doctor_id,
+        hospital_id: md.hospital_id,
+        asOfDate: order.paid_at,
+      })
+    : [];
   const tierASet = new Set(tierAProductIds.map((id) => String(id)));
 
   // Pre-fetch active capitation rule ONCE (capitation is per-MD, not per-line).
@@ -229,10 +281,14 @@ async function accrueForOrder({ order, userId, session } = {}) {
     }
 
     // ── Tier-A first ────────────────────────────────────────────────────
-    if (tierASet.has(productKey)) {
+    // Phase R1: hospital scoping is mandatory. If the MD has no resolved
+    // hospital (no PatientMdAttribution.hospital_id AND empty Doctor.hospitals[]),
+    // Tier-A cannot fire — fall through to Tier-B.
+    if (md.hospital_id && tierASet.has(productKey)) {
       const rule = await matchMdProductRebate({
         entity_id,
         doctor_id: md.doctor_id,
+        hospital_id: md.hospital_id,
         product_id: item.product_id,
         asOfDate: order.paid_at,
       });
