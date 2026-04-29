@@ -559,7 +559,6 @@ export default function SalesEntry() {
   const liveDate = user?.live_date ? new Date(user.live_date).toISOString().split('T')[0] : '';
   const sales = useSales();
   const inventory = useInventory();
-  const { hospitals } = useHospitals();
   const customers = useCustomers();
   const lookupApi = useErpApi();
   const [paymentModes, setPaymentModes] = useState([]);
@@ -568,6 +567,11 @@ export default function SalesEntry() {
   const [warehouseId, setWarehouseId] = useState('');
   // Phase G4.5a — proxy entry: empty = self; set to a User._id to file under another BDM.
   const [assignedTo, setAssignedTo] = useState('');
+  // Hospital dropdown must follow the SELECTED warehouse (not the logged-in user)
+  // so a proxy filing on behalf of another BDM sees the target warehouse's
+  // hospitals, not their own. Backend gates warehouse access; the hook bypasses
+  // its session cache when scoped so toggling warehouse always refetches.
+  const { hospitals } = useHospitals({ warehouseId });
   const [rows, setRows] = useState([emptyRow()]);
   const [stockProducts, setStockProducts] = useState([]);
   const [actionLoading, setActionLoading] = useState('');

@@ -9298,3 +9298,27 @@ Closes the user-stated proxy ask "let proxy edit the batch number AND actual sto
 - Phase 1.5 DANGER flag for `inventory.edit_batch_metadata` (Phase G4.5x pending — 1 line in `dangerSubPermissions.js`).
 - Phase 2 SalesLine cascade for DRAFT/VALID + fifo_override (Phase G4.5x pending — 60-90 min).
 - Optional: a future `inventory.physical_count_proxy` sub-perm if subscribers need to grant batch-metadata proxy WITHOUT physical-count proxy (today they're coupled). Not required by VIP.
+
+---
+
+## Phase G4.5z — Inventory Proxy Sub-Permission Split (Apr 29 2026) ✅ SHIPPED
+
+UX patch on G4.5x/y. Splits the bundled `inventory.grn_proxy_entry` into TWO explicit cross-BDM proxy keys so Access Template UI surfaces what each tick actually grants.
+
+### What changed
+- New SUB_PERMISSION_KEYS seed rows:
+  - `INVENTORY__BATCH_METADATA_PROXY` → "Edit Batch # / Expiry on another BDM's stock", key `batch_metadata_proxy`, sort 9.1
+  - `INVENTORY__PHYSICAL_COUNT_PROXY` → "Physical Count on another BDM's stock", key `physical_count_proxy`, sort 9.2
+- `recordPhysicalCount` widenScope = `privileged || canProxy(physical_count_proxy) || canProxy(grn_proxy_entry)`.
+- `correctBatchMetadata` widenScope = `privileged || canProxy(batch_metadata_proxy) || canProxy(grn_proxy_entry)`.
+- `getMyStock` widens on ANY of the three.
+- WorkflowGuide my-stock banner + tip describe the split + fallback.
+
+### Backward compatibility
+`grn_proxy_entry` continues to grant BOTH new capabilities. Mae's existing two-key grant works byte-for-byte after this phase — no re-permissioning required.
+
+### Files touched (4 modified)
+- `backend/erp/controllers/inventoryController.js`
+- `backend/erp/controllers/lookupGenericController.js`
+- `frontend/src/erp/components/WorkflowGuide.jsx`
+- `CLAUDE-ERP.md` + `docs/PHASETASK-ERP.md`

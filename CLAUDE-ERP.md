@@ -6148,3 +6148,40 @@ President + admin/finance always pass (privileged short-circuit). All other role
 3. Login as Proxy 1 (s22) → `/erp/my-stock` → pick a different BDM's TERRITORY warehouse → see batches → click Edit on a batch (Phase G4.5x) OR open Physical Count modal (Phase G4.5y).
 4. Verify ADJUSTMENT row + auto-journal land under the warehouse owner's `bdm_id`, NOT Proxy 1's `bdm_id`. Check `ErpAuditLog.changed_by` = Proxy 1, `ErpAuditLog.bdm_id` = warehouse owner.
 5. Revert grants when done — see `/c/tmp/smoke-proxy.js` for the canonical revert recipe.
+
+---
+
+## Phase G4.5z — Inventory Proxy Sub-Permission Split (April 29, 2026)
+
+UX patch on Phase G4.5x (batch metadata) + Phase G4.5y (physical count). Phase G4.5x/y bundled BOTH cross-BDM proxy capabilities under `inventory.grn_proxy_entry`. Admins reading the Access Template couldn't tell that ticking "Record GRN on behalf of another BDM" also granted batch-metadata edit AND physical count proxy — Rule #1 (helper-banner clarity) failure.
+
+**Two new explicit sub-permission keys (lookup-driven, Rule #3):**
+- `inventory.batch_metadata_proxy` → "Edit Batch # / Expiry on another BDM's stock"
+- `inventory.physical_count_proxy` → "Physical Count on another BDM's stock"
+
+Each surfaces as its own checkbox in `ErpAccessManager` after the lazy-seed fires.
+
+**Backward compatibility — load-bearing:** `inventory.grn_proxy_entry` STILL grants both new capabilities as a fallback. Subscribers who already configured G4.5x/y for Mae or any back-office BDM keep working without re-permissioning. Controllers check primary key OR fallback:
+
+```js
+// recordPhysicalCount (and similarly correctBatchMetadata)
+const [{ canProxy: hasPc }, { canProxy: hasGrn }] = await Promise.all([
+  canProxyEntry(req, 'inventory', { subKey: 'physical_count_proxy' }),
+  canProxyEntry(req, 'inventory', { subKey: 'grn_proxy_entry' }),
+]);
+const hasProxy = hasPc || hasGrn;
+```
+
+`getMyStock` widens scope on ANY of the three keys (grn_proxy_entry || batch_metadata_proxy || physical_count_proxy) so a user granted only batch-metadata-proxy still sees other BDMs' batches in /erp/my-stock to operate on them.
+
+**Granularity unlocked:** subscribers can now grant "fix batch typos" (batch_metadata_proxy) WITHOUT granting "post quantity ADJUSTMENT + JE" (physical_count_proxy). Important for Year-2 Pharmacy SaaS (Rule #0d) where a clinic might want a junior staffer to fix batch typos but withhold the larger-blast-radius physical count.
+
+**Files touched (4 modified, 0 new):**
+- modified: [backend/erp/controllers/inventoryController.js](backend/erp/controllers/inventoryController.js) — three `widenScope` blocks (`getMyStock`, `correctBatchMetadata`, `recordPhysicalCount`) accept new keys with `grn_proxy_entry` fallback
+- modified: [backend/erp/controllers/lookupGenericController.js](backend/erp/controllers/lookupGenericController.js) — 2 SUB_PERMISSION_KEYS seed rows
+- modified: [frontend/src/erp/components/WorkflowGuide.jsx](frontend/src/erp/components/WorkflowGuide.jsx) — banner + tip describe the split
+- modified: docs (this file + `docs/PHASETASK-ERP.md`)
+
+**No new lookup category, no new DANGER entry.** The PROXY_ENTRY_ROLES.INVENTORY + VALID_OWNER_ROLES.INVENTORY rows from G4.5x/y remain authoritative for both new keys (single role allowlist, cleanly subscription-ready).
+
+**Verification:** `node -c` green. Banner re-rendered. Lazy-seed fires on first GET of `/api/erp/lookup-values/SUB_PERMISSION_KEYS` per entity — admin opens ErpAccessManager and the two new checkboxes appear.

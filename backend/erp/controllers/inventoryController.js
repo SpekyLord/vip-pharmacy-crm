@@ -26,12 +26,18 @@ const { createAndPostJournal } = require('../services/journalEngine');
  * Admin/Finance: pass ?bdm_id=X to view any BDM's stock.
  */
 const getMyStock = catchAsync(async (req, res) => {
-  // President/admin/finance always widen. Phase G4.5 — a BDM with proxy
-  // entry rights for inventory (PROXY_ENTRY_ROLES.INVENTORY lookup +
-  // sub_permissions.inventory.grn_proxy_entry) also widens, so they can
-  // see any owner's batches and fix typo'd batch metadata via MyStock.
+  // President/admin/finance always widen. Phase G4.5x → G4.5z — any of the three
+  // inventory-proxy sub-perms (batch_metadata_proxy, physical_count_proxy, or
+  // legacy grn_proxy_entry) widens scope so the user can see other owners'
+  // batches in /my-stock. Operating on those batches still requires the
+  // matching capability-specific gate in the downstream route.
   const privileged = req.isAdmin || req.isFinance || req.isPresident;
-  const { canProxy: hasProxy } = await canProxyEntry(req, 'inventory', { subKey: 'grn_proxy_entry' });
+  const [{ canProxy: hasGrn }, { canProxy: hasBatch }, { canProxy: hasPc }] = await Promise.all([
+    canProxyEntry(req, 'inventory', { subKey: 'grn_proxy_entry' }),
+    canProxyEntry(req, 'inventory', { subKey: 'batch_metadata_proxy' }),
+    canProxyEntry(req, 'inventory', { subKey: 'physical_count_proxy' }),
+  ]);
+  const hasProxy = hasGrn || hasBatch || hasPc;
   const widenScope = privileged || hasProxy;
   const bdmId = widenScope ? (req.query.bdm_id || null) : req.bdmId;
 
@@ -350,9 +356,16 @@ const recordPhysicalCount = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Counts array required' });
   }
 
-  // Two-key proxy gate (mirrors getMyStock + correctBatchMetadata).
+  // Two-key proxy gate. Phase G4.5z — physical-count cross-BDM widening is
+  // primarily gated by `inventory.physical_count_proxy`. We honor the legacy
+  // `inventory.grn_proxy_entry` as a fallback so subscribers who already
+  // granted GRN proxy don't lose physical-count proxy in the split.
   const privileged = req.isAdmin || req.isFinance || req.isPresident;
-  const { canProxy: hasProxy } = await canProxyEntry(req, 'inventory', { subKey: 'grn_proxy_entry' });
+  const [{ canProxy: hasPc }, { canProxy: hasGrn }] = await Promise.all([
+    canProxyEntry(req, 'inventory', { subKey: 'physical_count_proxy' }),
+    canProxyEntry(req, 'inventory', { subKey: 'grn_proxy_entry' }),
+  ]);
+  const hasProxy = hasPc || hasGrn;
   const widenScope = privileged || hasProxy;
 
   // Rule #21 — never silently fall back to the caller's _id when they pass an
@@ -1451,13 +1464,17 @@ const correctBatchMetadata = catchAsync(async (req, res) => {
   }
 
   // Scope — privileged users (admin/finance/president) may target any bdm
-  // (entity-wide if omitted). Phase G4.5 — a BDM with proxy entry rights for
-  // inventory (PROXY_ENTRY_ROLES.INVENTORY lookup + sub_permissions
-  // .inventory.grn_proxy_entry) also widens; this is what lets a back-office
-  // BDM fix typo'd batch metadata that was filed against another BDM's stock.
+  // (entity-wide if omitted). Phase G4.5z — primary widening key is
+  // `inventory.batch_metadata_proxy`; we honor the legacy
+  // `inventory.grn_proxy_entry` as a fallback so subscribers who already
+  // granted GRN proxy don't lose batch-metadata proxy in the split.
   // Non-eligible callers stay pinned to their own bdm_id.
   const privileged = req.isAdmin || req.isFinance || req.isPresident;
-  const { canProxy: hasProxy } = await canProxyEntry(req, 'inventory', { subKey: 'grn_proxy_entry' });
+  const [{ canProxy: hasBatch }, { canProxy: hasGrn }] = await Promise.all([
+    canProxyEntry(req, 'inventory', { subKey: 'batch_metadata_proxy' }),
+    canProxyEntry(req, 'inventory', { subKey: 'grn_proxy_entry' }),
+  ]);
+  const hasProxy = hasBatch || hasGrn;
   const widenScope = privileged || hasProxy;
   const effectiveBdmId = widenScope ? (bodyBdmId || null) : req.bdmId;
 
