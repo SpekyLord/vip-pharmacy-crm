@@ -7,6 +7,8 @@ const { invalidateGuardrailCache } = require('../services/vendorAutoLearner');
 const { invalidateDangerCache } = require('../services/dangerSubPermissions');
 const { invalidateEditableStatuses } = require('../services/approvalService');
 const { invalidateProxyRolesCache, invalidateValidOwnerRolesCache } = require('../utils/resolveOwnerScope');
+// Phase G4.5bb (Apr 29 2026) — payslip person-id proxy roster cache buster.
+const { invalidatePayslipRosterCache } = require('../utils/resolvePayslipProxy');
 const { invalidateCrossEntityRolesCache } = require('../utils/resolveEntityScope');
 const { invalidate: invalidateScpwdRolesCache } = require('../../utils/scpwdAccess');
 const { invalidate: invalidateRebateCommissionCache } = require('../../utils/rebateCommissionAccess');
@@ -37,6 +39,13 @@ const PROXY_ENTRY_ROLES_CATEGORIES = new Set(['PROXY_ENTRY_ROLES']);
 // manager carrying a territory) extend the list via Control Center without
 // a code change. Matching invalidator in resolveOwnerScope.js (60s TTL).
 const VALID_OWNER_ROLES_CATEGORIES = new Set(['VALID_OWNER_ROLES']);
+
+// Phase G4.5bb (Apr 29 2026) — bust the payslip-proxy roster cache when admin
+// edits PAYSLIP_PROXY_ROSTER (one row per clerk, code=<userId>). Cache TTL is
+// 60s in resolvePayslipProxy.js; without this hook, a roster scope_mode flip
+// from PERSON_TYPES → PERSON_IDS would wait up to 60s per running instance
+// before the gate honored the new row.
+const PAYSLIP_PROXY_ROSTER_CATEGORIES = new Set(['PAYSLIP_PROXY_ROSTER']);
 
 // Phase G6 (Apr 26, 2026) — bust cross-entity-view role cache when admin
 // edits CROSS_ENTITY_VIEW_ROLES. Cache TTL is 60s in resolveEntityScope.js;
@@ -2764,6 +2773,23 @@ const SEED_DEFAULTS = {
     // correctBatchMetadata target validation.
     { code: 'INVENTORY', label: 'Valid proxy targets — Inventory (batch metadata + physical count)', insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 11 } },
   ],
+  // Phase G4.5bb (Apr 29, 2026) — per-clerk Payslip deduction-write roster.
+  //
+  // Sibling concept to PROXY_ENTRY_ROLES, but keyed on `code = <userId-string>`
+  // (one row per back-office clerk). Where PROXY_ENTRY_ROLES gates ROLES that
+  // can proxy a per-BDM record, PAYSLIP_PROXY_ROSTER gates WHICH employees a
+  // specific clerk holding `payroll.payslip_deduction_write` may mutate.
+  //
+  // metadata.scope_mode:
+  //   - 'ALL'           → entity-wide (G4.5aa default behavior; no row needed)
+  //   - 'PERSON_IDS'    → only payslips whose person_id ∈ metadata.person_ids[]
+  //   - 'PERSON_TYPES'  → only payslips whose person_type ∈ metadata.person_types[]
+  //
+  // No defaults seeded (rows are per-subscriber and per-clerk). Admins create
+  // rows on-demand via Control Center → Lookup Tables → PAYSLIP_PROXY_ROSTER.
+  // `insert_only_metadata: true` so admin-curated rosters survive future
+  // re-seeds (matches PROXY_ENTRY_ROLES posture).
+  PAYSLIP_PROXY_ROSTER: [],
   // Phase P1 — Proxy SLA thresholds. Lookup-driven so subscribers can tune
   // without code changes. pending_alert_hours = when to alert office lead;
   // auto_ack_hours = when to auto-acknowledge stale BDM reviews.
@@ -3271,6 +3297,7 @@ exports.create = catchAsync(async (req, res) => {
   if (REJECTION_CONFIG_CATEGORIES.has(cat)) invalidateEditableStatuses(req.entityId, item.code);
   if (PROXY_ENTRY_ROLES_CATEGORIES.has(cat)) invalidateProxyRolesCache(req.entityId);
   if (VALID_OWNER_ROLES_CATEGORIES.has(cat)) invalidateValidOwnerRolesCache(req.entityId);
+  if (PAYSLIP_PROXY_ROSTER_CATEGORIES.has(cat)) invalidatePayslipRosterCache(req.entityId, item.code);
   if (CROSS_ENTITY_VIEW_ROLES_CATEGORIES.has(cat)) invalidateCrossEntityRolesCache(req.entityId);
   if (SCPWD_ROLES_CATEGORIES.has(cat)) invalidateScpwdRolesCache(req.entityId);
   if (REBATE_COMMISSION_ROLES_CATEGORIES.has(cat)) invalidateRebateCommissionCache(req.entityId);
@@ -3303,6 +3330,7 @@ exports.update = catchAsync(async (req, res) => {
   if (REJECTION_CONFIG_CATEGORIES.has(item.category)) invalidateEditableStatuses(item.entity_id, item.code);
   if (PROXY_ENTRY_ROLES_CATEGORIES.has(item.category)) invalidateProxyRolesCache(item.entity_id);
   if (VALID_OWNER_ROLES_CATEGORIES.has(item.category)) invalidateValidOwnerRolesCache(item.entity_id);
+  if (PAYSLIP_PROXY_ROSTER_CATEGORIES.has(item.category)) invalidatePayslipRosterCache(item.entity_id, item.code);
   if (CROSS_ENTITY_VIEW_ROLES_CATEGORIES.has(item.category)) invalidateCrossEntityRolesCache(item.entity_id);
   if (SCPWD_ROLES_CATEGORIES.has(item.category)) invalidateScpwdRolesCache(item.entity_id);
   if (REBATE_COMMISSION_ROLES_CATEGORIES.has(item.category)) invalidateRebateCommissionCache(item.entity_id);
@@ -3327,6 +3355,7 @@ exports.remove = catchAsync(async (req, res) => {
   if (REJECTION_CONFIG_CATEGORIES.has(item.category)) invalidateEditableStatuses(item.entity_id, item.code);
   if (PROXY_ENTRY_ROLES_CATEGORIES.has(item.category)) invalidateProxyRolesCache(item.entity_id);
   if (VALID_OWNER_ROLES_CATEGORIES.has(item.category)) invalidateValidOwnerRolesCache(item.entity_id);
+  if (PAYSLIP_PROXY_ROSTER_CATEGORIES.has(item.category)) invalidatePayslipRosterCache(item.entity_id, item.code);
   if (CROSS_ENTITY_VIEW_ROLES_CATEGORIES.has(item.category)) invalidateCrossEntityRolesCache(item.entity_id);
   if (SCPWD_ROLES_CATEGORIES.has(item.category)) invalidateScpwdRolesCache(item.entity_id);
   if (REBATE_COMMISSION_ROLES_CATEGORIES.has(item.category)) invalidateRebateCommissionCache(item.entity_id);
@@ -3353,6 +3382,7 @@ exports.seedCategory = catchAsync(async (req, res) => {
   if (REJECTION_CONFIG_CATEGORIES.has(category)) invalidateEditableStatuses(req.entityId);
   if (PROXY_ENTRY_ROLES_CATEGORIES.has(category)) invalidateProxyRolesCache(req.entityId);
   if (VALID_OWNER_ROLES_CATEGORIES.has(category)) invalidateValidOwnerRolesCache(req.entityId);
+  if (PAYSLIP_PROXY_ROSTER_CATEGORIES.has(category)) invalidatePayslipRosterCache(req.entityId);
   if (CROSS_ENTITY_VIEW_ROLES_CATEGORIES.has(category)) invalidateCrossEntityRolesCache(req.entityId);
   if (SCPWD_ROLES_CATEGORIES.has(category)) invalidateScpwdRolesCache(req.entityId);
   if (REBATE_COMMISSION_ROLES_CATEGORIES.has(category)) invalidateRebateCommissionCache(req.entityId);
@@ -3383,6 +3413,7 @@ exports.seedAll = catchAsync(async (req, res) => {
   invalidateEditableStatuses(req.entityId);
   invalidateProxyRolesCache(req.entityId);
   invalidateValidOwnerRolesCache(req.entityId);
+  invalidatePayslipRosterCache(req.entityId);
   invalidateCrossEntityRolesCache(req.entityId);
   const populated = await Lookup.distinct('category', { entity_id: req.entityId });
   res.json({ success: true, data: results, message: `Seeded ${populated.length}/${Object.keys(SEED_DEFAULTS).length} categories` });

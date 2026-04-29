@@ -24,6 +24,12 @@ export default function usePayroll() {
   const removePayslipDeductionLine = (id, lineId) =>
     api.delete(`/payroll/${id}/deduction-line/${lineId}`);
 
+  // Phase G4.5bb — current-user payslip-proxy roster preview. Returns:
+  //   { allowed: true, privileged?, scope_mode: 'ALL'|'PERSON_IDS'|'PERSON_TYPES',
+  //     has_row, person_ids, person_types, people, note }
+  // OR { allowed: false, reason } when the caller has no sub-perm.
+  const getMyPayslipProxyRoster = () => api.get('/payroll/proxy-roster/me');
+
   return {
     ...api,
     computePayroll,
@@ -39,5 +45,7 @@ export default function usePayroll() {
     addPayslipDeductionLine,
     verifyPayslipDeductionLine,
     removePayslipDeductionLine,
+    // Phase G4.5bb
+    getMyPayslipProxyRoster,
   };
 }

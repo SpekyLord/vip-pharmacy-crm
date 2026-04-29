@@ -59,6 +59,10 @@ export default function PayrollRun() {
   const [msg, setMsg] = useState(null);
   const [loading, setLoading] = useState(false);
   const isFinance = ROLE_SETS.MANAGEMENT.includes(user?.role);
+  // Phase G4.5bb — proxy-roster preview for the read-only banner / chip. The
+  // backend already filters /payroll/staging by roster server-side; this is a
+  // surface so the clerk knows WHY their list is shorter than entity-wide.
+  const [roster, setRoster] = useState(null);
 
   const loadStaging = useCallback(async () => {
     setLoading(true);
@@ -70,6 +74,27 @@ export default function PayrollRun() {
   }, [period, cycle]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadStaging(); }, [loadStaging]);
+
+  // Phase G4.5bb — load roster preview once on mount. Privileged callers see
+  // scope_mode='ALL' and we don't render the chip. Staff with sub-perm + a
+  // restrictive roster row see scope_mode='PERSON_IDS'/'PERSON_TYPES' and we
+  // render an info chip explaining the constraint.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await api.getMyPayslipProxyRoster();
+        if (alive) setRoster(res?.data || null);
+      } catch {
+        // Silent — older backend without the route → no chip, page still works.
+        if (alive) setRoster(null);
+      }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const showRosterChip = roster && roster.allowed && !roster.privileged
+    && (roster.scope_mode === 'PERSON_IDS' || roster.scope_mode === 'PERSON_TYPES');
 
   const handleCompute = async () => {
     setMsg(null);
@@ -110,6 +135,29 @@ export default function PayrollRun() {
         <Sidebar />
         <main className="pr-main">
           <WorkflowGuide pageKey="payroll-run" />
+          {showRosterChip && (
+            <div style={{
+              background: '#f3e8ff', border: '1px solid #c4b5fd', borderRadius: 8,
+              padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#5b21b6',
+              display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+            }}>
+              <span style={{ fontWeight: 700 }}>Payslip Proxy Roster:</span>
+              {roster.scope_mode === 'PERSON_IDS' && (
+                <>
+                  <span>You may write deduction lines for {roster.people?.length || 0} employee{(roster.people?.length || 0) === 1 ? '' : 's'}.</span>
+                  {roster.people && roster.people.length > 0 && (
+                    <span style={{ color: '#7c3aed', fontStyle: 'italic' }}>
+                      ({roster.people.map(p => p.full_name).join(', ')})
+                    </span>
+                  )}
+                </>
+              )}
+              {roster.scope_mode === 'PERSON_TYPES' && (
+                <span>Limited to person types: <strong>{(roster.person_types || []).join(', ') || '(none — list will be empty)'}</strong></span>
+              )}
+              {roster.note && <span style={{ color: '#6b21a8' }}>· {roster.note}</span>}
+            </div>
+          )}
           <div className="pr-header">
             <h2>Payroll Run</h2>
           </div>

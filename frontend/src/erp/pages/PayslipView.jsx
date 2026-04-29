@@ -111,6 +111,9 @@ export default function PayslipView() {
   const { options: deductionTypes } = useLookupOptions('EMPLOYEE_DEDUCTION_TYPE');
   const [ps, setPs] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Phase G4.5bb — preview the caller's payslip-proxy roster so we can render
+  // a read-only banner BEFORE the clerk clicks Verify/Reject and gets a 403.
+  const [roster, setRoster] = useState(null);
 
   // Phase G1.3 — transparent breakdown (Car Logbook for Personal Gas, etc.)
   const [breakdown, setBreakdown] = useState(null);
@@ -126,7 +129,32 @@ export default function PayslipView() {
   const [correctNote, setCorrectNote] = useState('');
 
   const isFinance = ROLE_SETS.MANAGEMENT.includes(user?.role);
-  const canEdit = isFinance && ps && ['COMPUTED', 'REVIEWED'].includes(ps.status);
+
+  // Phase G4.5bb — staff with payroll.payslip_deduction_write sub-perm can
+  // also edit, BUT the per-clerk PAYSLIP_PROXY_ROSTER may exclude this
+  // payslip's person_id / person_type. We compute clientCanEdit by joining
+  // the staging status, the role/sub-perm, and the roster scope.
+  const hasSubPerm = !!user?.erp_access?.sub_permissions?.payroll?.payslip_deduction_write;
+  const rosterAllowsThisPayslip = (() => {
+    if (!ps || !roster) return null; // unknown — treat as allowed pending fetch
+    if (roster.privileged) return true;
+    if (!roster.allowed) return false;
+    if (roster.scope_mode === 'ALL') return true;
+    const pid = ps.person_id?._id || ps.person_id;
+    const ptype = String(ps.person_id?.person_type || '').toUpperCase();
+    if (roster.scope_mode === 'PERSON_IDS') {
+      return Array.isArray(roster.person_ids) && roster.person_ids.map(String).includes(String(pid));
+    }
+    if (roster.scope_mode === 'PERSON_TYPES') {
+      return Array.isArray(roster.person_types) && roster.person_types.map(s => String(s).toUpperCase()).includes(ptype);
+    }
+    return false;
+  })();
+  const canEdit = ps
+    && ['COMPUTED', 'REVIEWED'].includes(ps.status)
+    && (isFinance || (hasSubPerm && rosterAllowsThisPayslip !== false));
+  const blockedByRoster = !isFinance && hasSubPerm && rosterAllowsThisPayslip === false
+    && ps && ['COMPUTED', 'REVIEWED'].includes(ps.status);
 
   const load = useCallback(async () => {
     try {
@@ -141,6 +169,23 @@ export default function PayslipView() {
   }, [id]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Phase G4.5bb — fetch the caller's roster once so the read-only banner
+  // can decide eagerly. Privileged callers + clerks with no row see
+  // scope_mode='ALL' and the banner stays hidden.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await api.getMyPayslipProxyRoster();
+        if (alive) setRoster(res?.data || null);
+      } catch {
+        if (alive) setRoster(null);
+      }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // `force=true` skips the cache guard so Finance handlers can re-fetch the
   // installment timeline immediately after a SCHEDULE cascade without waiting
@@ -376,6 +421,32 @@ export default function PayslipView() {
             docLabel={`${ps.person_id?.full_name || 'Payslip'} \u2014 ${ps.period} ${ps.cycle}`}
             onResubmit={() => navigate('/erp/payroll')}
           />
+
+          {/* Phase G4.5bb \u2014 read-only banner when the clerk has the sub-perm
+              but the payslip's person_id / person_type is NOT on their
+              PAYSLIP_PROXY_ROSTER. The mutation buttons are hidden via
+              canEdit=false; this banner explains WHY so the clerk doesn't
+              hunt for missing controls. */}
+          {blockedByRoster && (
+            <div style={{
+              background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 8,
+              padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#92400e',
+              display: 'flex', alignItems: 'flex-start', gap: 10,
+            }}>
+              <span style={{ fontSize: 16 }}>{'\u26a0'}</span>
+              <div>
+                <div style={{ fontWeight: 700, marginBottom: 2 }}>Read-only \u2014 not on your payslip-proxy roster</div>
+                <div style={{ fontSize: 12 }}>
+                  This payslip\u2019s{' '}
+                  {roster?.scope_mode === 'PERSON_TYPES'
+                    ? <>person type (<strong>{(ps.person_id?.person_type || '').replace(/_/g, ' ')}</strong>) is not in your roster of: <strong>{(roster.person_types || []).join(', ')}</strong>.</>
+                    : <>employee is not in your <strong>PAYSLIP_PROXY_ROSTER</strong> allowlist.</>
+                  }{' '}
+                  Ask admin to add this employee (or person type) to your roster row in Control Center \u2192 Lookup Tables \u2192 PAYSLIP_PROXY_ROSTER.
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="psv-card">
             <div className="psv-header">
