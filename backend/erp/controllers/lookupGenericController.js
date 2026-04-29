@@ -680,6 +680,15 @@ const SEED_DEFAULTS = {
     // /erp/my-stock → Stock on Hand → batch row. See backend/erp/controllers/
     // inventoryController.js correctBatchMetadata.
     { code: 'INVENTORY__EDIT_BATCH_METADATA', label: 'Correct Batch Metadata (typo fix on existing stock)', metadata: { module: 'inventory', key: 'edit_batch_metadata', sort_order: 9 } },
+    // Phase G4.5z (Apr 29 2026) — explicit cross-BDM proxy splits for batch
+    // metadata correction + physical count. Phase G4.5x/G4.5y bundled both
+    // under inventory.grn_proxy_entry; admins reading the Access Template
+    // couldn't tell that ticking GRN proxy also granted batch metadata + qty
+    // adjustment cross-BDM. The two new keys surface explicit checkboxes.
+    // Backward-compatibility: controllers honor `grn_proxy_entry` as a fallback,
+    // so Mae's existing grant still works without re-permissioning.
+    { code: 'INVENTORY__BATCH_METADATA_PROXY',  label: 'Edit Batch # / Expiry on another BDM’s stock', metadata: { module: 'inventory', key: 'batch_metadata_proxy',  sort_order: 9.1 } },
+    { code: 'INVENTORY__PHYSICAL_COUNT_PROXY',  label: 'Physical Count on another BDM’s stock',         metadata: { module: 'inventory', key: 'physical_count_proxy',  sort_order: 9.2 } },
     // Phase G4.5e — Proxy Entry for Undertaking. Undertaking's bdm_id is
     // inherited from its linked GRN (autoUndertakingForGrn), so the proxy
     // applies only to READ (list/detail) and SUBMIT (DRAFT→SUBMITTED). No

@@ -284,14 +284,14 @@ const WORKFLOW_GUIDES = {
       'Request transfers from main warehouse if stock is low',
       'Wrong quantity? Use "Physical Count" (top-right) to record actual on-hand qty — variances post as ADJUSTMENT entries with a journal entry.',
       'Wrong batch number or expiry date? Expand the product row and click "Edit" on the batch line. Metadata-only fix — no journal entry, no quantity change.',
-      'Proxy correction (admin / finance / president, or a BDM granted `inventory.grn_proxy_entry`): pick another BDM\'s warehouse from the picker. Both Edit Batch and Physical Count now operate on that warehouse — the adjustment + journal entry are filed under the warehouse owner, not yourself.',
+      'Proxy correction (admin / finance / president, or a BDM granted one of the inventory proxy sub-perms): pick another BDM\'s warehouse from the picker. Edit Batch # / Expiry runs under `inventory.batch_metadata_proxy`; Physical Count runs under `inventory.physical_count_proxy`. The adjustment + journal entry are filed under the warehouse owner, not yourself. Legacy `inventory.grn_proxy_entry` still grants both for backward compatibility.',
     ],
     next: [
       { label: 'Create Sale', path: '/erp/sales/entry' },
       { label: 'Request Transfer', path: '/erp/transfers' },
       { label: 'View Consignment', path: '/erp/consignment' },
     ],
-    tip: 'FIFO (First In, First Out) is enforced. Oldest batches are sold first automatically. Batch metadata fix (batch # / expiry typo) is audited and rewrites every ledger row plus the source GRN line — gated by `inventory.edit_batch_metadata` sub-permission, so subscribers can grant it to trusted contractors via Access Template without code changes. Cross-BDM widening (proxy) for both Batch Metadata and Physical Count requires the same two-key gate: PROXY_ENTRY_ROLES.INVENTORY membership + `inventory.grn_proxy_entry` sub-permission. ADJUSTMENT rows + auto-journals attribute to the target BDM (warehouse owner); the proxy actor is captured in `recorded_by` and the audit log. Full GRN reversal is the President-only path when qty or cost is wrong.',
+    tip: 'FIFO (First In, First Out) is enforced. Oldest batches are sold first automatically. Batch metadata fix (batch # / expiry typo) is audited and rewrites every ledger row plus the source GRN line — gated by `inventory.edit_batch_metadata` sub-permission. Cross-BDM widening is split into two explicit sub-perms (Phase G4.5z, Apr 29 2026): `inventory.batch_metadata_proxy` for Edit Batch / Expiry on another BDM\'s stock, and `inventory.physical_count_proxy` for Physical Count on another BDM\'s stock. Both require PROXY_ENTRY_ROLES.INVENTORY membership. Legacy `inventory.grn_proxy_entry` still grants both as a fallback so subscribers who configured Phase G4.5x/y don\'t need to re-permission. ADJUSTMENT rows + auto-journals attribute to the target BDM (warehouse owner); the proxy actor is captured in `recorded_by` and the audit log. Full GRN reversal is the President-only path when qty or cost is wrong.',
   },
   'dr-entry': {
     title: 'Delivery Receipt / Consignment',
