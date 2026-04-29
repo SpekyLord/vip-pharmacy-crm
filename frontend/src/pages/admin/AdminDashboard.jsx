@@ -67,8 +67,6 @@ const pageStyles = `
   .admin-main {
     flex: 1;
     min-width: 0;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
     display: flex;
     flex-direction: column;
     padding-bottom: 32px;
@@ -263,17 +261,7 @@ const pageStyles = `
   }
 
   @media (min-width: 1181px) {
-    .admin-page {
-      height: 100vh;
-      overflow: hidden;
-    }
-
-    .admin-content {
-      overflow: hidden;
-    }
-
     .admin-main {
-      overflow-y: auto;
       padding-bottom: 16px;
     }
 
