@@ -2040,7 +2040,7 @@ const OverviewTab = ({ stats, onBdmDrillDown }) => {
               </div>
               {stats.perBdmCallRates?.length > 0 && onBdmDrillDown && (
                 <span style={{ fontSize: 11, color: 'var(--ink-500)', fontStyle: 'italic' }}>
-                  Click a bar to drill into that BDM's DCR
+                  Click a bar to drill into that BDM&apos;s DCR
                 </span>
               )}
             </div>
@@ -2332,7 +2332,7 @@ const TeamActivityTab = ({ data, loading, onBdmDrillDown }) => {
           </div>
           {onBdmDrillDown && (
             <span style={{ fontSize: 11, color: 'var(--ink-500)', fontStyle: 'italic' }}>
-              Click a row to drill into that BDM's DCR
+              Click a row to drill into that BDM&apos;s DCR
             </span>
           )}
         </div>
