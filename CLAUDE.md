@@ -179,6 +179,34 @@ const products = await Product.find({ _id: { $in: productIds } }).select('name c
 
 ---
 
+## SaaS Spin-Out Scope (Year 2 — Pharmacy SaaS / Vios Software Solutions)
+
+> **Strategic intent (locked Apr 29 2026)**: the rebate engine is the proprietary moat. It does NOT ship to SaaS subscribers. The CRM SaaS bundle = field sales + BDM management + VIP Client management + Visits + CPT + CLM + Messaging + Stats. Nothing else.
+
+### Proprietary — currently misplaced at `/admin/*` in CRM frontend (technical debt; move to `/erp/*` before SaaS spin-out)
+
+The seven pages below are wired in [Sidebar.jsx:1124-1138](frontend/src/components/common/Sidebar.jsx#L1124-L1138) and lazy-imported in [App.jsx:91-95](frontend/src/App.jsx#L91-L95). They live in `frontend/src/pages/admin/` (CRM frontend) but are ERP/finance semantics. Today they would ship to any CRM SaaS subscriber. Plan a dedicated phase to relocate them under `/erp/*` and `frontend/src/erp/pages/` BEFORE the CRM SaaS goes multi-tenant.
+
+| Sidebar Label | Current Route | Page | Reason it's proprietary |
+|---|---|---|---|
+| MD Rebate Matrix | `/admin/rebate-matrix` | `RebateMatrixPage.jsx` | Patient → MD attribution math, the USP |
+| Non-MD Rebate | `/admin/non-md-rebate-matrix` | `NonMdRebateMatrixPage.jsx` | Pharmacy partnership economics |
+| Capitation | `/admin/capitation-rules` | `CapitationRulesPage.jsx` | Per-MD per-period payout rules |
+| Commission Matrix | `/admin/commission-matrix` | `CommissionMatrixPage.jsx` | Currently wired to the rebate/incentive ledger; if subscribers need commissions for their own reps, build a separate generic version |
+| Payout Ledger | `/admin/payout-ledger` | `PayoutLedgerPage.jsx` | Reads `IncentivePayout` from the rebate engine |
+| BIR Compliance | `/admin/bir` | `BIRCompliancePage.jsx` | VIP's filings (1601-EQ, 2550Q, 2307, etc.); subscribers run their own books |
+| SC/PWD Sales Book | `/admin/scpwd-sales-book` | `SCPWDSalesBookPage.jsx` | RA 9994 + BIR RR 7-2010 — VIP's filings |
+
+**Backend note**: confirm each page's backend routes are already under `backend/erp/` (most of the rebate stack is — `frontend/src/erp/services/rebateCommissionService.js` exists, which is the giveaway). If any backend routes leaked into `backend/routes/`, move them too as part of the same phase.
+
+**Why this matters**: when Year-2 multi-tenant kicks in, every line of CRM-frontend code that's not behind a tenant-isolation gate becomes a leak risk (Rule #0d — "a leak across tenants is an end-of-business event in regulated SaaS"). Moving these to `/erp/*` is cleaner than feature-flagging them subscriber-by-subscriber.
+
+### Subscriber-shippable (stays in CRM frontend)
+
+VIP Client mgmt, BDM mgmt, Visits, Reports, Statistics, Activity Monitor, GPS Verification, Comm Logs, Message Templates, Settings (lookup-driven config), CLM, CPT, Excel import/export.
+
+---
+
 ## What's OUT of Scope
 
 | Feature | Status | Notes |
@@ -188,6 +216,7 @@ const products = await Product.find({ _id: { $in: productIds } }).select('name c
 | VIP Client A/B/C/D categories | Deprecated | Use visitFrequency instead |
 | Cloudinary integration | Removed | Use AWS S3 |
 | Generic VPS hosting | Removed | Use AWS Lightsail |
+| Rebate engine in CRM SaaS | Proprietary | Move to `/erp/*` before SaaS spin-out (see "SaaS Spin-Out Scope" above) |
 
 ---
 
