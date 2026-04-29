@@ -14,8 +14,9 @@ const Doctor = require('../models/Doctor');
 const Visit = require('../models/Visit');
 const ClientVisit = require('../models/ClientVisit');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
-const { getCycleNumber, getDisplayCycleNumber, getCycleStartDate, getCycleEndDate, getWeekOfMonth, getDayOfWeek, isWorkDay } = require('../utils/scheduleCycleUtils');
+const { getCycleNumber, getDisplayCycleNumber, getCycleStartDate, getCycleEndDate, getWeekOfMonth, getDayOfWeek, isWorkDay, MANILA_OFFSET_MS } = require('../utils/scheduleCycleUtils');
 const { ROLES, isAdminLike: isCrmAdminLike } = require('../constants/roles');
+const { getThresholds: getTeamActivityThresholds } = require('../utils/teamActivityThresholds');
 
 // ─── Reconciliation ────────────────────────────────────────────────────────────
 
@@ -967,6 +968,209 @@ const getCrossBdmHeatmap = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Team Activity Cockpit — one row per active BDM with today / this week
+ *          / this month / cycle visit counts + last-visit recency + red-flag.
+ *          Powers the COO surface at /admin/statistics → Team Activity tab.
+ *          Replaces the "scan 220 cells" matrix with an action list: who to
+ *          talk to today and why.
+ * @route   GET /api/schedules/team-activity
+ * @access  Private (Admin only)
+ *
+ * Thresholds (red_flag_consecutive_workdays, gap_warning_workdays,
+ * target_call_rate) come from TEAM_ACTIVITY_THRESHOLDS lookup category
+ * with inline defaults so subscribers can tune without a code deploy
+ * (Rule #3 / Rule #19). The full resolved threshold values are echoed
+ * back in the response so the UI can label thresholds correctly without
+ * a second round-trip.
+ */
+const getTeamActivity = catchAsync(async (req, res) => {
+  const User = require('../models/User');
+
+  const now = new Date();
+  const cycleNumber = getCycleNumber(now);
+  const cycleStart = getCycleStartDate(cycleNumber);
+  const cycleEnd = getCycleEndDate(cycleNumber);
+
+  // Manila-local "today" boundaries — visits stored in UTC need shifting so a
+  // 00:30 PHT visit doesn't get bucketed to "yesterday" when seen from UTC.
+  const nowManila = new Date(now.getTime() + MANILA_OFFSET_MS);
+  const todayStartManila = new Date(Date.UTC(
+    nowManila.getUTCFullYear(),
+    nowManila.getUTCMonth(),
+    nowManila.getUTCDate(),
+    0, 0, 0, 0
+  ));
+  const todayStart = new Date(todayStartManila.getTime() - MANILA_OFFSET_MS);
+  const todayEnd = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
+
+  // This week: Mon 00:00 PHT through now (work-week semantics, matches the
+  // weekly visit-limit rule in validateWeeklyVisit.js)
+  const dayOfWeek = getDayOfWeek(now); // 1=Mon … 7=Sun
+  const weekStart = new Date(todayStart.getTime() - (dayOfWeek - 1) * 24 * 60 * 60 * 1000);
+
+  // This month: 1st 00:00 PHT
+  const monthStartManila = new Date(Date.UTC(
+    nowManila.getUTCFullYear(),
+    nowManila.getUTCMonth(),
+    1, 0, 0, 0, 0
+  ));
+  const monthStart = new Date(monthStartManila.getTime() - MANILA_OFFSET_MS);
+
+  // Pull thresholds (lookup-driven, lazy-cached)
+  const entityId = req.entityId || null;
+  const thresholds = await getTeamActivityThresholds(entityId);
+
+  // Active staff (BDMs). ROLES.CONTRACTOR is aliased to ROLES.STAFF (Phase S2)
+  // so existing data with role='staff' is matched.
+  const employees = await User.find({ role: ROLES.STAFF, isActive: true })
+    .select('_id name firstName lastName')
+    .lean();
+
+  if (employees.length === 0) {
+    return res.json({
+      success: true,
+      data: {
+        asOf: now.toISOString(),
+        cycleNumber,
+        thresholds,
+        rows: [],
+      },
+    });
+  }
+
+  const userIds = employees.map((e) => e._id);
+
+  // One sweep of all completed visits in the current cycle for every BDM.
+  // Cycle is the longest window we report on, so this single query covers
+  // today/week/month/cycle filtering in-process. Limit fields to what we need.
+  const cycleVisits = await Visit.find({
+    user: { $in: userIds },
+    visitDate: { $gte: cycleStart, $lte: cycleEnd },
+    status: 'completed',
+  }).select('user visitDate').lean();
+
+  // Per-BDM aggregates
+  const aggMap = new Map();
+  userIds.forEach((id) => {
+    aggMap.set(id.toString(), {
+      today: 0,
+      thisWeek: 0,
+      thisMonth: 0,
+      cycle: 0,
+      lastVisitDate: null,
+      visitDays: new Set(), // unique YYYY-MM-DD (Manila) for consecutive-day calc
+    });
+  });
+
+  cycleVisits.forEach((v) => {
+    const uid = v.user.toString();
+    const a = aggMap.get(uid);
+    if (!a) return;
+    const t = v.visitDate.getTime();
+    a.cycle += 1;
+    if (t >= monthStart.getTime()) a.thisMonth += 1;
+    if (t >= weekStart.getTime()) a.thisWeek += 1;
+    if (t >= todayStart.getTime() && t <= todayEnd.getTime()) a.today += 1;
+    if (!a.lastVisitDate || t > a.lastVisitDate.getTime()) a.lastVisitDate = v.visitDate;
+    // Manila-local YYYY-MM-DD for consecutive-day tracking
+    const m = new Date(t + MANILA_OFFSET_MS);
+    const ymd = `${m.getUTCFullYear()}-${String(m.getUTCMonth() + 1).padStart(2, '0')}-${String(m.getUTCDate()).padStart(2, '0')}`;
+    a.visitDays.add(ymd);
+  });
+
+  // Pull cycle target for each BDM (Schedule entries this cycle)
+  const scheduleEntries = await Schedule.find({
+    user: { $in: userIds },
+    cycleNumber,
+  }).select('user status').lean();
+
+  const targetMap = new Map();
+  const completedMap = new Map();
+  scheduleEntries.forEach((s) => {
+    const uid = s.user.toString();
+    targetMap.set(uid, (targetMap.get(uid) || 0) + 1);
+    if (s.status === 'completed') {
+      completedMap.set(uid, (completedMap.get(uid) || 0) + 1);
+    }
+  });
+
+  // Compute consecutive workday gap (Manila workdays with zero visits ending today)
+  // Walks backward from "today" counting each Mon-Fri with no visit until it
+  // hits a workday that DID have a visit (or goes past the cycle start).
+  const cycleStartMs = cycleStart.getTime();
+  const consecutiveGap = (visitDays) => {
+    let gap = 0;
+    const cursor = new Date(todayStart.getTime());
+    while (cursor.getTime() >= cycleStartMs) {
+      const cm = new Date(cursor.getTime() + MANILA_OFFSET_MS);
+      const dayOfWk = cm.getUTCDay(); // 0=Sun … 6=Sat
+      if (dayOfWk >= 1 && dayOfWk <= 5) {
+        const ymd = `${cm.getUTCFullYear()}-${String(cm.getUTCMonth() + 1).padStart(2, '0')}-${String(cm.getUTCDate()).padStart(2, '0')}`;
+        if (visitDays.has(ymd)) break;
+        gap += 1;
+      }
+      cursor.setTime(cursor.getTime() - 24 * 60 * 60 * 1000);
+    }
+    return gap;
+  };
+
+  const rows = employees.map((emp) => {
+    const uid = emp._id.toString();
+    const a = aggMap.get(uid) || { today: 0, thisWeek: 0, thisMonth: 0, cycle: 0, lastVisitDate: null, visitDays: new Set() };
+    const cycleTarget = targetMap.get(uid) || 0;
+    const cycleCompleted = completedMap.get(uid) || 0;
+    const callRate = cycleTarget > 0
+      ? Math.round((cycleCompleted / cycleTarget) * 100)
+      : 0;
+
+    const gapWorkdays = consecutiveGap(a.visitDays);
+
+    let flag = 'ok';
+    if (!a.lastVisitDate) {
+      flag = 'never';
+    } else if (gapWorkdays >= thresholds.red_flag_consecutive_workdays) {
+      flag = 'redflag';
+    } else if (gapWorkdays >= thresholds.gap_warning_workdays && thresholds.gap_warning_workdays > 0) {
+      flag = 'warning';
+    }
+
+    return {
+      userId: emp._id,
+      name: emp.name || `${emp.firstName || ''} ${emp.lastName || ''}`.trim(),
+      firstName: emp.firstName || null,
+      today: a.today,
+      thisWeek: a.thisWeek,
+      thisMonth: a.thisMonth,
+      cycle: a.cycle,
+      cycleTarget,
+      callRate,
+      lastVisitDate: a.lastVisitDate ? a.lastVisitDate.toISOString() : null,
+      gapWorkdays,
+      flag,
+    };
+  });
+
+  // Default sort: red flags first, then warnings, then by callRate ascending
+  // (worst-performing on top so the COO sees who needs attention first)
+  const FLAG_ORDER = { redflag: 0, never: 1, warning: 2, ok: 3 };
+  rows.sort((a, b) => {
+    const fo = FLAG_ORDER[a.flag] - FLAG_ORDER[b.flag];
+    if (fo !== 0) return fo;
+    return a.callRate - b.callRate;
+  });
+
+  res.json({
+    success: true,
+    data: {
+      asOf: now.toISOString(),
+      cycleNumber,
+      thresholds,
+      rows,
+    },
+  });
+});
+
 module.exports = {
   getCycle,
   getToday,
@@ -978,4 +1182,5 @@ module.exports = {
   getCPTGrid,
   getCPTGridSummary,
   getCrossBdmHeatmap,
+  getTeamActivity,
 };

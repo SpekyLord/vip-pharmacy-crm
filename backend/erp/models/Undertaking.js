@@ -64,7 +64,13 @@ const undertakingSchema = new mongoose.Schema({
 
   receipt_date: { type: Date, required: true },
 
+  // Proof attachments — auto-mirrored from the linked GRN at create-time
+  // (autoUndertakingForGrn). Source of truth stays on the GRN; the mirror
+  // exists so the Approval Hub + UT detail page can fail-soft when the
+  // populate is partial or the GRN proof was lost. A re-upload from the UT
+  // page (Phase G4.5h-W — re-upload waybill recovery) writes BOTH copies.
   waybill_photo_url: { type: String, default: null },
+  undertaking_photo_url: { type: String, default: null },
 
   line_items: {
     type: [undertakingLineItemSchema],

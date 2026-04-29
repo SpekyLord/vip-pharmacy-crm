@@ -189,10 +189,15 @@ function buildUndertakingDetails(item) {
       status: grn.status
     } : { _id: item.linked_grn_id },
 
-    // Waybill + legacy evidence — keys come from the linked GRN. They'll be signed
-    // by universalApprovalService URL-signing switch (case 'UNDERTAKING').
-    waybill_photo_url: grn?.waybill_photo_url || null,
-    undertaking_photo_url: grn?.undertaking_photo_url || null,
+    // Waybill + legacy evidence — primary read from the linked GRN (source of
+    // truth, latest). Fall back to the UT's own mirror copied at
+    // autoUndertakingForGrn time so the Approval Hub does NOT false-positive a
+    // "missing waybill" warning when the linked-GRN populate is partial / stale,
+    // when a legacy GRN row is missing the proof, or when the GRN was
+    // soft-orphaned out from under the UT. URLs are signed by the
+    // universalApprovalService URL-signing switch (case 'UNDERTAKING').
+    waybill_photo_url: grn?.waybill_photo_url || item.waybill_photo_url || null,
+    undertaking_photo_url: grn?.undertaking_photo_url || item.undertaking_photo_url || null,
 
     // Warehouse/BDM for enrichment (same pattern as buildInventoryDetails)
     warehouse_name: item.warehouse_id?.warehouse_name

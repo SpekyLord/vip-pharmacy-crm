@@ -27,8 +27,10 @@ import {
   acknowledgeUndertaking,
   rejectUndertaking,
   presidentReverseUndertaking,
+  reuploadWaybill,
   getGrnSettings,
 } from '../services/undertakingService';
+import { processDocument } from '../services/ocrService';
 import { showError, showSuccess, showApprovalPending, isApprovalPending } from '../utils/errorToast';
 
 const STATUS_COLORS = {
@@ -65,7 +67,8 @@ export default function UndertakingDetail() {
   const [submitting, setSubmitting] = useState(false);
   const [decisionBusy, setDecisionBusy] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
-  const [settings, setSettings] = useState({ minExpiryDays: 30, varianceTolerancePct: 10 });
+  const [settings, setSettings] = useState({ minExpiryDays: 30, varianceTolerancePct: 10, waybillRequired: true });
+  const [waybillUploading, setWaybillUploading] = useState(false);
 
   const managementLike = isManagementRole(user?.role);
   const showPresidentReverse = canSeePresidentReverse(user);
@@ -178,6 +181,32 @@ export default function UndertakingDetail() {
     }
   };
 
+  // Phase G4.5h-W (Apr 29, 2026) — Re-upload waybill recovery path. Shown when
+  // the UT page can't find a waybill (UT mirror null AND linked-GRN populate
+  // returned null) and the entity requires one. Uploads the file via
+  // processDocument(file, 'WAYBILL') (existing S3 + DocumentAttachment pipeline)
+  // then PATCHes the UT — backend writes both the UT mirror AND the linked GRN.
+  const handleWaybillReupload = async (file) => {
+    if (!file || !doc) return;
+    setWaybillUploading(true);
+    try {
+      const ocrRes = await processDocument(file, 'WAYBILL');
+      if (!ocrRes?.s3_url) {
+        showError(null, 'Waybill upload did not return a URL — please retry');
+        return;
+      }
+      const res = await reuploadWaybill(id, ocrRes.s3_url);
+      if (res?.success) {
+        showSuccess('Waybill uploaded — linked GRN also patched.');
+        await load();
+      }
+    } catch (err) {
+      showError(err, 'Waybill re-upload failed');
+    } finally {
+      setWaybillUploading(false);
+    }
+  };
+
   const handlePresidentReverse = async () => {
     if (!doc) return;
     const reason = prompt('Reversal reason (required):');
@@ -212,7 +241,13 @@ export default function UndertakingDetail() {
 
   const st = STATUS_COLORS[doc.status] || { bg: '#e5e7eb', fg: '#374151' };
   const waybillUrl = doc.waybill_photo_url || linkedGrn?.waybill_photo_url || null;
-  const undertakingPaperUrl = linkedGrn?.undertaking_photo_url || null;
+  const undertakingPaperUrl = doc.undertaking_photo_url || linkedGrn?.undertaking_photo_url || null;
+  // Phase G4.5h-W — show the recovery uploader when:
+  //   - the entity requires a waybill (lookup-driven via GRN_SETTINGS.WAYBILL_REQUIRED), AND
+  //   - no waybill is on either the UT mirror or the linked GRN, AND
+  //   - the UT is still recoverable (DRAFT or SUBMITTED — terminal docs are off-limits), AND
+  //   - the caller can submit (owner / proxy / management — same gate as the submit button).
+  const canReuploadWaybill = settings?.waybillRequired && !waybillUrl && (isDraft || isSubmitted) && (canSubmit || managementLike);
 
   return (
     <div className="admin-page erp-page">
@@ -271,6 +306,26 @@ export default function UndertakingDetail() {
                   <a href={undertakingPaperUrl} target="_blank" rel="noreferrer">
                     <img src={undertakingPaperUrl} alt="Undertaking paper" className="ut-waybill-thumb" />
                   </a>
+                </div>
+              )}
+              {canReuploadWaybill && (
+                <div className="ut-attach ut-waybill-recovery">
+                  <div className="ut-attach-label" style={{ color: '#dc2626' }}>Waybill missing</div>
+                  <label className="ut-waybill-upload-btn" title="Upload courier waybill — patches the linked GRN too">
+                    {waybillUploading ? 'Uploading…' : 'Upload Waybill'}
+                    <input
+                      type="file"
+                      accept="image/*,application/pdf"
+                      style={{ display: 'none' }}
+                      disabled={waybillUploading}
+                      onChange={e => {
+                        const f = e.target.files?.[0];
+                        if (f) handleWaybillReupload(f);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                  <div className="ut-waybill-help">Required by GRN settings — approval is blocked without it.</div>
                 </div>
               )}
             </div>
@@ -380,6 +435,10 @@ const pageStyles = `
   .ut-attach { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
   .ut-attach-label { font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
   .ut-waybill-thumb { max-width: 140px; max-height: 100px; border-radius: 8px; border: 1px solid #dbe4f0; cursor: zoom-in; }
+  .ut-waybill-recovery { padding: 8px 10px; background: #fef2f2; border: 1px dashed #f87171; border-radius: 8px; max-width: 220px; }
+  .ut-waybill-upload-btn { display: inline-block; padding: 6px 12px; background: #dc2626; color: #fff; border-radius: 6px; font-size: 12px; font-weight: 700; cursor: pointer; }
+  .ut-waybill-upload-btn:hover { background: #b91c1c; }
+  .ut-waybill-help { margin-top: 6px; font-size: 11px; color: #991b1b; line-height: 1.3; }
 
   .status-pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; }
 

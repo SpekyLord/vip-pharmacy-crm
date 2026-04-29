@@ -333,32 +333,62 @@ const getVariance = catchAsync(async (req, res) => {
 /**
  * POST /physical-count — Record physical stock count
  * Creates ADJUSTMENT InventoryLedger entries for any variance.
+ *
+ * Phase G4.5y — proxy widening for cross-BDM physical count. Privileged users
+ * (admin/finance/president) and BDMs holding the two-key inventory proxy
+ * gate (PROXY_ENTRY_ROLES.INVENTORY membership + sub_permissions.inventory
+ * .grn_proxy_entry = true) may correct ANOTHER BDM's stock by selecting that
+ * BDM's warehouse. The ADJUSTMENT row + auto-journal land on the TARGET BDM
+ * (not the proxy actor), so per-BDM COGS/shrinkage and KPIs stay honest.
+ * The proxy actor is still recorded via `recorded_by` + ErpAuditLog.changed_by.
  */
 const recordPhysicalCount = catchAsync(async (req, res) => {
-  const { counts, warehouse_id } = req.body;
+  const { counts, warehouse_id, bdm_id: bodyBdmId } = req.body;
   // counts: [{ product_id, batch_lot_no, expiry_date, actual_qty }]
 
   if (!counts || !counts.length) {
     return res.status(400).json({ success: false, message: 'Counts array required' });
   }
 
-  const bdmId = req.bdmId;
+  // Two-key proxy gate (mirrors getMyStock + correctBatchMetadata).
+  const privileged = req.isAdmin || req.isFinance || req.isPresident;
+  const { canProxy: hasProxy } = await canProxyEntry(req, 'inventory', { subKey: 'grn_proxy_entry' });
+  const widenScope = privileged || hasProxy;
+
+  // Rule #21 — never silently fall back to the caller's _id when they pass an
+  // explicit bdm_id they aren't entitled to. Hard 403 instead of mis-attributing
+  // the adjustment + JE to their ledger.
+  if (bodyBdmId) {
+    if (!mongoose.isValidObjectId(bodyBdmId)) {
+      return res.status(400).json({ success: false, message: 'bdm_id is not a valid id' });
+    }
+    if (!widenScope && String(bodyBdmId) !== String(req.bdmId)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Proxy physical count denied. Your role or Access Template does not grant cross-BDM physical count rights for inventory.'
+      });
+    }
+  }
+
+  // explicit target | null (warehouse-only with per-batch derivation) | self-pin
+  const targetBdmId = bodyBdmId || (widenScope ? null : req.bdmId);
+
   const adjustments = [];
 
   for (const count of counts) {
     const normalizedBatch = cleanBatchNo(count.batch_lot_no);
 
-    // Get current system balance for this product/batch
+    // Get current system balance for this product/batch in scope
     const matchFilter = {
       entity_id: new mongoose.Types.ObjectId(req.entityId),
       product_id: new mongoose.Types.ObjectId(count.product_id),
       batch_lot_no: normalizedBatch
     };
-    // Use warehouse_id when provided, otherwise fall back to bdm_id
     if (warehouse_id) {
       matchFilter.warehouse_id = new mongoose.Types.ObjectId(warehouse_id);
-    } else {
-      matchFilter.bdm_id = new mongoose.Types.ObjectId(bdmId);
+    }
+    if (targetBdmId) {
+      matchFilter.bdm_id = new mongoose.Types.ObjectId(targetBdmId);
     }
     // eslint-disable-next-line vip-tenant/require-entity-filter -- $match: matchFilter where matchFilter is built above with entity_id from req.entityId; rule can't see through Identifier
     const [agg] = await InventoryLedger.aggregate([
@@ -379,9 +409,28 @@ const recordPhysicalCount = catchAsync(async (req, res) => {
 
     if (Math.abs(variance) < 0.01) continue; // No adjustment needed
 
+    // Resolve which BDM the ADJUSTMENT row + JE belong to. When the proxy is
+    // operating warehouse-only (no body.bdm_id), inherit from the first
+    // existing ledger row for this batch — that's the canonical owner of the
+    // stock-on-hand, even if a warehouse hosts batches from multiple BDMs.
+    let entryBdmId = targetBdmId;
+    if (!entryBdmId) {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- matchFilter built above is entity-scoped via entity_id from req.entityId
+      const sampleRow = await InventoryLedger.findOne(matchFilter).select('bdm_id').lean();
+      if (!sampleRow?.bdm_id) {
+        // No existing row to inherit ownership from — InventoryLedger.bdm_id
+        // is required, so we cannot file the ADJUSTMENT. Skip and warn.
+        console.warn('[PhysicalCount] No bdm_id derivable for batch', normalizedBatch, 'product', String(count.product_id), '— skipping');
+        continue;
+      }
+      entryBdmId = sampleRow.bdm_id;
+    }
+
+    const isProxied = String(entryBdmId) !== String(req.user._id);
+
     const entry = await InventoryLedger.create({
       entity_id: req.entityId,
-      bdm_id: bdmId,
+      bdm_id: entryBdmId,
       warehouse_id: warehouse_id || undefined,
       product_id: count.product_id,
       batch_lot_no: normalizedBatch,
@@ -394,7 +443,7 @@ const recordPhysicalCount = catchAsync(async (req, res) => {
 
     await ErpAuditLog.logChange({
       entity_id: req.entityId,
-      bdm_id: bdmId,
+      bdm_id: entryBdmId,
       log_type: 'ITEM_CHANGE',
       target_ref: entry._id.toString(),
       target_model: 'InventoryLedger',
@@ -402,7 +451,7 @@ const recordPhysicalCount = catchAsync(async (req, res) => {
       old_value: systemBalance,
       new_value: count.actual_qty,
       changed_by: req.user._id,
-      note: `Physical count adjustment: ${variance > 0 ? '+' : ''}${variance}`
+      note: `Physical count adjustment: ${variance > 0 ? '+' : ''}${variance}${isProxied ? ' (proxied)' : ''}`
     });
 
     adjustments.push({
@@ -410,11 +459,16 @@ const recordPhysicalCount = catchAsync(async (req, res) => {
       batch_lot_no: normalizedBatch,
       system_balance: systemBalance,
       actual_qty: count.actual_qty,
-      variance
+      variance,
+      bdm_id: entryBdmId,
+      proxied: isProxied
     });
   }
 
-  // Auto-journal for inventory adjustments (non-blocking)
+  // Auto-journal for inventory adjustments (non-blocking).
+  // bdm_id stamped on the JE = target BDM (entryBdmId), so per-BDM COGS /
+  // shrinkage attribution is correct under proxy. The proxy actor is captured
+  // via the second arg to journalFromInventoryAdjustment (req.user._id).
   for (const adj of adjustments) {
     try {
       // eslint-disable-next-line vip-tenant/require-entity-filter -- adj.product_id from same-entity-scoped physical-count match (entity_id filtered above)
@@ -425,7 +479,7 @@ const recordPhysicalCount = catchAsync(async (req, res) => {
         variance: adj.variance,
         product_name: product?.brand_name || '',
         batch_lot_no: adj.batch_lot_no,
-        bdm_id: req.bdmId
+        bdm_id: adj.bdm_id
       }, amount, req.user._id);
       if (jeData) await createAndPostJournal(req.entityId, jeData);
     } catch (jeErr) {

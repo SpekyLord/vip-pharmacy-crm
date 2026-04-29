@@ -331,17 +331,18 @@ const PAGE_GUIDES = {
   'statistics-page': {
     title: 'Statistics & Analytics',
     steps: [
-      'Overview tab shows system-wide compliance rate and per-BDM call rate chart with team average line',
-      'BDM Performance tab lets you drill into any BDM\'s DCR summary by cycle',
-      'Programs tab shows program and support type coverage across VIP Clients',
-      'Products tab shows which products are being presented most and by which BDMs',
-      'Daily Heatmap tab shows visit intensity across all BDMs and working days in one grid',
+      'Team Activity tab is the COO daily-scan surface — one row per BDM with today / this week / this month / cycle counts, last-visit recency, and a 🚩 red flag for BDMs idle ≥ 2 work days. Click a row to drill into that BDM\'s DCR.',
+      'Overview tab shows system-wide compliance rate and a per-BDM call rate chart — click any bar to drill into that BDM\'s DCR (Apr 2026 wiring).',
+      'BDM Performance tab lets you drill into any BDM\'s DCR summary by cycle (auto-loaded when you drill in from Team Activity or Overview).',
+      'Programs tab shows program and support type coverage across VIP Clients.',
+      'Products tab shows which products are being presented most and by which BDMs.',
+      'Daily Heatmap tab shows visit intensity across all BDMs and working days in one grid.',
     ],
     next: [
       { label: 'Reports', path: '/admin/reports' },
       { label: 'Activity Monitor', path: '/admin/activity' },
     ],
-    tip: 'Use the Refresh button to pull the latest data. Select a BDM in the Performance tab to see their DCR.',
+    tip: 'Red-flag thresholds (consecutive idle workdays, target call rate) come from the TEAM_ACTIVITY_THRESHOLDS lookup — admin tunes them in Control Center → Lookup Tables without a code deploy.',
   },
   'communication-log': {
     title: 'Communication Log',

@@ -1435,3 +1435,56 @@ A subscriber adds `cfo` to all three lookup rows + adds `cfo` to `ROLE_SETS.MANA
 - Future: lookup-drive `ROLE_SETS.MANAGEMENT` so adding a `cfo` role takes zero code changes (currently 1-line edit in `frontend/src/constants/roles.js`).
 - Future: per-user tile preferences (drag-to-reorder, pin/hide). Out-of-scope today; cockpit ships with a fixed Tier-1 → Tier-2 ordering for predictability.
 
+---
+
+## Phase TA-1 — Team Activity Cockpit + Overview Drill-down (April 29, 2026)
+
+### Why
+COO needs a daily-scan surface answering "who do I talk to today and why." Existing surfaces (Overview compliance bar chart, BDM Performance one-at-a-time, Reports Excel export, Activity Monitor firehose) all answer different questions. None of them shorten time-to-detection for an idle BDM. A red-flag list with proactive cadence rules does.
+
+Decision rejected: a full 11-BDMs × 20-days matrix view. That's a *reference* view, not a *decision* view — 220 cells to scan vs. an action list with built-in "who needs attention first" sort. Matrix can be built later if leadership genuinely wants it.
+
+### What
+- **New tab** `/admin/statistics` → Team Activity (leftmost, default badge counts red-flag + never)
+- **One row per active BDM**: Today / This Week / This Month / Cycle / Cycle Target / Call Rate / Last Visit (relative) / Flag pill
+- **Red-flag rule**: ≥ N consecutive Mon-Fri (Manila) workdays with zero visits. N is lookup-driven, default 2.
+- **Click row** → drills into BDM Performance tab pre-selected
+- **Quick Win bonus**: Overview tab's Per-BDM Call Rate bar chart bars are now clickable too — same drill handler
+
+### Files (3 new + 4 modified)
+- NEW: [backend/utils/teamActivityThresholds.js](../backend/utils/teamActivityThresholds.js) — lookup helper with inline DEFAULTS + 60s cache
+- NEW: [backend/scripts/healthcheckTeamActivity.js](../backend/scripts/healthcheckTeamActivity.js) — 22-point static wiring verifier
+- NEW (Playwright smoke artifacts): /tmp/playwright-test-team-activity-v{1,2,3}.js
+- MODIFIED: [backend/controllers/scheduleController.js](../backend/controllers/scheduleController.js) — added `getTeamActivity` (~140 lines, Manila-time-correct cycle sweep + consecutive-gap walker)
+- MODIFIED: [backend/routes/scheduleRoutes.js](../backend/routes/scheduleRoutes.js) — `GET /team-activity` mounted with `adminOnly`
+- MODIFIED: [backend/erp/controllers/lookupGenericController.js](../backend/erp/controllers/lookupGenericController.js) — `TEAM_ACTIVITY_THRESHOLDS` seed entry
+- MODIFIED: [frontend/src/services/scheduleService.js](../frontend/src/services/scheduleService.js) — `getTeamActivity()`
+- MODIFIED: [frontend/src/pages/admin/StatisticsPage.jsx](../frontend/src/pages/admin/StatisticsPage.jsx) — `TeamActivityTab` component (~210 lines), tab button + lazy-load + refresh wiring, `handleBdmDrillDown` shared with Overview bar-chart `<Bar onClick>`, `userId` propagated through `perBdmCallRates`
+- MODIFIED: [frontend/src/components/common/PageGuide.jsx](../frontend/src/components/common/PageGuide.jsx) — `statistics-page` banner updated for new tab + drill hint
+
+### Lookup-driven (Rule #3)
+Category `TEAM_ACTIVITY_THRESHOLDS`, code `DEFAULT`:
+- `red_flag_consecutive_workdays: 2`
+- `gap_warning_workdays: 1`
+- `target_call_rate: 80`
+
+`insert_only_metadata: true` so admin overrides survive `seedAllLookups.js` re-runs. Subscriber in Vios SaaS spin-out adds their own row per entity to tune cadence — zero code deploy.
+
+### Verification (Rule 0b)
+- Healthcheck: **22/22 PASS** — `node backend/scripts/healthcheckTeamActivity.js`
+- Backend syntax: PASS — `node -c` on touched files
+- Vite build: PASS — 10.79s, `StatisticsPage-Bvd2h-85.js` 69.27 kB
+- Playwright smoke: 9/10 PASS in v2; v3 used dispatchEvent on the Recharts `<g class="recharts-bar-rectangle">` (11 bar groups detected) and confirmed bar click drills into BDM Performance with `cycle-nav-label` rendered = 1 (proves selectedBdmId is set). Test creds: yourpartner@viosintegrated.net / DevPass123!@#.
+- Live data: 11 BDMs × 4 weeks of cycle 0 visit data → Team Activity rendered all 11 with sensible flag/count distribution.
+
+### Subscription-readiness posture (Rule #0d)
+- All thresholds lookup-driven — no hardcoded "2 workdays" or "80%" anywhere in business logic
+- `entity_id` filter on the lookup row reaches through `req.entityId` so a multi-tenant SaaS could already shard
+- `ROLES.STAFF` filter (Phase S2) instead of legacy `'employee'`/`'contractor'` — clean for the spin-out
+- No `'VIP'` or single-cluster Mongo URI assumptions in the new code
+
+### Open items
+- Push notification when red-flag count crosses a threshold (8 AM daily digest) — UI is ready, just needs a cron job hooked into the existing `notificationService`
+- "Mark as expected idle" override for legitimate gaps (annual leave, training week) — requires a per-BDM exception lookup
+- Year-2 SaaS: per-tenant Team Activity widget — generalizes cleanly because everything is already lookup-driven
+

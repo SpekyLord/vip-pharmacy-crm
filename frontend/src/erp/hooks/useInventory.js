@@ -29,9 +29,14 @@ export default function useInventory() {
     }
   });
 
-  const recordPhysicalCount = (counts, warehouseId) => api.post('/inventory/physical-count', {
+  // Phase G4.5y — bdmId is optional. When the caller is a privileged user or a
+  // BDM with the inventory.grn_proxy_entry sub-permission, the backend honors
+  // bdm_id (or per-batch derives it from warehouse_id). Non-eligible callers
+  // get 403 if they pass any bdm_id other than their own.
+  const recordPhysicalCount = (counts, warehouseId, bdmId) => api.post('/inventory/physical-count', {
     counts,
     ...(warehouseId && { warehouse_id: warehouseId }),
+    ...(bdmId && { bdm_id: bdmId }),
   });
 
   // Fix wrong batch_lot_no / expiry_date on stocks on hand. Narrow endpoint —

@@ -7753,6 +7753,61 @@ While walking the Reversal Console for the mis-approved GRN, the detail panel th
 
 ---
 
+## Phase G4.5h-W — GRN Undertaking Waybill Recovery (Apr 29 2026)
+
+### Problem
+The Approval Hub UNDERTAKING row warning ("No waybill photo — approval will be blocked") was firing as a false-positive when the linked GRN actually had a waybill on file. Two real failure modes:
+
+1. **Phase G4.5g design gap**: `buildUndertakingDetails` (Phase 32R) read `waybill_photo_url` only from the populated linked GRN object, not from the UT's own mirror copied at `autoUndertakingForGrn` time. Any partial populate (legacy data, soft-orphaned GRN, future select-list trim) → false missing-waybill banner.
+2. **No recovery path for legacy data**: GRNs created before `WAYBILL_REQUIRED` enforcement have a real `null` waybill. Since `GrnEntry` has no edit endpoint, the only escape was `reverse-and-recreate`, which destroys the doc-number trail and the InventoryLedger lineage.
+
+### Shipped (Apr 29, 2026)
+**Backend:**
+- `services/documentDetailBuilder.js#buildUndertakingDetails` — fallback chain `grn?.waybill_photo_url || item.waybill_photo_url || null` for both proof URLs.
+- `models/Undertaking.js` — added `undertaking_photo_url: { type: String, default: null }` to mirror the GRN field.
+- `services/undertakingService.js#autoUndertakingForGrn` — mirrors BOTH `waybill_photo_url` AND `undertaking_photo_url` at create time.
+- `controllers/undertakingController.js#signLinkedGrnPhotos` — also signs the UT's own mirror so the fallback URL is loadable through the private S3 bucket.
+- `controllers/undertakingController.js#reuploadWaybill` (NEW) — `POST /api/erp/undertaking/:id/waybill`. Patches BOTH UT and linked GRN inside one MongoDB transaction. Status DRAFT/SUBMITTED only; period-lock by receipt_date; ErpAuditLog `UPDATE` row with old/new value pair.
+- `routes/undertakingRoutes.js` — wires `POST /:id/waybill` behind `protect`. Authorization enforced inside the controller (lookup-driven, subscription-ready).
+- `scripts/healthcheckWaybillRecovery.js` (NEW) — 11-check static wiring healthcheck.
+
+**Frontend:**
+- `services/undertakingService.js` — `reuploadWaybill(id, waybillPhotoUrl)` helper.
+- `pages/UndertakingDetail.jsx` — red-dashed "Waybill missing" recovery uploader. Gated on `GRN_SETTINGS.WAYBILL_REQUIRED=1` AND missing-on-both-sides AND DRAFT/SUBMITTED AND user can submit. Uses the existing `processDocument(file, 'WAYBILL')` S3 + DocumentAttachment pipeline (same path that GrnEntry uses for the original capture).
+- `pages/ApprovalManager.jsx` — warning gated on lookup-driven `waybillRequired`; when shown, links to `/erp/undertaking/:id` for one-click recovery.
+- `components/WorkflowGuide.jsx` — `'undertaking-entry'` step 3 documents the recovery uploader.
+
+### Authorization (lookup-driven)
+Three concentric gates on `POST /:id/waybill`:
+1. **Owner BDM** — `doc.bdm_id === req.user._id`.
+2. **Proxy entry** — `canProxyEntry(req, 'inventory', { subKey: 'undertaking_proxy', lookupCode: 'UNDERTAKING' })`. Subscribers add roles to `PROXY_ENTRY_ROLES.UNDERTAKING` + tick `inventory.undertaking_proxy` on Access Template. No code change needed for new roles.
+3. **Management** — admin / finance / president / CEO via existing flags.
+
+### Verification
+- `node -c` on backend files: clean.
+- `npx vite build`: clean in 9.67s. `ApprovalManager-BS8gfB4m.js` + `WorkflowGuide-DbpuPL_W.js` + UT chunk all rebuilt.
+- `node backend/erp/scripts/healthcheckWaybillRecovery.js`: **11/11 PASS**.
+- Browser smoke: **DEFERRED**. Reproducing the bug requires a UT with `null` linked-GRN waybill (legacy seed only) + the live Atlas dev cluster doesn't have such a fixture. Recommend writing one fresh in the next session: log in as BDM (s3.vippharmacy@gmail.com / DevPass123!@#), DB-flip a recent GRN's `waybill_photo_url` to null on the dev cluster, open the linked UT, confirm red recovery uploader appears, upload, confirm both UT + GRN are patched + Approval Hub no longer shows the warning.
+
+### Files touched (10)
+- `backend/erp/services/documentDetailBuilder.js`
+- `backend/erp/models/Undertaking.js`
+- `backend/erp/services/undertakingService.js`
+- `backend/erp/controllers/undertakingController.js`
+- `backend/erp/routes/undertakingRoutes.js`
+- `backend/erp/scripts/healthcheckWaybillRecovery.js` (NEW)
+- `frontend/src/erp/services/undertakingService.js`
+- `frontend/src/erp/pages/UndertakingDetail.jsx`
+- `frontend/src/erp/pages/ApprovalManager.jsx`
+- `frontend/src/erp/components/WorkflowGuide.jsx`
+
+### Follow-ups (not in this phase)
+- Browser smoke once a missing-waybill fixture exists.
+- Apply the same fallback pattern to direct GRN approval (e.g., display the waybill thumbnail + warning on `approveGrn` endpoint for admin-only direct path) — Phase 32R design already routes most approvals through UT, so low priority.
+- Consider lookup-driven `WAYBILL_OVERRIDE_ROLES` if future emergency-bypass policy is approved (with required `grn.waybill_override_reason` justification). Out of scope today.
+
+---
+
 ## Phase G4.5h — CALF↔Expense One-Acknowledge Cascade (Apr 24 2026)
 
 ### Problem
@@ -9199,3 +9254,47 @@ Customer now mirrors Hospital exactly: globally shared, BDM-tag-driven visibilit
 - **X4** (~1 day): Audit-trail polish — Messenger screenshot upload to S3, hospital PDF as evidence (NOT parsed), approval-view diff of parsed-vs-confirmed lines, substitution metadata.
 
 **Plan**: `~/.claude/plans/phase-csi-x1-hospital-po-pricing.md`.
+
+---
+
+## Phase G4.5y — Physical Count Proxy Widening (Apr 29 2026) ✅ SHIPPED
+
+Closes the user-stated proxy ask "let proxy edit the batch number AND actual stocks of the BDMs warehouse". Phase G4.5x (Apr 29) shipped batch-metadata proxy; this phase ports the same two-key gate to `recordPhysicalCount` so quantity adjustments + auto-journals also work cross-BDM.
+
+### What changed
+- `backend/erp/controllers/inventoryController.js` `recordPhysicalCount`:
+  - Two-key gate: `privileged || canProxyEntry(req, 'inventory', { subKey: 'grn_proxy_entry' })` widens scope.
+  - Accepts new optional body `bdm_id`. Non-eligible callers passing a foreign id get HTTP 403 (Rule #21 — never silent self-fill).
+  - When eligible callers omit `bdm_id` but pass `warehouse_id`, the controller derives the target BDM **per-batch** by inheriting from the first existing InventoryLedger row for that batch+warehouse. Robust to warehouses whose batches span multiple BDM owners.
+  - `InventoryLedger.bdm_id` and `ErpAuditLog.bdm_id` stamp the **target** BDM (warehouse owner). `recorded_by` and `ErpAuditLog.changed_by` capture the proxy actor. Audit note appends `(proxied)` when actor ≠ owner.
+  - Auto-journal (`journalFromInventoryAdjustment`) `bdm_id` arg moved from `req.bdmId` to per-adjustment owner. Per-BDM COGS/shrinkage attribution stays honest under proxy.
+- `frontend/src/erp/hooks/useInventory.js` `recordPhysicalCount(counts, warehouseId, bdmId)` — third arg added; optional. Server-side per-batch derivation handles the warehouse-only path.
+- `frontend/src/erp/components/WorkflowGuide.jsx` `WORKFLOW_GUIDES['my-stock']` — added a proxy-correction step + extended tip explaining target-BDM attribution and `recorded_by` capture.
+
+### Lookup-driven + subscription-ready
+- Reuses `PROXY_ENTRY_ROLES.INVENTORY` (per-entity Lookup, default `[admin, finance, president]`, admin extends to `staff` via `/erp/lookup-manager`).
+- Reuses `inventory.grn_proxy_entry` sub-permission. No new sub-perm; one switch governs both batch-metadata and physical-count proxy capabilities.
+- VALID_OWNER_ROLES.INVENTORY governs valid targets — same gate as GRN.
+
+### Wiring + integrity walk (Rule #4)
+- `InventoryLedger.bdm_id required: true` — per-batch derivation guarantees a non-null value; "no existing ledger row to inherit from" path logs + skips (cannot adjust a batch the system has never recorded).
+- Downstream consumers (`getMyStock`, `getVariance`, `getLedger`, `getBatches`, Sales auto-FIFO, Expiry Alerts) read by entity+warehouse / entity+bdm — naturally pick up new ADJUSTMENT rows under the correct owner.
+- Period locks: physical count was not gated by `periodLockCheck` pre-G4.5y; preserved. Auto-journal carries its own period scope.
+- Approval Hub: physical count is not a status transition — no `gateApproval` call.
+- No CORS / route changes. No new sub-permission seed needed.
+
+### Files touched (3 modified)
+- modified: `backend/erp/controllers/inventoryController.js`
+- modified: `frontend/src/erp/hooks/useInventory.js`
+- modified: `frontend/src/erp/components/WorkflowGuide.jsx`
+- modified (docs): `CLAUDE-ERP.md`, `docs/PHASETASK-ERP.md`
+
+### Verification
+- Node syntax check on `inventoryController.js` — PASS.
+- Vite build — see commit context.
+- Playwright UI smoke — re-run `/c/tmp/smoke-readonly.js` + `/c/tmp/smoke-proxy.js` for batch-metadata regression + drive a Mae proxy physical count against a foreign warehouse.
+
+### Open follow-ups (do NOT block ship)
+- Phase 1.5 DANGER flag for `inventory.edit_batch_metadata` (Phase G4.5x pending — 1 line in `dangerSubPermissions.js`).
+- Phase 2 SalesLine cascade for DRAFT/VALID + fifo_override (Phase G4.5x pending — 60-90 min).
+- Optional: a future `inventory.physical_count_proxy` sub-perm if subscribers need to grant batch-metadata proxy WITHOUT physical-count proxy (today they're coupled). Not required by VIP.

@@ -284,13 +284,14 @@ const WORKFLOW_GUIDES = {
       'Request transfers from main warehouse if stock is low',
       'Wrong quantity? Use "Physical Count" (top-right) to record actual on-hand qty — variances post as ADJUSTMENT entries with a journal entry.',
       'Wrong batch number or expiry date? Expand the product row and click "Edit" on the batch line. Metadata-only fix — no journal entry, no quantity change.',
+      'Proxy correction (admin / finance / president, or a BDM granted `inventory.grn_proxy_entry`): pick another BDM\'s warehouse from the picker. Both Edit Batch and Physical Count now operate on that warehouse — the adjustment + journal entry are filed under the warehouse owner, not yourself.',
     ],
     next: [
       { label: 'Create Sale', path: '/erp/sales/entry' },
       { label: 'Request Transfer', path: '/erp/transfers' },
       { label: 'View Consignment', path: '/erp/consignment' },
     ],
-    tip: 'FIFO (First In, First Out) is enforced. Oldest batches are sold first automatically. Batch metadata fix (batch # / expiry typo) is audited and rewrites every ledger row plus the source GRN line — gated by `inventory.edit_batch_metadata` sub-permission, so subscribers can grant it to trusted contractors via Access Template without code changes. Quantity corrections still run through Physical Count; full GRN reversal is the President-only path when qty or cost is wrong.',
+    tip: 'FIFO (First In, First Out) is enforced. Oldest batches are sold first automatically. Batch metadata fix (batch # / expiry typo) is audited and rewrites every ledger row plus the source GRN line — gated by `inventory.edit_batch_metadata` sub-permission, so subscribers can grant it to trusted contractors via Access Template without code changes. Cross-BDM widening (proxy) for both Batch Metadata and Physical Count requires the same two-key gate: PROXY_ENTRY_ROLES.INVENTORY membership + `inventory.grn_proxy_entry` sub-permission. ADJUSTMENT rows + auto-journals attribute to the target BDM (warehouse owner); the proxy actor is captured in `recorded_by` and the audit log. Full GRN reversal is the President-only path when qty or cost is wrong.',
   },
   'dr-entry': {
     title: 'Delivery Receipt / Consignment',
@@ -580,6 +581,7 @@ const WORKFLOW_GUIDES = {
     steps: [
       'Auto-created on every GRN — open the DRAFT for the GRN you just captured. Every line mirrors what you entered on GrnEntry (product, qty, batch, expiry).',
       'Double-check the mirrored details and the attached waybill + scanned Undertaking paper thumbnails. Lines show ✓ when they were OCR-confirmed from the paper.',
+      'If the waybill panel shows "Waybill missing" (red dashed box in the header) — tap "Upload Waybill" to attach it now. The recovery uploader patches BOTH this Undertaking AND the linked GRN; the GRN has no edit page of its own so this is the only way to add a waybill to a legacy receipt. Approval will fail without it when GRN_SETTINGS.WAYBILL_REQUIRED is on.',
       'Tap "Validate & Submit" — DRAFT → SUBMITTED. If your role is not in MODULE_DEFAULT_ROLES.UNDERTAKING the request is held in the Approval Hub (HTTP 202) for a president/finance/admin approver.',
       'Approver acknowledges → linked GRN auto-approves and InventoryLedger is written atomically in one session. FIFO picks the batch automatically downstream.',
       'Approver rejects → Undertaking becomes REJECTED (terminal). GRN stays PENDING so the BDM can reverse the GRN entirely and re-capture from scratch.',
@@ -590,7 +592,7 @@ const WORKFLOW_GUIDES = {
       { label: 'My Stock', path: '/erp/my-stock' },
       { label: 'Batch Trace', path: '/erp/batch-trace' },
     ],
-    tip: 'Variance flags (yellow/red): qty-under, qty-over (VARIANCE_TOLERANCE_PCT lookup), near-expiry. Data entry has already happened on GrnEntry — no inputs here on purpose. If something is wrong, reject the UT and reverse the GRN to recapture. The "Linked GRN" link now shows the GRN\'s human-readable number (`GRN-{TERR|ENTITY}{MMDDYY}-{NNN}`) — legacy GRNs created before Phase 32R-GRN# still display the last-6 id tail. **Proxy Entry (Phase G4.5e, Apr 2026)** — Undertaking ownership is inherited from the linked GRN (`recorded_on_behalf_of` propagated by `autoUndertakingForGrn`), so there is no create path here. On submit, admin/finance/president (or an eBDM contractor with `inventory.undertaking_proxy` ticked) can submit SUBMITTED-status UTs on behalf of the owner BDM. Any UT originating from a proxy-created GRN force-routes through the Approval Hub at submit time (Rule #20 four-eyes) — a proxy enters, never approves. Look for the purple "Proxied" badge in the header. Lookup-driven: PROXY_ENTRY_ROLES.UNDERTAKING + VALID_OWNER_ROLES.UNDERTAKING.',
+    tip: 'Variance flags (yellow/red): qty-under, qty-over (VARIANCE_TOLERANCE_PCT lookup), near-expiry. Data entry has already happened on GrnEntry — no inputs here on purpose, EXCEPT the Phase G4.5h-W waybill recovery uploader (shown only when waybill is missing AND GRN_SETTINGS.WAYBILL_REQUIRED is on AND the UT is still DRAFT/SUBMITTED). If something else is wrong with the line data, reject the UT and reverse the GRN to recapture. The "Linked GRN" link now shows the GRN\'s human-readable number (`GRN-{TERR|ENTITY}{MMDDYY}-{NNN}`) — legacy GRNs created before Phase 32R-GRN# still display the last-6 id tail. **Proxy Entry (Phase G4.5e, Apr 2026)** — Undertaking ownership is inherited from the linked GRN (`recorded_on_behalf_of` propagated by `autoUndertakingForGrn`), so there is no create path here. On submit, admin/finance/president (or an eBDM contractor with `inventory.undertaking_proxy` ticked) can submit SUBMITTED-status UTs on behalf of the owner BDM. The same proxy gate (PROXY_ENTRY_ROLES.UNDERTAKING + `inventory.undertaking_proxy` sub-perm) governs who can re-upload the waybill — fully lookup-driven so subscribers can configure recovery authority without code changes. Any UT originating from a proxy-created GRN force-routes through the Approval Hub at submit time (Rule #20 four-eyes) — a proxy enters, never approves. Look for the purple "Proxied" badge in the header.',
   },
   'grn-audit': {
     title: 'GRN Audit Trail',

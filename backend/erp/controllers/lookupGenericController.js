@@ -2392,6 +2392,23 @@ const SEED_DEFAULTS = {
     { code: 'DEFAULT', label: 'Accounting Integrity tolerances + sub-ledger strictness', insert_only_metadata: true, metadata: { tb_tolerance: 0.01, je_math_tolerance: 0.01, subledger_tolerance: 1.00, ic_tolerance: 1.00, subledger_enforce: false } },
   ],
 
+  // backend/utils/teamActivityThresholds.js → getThresholds()
+  // Powers the COO-facing Statistics → Team Activity tab. Subscriber-tunable
+  // via Control Center → Lookup Tables → TEAM_ACTIVITY_THRESHOLDS so each
+  // pharmacy/subsidiary picks a red-flag cadence that matches its territory.
+  // insert_only_metadata: true → admin tweaks survive future re-seeds.
+  //
+  //   - red_flag_consecutive_workdays: 2 = a BDM idle for 2+ Mon-Fri workdays
+  //     gets the 🚩 redflag pill. Two days is the COO escalation point: one
+  //     idle day is routine (sick, traffic, doctor cancelled), two is a pattern.
+  //   - gap_warning_workdays: 1 = a one-workday gap shows ⚠ warning. Set 0 to
+  //     disable the warning state (only OK / RED).
+  //   - target_call_rate: 80 — current-cycle call rate floor (matches the
+  //     Overview tab's on-track ≥80 rule so the two surfaces agree).
+  TEAM_ACTIVITY_THRESHOLDS: [
+    { code: 'DEFAULT', label: 'Team Activity Cockpit — red-flag thresholds', insert_only_metadata: true, metadata: { red_flag_consecutive_workdays: 2, gap_warning_workdays: 1, target_call_rate: 80 } },
+  ],
+
   // agents/complianceDeadlineAgent.js → loadDeadlines()
   // STRUCTURAL metadata (statutory filing dates don't drift per entity) — re-sync
   // on seedAll is desirable so engineering can correct baseline data centrally.
@@ -2667,6 +2684,15 @@ const SEED_DEFAULTS = {
     // Subscribers add 'staff' here only when a back-office clerk role exists that
     // should also proxy.
     { code: 'HOSPITAL_PO', label: 'Hospital PO Entry (incl. Iloilo office proxy)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 10 } },
+    // Phase G4.5x + G4.5y (Apr 29 2026) — Inventory cross-BDM widening. Single
+    // PROXY_ENTRY_ROLES.INVENTORY row gates BOTH the batch metadata correction
+    // (`inventory.edit_batch_metadata` sub-perm + this lookup) AND physical count
+    // adjustments (`inventory.grn_proxy_entry` sub-perm + this lookup). Same
+    // two-key pattern as GRN. Subscribers append 'staff' to allow a back-office
+    // BDM to fix typo'd batches and record physical counts on another BDM's
+    // warehouse. ADJUSTMENT row + auto-journal attribute to the warehouse owner
+    // (target BDM) via per-batch derivation in inventoryController.recordPhysicalCount.
+    { code: 'INVENTORY', label: 'Inventory (batch metadata correction + physical count proxy)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 11 } },
   ],
   // Phase G4.5a follow-up — which roles are valid OWNERS of a proxied record
   // per module. Defaults to BDM-shaped roles (['staff']); admin/
@@ -2696,6 +2722,12 @@ const SEED_DEFAULTS = {
     // Phase CSI-X1 — Hospital PO ownership stays BDM-shaped. Per-BDM open-backlog
     // KPIs, hospital relationship reports, and rebate gates all key on bdm_id.
     { code: 'HOSPITAL_PO', label: 'Valid proxy targets — Hospital PO', insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 10 } },
+    // Phase G4.5x + G4.5y (Apr 29 2026) — Inventory ownership stays BDM-shaped.
+    // Per-BDM stock visibility, FIFO consumption, COGS/shrinkage attribution all
+    // key on bdm_id. Letting an admin/finance/president be a stock owner would
+    // corrupt these. Used by recordPhysicalCount per-batch BDM derivation +
+    // correctBatchMetadata target validation.
+    { code: 'INVENTORY', label: 'Valid proxy targets — Inventory (batch metadata + physical count)', insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 11 } },
   ],
   // Phase P1 — Proxy SLA thresholds. Lookup-driven so subscribers can tune
   // without code changes. pending_alert_hours = when to alert office lead;

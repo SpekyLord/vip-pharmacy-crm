@@ -70,6 +70,16 @@ const scheduleService = {
     return response.data;
   },
 
+  // Team Activity Cockpit — one row per active BDM with today / this week
+  // / this month / cycle visit counts + last-visit recency + red-flag.
+  // Powers /admin/statistics → Team Activity tab. Thresholds resolved
+  // server-side from TEAM_ACTIVITY_THRESHOLDS lookup and echoed in the
+  // response so the UI doesn't need a second round-trip.
+  getTeamActivity: async () => {
+    const response = await api.get('/schedules/team-activity');
+    return response.data;
+  },
+
 };
 
 export default scheduleService;

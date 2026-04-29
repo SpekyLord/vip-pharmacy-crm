@@ -12,6 +12,7 @@
  *   - POST  /undertaking/:id/submit            DRAFT → SUBMITTED (may return 202)
  *   - POST  /undertaking/:id/acknowledge       SUBMITTED → ACKNOWLEDGED (cascade-approves GRN)
  *   - POST  /undertaking/:id/reject            SUBMITTED → REJECTED (terminal; GRN stays PENDING)
+ *   - POST  /undertaking/:id/waybill           Phase G4.5h-W — re-upload waybill (recovery; patches GRN too)
  *   - POST  /undertaking/:id/president-reverse cascade-reverse GRN (inventory.reverse_undertaking grant)
  *
  * Errors bubble up — callers invoke showError / showApprovalPending from errorToast.js.
@@ -45,6 +46,18 @@ export async function rejectUndertaking(id, rejectionReason) {
 
 export async function presidentReverseUndertaking(id, { reason, confirm }) {
   const { data } = await api.post(`/erp/undertaking/${id}/president-reverse`, { reason, confirm });
+  return data;
+}
+
+/**
+ * Phase G4.5h-W (Apr 29, 2026) — Re-upload the waybill on a DRAFT or SUBMITTED
+ * Undertaking. Caller has already uploaded the file via processDocument(file, 'WAYBILL')
+ * and has the resulting `s3_url`. This endpoint patches BOTH the UT mirror AND
+ * the linked GRN (the GRN has no edit endpoint, so this is the only recovery
+ * path for legacy GRN rows missing the courier waybill).
+ */
+export async function reuploadWaybill(id, waybillPhotoUrl) {
+  const { data } = await api.post(`/erp/undertaking/${id}/waybill`, { waybill_photo_url: waybillPhotoUrl });
   return data;
 }
 

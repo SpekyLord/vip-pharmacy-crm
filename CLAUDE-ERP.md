@@ -1,8 +1,8 @@
 # VIP ERP - Project Context
 
-> **Last Updated**: April 28, 2026
-> **Version**: 7.5
-> **Status**: Phase **CSI-X1 (Apr 28 2026)**: HospitalContractPrice + HospitalPO/HospitalPOLine + price resolver + SalesLine `po_id` extension. Per-hospital BDM-negotiated contract pricing resolves before ProductMaster.selling_price for sales to that hospital. Hospital purchase order capture with unserved-backlog tracking — PO line `qty_served` auto-decrements/restores atomically inside the existing JE-TX MongoDB transaction on Sales POST/reopen/approveDeletion. 4 new pages at `/erp/hospital-contract-prices`, `/erp/hospital-pos/backlog`, `/erp/hospital-pos/entry`, `/erp/hospital-pos/:id`. Lookup-driven (PRICE_RESOLUTION_RULES, PO_EXPIRY_DAYS, HOSPITAL_PO_STATUS, HOSPITAL_PO_SOURCE_KIND, MODULE_DEFAULT_ROLES.PRICE_LIST, PROXY_ENTRY_ROLES.HOSPITAL_PO, VALID_OWNER_ROLES.HOSPITAL_PO). Iloilo office encoders proxy on behalf of BDMs via existing G4.5a resolveOwnerForWrite. PO# already prints on CSI overlay (csiDraftRenderer.js:271). Healthcheck `node backend/scripts/healthcheckHospitalPoWiring.js` PASSES across 60 checks. Vite build green (43.04s, 4 new lazy bundles). Playwright smoke 4/4 PASS. X2 (paste-parser) + X3 (Cockpit KPI tiles + expiry cron) + X4 (audit polish) deferred — plan `~/.claude/plans/phase-csi-x1-hospital-po-pricing.md`. Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G6 + G6.1 + G1.5 + H1-H5 + Phase 34 + Phase 3a + Phase 3c + Phase EC-1 Complete. **Phase G5 (Customer Globalization) Index Migration applied on dev Apr 27 2026** — `migrateCustomerGlobalUnique.js --apply` dropped 3 legacy compound indexes; Customer is now Hospital-style global. Cross-entity duplicate POST returns 400 with global-unique error; cross-entity read visibility confirmed. Prod apply still pending (gated on Atlas backup — see `memory/handoff_customer_global_migration_apr27_2026.md`). Phase G6.1 (Apr 26, 2026): **People Master Entity Lifecycle** — Transfer Home + Grant/Revoke endpoints + visibility union on People List (home ∪ User.entity_ids span ∪ active FRA holders). Two new danger-baseline sub-perms `people.transfer_entity` + `people.grant_entity`. Lookback days lookup-driven (`PEOPLE_LIFECYCLE_CONFIG.TRANSFER_BLOCK_LOOKBACK_DAYS`, default 90). Three new `AuditLog` enum values for full lineage. Closes the write-side gap left open by Phase G6 (which only made reads honor the entity selector). Phase G6 (Apr 26, 2026): **Master-data entity-scope honoring**. People Master list now respects the top-right entity selector for president-likes (was silently cross-entity). New `resolveEntityScope` helper + `CROSS_ENTITY_VIEW_ROLES` lookup category gate explicit `?cross_entity=true` opt-in by per-module role allowlist (default `['president','ceo']`). 60s cache + bust-on-lookup-write. Pattern ready for vendor/customer/hospital lists. Phase 3c (Apr 18, 2026): **Comprehensive hardcoded-role migration** — 30 destructive endpoints across ~15 modules now use `erpSubAccessCheck(module, key)` instead of `roleCheck('admin','finance','president')`. Baseline danger set grew 1 → 10 keys; 19 new sub-perms appear in the Access Template editor (period force-unlock, year-end, settings write, transfer pricing, people terminate/login mgmt, master data deactivate/delete, lookup deletes, etc.). Phase 3a (Apr 18, 2026): **Lookup-driven Danger Sub-Permission Gate + President-Reverse rollout**. Hardcoded `roleCheck('president')` on destructive endpoints replaced with `erpSubAccessCheck('accounting','reverse_posted')` so subsidiaries can delegate to CFO/Finance via Access Template editor without a code change. Rollout adds per-module `/president-reverse` routes to Expenses (ORE/ACCESS), PRF/CALF, and Petty Cash — on top of the existing Sales + Collection endpoints. Baseline danger set stays hardcoded (platform safety floor); subscribers extend via ERP_DANGER_SUB_PERMISSIONS lookup (5-min cache, busted on lookup write). Phase G5 (Apr 18, 2026): Fixed privileged-user BDM filter fallback bug in 9 ERP endpoints.
+> **Last Updated**: April 29, 2026
+> **Version**: 7.6
+> **Status**: Phase **G4.5h-W (Apr 29 2026)**: GRN Undertaking waybill-recovery wiring. Closed the false-positive "no waybill is attached — approval will be blocked" warning that the Approval Hub showed even when the linked GRN's populate dropped the field. `buildUndertakingDetails` (documentDetailBuilder.js:194-201) now falls back from linked GRN → UT mirror → null for both `waybill_photo_url` and `undertaking_photo_url`. Undertaking model gained `undertaking_photo_url` field; `autoUndertakingForGrn` (undertakingService.js:114-115) now mirrors BOTH proof URLs at create time. `signLinkedGrnPhotos` (undertakingController.js:54-72) signs the UT's own mirror so the fallback URL renders without S3 AccessDenied. New recovery endpoint `POST /api/erp/undertaking/:id/waybill` patches BOTH the UT AND the linked GRN — the GRN has no edit endpoint of its own, so this is the only path to add a waybill to a legacy receipt without reversing+recreating. Authorization: owner BDM / proxy (lookup-driven via PROXY_ENTRY_ROLES.UNDERTAKING + `inventory.undertaking_proxy` sub-perm) / admin / finance / president. Status gate DRAFT or SUBMITTED only; period-lock enforced by receipt_date; ErpAuditLog `UPDATE` row stamped with old + new URL for traceability. Frontend uploader on `UndertakingDetail.jsx` shown when waybill missing AND `GRN_SETTINGS.WAYBILL_REQUIRED=1` AND user can submit. ApprovalManager warning is gated on the same `GRN_SETTINGS.WAYBILL_REQUIRED` lookup (subscribers who don't capture courier waybills no longer see false-positives) and now links the approver to the UT page for one-click recovery. WorkflowGuide `undertaking-entry` updated. Healthcheck `node backend/erp/scripts/healthcheckWaybillRecovery.js` PASSES 11/11. Vite build green (9.67s). Browser smoke deferred — needs a UT with `null` linked-GRN waybill + live Atlas dev cluster avoidance. Phase **CSI-X1 (Apr 28 2026)**: HospitalContractPrice + HospitalPO/HospitalPOLine + price resolver + SalesLine `po_id` extension. Per-hospital BDM-negotiated contract pricing resolves before ProductMaster.selling_price for sales to that hospital. Hospital purchase order capture with unserved-backlog tracking — PO line `qty_served` auto-decrements/restores atomically inside the existing JE-TX MongoDB transaction on Sales POST/reopen/approveDeletion. 4 new pages at `/erp/hospital-contract-prices`, `/erp/hospital-pos/backlog`, `/erp/hospital-pos/entry`, `/erp/hospital-pos/:id`. Lookup-driven (PRICE_RESOLUTION_RULES, PO_EXPIRY_DAYS, HOSPITAL_PO_STATUS, HOSPITAL_PO_SOURCE_KIND, MODULE_DEFAULT_ROLES.PRICE_LIST, PROXY_ENTRY_ROLES.HOSPITAL_PO, VALID_OWNER_ROLES.HOSPITAL_PO). Iloilo office encoders proxy on behalf of BDMs via existing G4.5a resolveOwnerForWrite. PO# already prints on CSI overlay (csiDraftRenderer.js:271). Healthcheck `node backend/scripts/healthcheckHospitalPoWiring.js` PASSES across 60 checks. Vite build green (43.04s, 4 new lazy bundles). Playwright smoke 4/4 PASS. X2 (paste-parser) + X3 (Cockpit KPI tiles + expiry cron) + X4 (audit polish) deferred — plan `~/.claude/plans/phase-csi-x1-hospital-po-pricing.md`. Phases 0-35 + Phase A-F.1 + Gap 9 + G1-G6 + G6.1 + G1.5 + H1-H5 + Phase 34 + Phase 3a + Phase 3c + Phase EC-1 Complete. **Phase G5 (Customer Globalization) Index Migration applied on dev Apr 27 2026** — `migrateCustomerGlobalUnique.js --apply` dropped 3 legacy compound indexes; Customer is now Hospital-style global. Cross-entity duplicate POST returns 400 with global-unique error; cross-entity read visibility confirmed. Prod apply still pending (gated on Atlas backup — see `memory/handoff_customer_global_migration_apr27_2026.md`). Phase G6.1 (Apr 26, 2026): **People Master Entity Lifecycle** — Transfer Home + Grant/Revoke endpoints + visibility union on People List (home ∪ User.entity_ids span ∪ active FRA holders). Two new danger-baseline sub-perms `people.transfer_entity` + `people.grant_entity`. Lookback days lookup-driven (`PEOPLE_LIFECYCLE_CONFIG.TRANSFER_BLOCK_LOOKBACK_DAYS`, default 90). Three new `AuditLog` enum values for full lineage. Closes the write-side gap left open by Phase G6 (which only made reads honor the entity selector). Phase G6 (Apr 26, 2026): **Master-data entity-scope honoring**. People Master list now respects the top-right entity selector for president-likes (was silently cross-entity). New `resolveEntityScope` helper + `CROSS_ENTITY_VIEW_ROLES` lookup category gate explicit `?cross_entity=true` opt-in by per-module role allowlist (default `['president','ceo']`). 60s cache + bust-on-lookup-write. Pattern ready for vendor/customer/hospital lists. Phase 3c (Apr 18, 2026): **Comprehensive hardcoded-role migration** — 30 destructive endpoints across ~15 modules now use `erpSubAccessCheck(module, key)` instead of `roleCheck('admin','finance','president')`. Baseline danger set grew 1 → 10 keys; 19 new sub-perms appear in the Access Template editor (period force-unlock, year-end, settings write, transfer pricing, people terminate/login mgmt, master data deactivate/delete, lookup deletes, etc.). Phase 3a (Apr 18, 2026): **Lookup-driven Danger Sub-Permission Gate + President-Reverse rollout**. Hardcoded `roleCheck('president')` on destructive endpoints replaced with `erpSubAccessCheck('accounting','reverse_posted')` so subsidiaries can delegate to CFO/Finance via Access Template editor without a code change. Rollout adds per-module `/president-reverse` routes to Expenses (ORE/ACCESS), PRF/CALF, and Petty Cash — on top of the existing Sales + Collection endpoints. Baseline danger set stays hardcoded (platform safety floor); subscribers extend via ERP_DANGER_SUB_PERMISSIONS lookup (5-min cache, busted on lookup write). Phase G5 (Apr 18, 2026): Fixed privileged-user BDM filter fallback bug in 9 ERP endpoints.
 
 See `CLAUDE.md` for CRM context. See `docs/PHASETASK-ERP.md` for full task breakdown (3000+ lines).
 
@@ -4815,6 +4815,43 @@ A new subsidiary tomorrow gets:
 
 ---
 
+## Phase G4.5h-W — GRN Undertaking Waybill Recovery (Apr 29, 2026)
+
+### Why
+The Approval Hub was scaring approvers off perfectly-good Undertakings with "No waybill photo — approval will be blocked" even when the linked GRN had a waybill on file. Root cause: `buildUndertakingDetails` (Phase 32R) read `waybill_photo_url` only from the populated linked GRN object — if the populate dropped the field for any reason (legacy data, partial select, soft-orphaned GRN), the Hub UI fell back to "missing." There was also no recovery path for legacy GRN rows that genuinely never had a waybill (created before `WAYBILL_REQUIRED` enforcement was flipped on) — `GrnEntry` has no edit endpoint, so the only escape was `reverse-and-recreate`, which destroys the doc-number trail.
+
+### Shipped
+| Layer | Change |
+|---|---|
+| Backend `services/documentDetailBuilder.js#buildUndertakingDetails` | Falls back from `grn?.waybill_photo_url` → `item.waybill_photo_url` → `null`. Same chain for `undertaking_photo_url`. The UT mirror was already copied at `autoUndertakingForGrn` time so this is a fail-soft, not a privilege expansion. |
+| Backend `models/Undertaking.js` | New `undertaking_photo_url: { type: String, default: null }` field. Mirrors the GRN's secondary proof attachment so the same fallback logic works for both capture documents. |
+| Backend `services/undertakingService.js#autoUndertakingForGrn` | Mirrors BOTH `waybill_photo_url` AND `undertaking_photo_url` from the GRN at create time. Pre-fix only the waybill was copied. |
+| Backend `controllers/undertakingController.js#signLinkedGrnPhotos` | Signs the UT's own mirror in addition to the linked GRN's. The S3 bucket is private; without signing the fallback URL would fail with AccessDenied even if the value was non-null. |
+| Backend `controllers/undertakingController.js#reuploadWaybill` (NEW) | `POST /api/erp/undertaking/:id/waybill` — patches BOTH the UT mirror AND the linked GRN. MongoDB transaction so both writes commit or roll back together. Status gate DRAFT/SUBMITTED only; period-lock by receipt_date; ErpAuditLog `UPDATE` row. |
+| Backend `routes/undertakingRoutes.js` | Wires `POST /:id/waybill` behind `protect`. Authorization is enforced inside the controller (lookup-driven so subscribers configure recovery authority via Control Center, not a code change). |
+| Frontend `services/undertakingService.js` | `reuploadWaybill(id, waybillPhotoUrl)` helper — caller is expected to have already uploaded the file via `processDocument(file, 'WAYBILL')` (existing S3 + DocumentAttachment pipeline). |
+| Frontend `pages/UndertakingDetail.jsx` | Red-dashed "Waybill missing" recovery uploader. Shown ONLY when `GRN_SETTINGS.WAYBILL_REQUIRED=1` AND no waybill on either UT mirror or linked GRN AND UT is DRAFT/SUBMITTED AND user can submit (owner/proxy/management). Uses the same `processDocument(file, 'WAYBILL')` pipeline that GrnEntry uses for the original capture. |
+| Frontend `pages/ApprovalManager.jsx` | Approval Hub UNDERTAKING row warning is gated on the lookup-driven `waybillRequired` flag (subscribers who don't capture waybills no longer see false-positives). When the warning IS shown, it now links the approver to `/erp/undertaking/:id` for one-click recovery. |
+| Frontend `components/WorkflowGuide.jsx` | `'undertaking-entry'` step 3 documents the recovery uploader. Tip refreshed to note the lookup gate. |
+| Backend `scripts/healthcheckWaybillRecovery.js` (NEW) | Static wiring healthcheck — 11 checks covering builder fallback, UT model field, mirror copy, signer, controller export, route mount, frontend service, page wiring, hub gating, banner update. |
+
+### Authorization (lookup-driven, subscription-ready per Rule #3 + #19)
+Three concentric gates on `POST /:id/waybill`:
+1. **Owner BDM** — `doc.bdm_id === req.user._id` on a DRAFT/SUBMITTED UT.
+2. **Proxy entry** — caller passes `canProxyEntry(req, 'inventory', { subKey: 'undertaking_proxy', lookupCode: 'UNDERTAKING' })`. Subscribers add roles to `PROXY_ENTRY_ROLES.UNDERTAKING` via Control Center → Lookup Tables; sub-perm `inventory.undertaking_proxy` ticked on Access Template.
+3. **Management** — admin / finance / president / CEO via existing `req.isAdmin / req.isFinance / req.isPresident` flags.
+
+### Backend invariants preserved
+- **Rule #19 / Rule #3 (lookup-driven, subscription-ready)** — every gate (waybill-required, waybill-recovery role, proxy sub-perm) is configurable via lookups, not hardcoded.
+- **Rule #20 (period-lock + audit)** — receipt_date period-lock + ErpAuditLog `UPDATE` (with old/new value pair) on every recovery.
+- **Rule #21 (privileged user filter)** — UT list & detail endpoints keep their corrected `privileged ? (req.query.bdm_id || null) : req.bdmId` patterns.
+- **Source-of-truth invariant** — the GRN remains the source of truth for `approveGrnCore`'s waybill gate; the UT mirror is display-only and the recovery endpoint always patches the GRN side too. There is no path where the UT shows a waybill but the GRN doesn't.
+
+### Browser smoke gap (not yet closed)
+The bug-reproducer needs a UT whose linked GRN has `null` waybill_photo_url. That state only exists for legacy receipts created before `WAYBILL_REQUIRED` enforcement, or for receipts whose S3 object was deleted. The dev cluster doesn't have such a fixture today. The static healthcheck (`backend/erp/scripts/healthcheckWaybillRecovery.js`) covers the wiring contract end-to-end. Browser smoke is queued for the next session — happy path: log in as BDM, open a UT whose GRN waybill was DB-flipped to null, see the red recovery uploader, upload a new waybill, confirm both UT and GRN get the new URL, confirm Approval Hub no longer shows "approval will be blocked".
+
+---
+
 ## Phase 32R — GRN Capture + Undertaking Approval Wrapper (April 20, 2026)
 
 ### Why-pivot
@@ -6042,3 +6079,72 @@ The controller resolves both flags via `userHasCockpitRole(req, 'VIEW_FINANCIAL'
 - Healthcheck integration into the global `npm run healthcheck` runner (if/when one exists). Standalone-runnable today.
 - A future "tile-level preferences" surface (drag-to-reorder, per-user pin/hide) would be the natural next step once subscribers ask. Not built today — single ordered render keeps the page bulletproof and free of state-store overhead.
 - Cockpit AGREES with detail pages by construction (it calls the same aggregators). If a tile shows wrong numbers, the bug is in the underlying service — not in cockpit roll-up. Worth restating in any future bug-triage path.
+
+---
+
+## Phase G4.5y — Physical Count Proxy Widening (April 29, 2026)
+
+Closes the second half of the user-stated proxy ask ("let proxy edit the batch number AND actual stocks of the BDMs warehouse"). Phase G4.5x widened `correctBatchMetadata` and `getMyStock` for cross-BDM batch metadata fixes; this phase widens `recordPhysicalCount` for cross-BDM stock-quantity adjustments under the same two-key gate.
+
+**Two-key gate (unchanged from Phase G4.5x):**
+1. `PROXY_ENTRY_ROLES.INVENTORY` lookup (per-entity, admin-editable) must include the caller's role. Default `[admin, finance, president]`. Admin can extend to `staff` via `/erp/lookup-manager`.
+2. `erp_access.sub_permissions.inventory.grn_proxy_entry = true` on the user's Access Template.
+
+President + admin/finance always pass (privileged short-circuit). All other roles must pass BOTH keys to widen.
+
+**Behavior change:**
+- Eligible callers passing a `bdm_id` in the body record the ADJUSTMENT under that BDM. Non-eligible callers passing a foreign `bdm_id` get **HTTP 403 with explicit message** — no Rule #21 silent self-fill.
+- Eligible callers omitting `bdm_id` but passing `warehouse_id` get **per-batch BDM derivation**: the controller looks up the first existing InventoryLedger row for that batch+warehouse and inherits its `bdm_id` for the new ADJUSTMENT row + the auto-journal. This handles warehouses whose batches span multiple BDMs (e.g. a TERRITORY warehouse that received stock under a previous BDM).
+- The auto-journal (`journalFromInventoryAdjustment`) now stamps `bdm_id` from the resolved owner (not `req.bdmId`), so per-BDM COGS / shrinkage / KPIs stay honest under proxy.
+- The proxy actor is captured separately on `InventoryLedger.recorded_by` and `ErpAuditLog.changed_by`, with `(proxied)` annotation in the audit note when actor ≠ owner.
+
+**No new sub-permission key is introduced** — physical count and batch metadata are conceptually the same back-office correction surface, so they share the same `inventory.grn_proxy_entry` two-key gate. This keeps subscriber configuration simple (one switch, both capabilities).
+
+**No new DANGER flag.** `inventory.grn_proxy_entry` is not in BASELINE_DANGER_SUB_PERMS today (DANGER only matters for FULL fall-through; explicit grants always honored). Mae's existing grant test path is preserved byte-for-byte.
+
+**Lookup-driven (Rule #3) + subscription-ready (Rule #19):**
+- Allowlist of proxy-eligible roles is per-entity (`PROXY_ENTRY_ROLES.INVENTORY`).
+- VALID_OWNER_ROLES.INVENTORY governs who may be a target (BDM-shaped roles only — same as GRN/Sales).
+- No hardcoded role string anywhere. Subscribers in Year-2 SaaS spin-out get the same gate without code edits.
+
+**Files touched (3 modified):**
+- modified: [backend/erp/controllers/inventoryController.js](backend/erp/controllers/inventoryController.js) — `recordPhysicalCount` extended with `widenScope` + `targetBdmId` + per-batch derivation + 403 on non-eligible body.bdm_id; auto-journal stamps target BDM not actor.
+- modified: [frontend/src/erp/hooks/useInventory.js](frontend/src/erp/hooks/useInventory.js) — `recordPhysicalCount(counts, warehouseId, bdmId)` signature extended; bdm_id is optional, server falls back to per-batch derivation when omitted.
+- modified: [frontend/src/erp/components/WorkflowGuide.jsx](frontend/src/erp/components/WorkflowGuide.jsx) — `WORKFLOW_GUIDES['my-stock']` adds proxy correction step + tip describing the two-key gate, target-BDM attribution, and `recorded_by` capture.
+
+**Wiring + integrity walk:**
+- `InventoryLedger.bdm_id` is `required: true`. Per-batch derivation guarantees we always have a value; the only edge case is "no existing ledger row for this batch in this warehouse", which is logged + skipped (cannot ADJUSTMENT a batch the system has never seen).
+- `getMyStock`, `getVariance`, `getLedger`, `getBatches` aggregations are entity-scoped and respect the new bdm_id stamping by construction (they group by bdm_id; the rows just land in the correct group).
+- Auto-journal (`journalFromInventoryAdjustment`) signature unchanged; only the `bdm_id` argument's source moved from `req.bdmId` to `adj.bdm_id` (resolved per adjustment).
+- Audit log: `bdm_id` = target, `changed_by` = actor — both captured for any later reconciliation. The note includes `(proxied)` when actor ≠ owner.
+- Period locks (Rule #20): physical count was already not gated by `periodLockCheck` in the existing code — this phase preserves that. (The auto-journal carries its own period scope; if the period is locked, the JE post fails non-blocking and the ADJUSTMENT row remains for re-post.)
+- Approval Hub (Rule #20): physical count is not a status transition — no `gateApproval` call. Same as pre-G4.5y.
+
+**No downstream consumer broken:**
+- Sales/CSI auto-FIFO reads the ledger by entity+warehouse (or entity+bdm). Renaming/quantity adjustments propagate naturally.
+- Variance Report (`getVariance`) groups by product, computes from sum-of-IN minus sum-of-OUT; new ADJUSTMENT rows fold in correctly.
+- Expiry Alerts read distinct expiry_date from the ledger; unaffected.
+- Inventory Variance + Stock-on-Hand summaries on `/erp/my-stock` are read on next page load — no cache invalidation needed.
+
+**Healthcheck:** rerun the existing batch-metadata Playwright smokes (`/c/tmp/smoke-readonly.js` + `/c/tmp/smoke-proxy.js`); add a follow-up Playwright walk that drives a Mae proxy physical count against a foreign warehouse and verifies (a) the new ADJUSTMENT row carries `bdm_id` = target's, (b) the auto-journal `bdm_id` = target's, (c) the ErpAuditLog row carries `changed_by` = Mae and `bdm_id` = target.
+
+---
+
+## Test Credentials — Dev / Localhost only (Apr 29 2026)
+
+> Use ONLY against `localhost:5173` + `localhost:5000` bound to the live Atlas dev cluster. Never share, commit to public docs, or use against production. Verified working Apr 27–29 2026.
+
+| Persona | Email | Password | Use case |
+|--|--|--|--|
+| Admin / President | `yourpartner@viosintegrated.net` | `DevPass123!@#` | full-tier access; privileged short-circuit on every proxy gate; required for Access-Template grants + lookup edits in Playwright smokes |
+| BDM (Mae Navarro) | `s3.vippharmacy@gmail.com` | `DevPass123!@#` | generic BDM persona; user_id `69b3944f0aee4ab455785c50` |
+| BDM (MG and CO BDM) | `s19.vippharmacy@gmail.com` | `DevPass123!@#` | MG-and-CO entity BDM — useful for cross-entity / multi-entity scoping tests + cross-BDM owner-picker scenarios |
+| **BDM Proxy 1** | `s22.vippharmacy@gmail.com` | `DevPass123!@#` | designated PROXY tester — grant `inventory.grn_proxy_entry` + add `staff` to `PROXY_ENTRY_ROLES.INVENTORY` to exercise Phase G4.5x batch metadata correction + Phase G4.5y physical count proxy. Add `expenses.proxy_entry` / `smer_proxy_entry` / `prf_calf_proxy` / `car_logbook_proxy` / `undertaking_proxy` etc. for the matching Phase G4.5{a-h} flows. |
+| **BDM Proxy 2** | `s25.vippharmacy@gmail.com` | `DevPass123!@#` | second PROXY tester — pair with Proxy 1 for cross-BDM scenarios where Proxy 1 + Proxy 2 act on each other's warehouses (e.g. Proxy 1 corrects Proxy 2's batch metadata, Proxy 2 records physical count on Proxy 1's TERRITORY warehouse) |
+
+**Canonical proxy walkthrough:**
+1. Login as Admin → `/erp/erp-access` → flip `inventory.grn_proxy_entry = true` for Proxy 1 (s22). PUT body MUST be top-level `{enabled, modules, sub_permissions, can_approve}` — NOT wrapped in `{erp_access: {...}}`.
+2. Admin → `/erp/lookup-manager` → `PROXY_ENTRY_ROLES` → `INVENTORY` row → add `staff` to `metadata.roles`. Cache invalidation auto-fires via `invalidateProxyRolesCache(entityId)`.
+3. Login as Proxy 1 (s22) → `/erp/my-stock` → pick a different BDM's TERRITORY warehouse → see batches → click Edit on a batch (Phase G4.5x) OR open Physical Count modal (Phase G4.5y).
+4. Verify ADJUSTMENT row + auto-journal land under the warehouse owner's `bdm_id`, NOT Proxy 1's `bdm_id`. Check `ErpAuditLog.changed_by` = Proxy 1, `ErpAuditLog.bdm_id` = warehouse owner.
+5. Revert grants when done — see `/c/tmp/smoke-proxy.js` for the canonical revert recipe.
