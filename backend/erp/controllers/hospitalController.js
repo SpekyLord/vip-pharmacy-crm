@@ -14,12 +14,51 @@ const getAll = catchAsync(async (req, res) => {
     filter.hospital_name = { $regex: req.query.q, $options: 'i' };
   }
 
+  // ── Proxy/warehouse-scoped hospital list ───────────────────────────────
+  // SalesEntry (and any proxy-aware caller) passes ?warehouse_id=<id> so the
+  // dropdown reflects hospitals tied to the SELECTED warehouse rather than the
+  // logged-in user's own warehouses. Without this, a proxy filing on behalf of
+  // another BDM would see THEIR OWN hospitals, not the target warehouse's —
+  // causing the buggy fallback observed in Phase G4.5a proxy entry.
+  //
+  // Access guard: the caller must be entitled to see the warehouse, using the
+  // same rules as `GET /warehouse/my` (admin-like → any; ERP-enabled BDM → any
+  // active warehouse in their working entity; otherwise → manager_id or
+  // assigned_users membership). If the warehouse fails the guard, fall through
+  // to user-scoped behavior so we don't leak hospitals tied to inaccessible
+  // warehouses.
+  const warehouseIdParam = req.query.warehouse_id ? String(req.query.warehouse_id).trim() : '';
+  let warehouseScoped = false;
+  if (warehouseIdParam) {
+    const whGuard = { _id: warehouseIdParam, is_active: true };
+    if (!isAdminLike(req.user.role)) {
+      if (req.user.erp_access?.enabled && req.entityId) {
+        whGuard.entity_id = req.entityId;
+      } else {
+        whGuard.$or = [
+          { manager_id: req.user._id },
+          { assigned_users: req.user._id },
+        ];
+        if (req.entityId) whGuard.entity_id = req.entityId;
+      }
+    }
+    const wh = await Warehouse.findOne(whGuard).select('_id').lean();
+    if (wh) {
+      filter.warehouse_ids = wh._id;
+      warehouseScoped = true;
+    }
+    // If the guard fails we silently fall through to user-scoped — never leak
+    // by bypassing the filter entirely.
+  }
+
   // BDM sees only hospitals assigned to their warehouse(s); admin/president/finance/ceo see all
   // Scalable: warehouse_ids is the primary mechanism; tagged_bdms is legacy fallback
   // ?my=true forces BDM filter even for admin-like roles
   const forceMyFilter = req.query.my === 'true';
-  const effectiveUser = forceMyFilter ? { ...req.user, role: 'staff' } : req.user;
-  Object.assign(filter, await buildHospitalAccessFilter(effectiveUser));
+  if (!warehouseScoped) {
+    const effectiveUser = forceMyFilter ? { ...req.user, role: 'staff' } : req.user;
+    Object.assign(filter, await buildHospitalAccessFilter(effectiveUser));
+  }
 
   const page = parseInt(req.query.page) || 1;
   const rawLimit = req.query.limit;
