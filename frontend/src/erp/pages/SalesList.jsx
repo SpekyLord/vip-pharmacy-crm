@@ -40,8 +40,6 @@ const pageStyles = `
   .saleslist-main {
     flex: 1;
     min-width: 0;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
     padding: 24px;
     padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
   }

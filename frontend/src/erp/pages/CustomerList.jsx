@@ -26,7 +26,7 @@ const STATUS_BADGE = {
 
 const pageStyles = `
   .cust-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .cust-main { flex: 1; min-width: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .cust-main { flex: 1; min-width: 0; padding: 20px; max-width: 1200px; margin: 0 auto; }
   .cust-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
   .cust-header h1 { font-size: 22px; color: var(--erp-text, #132238); margin: 0 0 4px; }
   .cust-header p { color: var(--erp-muted, #5f7188); font-size: 14px; margin: 0; }

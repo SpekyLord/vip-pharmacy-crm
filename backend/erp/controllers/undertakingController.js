@@ -259,12 +259,31 @@ const submitUndertaking = catchAsync(async (req, res) => {
  *
  * Per global rule #20: auto-submit with rollback. If GRN approval fails
  * (period lock, PO mismatch, etc.), the acknowledgement is rolled back too.
+ *
+ * Phase G4.5h Part A (Apr 30, 2026) — idempotent.
+ *   - Atomic SUBMITTED → ACKNOWLEDGED claim via findOneAndUpdate, so two
+ *     concurrent ack callers cannot both win (direct path + Approval Hub
+ *     could otherwise race against the same UT).
+ *   - GRN-status peek before approveGrnCore. If the linked GRN is already
+ *     APPROVED (manual recovery path, future direct-approve, or a half-
+ *     committed prior cascade), the ledger is already written; we skip
+ *     the cascade and return the existing GRN. Closes the UT-002 orphan
+ *     scenario from Phase G4.5g (Apr 24 ghost approval). The GRN's
+ *     `event_id` is the secondary signal we surface in the audit note;
+ *     it is never null on an APPROVED GRN written via approveGrnCore.
+ *   - Concurrent ack returns `alreadyAcknowledged: true` so callers can
+ *     report the truth without raising — the request was effectively a
+ *     no-op against an already-acknowledged UT.
+ *
+ * @returns {Promise<{
+ *   undertaking: Object,
+ *   grn: Object|null,
+ *   alreadyAcknowledged: boolean,
+ *   cascadeSkipped: boolean
+ * }>}
  */
 async function postSingleUndertaking(doc, userId) {
   if (!doc) throw new Error('postSingleUndertaking: doc is required');
-  if (doc.status !== 'SUBMITTED') {
-    throw new Error(`postSingleUndertaking: expected SUBMITTED, got ${doc.status}`);
-  }
 
   const approveGrnCore = getApproveGrnCore();
   if (typeof approveGrnCore !== 'function') {
@@ -274,34 +293,107 @@ async function postSingleUndertaking(doc, userId) {
   const session = await mongoose.startSession();
   try {
     let updatedGrn = null;
+    let alreadyAcknowledged = false;
+    let cascadeSkipped = false;
+
     await session.withTransaction(async () => {
-      doc.status = 'ACKNOWLEDGED';
-      doc.acknowledged_by = userId;
-      doc.acknowledged_at = new Date();
-      await doc.save({ session });
+      // Atomic claim: only the caller that finds the UT in SUBMITTED state
+      // wins the transition. The outer status checks at the two call sites
+      // (acknowledgeUndertaking + approvalHandlers.undertaking) happen
+      // OUTSIDE the txn, so without this atomic claim two concurrent acks
+      // could both pass the outer gate and both try to cascade.
+      const claimed = await Undertaking.findOneAndUpdate(
+        { _id: doc._id, status: 'SUBMITTED' },
+        {
+          $set: {
+            status: 'ACKNOWLEDGED',
+            acknowledged_by: userId,
+            acknowledged_at: new Date(),
+          },
+        },
+        { new: true, session }
+      );
 
-      // Cascade — auto-approve GRN using the refactored core
-      updatedGrn = await approveGrnCore({
-        grnId: doc.linked_grn_id,
-        userId,
-        session
-      });
+      if (!claimed) {
+        // Lost the race or the UT was never SUBMITTED on entry. Re-fetch to
+        // tell the caller exactly what happened.
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- _id from caller-loaded doc; entity scope already enforced upstream
+        const current = await Undertaking.findById(doc._id).session(session);
+        if (!current) {
+          throw new Error(`postSingleUndertaking: Undertaking ${doc._id} not found`);
+        }
+        if (current.status === 'ACKNOWLEDGED') {
+          // Idempotent — caller's request is a no-op. Mirror the current
+          // doc into the caller's reference so the response stays consistent.
+          alreadyAcknowledged = true;
+          Object.assign(doc, current.toObject());
+          // Best-effort grab of the linked GRN for the response shape.
+          if (current.linked_grn_id) {
+            const GrnEntry = require('../models/GrnEntry');
+            // eslint-disable-next-line vip-tenant/require-entity-filter -- linked_grn_id from same-entity-scoped UT loaded above
+            updatedGrn = await GrnEntry.findById(current.linked_grn_id).session(session);
+          }
+          return;
+        }
+        throw new Error(
+          `postSingleUndertaking: Undertaking is ${current.status}, expected SUBMITTED`
+        );
+      }
+
+      // We won the claim. Mirror the new state into the caller's reference.
+      Object.assign(doc, claimed.toObject());
+
+      // Idempotent cascade. If the linked GRN is already APPROVED, the
+      // ledger + TransactionEvent rows already exist; calling approveGrnCore
+      // again would throw `expected PENDING` (inventoryController.js:835).
+      // Skip the cascade and let the audit note record the recovery path.
+      const GrnEntry = require('../models/GrnEntry');
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- linked_grn_id from same-entity-scoped UT claim above
+      const grnPeek = await GrnEntry.findById(doc.linked_grn_id)
+        .select('status event_id')
+        .session(session);
+      if (!grnPeek) {
+        throw new Error(
+          `postSingleUndertaking: linked GRN ${doc.linked_grn_id} not found`
+        );
+      }
+      if (grnPeek.status === 'APPROVED') {
+        cascadeSkipped = true;
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- same-entity-scoped GRN already peeked in this txn
+        updatedGrn = await GrnEntry.findById(doc.linked_grn_id).session(session);
+      } else {
+        updatedGrn = await approveGrnCore({
+          grnId: doc.linked_grn_id,
+          userId,
+          session,
+        });
+      }
     });
 
-    await ErpAuditLog.logChange({
-      entity_id: doc.entity_id,
-      bdm_id: doc.bdm_id,
-      log_type: 'STATUS_CHANGE',
-      target_ref: doc._id.toString(),
-      target_model: 'Undertaking',
-      field_changed: 'status',
-      old_value: 'SUBMITTED',
-      new_value: 'ACKNOWLEDGED',
-      changed_by: userId,
-      note: `Undertaking acknowledged — GRN ${updatedGrn?._id} auto-approved`
-    });
+    // Audit OUTSIDE the txn so audit failure does not roll back a committed
+    // state change (matches the doctorMergeService.js pattern from A.5.5).
+    // Skip when alreadyAcknowledged — the original ack already wrote the row.
+    if (!alreadyAcknowledged) {
+      const note = cascadeSkipped
+        ? `Undertaking acknowledged — linked GRN ${updatedGrn?._id || doc.linked_grn_id} was already APPROVED (cascade skipped, idempotent path; GRN event_id=${updatedGrn?.event_id || 'null'})`
+        : `Undertaking acknowledged — GRN ${updatedGrn?._id} auto-approved`;
+      await ErpAuditLog.logChange({
+        entity_id: doc.entity_id,
+        bdm_id: doc.bdm_id,
+        log_type: 'STATUS_CHANGE',
+        target_ref: doc._id.toString(),
+        target_model: 'Undertaking',
+        field_changed: 'status',
+        old_value: 'SUBMITTED',
+        new_value: 'ACKNOWLEDGED',
+        changed_by: userId,
+        note,
+      }).catch(err =>
+        console.error('[postSingleUndertaking] audit failed (non-critical):', err.message)
+      );
+    }
 
-    return { undertaking: doc, grn: updatedGrn };
+    return { undertaking: doc, grn: updatedGrn, alreadyAcknowledged, cascadeSkipped };
   } finally {
     await session.endSession();
   }
@@ -335,11 +427,25 @@ const acknowledgeUndertaking = catchAsync(async (req, res) => {
   await checkPeriodOpen(doc.entity_id, period);
 
   try {
-    const { undertaking, grn } = await postSingleUndertaking(doc, req.user._id);
+    const { undertaking, grn, alreadyAcknowledged, cascadeSkipped } =
+      await postSingleUndertaking(doc, req.user._id);
+    // Phase G4.5h Part A — message reflects which idempotent path ran so the
+    // operator can see whether stock was actually moved this click. The
+    // cascade-skipped path matters for audit reviewers who otherwise wonder
+    // why a UT acknowledge produced no new ledger rows.
+    let message;
+    if (alreadyAcknowledged) {
+      message = 'Undertaking was already acknowledged — no change';
+    } else if (cascadeSkipped) {
+      message =
+        'Undertaking acknowledged — linked GRN was already APPROVED (no new stock posted)';
+    } else {
+      message = 'Undertaking acknowledged — GRN auto-approved';
+    }
     res.json({
       success: true,
-      data: { undertaking, grn },
-      message: 'Undertaking acknowledged — GRN auto-approved'
+      data: { undertaking, grn, alreadyAcknowledged, cascadeSkipped },
+      message,
     });
   } catch (err) {
     console.error('[undertakingController] acknowledge failed:', err);

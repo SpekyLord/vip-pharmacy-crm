@@ -27,7 +27,7 @@ const STATUS_COLORS = {
 
 const pageStyles = `
   .transfers-page { background: var(--erp-bg, #f4f7fb); }
-  .transfers-main { flex:1; min-width:0; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:24px; }
+  .transfers-main { flex:1; min-width:0; padding:24px; }
   .transfers-inner { max-width:1200px; margin:0 auto; }
   .transfers-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; flex-wrap:wrap; gap:12px; }
   .transfers-header h1 { font-size:22px; color:var(--erp-text, #132238); margin:0; }

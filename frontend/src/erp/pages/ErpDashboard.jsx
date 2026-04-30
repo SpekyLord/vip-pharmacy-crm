@@ -39,7 +39,7 @@ const pageStyles = `
     --erp-accent-soft: rgba(122, 162, 255, 0.16);
   }
 
-  .boss-main { flex: 1; min-width: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; background: var(--erp-bg); display: flex; flex-direction: column; }
+  .boss-main { flex: 1; min-width: 0; background: var(--erp-bg); display: flex; flex-direction: column; }
   .boss-scroll { flex: 1; overflow-y: auto; padding: 16px 16px 100px; max-width: 900px; margin: 0 auto; width: 100%; }
   .boss-header { margin-bottom: 16px; }
   .boss-header h1 { font-size: 20px; color: var(--erp-text); margin: 0 0 2px; }

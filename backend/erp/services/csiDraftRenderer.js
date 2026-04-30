@@ -307,25 +307,44 @@ function drawTotalsBlock(doc, block, totals, px, py) {
 // ─── Totals view builder ────────────────────────────────────────────
 // Computes all possible totals fields (both templates' unions). Unused
 // fields on a given template's block are simply ignored by drawTotalsBlock.
+//
+// Phase R2 — Sales Discount. Net method (BIR-standard trade discount):
+// the model stores invoice_total / total_vat / total_net_of_vat as
+// AFTER-DISCOUNT values (VAT base shrinks). For the receipt face we want
+// to show the customer the gross BEFORE discount, the discount, then the
+// after-discount totals so the math reconciles:
+//   gross_before_discount  = total_gross_before_discount (sum qty × unit_price)
+//   less_discount          = total_discount              (gross - invoice_total)
+//   amount_due             = invoice_total                (= net_of_vat + vat)
 function buildTotalsView(sale, allLines) {
-  const vatable = Number(sale.total_net_of_vat) || 0;  // net-of-VAT proxy for vatable sales
-  const vat     = Number(sale.total_vat) || 0;
-  const gross   = Number(sale.invoice_total) || (vatable + vat);
+  const vatable     = Number(sale.total_net_of_vat) || 0;
+  const vat         = Number(sale.total_vat) || 0;
+  const afterDisc   = Number(sale.invoice_total) || (vatable + vat);
+  // Fall back to deriving gross from the lineDisplay if the stored field
+  // hasn't been populated (e.g. legacy doc saved before Phase R2 hook).
+  const storedGross = Number(sale.total_gross_before_discount) || 0;
+  const derivedGross = (allLines || []).reduce(
+    (sum, ld) => sum + ((Number(ld.qty) || 0) * (Number(ld.unit_price) || 0)),
+    0
+  );
+  const grossBeforeDiscount = storedGross || derivedGross || afterDisc;
+  const discount    = Number(sale.total_discount)
+    || Math.max(0, Math.round((grossBeforeDiscount - afterDisc) * 100) / 100);
   return {
     vatable_sales: vatable,
     vat,
     vat_amount: vat,
     zero_rated: 0,
     vat_exempt: 0,
-    total_sales_vat_inclusive: gross,
+    total_sales_vat_inclusive: grossBeforeDiscount,
     less_vat: vat,
     amount_net_of_vat: vatable,
-    less_discount: 0,
+    less_discount: discount,
     less_sc_pwd_discount: 0,
-    amount_due: gross,
+    amount_due: afterDisc,
     add_vat: 0,
     less_withholding_tax: 0,
-    total_amount_due: gross,
+    total_amount_due: afterDisc,
   };
 }
 

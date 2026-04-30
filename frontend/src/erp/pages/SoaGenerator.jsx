@@ -11,7 +11,7 @@ import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .soa-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .soa-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 800px; margin: 0 auto; }
+  .soa-main { flex: 1; min-width: 0; padding: 20px; max-width: 800px; margin: 0 auto; }
   .soa-header h1 { font-size: 22px; color: var(--erp-text); margin: 0 0 20px; }
   .section { background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
   .form-group { margin-bottom: 14px; }

@@ -27,7 +27,7 @@ const STATUS_COLORS = {
 
 const pageStyles = `
   .coll-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .coll-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .coll-main { flex: 1; min-width: 0; padding: 20px; max-width: 1200px; margin: 0 auto; }
   .coll-list-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
   .coll-list-header h1 { font-size: 22px; color: var(--erp-text); margin: 0; }
   .coll-actions { display: flex; gap: 8px; flex-wrap: wrap; }

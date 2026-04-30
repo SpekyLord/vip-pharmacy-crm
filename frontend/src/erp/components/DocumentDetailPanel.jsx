@@ -573,12 +573,29 @@ export default function DocumentDetailPanel(props) {
             )}
           </div>
           {d.service_description && <div style={{ marginBottom: 6, fontStyle: 'italic', color: 'var(--erp-muted)' }}>{d.service_description}</div>}
-          {(d.line_items || []).length > 0 && (
+          {(d.line_items || []).length > 0 && (() => {
+            // Phase R2 — only widen the table with the Disc % + Gross columns
+            // when at least one line carries a non-zero discount. Keeps the
+            // pre-R2 visual density for the (still common) no-discount case.
+            const hasAnyDiscount = (d.line_items || []).some(li => Number(li.line_discount_percent) > 0)
+              || Number(d.total_discount) > 0;
+            return (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginTop: 6 }}>
-              <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}><th style={{ padding: '4px 8px', textAlign: 'left' }}>Product</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Qty</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Stock</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Unit Price</th><th style={{ padding: '4px 8px', textAlign: 'right' }}>Line Total</th>{!readOnly && (editableLineFieldsMap.sales_line || []).length > 0 && <th style={{ padding: '4px 8px' }} />}</tr></thead>
+              <thead><tr style={{ background: 'var(--erp-accent-soft, #e8efff)' }}>
+                <th style={{ padding: '4px 8px', textAlign: 'left' }}>Product</th>
+                <th style={{ padding: '4px 8px', textAlign: 'right' }}>Qty</th>
+                <th style={{ padding: '4px 8px', textAlign: 'right' }}>Stock</th>
+                <th style={{ padding: '4px 8px', textAlign: 'right' }}>Unit Price</th>
+                {hasAnyDiscount && <th style={{ padding: '4px 8px', textAlign: 'right' }}>Gross</th>}
+                {hasAnyDiscount && <th style={{ padding: '4px 8px', textAlign: 'right', color: '#b45309' }}>Disc %</th>}
+                <th style={{ padding: '4px 8px', textAlign: 'right' }}>Line Total</th>
+                {!readOnly && (editableLineFieldsMap.sales_line || []).length > 0 && <th style={{ padding: '4px 8px' }} />}
+              </tr></thead>
               <tbody>
                 {(d.line_items || []).map((li, i) => {
                   const isEditingLine = !readOnly && editingLineItem?.itemId === item?.id && editingLineItem?.lineIndex === i;
+                  const discPct = Number(li.line_discount_percent) || 0;
+                  const grossAmt = Number(li.line_gross_amount) || ((Number(li.qty) || 0) * (Number(li.unit_price) || 0));
                   return (
                     <tr key={i} style={li.fifo_override ? { background: '#fffbeb' } : undefined}>
                       <td style={{ padding: '3px 8px' }}>
@@ -593,6 +610,8 @@ export default function DocumentDetailPanel(props) {
                       <td style={{ padding: '3px 8px', textAlign: 'right' }}>{isEditingLine && (editableLineFieldsMap.sales_line || []).includes('qty') ? <input type="number" value={lineEditForm.qty ?? li.qty ?? ''} onChange={e => setLineEditForm(f => ({ ...f, qty: Number(e.target.value) }))} style={{ width: 60, padding: '2px 4px', fontSize: 12, border: '1px solid #93c5fd', borderRadius: 4, textAlign: 'right' }} /> : li.qty}</td>
                       <td style={{ padding: '3px 8px', textAlign: 'right', color: li.available_stock != null && li.available_stock < li.qty ? 'var(--erp-danger, #d32f2f)' : undefined }}>{li.available_stock != null ? li.available_stock : '—'}</td>
                       <td style={{ padding: '3px 8px', textAlign: 'right' }}>{isEditingLine && (editableLineFieldsMap.sales_line || []).includes('unit_price') ? <input type="number" step="0.01" value={lineEditForm.unit_price ?? li.unit_price ?? ''} onChange={e => setLineEditForm(f => ({ ...f, unit_price: Number(e.target.value) }))} style={{ width: 80, padding: '2px 4px', fontSize: 12, border: '1px solid #93c5fd', borderRadius: 4, textAlign: 'right' }} /> : fmt(li.unit_price)}</td>
+                      {hasAnyDiscount && <td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(grossAmt)}</td>}
+                      {hasAnyDiscount && <td style={{ padding: '3px 8px', textAlign: 'right', color: discPct > 0 ? '#b45309' : 'var(--erp-muted)' }}>{discPct > 0 ? `${discPct}%` : '—'}</td>}
                       <td style={{ padding: '3px 8px', textAlign: 'right' }}>{fmt(li.line_total)}</td>
                       {!readOnly && (editableLineFieldsMap.sales_line || []).length > 0 && (
                         <td style={{ padding: '3px 8px' }}>
@@ -611,8 +630,18 @@ export default function DocumentDetailPanel(props) {
                 })}
               </tbody>
             </table>
-          )}
-          <div style={{ display: 'flex', gap: 16, marginTop: 8, fontWeight: 700 }}>
+            );
+          })()}
+          <div style={{ display: 'flex', gap: 16, marginTop: 8, fontWeight: 700, flexWrap: 'wrap' }}>
+            {/* Phase R2 — Less: Discount row only when total_discount > 0.
+                Without it the panel hides material info from the president
+                before they Acknowledge the Approval Hub card. */}
+            {Number(d.total_discount) > 0 && (
+              <>
+                <span>Total Sales (VAT Inclusive): {fmt(d.total_gross_before_discount)}</span>
+                <span style={{ color: '#b45309' }}>Less: Discount: ({fmt(d.total_discount)})</span>
+              </>
+            )}
             <span>Net of VAT: {fmt(d.total_net_of_vat)}</span>
             <span>VAT: {fmt(d.total_vat)}</span>
             <span>Total: {fmt(d.invoice_total)}</span>

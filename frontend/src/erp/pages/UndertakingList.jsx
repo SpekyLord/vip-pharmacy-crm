@@ -201,7 +201,7 @@ export default function UndertakingList() {
 }
 
 const pageStyles = `
-  .ut-main { flex: 1; min-width: 0; overflow-y: auto; padding: 24px; max-width: 1280px; margin: 0 auto; }
+  .ut-main { flex: 1; min-width: 0; padding: 24px; max-width: 1280px; margin: 0 auto; }
   .ut-header { margin-bottom: 16px; }
   .ut-header h1 { font-size: 24px; color: var(--erp-text, #132238); margin: 0; }
   .ut-header p { margin: 4px 0 0; color: var(--erp-muted); font-size: 13px; line-height: 1.5; max-width: 860px; }

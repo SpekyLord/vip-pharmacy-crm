@@ -198,7 +198,7 @@ export function HospitalListContent() {
 
   const styles = {
     page: { background: '#f4f7fb', minHeight: '100vh' },
-    main: { flex: 1, padding: 20, maxWidth: 1200, margin: '0 auto', overflow: 'auto' },
+    main: { flex: 1, padding: 20, maxWidth: 1200, margin: '0 auto' },
     header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 },
     filters: { display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 },
     input: { padding: '8px 12px', border: '1px solid #dbe4f0', borderRadius: 8, fontSize: 14 },

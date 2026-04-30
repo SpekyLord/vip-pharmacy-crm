@@ -30,7 +30,7 @@ import WorkflowGuide from '../components/WorkflowGuide';
 
 const css = `
   .pd-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .pd-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 960px; margin: 0 auto; }
+  .pd-main { flex: 1; min-width: 0; padding: 20px; max-width: 960px; margin: 0 auto; }
   .pd-back { font-size: 13px; color: var(--erp-accent, #1e5eff); cursor: pointer; margin-bottom: 12px; display: inline-block; }
   .pd-card { background: var(--erp-panel, #fff); border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
   .pd-card-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }

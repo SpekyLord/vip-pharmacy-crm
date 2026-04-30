@@ -14,7 +14,7 @@ const AGING_COLORS = {
 
 const pageStyles = `
   .consignment-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .consignment-main { flex: 1; min-width: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .consignment-main { flex: 1; min-width: 0; padding: 20px; max-width: 1200px; margin: 0 auto; }
   .consignment-header h1 { font-size: 22px; color: var(--erp-text); margin: 0 0 16px; }
 
   .summary-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 20px; }

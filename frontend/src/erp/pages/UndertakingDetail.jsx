@@ -428,7 +428,7 @@ export default function UndertakingDetail() {
 }
 
 const pageStyles = `
-  .ut-detail-main { flex: 1; min-width: 0; overflow-y: auto; padding: 24px; max-width: 1280px; margin: 0 auto; }
+  .ut-detail-main { flex: 1; min-width: 0; padding: 24px; max-width: 1280px; margin: 0 auto; }
   .ut-detail-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
   .ut-detail-sub { font-size: 12px; color: #475569; margin-top: 6px; line-height: 1.5; }
   .ut-head-attachments { display: flex; gap: 12px; flex-wrap: wrap; }

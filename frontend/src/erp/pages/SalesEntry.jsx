@@ -37,7 +37,7 @@ const emptyRow = () => ({
   hospital_id: '',
   csi_date: new Date().toISOString().split('T')[0],
   doc_ref: '',
-  line_items: [{ product_id: '', qty: '', unit: '', unit_price: '', item_key: '', batch_lot_no: '', fifo_override: false, override_reason: '' }],
+  line_items: [{ product_id: '', qty: '', unit: '', unit_price: '', line_discount_percent: '', item_key: '', batch_lot_no: '', fifo_override: false, override_reason: '' }],
   status: 'DRAFT',
   validation_errors: [],
   _isNew: true
@@ -45,7 +45,7 @@ const emptyRow = () => ({
 
 const pageStyles = `
   .sales-entry-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .sales-main { flex: 1; min-width: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px; max-width: 1400px; margin: 0 auto; }
+  .sales-main { flex: 1; min-width: 0; padding: 20px; max-width: 1400px; margin: 0 auto; }
   .sales-top-panel {
     background: var(--erp-panel, #fff);
     border: 1px solid var(--erp-border, #dbe4f0);
@@ -132,7 +132,9 @@ const pageStyles = `
   .sales-row-reject td { border-top: none; background: #fff5f5; padding: 8px 12px; }
   .sales-li-section-label { font-size: 10px; color: var(--erp-muted, #5f7188); text-transform: uppercase; font-weight: 700; letter-spacing: 0.4px; margin: 2px 0 6px; }
   /* 8 columns: Product / Batch / Expiry / Qty / Unit / Price / Line Total / × */
-  .sales-line-item { display: grid; grid-template-columns: minmax(220px, 2.6fr) 150px 110px 80px 70px 90px 100px 32px; gap: 8px; align-items: start; margin-bottom: 6px; }
+  /* Phase R2 — added Disc % column (70px) between Price and Total. Order:
+     Product · Batch · Expiry · Qty · Unit · Price · Disc% · Total · × */
+  .sales-line-item { display: grid; grid-template-columns: minmax(220px, 2.6fr) 150px 110px 80px 70px 90px 70px 100px 32px; gap: 8px; align-items: start; margin-bottom: 6px; }
   .sales-line-item > * { min-width: 0; }
   .sales-line-item .cell-stack { display: flex; flex-direction: column; gap: 4px; }
   .sales-li-add { background: transparent; border: 1px dashed var(--erp-border); color: var(--erp-muted); padding: 4px 10px; font-size: 11px; border-radius: 6px; cursor: pointer; margin-top: 2px; }
@@ -342,7 +344,7 @@ function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions }) {
               : String(parseFloat(mi.ocr_unit_price) || ''),
             item_key: mi.product_match?.product?.item_key || ''
           }))
-        : [{ product_id: '', qty: '', unit: '', unit_price: '', item_key: '' }]
+        : [{ product_id: '', qty: '', unit: '', unit_price: '', line_discount_percent: '', item_key: '' }]
     };
 
     onApply(row);
@@ -643,6 +645,7 @@ export default function SalesEntry() {
         qty: prefill.qty || '',
         unit: '',
         unit_price: '',
+        line_discount_percent: '',
         item_key: '',
         batch_lot_no: '',
         fifo_override: false,
@@ -742,7 +745,7 @@ export default function SalesEntry() {
       const row = { ...updated[rowIdx] };
       row.line_items = [
         ...row.line_items,
-        { product_id: '', qty: '', unit: '', unit_price: '', item_key: '', batch_lot_no: '', fifo_override: false, override_reason: '' }
+        { product_id: '', qty: '', unit: '', unit_price: '', line_discount_percent: '', item_key: '', batch_lot_no: '', fifo_override: false, override_reason: '' }
       ];
       updated[rowIdx] = row;
       return updated;
@@ -755,7 +758,7 @@ export default function SalesEntry() {
       const row = { ...updated[rowIdx] };
       row.line_items = row.line_items.filter((_, i) => i !== itemIdx);
       if (row.line_items.length === 0) {
-        row.line_items = [{ product_id: '', qty: '', unit: '', unit_price: '', item_key: '', batch_lot_no: '', fifo_override: false, override_reason: '' }];
+        row.line_items = [{ product_id: '', qty: '', unit: '', unit_price: '', line_discount_percent: '', item_key: '', batch_lot_no: '', fifo_override: false, override_reason: '' }];
       }
       updated[rowIdx] = row;
       return updated;
@@ -797,7 +800,7 @@ export default function SalesEntry() {
       csi_attachment_id: scannedData.csi_attachment_id || null,
       line_items: scannedData.line_items?.length
         ? scannedData.line_items.map(li => ({ ...li, batch_lot_no: li.batch_lot_no || '', fifo_override: false, override_reason: '' }))
-        : [{ product_id: '', qty: '', unit: '', unit_price: '', item_key: '', batch_lot_no: '', fifo_override: false, override_reason: '' }]
+        : [{ product_id: '', qty: '', unit: '', unit_price: '', line_discount_percent: '', item_key: '', batch_lot_no: '', fifo_override: false, override_reason: '' }]
     };
     setRows(prev => [...prev, newRow]);
   }, []);
@@ -809,10 +812,21 @@ export default function SalesEntry() {
     });
   };
 
-  const computeLineTotal = (item) => {
+  // Phase R2 — line total is qty × unit_price × (1 - discount_pct/100). VAT
+  // base shrinks (BIR-standard trade discount). Mirrors the SalesLine pre-save
+  // hook so the on-screen total matches what the model will store.
+  const computeLineGross = (item) => {
     const qty = parseFloat(item.qty) || 0;
     const price = parseFloat(item.unit_price) || 0;
-    return (qty * price).toFixed(2);
+    return qty * price;
+  };
+  const computeLineDiscountAmount = (item) => {
+    const gross = computeLineGross(item);
+    const pct = Math.max(0, Math.min(100, parseFloat(item.line_discount_percent) || 0));
+    return gross * (pct / 100);
+  };
+  const computeLineTotal = (item) => {
+    return (computeLineGross(item) - computeLineDiscountAmount(item)).toFixed(2);
   };
 
   // Save all new/dirty rows as DRAFTs
@@ -876,6 +890,11 @@ export default function SalesEntry() {
             qty: parseFloat(li.qty),
             unit: li.unit,
             unit_price: parseFloat(li.unit_price),
+            // Phase R2 — line-level discount %. Schema clamps 0..100; backend
+            // also enforces SALES_DISCOUNT_CONFIG.max_percent (privileged bypass).
+            // Coerce empty / non-numeric input to 0 so omitted-field semantics
+            // match the schema default.
+            line_discount_percent: Math.max(0, Math.min(100, parseFloat(li.line_discount_percent) || 0)),
             ...(li.batch_lot_no ? { batch_lot_no: li.batch_lot_no, fifo_override: li.fifo_override || false } : {}),
             ...(li.fifo_override && li.override_reason ? { override_reason: li.override_reason } : {})
           }))
@@ -1331,7 +1350,24 @@ export default function SalesEntry() {
                             <input className="readonly" value={item.unit || ''} readOnly tabIndex={-1} />
                             {/* Unit Price */}
                             <input type="number" step="0.01" value={item.unit_price || ''} onChange={e => updateLineItem(idx, li, 'unit_price', e.target.value)} disabled={isPosted} placeholder="Price" />
-                            {/* Line Total */}
+                            {/* Phase R2 — Discount %. BDM-entered per-line discount (0-100). VAT base
+                                shrinks per BIR RR 16-2005. Empty = 0% (no discount). Tooltip surfaces
+                                the computed amount so BDM can sanity-check before save. */}
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              step="0.01"
+                              value={item.line_discount_percent ?? ''}
+                              onChange={e => updateLineItem(idx, li, 'line_discount_percent', e.target.value)}
+                              disabled={isPosted}
+                              placeholder="0"
+                              title={(parseFloat(item.line_discount_percent) || 0) > 0
+                                ? `Discount: ₱${computeLineDiscountAmount(item).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                                : 'Per-line discount % (BIR trade discount; reduces VAT base)'}
+                              style={{ textAlign: 'right' }}
+                            />
+                            {/* Line Total (after discount) */}
                             <input className="readonly" value={computeLineTotal(item)} readOnly tabIndex={-1} />
                             {/* Remove sub-line */}
                             {!isPosted ? (
@@ -1469,8 +1505,28 @@ export default function SalesEntry() {
                       <div style={{ display: 'flex', gap: 8 }}>
                         <div style={{ flex: 1 }}><label>Qty</label><input type="number" value={item.qty || ''} onChange={e => updateLineItem(idx, li, 'qty', e.target.value)} disabled={isPosted} /></div>
                         <div style={{ flex: 1 }}><label>Price</label><input type="number" value={item.unit_price || ''} onChange={e => updateLineItem(idx, li, 'unit_price', e.target.value)} disabled={isPosted} /></div>
+                        {/* Phase R2 — Disc % (mobile). Tap-target friendly; tooltip absent here
+                            but discount preview chip below supplies the same info. */}
+                        <div style={{ flex: 1 }}>
+                          <label>Disc %</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.01"
+                            value={item.line_discount_percent ?? ''}
+                            onChange={e => updateLineItem(idx, li, 'line_discount_percent', e.target.value)}
+                            disabled={isPosted}
+                            placeholder="0"
+                          />
+                        </div>
                         <div style={{ flex: 1 }}><label>Total</label><input value={computeLineTotal(item)} readOnly /></div>
                       </div>
+                      {(parseFloat(item.line_discount_percent) || 0) > 0 && (
+                        <div style={{ fontSize: 11, color: '#b45309', marginTop: 4 }}>
+                          Less {parseFloat(item.line_discount_percent)}% (₱{computeLineDiscountAmount(item).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})
+                        </div>
+                      )}
                     </div>
                   );
                 })}

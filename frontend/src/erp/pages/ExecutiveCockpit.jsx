@@ -48,7 +48,7 @@ const styles = `
     --cp-warn: #fbbf24;
     --cp-bad: #f87171;
   }
-  .cp-main { flex: 1; min-width: 0; overflow-y: auto; background: var(--cp-bg); display: flex; flex-direction: column; }
+  .cp-main { flex: 1; min-width: 0; background: var(--cp-bg); display: flex; flex-direction: column; }
   .cp-scroll { flex: 1; overflow-y: auto; padding: 16px 16px 96px; max-width: 1280px; margin: 0 auto; width: 100%; }
   .cp-header { margin-bottom: 14px; display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
   .cp-header h1 { font-size: 20px; color: var(--cp-text); margin: 0 0 2px; }
