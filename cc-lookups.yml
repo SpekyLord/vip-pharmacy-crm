@@ -1,0 +1,99 @@
+- generic [ref=e7]:
+  - navigation [ref=e8]:
+    - generic [ref=e9]:
+      - img "VIP" [ref=e11]
+      - generic "Platform switch" [ref=e12]:
+        - link "CRM" [ref=e13] [cursor=pointer]:
+          - /url: /admin
+        - link "ERP" [ref=e20] [cursor=pointer]:
+          - /url: /erp
+    - generic [ref=e25]:
+      - img [ref=e27]
+      - generic "ERP tabs" [ref=e32]:
+        - link "Dashboard" [ref=e33] [cursor=pointer]:
+          - /url: /erp
+        - link "Sales" [ref=e41] [cursor=pointer]:
+          - /url: /erp/sales
+        - link "Inventory" [ref=e48] [cursor=pointer]:
+          - /url: /erp/my-stock
+        - link "Transfers" [ref=e55] [cursor=pointer]:
+          - /url: /erp/transfers
+        - link "Collections" [ref=e63] [cursor=pointer]:
+          - /url: /erp/collections
+        - link "Expenses" [ref=e69] [cursor=pointer]:
+          - /url: /erp/expenses
+        - link "Reports" [ref=e75] [cursor=pointer]:
+          - /url: /erp/reports
+    - generic [ref=e80]:
+      - combobox "Working entity" [ref=e81] [cursor=pointer]:
+        - option "VIP" [selected]
+        - option "Balai Lawaan"
+        - option "MG and CO."
+      - button "Toggle dark mode" [ref=e82] [cursor=pointer]:
+        - img [ref=e83]
+      - link "Inbox — 5 unread" [ref=e86] [cursor=pointer]:
+        - /url: /inbox
+        - img [ref=e87]
+        - generic: "5"
+      - generic [ref=e91]:
+        - generic [ref=e92]: GL
+        - generic [ref=e93]
+      - button "Logout" [ref=e96] [cursor=pointer]:
+        - img [ref=e97]
+        - generic [ref=e100]: Logout
+  - generic [ref=e101]:
+    - complementary [ref=e102]:
+      - button [ref=e103] [cursor=pointer]:
+        - img [ref=e104]
+      - navigation [ref=e106]:
+        - generic [ref=e108]
+        - generic [ref=e120]
+        - generic [ref=e192]
+        - generic [ref=e248]
+        - generic [ref=e326]
+        - generic [ref=e351]
+        - button "Capture Hub" [ref=e368] [cursor=pointer]
+        - button "Reports" [ref=e373] [cursor=pointer]
+        - button "Sales Goals" [ref=e378] [cursor=pointer]
+        - generic [ref=e382]
+        - generic [ref=e413]
+        - generic [ref=e499]
+        - generic [ref=e536]
+    - generic [ref=e596]:
+      - button [ref=e598] [cursor=pointer]:
+        - img [ref=e599]
+      - generic "Platform switch" [ref=e602]:
+        - link "CRM" [ref=e603] [cursor=pointer]:
+          - /url: /admin
+        - link "ERP" [ref=e604] [cursor=pointer]:
+          - /url: /erp
+      - navigation [ref=e605]:
+        - generic [ref=e607]
+        - generic [ref=e619]
+        - generic [ref=e691]
+        - generic [ref=e747]
+        - generic [ref=e825]
+        - generic [ref=e850]
+        - button "Capture Hub" [ref=e867] [cursor=pointer]
+        - button "Reports" [ref=e872] [cursor=pointer]
+        - button "Sales Goals" [ref=e877] [cursor=pointer]
+        - generic [ref=e881]
+        - generic [ref=e912]
+        - generic [ref=e998]
+        - generic [ref=e1035]
+    - generic [ref=e1095]:
+      - navigation [ref=e1096]:
+        - generic [ref=e1097]: Control Center
+        - generic [ref=e1098]
+        - generic [ref=e1115]
+        - generic [ref=e1135]
+        - generic [ref=e1179]
+        - generic [ref=e1207]
+        - generic [ref=e1220]
+        - generic [ref=e1261]
+        - generic [ref=e1293]
+        - generic [ref=e1318]
+        - generic [ref=e1336]
+      - generic [ref=e1358]:
+        - generic [ref=e1359]
+        - generic [ref=e1387]

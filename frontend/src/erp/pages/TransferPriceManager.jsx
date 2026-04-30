@@ -9,7 +9,7 @@ import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .tpm-page { background: var(--erp-bg, #f4f7fb); }
-  .tpm-main { flex:1; min-width:0; overflow-y:auto; padding:24px; }
+  .tpm-main { flex:1; min-width:0; padding:24px; }
   .tpm-inner { max-width:1100px; margin:0 auto; }
   .tpm-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:12px; }
   .tpm-header h1 { font-size:22px; margin:0; color:var(--erp-text,#132238); }

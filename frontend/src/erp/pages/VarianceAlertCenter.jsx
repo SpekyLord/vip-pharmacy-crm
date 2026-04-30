@@ -18,7 +18,7 @@ import { useAuth } from '../../hooks/useAuth';
 import { showError, showSuccess } from '../utils/errorToast';
 
 const styles = `
-  .va-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1400px; margin: 0 auto; }
+  .va-main { flex: 1; min-width: 0; padding: 20px; max-width: 1400px; margin: 0 auto; }
   .va-header { margin-bottom: 18px; }
   .va-header h1 { font-size: 22px; color: var(--erp-text); margin: 0 0 4px; }
   .va-header p { color: var(--erp-muted); font-size: 13px; margin: 0; }

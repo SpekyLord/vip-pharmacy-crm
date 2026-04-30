@@ -13,7 +13,7 @@ import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .pmode-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .pmode-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1000px; margin: 0 auto; }
+  .pmode-main { flex: 1; min-width: 0; padding: 20px; max-width: 1000px; margin: 0 auto; }
   .pmode-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
   .pmode-header h2 { font-size: 20px; font-weight: 700; margin: 0; }
   .pmode-table { width: 100%; border-collapse: collapse; background: var(--erp-panel, #fff); border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.06); }

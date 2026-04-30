@@ -18,7 +18,7 @@ const pct = (n) => `${(n || 0).toFixed(1)}%`;
 
 const pageStyles = `
   .sgd-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .sgd-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1400px; margin: 0 auto; }
+  .sgd-main { flex: 1; min-width: 0; padding: 20px; max-width: 1400px; margin: 0 auto; }
   .sgd-header { margin-bottom: 20px; }
   .sgd-header h1 { font-size: 22px; color: var(--erp-text); margin: 0 0 4px; }
   .sgd-header p { color: var(--erp-muted); font-size: 13px; margin: 0; }

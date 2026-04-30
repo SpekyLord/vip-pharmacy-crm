@@ -9,7 +9,7 @@ import { showError } from '../utils/errorToast';
 
 const pageStyles = `
   .receipt-page { background: var(--erp-bg, #f4f7fb); }
-  .receipt-main { flex:1; min-width:0; overflow-y:auto; padding:24px; }
+  .receipt-main { flex:1; min-width:0; padding:24px; }
   .receipt-inner { max-width:900px; margin:0 auto; }
   .receipt-header h1 { font-size:22px; color:var(--erp-text, #132238); margin:0 0 20px; }
 

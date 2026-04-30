@@ -11,7 +11,7 @@ import useReports from '../hooks/useReports';
 
 const pageStyles = `
   .archive-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .archive-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .archive-main { flex: 1; min-width: 0; padding: 20px; max-width: 1200px; margin: 0 auto; }
   .archive-header h1 { font-size: 22px; color: var(--erp-text); margin: 0 0 4px; }
   .archive-header p { color: var(--erp-muted); font-size: 13px; margin: 0 0 16px; }
   .btn { padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }

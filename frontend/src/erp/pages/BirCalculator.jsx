@@ -7,7 +7,7 @@ import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .bir-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .bir-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 900px; margin: 0 auto; }
+  .bir-main { flex: 1; min-width: 0; padding: 20px; max-width: 900px; margin: 0 auto; }
   .bir-header { margin-bottom: 20px; }
   .bir-header h2 { font-size: 20px; font-weight: 700; margin: 0; color: var(--erp-text); }
   .bir-header p { font-size: 13px; color: var(--erp-muted); margin: 4px 0 0; }

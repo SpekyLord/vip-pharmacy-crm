@@ -13,7 +13,7 @@ import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .audit-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .audit-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1300px; margin: 0 auto; }
+  .audit-main { flex: 1; min-width: 0; padding: 20px; max-width: 1300px; margin: 0 auto; }
   .audit-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
   .audit-header h1 { font-size: 22px; color: var(--erp-text); margin: 0; }
   .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }

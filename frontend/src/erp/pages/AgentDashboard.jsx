@@ -19,7 +19,7 @@ import { useLookupOptions } from '../hooks/useLookups';
 
 const pageStyles = `
   .agd-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .agd-main { flex: 1; min-width: 0; overflow-y: auto; padding: 24px; max-width: 1300px; margin: 0 auto; }
+  .agd-main { flex: 1; min-width: 0; padding: 24px; max-width: 1300px; margin: 0 auto; }
   .agd-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
   .agd-header h1 { font-size: 24px; font-weight: 700; color: var(--erp-text, #132238); margin: 0; display: flex; align-items: center; gap: 10px; }
   .agd-header h1 svg { color: var(--erp-accent, #1e5eff); }

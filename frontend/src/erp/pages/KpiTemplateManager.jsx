@@ -18,7 +18,7 @@ import { showError, showSuccess } from '../utils/errorToast';
 
 const styles = `
   .ktm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .ktm-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1400px; margin: 0 auto; }
+  .ktm-main { flex: 1; min-width: 0; padding: 20px; max-width: 1400px; margin: 0 auto; }
   .ktm-header { margin-bottom: 16px; }
   .ktm-header h1 { font-size: 22px; color: var(--erp-text); margin: 0 0 4px; }
   .ktm-header p { color: var(--erp-muted); font-size: 13px; margin: 0; }

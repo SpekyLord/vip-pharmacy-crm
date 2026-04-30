@@ -9,7 +9,7 @@ import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .oe-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .oe-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1000px; margin: 0 auto; }
+  .oe-main { flex: 1; min-width: 0; padding: 20px; max-width: 1000px; margin: 0 auto; }
   .oe-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
   .oe-header h2 { font-size: 20px; font-weight: 700; margin: 0; }
   .btn { padding: 6px 14px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; }

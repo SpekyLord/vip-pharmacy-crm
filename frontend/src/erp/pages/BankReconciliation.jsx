@@ -10,7 +10,7 @@ import RejectionBanner from '../components/RejectionBanner';
 
 const pageStyles = `
   .br-container { background: var(--erp-bg, #f4f7fb); min-height: 100vh; display: flex; flex-direction: column; }
-  .br-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1400px; margin: 0 auto; width: 100%; }
+  .br-main { flex: 1; min-width: 0; padding: 20px; max-width: 1400px; margin: 0 auto; width: 100%; }
   .br-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
   .br-header h2 { margin: 0; font-size: 20px; }
   .br-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }

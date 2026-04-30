@@ -16,7 +16,7 @@ const php = (n) => new Intl.NumberFormat('en-PH', { style: 'currency', currency:
 const pct = (n) => `${(n || 0).toFixed(1)}%`;
 
 const pageStyles = `
-  .ict-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1400px; margin: 0 auto; }
+  .ict-main { flex: 1; min-width: 0; padding: 20px; max-width: 1400px; margin: 0 auto; }
   .ict-header { margin-bottom: 20px; }
   .ict-header h1 { font-size: 22px; color: var(--erp-text); margin: 0 0 4px; }
   .ict-header p { color: var(--erp-muted); font-size: 13px; margin: 0; }

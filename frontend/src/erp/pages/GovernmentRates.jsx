@@ -11,7 +11,7 @@ import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .govr-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .govr-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .govr-main { flex: 1; min-width: 0; padding: 20px; max-width: 1200px; margin: 0 auto; }
   .govr-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
   .govr-header h2 { font-size: 20px; font-weight: 700; margin: 0; color: var(--erp-text); }
   .govr-actions { display: flex; gap: 8px; flex-wrap: wrap; }

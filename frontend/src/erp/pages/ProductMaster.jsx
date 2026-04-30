@@ -18,7 +18,7 @@ const STATUS_FILTER = ['ALL', 'ACTIVE', 'INACTIVE'];
 
 const pageStyles = `
   .pm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .pm-main { flex: 1; min-width: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px; max-width: 1400px; margin: 0 auto; }
+  .pm-main { flex: 1; min-width: 0; padding: 20px; max-width: 1400px; margin: 0 auto; }
   .pm-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
   .pm-header h1 { font-size: 22px; color: var(--erp-text, #132238); margin: 0 0 4px; }
   .pm-header p { color: var(--erp-muted, #5f7188); font-size: 14px; margin: 0; }

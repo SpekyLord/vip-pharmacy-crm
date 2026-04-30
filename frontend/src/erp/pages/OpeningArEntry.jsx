@@ -83,7 +83,7 @@ function buildEmptyRow(defaultDate) {
 
 const pageStyles = `
   .oar-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .oar-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1400px; margin: 0 auto; }
+  .oar-main { flex: 1; min-width: 0; padding: 20px; max-width: 1400px; margin: 0 auto; }
   .oar-panel { background: var(--erp-panel, #fff); border: 1px solid var(--erp-border, #dbe4f0); border-radius: 14px; padding: 16px; margin-bottom: 14px; box-shadow: 0 4px 14px rgba(15, 23, 42, 0.04); }
   .oar-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
   .oar-header h1 { font-size: 22px; color: var(--erp-text, #132238); margin: 0; }
