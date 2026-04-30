@@ -7,11 +7,57 @@
  * - Admin can access all users
  */
 
+const mongoose = require('mongoose');
 const User = require('../models/User');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
 const { sanitizeSearchString } = require('../utils/controllerHelpers');
-const { ROLES, ALL_ROLES, isAdminLike } = require('../constants/roles');
+const { ROLES, ALL_ROLES, ROLE_SETS, isAdminLike } = require('../constants/roles');
 const { logAuditEvent, AuditActions } = require('../utils/auditLogger');
+
+/**
+ * Resolve the entity scope to apply to a user-list query (Rule #21).
+ *
+ * - Privileged users (admin/finance/president/ceo) may pass `?entity_id=` or
+ *   the `X-Entity-Id` header to scope the list to one entity. Absent header
+ *   means "no entity filter — see every user across every entity I'm
+ *   entitled to." Per Rule #21 we never silently fall back to the privileged
+ *   user's own entity_id.
+ * - Non-privileged callers don't reach this controller (route is admin-only),
+ *   but the helper still pins them to their primary entity_id for safety.
+ *
+ * Returns an ObjectId (apply filter) or null (skip filter).
+ */
+const ENTITY_SCOPE_ROLES = new Set(ROLE_SETS.ADMIN_LIKE);
+
+const resolveUserListEntityScope = (req) => {
+  const headerEntity = req.headers?.['x-entity-id'];
+  const queryEntity = req.query?.entity_id;
+  if (ENTITY_SCOPE_ROLES.has(req.user.role)) {
+    const raw = (queryEntity || headerEntity || '').toString();
+    if (raw && /^[a-f\d]{24}$/i.test(raw)) {
+      return new mongoose.Types.ObjectId(raw);
+    }
+    return null; // privileged + no override = no entity filter
+  }
+  const fallback = req.user.entity_id
+    || (Array.isArray(req.user.entity_ids) && req.user.entity_ids[0])
+    || null;
+  return fallback ? new mongoose.Types.ObjectId(fallback.toString()) : null;
+};
+
+/**
+ * Build the Mongo clause that matches a User belonging to `scope`. A user is
+ * "in" an entity if their primary `entity_id` matches OR `entity_ids`
+ * contains the scope. We do NOT include `entity_ids_static` here — it's the
+ * admin-granted superset used by Phase FRA-A rebuild, and `entity_ids` is
+ * always kept in sync as a superset of static + active FRA grants.
+ */
+const entityScopeClause = (scope) => ({
+  $or: [
+    { entity_id: scope },
+    { entity_ids: scope },
+  ],
+});
 
 /**
  * @desc    Get currently active users (lastActivity within 15 minutes)
@@ -21,11 +67,16 @@ const { logAuditEvent, AuditActions } = require('../utils/auditLogger');
 const getActiveUsers = catchAsync(async (req, res) => {
   const fifteenMinAgo = new Date(Date.now() - 15 * 60 * 1000);
 
-  const users = await User.find({
+  const filter = {
     isActive: true,
     role: ROLES.CONTRACTOR,
     lastActivity: { $gte: fifteenMinAgo },
-  })
+  };
+
+  const entityScope = resolveUserListEntityScope(req);
+  if (entityScope) Object.assign(filter, entityScopeClause(entityScope));
+
+  const users = await User.find(filter)
     .select('name email lastActivity')
     .sort({ lastActivity: -1 });
 
@@ -60,13 +111,27 @@ const getAllUsers = catchAsync(async (req, res) => {
     filter.isActive = req.query.isActive === 'true';
   }
 
-  // Search by name or email
+  // Entity scope (Rule #21) and free-text search both use $or — combine via
+  // $and so search-OR doesn't override entity-OR.
+  const andClauses = [];
+
+  const entityScope = resolveUserListEntityScope(req);
+  if (entityScope) andClauses.push(entityScopeClause(entityScope));
+
   if (req.query.search) {
     const safeSearch = sanitizeSearchString(req.query.search);
-    filter.$or = [
-      { name: { $regex: safeSearch, $options: 'i' } },
-      { email: { $regex: safeSearch, $options: 'i' } },
-    ];
+    andClauses.push({
+      $or: [
+        { name: { $regex: safeSearch, $options: 'i' } },
+        { email: { $regex: safeSearch, $options: 'i' } },
+      ],
+    });
+  }
+
+  if (andClauses.length === 1) {
+    Object.assign(filter, andClauses[0]);
+  } else if (andClauses.length > 1) {
+    filter.$and = andClauses;
   }
 
   // Execute query
@@ -253,6 +318,9 @@ const deleteUser = catchAsync(async (req, res) => {
  */
 const getEmployees = catchAsync(async (req, res) => {
   const filter = { role: ROLES.CONTRACTOR, isActive: true };
+
+  const entityScope = resolveUserListEntityScope(req);
+  if (entityScope) Object.assign(filter, entityScopeClause(entityScope));
 
   const employees = await User.find(filter)
     .select('name email phone isActive lastLogin')
