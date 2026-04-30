@@ -82,17 +82,19 @@ const MdLeadsPage = lazyRetry(() => import('./pages/admin/MdLeadsPage'));
 // VIP_CLIENT_LIFECYCLE_ROLES; cascades 13+ FK references across CRM + ERP.
 const MdMergePage = lazyRetry(() => import('./pages/admin/MdMergePage'));
 // Phase VIP-1.H — SC/PWD Sales Book + BIR exports (RA 9994 + RR 7-2010)
-const SCPWDSalesBookPage = lazyRetry(() => import('./pages/admin/SCPWDSalesBookPage'));
+// Relocated /admin/* → /erp/* per SaaS scope decision Apr 29 2026 (rebate stack
+// is proprietary; must not ship to Year-2 Pharmacy SaaS subscribers).
+const SCPWDSalesBookPage = lazyRetry(() => import('./erp/pages/SCPWDSalesBookPage'));
 // Phase VIP-1.J — BIR Compliance Dashboard (12+ forms, accountant view)
-const BIRCompliancePage = lazyRetry(() => import('./pages/admin/BIRCompliancePage'));
+const BIRCompliancePage = lazyRetry(() => import('./erp/pages/BIRCompliancePage'));
 // Phase VIP-1.J / J1 — 2550M / 2550Q VAT return form-detail page
-const BirVatReturnDetailPage = lazyRetry(() => import('./pages/admin/BirVatReturnDetailPage'));
+const BirVatReturnDetailPage = lazyRetry(() => import('./erp/pages/BirVatReturnDetailPage'));
 // Phase VIP-1.B Phase 4 — Rebate + Commission matrix admin + Payout ledger
-const RebateMatrixPage = lazyRetry(() => import('./pages/admin/RebateMatrixPage'));
-const NonMdRebateMatrixPage = lazyRetry(() => import('./pages/admin/NonMdRebateMatrixPage'));
-const CapitationRulesPage = lazyRetry(() => import('./pages/admin/CapitationRulesPage'));
-const CommissionMatrixPage = lazyRetry(() => import('./pages/admin/CommissionMatrixPage'));
-const PayoutLedgerPage = lazyRetry(() => import('./pages/admin/PayoutLedgerPage'));
+const RebateMatrixPage = lazyRetry(() => import('./erp/pages/RebateMatrixPage'));
+const NonMdRebateMatrixPage = lazyRetry(() => import('./erp/pages/NonMdRebateMatrixPage'));
+const CapitationRulesPage = lazyRetry(() => import('./erp/pages/CapitationRulesPage'));
+const CommissionMatrixPage = lazyRetry(() => import('./erp/pages/CommissionMatrixPage'));
+const PayoutLedgerPage = lazyRetry(() => import('./erp/pages/PayoutLedgerPage'));
 
 // ERP pages
 const ErpDashboard = lazyRetry(() => import('./erp/pages/ErpDashboard'));
@@ -607,7 +609,7 @@ function App() {
               create / export-monthly / export-vat-reclaim) so finance can be
               extended without code changes. */}
           <Route
-            path="/admin/scpwd-sales-book"
+            path="/erp/scpwd-sales-book"
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_ONLY}>
                 <SCPWDSalesBookPage />
@@ -623,7 +625,7 @@ function App() {
               / mark-confirmed / run-data-audit / manage-tax-config) so
               subscribers reconfigure per entity via Control Center. */}
           <Route
-            path="/admin/bir"
+            path="/erp/bir"
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.BIR_FILING}>
                 <BIRCompliancePage />
@@ -635,7 +637,7 @@ function App() {
               Same BIR_FILING role-set guard; backend layers VIEW_DASHBOARD +
               EXPORT_FORM scopes per route via birAccess.userHasBirRole(). */}
           <Route
-            path="/admin/bir/:formCode/:year/:period"
+            path="/erp/bir/:formCode/:year/:period"
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.BIR_FILING}>
                 <BirVatReturnDetailPage />
@@ -653,7 +655,7 @@ function App() {
               silently lock out president from the matrix UI even though the
               backend permits the write. */}
           <Route
-            path="/admin/rebate-matrix"
+            path="/erp/rebate-matrix"
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_LIKE}>
                 <RebateMatrixPage />
@@ -661,7 +663,7 @@ function App() {
             }
           />
           <Route
-            path="/admin/non-md-rebate-matrix"
+            path="/erp/non-md-rebate-matrix"
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_LIKE}>
                 <NonMdRebateMatrixPage />
@@ -669,7 +671,7 @@ function App() {
             }
           />
           <Route
-            path="/admin/capitation-rules"
+            path="/erp/capitation-rules"
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_LIKE}>
                 <CapitationRulesPage />
@@ -677,7 +679,7 @@ function App() {
             }
           />
           <Route
-            path="/admin/commission-matrix"
+            path="/erp/commission-matrix"
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_LIKE}>
                 <CommissionMatrixPage />
@@ -685,13 +687,25 @@ function App() {
             }
           />
           <Route
-            path="/admin/payout-ledger"
+            path="/erp/payout-ledger"
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.ADMIN_LIKE}>
                 <PayoutLedgerPage />
               </ProtectedRoute>
             }
           />
+
+          {/* SaaS Scope (Apr 29 2026) — redirect old /admin/* paths to /erp/*
+              for any saved bookmarks / external links. Plan is to drop these
+              after a 30-day grace period; remove the block after May 29 2026. */}
+          <Route path="/admin/scpwd-sales-book" element={<Navigate to="/erp/scpwd-sales-book" replace />} />
+          <Route path="/admin/bir" element={<Navigate to="/erp/bir" replace />} />
+          <Route path="/admin/bir/:formCode/:year/:period" element={<Navigate to="/erp/bir" replace />} />
+          <Route path="/admin/rebate-matrix" element={<Navigate to="/erp/rebate-matrix" replace />} />
+          <Route path="/admin/non-md-rebate-matrix" element={<Navigate to="/erp/non-md-rebate-matrix" replace />} />
+          <Route path="/admin/capitation-rules" element={<Navigate to="/erp/capitation-rules" replace />} />
+          <Route path="/admin/commission-matrix" element={<Navigate to="/erp/commission-matrix" replace />} />
+          <Route path="/admin/payout-ledger" element={<Navigate to="/erp/payout-ledger" replace />} />
 
           {/* Legacy /employee redirects → /bdm */}
           {/* ERP Routes */}

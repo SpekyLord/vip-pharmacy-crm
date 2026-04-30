@@ -1,13 +1,15 @@
 /**
- * nonMdPartnerRebateRuleController — Phase VIP-1.B Phase 4 (Apr 2026)
+ * nonMdPartnerRebateRuleController — Phase VIP-1.B / Phase R1 (Apr 2026)
  *
  * CRUD for NonMdPartnerRebateRule (per-partner matrix for pharmacist /
  * hospital staff / non-MD partners). Lookup-driven role gate via
  * REBATE_ROLES.MANAGE_NONMD_MATRIX.
  *
- * Specificity: rules can target hospital_id / customer_id / product_code in
- * any combination. The matrix walker (services/matrixWalker.js) picks the
- * most-specific match at apply time.
+ * Phase R1 (Apr 29 2026): match grain simplified to per-(partner ×
+ * hospital). Customer / product_code / priority dimensions removed —
+ * calculation_mode is the new variation axis (EXCLUDE_MD_COVERED default
+ * vs TOTAL_COLLECTION). Multiple rules at the same key all earn full %
+ * independently; the walker returns all matches.
  */
 
 const mongoose = require('mongoose');
@@ -54,8 +56,9 @@ const list = catchAsync(async (req, res) => {
   if (req.query.is_active !== undefined) filter.is_active = req.query.is_active === 'true';
   const limit = Math.min(parseInt(req.query.limit) || 100, 500);
   const skip = parseInt(req.query.skip) || 0;
+  // Phase R1: dropped 'priority' — sort by partner_id, then most-recent first.
   const [rows, total] = await Promise.all([
-    NonMdPartnerRebateRule.find(filter).sort({ partner_id: 1, priority: 1, createdAt: -1 }).limit(limit).skip(skip).lean(),
+    NonMdPartnerRebateRule.find(filter).sort({ partner_id: 1, createdAt: -1 }).limit(limit).skip(skip).lean(),
     NonMdPartnerRebateRule.countDocuments(filter),
   ]);
   // Enrich partner names (Doctor model — partner_tags reuse the Doctor coll for non-MDs).
@@ -99,7 +102,8 @@ const update = catchAsync(async (req, res) => {
   filter._id = req.params.id;
   const row = await NonMdPartnerRebateRule.findOne(filter);
   if (!row) return res.status(404).json({ success: false, message: 'Not found' });
-  const allowed = ['rebate_pct', 'hospital_id', 'customer_id', 'product_code', 'priority', 'effective_from', 'effective_to', 'is_active', 'notes'];
+  // Phase R1: dropped customer_id / product_code / priority. Added calculation_mode.
+  const allowed = ['rebate_pct', 'hospital_id', 'calculation_mode', 'effective_from', 'effective_to', 'is_active', 'notes', 'rule_name', 'description', 'partner_name'];
   for (const k of allowed) if (k in req.body) row[k] = req.body[k];
   try {
     await row.save();

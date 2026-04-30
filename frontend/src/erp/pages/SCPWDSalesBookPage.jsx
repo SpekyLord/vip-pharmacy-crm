@@ -9,7 +9,7 @@
  * Role gates are backend-driven (lookup SCPWD_ROLES). The route guard here is
  * admin-like to prevent BDM eyeballs on customer SC/PWD IDs.
  *
- * Route: /admin/scpwd-sales-book
+ * Route: /erp/scpwd-sales-book
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
