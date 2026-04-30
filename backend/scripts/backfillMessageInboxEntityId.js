@@ -31,6 +31,10 @@ const DRY_RUN = process.argv.includes('--dry-run');
 
 // Category → Folder mapping. Mirrors the write-time derivation used by
 // persistInApp in G9.B. Any category not in this map falls through to INBOX.
+// MUST stay in sync with backend/erp/utils/inboxLookups.js CATEGORY_TO_FOLDER.
+// Phase G9.R11 (Apr 30 2026) — briefing moved to EXECUTIVE_BRIEF;
+// inventory_alert / proxy_sla_alert / proxy_auto_ack / data_quality routed
+// to AI_AGENT_REPORTS (previously fell through to INBOX).
 const CATEGORY_TO_FOLDER = {
   announcement: 'ANNOUNCEMENTS',
   system: 'ANNOUNCEMENTS',
@@ -42,14 +46,19 @@ const CATEGORY_TO_FOLDER = {
   approval_decision: 'APPROVALS',
   document_posted: 'APPROVALS',
 
+  briefing: 'EXECUTIVE_BRIEF',
+
   compliance_alert: 'AI_AGENT_REPORTS',
   ai_coaching: 'AI_AGENT_REPORTS',
   ai_schedule: 'AI_AGENT_REPORTS',
   ai_alert: 'AI_AGENT_REPORTS',
   ai_agent_finding: 'AI_AGENT_REPORTS',
-  briefing: 'AI_AGENT_REPORTS',
   compensation: 'AI_AGENT_REPORTS',
   kpiVariance: 'AI_AGENT_REPORTS',
+  inventory_alert: 'AI_AGENT_REPORTS',
+  proxy_sla_alert: 'AI_AGENT_REPORTS',
+  proxy_auto_ack: 'AI_AGENT_REPORTS',
+  data_quality: 'AI_AGENT_REPORTS',
 
   task_assigned: 'TASKS',
   task_overdue: 'TASKS',

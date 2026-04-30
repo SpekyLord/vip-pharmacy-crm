@@ -16,8 +16,8 @@
  *     scope choice — it leaked from a fallback)
  *
  * Modes (env var `BDM_GUARD_MODE`, read once at attach time):
- *   - `log`   (default): console.error JSON line; in production, also fire a
- *               deduped MessageInbox alert via guardAlerter.
+ *   - `log`   (default): console.error JSON line. Grep
+ *               `[BDM_GUARD_VIOLATION]` in pm2 logs to triage.
  *   - `throw`: console.error JSON line + throw inside the Mongoose pre-hook.
  *               Use AFTER triage. The bug class is hard to clear from history
  *               (every existing buggy controller would 500 immediately) — flip
@@ -37,7 +37,6 @@ const mongoose = require('mongoose');
 const path = require('path');
 
 const { readLiveCtx } = require('./requestContext');
-const { maybeAlert } = require('./guardAlerter');
 
 const VALID_MODES = ['log', 'throw', 'off'];
 const resolveMode = () => {
@@ -145,13 +144,6 @@ const emitViolation = (payload, mode) => {
     err.violation = payload;
     throw err;
   }
-
-  maybeAlert({
-    kind: payload.kind,
-    model: payload.model,
-    requestPath: payload.path,
-    payload,
-  });
 };
 
 const buildPlugin = (bdmScopedSet, mode) => {

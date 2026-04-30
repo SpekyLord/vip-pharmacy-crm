@@ -5,13 +5,14 @@
  * codes are sourced from /api/messages/folders so subscribers can rename
  * labels or add new folders via Control Center → Lookup Tables (Rule #3).
  */
-import { Inbox, Bell, ClipboardCheck, ListChecks, Sparkles, Megaphone, MessagesSquare, Send, Archive } from 'lucide-react';
+import { Inbox, Bell, ClipboardCheck, ListChecks, Sparkles, Newspaper, Megaphone, MessagesSquare, Send, Archive } from 'lucide-react';
 
 const ICON_BY_CODE = {
   INBOX: Inbox,
   ACTION_REQUIRED: Bell,
   APPROVALS: ClipboardCheck,
   TASKS: ListChecks,
+  EXECUTIVE_BRIEF: Newspaper, // Phase G9.R11 — daily exec read folder
   AI_AGENT_REPORTS: Sparkles,
   ANNOUNCEMENTS: Megaphone,
   CHAT: MessagesSquare,

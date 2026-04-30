@@ -275,46 +275,41 @@ const updateTransaction = catchAsync(async (req, res) => {
 });
 
 /**
- * POST /transactions/:id/post — atomically move balance + mark POSTED
- * This is the ONLY place balance changes for deposit/disbursement.
+ * Atomic post helper — moves balance, flips status to POSTED, fires ceiling
+ * notifications. Shared by:
+ *   - postTransaction (BDM-direct path, called after gateApproval)
+ *   - approvalHandlers.petty_cash (Approval Hub path, called after Hub approve)
+ *
+ * Period lock + balance guards are enforced inside. Idempotent on POSTED.
+ *
+ * Note: callers are responsible for the authorization gate. The BDM-direct
+ * path enforces gateApproval upstream; the Hub path enforces the approver's
+ * `approve_petty_cash` sub-permission in universalApprove before reaching here.
  */
-const postTransaction = catchAsync(async (req, res) => {
-  // Period lock check before entering transaction
+async function postSinglePettyCashTransaction(txnId, userId) {
   const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
-  const txnPrecheck = await PettyCashTransaction.findOne({ _id: req.params.id, ...pcFilter(req.tenantFilter, 'transaction') }).lean();
-  if (txnPrecheck) {
-    const pcPeriod = dateToPeriod(txnPrecheck.txn_date || new Date());
-    await checkPeriodOpen(req.entityId, pcPeriod);
 
-    // Authority matrix gate
-    const { gateApproval } = require('../services/approvalService');
-    const gated = await gateApproval({
-      entityId: req.entityId,
-      module: 'PETTY_CASH',
-      docType: txnPrecheck.txn_type || 'DISBURSEMENT',
-      docId: txnPrecheck._id,
-      docRef: txnPrecheck.reference || txnPrecheck._id.toString(),
-      amount: txnPrecheck.amount || 0,
-      description: `Petty cash ${(txnPrecheck.txn_type || 'transaction').toLowerCase()} — ${txnPrecheck.description || ''}`.trim(),
-      requesterId: req.user._id,
-      requesterName: req.user.name || req.user.email,
-    }, res);
-    if (gated) return;
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- helper resolves entity from txn; caller provides authorization
+  const precheck = await PettyCashTransaction.findById(txnId).lean();
+  if (!precheck) throw Object.assign(new Error('Transaction not found'), { statusCode: 404 });
+  if (precheck.status === 'POSTED') {
+    return { txn: precheck, ceiling_breached: false, already_posted: true };
   }
+
+  // Period lock against the txn's own entity (Hub approvers may be cross-entity privileged)
+  const pcPeriod = dateToPeriod(precheck.txn_date || new Date());
+  await checkPeriodOpen(precheck.entity_id, pcPeriod);
 
   const session = await mongoose.startSession();
   try {
     let result;
     await session.withTransaction(async () => {
-      const txn = await PettyCashTransaction.findOne({
-        _id: req.params.id,
-        ...pcFilter(req.tenantFilter, 'transaction')
-      }).session(session);
-
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- txnId already resolved via precheck
+      const txn = await PettyCashTransaction.findById(txnId).session(session);
       if (!txn) throw Object.assign(new Error('Transaction not found'), { statusCode: 404 });
-      if (txn.status === 'POSTED') throw Object.assign(new Error('Transaction already posted'), { statusCode: 400 });
+      if (txn.status === 'POSTED') { result = txn; return; }
 
-      // eslint-disable-next-line vip-tenant/require-entity-filter -- fund_id from same-entity-scoped txn fetched at L308 via pcFilter tenantFilter
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- fund_id from same-entity txn fetched above
       const fund = await PettyCashFund.findById(txn.fund_id).session(session);
       if (!fund) throw Object.assign(new Error('Fund not found'), { statusCode: 404 });
 
@@ -330,7 +325,8 @@ const postTransaction = catchAsync(async (req, res) => {
 
       txn.status = 'POSTED';
       txn.posted_at = new Date();
-      txn.posted_by = req.user._id;
+      txn.posted_by = userId;
+      if (!txn.approved_by) txn.approved_by = userId;
       txn.running_balance = fund.current_balance;
       await txn.save({ session });
 
@@ -338,16 +334,15 @@ const postTransaction = catchAsync(async (req, res) => {
     });
 
     // ── Post-commit: ceiling breach notification (non-blocking) ──
-    let ceilingBreached = false;
+    let ceiling_breached = false;
     try {
-      // eslint-disable-next-line vip-tenant/require-entity-filter -- fund_id from result (txn just posted in same-entity-scoped session above)
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- fund_id from result (txn just posted)
       const updatedFund = await PettyCashFund.findById(result.fund_id).lean();
       if (updatedFund && updatedFund.current_balance > updatedFund.balance_ceiling) {
-        ceilingBreached = true;
+        ceiling_breached = true;
         const excess = Math.round((updatedFund.current_balance - updatedFund.balance_ceiling) * 100) / 100;
         const { notify } = require('../../agents/notificationService');
 
-        // Notify custodian
         if (updatedFund.custodian_id) {
           await notify({
             recipient_id: updatedFund.custodian_id,
@@ -360,7 +355,6 @@ const postTransaction = catchAsync(async (req, res) => {
           }).catch(() => {});
         }
 
-        // Notify president
         await notify({
           recipient_id: 'PRESIDENT',
           title: `Petty Cash Over Ceiling — ${updatedFund.fund_name}`,
@@ -375,12 +369,48 @@ const postTransaction = catchAsync(async (req, res) => {
       console.error('[PettyCash] Ceiling notification failed:', ceilErr.message);
     }
 
-    res.json({ success: true, data: result, ceiling_breached: ceilingBreached });
+    return { txn: result, ceiling_breached, already_posted: false };
+  } finally {
+    session.endSession();
+  }
+}
+
+/**
+ * POST /transactions/:id/post — atomically move balance + mark POSTED
+ * This is the ONLY place balance changes for deposit/disbursement on the
+ * BDM-direct path. The Approval Hub uses the same atomic helper directly.
+ */
+const postTransaction = catchAsync(async (req, res) => {
+  // Tenant-scoped existence check + authority gate
+  const txnPrecheck = await PettyCashTransaction.findOne(
+    { _id: req.params.id, ...pcFilter(req.tenantFilter, 'transaction') }
+  ).lean();
+  if (!txnPrecheck) {
+    return res.status(404).json({ success: false, message: 'Transaction not found' });
+  }
+
+  // Authority matrix gate — also rebuilds an ApprovalRequest if a previous
+  // submission was rejected and the BDM is re-attempting.
+  const { gateApproval } = require('../services/approvalService');
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'PETTY_CASH',
+    docType: txnPrecheck.txn_type || 'DISBURSEMENT',
+    docId: txnPrecheck._id,
+    docRef: txnPrecheck.reference || txnPrecheck._id.toString(),
+    amount: txnPrecheck.amount || 0,
+    description: `Petty cash ${(txnPrecheck.txn_type || 'transaction').toLowerCase()} — ${txnPrecheck.description || ''}`.trim(),
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
+  try {
+    const { txn, ceiling_breached } = await postSinglePettyCashTransaction(req.params.id, req.user._id);
+    res.json({ success: true, data: txn, ceiling_breached });
   } catch (err) {
     if (err.statusCode) return res.status(err.statusCode).json({ success: false, message: err.message });
     throw err;
-  } finally {
-    session.endSession();
   }
 });
 
@@ -744,6 +774,7 @@ module.exports = {
   createTransaction,
   updateTransaction,
   postTransaction,
+  postSinglePettyCashTransaction,
   voidTransaction,
   checkCeiling,
   generateRemittance,

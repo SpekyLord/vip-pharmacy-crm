@@ -14,6 +14,7 @@ const Settings = require('../models/Settings');
 const ErpAuditLog = require('../models/ErpAuditLog');
 const { resolveOwnerForWrite, widenFilterForProxy, canProxyEntry } = require('../utils/resolveOwnerScope');
 const { catchAsync } = require('../../middleware/errorHandler');
+const { markCrossEntityAllowed } = require('../../middleware/requestContext');
 const { getMyStock: getMyStockAgg, getAvailableBatches } = require('../services/fifoEngine');
 const { cleanBatchNo } = require('../utils/normalize');
 const { journalFromInventoryAdjustment } = require('../services/autoJournal');
@@ -1393,6 +1394,8 @@ const seedStockOnHand = catchAsync(async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ success: false, message: 'No file uploaded. Send as multipart/form-data with field name "file".' });
   }
+
+  markCrossEntityAllowed(req, 'admin opening-stock import resolves warehouse codes across all entities; entity_id is stamped per-row from the matched warehouse');
 
   // Parse file (supports CSV and XLSX) — raw:false keeps values as strings
   const wb = safeXlsxRead(req.file.buffer, { type: 'buffer', raw: true });

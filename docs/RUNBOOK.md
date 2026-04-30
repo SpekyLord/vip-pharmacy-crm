@@ -386,7 +386,9 @@ Verify that a Lightsail snapshot can be restored to a working instance **without
 
 ## SECTION 9b — Tenant Guard Violation (production alert)
 
-> Triggered by: `[ENTITY_GUARD_VIOLATION]` or `[BDM_GUARD_VIOLATION]` JSON line in `pm2 logs`, OR a MessageInbox alert titled `[GUARD] …` arriving in admin inbox. Both signals fire from [backend/middleware/entityGuard.js](../backend/middleware/entityGuard.js) and [bdmGuard.js](../backend/middleware/bdmGuard.js). Production runs on `ENTITY_GUARD_MODE=log` so the violation **does not break the request** — it only paints a target on a tenant-isolation leak we shipped.
+> Triggered by: `[ENTITY_GUARD_VIOLATION]` or `[BDM_GUARD_VIOLATION]` JSON line in `pm2 logs`. Both signals fire from [backend/middleware/entityGuard.js](../backend/middleware/entityGuard.js) and [bdmGuard.js](../backend/middleware/bdmGuard.js). Production runs on `ENTITY_GUARD_MODE=log` so the violation **does not break the request** — it only paints a target on a tenant-isolation leak we shipped.
+>
+> Triage cadence: grep `[ENTITY_GUARD_VIOLATION]` / `[BDM_GUARD_VIOLATION]` in `pm2 logs vip-crm-api` daily during a stabilization week, then on-demand thereafter. The previous MessageInbox alert channel was retired 2026-04-30 because the per-recipient fan-out (×4 admins) generated >1000-row floods that drowned out other inbox traffic. Logs are now the sole signal — same JSON payload, no admin inbox spam.
 
 ### What it means
 
@@ -397,7 +399,7 @@ Two separate fingerprints, same procedure:
 
 ### Steps
 
-1. **Read the alert body or the log line.** The structured JSON includes:
+1. **Read the log line.** The structured JSON includes:
    - `model` — the Mongoose model that ran the unfiltered query
    - `path` — the request path (`GET /api/erp/sales`)
    - `userId` / `role` / `entityId` / `requestId`
@@ -409,9 +411,7 @@ Two separate fingerprints, same procedure:
    - **(b) Missing entity filter — actual bug.** Add `entity_id: req.entityId` to the query. Reference Rule #21 if it's a `bdm_id` issue.
    - **(c) Wrong classification.** The model shouldn't be in `strict_entity` / `strict_entity_and_bdm`. Move it to `global` or `deferred_crm` in [backend/middleware/entityScopedModels.json](../backend/middleware/entityScopedModels.json) and update [docs/ENTITY_SCOPED_MODELS.md](ENTITY_SCOPED_MODELS.md).
 
-3. **Verify dedup is working.** A flooding violation only fires ONE alert per `(kind, model, path)` per hour ([backend/middleware/guardAlerter.js](../backend/middleware/guardAlerter.js) `DEDUP_WINDOW_MS`). If you see >1 alert per hour for the same triple, restart `pm2` (in-process Map cleared) or check for clock skew.
-
-4. **Once all observed violations are triaged**, flip prod from `log` to `throw`:
+3. **Once all observed violations are triaged**, flip prod from `log` to `throw`:
    ```bash
    # /var/www/vip-pharmacy-crm/backend/.env
    ENTITY_GUARD_MODE=throw
@@ -419,12 +419,12 @@ Two separate fingerprints, same procedure:
    ```
    Restart pm2. Any future leak will surface as a 500 in real time, caught by the controller's `catchAsync` and the global `errorHandler`.
 
-5. **Roll back to `log` if `throw` causes 500 storms:**
+4. **Roll back to `log` if `throw` causes 500 storms:**
    ```bash
    ENTITY_GUARD_MODE=log
    pm2 restart vip-api
    ```
-   The structured log line still fires — you have 1 hour of dedup before the first alert lands, so triage is unblocked.
+   The structured log line still fires — triage from `pm2 logs vip-crm-api | grep ENTITY_GUARD_VIOLATION` is unblocked.
 
 ### Won't catch
 
@@ -457,6 +457,7 @@ Recommended cadence for planned (non-emergency) work:
 | 2026-04-27 | Founder + Claude | Section 9 schedule synced to actual Drill #1 + #2 results. Section 9a added — Drill #3 Lightsail snapshot-restore procedure pre-staged for execution post-quota-approval. |
 | TBD | Founder | First Drill #3 run after AWS quota approval — record measured RTO + evidence in Sections 9a + 3. |
 | 2026-04-28 | Founder + Claude | Section 10 added — Accounting Integrity Agent + Orphan Ledger Audit Agent operator procedures (manual trigger, expected output, alert routing, repair paths). |
+| 2026-04-30 | Founder + Claude | Section 9b — retired MessageInbox alert channel (`backend/middleware/guardAlerter.js` deleted). Per-recipient fan-out across `ALL_ADMINS` flooded admin inboxes (>1000 rows). pm2 log line is now the sole signal; same structured JSON payload. Run `node backend/scripts/tempInboxArchiveGuards.js --apply --soft-delete` once on prod to clear historical `[GUARD]` rows. |
 
 ---
 
