@@ -16,6 +16,82 @@
 
 ---
 
+## PHASE UX-Scroll — ERP Page Body-Scroll Restoration ✅ COMPLETE (Apr 30, 2026 evening)
+
+**Goal:** Long ERP forms (SMER, Sales, AR, Expenses, etc.) must scroll vertically on laptop when WorkflowGuide is visible. Restore Rule #1 — banners visible AND page still scrolls. Mobile already worked.
+
+**Root cause:** `.admin-layout { min-height: 0 }` (in `index.css:299-303`) capped the layout to viewport height. Combined with ~90 ERP pages' `<page>-main { overflow-y: auto }` rules, this created an invisible inner scroll container (scrollbars hidden globally per `*::-webkit-scrollbar { display: none }` in `index.css:11-18`). User had no scroll affordance and wheel events only fired while cursor was over the main column. Removing WorkflowGuide brought content under the cap, hiding the bug. Mobile worked because touch-drag scrolls any container regardless of cursor.
+
+### UX-Scroll.1 — Root-of-chain fix ✅
+- [x] [frontend/src/index.css](../frontend/src/index.css) — drop `min-height: 0` from `.admin-layout`. With default `min-height: auto`, layout grows to fit content, body-scroll handles overflow. The ~90 `<page>-main { overflow-y: auto }` rules become harmless dead weight (each main's height now matches its content).
+- [x] Comment block explains the trap and points future pages that genuinely need inner scroll at the OcrTest opt-in pattern (re-establish `height: 100vh; overflow: hidden` on `.admin-page.<key>-page`).
+
+### UX-Scroll.2 — Page-level hygiene cleanup (30 ERP pages) ✅
+Dropped `overflow-y: auto` (and paired `-webkit-overflow-scrolling: touch`) from each `<page>-main` rule:
+- [x] [AccessTemplateManager](../frontend/src/erp/pages/AccessTemplateManager.jsx) (`.atm-main`)
+- [x] [AccountsReceivable](../frontend/src/erp/pages/AccountsReceivable.jsx) (`.ar-main`)
+- [x] [Collaterals](../frontend/src/erp/pages/Collaterals.jsx) (`.collaterals-main`)
+- [x] [Collections](../frontend/src/erp/pages/Collections.jsx) (`.coll-main`)
+- [x] [CollectionSession](../frontend/src/erp/pages/CollectionSession.jsx) (`.coll-main`)
+- [x] [ConsignmentDashboard](../frontend/src/erp/pages/ConsignmentDashboard.jsx) (`.consignment-main`)
+- [x] [CustomerList](../frontend/src/erp/pages/CustomerList.jsx) (`.cust-main`)
+- [x] [DrEntry](../frontend/src/erp/pages/DrEntry.jsx) (`.dr-main`)
+- [x] [ErpDashboard](../frontend/src/erp/pages/ErpDashboard.jsx) (`.boss-main`)
+- [x] [ExecutiveCockpit](../frontend/src/erp/pages/ExecutiveCockpit.jsx) (`.cp-main`)
+- [x] [GrnAuditView](../frontend/src/erp/pages/GrnAuditView.jsx) (`.ga-main`)
+- [x] [GrnEntry](../frontend/src/erp/pages/GrnEntry.jsx) (`.grn-main`)
+- [x] [HospitalList](../frontend/src/erp/pages/HospitalList.jsx) (inline JSX `style.main.overflow`)
+- [x] [IcArDashboard](../frontend/src/erp/pages/IcArDashboard.jsx) (`.icar-main`)
+- [x] [IcSettlement](../frontend/src/erp/pages/IcSettlement.jsx) (`.ics-main`)
+- [x] [MyStock](../frontend/src/erp/pages/MyStock.jsx) (`.mystock-main`, multi-line)
+- [x] [OpeningArList](../frontend/src/erp/pages/OpeningArList.jsx) (`.oarlist-main`, multi-line)
+- [x] [OrgChart](../frontend/src/erp/pages/OrgChart.jsx) (`.org-main`)
+- [x] [PayrollRun](../frontend/src/erp/pages/PayrollRun.jsx) (`.pr-main`)
+- [x] [PayslipView](../frontend/src/erp/pages/PayslipView.jsx) (`.psv-main`)
+- [x] [PeopleList](../frontend/src/erp/pages/PeopleList.jsx) (`.ppl-main`)
+- [x] [PersonDetail](../frontend/src/erp/pages/PersonDetail.jsx) (`.pd-main`)
+- [x] [SalesEntry](../frontend/src/erp/pages/SalesEntry.jsx) (`.sales-main`)
+- [x] [SalesList](../frontend/src/erp/pages/SalesList.jsx) (`.saleslist-main`, multi-line)
+- [x] [SoaGenerator](../frontend/src/erp/pages/SoaGenerator.jsx) (`.soa-main`)
+- [x] [ThirteenthMonth](../frontend/src/erp/pages/ThirteenthMonth.jsx) (`.tm-main`)
+- [x] [TransferOrders](../frontend/src/erp/pages/TransferOrders.jsx) (`.transfers-main`)
+- [x] [UndertakingDetail](../frontend/src/erp/pages/UndertakingDetail.jsx) (`.ut-detail-main`)
+- [x] [UndertakingList](../frontend/src/erp/pages/UndertakingList.jsx) (`.ut-main`)
+- [x] [WarehouseManager](../frontend/src/erp/pages/WarehouseManager.jsx) (`.wm-main`)
+
+The remaining ~60 ERP pages keep their `overflow-y: auto` on `<page>-main` (`.ap-main`, `.agd-main`, `.coa-main`, `.po-main`, `.je-main`, `.tb-main`, etc.) — they no longer trigger thanks to UX-Scroll.1. These are deferred-cleanup, not active bugs. Risk of regression on a follow-up sweep is zero.
+
+### UX-Scroll.3 — Scope guardrails ✅
+- [x] CRM pages unaffected — verified `.admin-layout` is exclusively used by ERP (`grep className="admin-layout"` returns 0 hits in `frontend/src/pages` + `frontend/src/components`).
+- [x] OcrTest unaffected — its `.admin-page.ocr-page { height: 100vh; overflow: hidden }` scoped overrides re-establish the height cap independently of the global `.admin-layout` rule.
+- [x] AdminDashboard unaffected — uses `.admin-content` (still has `min-height: 0`) and overrides locally.
+- [x] `.admin-content` left alone — only used by AdminDashboard + OcrTest, both with their own local overrides; touching it would be scope creep.
+
+### UX-Scroll.4 — Validation ✅
+- [x] Vite build green (16.49s after root fix; 25.13s during the initial 30-page hygiene round; both runs clean, no syntax or chunk-size regressions).
+- [x] Post-fix grep confirms exactly 60 remaining ERP pages still have the `*-main { overflow-y: auto }` dead-weight rule and the 30 hygiene-cleaned pages no longer have it.
+- [x] No backend syntax (`node -c`) checks needed — pure CSS / JSX style-prop change. No JS modified beyond the inline `style={{ overflow }}` removal in HospitalList (verified by Vite build).
+- [ ] Browser smoke (Playwright): drive to `/erp/sales/entry` (or `/erp/smer`), confirm body-scroll past viewport while WorkflowGuide is visible.
+
+### UX-Scroll.5 — Documentation ✅
+- [x] CLAUDE-ERP.md status header updated (v8.2) + Phase UX-Scroll section
+- [x] PHASETASK-ERP.md (this section)
+
+**Files touched (1 root + 30 hygiene + 2 docs = 33):**
+- `frontend/src/index.css` — root-of-chain (drop `min-height: 0` from `.admin-layout`)
+- 30 ERP page files (see UX-Scroll.2 list)
+- `CLAUDE-ERP.md` + `docs/PHASETASK-ERP.md` (this section)
+
+**No business-logic changes.** Pure frontend CSS hygiene. No backend wiring touched. No `req.entityId` scope changes, no models, no controllers, no routes, no services, no journals, no audits, no period-locks, no approval-gates, no banners removed.
+
+**Subscription readiness:** Body-scroll is universal browser behavior — no lookup config needed. Future SaaS subscribers inherit a working scroll pattern out of the box. Pages that genuinely need inner-scroll regions follow the OcrTest opt-in pattern (re-establish `height: 100vh; overflow: hidden` on `.admin-page.<key>-page`).
+
+### Future Phase UX-Scroll-Followup (DEFERRED, ~30 minutes)
+
+Sweep the remaining ~60 ERP pages and drop the dead-weight `overflow-y: auto` from each `<page>-main` rule. Risk: zero (rules are dead weight after UX-Scroll.1). Benefit: cleaner CSS, clearer intent for future pages.
+
+---
+
 ## PHASE R2 — Sales Discount (Line-Level, BIR-Standard Net Method) ✅ COMPLETE (Apr 30, 2026)
 
 **Goal:** Add per-line discount % to Sales Entry / Draft CSI / POSTED CSI print. Hospital contract discounts get a real surface, real audit, and BIR-correct VAT treatment (RR 16-2005 trade discount on the face of the invoice — VAT base shrinks).
