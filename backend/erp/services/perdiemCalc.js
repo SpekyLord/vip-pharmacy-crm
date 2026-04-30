@@ -22,6 +22,13 @@
  *   Settings is the global fallback. Unlike revolving fund (where 0 = use
  *   global), thresholds treat null/undefined as "defer to next layer" — 0 IS
  *   a valid value (means "always at least this tier, regardless of MD count").
+ *
+ * Phase G4.5ee (Apr 30 2026) — activity-aware tier rule. Lookup-driven
+ * ACTIVITY_PERDIEM_RULES per-entity overrides the MD-threshold logic per
+ * activity_type. Defaults: OFFICE → AUTO_FULL (admin/office staff get full
+ * regardless of MD count), FIELD → USE_THRESHOLDS (current pharma logic),
+ * NO_WORK → ZERO. tier_rule values: AUTO_FULL | AUTO_HALF | ZERO | USE_THRESHOLDS.
+ * When omitted (no options arg passed), behavior is byte-identical to pre-G4.5ee.
  */
 
 const TIER_MULTIPLIER = {
@@ -29,6 +36,20 @@ const TIER_MULTIPLIER = {
   HALF: 0.5,
   ZERO: 0.0
 };
+
+// Phase G4.5ee — activity-aware tier rule resolver.
+// Inline defaults are the seed baseline for ACTIVITY_PERDIEM_RULES so the
+// resolver works on entities that have not yet been seeded (lazy first-use).
+// Cache mirrors the resolveOwnerScope pattern (60s TTL, per-entity bust hook).
+const ACTIVITY_PERDIEM_RULE_DEFAULTS = {
+  OFFICE: 'AUTO_FULL',
+  FIELD: 'USE_THRESHOLDS',
+  OTHER: 'USE_THRESHOLDS',
+  NO_WORK: 'ZERO',
+};
+const VALID_TIER_RULES = new Set(['AUTO_FULL', 'AUTO_HALF', 'ZERO', 'USE_THRESHOLDS']);
+const ACTIVITY_RULE_CACHE_TTL_MS = 60_000;
+const _activityRulesCache = new Map(); // entityId → { ts, rules: { CODE: tier_rule } }
 
 /**
  * Resolve per diem thresholds from CompProfile → PERDIEM_RATES → Settings fallback.
@@ -71,9 +92,21 @@ function resolvePerdiemThresholds(settings, compProfile, perdiemConfig) {
  * @param {Object} settings - ERP Settings document
  * @param {Object} [compProfile] - BDM's active CompProfile (optional)
  * @param {Object} [perdiemConfig] - Per-role config from resolvePerdiemConfig (Phase G1.6, optional)
+ * @param {Object} [options] - Phase G4.5ee. options.activityRule ∈
+ *   {AUTO_FULL, AUTO_HALF, ZERO, USE_THRESHOLDS}. If set to one of the AUTO_*
+ *   or ZERO values, the activity rule wins and md_count + thresholds are
+ *   ignored. USE_THRESHOLDS or unset → existing MD-threshold logic. Override
+ *   paths (admin force-FULL/HALF) intentionally pass NO options, so override
+ *   always wins over activity rule.
  * @returns {String} 'FULL' | 'HALF' | 'ZERO'
  */
-function computePerdiemTier(mdCount, settings, compProfile, perdiemConfig) {
+function computePerdiemTier(mdCount, settings, compProfile, perdiemConfig, options = {}) {
+  const activityRule = options && options.activityRule;
+  if (activityRule === 'AUTO_FULL') return 'FULL';
+  if (activityRule === 'AUTO_HALF') return 'HALF';
+  if (activityRule === 'ZERO') return 'ZERO';
+  // USE_THRESHOLDS or unset → existing logic (preserves byte-identical behavior
+  // for every call site that has not been migrated yet).
   const { fullThreshold, halfThreshold } = resolvePerdiemThresholds(settings, compProfile, perdiemConfig);
 
   if (mdCount >= fullThreshold) return 'FULL';
@@ -88,13 +121,134 @@ function computePerdiemTier(mdCount, settings, compProfile, perdiemConfig) {
  * @param {Object} settings
  * @param {Object} [compProfile] - BDM's active CompProfile (optional)
  * @param {Object} [perdiemConfig] - Per-role config from resolvePerdiemConfig (Phase G1.6, optional)
+ * @param {Object} [options] - Phase G4.5ee. See computePerdiemTier for shape.
  * @returns {{ tier: String, amount: Number }}
  */
-function computePerdiemAmount(mdCount, perdiemRate, settings, compProfile, perdiemConfig) {
-  const tier = computePerdiemTier(mdCount, settings, compProfile, perdiemConfig);
+function computePerdiemAmount(mdCount, perdiemRate, settings, compProfile, perdiemConfig, options = {}) {
+  const tier = computePerdiemTier(mdCount, settings, compProfile, perdiemConfig, options);
   const multiplier = TIER_MULTIPLIER[tier];
   const amount = Math.round(perdiemRate * multiplier * 100) / 100;
   return { tier, amount };
+}
+
+/**
+ * Phase G4.5ee — Resolve the per-diem rule for a given activity_type code.
+ *
+ * Reads ACTIVITY_PERDIEM_RULES Lookup rows for the entity (one row per code,
+ * code = activity_type code, metadata.tier_rule = AUTO_FULL | AUTO_HALF | ZERO
+ * | USE_THRESHOLDS). Caches the full per-entity rule map for 60s. When a row
+ * is missing for an activity, falls back to ACTIVITY_PERDIEM_RULE_DEFAULTS
+ * (so OFFICE/FIELD/OTHER/NO_WORK have sane behavior even on un-seeded entities).
+ * When the activity code is missing or unknown, returns 'USE_THRESHOLDS' so
+ * the legacy MD-threshold logic kicks in (preserves Phase G1.6 contract).
+ *
+ * @param {ObjectId|String} entityId
+ * @param {String} [activityCode] - SmerEntry.activity_type (e.g. 'OFFICE'). Case-insensitive.
+ * @returns {Promise<String>} 'AUTO_FULL' | 'AUTO_HALF' | 'ZERO' | 'USE_THRESHOLDS'
+ */
+async function resolveActivityPerdiemRule(entityId, activityCode) {
+  if (!entityId || !activityCode) return 'USE_THRESHOLDS';
+  const code = String(activityCode).toUpperCase();
+
+  const cacheKey = String(entityId);
+  let rules;
+  const cached = _activityRulesCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < ACTIVITY_RULE_CACHE_TTL_MS) {
+    rules = cached.rules;
+  } else {
+    rules = { ...ACTIVITY_PERDIEM_RULE_DEFAULTS };
+    try {
+      const Lookup = require('../models/Lookup');
+      const docs = await Lookup.find({
+        entity_id: entityId,
+        category: 'ACTIVITY_PERDIEM_RULES',
+        is_active: true,
+      }).lean();
+      for (const d of docs) {
+        const rule = d.metadata && d.metadata.tier_rule;
+        if (typeof rule === 'string' && VALID_TIER_RULES.has(rule.toUpperCase())) {
+          rules[String(d.code).toUpperCase()] = rule.toUpperCase();
+        }
+      }
+    } catch (err) {
+      console.warn('[perdiemCalc] ACTIVITY_PERDIEM_RULES lookup failed, using defaults:', err.message);
+    }
+    _activityRulesCache.set(cacheKey, { ts: Date.now(), rules });
+  }
+
+  return rules[code] || 'USE_THRESHOLDS';
+}
+
+/**
+ * Phase G4.5ee — Bust the activity-rule cache for a given entity (or all
+ * entities if no entityId given). Wired from lookupGenericController so
+ * admin edits in Control Center propagate immediately instead of waiting
+ * up to 60s per running instance.
+ */
+function invalidateActivityPerdiemRuleCache(entityId = null) {
+  if (!entityId) {
+    _activityRulesCache.clear();
+    return;
+  }
+  _activityRulesCache.delete(String(entityId));
+}
+
+/**
+ * Phase G4.5ee — Resolve the FULL activity-rule map for an entity in a single
+ * DB call. Returns a plain object: { OFFICE: 'AUTO_FULL', FIELD: 'USE_THRESHOLDS', ... }.
+ *
+ * Use this when you need to recompute many daily entries in one pass (createSmer,
+ * updateSmer, postSmer, recomputeSmerPerdiem) — you await once, then look up
+ * sync inside the per-entry .map(). Backward-compat sibling of the per-code
+ * resolveActivityPerdiemRule. Same 60s cache key, so calling either function
+ * reuses the same cache entry.
+ *
+ * @param {ObjectId|String} entityId
+ * @returns {Promise<Object>} Plain object keyed by uppercase activity code.
+ */
+async function resolveActivityPerdiemRuleMap(entityId) {
+  if (!entityId) return { ...ACTIVITY_PERDIEM_RULE_DEFAULTS };
+
+  const cacheKey = String(entityId);
+  const cached = _activityRulesCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < ACTIVITY_RULE_CACHE_TTL_MS) {
+    return { ...cached.rules };
+  }
+
+  const rules = { ...ACTIVITY_PERDIEM_RULE_DEFAULTS };
+  try {
+    const Lookup = require('../models/Lookup');
+    const docs = await Lookup.find({
+      entity_id: entityId,
+      category: 'ACTIVITY_PERDIEM_RULES',
+      is_active: true,
+    }).lean();
+    for (const d of docs) {
+      const rule = d.metadata && d.metadata.tier_rule;
+      if (typeof rule === 'string' && VALID_TIER_RULES.has(rule.toUpperCase())) {
+        rules[String(d.code).toUpperCase()] = rule.toUpperCase();
+      }
+    }
+  } catch (err) {
+    console.warn('[perdiemCalc] ACTIVITY_PERDIEM_RULES lookup failed, using defaults:', err.message);
+  }
+  _activityRulesCache.set(cacheKey, { ts: Date.now(), rules });
+  return { ...rules };
+}
+
+/**
+ * Phase G4.5ee — Sync helper for converting a single activity_type into a tier
+ * rule, given a pre-resolved rule map (from resolveActivityPerdiemRuleMap).
+ * Returns 'USE_THRESHOLDS' if the activity is missing or unknown — preserves
+ * legacy MD-threshold behavior for un-mapped activities.
+ *
+ * @param {Object} rulesMap - Result of resolveActivityPerdiemRuleMap
+ * @param {String} [activityCode]
+ * @returns {String} 'AUTO_FULL' | 'AUTO_HALF' | 'ZERO' | 'USE_THRESHOLDS'
+ */
+function getActivityRuleFromMap(rulesMap, activityCode) {
+  if (!rulesMap || !activityCode) return 'USE_THRESHOLDS';
+  return rulesMap[String(activityCode).toUpperCase()] || 'USE_THRESHOLDS';
 }
 
 /**
@@ -177,5 +331,11 @@ module.exports = {
   computeSmerPerdiem,
   resolvePerdiemThresholds,
   resolvePerdiemConfig,
+  resolveActivityPerdiemRule,
+  resolveActivityPerdiemRuleMap,
+  getActivityRuleFromMap,
+  invalidateActivityPerdiemRuleCache,
+  ACTIVITY_PERDIEM_RULE_DEFAULTS,
+  VALID_TIER_RULES,
   TIER_MULTIPLIER
 };

@@ -226,6 +226,16 @@ const getInboxMessages = catchAsync(async (req, res) => {
     filter.category = cats.length > 1 ? { $in: cats } : cats[0];
   }
 
+  // Phase G9.R11 — priority filter (comma-separated). Powers the chip row
+  // above the list (e.g. when scanning AI_AGENT_REPORTS by importance).
+  // Values are passed through opaquely; the schema's `priority` field has no
+  // server-side enum so subscribers can introduce new tiers via lookup.
+  const priorityRaw = (req.query.priority || '').toString().trim();
+  if (priorityRaw && priorityRaw !== 'all') {
+    const prios = priorityRaw.split(',').map((p) => p.trim()).filter(Boolean);
+    if (prios.length) filter.priority = prios.length > 1 ? { $in: prios } : prios[0];
+  }
+
   if (status === 'read') filter.readBy = req.user._id;
   else if (status === 'unread') filter.readBy = { $ne: req.user._id };
 
@@ -312,6 +322,7 @@ const ZERO_COUNTS = Object.freeze({
   action_required: 0,
   approvals: 0,
   tasks: 0,
+  executive_brief: 0,
   ai_agent_reports: 0,
   announcements: 0,
   chat: 0,
@@ -408,6 +419,7 @@ const computeFolderCounts = async (req, entityScope, hiddenFoldersArg) => {
         },
         approvals:        { $sum: { $cond: [{ $eq: ['$folder', 'APPROVALS'] }, 1, 0] } },
         tasks:            { $sum: { $cond: [{ $eq: ['$folder', 'TASKS'] }, 1, 0] } },
+        executive_brief:  { $sum: { $cond: [{ $eq: ['$folder', 'EXECUTIVE_BRIEF'] }, 1, 0] } },
         ai_agent_reports: { $sum: { $cond: [{ $eq: ['$folder', 'AI_AGENT_REPORTS'] }, 1, 0] } },
         announcements:    { $sum: { $cond: [{ $eq: ['$folder', 'ANNOUNCEMENTS'] }, 1, 0] } },
         chat:             { $sum: { $cond: [{ $eq: ['$folder', 'CHAT'] }, 1, 0] } },

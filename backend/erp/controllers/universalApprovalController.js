@@ -977,12 +977,62 @@ const approvalHandlers = {
     terminalStates: ['POSTED', 'CANCELLED', 'RECEIVED'],
   }),
 
-  petty_cash: async (id, action, userId, reason) => buildGroupBReject({
-    actionType: 'petty_cash', id, action, userId, reason,
-    modelByDocType: { DISBURSEMENT: 'PettyCashTransaction', DEPOSIT: 'PettyCashTransaction' },
-    fallbackModel: 'PettyCashTransaction',
-    terminalStates: ['POSTED', 'VOIDED'],
-  }),
+  // Petty Cash — supports BOTH approve/post (atomic balance + status flip)
+  // and reject. Approve path mirrors the Group A pattern (postSingleSmer /
+  // postSingleExpense): Hub passes ApprovalRequest._id; deref to doc_id and
+  // call the shared postSinglePettyCashTransaction helper. Period lock,
+  // balance guards, and ceiling notifications all live inside the helper.
+  petty_cash: async (id, action, userId, reason) => {
+    if (action === 'reject') {
+      return buildGroupBReject({
+        actionType: 'petty_cash', id, action, userId, reason,
+        modelByDocType: { DISBURSEMENT: 'PettyCashTransaction', DEPOSIT: 'PettyCashTransaction' },
+        fallbackModel: 'PettyCashTransaction',
+        terminalStates: ['POSTED', 'VOIDED'],
+      });
+    }
+    if (action === 'approve' || action === 'post') {
+      const ApprovalRequest = require('../models/ApprovalRequest');
+      // Hub passes ApprovalRequest._id in approve_data.id (Group B id-semantics);
+      // deref to the underlying PettyCashTransaction. Fall back to treating id as
+      // the txn _id directly so legacy callers / direct dispatches still work.
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
+      const request = await ApprovalRequest.findById(id).lean();
+      const txnId = (request && request.doc_id) ? request.doc_id : id;
+
+      const { postSinglePettyCashTransaction } = require('./pettyCashController');
+      const { txn } = await postSinglePettyCashTransaction(txnId, userId);
+
+      // Close the originating ApprovalRequest. The shared auto-resolve at
+      // L1130-1160 below keys on `{ doc_id: id }` (Group A id-semantics where
+      // id IS the underlying doc), which never matches for Group B items
+      // (id IS the ApprovalRequest._id). Without this explicit close, the
+      // request would stay PENDING in the Hub after a successful approve.
+      if (request) {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id resolved from gated approver via entity-scoped list above
+        await ApprovalRequest.updateOne(
+          { _id: id, status: 'PENDING' },
+          {
+            $set: {
+              status: 'APPROVED',
+              decided_by: userId,
+              decided_at: new Date(),
+              decision_reason: reason || 'Approved via Approval Hub',
+            },
+            $push: {
+              history: {
+                status: 'APPROVED',
+                by: userId,
+                reason: reason || 'Approved via Approval Hub',
+              },
+            },
+          }
+        );
+      }
+      return txn;
+    }
+    throw new Error(`Unsupported action for petty_cash: ${action}`);
+  },
 
   sales_goal_plan: async (id, action, userId, reason) => buildGroupBReject({
     actionType: 'sales_goal_plan', id, action, userId, reason,

@@ -6,8 +6,8 @@
  * can `pm2 logs | grep ENTITY_GUARD_VIOLATION`.
  *
  * Modes (env var `ENTITY_GUARD_MODE`, read once at attach time):
- *   - `log`   (default): console.error JSON line; in production, also fire a
- *               deduped MessageInbox alert via guardAlerter.
+ *   - `log`   (default): console.error JSON line. Grep
+ *               `[ENTITY_GUARD_VIOLATION]` in pm2 logs to triage.
  *   - `throw`: console.error JSON line + throw inside the Mongoose pre-hook,
  *               causing the controller to surface a 500 (caught by global
  *               errorHandler). Use after Day-4 triage classifies all
@@ -38,7 +38,6 @@ const mongoose = require('mongoose');
 const path = require('path');
 
 const { readLiveCtx } = require('./requestContext');
-const { maybeAlert } = require('./guardAlerter');
 
 const VALID_MODES = ['log', 'throw', 'off'];
 const resolveMode = () => {
@@ -126,15 +125,6 @@ const emitViolation = (payload, mode) => {
     err.violation = payload;
     throw err;
   }
-
-  // log mode: also fire MessageInbox alert in production (deduped, 1/hr per
-  // model+path; no-op outside production).
-  maybeAlert({
-    kind: payload.kind,
-    model: payload.model,
-    requestPath: payload.path,
-    payload,
-  });
 };
 
 const buildPlugin = (entityScopedSet, mode) => {

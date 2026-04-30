@@ -15,7 +15,7 @@ const ErpAuditLog = require('../models/ErpAuditLog');
 const DocumentAttachment = require('../models/DocumentAttachment');
 const Settings = require('../models/Settings');
 const { catchAsync } = require('../../middleware/errorHandler');
-const { computePerdiemAmount, resolvePerdiemThresholds, resolvePerdiemConfig } = require('../services/perdiemCalc');
+const { computePerdiemAmount, resolvePerdiemThresholds, resolvePerdiemConfig, resolveActivityPerdiemRuleMap, getActivityRuleFromMap } = require('../services/perdiemCalc');
 // fuelTracker computations handled by CarLogbookEntry pre-save hook
 const { generateExpenseSummary } = require('../services/expenseSummary');
 const { getDailyMdCounts, getDailyVisitDetails } = require('../services/smerCrmBridge');
@@ -217,15 +217,26 @@ const createSmer = catchAsync(async (req, res) => {
   // Phase G1.6 — threshold chain: CompProfile per-person → PERDIEM_RATES per-role → Settings global.
   // Passing perdiemConfig as 5th arg ensures preview (getSmerCrmMdCounts) and
   // create/update/post all resolve to the same tier for non-pharma subscribers.
+  // Phase G4.5ee — pre-resolve the activity-rule map ONCE for this entity (1 DB
+  // read, 60s cache). Then look up the per-day rule sync inside .map(). When
+  // an entry's activity is OFFICE / NO_WORK / etc., the rule overrides the
+  // MD-threshold logic. Override paths intentionally pass NO options so that
+  // an admin force-FULL/HALF always wins over the activity rule.
+  const activityRulesMap = await resolveActivityPerdiemRuleMap(req.entityId);
   let dailyEntries = (req.body.daily_entries || []).map(entry => {
-    // "No Work" — force zero everything, skip per diem computation
+    // "No Work" — force zero everything, skip per diem computation. The
+    // ACTIVITY_PERDIEM_RULES.NO_WORK = ZERO row makes this redundant for the
+    // tier, but enforceNoWorkRules also clears md_count + hospital_covered +
+    // override fields (semantics broader than tier), so we keep it.
     if (entry.activity_type === 'NO_WORK') return enforceNoWorkRules(entry);
     if (entry.perdiem_override && entry.override_tier) {
-      // Override set — use override_tier for amount, preserve CRM md_count
+      // Override set — use override_tier for amount, preserve CRM md_count.
+      // No options passed → activity rule does NOT apply to override paths.
       const { amount } = computePerdiemAmount(entry.override_tier === 'FULL' ? 999 : 3, perdiemRate, settings, compProfile, perdiemConfig);
       return { ...entry, perdiem_tier: entry.override_tier, perdiem_amount: amount };
     }
-    const { tier, amount } = computePerdiemAmount(entry.md_count || 0, perdiemRate, settings, compProfile, perdiemConfig);
+    const activityRule = getActivityRuleFromMap(activityRulesMap, entry.activity_type);
+    const { tier, amount } = computePerdiemAmount(entry.md_count || 0, perdiemRate, settings, compProfile, perdiemConfig, { activityRule });
     return { ...entry, perdiem_tier: tier, perdiem_amount: amount };
   });
 
@@ -312,7 +323,9 @@ const updateSmer = catchAsync(async (req, res) => {
 
   // Re-compute per diem if daily entries changed (skip overridden entries)
   // Phase G1.6 — threshold chain: CompProfile per-person → PERDIEM_RATES per-role → Settings global.
+  // Phase G4.5ee — same activity-rule map prefetch as createSmer.
   if (req.body.daily_entries) {
+    const activityRulesMap = await resolveActivityPerdiemRuleMap(smer.entity_id);
     req.body.daily_entries = req.body.daily_entries.map(entry => {
       // Strip empty strings from enum fields
       const cleaned = { ...entry };
@@ -323,10 +336,12 @@ const updateSmer = catchAsync(async (req, res) => {
       if (cleaned.activity_type === 'NO_WORK') return enforceNoWorkRules(cleaned);
 
       if (cleaned.perdiem_override && cleaned.override_tier) {
+        // Override always wins — no activity rule passed.
         const { amount } = computePerdiemAmount(cleaned.override_tier === 'FULL' ? 999 : 3, perdiemRate, settings, compProfile, perdiemConfig);
         return { ...cleaned, perdiem_tier: cleaned.override_tier, perdiem_amount: amount };
       }
-      const { tier, amount } = computePerdiemAmount(cleaned.md_count || 0, perdiemRate, settings, compProfile, perdiemConfig);
+      const activityRule = getActivityRuleFromMap(activityRulesMap, cleaned.activity_type);
+      const { tier, amount } = computePerdiemAmount(cleaned.md_count || 0, perdiemRate, settings, compProfile, perdiemConfig, { activityRule });
       return { ...cleaned, perdiem_tier: tier, perdiem_amount: amount };
     });
   }
@@ -816,6 +831,10 @@ const overridePerdiemDay = catchAsync(async (req, res) => {
     // Remove override — revert to CRM-computed tier (no approval needed)
     // Phase G1.6 — include perdiemConfig so revert matches current preview tier
     // under per-role thresholds. Degrade-to-undefined if lookup missing.
+    // Phase G4.5ee — also resolve the activity rule so a reverted entry on an
+    // OFFICE day correctly returns to FULL (or whatever the activity rule
+    // says) instead of falling back to MD-threshold logic that the override
+    // was masking.
     const settings = await Settings.getSettings();
     const compProfile = await loadBdmCompProfile(smer.bdm_id, smer.entity_id);
     let perdiemConfig;
@@ -824,7 +843,9 @@ const overridePerdiemDay = catchAsync(async (req, res) => {
     } catch (_) {
       perdiemConfig = undefined;
     }
-    const { tier, amount } = computePerdiemAmount(entry.md_count || 0, smer.perdiem_rate, settings, compProfile, perdiemConfig);
+    const activityRulesMap = await resolveActivityPerdiemRuleMap(smer.entity_id);
+    const activityRule = getActivityRuleFromMap(activityRulesMap, entry.activity_type);
+    const { tier, amount } = computePerdiemAmount(entry.md_count || 0, smer.perdiem_rate, settings, compProfile, perdiemConfig, { activityRule });
     entry.perdiem_override = false;
     entry.override_tier = undefined;
     entry.override_reason = undefined;

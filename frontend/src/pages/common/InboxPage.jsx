@@ -60,6 +60,18 @@ const styles = `
   .ip-search input { width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; }
   body.dark-mode .ip-search input { background: #0b1220; border-color: #1e293b; color: #e2e8f0; }
   .ip-mobile-tab { display: none; }
+  /* Phase G9.R11 — priority filter chips for AI_AGENT_REPORTS folder */
+  .ip-prio-row { display: flex; align-items: center; gap: 6px; padding: 8px 14px; border-bottom: 1px solid #e5e7eb; background: #fff; flex-wrap: wrap; }
+  body.dark-mode .ip-prio-row { background: #0f172a; border-color: #1e293b; }
+  .ip-prio-label { font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: 0.05em; text-transform: uppercase; margin-right: 4px; }
+  body.dark-mode .ip-prio-label { color: #94a3b8; }
+  .ip-prio-chip { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 999px; border: 1px solid #cbd5e1; background: #fff; color: #475569; cursor: pointer; min-height: 28px; }
+  .ip-prio-chip:hover:not(.active) { background: #f1f5f9; }
+  .ip-prio-chip.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+  .ip-prio-chip.active.high { background: #b45309; border-color: #b45309; }
+  .ip-prio-chip.active.important { background: #6d28d9; border-color: #6d28d9; }
+  body.dark-mode .ip-prio-chip { background: #1e293b; color: #cbd5e1; border-color: #334155; }
+  body.dark-mode .ip-prio-chip:hover:not(.active) { background: #334155; }
 
   @media (max-width: 1023px) {
     .ip-shell { grid-template-columns: 200px 1fr; }
@@ -77,16 +89,21 @@ const styles = `
   }
 `;
 
+// DEFAULT_FOLDERS — bootstrap fallback for the rail when /api/messages/folders
+// hasn't returned yet (or fails). Keep in sync with FOLDER_DEFAULTS in
+// backend/erp/utils/inboxLookups.js — the API response always overrides.
+// Phase G9.R11 (Apr 30 2026): EXECUTIVE_BRIEF added at sort_order 5.
 const DEFAULT_FOLDERS = [
   { code: 'INBOX', label: 'Inbox', sort_order: 1 },
   { code: 'ACTION_REQUIRED', label: 'Action Required', sort_order: 2 },
   { code: 'APPROVALS', label: 'Approvals', sort_order: 3 },
   { code: 'TASKS', label: 'Tasks / To-Do', sort_order: 4 },
-  { code: 'AI_AGENT_REPORTS', label: 'AI Agents', sort_order: 5 },
-  { code: 'ANNOUNCEMENTS', label: 'Announcements', sort_order: 6 },
-  { code: 'CHAT', label: 'Chat', sort_order: 7 },
-  { code: 'SENT', label: 'Sent', sort_order: 8 },
-  { code: 'ARCHIVE', label: 'Archive', sort_order: 9 },
+  { code: 'EXECUTIVE_BRIEF', label: 'Executive Brief', sort_order: 5 },
+  { code: 'AI_AGENT_REPORTS', label: 'AI Agents', sort_order: 6 },
+  { code: 'ANNOUNCEMENTS', label: 'Announcements', sort_order: 7 },
+  { code: 'CHAT', label: 'Chat', sort_order: 8 },
+  { code: 'SENT', label: 'Sent', sort_order: 9 },
+  { code: 'ARCHIVE', label: 'Archive', sort_order: 10 },
 ];
 
 export default function InboxPage() {
@@ -104,6 +121,10 @@ export default function InboxPage() {
   const [activeMessage, setActiveMessage] = useState(null);
   const [thread, setThread] = useState([]);
   const [search, setSearch] = useState('');
+  // Phase G9.R11 — Priority filter (only applied inside AI_AGENT_REPORTS).
+  // Server passes through opaquely; chip values match the model's `priority`
+  // strings: 'high' / 'important' / 'normal' / 'low'. 'all' = no filter.
+  const [priorityFilter, setPriorityFilter] = useState('all');
   const [composeOpen, setComposeOpen] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [taskFromMsg, setTaskFromMsg] = useState(null);
@@ -125,19 +146,26 @@ export default function InboxPage() {
     return () => { live = false; };
   }, []);
 
-  // ── Refresh list when folder/search changes ─────────────────────
+  // ── Refresh list when folder/search/priority changes ──────────────
   const refreshList = useCallback(async () => {
     if (abortRef.current) abortRef.current.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
     setLoading(true);
     try {
-      const json = await messageService.list({
+      // Phase G9.R11 — priority filter is only meaningful inside
+      // AI_AGENT_REPORTS today. Pass through to the backend (opaque) only when
+      // the chip is non-default; otherwise the server returns everything.
+      const params = {
         folder: activeFolder,
         search: search.trim() || undefined,
         counts: 1,
         limit: 50,
-      }, { signal: ctrl.signal });
+      };
+      if (activeFolder === 'AI_AGENT_REPORTS' && priorityFilter && priorityFilter !== 'all') {
+        params.priority = priorityFilter;
+      }
+      const json = await messageService.list(params, { signal: ctrl.signal });
       if (ctrl.signal.aborted) return;
       setMessages(json?.data || []);
       if (json?.counts) setCounts(json.counts);
@@ -150,7 +178,7 @@ export default function InboxPage() {
     } finally {
       if (!ctrl.signal.aborted) setLoading(false);
     }
-  }, [activeFolder, search]);
+  }, [activeFolder, search, priorityFilter]);
 
   useEffect(() => {
     refreshList();
@@ -403,6 +431,29 @@ export default function InboxPage() {
                   aria-label="Search messages"
                 />
               </div>
+              {/* Phase G9.R11 — priority filter chips, AI_AGENT_REPORTS only */}
+              {activeFolder === 'AI_AGENT_REPORTS' && (
+                <div className="ip-prio-row" role="group" aria-label="Filter by priority">
+                  <span className="ip-prio-label">Priority</span>
+                  {[
+                    { code: 'all',       label: 'All',       cls: '' },
+                    { code: 'high',      label: 'High',      cls: 'high' },
+                    { code: 'important', label: 'Important', cls: 'important' },
+                    { code: 'normal',    label: 'Normal',    cls: '' },
+                    { code: 'low',       label: 'Low',       cls: '' },
+                  ].map((p) => (
+                    <button
+                      key={p.code}
+                      type="button"
+                      className={`ip-prio-chip ${p.cls}${priorityFilter === p.code ? ' active' : ''}`}
+                      onClick={() => setPriorityFilter(p.code)}
+                      aria-pressed={priorityFilter === p.code}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <InboxMessageList
                 messages={messages}
                 activeId={activeMessage?._id}

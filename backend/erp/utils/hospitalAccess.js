@@ -12,6 +12,7 @@
  */
 const Warehouse = require('../models/Warehouse');
 const { isAdminLike } = require('../../constants/roles');
+const { withCrossEntityScope } = require('../../middleware/requestContext');
 
 /**
  * Build the MongoDB filter conditions for hospital access based on user role.
@@ -21,12 +22,19 @@ const { isAdminLike } = require('../../constants/roles');
 async function buildHospitalAccessFilter(user) {
   if (!user || isAdminLike(user.role)) return {}; // no filter for admin-like roles
 
-  // Find warehouses this BDM is assigned to (manager or assigned_user)
-  // eslint-disable-next-line vip-tenant/require-entity-filter -- intentional cross-entity sweep: collects ALL warehouses user manages; entity scope is re-applied by caller's Hospital.find via tenantFilter
-  const myWarehouses = await Warehouse.find({
-    is_active: true,
-    $or: [{ manager_id: user._id }, { assigned_users: user._id }]
-  }).select('_id').lean();
+  // Find warehouses this BDM is assigned to (manager or assigned_user).
+  // Per-call cross-entity scope: a multi-entity BDM may manage warehouses
+  // across entities; the resulting hospital filter is then re-scoped by the
+  // caller's Hospital.find via tenantFilter. We don't widen the rest of the
+  // request — only this one query.
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- see withCrossEntityScope below
+  const myWarehouses = await withCrossEntityScope(
+    'BDM hospital access: collects warehouses user manages across all entities',
+    () => Warehouse.find({
+      is_active: true,
+      $or: [{ manager_id: user._id }, { assigned_users: user._id }]
+    }).select('_id').lean()
+  );
   const myWhIds = myWarehouses.map(w => w._id);
 
   if (myWhIds.length > 0) {

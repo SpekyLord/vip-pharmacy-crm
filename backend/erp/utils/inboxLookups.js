@@ -30,20 +30,35 @@ const Lookup = require('../models/Lookup');
 // ─── Folder taxonomy ────────────────────────────────────────────────────
 // Keep in sync with the UI's InboxFolderNav (Phase G9.E) and with
 // backend/scripts/backfillMessageInboxEntityId.js CATEGORY_TO_FOLDER.
+// Phase G9.R11 (Apr 30 2026): EXECUTIVE_BRIEF added — daily-read signal
+// folder for `briefing` category (morning brief / FP&A forecast / procurement
+// scorecard / expansion readiness). Splits high-signal AI output away from
+// the noisy AI_AGENT_REPORTS folder so subscribers can see daily briefs at
+// a glance and hide AI_AGENT_REPORTS without losing the signal.
 const FOLDER_DEFAULTS = [
   { code: 'INBOX',             label: 'Inbox',            sort_order: 1, metadata: { virtual: true,  description: 'Everything — all categories combined' } },
   { code: 'ACTION_REQUIRED',   label: 'Action Required',  sort_order: 2, metadata: { virtual: true,  description: 'Items awaiting your click ([Approve]/[Resolve]/etc.)' } },
   { code: 'APPROVALS',         label: 'Approvals',        sort_order: 3, metadata: { virtual: false, description: 'Approval requests + decisions + document-posted events' } },
   { code: 'TASKS',             label: 'Tasks / To-Do',    sort_order: 4, metadata: { virtual: false, description: 'Tasks assigned / reassigned / overdue / completed' } },
-  { code: 'AI_AGENT_REPORTS',  label: 'AI Agents',        sort_order: 5, metadata: { virtual: false, description: 'Findings from rule-based and AI agents (KPI variance, daily briefing, OCR, etc.)' } },
-  { code: 'ANNOUNCEMENTS',     label: 'Announcements',    sort_order: 6, metadata: { virtual: false, description: 'Broadcasts from admin / HR / system' } },
-  { code: 'CHAT',              label: 'Chat',             sort_order: 7, metadata: { virtual: false, description: 'Direct messages and threaded conversations' } },
-  { code: 'SENT',              label: 'Sent',             sort_order: 8, metadata: { virtual: true,  description: 'Messages you sent (not a real folder — sender filter)' } },
-  { code: 'ARCHIVE',           label: 'Archive',          sort_order: 9, metadata: { virtual: true,  description: 'Archived items (per-recipient via archivedBy)' } },
+  { code: 'EXECUTIVE_BRIEF',   label: 'Executive Brief',  sort_order: 5, metadata: { virtual: false, description: 'Daily executive briefs — morning brief, FP&A forecast, procurement scorecard, expansion readiness' } },
+  { code: 'AI_AGENT_REPORTS',  label: 'AI Agents',        sort_order: 6, metadata: { virtual: false, description: 'Findings from rule-based and AI agents (KPI variance, compliance alerts, ai_alerts, OCR, etc.)' } },
+  { code: 'ANNOUNCEMENTS',     label: 'Announcements',    sort_order: 7, metadata: { virtual: false, description: 'Broadcasts from admin / HR / system' } },
+  { code: 'CHAT',              label: 'Chat',             sort_order: 8, metadata: { virtual: false, description: 'Direct messages and threaded conversations' } },
+  { code: 'SENT',              label: 'Sent',             sort_order: 9, metadata: { virtual: true,  description: 'Messages you sent (not a real folder — sender filter)' } },
+  { code: 'ARCHIVE',           label: 'Archive',          sort_order: 10, metadata: { virtual: true, description: 'Archived items (per-recipient via archivedBy)' } },
 ];
 
 // Category → Folder mapping. Canonical source. backfillMessageInboxEntityId.js
 // MUST stay in sync.
+//
+// Phase G9.R11 (Apr 30 2026):
+//   - `briefing` moved AI_AGENT_REPORTS → EXECUTIVE_BRIEF (high-signal daily reads)
+//   - Four agents that previously emitted unmapped categories (which fell
+//     through to INBOX as the default per folderForCategory) are now routed
+//     to AI_AGENT_REPORTS: inventory_alert (fefoAuditAgent), proxy_sla_alert,
+//     proxy_auto_ack (proxySlaAgent), data_quality (dataQualityAgent). This
+//     stops them spilling into the main INBOX virtual folder when president
+//     has AI_AGENT_REPORTS hidden via INBOX_HIDDEN_FOLDERS_BY_ROLE.
 const CATEGORY_TO_FOLDER = {
   announcement: 'ANNOUNCEMENTS',
   system: 'ANNOUNCEMENTS',
@@ -55,14 +70,19 @@ const CATEGORY_TO_FOLDER = {
   approval_decision: 'APPROVALS',
   document_posted: 'APPROVALS',
 
+  briefing: 'EXECUTIVE_BRIEF',
+
   compliance_alert: 'AI_AGENT_REPORTS',
   ai_coaching: 'AI_AGENT_REPORTS',
   ai_schedule: 'AI_AGENT_REPORTS',
   ai_alert: 'AI_AGENT_REPORTS',
   ai_agent_finding: 'AI_AGENT_REPORTS',
-  briefing: 'AI_AGENT_REPORTS',
   compensation: 'AI_AGENT_REPORTS',
   kpiVariance: 'AI_AGENT_REPORTS',
+  inventory_alert: 'AI_AGENT_REPORTS',
+  proxy_sla_alert: 'AI_AGENT_REPORTS',
+  proxy_auto_ack: 'AI_AGENT_REPORTS',
+  data_quality: 'AI_AGENT_REPORTS',
 
   task_assigned: 'TASKS',
   task_overdue: 'TASKS',
@@ -145,18 +165,27 @@ const ACCESS_ROLES_DEFAULTS = [
 ];
 
 // ─── Per-role hidden-folders matrix ────────────────────────────────────
-// Defaults: president has the dedicated Approval Hub at /erp/approvals — the
-// APPROVALS folder would just duplicate it. Other roles see all folders.
-// Admin can edit/extend via Control Center → Lookup Tables (e.g. add a `ceo`
-// row, or hide TASKS for finance, etc.). `metadata.hidden_folders` is the
-// authoritative array; missing/empty array → role sees everything.
+// Defaults:
+//   - APPROVALS hidden for president — the dedicated Approval Hub at
+//     /erp/approvals already covers them; the folder would just duplicate.
+//   - AI_AGENT_REPORTS hidden for president (Phase G9.R11, Apr 30 2026) —
+//     compliance_alert / kpiVariance / ai_alert / inventory_alert /
+//     proxy_sla_alert etc. are operational-noise digests. Hiding excludes
+//     them from the main INBOX virtual folder + count + rail; the folder
+//     itself stays accessible if the president clicks into it. The high-
+//     signal `briefing` category was moved to EXECUTIVE_BRIEF (separate
+//     folder) so the daily exec read is unaffected.
+// Other roles see all folders by default. Admin extends via Control Center
+// → Lookup Tables (e.g. hide TASKS for finance, add CEO row, etc.).
+// `metadata.hidden_folders` is the authoritative array; missing/empty array
+// → role sees everything.
 const HIDDEN_FOLDERS_BY_ROLE_DEFAULTS = [
   {
     code: 'president', label: 'President',
     sort_order: 1,
     metadata: {
-      hidden_folders: ['APPROVALS'],
-      description: 'President uses Approval Hub (/erp/approvals); APPROVALS folder would duplicate.',
+      hidden_folders: ['APPROVALS', 'AI_AGENT_REPORTS'],
+      description: 'President uses Approval Hub for APPROVALS, and Executive Brief replaces AI Agents as the daily-read folder. AI Agents stays accessible via direct click — just excluded from the main Inbox count.',
     },
   },
 ];

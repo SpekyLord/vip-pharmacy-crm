@@ -284,14 +284,16 @@ const PAGE_GUIDES = {
   'inbox': {
     title: 'Unified Inbox',
     steps: [
-      'Folders on the left group everything: Approvals, Tasks, AI Agents, Announcements, Chat. The red dot is "Action Required" — items waiting on your click ([Approve] / [Resolve] / [Mark done]). An amber ⚑ count on the Inbox folder means messages are awaiting your acknowledgement.',
+      'Folders on the left group everything: Approvals, Tasks, Executive Brief, AI Agents, Announcements, Chat. The red dot is "Action Required" — items waiting on your click ([Approve] / [Resolve] / [Mark done]). An amber ⚑ count on the Inbox folder means messages are awaiting your acknowledgement.',
       'Click a row to read it. Replies appear inline as a threaded conversation — approve/decision/reopen events all fold into the same thread by approval request.',
+      'Executive Brief (Phase G9.R11) = high-signal daily reads (morning brief, FP&A forecast, procurement scorecard, expansion readiness). Split out from AI Agents so the briefs you read every morning don\'t get buried under operational noise.',
+      'AI Agents folder = lower-signal agent findings (compliance alerts, KPI variance, ai_alerts, inventory reorder, proxy SLA, data-quality digests). When inside the folder, use the Priority chips above the list to scan High / Important first.',
       'Archive is per-recipient: archiving a message only hides it from your own inbox — senders still see it in their Sent folder and other recipients are unaffected (Gmail-style).',
       'Flagged messages show an amber "⚑ Ack required" banner. Hit "I acknowledge" before approving/rejecting/resolving — that button is gated until you confirm you have read the message. Admin/president/ceo + sender can click "Read receipts" to see who has acknowledged and who is still pending.',
       'Bulk mode: use "Select" in the list toolbar to tick several rows then "Archive selected" in one shot. "Mark all read" flips every unread message in the current folder so the counter clears.',
       'Tasks open with a mini-editor so you can change status / due date / assignee inline. Need the full Gantt / Kanban view? Use the "Open full page" button.',
       'New message? Hit "+ New" to send a direct message or broadcast — backend enforces who can DM whom via the messaging.* sub-permissions and the MESSAGE_ACCESS_ROLES lookup. Admin/president can require acknowledgement on the compose modal; the tri-state default is driven by INBOX_ACK_DEFAULTS (see Control Center → Inbox Retention).',
-      'Per-role folder visibility (Phase G9.R9): your role may have folders hidden via INBOX_HIDDEN_FOLDERS_BY_ROLE lookup. By default the president has APPROVALS hidden because Approval Hub already covers them. Edit the lookup in Control Center → Lookup Tables to add CEO, hide TASKS for finance, etc.',
+      'Per-role folder visibility (Phase G9.R9 + R11): your role may have folders hidden via INBOX_HIDDEN_FOLDERS_BY_ROLE lookup. By default president has APPROVALS hidden (covered by Approval Hub) and AI_AGENT_REPORTS hidden from the main count (still accessible via direct click). Edit the lookup in Control Center → Lookup Tables to add CEO, hide TASKS for finance, etc.',
     ],
     next: [
       { label: 'Dashboard', path: '/bdm' },

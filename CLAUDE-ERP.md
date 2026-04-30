@@ -252,6 +252,91 @@ When the consultant delivers the gap list, the concrete work gets its own Phase 
 
 ---
 
+## Phase G4.5ee — Activity-Aware Per-Diem Tier Rule (Apr 30, 2026 evening)
+
+Closes a Rule #3 gap surfaced during a live SMER review of Judy Mae Patrocinio's 2026-04-C2 cycle: every OFFICE day carried `MD: 10` to clear the 8-MD FULL threshold, even though OFFICE activity has zero verifiable MD encounters. The honor-system padding produced a clean ₱7,150 reimbursable but polluted DCR Call Rate dashboards with 110 phantom MD visits and exposed the system to a "show me the 110 visit photos" audit failure.
+
+The fix makes the activity_type the per-diem semantic — not a free-text annotation. OFFICE day = AUTO_FULL; FIELD day = MD threshold; NO_WORK = ZERO. Subscriber-configurable per entity via Lookup, backwards-compat for every existing call site that doesn't opt in.
+
+### Strategic intent
+
+Replace hardcoded `if (entry.activity_type === 'NO_WORK') return enforceNoWorkRules(entry)` with a lookup-driven rule layer, so:
+
+1. A non-pharma subscriber (delivery-driver SaaS) can flip OFFICE → ZERO without a code deploy (their drivers don't get office-day per-diem).
+2. A pharma subsidiary that classifies "TRAINING" as a separate activity can decide AUTO_HALF for it.
+3. Override paths (admin force-FULL/HALF) continue to bypass everything — manual override always wins.
+4. The existing 8/3 MD-threshold logic is preserved for FIELD activity (legacy default, no behavior change).
+
+### Architecture
+
+- **`backend/erp/services/perdiemCalc.js`** — extends `computePerdiemTier(mdCount, settings, compProfile, perdiemConfig, options)` with optional `options.activityRule ∈ {AUTO_FULL, AUTO_HALF, ZERO, USE_THRESHOLDS}`. AUTO_* and ZERO short-circuit before threshold resolution; USE_THRESHOLDS / unset falls through to the existing G1.6 chain (CompProfile → PERDIEM_RATES → Settings). `computePerdiemAmount(...)` forwards options to tier. Default `options = {}` keeps every untouched call site byte-identical.
+- **Inline `ACTIVITY_PERDIEM_RULE_DEFAULTS`** mirrors the seed (OFFICE → AUTO_FULL, FIELD → USE_THRESHOLDS, OTHER → USE_THRESHOLDS, NO_WORK → ZERO) so the resolver works on un-seeded entities (lazy-seed kicks in on first lookup read).
+- **`resolveActivityPerdiemRuleMap(entityId)`** (bulk) + **`resolveActivityPerdiemRule(entityId, code)`** (single) + **`getActivityRuleFromMap(map, code)`** (sync). 60s in-process cache mirrors the PROXY_ENTRY_ROLES / PERDIEM_RATES / SCPWD_ROLES pattern. Bulk path is the preferred call shape: SMER controllers `await` once, then look up sync inside `.map(daily_entries)`.
+- **`invalidateActivityPerdiemRuleCache(entityId)`** wired into all 4 mutator paths in `lookupGenericController.js` (create / update / remove / seedCategory) so admin edits in Control Center take effect on the next request — not after 60s drift.
+- **`SEED_DEFAULTS.ACTIVITY_PERDIEM_RULES`** in `lookupGenericController.js` seeds 4 baseline rows with `insert_only_metadata: true` (admin-owned semantics — Control Center edits to `tier_rule` survive future re-seeds).
+- **`backend/erp/controllers/expenseController.js`** — three migration sites (createSmer, updateSmer, remove_override revert path). Each prefetches the rule map once and threads `{ activityRule }` through `computePerdiemAmount` for non-override entries. **Override paths intentionally NOT migrated** (createSmer override branch, updateSmer override branch, override-request, override-apply, approvalController, universalApprovalService, repairStuckPerdiemOverrides) — they pass fake md_count (999/3) to emulate FULL/HALF and must always trump the activity rule. **CRM-Pull preview path intentionally NOT migrated** — it's the FIRST-load preview before the BDM picks activity_type; after Save, createSmer applies the activity rule.
+- **Frontend mirror in `frontend/src/erp/pages/Smer.jsx`** — `useLookupOptions('ACTIVITY_PERDIEM_RULES')` + `useMemo` rule map with inline fallback (so the page never goes dark on a Lookup outage). `computePerdiem(count, activityType)` accepts the same option and applies the same short-circuit logic so the on-screen tier preview matches what `postSmer` will compute. Two call sites updated (`handleEntryChange` after activity_type/md_count change; `handleRemoveOverride` local-state fallback). The override-applied path keeps its old `computePerdiem(tier === 'FULL' ? 999 : 3)` shape — no activity_type passed, override always wins.
+- **Activity-rule banner** renders only when at least one activity has a non-USE_THRESHOLDS rule. Pharma-default subscribers (all USE_THRESHOLDS) see no banner. AUTO_FULL/AUTO_HALF/ZERO subscribers see explanatory copy: *"Activity-driven per-diem: OFFICE → auto-FULL, NO_WORK → zero. MD count is ignored for these activities; admin can flip via Control Center → Lookup Tables → ACTIVITY_PERDIEM_RULES."*
+- **WorkflowGuide.smer.tip** narrative extended with the G4.5ee paragraph (Rule #1 — user-facing pages must explain workflow shifts).
+
+### Lookup contract
+
+Category: `ACTIVITY_PERDIEM_RULES`. One row per activity_type code (`code = SmerEntry.activity_type`, case-normalized to uppercase by the seed builder).
+
+`metadata.tier_rule`:
+- `AUTO_FULL` — always FULL per-diem regardless of MD count (admin/office staff)
+- `AUTO_HALF` — always HALF per-diem regardless of MD count (rare, on-call half-day)
+- `ZERO` — always ZERO (leave, holiday, NO_WORK)
+- `USE_THRESHOLDS` — existing MD-vs-CompProfile/PERDIEM_RATES/Settings logic (FIELD default)
+
+Seeded baseline rows:
+
+| code | tier_rule | description |
+|---|---|---|
+| OFFICE | AUTO_FULL | Admin/office staff. Per-diem is daily allowance regardless of MDs. |
+| FIELD | USE_THRESHOLDS | BDM field activity. md_count vs thresholds → FULL/HALF/ZERO. |
+| OTHER | USE_THRESHOLDS | Free-text bucket. Defaults to FIELD-equivalent; admin can flip per entity. |
+| NO_WORK | ZERO | Always ZERO. Replaces the legacy hardcoded NO_WORK special case. |
+
+### Backwards compatibility
+
+- `computePerdiemTier(...)` and `computePerdiemAmount(...)` default `options = {}` → behavior byte-identical to pre-G4.5ee for any call site that hasn't opted in. The 7 override-style call sites (universalApproval + repair script + expenseController override paths) keep their old signatures.
+- The legacy hardcoded `if (entry.activity_type === 'NO_WORK') return enforceNoWorkRules(entry)` in createSmer / updateSmer is **kept** because `enforceNoWorkRules` clears semantics broader than tier (md_count, hospital_covered, override fields). The activity rule for NO_WORK = ZERO is therefore redundant for the tier but not harmful — both produce ZERO. Future cleanup can collapse the special case once enforceNoWorkRules is decomposed.
+- Existing SMER documents already POSTED with old tier values are NOT recomputed retroactively. Only new or recomputed entries (createSmer / updateSmer / remove_override) pick up the new rule. This is intentional — silent tier-flips on POSTED rows would unbalance the General Ledger.
+
+### Subscription readiness (Year 2 SaaS path)
+
+- Lookup-driven per Rule #3 — subscribers configure activity semantics per entity via Control Center, no code deploy. A delivery-driver SaaS can ship with `OFFICE → ZERO`, `FIELD → AUTO_FULL` (any logbook day = full), `LEAVE → ZERO`. A short-term-rental property manager SaaS can ship with `INSPECTION → AUTO_FULL`, `OFFICE → USE_THRESHOLDS` etc.
+- `ACTIVITY_PERDIEM_RULES` rows use `insert_only_metadata: true` so admin tweaks survive future seedAll runs (mirrors PERDIEM_RATES, SCPWD_ROLES, BIR_ROLES patterns).
+- Generalizes past `entity_id` cleanly — the resolver is keyed on `entity_id`, the cache is per-entity, the cache buster is per-entity. No cross-tenant leak risk at SaaS spin-out (Rule #0d).
+
+### Files touched (8 code + 1 healthcheck + 2 docs = 11)
+
+- `backend/erp/services/perdiemCalc.js` (resolver + cache + extended tier/amount + 4 new exports)
+- `backend/erp/controllers/lookupGenericController.js` (SEED_DEFAULTS.ACTIVITY_PERDIEM_RULES + cache-bust hook on 4 paths)
+- `backend/erp/controllers/expenseController.js` (3 migration sites: createSmer + updateSmer + remove_override)
+- `frontend/src/erp/pages/Smer.jsx` (useLookupOptions + useMemo rule map + computePerdiem signature + 2 call sites + banner)
+- `frontend/src/erp/components/WorkflowGuide.jsx` (smer.tip extended with G4.5ee paragraph)
+- `backend/scripts/healthcheckActivityPerdiemRules.js` (NEW — 34-check static wiring contract)
+- `CLAUDE-ERP.md` + `docs/PHASETASK-ERP.md` (this section + the PHASETASK row)
+
+### Validation
+
+- **Healthcheck `node backend/scripts/healthcheckActivityPerdiemRules.js` 34/34 PASS** — covers resolver shape, cache TTL, options pass-through, seed defaults, cache-bust on all 4 mutator paths, expenseController wiring on 3 sites, override paths intentionally untouched, frontend mirror parity, banner conditional render, WorkflowGuide narrative.
+- Regression healthchecks PASS: SalesDiscount 41/41, SmerRevert 18/18, ComputePayrollProxy 29/29, PayslipProxyRoster 31/31, IncomeProxy 32/32.
+- Vite full bundle green (28.25s).
+- Backend syntax check on all 3 modified files (`node -c`) clean.
+- Live Playwright smoke as `s25.vippharmacy@gmail.com` (Judy Mae Patrocinio, BDM Proxy 2) on `/erp/smer` — see session smoke for screenshot capture.
+
+### Common gotchas
+
+- **Override always wins.** All 7 override-style call sites pass fake md_count (999/3) and NO options to `computePerdiemAmount(...)`. If a future maintainer adds `{ activityRule }` to an override path "for consistency", an OFFICE-day override request with rule=AUTO_FULL would silently ignore the override_tier the admin selected. The healthcheck catches this regression by asserting the override path comment.
+- **CRM-Pull preview is intentionally MD-threshold-based.** The preview shows what per-diem WOULD be if the entry stayed at FIELD — before the BDM picks activity_type. After Save, createSmer applies the activity rule and the tier may shift (e.g. ZERO → FULL when the BDM picks OFFICE). This is documented in the WorkflowGuide.smer.tip and is by design.
+- **Existing POSTED SMERs are not recomputed.** Tier-flips on POSTED rows would unbalance the GL. Admin who wants to retroactively fix Judy Mae's 2026-04-C2 must reopen the SMER (Reversal Console) → tier auto-recomputes on update → resubmit. The journal re-posts with the new amount.
+- **`tier_rule` is case-normalized server-side.** The seed builder uppercases the code, the resolver `String(...).toUpperCase()`s before lookup, and `VALID_TIER_RULES` is uppercase. A row with `metadata.tier_rule: 'auto_full'` is treated as `AUTO_FULL` (defensive — same shape as Lookup.code's `uppercase: true` schema setter).
+
+---
+
 ## Phase UX-Scroll — ERP Page Body-Scroll Restoration (Apr 30, 2026 evening)
 
 Closes a UX bug from the Apr 29 layout cleanup: long ERP forms (SMER, Sales Entry, Accounts Receivable, Expenses, etc.) couldn't scroll vertically on laptop when WorkflowGuide was visible. Mobile worked because touch-drag scrolls any container. The user's workaround was dismissing the WorkflowGuide — defeating Rule #1's purpose.
@@ -6001,11 +6086,11 @@ list, verification matrix, and out-of-scope items.
 Day 3's observation-mode plugins are now mode-switchable and production-loud:
 
 - **`ENTITY_GUARD_MODE` / `BDM_GUARD_MODE`** (env vars on the backend, default `log`):
-  - `log` — console.error JSON line; in production, also fires a deduped MessageInbox alert.
+  - `log` — console.error JSON line, greppable as `[ENTITY_GUARD_VIOLATION]` / `[BDM_GUARD_VIOLATION]` in pm2 logs.
   - `throw` — log + throw inside the Mongoose pre-hook (controller's `catchAsync` returns 500).
   - `off`  — plugin not registered (test-only).
   Local dev defaults to `throw` so tenant leaks fail loud during development. Production stays on `log` until Day-4 triage clears all flagged routes.
-- **Production alerting** ([backend/middleware/guardAlerter.js](backend/middleware/guardAlerter.js)) routes through the existing multi-channel `notify()` service (`recipient_id: 'ALL_ADMINS'` by default; override via `ENTITY_GUARD_ALERT_RECIPIENT` env var). Dedup window is 1 hour per `(kind, model, request-path)` triple — flooding violations don't spam the inbox.
+- **Production signal** is the structured JSON log line only (Apr 30 2026): the original Day-4 design also dispatched a deduped MessageInbox alert via `guardAlerter.js`, but the per-recipient fan-out across `ALL_ADMINS` (4× admin-tier users) flooded admin inboxes with >1000 `[GUARD]` rows and drowned out other inbox traffic. `guardAlerter.js` was deleted; the pm2 log line carries the same structured payload (`model`, `path`, `userId`, `role`, `entityId`, `requestId`, `filterKeys`, `stack`).
 - **Operator procedure** is in [docs/RUNBOOK.md](docs/RUNBOOK.md) Section 9b: classify (legitimate cross-entity / actual bug / wrong classification), fix, re-deploy. The throw-mode flip is the Day-4-finished gate.
 - **Day 4.5 #3 — Orphan Audit Agent** ([backend/agents/orphanAuditAgent.js](backend/agents/orphanAuditAgent.js)) wraps the read-only [findOrphanedOwnerRecords.js](backend/erp/scripts/findOrphanedOwnerRecords.js) sweep into a weekly cron (Mon 05:15 Manila, registered as `orphan_audit`). Reuses the same Day-4 `notify()` plumbing — PRESIDENT (in_app + email) + ALL_ADMINS (in_app only), `compliance_alert` category, priority escalates to `high` past 50 orphans. Surfaces silent regressions of the Phase G4.5d / Rule #21 fingerprint without depending on an operator to run the script. See `docs/PHASETASK-ERP.md` (`WEEK-1 STABILIZATION — DAY 4.5 #3`) for the full file list and verification.
 
@@ -6291,6 +6376,46 @@ Different invariants, different repair paths. Bundling them would couple their e
 - The "Recent Agent Runs" section header doesn't yet show a "newest first" / "by agent name" sort toggle. Backend already sorts `run_date: -1`; if subscribers want by-agent grouping, that's a one-line frontend toggle.
 - Click-to-view on a RUN row (not just a message) would let admin see the full agent run detail (full key_findings list, error stack, payload metadata) inline. The data is already on `AgentRun.summary` / `AgentRun.error_msg`. Defer until requested.
 - Bulk archive / mark-all-read on the messages monitor view: deferred — those operations live in the Inbox surface where they belong.
+
+---
+
+## Phase G9.R11 — Inbox Importance Triage (Apr 30, 2026 evening)
+
+**Why.** A misuse pattern discovered while triaging the >1000 `[GUARD]` rows in the president inbox: high-signal `briefing` (morning brief, FP&A forecast, procurement scorecard, expansion readiness) shared the `AI_AGENT_REPORTS` folder with operational-noise digests (`compliance_alert`, `kpiVariance`, `ai_alert`, `ai_coaching`, `inventory_alert`, `proxy_sla_alert`, `proxy_auto_ack`, `data_quality`). Worse — four agents emitted categories that weren't in `CATEGORY_TO_FOLDER` at all (inventory_alert / proxy_sla_alert / proxy_auto_ack / data_quality), so they fell through to the main `INBOX` virtual folder. Result: the daily exec read got buried under noise that itself shouldn't have been in the main count.
+
+**Behavior.**
+- New folder `EXECUTIVE_BRIEF` at sort_order 5 (between Tasks and AI Agents). `briefing` category re-routed there.
+- 4 orphan agent categories explicitly mapped to `AI_AGENT_REPORTS` (was: implicit fallthrough to INBOX).
+- `AI_AGENT_REPORTS` added to `INBOX_HIDDEN_FOLDERS_BY_ROLE` defaults for `president` (alongside the existing APPROVALS hide). Effect: AI Agents folder is still in the rail but its rows are excluded from the main INBOX count + the rail badge — Executive Brief stays visible because it's a different folder.
+- New backend filter `?priority=high|important|normal|low|all` on `GET /api/messages` — opaque pass-through, no schema enum, subscribers can introduce new tiers. Frontend renders chip row above the list but ONLY when `activeFolder === 'AI_AGENT_REPORTS'` (high-volume, low-signal — chips help scan).
+
+**Wiring.**
+- [backend/erp/utils/inboxLookups.js](backend/erp/utils/inboxLookups.js) — `FOLDER_DEFAULTS` (+1 row, sort_order shifted 5→6 for AI_AGENT_REPORTS et al.), `CATEGORY_TO_FOLDER` (+5 entries: 1 move + 4 add), `HIDDEN_FOLDERS_BY_ROLE_DEFAULTS.president.metadata.hidden_folders` adds `'AI_AGENT_REPORTS'`.
+- [backend/scripts/backfillMessageInboxEntityId.js](backend/scripts/backfillMessageInboxEntityId.js) — `CATEGORY_TO_FOLDER` copy synced. The "MUST stay in sync" comment is enforced by the new healthcheck.
+- [backend/controllers/messageInboxController.js](backend/controllers/messageInboxController.js) — `ZERO_COUNTS` (+executive_brief), aggregation pipeline (+executive_brief $sum branch), new `?priority=` filter in `getInboxMessages`.
+- [backend/scripts/migrateExecutiveBriefFolder.js](backend/scripts/migrateExecutiveBriefFolder.js) (new) — idempotent, dry-run-by-default. 4 steps per entity: insert `EXECUTIVE_BRIEF` lookup row if missing, bump existing AI_AGENT_REPORTS sort_order 5→6 if still default, add AI_AGENT_REPORTS to president hidden_folders (or insert a fresh president row if missing), re-point existing `MessageInbox` rows where `category=='briefing' AND folder=='AI_AGENT_REPORTS'` → `folder='EXECUTIVE_BRIEF'`.
+- [frontend/src/components/common/inbox/InboxFolderNav.jsx](frontend/src/components/common/inbox/InboxFolderNav.jsx) — `ICON_BY_CODE.EXECUTIVE_BRIEF = Newspaper` (lucide-react). Daily-brief metaphor; distinct from AI Agents' `Sparkles`.
+- [frontend/src/pages/common/InboxPage.jsx](frontend/src/pages/common/InboxPage.jsx) — `DEFAULT_FOLDERS` fallback (+1 row), `priorityFilter` state, chip row rendered conditionally when AI_AGENT_REPORTS is active, `params.priority` threaded through `messageService.list`.
+- [frontend/src/erp/components/WorkflowGuide.jsx](frontend/src/erp/components/WorkflowGuide.jsx) `'inbox'` + [frontend/src/components/common/PageGuide.jsx](frontend/src/components/common/PageGuide.jsx) `'inbox'` — banner steps describe Executive Brief folder, the priority chips, and the per-role hidden-folder behavior (with the new AI_AGENT_REPORTS default for president).
+- [backend/scripts/healthcheckInboxImportanceTriage.js](backend/scripts/healthcheckInboxImportanceTriage.js) (new) — 23-point static wiring contract: lookup defaults shape, category mapping symmetry between inboxLookups + backfill script, controller ZERO_COUNTS + aggregation, frontend icon + DEFAULT_FOLDERS + chip wiring, banner copy.
+
+**Subscriber tunability (Rule #3).**
+- Re-show AI Agents to a specific role: Control Center → Lookup Tables → `INBOX_HIDDEN_FOLDERS_BY_ROLE` → edit `president` row, remove `AI_AGENT_REPORTS` from `metadata.hidden_folders`.
+- Hide AI Agents for CEO too: add `{ code: 'ceo', metadata: { hidden_folders: ['APPROVALS','AI_AGENT_REPORTS'] } }`.
+- Re-route a category: lookup-only fix isn't possible today (CATEGORY_TO_FOLDER is code-resident — that was the existing G9.A design choice for write-time consistency). If subscribers need this, expose `MESSAGE_CATEGORY_FOLDER_MAP` lookup with `insert_only_metadata: true` — defer until requested.
+- Add a new priority tier: free-text on `priority` field; UI chip row needs a code change to render the new tier. Could be lifted to a `MESSAGE_PRIORITY` lookup later — defer.
+
+**Migration runbook.**
+1. Deploy code (no schema change, no breaking field rename).
+2. `node backend/scripts/migrateExecutiveBriefFolder.js` (dry-run preview).
+3. `node backend/scripts/migrateExecutiveBriefFolder.js --apply` (commit).
+4. (Optional) `node backend/scripts/tempInboxArchiveGuards.js --apply --soft-delete` to clear the historical `[GUARD]` pile per-recipient.
+5. Restart pm2 — lookup cache rebuilds on next request.
+
+**Rollback path.**
+- Code: revert the commit; lookup rows + repointed messages stay (forward-compatible — old code skips `EXECUTIVE_BRIEF` folder gracefully because folder strings are not enum-validated).
+- Lookup-only rollback: edit president row in `INBOX_HIDDEN_FOLDERS_BY_ROLE` to drop `AI_AGENT_REPORTS`; AI Agents folder reappears in main count immediately.
+- Briefing re-routing rollback: `db.messages.updateMany({ folder: 'EXECUTIVE_BRIEF', category: 'briefing' }, { $set: { folder: 'AI_AGENT_REPORTS' } })` (one-liner in mongo shell).
 
 ---
 
@@ -6665,3 +6790,61 @@ PRF and CALF default to `bir_flag: 'INTERNAL'` ([backend/erp/models/PrfCalf.js:1
 - All four pages remain admin-gated via lookup-driven role categories `REBATE_ROLES` and `COMMISSION_ROLES` — subscribers configure access via Control Center → Lookup Tables.
 - All schema enums (`calculation_mode`, `partnership_status`, `client_type`) are validation gates only; UI labels come from lookups (`NONMD_REBATE_CALC_MODE`, `DOCTOR_PARTNERSHIP_STATUS`, `VIP_CLIENT_TYPE`) with inline fallbacks so the page never goes dark on a Lookup outage (Rule #3).
 - Single-flow PRF/CALF design simplifies the Year-2 Pharmacy SaaS spin-out — one accounting path to expose vs three modes was a real divergence risk for multi-tenant subscribers.
+
+---
+
+## Phase G6.7-PC1 — Petty Cash Hub Approve Fix (Apr 30 2026 evening)
+
+> Tightly-scoped regression fix. Closes the "Petty Cash cannot be approved from the Approval Hub" 500-error reported by the President during live use of [/erp/approvals](frontend/src/erp/pages/ApprovalManager.jsx).
+
+### What was broken
+
+`POST /api/erp/approvals/universal-approve` with `{ type: 'petty_cash', action: 'approve' }` returned `500 Internal Server Error` ("Something went wrong"). Root cause in [universalApprovalController.js:980-985](backend/erp/controllers/universalApprovalController.js#L980-L985): the Group B `petty_cash` handler was a bare delegate to `buildGroupBReject`, which hard-throws on any action ≠ `'reject'` ("Unsupported action for petty_cash: approve — only 'reject' is supported via Group B handler"). The original Phase G6.7 author's design comment at L80-83 said the approve path was "consumed by each module's controller on next call via isFullyApproved()" — i.e. submitter retries the post and gateApproval lets it through — but in practice the Hub never flipped the ApprovalRequest to APPROVED (the handler threw before reaching the universalApprove auto-resolve at L1130-1160), so the two-step never closed the loop. Net effect: the Hub could only **reject** petty cash; approves were silently dead.
+
+### What shipped
+
+**1. Shared atomic post helper (`postSinglePettyCashTransaction`)** in [pettyCashController.js:281-378](backend/erp/controllers/pettyCashController.js#L281-L378):
+- Idempotent on POSTED (early return with `already_posted: true` — re-approve from Hub never double-posts).
+- Period lock check via `checkPeriodOpen(precheck.entity_id, period)` — keyed on the txn's own entity, not the approver's `req.entityId`, so cross-entity privileged approvers (CEO/admin spanning subsidiaries) work cleanly.
+- Atomic balance move + status flip in `session.withTransaction()`. Hard balance guard on DISBURSEMENT (insufficient balance throws 400 with statusCode tag).
+- Stamps `posted_by`, `posted_at`, `running_balance`, and `approved_by` (when blank) on the txn.
+- Post-commit ceiling-breach notification (custodian + president) — best-effort, non-throwing (notify failures don't poison the post).
+
+**2. `postTransaction` (BDM-direct path, [pettyCashController.js:383-411](backend/erp/controllers/pettyCashController.js#L383-L411))** refactored to:
+- Run `gateApproval` (Authority Matrix + Default-Roles Gate) first → returns 202 + `approval_pending: true` if the requester isn't in `MODULE_DEFAULT_ROLES.PETTY_CASH` per the lookup.
+- Delegate to the helper. Surfaces statusCode-tagged errors from the helper directly to the client.
+
+**3. Hub handler (`approvalHandlers.petty_cash`, [universalApprovalController.js:980-1031](backend/erp/controllers/universalApprovalController.js#L980-L1031))** now branches on action:
+- `reject` → still goes through `buildGroupBReject` (terminal-state guard + REJECTED stamp).
+- `approve | post` → dereferences `ApprovalRequest.findById(id)` to recover the underlying `PettyCashTransaction._id` (Group B id-semantics: Hub's `approve_data.id` IS the request `_id`, not the doc `_id`), calls the helper to post atomically, then explicitly closes the originating `ApprovalRequest` via `updateOne({_id: id, status: 'PENDING'} → APPROVED)` with a history `$push`.
+- The explicit close is required because the shared auto-resolve at [universalApprovalController.js:1130-1160](backend/erp/controllers/universalApprovalController.js#L1130-L1160) keys on `{ doc_id: id }` — that filter assumes Group A id-semantics (id == doc `_id`) and never matches Group B items. Without the explicit close the approve would post the txn but leave the request PENDING, re-surfacing it in the next Hub render.
+
+**4. Healthcheck — [backend/scripts/healthcheckPettyCashHubApprove.js](backend/scripts/healthcheckPettyCashHubApprove.js) (22 static assertions):** verifies helper presence + export + idempotency + period-lock + session-transaction + insufficient-balance guard + ceiling notify; verifies Hub handler branches on action + dereferences ApprovalRequest + closes the request to APPROVED + history $push; verifies the BDM-direct route still mounts `postTransaction`. Mirrors the posture of `healthcheckInternalTransferProxy.js` (Phase G4.5dd) and catches the same "controller wired but Hub handler unaware → runtime 500" wiring drift class.
+
+### Scope guardrails (Rule #4)
+
+- **Other Group B modules NOT touched.** PURCHASING, JOURNAL, BANKING, IC_TRANSFER, SALES_GOAL_PLAN, INCENTIVE_PAYOUT all have the same "approve throws" pattern — they need analogous `postSingleXxx` helpers + Hub-handler branching, but each has its own complexity (multi-leg postings, reconciliation state machines, cross-entity flows). Fixing them blanket-style would risk breaking surfaces the user didn't ask about. Tracked as a follow-up phase (Phase G6.7-PC1-followup): see "Open Group B gaps" in PHASETASK-ERP.md for the punch list.
+- **No new lookup category.** Existing `MODULE_DEFAULT_ROLES.PETTY_CASH` + `approve_petty_cash` sub-permission stay the authoritative gate. No hardcoded role lists added (Rule #3 preserved).
+- **Banner unchanged.** [WorkflowGuide.jsx 'approval-manager' block L715-740](frontend/src/erp/components/WorkflowGuide.jsx#L715-L740) already documented the contract ("Posting modules… click Post to transition to POSTED; the close-loop auto-resolves any pending ApprovalRequest on the same doc"). The fix makes the implementation match the documentation.
+- **No silent self-ID fallback** (Rule #21). The handler reads the txn via the helper, which trusts `precheck.entity_id` from the doc itself — never `req.entityId`/`req.bdmId`.
+- **Backward compatibility — load-bearing.** The helper accepts the underlying `PettyCashTransaction._id` directly; the Hub handler falls back to treating `id` as the txn `_id` when `ApprovalRequest.findById(id)` returns null. Direct dispatches outside the Hub keep working.
+
+### Files touched (2 modified, 1 new)
+
+- modified: [backend/erp/controllers/pettyCashController.js](backend/erp/controllers/pettyCashController.js) — extract helper + refactor `postTransaction` + export helper
+- modified: [backend/erp/controllers/universalApprovalController.js](backend/erp/controllers/universalApprovalController.js) — `petty_cash` handler branches on action; explicit ApprovalRequest close
+- new: [backend/scripts/healthcheckPettyCashHubApprove.js](backend/scripts/healthcheckPettyCashHubApprove.js) — 22-check static wiring contract
+- modified: docs ([CLAUDE-ERP.md](CLAUDE-ERP.md) + [docs/PHASETASK-ERP.md](docs/PHASETASK-ERP.md))
+
+### Verification (Apr 30 2026 evening)
+
+- `node -c` on both modified controllers → green.
+- `node backend/scripts/healthcheckPettyCashHubApprove.js` → **22/22 PASS**.
+- Regression sibling healthchecks: G4.5dd 26/26 PASS, Income Proxy 32/32 PASS, Compute Payroll 29/29 PASS, Payslip Roster 31/31 PASS.
+- `npx vite build` → **green in 13.96s**.
+- Live Playwright smoke: see handoff (s25 BDM submits DEPOSIT → Hub item appears → president clicks Approve → 200 + txn POSTED + fund balance updated + ApprovalRequest closed).
+
+### Subscription posture
+
+- Approver gate still routes through the lookup-driven `MODULE_DEFAULT_ROLES.PETTY_CASH` (Rule #3) and the `approve_petty_cash` sub-permission. Subscribers configure who can post petty cash without code changes.
+- `MODULE_AUTO_POST` was deliberately NOT extended to PETTY_CASH (would only fire on the `approval_request` type). The fix lives in the `petty_cash` handler itself, which is what the Hub actually dispatches.

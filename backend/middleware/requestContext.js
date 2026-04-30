@@ -68,9 +68,35 @@ const markCrossEntityAllowed = (req, reason = 'unspecified') => {
   }
 };
 
+/**
+ * Per-call cross-entity scope. Use when a single utility function needs to
+ * sweep across entities (e.g. resolving warehouse codes during import) but
+ * the *caller's* request must keep its tenant scoping. Saves and restores
+ * the prior `crossEntityAllowed` state around `fn()`.
+ *
+ * Outside a request context (CLI scripts, cron jobs) this is a no-op
+ * passthrough — the guards already skip when the AsyncLocalStorage store
+ * is empty.
+ */
+const withCrossEntityScope = async (reason, fn) => {
+  const store = requestContext.getStore();
+  if (!store) return fn();
+  const prevAllowed = store.crossEntityAllowed;
+  const prevReason = store.crossEntityReason;
+  store.crossEntityAllowed = true;
+  store.crossEntityReason = reason;
+  try {
+    return await fn();
+  } finally {
+    store.crossEntityAllowed = prevAllowed;
+    store.crossEntityReason = prevReason;
+  }
+};
+
 module.exports = {
   requestContext,
   requestContextRoot,
   readLiveCtx,
   markCrossEntityAllowed,
+  withCrossEntityScope,
 };

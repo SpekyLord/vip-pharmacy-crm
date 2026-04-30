@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
@@ -153,6 +153,32 @@ export default function Smer() {
   const { settings } = useSettings();
   const { options: activityTypeOpts } = useLookupOptions('ACTIVITY_TYPE');
   const ACTIVITY_TYPES = activityTypeOpts.map(o => o.code);
+  // Phase G4.5ee — activity-aware per-diem tier rule mirror. Backend resolves
+  // these from ACTIVITY_PERDIEM_RULES Lookup; frontend mirrors so the preview
+  // tier matches what postSmer will compute. When the lookup hasn't seeded
+  // yet (or fails), we fall back to inline defaults so OFFICE → AUTO_FULL is
+  // honored even on a brand-new entity. tier_rule semantics:
+  //   AUTO_FULL       → 100% per-diem regardless of MD count (admin/office)
+  //   AUTO_HALF       → 50% per-diem regardless of MD count (rare)
+  //   ZERO            → 0% per-diem (no work, leave, holiday)
+  //   USE_THRESHOLDS  → existing MD vs CompProfile/PERDIEM_RATES/Settings
+  const { options: activityRuleOpts } = useLookupOptions('ACTIVITY_PERDIEM_RULES');
+  const ACTIVITY_RULE_FALLBACK = useMemo(() => ({
+    OFFICE: 'AUTO_FULL',
+    FIELD: 'USE_THRESHOLDS',
+    OTHER: 'USE_THRESHOLDS',
+    NO_WORK: 'ZERO',
+  }), []);
+  const activityRuleByCode = useMemo(() => {
+    const map = { ...ACTIVITY_RULE_FALLBACK };
+    for (const r of activityRuleOpts || []) {
+      const rule = r?.metadata?.tier_rule;
+      if (rule && ['AUTO_FULL', 'AUTO_HALF', 'ZERO', 'USE_THRESHOLDS'].includes(String(rule).toUpperCase())) {
+        map[String(r.code).toUpperCase()] = String(rule).toUpperCase();
+      }
+    }
+    return map;
+  }, [activityRuleOpts, ACTIVITY_RULE_FALLBACK]);
 
   // Lookup-driven rejection config (MODULE_REJECTION_CONFIG → SMER).
   // Drives which statuses can still be edited / re-submitted by the contractor.
@@ -297,8 +323,15 @@ export default function Smer() {
     return entries;
   };
 
-  const computePerdiem = (count) => {
-    // Uses resolved thresholds (CompProfile per-person → Settings global fallback)
+  const computePerdiem = (count, activityType) => {
+    // Phase G4.5ee — activity rule overrides MD-threshold logic when set.
+    // Mirrors backend computePerdiemTier(..., { activityRule }) semantics so
+    // the on-screen preview matches what postSmer will compute.
+    const rule = activityType ? activityRuleByCode[String(activityType).toUpperCase()] : null;
+    if (rule === 'AUTO_FULL') return { tier: 'FULL', amount: perdiemRate };
+    if (rule === 'AUTO_HALF') return { tier: 'HALF', amount: Math.round(perdiemRate * 0.5 * 100) / 100 };
+    if (rule === 'ZERO') return { tier: 'ZERO', amount: 0 };
+    // USE_THRESHOLDS or unset → existing logic (CompProfile → PERDIEM_RATES → Settings)
     const fullThreshold = perdiemThresholds.full;
     const halfThreshold = perdiemThresholds.half;
     if (count >= fullThreshold) return { tier: 'FULL', amount: perdiemRate };
@@ -366,8 +399,11 @@ export default function Smer() {
       }
 
       // Auto-compute per diem when engagement count OR activity type changes — but NOT if overridden or No Work
+      // Phase G4.5ee — pass activity_type so the AUTO_FULL/AUTO_HALF/ZERO rule
+      // applies when set (e.g. OFFICE day shows FULL ₱650 the moment the user
+      // picks "Office", without needing to enter MDs).
       if ((field === 'md_count' || (field === 'activity_type' && value && value !== 'NO_WORK')) && !updated[index].perdiem_override && updated[index].activity_type !== 'NO_WORK') {
-        const { tier, amount } = computePerdiem(updated[index].md_count || 0);
+        const { tier, amount } = computePerdiem(updated[index].md_count || 0, updated[index].activity_type);
         updated[index].perdiem_tier = tier;
         updated[index].perdiem_amount = amount;
       }
@@ -635,7 +671,10 @@ export default function Smer() {
     setDailyEntries(prev => {
       const updated = [...prev];
       const e = updated[index];
-      const { tier, amount } = computePerdiem(e.md_count || 0);
+      // Phase G4.5ee — pass activity_type so a reverted OFFICE day correctly
+      // returns to FULL (or whatever the activity rule says) rather than the
+      // MD-threshold result the override was masking.
+      const { tier, amount } = computePerdiem(e.md_count || 0, e.activity_type);
       updated[index] = { ...e, perdiem_override: false, override_tier: undefined, override_reason: undefined, perdiem_tier: tier, perdiem_amount: amount };
       return updated;
     });
@@ -1010,6 +1049,28 @@ export default function Smer() {
                   <div style={{ padding: '6px 12px', marginBottom: 12, borderRadius: 6, background: '#f0fdf4', border: '1px solid #bbf7d0', fontSize: 12, color: '#166534' }}>
                     BDMs: pull auto-fills MD counts and area visited from {sourceLabel}. You can still edit manually after pulling.
                     {perdiemThresholds.skip_flagged && src === 'visit' && <span style={{ marginLeft: 6, color: '#9a3412' }}>Visits with photo flags do not count toward per-diem.</span>}
+                  </div>
+                );
+              })()}
+
+              {/* Phase G4.5ee — activity-aware per-diem rule banner. Only renders
+                  when at least one activity is mapped to a non-USE_THRESHOLDS
+                  rule for this entity, so subscribers who run pharma-default
+                  semantics see no extra noise. Mirrors the source-of-truth
+                  ACTIVITY_PERDIEM_RULES lookup (admin-editable in Control
+                  Center → Lookup Tables). Closes the "office staff write
+                  MD=10 to claim FULL per-diem" data-pollution gap by making
+                  the rule explicit on every preview. */}
+              {(() => {
+                const ruleEntries = Object.entries(activityRuleByCode || {});
+                const interesting = ruleEntries.filter(([, r]) => r && r !== 'USE_THRESHOLDS');
+                if (interesting.length === 0) return null;
+                const fmt = (rule) => rule === 'AUTO_FULL' ? 'auto-FULL' : rule === 'AUTO_HALF' ? 'auto-HALF' : rule === 'ZERO' ? 'zero' : rule;
+                return (
+                  <div style={{ padding: '6px 12px', marginBottom: 12, borderRadius: 6, background: '#eff6ff', border: '1px solid #bfdbfe', fontSize: 12, color: '#1e40af' }}>
+                    Activity-driven per-diem: {interesting.map(([code, rule], i) => (
+                      <span key={code}>{i > 0 && ', '}<strong>{code}</strong> &rarr; {fmt(rule)}</span>
+                    ))}. MD count is ignored for these activities; admin can flip via Control Center &rarr; Lookup Tables &rarr; ACTIVITY_PERDIEM_RULES.
                   </div>
                 );
               })()}

@@ -92,6 +92,15 @@ const PRICE_RESOLVER_CATEGORIES = new Set(['PRICE_RESOLUTION_RULES']);
 const { invalidate: invalidateSalesDiscountCache } = require('../../utils/salesDiscountConfig');
 const SALES_DISCOUNT_CONFIG_CATEGORIES = new Set(['SALES_DISCOUNT_CONFIG']);
 
+// Phase G4.5ee (Apr 30 2026) — Activity-aware per-diem tier rule. When admin
+// edits ACTIVITY_PERDIEM_RULES (e.g. flips OFFICE → ZERO for a subsidiary
+// that doesn't pay office-day per-diem), bust the 60s in-process rule cache
+// in perdiemCalc.js so the next SMER preview/post/recompute picks up the new
+// rule immediately. Without this hook, the change waits up to 60s per
+// running instance, which is a payroll-correctness risk.
+const { invalidateActivityPerdiemRuleCache } = require('../services/perdiemCalc');
+const ACTIVITY_PERDIEM_RULES_CATEGORIES = new Set(['ACTIVITY_PERDIEM_RULES']);
+
 // Phase G6.10/G7 — categories whose seeded rows must default is_active: false so
 // subscribers explicitly opt in (Anthropic-billable features, spend caps that
 // could surprise-block in-flight calls). Without this, the first AgentSettings
@@ -2562,6 +2571,27 @@ const SEED_DEFAULTS = {
     { code: 'DELIVERY_DRIVER', label: 'Delivery driver — logbook-driven per-diem (example template)', insert_only_metadata: true, metadata: { rate_php: 500, eligibility_source: 'logbook', skip_flagged: false, allow_weekend: true, full_tier_threshold: 1, half_tier_threshold: 1 } },
   ],
 
+  // Phase G4.5ee (Apr 30 2026) — Activity-aware per-diem tier rule.
+  // One row per ACTIVITY_TYPE code. metadata.tier_rule selects how that
+  // activity earns per-diem:
+  //   AUTO_FULL       → always 100% per-diem (admin/office staff, ignores MD count)
+  //   AUTO_HALF       → always 50% per-diem (uncommon; e.g. half-day on-call)
+  //   ZERO            → 0% per-diem (no-work, leave, holiday)
+  //   USE_THRESHOLDS  → existing MD-count-vs-threshold logic (pharma BDM default for FIELD)
+  // insert_only_metadata: true — admin tweaks (e.g. flipping OFFICE → ZERO for a
+  // subsidiary that doesn't pay office-day per-diem) survive future re-seeds.
+  // Missing row for an activity → resolveActivityPerdiemRule falls back to
+  // ACTIVITY_PERDIEM_RULE_DEFAULTS in perdiemCalc.js (same defaults seeded here).
+  // Override paths (admin force-FULL/HALF) intentionally bypass this rule —
+  // admin override always wins. Closes Rule #3 / Rule #19 gap on activity-type
+  // semantics (was hardcoded `if activity_type === 'NO_WORK'`).
+  ACTIVITY_PERDIEM_RULES: [
+    { code: 'OFFICE',  label: 'Office work — auto-FULL per-diem (admin/office staff, no MDs needed)', insert_only_metadata: true, metadata: { tier_rule: 'AUTO_FULL', description: 'Admin / back-office staff. Per-diem is part of daily allowance regardless of MD count.' } },
+    { code: 'FIELD',   label: 'Field visits — MD-threshold per-diem (pharma default)',                insert_only_metadata: true, metadata: { tier_rule: 'USE_THRESHOLDS', description: 'BDM field activity. md_count vs CompProfile/PERDIEM_RATES/Settings thresholds determines FULL/HALF/ZERO.' } },
+    { code: 'OTHER',   label: 'Other activity — MD-threshold per-diem (legacy bucket)',               insert_only_metadata: true, metadata: { tier_rule: 'USE_THRESHOLDS', description: 'Free-text bucket. Uses MD threshold like FIELD by default; admin can flip to AUTO_FULL/ZERO per entity.' } },
+    { code: 'NO_WORK', label: 'No work — zero per-diem (leave, holiday, off day)',                    insert_only_metadata: true, metadata: { tier_rule: 'ZERO', description: 'Always ZERO. Cannot be overridden via UI; replaces the legacy hardcoded NO_WORK special case.' } },
+  ],
+
   // Phase G1.5 — Philippine provinces (82 rows) for structured Doctor address.
   // code = ISO 3166-2:PH-like province code; label = human name; metadata.region = Luzon/Visayas/Mindanao macro bucket.
   PH_PROVINCES: [
@@ -3372,6 +3402,7 @@ exports.create = catchAsync(async (req, res) => {
   if (EXECUTIVE_COCKPIT_ROLES_CATEGORIES.has(cat)) invalidateCockpitRolesCache(req.entityId);
   if (PRICE_RESOLVER_CATEGORIES.has(cat)) invalidatePriceCache(req.entityId);
   if (SALES_DISCOUNT_CONFIG_CATEGORIES.has(cat)) invalidateSalesDiscountCache(req.entityId);
+  if (ACTIVITY_PERDIEM_RULES_CATEGORIES.has(cat)) invalidateActivityPerdiemRuleCache(req.entityId);
   res.status(201).json({ success: true, data: item });
 });
 
@@ -3406,6 +3437,7 @@ exports.update = catchAsync(async (req, res) => {
   if (EXECUTIVE_COCKPIT_ROLES_CATEGORIES.has(item.category)) invalidateCockpitRolesCache(item.entity_id);
   if (PRICE_RESOLVER_CATEGORIES.has(item.category)) invalidatePriceCache(item.entity_id);
   if (SALES_DISCOUNT_CONFIG_CATEGORIES.has(item.category)) invalidateSalesDiscountCache(item.entity_id);
+  if (ACTIVITY_PERDIEM_RULES_CATEGORIES.has(item.category)) invalidateActivityPerdiemRuleCache(item.entity_id);
   res.json({ success: true, data: item });
 });
 
@@ -3432,6 +3464,7 @@ exports.remove = catchAsync(async (req, res) => {
   if (EXECUTIVE_COCKPIT_ROLES_CATEGORIES.has(item.category)) invalidateCockpitRolesCache(item.entity_id);
   if (PRICE_RESOLVER_CATEGORIES.has(item.category)) invalidatePriceCache(item.entity_id);
   if (SALES_DISCOUNT_CONFIG_CATEGORIES.has(item.category)) invalidateSalesDiscountCache(item.entity_id);
+  if (ACTIVITY_PERDIEM_RULES_CATEGORIES.has(item.category)) invalidateActivityPerdiemRuleCache(item.entity_id);
   res.json({ success: true, data: item, message: 'Item deactivated' });
 });
 
@@ -3460,6 +3493,7 @@ exports.seedCategory = catchAsync(async (req, res) => {
   if (EXECUTIVE_COCKPIT_ROLES_CATEGORIES.has(category)) invalidateCockpitRolesCache(req.entityId);
   if (PRICE_RESOLVER_CATEGORIES.has(category)) invalidatePriceCache(req.entityId);
   if (SALES_DISCOUNT_CONFIG_CATEGORIES.has(category)) invalidateSalesDiscountCache(req.entityId);
+  if (ACTIVITY_PERDIEM_RULES_CATEGORIES.has(category)) invalidateActivityPerdiemRuleCache(req.entityId);
   const items = await Lookup.find({ entity_id: req.entityId, category }).sort({ sort_order: 1 }).lean();
   res.json({ success: true, data: items, message: `Seeded ${defaults.length} defaults for ${category}` });
 });

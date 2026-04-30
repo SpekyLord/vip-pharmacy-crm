@@ -3,6 +3,7 @@ const Warehouse = require('../models/Warehouse');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { ROLES, isAdminLike } = require('../../constants/roles');
 const { buildHospitalAccessFilter } = require('../utils/hospitalAccess');
+const { markCrossEntityAllowed } = require('../../middleware/requestContext');
 const XLSX = require('xlsx');
 const { safeXlsxRead } = require('../../utils/safeXlsxRead');
 
@@ -143,6 +144,8 @@ const removeAlias = catchAsync(async (req, res) => {
 
 // ═══ Export Hospitals (Excel) ═══
 const exportHospitals = catchAsync(async (req, res) => {
+  markCrossEntityAllowed(req, 'admin Hospital export reads warehouse codes across all entities (Hospital.warehouse_ids is multi-entity per Phase G3)');
+
   const hospitals = await Hospital.find({}).sort({ hospital_name: 1 })
     .select('-__v -tagged_bdms -hospital_name_clean -createdAt -updatedAt')
     .lean();
@@ -194,6 +197,8 @@ const exportHospitals = catchAsync(async (req, res) => {
 // ═══ Import Hospitals (Excel) — upsert by hospital_name ═══
 const importHospitals = catchAsync(async (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: 'Upload an Excel file' });
+
+  markCrossEntityAllowed(req, 'admin Hospital import resolves warehouse codes across all entities (Hospital.warehouse_ids is multi-entity per Phase G3)');
 
   const wb = safeXlsxRead(req.file.buffer, { type: 'buffer' });
   const ws = wb.Sheets[wb.SheetNames[0]];
