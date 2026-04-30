@@ -956,12 +956,74 @@ const approvalHandlers = {
     terminalStates: ['POSTED', 'CLOSED', 'CANCELLED'],
   }),
 
-  journal: async (id, action, userId, reason) => buildGroupBReject({
-    actionType: 'journal', id, action, userId, reason,
-    modelByDocType: { JOURNAL_ENTRY: 'JournalEntry' },
-    fallbackModel: 'JournalEntry',
-    terminalStates: ['POSTED', 'VOID'],
-  }),
+  // Phase G6.7-PC2 (Apr 30 2026) — Journal: branches on action like petty_cash.
+  // Approve/post path delegates to the existing journalEngine.postJournal helper
+  // (already factored — no extraction needed); reject stays on buildGroupBReject.
+  // Idempotent on POSTED; period-lock against the JE's own entity (cross-entity-safe).
+  journal: async (id, action, userId, reason) => {
+    if (action === 'reject') {
+      return buildGroupBReject({
+        actionType: 'journal', id, action, userId, reason,
+        modelByDocType: { JOURNAL_ENTRY: 'JournalEntry' },
+        fallbackModel: 'JournalEntry',
+        terminalStates: ['POSTED', 'VOID'],
+      });
+    }
+    if (action === 'approve' || action === 'post') {
+      const ApprovalRequest = require('../models/ApprovalRequest');
+      const JournalEntry = require('../models/JournalEntry');
+      const { postJournal } = require('../services/journalEngine');
+      const { checkPeriodOpen } = require('../utils/periodLock');
+
+      // Hub passes ApprovalRequest._id (Group B id-semantics); deref to JE._id.
+      // Fall back to treating id as the JE _id directly so direct dispatches still work.
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
+      const request = await ApprovalRequest.findById(id).lean();
+      const jeId = (request && request.doc_id) ? request.doc_id : id;
+
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: jeId resolved from gated approver via entity-scoped list above
+      const jePre = await JournalEntry.findById(jeId).lean();
+      if (!jePre) throw new Error('Journal entry not found');
+
+      // Idempotency on POSTED — re-approve from Hub never double-posts (matches G6.7-PC1 petty_cash posture).
+      if (jePre.status !== 'POSTED') {
+        // Period lock against the JE's own entity (Hub approvers may be cross-entity privileged).
+        if (jePre.period) await checkPeriodOpen(jePre.entity_id, jePre.period);
+        // postJournal throws if status !== 'DRAFT' — that's the desired guard for non-DRAFT/non-POSTED states.
+        await postJournal(jeId, userId, jePre.entity_id);
+      }
+
+      // Close the originating ApprovalRequest. The shared auto-resolve at L1130-1160
+      // keys on `{ doc_id: id }` (Group A id-semantics where id IS the underlying doc),
+      // which never matches Group B items (id IS the ApprovalRequest._id). Without this
+      // explicit close, the request would stay PENDING in the Hub after a successful approve.
+      if (request) {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id resolved from gated approver via entity-scoped list above
+        await ApprovalRequest.updateOne(
+          { _id: id, status: 'PENDING' },
+          {
+            $set: {
+              status: 'APPROVED',
+              decided_by: userId,
+              decided_at: new Date(),
+              decision_reason: reason || 'Approved via Approval Hub',
+            },
+            $push: {
+              history: {
+                status: 'APPROVED',
+                by: userId,
+                reason: reason || 'Approved via Approval Hub',
+              },
+            },
+          }
+        );
+      }
+
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: jeId resolved from gated approver via entity-scoped list above
+      return await JournalEntry.findById(jeId).lean();
+    }
+    throw new Error(`Unsupported action for journal: ${action}`);
+  },
 
   banking: async (id, action, userId, reason) => buildGroupBReject({
     actionType: 'banking', id, action, userId, reason,

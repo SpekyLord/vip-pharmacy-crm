@@ -6848,3 +6848,51 @@ PRF and CALF default to `bir_flag: 'INTERNAL'` ([backend/erp/models/PrfCalf.js:1
 
 - Approver gate still routes through the lookup-driven `MODULE_DEFAULT_ROLES.PETTY_CASH` (Rule #3) and the `approve_petty_cash` sub-permission. Subscribers configure who can post petty cash without code changes.
 - `MODULE_AUTO_POST` was deliberately NOT extended to PETTY_CASH (would only fire on the `approval_request` type). The fix lives in the `petty_cash` handler itself, which is what the Hub actually dispatches.
+
+---
+
+## Phase G6.7-PC2 — Journal Hub Approve Fix (Apr 30 2026 evening)
+
+> Same fix template as G6.7-PC1, applied to the next Group B module. Closes the second of six identical 500 regressions surfaced by the Group B Hub-handler audit.
+
+### Why this was urgent
+
+The Apr 29 audit (see PHASETASK-ERP.md "Open Group B gaps") confirmed all 6 Group B handlers (`purchasing` / `journal` / `banking` / `ic_transfer` / `sales_goal_plan` / `incentive_payout`) render an Approve button in the Hub UI but the backend handler is hard-coded to throw on any action ≠ `'reject'`. Each is end-to-end 500-broken on approve, same bug class as the petty_cash regression we just fixed. Risk-tiered fix order (lowest → highest blast radius): journal → purchasing/incentive_payout → banking/ic_transfer/sales_goal_plan.
+
+### What shipped
+
+**Hub handler (`approvalHandlers.journal`, [universalApprovalController.js:959-1027](backend/erp/controllers/universalApprovalController.js#L959-L1027))** now branches on action:
+- `reject` → still goes through `buildGroupBReject` (terminal-state guard + REJECTED stamp).
+- `approve | post` → derefs `ApprovalRequest.findById(id)` to recover the underlying `JournalEntry._id`, peeks status (idempotent on POSTED — re-approve from Hub never double-posts), period-locks against the **JE's own** entity_id (cross-entity-safe), calls existing `journalEngine.postJournal(jeId, userId, jeEntityId)`, then explicitly closes the originating `ApprovalRequest` to APPROVED with a history `$push`.
+
+### Why no helper extraction was needed (vs G6.7-PC1)
+
+`postJournal(jeId, userId, entityId)` is already a clean service-layer function in [`backend/erp/services/journalEngine.js:51`](backend/erp/services/journalEngine.js#L51) — same shape and contract as the helper we extracted for petty cash, but it already existed. Stamp `posted_by` + `posted_at` + `status='POSTED'` is done inside the existing helper; pre-save hook validates DR=CR balance + COA codes against ChartOfAccounts. **Zero new business logic added — pure wiring.**
+
+### Healthcheck
+
+[`backend/scripts/healthcheckJournalHubApprove.js`](backend/scripts/healthcheckJournalHubApprove.js) — **19 static assertions**: Hub handler branches on action; reject path preserved; approve|post path delegates to `postJournal`; ApprovalRequest deref + close + history $push; period-lock against JE entity; `postJournal` helper signature + idempotency guard; BDM-direct route still wired; `JOURNAL` MODULE_QUERIES `actionType` + `sub_key='approve_journal'` unchanged; G6.7-PC1 sibling healthcheck still present.
+
+### Verification (Apr 30 2026 evening)
+
+- `node -c` on universalApprovalController → green.
+- `node backend/scripts/healthcheckJournalHubApprove.js` → **19/19 PASS**.
+- Regression: G6.7-PC1 22/22, G4.5dd 26/26, Income Proxy 32/32, Compute Payroll 29/29, Payslip Roster 31/31 — all green.
+- `npx vite build` → green in 24.35s.
+- **Live Playwright smoke (President):** seeded DRAFT JE (DR Cash 1000 ₱100 / CR Owner Capital 3000 ₱100) + PENDING ApprovalRequest. Hub queue 7→8 with JOURNAL filter chip. POST `/universal-approve` `{type:'journal', action:'approve', id:request._id, doc_id:je._id}` → **HTTP 200** with full JE doc returned. Hub queue 8→7, JOURNAL chip gone. DB-side ratification via `smokeVerifyJournalHubApprove.js`: JE status DRAFT → POSTED, posted_by=President, posted_at stamped, ApprovalRequest PENDING → APPROVED, decided_by=President, decision_reason="Approved via Approval Hub", history $push verified.
+
+### Files touched (1 modified, 3 new)
+
+- modified: [backend/erp/controllers/universalApprovalController.js](backend/erp/controllers/universalApprovalController.js) — `journal` handler branches on action; explicit ApprovalRequest close.
+- new: [backend/scripts/healthcheckJournalHubApprove.js](backend/scripts/healthcheckJournalHubApprove.js)
+- new: [backend/scripts/smokeFixtureJournalHubApprove.js](backend/scripts/smokeFixtureJournalHubApprove.js) (dev-only, optional)
+- new: [backend/scripts/smokeVerifyJournalHubApprove.js](backend/scripts/smokeVerifyJournalHubApprove.js) (dev-only, optional)
+- modified: docs (CLAUDE-ERP.md + docs/PHASETASK-ERP.md)
+
+### Subscription posture
+
+Approver gate still routes through `MODULE_DEFAULT_ROLES.JOURNAL` (Rule #3) + `approve_journal` sub-permission. No new lookup category. Same backward-compat guard as G6.7-PC1: handler falls back to treating `id` as the JE _id directly when `ApprovalRequest.findById(id)` returns null — direct dispatches outside the Hub keep working.
+
+### Open Group B gaps (4 remaining, deferred)
+
+`purchasing` / `banking` / `ic_transfer` / `sales_goal_plan` / `incentive_payout` Hub handlers still throw on approve. Same fix template applies; each requires its own healthcheck + smoke fixture. Recommended order: `purchasing` → `incentive_payout` → `ic_transfer` → `banking` → `sales_goal_plan`. See PHASETASK-ERP.md for the full punch list.

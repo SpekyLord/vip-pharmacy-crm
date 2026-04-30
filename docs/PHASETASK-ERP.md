@@ -10122,22 +10122,62 @@ The Group B `petty_cash` handler at universalApprovalController.js L980-985 was 
 - modified: CLAUDE-ERP.md
 - modified: docs/PHASETASK-ERP.md
 
-### Open Group B gaps (deferred, NOT in scope)
+### Open Group B gaps
 
-The same "approve throws → Hub returns 500" pattern still exists for the other Group B handlers at universalApprovalController.js L952-1001. Each needs a `postSingleXxx` helper extracted from its module controller, then the Hub handler branches on action like `petty_cash` now does. Defer until a user reports the symptom (or pull forward proactively before the SaaS spin-out audit).
+The same "approve throws → Hub returns 500" pattern still exists for the other Group B handlers. Each needs the `petty_cash`-style branching: `reject` → `buildGroupBReject` (unchanged); `approve | post` → deref `ApprovalRequest.findById(id)` → call the module's `postSingleXxx` (or service-layer `postX`) helper → close the request to APPROVED with history $push. Pull forward proactively before the SaaS spin-out audit (recommended order is risk-tiered, lowest blast radius first).
 
-| Type            | Handler line | Source models                       | Helper to extract from        |
-|-----------------|--------------|-------------------------------------|-------------------------------|
-| purchasing      | L952         | SupplierInvoice / PurchaseOrder     | purchasingController          |
-| journal         | L959         | JournalEntry                        | journalController             |
-| banking         | L966         | BankStatement                       | bankingController             |
-| ic_transfer     | L973         | InterCompanyTransfer / IcSettlement | interCompanyController        |
-| sales_goal_plan | L987         | SalesGoalPlan                       | salesGoalPlanController       |
-| incentive_payout| L996         | IncentivePayout                     | incentivePayoutController     |
+| Type            | Status   | Source models                       | Helper to extract from / call         |
+|-----------------|----------|-------------------------------------|---------------------------------------|
+| petty_cash      | ✅ G6.7-PC1 | PettyCashTransaction              | postSinglePettyCashTransaction (NEW)  |
+| journal         | ✅ G6.7-PC2 | JournalEntry                      | journalEngine.postJournal (existing)  |
+| purchasing      | ⏸ deferred | SupplierInvoice / PurchaseOrder   | purchasingController                  |
+| incentive_payout| ⏸ deferred | IncentivePayout                   | incentivePayoutController             |
+| ic_transfer     | ⏸ deferred | InterCompanyTransfer / IcSettlement | interCompanyController              |
+| banking         | ⏸ deferred | BankStatement                     | bankingController                     |
+| sales_goal_plan | ⏸ deferred | SalesGoalPlan                     | salesGoalPlanController               |
 
 ### Subscription posture
 
 Approver gate still routes through the lookup-driven `MODULE_DEFAULT_ROLES.PETTY_CASH` (Rule #3) and the `approve_petty_cash` sub-permission. No new lookup category. WorkflowGuide language at WorkflowGuide.jsx 'approval-manager' L715-740 already documented the now-true contract.
+
+---
+
+## Phase G6.7-PC2 — Journal Hub Approve Fix (Apr 30 2026 evening)
+
+> Same fix template as G6.7-PC1, applied to `journal` (lowest-risk Group B module — `postJournal` was already a service-layer function so no helper extraction needed).
+
+### Symptom
+
+President clicks **Approve** on any JOURNAL item in /erp/approvals → `POST /api/erp/approvals/universal-approve 500 (Internal Server Error)`. Same bug class as petty_cash; same fix pattern.
+
+### Root cause
+
+`approvalHandlers.journal` at universalApprovalController.js L959 was a bare `buildGroupBReject` delegate. `buildGroupBReject` throws "Unsupported action for journal: approve — only 'reject' is supported via Group B handler" on any action ≠ `'reject'`.
+
+### Tasks
+
+- [x] Branch `approvalHandlers.journal` on action: reject → `buildGroupBReject` (unchanged); approve | post → deref ApprovalRequest → call `journalEngine.postJournal` → close request
+- [x] Idempotent on POSTED (skip post when already posted — re-approve from Hub never double-posts)
+- [x] Period-lock against the JE's own `entity_id` (cross-entity-safe for privileged Hub approvers)
+- [x] No `postSingleJournal` helper extraction — `postJournal(jeId, userId, entityId)` was already factored into `services/journalEngine.js`
+- [x] Healthcheck `node backend/scripts/healthcheckJournalHubApprove.js` — **19/19 PASS**
+- [x] Regression: G6.7-PC1 22/22, G4.5dd 26/26, Income Proxy 32/32, Compute Payroll 29/29, Payslip Roster 31/31 — all green
+- [x] `node -c` on universalApprovalController — green
+- [x] `npx vite build` — green in 24.35s
+- [x] Live Playwright smoke (President): seeded DRAFT JE (DR Cash 1000 ₱100 / CR Owner Capital 3000 ₱100) + PENDING ApprovalRequest → Approve → HTTP 200 → JE POSTED + ApprovalRequest APPROVED + history $push verified via `smokeVerifyJournalHubApprove.js`
+
+### Files touched
+
+- modified: backend/erp/controllers/universalApprovalController.js
+- new: backend/scripts/healthcheckJournalHubApprove.js
+- new: backend/scripts/smokeFixtureJournalHubApprove.js (dev-only)
+- new: backend/scripts/smokeVerifyJournalHubApprove.js (dev-only)
+- modified: CLAUDE-ERP.md
+- modified: docs/PHASETASK-ERP.md
+
+### Subscription posture
+
+Approver gate still routes through `MODULE_DEFAULT_ROLES.JOURNAL` + `approve_journal` sub-permission. No new lookup category. Same backward-compat guard as G6.7-PC1: handler falls back to treating `id` as the JE _id directly when `ApprovalRequest.findById(id)` returns null — direct dispatches outside the Hub keep working.
 
 ---
 
