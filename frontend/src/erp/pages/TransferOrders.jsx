@@ -161,8 +161,12 @@ export default function TransferOrders() {
   const [sourceWarehouses, setSourceWarehouses] = useState([]);
   const [targetWarehouses, setTargetWarehouses] = useState([]);
 
-  // Internal Reassignment form state
-  const [reassignForm, setReassignForm] = useState({ source_bdm_id: '', target_bdm_id: '', source_warehouse_id: '', target_warehouse_id: '', reassignment_date: new Date().toISOString().slice(0, 10), territory_code: '', notes: '' });
+  // Internal Reassignment form state.
+  // Phase G4.5dd-r1 (Apr 30 2026): `territory_code` field dropped — backend
+  // auto-derives the IST-{TERRITORY|ENTITY}{MMDDYY}-{NNN} prefix from the
+  // source BDM's territory mapping (with entity short_name fallback) via the
+  // shared docNumbering service.
+  const [reassignForm, setReassignForm] = useState({ source_bdm_id: '', target_bdm_id: '', source_warehouse_id: '', target_warehouse_id: '', reassignment_date: new Date().toISOString().slice(0, 10), notes: '' });
   const [reassignItems, setReassignItems] = useState([{ product_id: '', batch_lot_no: '', expiry_date: '', qty: 1 }]);
   const [entityBdms, setEntityBdms] = useState([]);
   const [reassignBatchCache, setReassignBatchCache] = useState({});
@@ -170,6 +174,14 @@ export default function TransferOrders() {
 
   const isPresidentOrAdmin = [ROLES.PRESIDENT, ROLES.CEO, ROLES.ADMIN].includes(user?.role);
   const isFinanceOrAdmin = [ROLES.FINANCE, ROLES.ADMIN].includes(user?.role);
+  // Phase G4.5dd (Apr 30 2026) — staff with `inventory.internal_transfer_proxy`
+  // can CREATE internal reassignments on behalf of another BDM. Approval stays
+  // finance/admin only (preserves two-person rule on stock-ownership changes).
+  // Lookup-driven role allowlist (PROXY_ENTRY_ROLES.INTERNAL_TRANSFER) lives
+  // server-side; this client check is just the UX surface — the backend gate
+  // in interCompanyController.createReassignment is the authoritative deny.
+  const canProxyInternalTransfer = !!user?.erp_access?.sub_permissions?.inventory?.internal_transfer_proxy;
+  const canCreateReassign = isPresidentOrAdmin || canProxyInternalTransfer;
 
   // Fetch entities on mount
   const fetchEntities = useCallback(async () => {
@@ -305,7 +317,7 @@ export default function TransferOrders() {
       if (!items.length) { showError(null, 'Add at least one line item'); return; }
       await createReassignment({ ...reassignForm, entity_id: user?.entity_id, line_items: items });
       setShowCreateReassign(false);
-      setReassignForm({ source_bdm_id: '', target_bdm_id: '', source_warehouse_id: '', target_warehouse_id: '', reassignment_date: new Date().toISOString().slice(0, 10), territory_code: '', notes: '' });
+      setReassignForm({ source_bdm_id: '', target_bdm_id: '', source_warehouse_id: '', target_warehouse_id: '', reassignment_date: new Date().toISOString().slice(0, 10), notes: '' });
       setReassignItems([{ product_id: '', batch_lot_no: '', expiry_date: '', qty: 1 }]);
       fetchReassignments();
     } catch (err) { showError(err, 'Could not create reassignment'); }
@@ -402,8 +414,13 @@ export default function TransferOrders() {
               {isPresidentOrAdmin && activeTab === 'ic' && (
                 <button className="btn btn-primary" onClick={() => setShowCreate(true)}>+ IC Transfer</button>
               )}
-              {isPresidentOrAdmin && activeTab === 'internal' && (
+              {canCreateReassign && activeTab === 'internal' && (
                 <button className="btn btn-primary" onClick={() => setShowCreateReassign(true)}>+ Reassign Stock</button>
+              )}
+              {!isPresidentOrAdmin && canProxyInternalTransfer && activeTab === 'internal' && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', padding: '4px 10px', borderRadius: 999, background: '#ede9fe', color: '#5b21b6', fontSize: 11, fontWeight: 600, letterSpacing: '0.02em' }} title="You are creating reassignments on behalf of another BDM. Approval is reserved for admin/finance.">
+                  Proxy mode — create only
+                </span>
               )}
             </div>
           </div>
@@ -778,20 +795,19 @@ export default function TransferOrders() {
                   </SelectField>
                 </div>
               </div>
-              <div className="form-row-3">
+              <div className="form-row">
                 <div className="form-group">
                   <label>Date</label>
                   <input type="date" value={reassignForm.reassignment_date} onChange={e => setReassignForm({ ...reassignForm, reassignment_date: e.target.value })} />
-                </div>
-                <div className="form-group">
-                  <label>Territory Code</label>
-                  <input value={reassignForm.territory_code} onChange={e => setReassignForm({ ...reassignForm, territory_code: e.target.value })} placeholder="e.g. ILO" style={{ textTransform: 'uppercase' }} />
                 </div>
                 <div className="form-group">
                   <label>Notes</label>
                   <input value={reassignForm.notes} onChange={e => setReassignForm({ ...reassignForm, notes: e.target.value })} placeholder="Optional" />
                 </div>
               </div>
+              <p style={{ fontSize: 11, color: '#94a3b8', margin: '0 0 12px' }}>
+                Reference number auto-assigned on submit: <code>IST-{`{TERRITORY|ENTITY}{MMDDYY}-{NNN}`}</code> — same scheme as ICT / JE / CALF / PO. Territory derives from the source BDM; entity short_name is the fallback.
+              </p>
               <h3 style={{ fontSize: 14, fontWeight: 600, marginTop: 16, marginBottom: 8 }}>Line Items</h3>
               <table className="line-items-grid">
                 <thead><tr><th>Product</th><th>Batch (FIFO)</th><th>Expiry</th><th>Qty</th><th></th></tr></thead>

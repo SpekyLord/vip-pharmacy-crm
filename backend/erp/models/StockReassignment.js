@@ -69,14 +69,40 @@ const stockReassignmentSchema = new mongoose.Schema({
   collection: 'erp_stock_reassignments'
 });
 
-// Normalize batch numbers on save
-stockReassignmentSchema.pre('save', function (next) {
-  for (const item of this.line_items) {
-    if (item.batch_lot_no) {
-      item.batch_lot_no = cleanBatchNo(item.batch_lot_no);
+// Normalize batch numbers + auto-generate reassignment_ref on save.
+//
+// Phase G4.5dd-r1 (Apr 30 2026 evening) — ref generation moved off the
+// controller and onto the model, mirroring InterCompanyTransfer.
+// Format: IST-{TERRITORY|ENTITY}{MMDDYY}-{NNN}, matching ICT/JE/CALF/PO.
+//   - Territory code from source BDM's Territory mapping (CALF/PRF style).
+//   - Falls back to source Entity.short_name (admin-editable, cached).
+//   - Atomic sequence via DocSequence — collision-safe.
+//
+// The legacy admin-typed `territory_code` input on the modal is deprecated;
+// docNumbering's resolver now handles the prefix automatically.
+stockReassignmentSchema.pre('save', async function (next) {
+  try {
+    for (const item of this.line_items) {
+      if (item.batch_lot_no) {
+        item.batch_lot_no = cleanBatchNo(item.batch_lot_no);
+      }
     }
+
+    if (this.isNew && !this.reassignment_ref) {
+      const { generateDocNumber } = require('../services/docNumbering');
+      this.reassignment_ref = await generateDocNumber({
+        prefix: 'IST',
+        bdmId: this.source_bdm_id,
+        entityId: this.entity_id,
+        date: this.reassignment_date || new Date(),
+        fallbackCode: 'STR',
+      });
+    }
+
+    next();
+  } catch (err) {
+    next(err);
   }
-  next();
 });
 
 stockReassignmentSchema.index({ entity_id: 1, status: 1 });

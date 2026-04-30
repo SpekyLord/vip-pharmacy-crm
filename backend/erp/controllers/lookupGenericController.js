@@ -706,6 +706,15 @@ const SEED_DEFAULTS = {
     // so Mae's existing grant still works without re-permissioning.
     { code: 'INVENTORY__BATCH_METADATA_PROXY',  label: 'Edit Batch # / Expiry on another BDM’s stock', metadata: { module: 'inventory', key: 'batch_metadata_proxy',  sort_order: 9.1 } },
     { code: 'INVENTORY__PHYSICAL_COUNT_PROXY',  label: 'Physical Count on another BDM’s stock',         metadata: { module: 'inventory', key: 'physical_count_proxy',  sort_order: 9.2 } },
+    // Phase G4.5dd (Apr 30 2026) — explicit cross-BDM proxy for Internal Stock
+    // Reassignment (warehouse-to-warehouse, custodian shift). Mirrors the
+    // G4.5x/G4.5y split — separate from `grn_proxy_entry` because reassignment
+    // moves stock OWNERSHIP between BDMs (KPI / commission / inventory cost
+    // basis impact), not just rewriting batch metadata. Pairs with
+    // PROXY_ENTRY_ROLES.INTERNAL_TRANSFER + VALID_OWNER_ROLES.INTERNAL_TRANSFER.
+    // Approval of the reassignment remains admin/finance/president — preserves
+    // the two-person rule (creator ≠ approver) for stock-ownership changes.
+    { code: 'INVENTORY__INTERNAL_TRANSFER_PROXY', label: 'Create Internal Stock Reassignment on behalf of another BDM', metadata: { module: 'inventory', key: 'internal_transfer_proxy', sort_order: 9.3 } },
     // Phase G4.5e — Proxy Entry for Undertaking. Undertaking's bdm_id is
     // inherited from its linked GRN (autoUndertakingForGrn), so the proxy
     // applies only to READ (list/detail) and SUBMIT (DRAFT→SUBMITTED). No
@@ -2772,6 +2781,13 @@ const SEED_DEFAULTS = {
     // (BDM-shaped owners only). President always bypasses.
     { code: 'INCOME', label: 'Income Report (per-BDM payslip + manual deduction lines)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 12 } },
     { code: 'DEDUCTION_SCHEDULE', label: 'Deduction Schedule (BDM cash advance / loan amortization)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 13 } },
+    // Phase G4.5dd (Apr 30 2026) — Internal Stock Reassignment proxy (cross-BDM
+    // warehouse-to-warehouse). Subscribers append 'staff' to metadata.roles in
+    // Control Center so a back-office BDM with INVENTORY__INTERNAL_TRANSFER_PROXY
+    // can create reassignments on behalf of field BDMs. Approval (which deducts
+    // FIFO-consumed stock from source) remains admin/finance/president regardless
+    // of this row — preserves two-person rule on stock-ownership changes.
+    { code: 'INTERNAL_TRANSFER', label: 'Internal Stock Reassignment (cross-BDM warehouse-to-warehouse)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 14 } },
   ],
   // Phase G4.5a follow-up — which roles are valid OWNERS of a proxied record
   // per module. Defaults to BDM-shaped roles (['staff']); admin/
@@ -2807,6 +2823,13 @@ const SEED_DEFAULTS = {
     // corrupt these. Used by recordPhysicalCount per-batch BDM derivation +
     // correctBatchMetadata target validation.
     { code: 'INVENTORY', label: 'Valid proxy targets — Inventory (batch metadata + physical count)', insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 11 } },
+    // Phase G4.5dd (Apr 30 2026) — Internal Stock Reassignment ownership stays
+    // BDM-shaped on BOTH sides. source_bdm_id and target_bdm_id are validated
+    // against this allowlist + same-entity. Letting an admin/finance/president
+    // be a stock owner would corrupt FIFO consumption, per-BDM stock visibility,
+    // commission attribution, and Approval Hub hydration. Used by
+    // interCompanyController.createReassignment defense-in-depth gate.
+    { code: 'INTERNAL_TRANSFER', label: 'Valid proxy targets — Internal Stock Reassignment', insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 12 } },
   ],
   // Phase G4.5bb (Apr 29, 2026) — per-clerk Payslip deduction-write roster.
   //

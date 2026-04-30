@@ -18,6 +18,9 @@ export default function useExpenses() {
   const validateSmer = (body) => api.post('/expenses/smer/validate', body || {});
   const submitSmer = (body) => api.post('/expenses/smer/submit', body || {});
   const reopenSmer = (ids, extra) => api.post('/expenses/smer/reopen', { smer_ids: ids, ...(extra || {}) });
+  // VALID → DRAFT so the BDM (or proxy) can edit. No journal reversal — VALID
+  // hasn't posted. Period-locked + proxy-aware on the backend.
+  const revertSmer = (id) => api.post(`/expenses/smer/${id}/revert`);
   // Phase G4.5f follow-up — forward bdmId so privileged + proxy callers scope to
   // the target BDM's CRM visits, not to req.bdmId (admins have no BDM rows; eBDM
   // proxies would silently pull their own visits). Self-filers may omit bdmId;
@@ -99,7 +102,7 @@ export default function useExpenses() {
     getExpenseSummary,
     // SMER
     getSmerList, getSmerById, createSmer, updateSmer, deleteDraftSmer,
-    validateSmer, submitSmer, reopenSmer,
+    validateSmer, submitSmer, reopenSmer, revertSmer,
     getSmerCrmMdCounts, getSmerCrmVisitDetail, overridePerdiemDay, applyPerdiemOverride,
     // Car Logbook
     getCarLogbookList, getCarLogbookById, createCarLogbook, updateCarLogbook, deleteDraftCarLogbook,

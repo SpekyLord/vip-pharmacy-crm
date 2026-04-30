@@ -9886,6 +9886,70 @@ Closes the user-stated proxy ask "let proxy edit the batch number AND actual sto
 
 ---
 
+## Phase G4.5dd — Internal Stock Reassignment Proxy (Apr 30 2026 evening) ✅ SHIPPED
+
+Closes the cross-BDM proxy gap on `/erp/transfers` Internal tab. Mae Navarro / Jay Ann Protacio (eBDMs) can now create internal warehouse-to-warehouse stock reassignments on behalf of field BDMs. Sibling phase to G4.5x / G4.5y / G4.5z (inventory proxy family).
+
+### What changed
+
+- New SUB_PERMISSION_KEYS seed row:
+  - `INVENTORY__INTERNAL_TRANSFER_PROXY` → "Create Internal Stock Reassignment on behalf of another BDM", key `internal_transfer_proxy`, sort 9.3
+- New PROXY_ENTRY_ROLES row: `INTERNAL_TRANSFER`, default `metadata.roles: ['admin','finance','president']`, `insert_only_metadata: true`. Subscriber appends `'staff'` via Control Center to grant.
+- New VALID_OWNER_ROLES row: `INTERNAL_TRANSFER`, default `metadata.roles: ['staff']`, `insert_only_metadata: true`.
+- `interCompanyController.createReassignment`:
+  - Privileged short-circuit (admin/finance/president) → no proxy check.
+  - Non-privileged → must hold `inventory.internal_transfer_proxy` + role in PROXY_ENTRY_ROLES.INTERNAL_TRANSFER (returns 403 with required-grant message).
+  - Defense-in-depth: BOTH source_bdm_id AND target_bdm_id validated against VALID_OWNER_ROLES.INTERNAL_TRANSFER + same-entity (catches a privileged caller accidentally passing an admin _id).
+- `interCompanyController.approveReassignment` gains explicit `req.isAdmin || req.isFinance || req.isPresident` short-circuit at the top — closes a latent gap where any user with `inventory.transfers` could call POST `/reassign/:id/approve` directly via the API.
+- `TransferOrders.jsx`:
+  - Reads `user.erp_access.sub_permissions.inventory.internal_transfer_proxy` into `canProxyInternalTransfer`.
+  - "+ Reassign Stock" button surfaces if `isPresidentOrAdmin || canProxyInternalTransfer`.
+  - Purple "Proxy mode — create only" chip in the header when non-privileged proxy is active.
+  - Approve / Reject buttons remain gated on `isFinanceOrAdmin` (two-person rule UI parity).
+- `WorkflowGuide.jsx` `transfers` block rewritten — separate steps for IC vs Internal, mention of the proxy sub-perm + lookup row + two-person rule.
+
+### Two-person rule (preserved)
+
+Proxy can CREATE PENDING reassignment; APPROVAL — which deducts FIFO stock from source and shifts ownership to target — stays admin/finance/president, **non-delegable**. Mirrors PRF/CALF / Sales / Collections proxy phase posture: proxies submit, authorities post.
+
+### Files touched (5 modified, 1 new)
+
+- `backend/erp/controllers/lookupGenericController.js`
+- `backend/erp/controllers/interCompanyController.js`
+- `frontend/src/erp/pages/TransferOrders.jsx`
+- `frontend/src/erp/components/WorkflowGuide.jsx`
+- `CLAUDE-ERP.md` + `docs/PHASETASK-ERP.md`
+- NEW: `backend/scripts/healthcheckInternalTransferProxy.js`
+
+### Verification (Apr 30 2026 evening)
+
+- `node backend/scripts/healthcheckInternalTransferProxy.js` → **19/19 PASS**
+- Sibling regressions all green: G4.5aa 32/32, G4.5bb 31/31, G4.5cc 29/29, Phase N + G4.5h-A.
+- `npx vite build` → green in 13.78s.
+- Browser smoke as Jay Ann Protacio (s19) with `inventory.internal_transfer_proxy` ticked — planned same evening.
+
+### Operational quickstart (subscriber)
+
+1. Admin → Control Center → Access Templates → eBDM's Access Template → Inventory → tick "Create Internal Stock Reassignment on behalf of another BDM".
+2. Admin → Control Center → Lookup Tables → category PROXY_ENTRY_ROLES, code INTERNAL_TRANSFER → append `'staff'` to `metadata.roles`. Cache busts on save (60s TTL).
+3. eBDM logs in to /erp/transfers → Internal tab → button visible + purple chip — submission goes PENDING; admin/finance approves to deduct FIFO.
+
+### Phase G4.5dd-r1 follow-up (same evening, Apr 30 2026)
+
+User feedback: the modal's "Territory Code" free-text input clashed with the rest of the system, which auto-numbers via `docNumbering`. Fixed:
+
+- `StockReassignment.pre('save')` now calls `generateDocNumber({ prefix: 'IST', bdmId: source_bdm_id, entityId: entity_id, fallbackCode: 'STR' })`. Format `IST-{TERRITORY|ENTITY}{MMDDYY}-{NNN}` — same scheme as ICT / JE / CALF / PO. Resolution: BDM's Territory mapping → Entity.short_name → `STR` fallback. Atomic DocSequence.
+- Modal: dropped the Territory Code form-group + state field. New helper note explains the auto-assigned scheme.
+- `createReassignment` no longer reads `territory_code` from `req.body`; legacy hand-built ref block removed.
+- Healthcheck extended **19 → 26**. Sibling regressions clean.
+- Vite green 28.31s. UI re-smoked as Jay Ann — modal now 6 fields (was 7), helper note rendering. Screenshot: `g45dd-r1-modal-no-territory.png`.
+
+Files added to the bundle (total 9, was 7):
+- + modified: `backend/erp/models/StockReassignment.js` (pre-save hook expanded)
+- + same files modified again: `interCompanyController.js`, `TransferOrders.jsx`, `WorkflowGuide.jsx`, `healthcheckInternalTransferProxy.js`, `CLAUDE-ERP.md`, `docs/PHASETASK-ERP.md`
+
+---
+
 ## Phase G4.5z — Inventory Proxy Sub-Permission Split (Apr 29 2026) ✅ SHIPPED
 
 UX patch on G4.5x/y. Splits the bundled `inventory.grn_proxy_entry` into TWO explicit cross-BDM proxy keys so Access Template UI surfaces what each tick actually grants.

@@ -13,7 +13,7 @@ const { uploadMultiple } = require('../../middleware/upload');
 const {
   // SMER
   createSmer, updateSmer, getSmerList, getSmerById, deleteDraftSmer,
-  validateSmer, submitSmer, reopenSmer,
+  validateSmer, submitSmer, reopenSmer, revertSmer,
   overridePerdiemDay, applyPerdiemOverride, getSmerCrmMdCounts, getSmerCrmVisitDetail,
   // Car Logbook
   createCarLogbook, updateCarLogbook, getCarLogbookList, getCarLogbookById, deleteDraftCarLogbook,
@@ -57,6 +57,7 @@ router.get('/smer/crm-visits/:date', getSmerCrmVisitDetail);  // CRM bridge: dri
 router.post('/smer/validate', validateSmer);
 router.post('/smer/submit', periodLockCheck('EXPENSE'), submitSmer);
 router.post('/smer/reopen', periodLockCheck('EXPENSE'), reopenSmer);
+router.post('/smer/:id/revert', periodLockCheck('EXPENSE'), revertSmer);  // VALID → DRAFT for further editing
 router.get('/smer/:id', getSmerById);
 router.put('/smer/:id', updateSmer);
 router.delete('/smer/:id', deleteDraftSmer);  // DRAFT only — backend enforces status check

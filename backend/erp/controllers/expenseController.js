@@ -485,6 +485,41 @@ const validateSmer = catchAsync(async (req, res) => {
   res.json({ success: true, message: `Validated ${smers.length} SMER(s)`, data: smers.map(s => ({ _id: s._id, status: s.status, errors: s.validation_errors })) });
 });
 
+/**
+ * POST /expenses/smer/:id/revert
+ * Demote a VALID SMER back to DRAFT so the BDM (or proxy) can edit it.
+ * Mirrors reopenSmer in spirit, but for the pre-POST stage — no journal
+ * reversal needed because VALID has not posted yet.
+ *
+ * Period-locked (period locks gate every status mutation under EXPENSE).
+ * Proxy-aware via widenFilterForProxy (same scope as updateSmer).
+ */
+const revertSmer = catchAsync(async (req, res) => {
+  const scope = await widenFilterForProxy(req, 'expenses', SMER_PROXY_OPTS);
+  const smer = await SmerEntry.findOne({ _id: req.params.id, ...scope, status: 'VALID' });
+  if (!smer) return res.status(404).json({ success: false, message: 'VALID SMER not found' });
+
+  const oldStatus = smer.status;
+  smer.status = 'DRAFT';
+  smer.validation_errors = [];
+  await smer.save();
+
+  await ErpAuditLog.logChange({
+    entity_id: smer.entity_id,
+    bdm_id: smer.bdm_id,
+    log_type: 'STATUS_CHANGE',
+    target_ref: smer._id.toString(),
+    target_model: 'SmerEntry',
+    field_changed: 'status',
+    old_value: oldStatus,
+    new_value: 'DRAFT',
+    changed_by: req.user._id,
+    note: `Reverted to DRAFT for editing — ${smer.period} ${smer.cycle}${String(smer.bdm_id) !== String(req.user._id) ? ' (proxy)' : ''}`
+  }).catch(err => console.error('[revertSmer] audit failed (non-critical):', err.message));
+
+  res.json({ success: true, data: smer });
+});
+
 const submitSmer = catchAsync(async (req, res) => {
   // Phase G4.5f — Integrity Point A. submitSmer loops every matching VALID
   // SMER in scope. Self-filers narrow via tenantFilter (own bdm_id only).
@@ -4075,7 +4110,7 @@ const presidentReversePrf = _reversePrfHandler;
 module.exports = {
   // SMER
   createSmer, updateSmer, getSmerList, getSmerById, deleteDraftSmer,
-  validateSmer, submitSmer, reopenSmer,
+  validateSmer, submitSmer, reopenSmer, revertSmer,
   overridePerdiemDay, applyPerdiemOverride, getSmerCrmMdCounts, getSmerCrmVisitDetail,
   // Car Logbook
   createCarLogbook, updateCarLogbook, getCarLogbookList, getCarLogbookById, deleteDraftCarLogbook,
