@@ -14,12 +14,28 @@
  * five lookup rows per entity. Doing it by hand in Control Center is fine for
  * one entity but error-prone across multi-entity tenants and across dev/prod.
  *
- * This script idempotently adds 'staff' (or removes it under --rollback) to:
- *   - MODULE_DEFAULT_ROLES.PAYROLL          (gates Compute + Submit Run)
- *   - MODULE_DEFAULT_ROLES.INCOME           (gates Income Report submit)
- *   - MODULE_DEFAULT_ROLES.DEDUCTION_SCHEDULE (gates Deduction Schedule submit)
- *   - PROXY_ENTRY_ROLES.INCOME              (allows staff to be a proxy on behalf of a target BDM)
- *   - PROXY_ENTRY_ROLES.DEDUCTION_SCHEDULE  (same)
+ * This script does TWO things idempotently per entity:
+ *
+ * (a) Ensures the 4 ERP_SUB_PERMISSION rows exist (Access Template checkboxes
+ *     admin ticks per clerk in People → user → ERP Access Template). If your
+ *     prod is on pre-Apr 29 code, these rows will be missing and the
+ *     checkboxes won't appear. --upsert inserts them independent of deployed
+ *     code's SEED_DEFAULTS so you're not blocked by code-rollout cadence:
+ *       - PAYROLL__INCOME_PROXY            (payroll.income_proxy)
+ *       - PAYROLL__DEDUCTION_SCHEDULE_PROXY (payroll.deduction_schedule_proxy)
+ *       - PAYROLL__PAYSLIP_DEDUCTION_WRITE  (payroll.payslip_deduction_write)
+ *       - PAYROLL__RUN_PROXY               (payroll.run_proxy — G4.5cc)
+ *
+ * (b) Adds 'staff' (or removes under --rollback) to metadata.roles on:
+ *       - MODULE_DEFAULT_ROLES.PAYROLL          (gates Compute + Submit Run)
+ *       - MODULE_DEFAULT_ROLES.INCOME           (gates Income Report submit)
+ *       - MODULE_DEFAULT_ROLES.DEDUCTION_SCHEDULE (gates Deduction Schedule submit)
+ *       - PROXY_ENTRY_ROLES.INCOME              (allows staff to be a proxy on behalf of a target BDM)
+ *       - PROXY_ENTRY_ROLES.DEDUCTION_SCHEDULE  (same)
+ *
+ * Note: there is NO PROXY_ENTRY_ROLES.PAYROLL row, by design. Compute Payroll
+ * is entity-wide, not per-BDM, so there's no "target BDM" to gate. The Compute
+ * Payroll proxy gate uses MODULE_DEFAULT_ROLES.PAYROLL only.
  *
  * Each row already has admin/finance/president pre-seeded by SEED_DEFAULTS
  * (lazy-seed on first GET). This script only touches metadata.roles via
@@ -51,11 +67,11 @@ const DRY_RUN = !process.argv.includes('--apply');
 const ROLLBACK = process.argv.includes('--rollback');
 const UPSERT = process.argv.includes('--upsert');
 
-// Lookup rows we touch. metadata block is the FALLBACK shape used when --upsert
-// inserts a missing row (prod entity that has never opened Lookup Tables for
-// the category yet). Existing rows are NEVER overwritten — only metadata.roles
-// gets the $addToSet / $pull mutation.
-const ROWS = [
+// Role-list rows we touch — ROLE_ROWS get 'staff' added (or removed under --rollback)
+// to metadata.roles via $addToSet / $pull. metadata block is the FALLBACK shape
+// used when --upsert inserts a missing row. Existing rows are NEVER overwritten —
+// only metadata.roles gets mutated.
+const ROLE_ROWS = [
   {
     category: 'MODULE_DEFAULT_ROLES',
     code: 'PAYROLL',
@@ -93,6 +109,48 @@ const ROWS = [
   },
 ];
 
+// Sub-perm rows (ERP_SUB_PERMISSION) — these are the Access Template checkboxes
+// admin ticks per clerk in People → user → ERP Access Template. Their existence
+// in the DB is what makes the checkbox APPEAR in the panel. They normally lazy-
+// seed on first Access Template open in each entity, BUT: if prod's deployed
+// code is older than G4.5aa (Apr 29, 2026), its SEED_DEFAULTS won't contain
+// these entries — meaning lazy-seed is a no-op and the checkboxes never appear.
+//
+// This script's --upsert mode inserts these rows independently of deployed
+// code's SEED_DEFAULTS so prod is unblocked even if code rollout is delayed.
+// 'staff' is NOT added here — these are user-level toggles, not role gates.
+// Existing rows (with potentially admin-tweaked labels) are NEVER overwritten.
+const SUB_PERM_ROWS = [
+  {
+    category: 'ERP_SUB_PERMISSION',
+    code: 'PAYROLL__INCOME_PROXY',
+    label: 'Generate Income Report + record deductions on behalf of another BDM',
+    metadata: { module: 'payroll', key: 'income_proxy', sort_order: 3 },
+  },
+  {
+    category: 'ERP_SUB_PERMISSION',
+    code: 'PAYROLL__DEDUCTION_SCHEDULE_PROXY',
+    label: 'Create / Edit / Withdraw Deduction Schedule on behalf of another BDM',
+    metadata: { module: 'payroll', key: 'deduction_schedule_proxy', sort_order: 4 },
+  },
+  {
+    category: 'ERP_SUB_PERMISSION',
+    code: 'PAYROLL__PAYSLIP_DEDUCTION_WRITE',
+    label: 'Add / Verify / Remove employee Payslip deduction lines (without PAYROLL FULL)',
+    metadata: { module: 'payroll', key: 'payslip_deduction_write', sort_order: 5 },
+  },
+  {
+    category: 'ERP_SUB_PERMISSION',
+    code: 'PAYROLL__RUN_PROXY',
+    label: 'Run Compute Payroll + Submit Run for Posting (Hub-approved by admin/finance/president)',
+    metadata: { module: 'payroll', key: 'run_proxy', sort_order: 6 },
+  },
+];
+
+// Compatibility alias — the original variable name. Older code paths in this
+// file still reference `ROWS`. Will be removed in next refactor.
+const ROWS = ROLE_ROWS;
+
 const lookupSchema = new mongoose.Schema({
   entity_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Entity', required: true },
   category: { type: String, required: true, uppercase: true, trim: true },
@@ -128,11 +186,41 @@ async function run() {
   }
 
   let inserts = 0, additions = 0, removals = 0, skipped = 0, missing = 0;
+  let subpermInserts = 0, subpermSkipped = 0, subpermMissing = 0;
 
   for (const ent of entities) {
     const label = ent.short_name || ent.entity_name || ent._id;
     console.log(`\n=== ${label} (${ent._id}) ===`);
 
+    // ── Pass 1: ensure ERP_SUB_PERMISSION rows exist (Access Template checkboxes) ──
+    for (const sp of SUB_PERM_ROWS) {
+      const existing = await Lookup.findOne({ entity_id: ent._id, category: sp.category, code: sp.code }).lean();
+      if (existing) {
+        console.log(`  · skip sub-perm ${sp.code} — already present`);
+        subpermSkipped++;
+        continue;
+      }
+      if (UPSERT) {
+        if (!DRY_RUN) {
+          await Lookup.create({
+            entity_id: ent._id,
+            category: sp.category,
+            code: sp.code,
+            label: sp.label,
+            sort_order: sp.metadata.sort_order || 0,
+            is_active: true,
+            metadata: sp.metadata,
+          });
+        }
+        console.log(`  ${DRY_RUN ? '[dry] would insert' : 'INSERTED'} sub-perm: ${sp.code}`);
+        subpermInserts++;
+      } else {
+        console.log(`  · MISSING sub-perm ${sp.code} (run with --upsert to insert)`);
+        subpermMissing++;
+      }
+    }
+
+    // ── Pass 2: ensure role-list rows exist + add/remove 'staff' ──
     for (const r of ROWS) {
       const filter = { entity_id: ent._id, category: r.category, code: r.code };
       const existing = await Lookup.findOne(filter).lean();
@@ -193,15 +281,19 @@ async function run() {
 
   console.log(`\n=== Summary ===`);
   console.log(`Entities scanned: ${entities.length}`);
-  console.log(`Rows ${UPSERT ? 'inserted' : 'missing (would be inserted with --upsert)'}: ${UPSERT ? inserts : missing}`);
-  console.log(`'staff' additions: ${additions}`);
-  console.log(`'staff' removals: ${removals}`);
-  console.log(`Skipped (already in desired state): ${skipped}`);
+  console.log(`\n-- Role-list rows (MODULE_DEFAULT_ROLES + PROXY_ENTRY_ROLES) --`);
+  console.log(`  ${UPSERT ? 'Inserted' : 'Missing (pass --upsert to insert)'}: ${UPSERT ? inserts : missing}`);
+  console.log(`  'staff' additions: ${additions}`);
+  console.log(`  'staff' removals: ${removals}`);
+  console.log(`  Skipped (already in desired state): ${skipped}`);
+  console.log(`\n-- Sub-perm rows (ERP_SUB_PERMISSION — Access Template checkboxes) --`);
+  console.log(`  ${UPSERT ? 'Inserted' : 'Missing (pass --upsert to insert)'}: ${UPSERT ? subpermInserts : subpermMissing}`);
+  console.log(`  Skipped (already present): ${subpermSkipped}`);
 
   if (DRY_RUN) {
     console.log(`\nDRY-RUN complete. Re-run with --apply to commit.`);
-    if (missing > 0 && !UPSERT) {
-      console.log(`Tip: ${missing} rows missing — pass --upsert to insert from baseline.`);
+    if ((missing > 0 || subpermMissing > 0) && !UPSERT) {
+      console.log(`Tip: ${missing + subpermMissing} rows missing — pass --upsert to insert from baseline.`);
     }
   } else {
     console.log(`\n[migrateAddStaffToProxyRoles] ✓ Migration ${ROLLBACK ? 'rollback' : 'apply'} complete.`);
