@@ -32,6 +32,7 @@ import PageGuide from '../../components/common/PageGuide';
 import doctorService from '../../services/doctorService';
 import rebateCommissionService from '../../erp/services/rebateCommissionService';
 import api from '../../services/api';
+import { useLookupOptions } from '../hooks/useLookups';
 
 const fmtPct = (n) => `${(Number(n || 0)).toFixed(2)}%`;
 
@@ -54,7 +55,11 @@ export default function NonMdRebateMatrixPage() {
   const [rows, setRows] = useState([]);
   const [partners, setPartners] = useState([]);
   const [hospitals, setHospitals] = useState([]);
-  const [calcModes, setCalcModes] = useState([]);
+  // Phase R1 Apr-30 fix: switched from bespoke `api.get('/erp/lookup-values', {params:{category}})`
+  // (404 — that route only matches path-segment `/:category`) to the canonical
+  // useLookupOptions hook. Mirrors RebateMatrixPage / DoctorManagement / ClientAddModal pattern.
+  // Adds 5-min entity-aware cache + auto-busts on entity switch — SaaS-tenant safe (Rule #0d).
+  const { options: calcModes } = useLookupOptions('NONMD_REBATE_CALC_MODE');
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -85,14 +90,11 @@ export default function NonMdRebateMatrixPage() {
       .catch(() => setPartners([]));
   }, []);
 
-  // Hospitals + calc-mode lookup co-load.
+  // Hospitals fetch (calc-mode lookup is now handled by useLookupOptions hook above).
   useEffect(() => {
     api.get('/erp/hospitals', { params: { limit: 500 } })
       .then(r => setHospitals(r?.data?.data || r?.data || []))
       .catch(() => setHospitals([]));
-    api.get('/erp/lookup-values', { params: { category: 'NONMD_REBATE_CALC_MODE' } })
-      .then(r => setCalcModes(r?.data?.data || []))
-      .catch(() => setCalcModes([]));
   }, []);
 
   const labelForCalcMode = useCallback((code) => {
