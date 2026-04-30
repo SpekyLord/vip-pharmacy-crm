@@ -12,7 +12,7 @@ import WorkflowGuide from '../components/WorkflowGuide';
 
 const styles = `
   .si-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .si-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1300px; margin: 0 auto; }
+  .si-main { flex: 1; min-width: 0; padding: 20px; max-width: 1300px; margin: 0 auto; }
   .si-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
   .si-header h2 { font-size: 20px; font-weight: 700; margin: 0; }
   .si-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; align-items: center; }

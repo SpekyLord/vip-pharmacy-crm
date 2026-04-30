@@ -13,7 +13,7 @@ import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .coa-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .coa-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .coa-main { flex: 1; min-width: 0; padding: 20px; max-width: 1200px; margin: 0 auto; }
   .coa-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
   .coa-header h2 { font-size: 20px; font-weight: 700; margin: 0; }
   .coa-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }

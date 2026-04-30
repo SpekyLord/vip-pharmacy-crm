@@ -56,7 +56,7 @@ const pageStyles = `
 
   .booklet-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .booklet-shell { display: flex; flex: 1; min-width: 0; }
-  .booklet-main { flex: 1; min-width: 0; overflow-y: auto; padding: 24px; max-width: 1240px; margin: 0 auto; }
+  .booklet-main { flex: 1; min-width: 0; padding: 24px; max-width: 1240px; margin: 0 auto; }
   .booklet-header { display: flex; justify-content: space-between; gap: 16px; align-items: flex-end; margin-bottom: 18px; flex-wrap: wrap; }
   .booklet-header h1 { font-size: 24px; color: var(--erp-text); margin: 0 0 4px; }
   .booklet-header p { color: var(--erp-muted); font-size: 13px; margin: 0; max-width: 680px; line-height: 1.5; }

@@ -9,7 +9,7 @@ import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .ccl-container { background: var(--erp-bg, #f4f7fb); min-height: 100vh; display: flex; flex-direction: column; }
-  .ccl-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; width: 100%; }
+  .ccl-main { flex: 1; min-width: 0; padding: 20px; max-width: 1200px; margin: 0 auto; width: 100%; }
   .ccl-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
   .ccl-header h2 { margin: 0; font-size: 20px; }
   .ccl-controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }

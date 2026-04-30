@@ -11,7 +11,7 @@ import WorkflowGuide from '../components/WorkflowGuide';
 
 const styles = `
   .vl-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .vl-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .vl-main { flex: 1; min-width: 0; padding: 20px; max-width: 1200px; margin: 0 auto; }
   .vl-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
   .vl-header h2 { font-size: 20px; font-weight: 700; margin: 0; }
   .vl-search { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--erp-border, #e2e8f0); font-size: 13px; width: 260px; }

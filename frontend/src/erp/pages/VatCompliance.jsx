@@ -11,7 +11,7 @@ import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .vat-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .vat-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .vat-main { flex: 1; min-width: 0; padding: 20px; max-width: 1200px; margin: 0 auto; }
   .vat-header h2 { font-size: 20px; font-weight: 700; margin: 0 0 16px; }
   .vat-tabs { display: flex; gap: 4px; background: var(--erp-panel); border-radius: 8px; padding: 3px; margin-bottom: 14px; width: fit-content; }
   .vat-tabs button { padding: 6px 14px; border: none; border-radius: 6px; font-size: 12px; cursor: pointer; background: transparent; }

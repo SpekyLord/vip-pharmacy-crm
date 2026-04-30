@@ -14,7 +14,7 @@ import SelectField from '../../components/common/Select';
 
 const pageStyles = `
   .cr-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .cr-main { flex: 1; min-width: 0; overflow-y: auto; padding: 24px; max-width: 1280px; margin: 0 auto; }
+  .cr-main { flex: 1; min-width: 0; padding: 24px; max-width: 1280px; margin: 0 auto; }
   .cr-header h1 { font-size: 24px; color: var(--erp-text); margin: 0 0 4px; }
   .cr-header p { color: var(--erp-muted); font-size: 13px; margin: 0 0 16px; max-width: 720px; line-height: 1.5; }
   .controls { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }

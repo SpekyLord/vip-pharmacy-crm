@@ -15,7 +15,7 @@ import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .aging-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .aging-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1400px; margin: 0 auto; }
+  .aging-main { flex: 1; min-width: 0; padding: 20px; max-width: 1400px; margin: 0 auto; }
   .aging-header h1 { font-size: 22px; color: var(--erp-text); margin: 0 0 4px; }
   .aging-header p { color: var(--erp-muted); font-size: 13px; margin: 0 0 16px; }
   .controls { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }

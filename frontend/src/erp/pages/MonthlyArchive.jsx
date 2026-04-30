@@ -13,7 +13,7 @@ import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .archive-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .archive-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .archive-main { flex: 1; min-width: 0; padding: 20px; max-width: 1200px; margin: 0 auto; }
   .archive-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
   .archive-header h1 { font-size: 22px; color: var(--erp-text); margin: 0; }
   .period-control { display: flex; gap: 10px; align-items: center; margin-bottom: 20px; padding: 16px; background: var(--erp-panel); border: 1px solid var(--erp-border); border-radius: 12px; flex-wrap: wrap; }

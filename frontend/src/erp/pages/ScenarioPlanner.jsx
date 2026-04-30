@@ -23,7 +23,7 @@ const pct = (n) => `${(Number(n) || 0).toFixed(1)}%`;
 
 const styles = `
   .sp-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .sp-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1400px; margin: 0 auto; }
+  .sp-main { flex: 1; min-width: 0; padding: 20px; max-width: 1400px; margin: 0 auto; }
   .sp-header { margin-bottom: 18px; }
   .sp-header h1 { font-size: 22px; color: var(--erp-text); margin: 0 0 4px; }
   .sp-header p { color: var(--erp-muted); font-size: 13px; margin: 0; }

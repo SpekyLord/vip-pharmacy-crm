@@ -10,7 +10,7 @@ import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .ba-container { background: var(--erp-bg, #f4f7fb); min-height: 100vh; display: flex; flex-direction: column; }
-  .ba-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; width: 100%; }
+  .ba-main { flex: 1; min-width: 0; padding: 20px; max-width: 1200px; margin: 0 auto; width: 100%; }
   .ba-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
   .ba-header h2 { margin: 0; font-size: 20px; }
   .ba-table { width: 100%; border-collapse: collapse; background: var(--erp-panel, #fff); border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.06); }

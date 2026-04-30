@@ -11,7 +11,7 @@ import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .ccm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .ccm-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .ccm-main { flex: 1; min-width: 0; padding: 20px; max-width: 1200px; margin: 0 auto; }
   .ccm-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
   .ccm-header h2 { font-size: 20px; font-weight: 700; margin: 0; }
   .ccm-tabs { display: flex; gap: 4px; background: var(--erp-panel); border-radius: 8px; padding: 3px; margin-bottom: 14px; width: fit-content; }

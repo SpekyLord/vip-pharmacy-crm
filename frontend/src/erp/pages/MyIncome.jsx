@@ -24,7 +24,7 @@ import OwnerPicker from '../components/OwnerPicker';
 
 const pageStyles = `
   .my-income-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .my-income-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 960px; margin: 0 auto; }
+  .my-income-main { flex: 1; min-width: 0; padding: 20px; max-width: 960px; margin: 0 auto; }
   .my-income-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
   .my-income-header h1 { font-size: 22px; color: var(--erp-text); margin: 0; }
   .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
