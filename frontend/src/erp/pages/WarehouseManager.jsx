@@ -24,7 +24,7 @@ const TYPE_COLORS = { MAIN: '#1e40af', TERRITORY: '#166534', VIRTUAL: '#64748b' 
 
 const pageStyles = `
   .wm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .wm-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .wm-main { flex: 1; min-width: 0; padding: 20px; max-width: 1200px; margin: 0 auto; }
   .wm-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
   .wm-header h2 { font-size: 20px; font-weight: 700; color: var(--erp-text, #1a1a2e); margin: 0; }
   .wm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }

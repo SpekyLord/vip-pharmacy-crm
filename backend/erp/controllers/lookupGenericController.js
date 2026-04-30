@@ -84,6 +84,14 @@ const EXECUTIVE_COCKPIT_ROLES_CATEGORIES = new Set(['EXECUTIVE_COCKPIT_ROLES']);
 // to 5min before sales picked up the new rule.
 const PRICE_RESOLVER_CATEGORIES = new Set(['PRICE_RESOLUTION_RULES']);
 
+// Phase R2 — Sales Discount cap config. Hot-reloads salesDiscountConfig's
+// in-process 60s cache so admin edits to SALES_DISCOUNT_CONFIG.DEFAULT
+// (max_percent, default_percent, require_reason_above) take effect on the
+// next request without waiting for TTL expiry. Mirrors the PAYSLIP_PROXY_ROSTER
+// + PRICE_RESOLVER pattern.
+const { invalidate: invalidateSalesDiscountCache } = require('../../utils/salesDiscountConfig');
+const SALES_DISCOUNT_CONFIG_CATEGORIES = new Set(['SALES_DISCOUNT_CONFIG']);
+
 // Phase G6.10/G7 — categories whose seeded rows must default is_active: false so
 // subscribers explicitly opt in (Anthropic-billable features, spend caps that
 // could surprise-block in-flight calls). Without this, the first AgentSettings
@@ -2452,6 +2460,25 @@ const SEED_DEFAULTS = {
     { code: 'DEFAULT', label: 'Team Activity Cockpit — red-flag thresholds', insert_only_metadata: true, metadata: { red_flag_consecutive_workdays: 2, gap_warning_workdays: 1, target_call_rate: 80 } },
   ],
 
+  // Phase R2 — Sales Discount config. Lookup-driven so admin can cap how
+  // aggressive a discount BDMs can apply without a code deploy. Subscriber-
+  // ready: each pharmacy/subsidiary picks its own ceiling.
+  //
+  //   - max_percent: 100 = unlimited (only the schema's 0-100 hard cap applies).
+  //     Set to e.g. 30 to cap line discounts at 30% — anything higher rejects
+  //     at validate/save time with a clear message. President/admin always
+  //     bypass the cap (escalation route for one-off bigger contracts).
+  //   - default_percent: 0 = no auto-applied discount on new line items.
+  //     Future Phase R3 (Hospital Discount Master) will let admin set
+  //     per-hospital defaults that override this.
+  //   - require_reason_above: 0 = no reason required. Set to e.g. 15 so any
+  //     line discount > 15% triggers a Lookup-driven reason picker (Phase R3).
+  //
+  // insert_only_metadata: true → admin tweaks survive future re-seeds.
+  SALES_DISCOUNT_CONFIG: [
+    { code: 'DEFAULT', label: 'Sales / CSI line-level discount caps and defaults', insert_only_metadata: true, metadata: { max_percent: 100, default_percent: 0, require_reason_above: 0 } },
+  ],
+
   // agents/complianceDeadlineAgent.js → loadDeadlines()
   // STRUCTURAL metadata (statutory filing dates don't drift per entity) — re-sync
   // on seedAll is desirable so engineering can correct baseline data centrally.
@@ -3312,6 +3339,7 @@ exports.create = catchAsync(async (req, res) => {
   if (BIR_ROLES_CATEGORIES.has(cat)) invalidateBirRolesCache(req.entityId);
   if (EXECUTIVE_COCKPIT_ROLES_CATEGORIES.has(cat)) invalidateCockpitRolesCache(req.entityId);
   if (PRICE_RESOLVER_CATEGORIES.has(cat)) invalidatePriceCache(req.entityId);
+  if (SALES_DISCOUNT_CONFIG_CATEGORIES.has(cat)) invalidateSalesDiscountCache(req.entityId);
   res.status(201).json({ success: true, data: item });
 });
 
@@ -3345,6 +3373,7 @@ exports.update = catchAsync(async (req, res) => {
   if (BIR_ROLES_CATEGORIES.has(item.category)) invalidateBirRolesCache(item.entity_id);
   if (EXECUTIVE_COCKPIT_ROLES_CATEGORIES.has(item.category)) invalidateCockpitRolesCache(item.entity_id);
   if (PRICE_RESOLVER_CATEGORIES.has(item.category)) invalidatePriceCache(item.entity_id);
+  if (SALES_DISCOUNT_CONFIG_CATEGORIES.has(item.category)) invalidateSalesDiscountCache(item.entity_id);
   res.json({ success: true, data: item });
 });
 
@@ -3370,6 +3399,7 @@ exports.remove = catchAsync(async (req, res) => {
   if (BIR_ROLES_CATEGORIES.has(item.category)) invalidateBirRolesCache(item.entity_id);
   if (EXECUTIVE_COCKPIT_ROLES_CATEGORIES.has(item.category)) invalidateCockpitRolesCache(item.entity_id);
   if (PRICE_RESOLVER_CATEGORIES.has(item.category)) invalidatePriceCache(item.entity_id);
+  if (SALES_DISCOUNT_CONFIG_CATEGORIES.has(item.category)) invalidateSalesDiscountCache(item.entity_id);
   res.json({ success: true, data: item, message: 'Item deactivated' });
 });
 
@@ -3397,6 +3427,7 @@ exports.seedCategory = catchAsync(async (req, res) => {
   if (BIR_ROLES_CATEGORIES.has(category)) invalidateBirRolesCache(req.entityId);
   if (EXECUTIVE_COCKPIT_ROLES_CATEGORIES.has(category)) invalidateCockpitRolesCache(req.entityId);
   if (PRICE_RESOLVER_CATEGORIES.has(category)) invalidatePriceCache(req.entityId);
+  if (SALES_DISCOUNT_CONFIG_CATEGORIES.has(category)) invalidateSalesDiscountCache(req.entityId);
   const items = await Lookup.find({ entity_id: req.entityId, category }).sort({ sort_order: 1 }).lean();
   res.json({ success: true, data: items, message: `Seeded ${defaults.length} defaults for ${category}` });
 });

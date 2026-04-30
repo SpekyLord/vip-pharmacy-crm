@@ -27,6 +27,8 @@ const { validateCsiNumber, markUsed: markCsiUsed, unmarkUsed: unmarkCsiUsed } = 
 const Lookup = require('../models/Lookup');
 // Phase G4.5a — proxy entry (record on behalf of another BDM)
 const { resolveOwnerForWrite, widenFilterForProxy } = require('../utils/resolveOwnerScope');
+// Phase R2 — Sales Discount lookup-driven cap
+const { getDiscountConfig, canBypassDiscountCap } = require('../../utils/salesDiscountConfig');
 
 /**
  * Read a numeric flag from the per-entity SALES_SETTINGS lookup with a hard
@@ -364,6 +366,11 @@ const createSale = catchAsync(async (req, res) => {
 
   // Validate line items before saving — catch qty ≤ 0 and unit_price ≤ 0 early
   const saleType = saleData.sale_type || 'CSI';
+  // Phase R2 — load lookup-driven discount cap once for all line checks.
+  // Privileged users (president/admin/finance) bypass the configurable cap;
+  // schema's hard 0..100 still applies via Mongoose validators.
+  const discountCfg = await getDiscountConfig(req.entityId);
+  const bypassCap = canBypassDiscountCap(req);
   if (saleType !== 'SERVICE_INVOICE' && Array.isArray(saleData.line_items)) {
     for (const item of saleData.line_items) {
       if (!item.qty || item.qty <= 0) {
@@ -376,6 +383,21 @@ const createSale = catchAsync(async (req, res) => {
         return res.status(400).json({
           success: false,
           message: `Unit price must be greater than 0 for ${item.item_key || 'product'}`
+        });
+      }
+      // Phase R2 — discount cap. Schema enforces 0..100; this is the
+      // subscriber-tunable lower ceiling.
+      const discPct = Number(item.line_discount_percent) || 0;
+      if (discPct < 0 || discPct > 100) {
+        return res.status(400).json({
+          success: false,
+          message: `Discount % must be between 0 and 100 for ${item.item_key || 'product'} (got ${discPct})`
+        });
+      }
+      if (!bypassCap && discPct > discountCfg.max_percent) {
+        return res.status(400).json({
+          success: false,
+          message: `Discount ${discPct}% exceeds cap of ${discountCfg.max_percent}% for ${item.item_key || 'product'}. Ask admin to raise SALES_DISCOUNT_CONFIG.max_percent or escalate.`
         });
       }
     }
@@ -643,6 +665,11 @@ const validateSales = catchAsync(async (req, res) => {
   // attached later via PUT /sales/:id/received-csi on SalesList.
   const requireCsiPhotoOpeningAr = (await getSalesSetting(req.entityId, 'REQUIRE_CSI_PHOTO_OPENING_AR', 1)) ? true : false;
 
+  // Phase R2 — load discount cap once. Privileged roles bypass; schema's
+  // hard 0..100 still applies via Mongoose validators.
+  const discountCfg = await getDiscountConfig(req.entityId);
+  const bypassDiscountCap = canBypassDiscountCap(req);
+
   // Build fresh stock snapshot from InventoryLedger
   // Phase 17: If rows have warehouse_id, scope snapshot to that warehouse.
   // For now, all rows for a BDM share one warehouse, so first row's warehouse is used.
@@ -840,12 +867,30 @@ const validateSales = catchAsync(async (req, res) => {
       }
     }
 
-    // VAT balance check
+    // VAT balance check — Phase R2: invoice_total is gross-MINUS-discount.
+    // Compute the same way pre-save does so this validator matches what
+    // SalesLine.pre('save') stored. Per-line discount = gross × (pct / 100).
     if (row.line_items.length > 0) {
-      const computedTotal = row.line_items.reduce((sum, li) => sum + (li.qty * li.unit_price), 0);
+      const computedTotal = row.line_items.reduce((sum, li) => {
+        const gross = (li.qty || 0) * (li.unit_price || 0);
+        const pct = Math.max(0, Math.min(100, Number(li.line_discount_percent) || 0));
+        const lineNet = gross - (gross * pct / 100);
+        return sum + lineNet;
+      }, 0);
       const diff = Math.abs(computedTotal - row.invoice_total);
       if (diff > 0.01) {
         rowErrors.push(`Invoice total mismatch: computed ${computedTotal.toFixed(2)}, recorded ${row.invoice_total.toFixed(2)}`);
+      }
+    }
+
+    // Phase R2 — Sales Discount cap. Subscribers tune via Control Center →
+    // Lookup Tables → SALES_DISCOUNT_CONFIG. Privileged roles bypass.
+    if (!bypassDiscountCap && Array.isArray(row.line_items)) {
+      for (const li of row.line_items) {
+        const discPct = Number(li.line_discount_percent) || 0;
+        if (discPct > discountCfg.max_percent) {
+          rowErrors.push(`Discount ${discPct}% on ${li.item_key || 'line'} exceeds cap of ${discountCfg.max_percent}%`);
+        }
       }
     }
 
@@ -1788,12 +1833,19 @@ const generateCsiDraft = catchAsync(async (req, res) => {
       desc = p.generic_name || 'Item';
     }
     const resolved = batchByLineIdx.get(idx) || {};
+    // Phase R2 — CSI face shows GROSS line amount (qty × unit_price) so the
+    // booklet's printed math reconciles with the customer's eye. The discount
+    // is summarized in the totals block ("Less: Discount → Amount Due").
+    // line_gross_amount is populated by the SalesLine pre-save hook; fall back
+    // to qty × unit_price for legacy rows saved before Phase R2.
+    const grossAmount = Number(li.line_gross_amount)
+      || (Number(li.qty) || 0) * (Number(li.unit_price) || 0);
     return {
       description: desc,
       qty: li.qty,
       unit: li.unit || '',
       unit_price: li.unit_price,
-      amount: li.line_total,
+      amount: grossAmount,
       batch_lot_no: resolved.batch_lot_no || li.batch_lot_no || null,
       exp_date: resolved.expiry_date || null,
     };

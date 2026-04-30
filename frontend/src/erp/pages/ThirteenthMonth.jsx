@@ -6,7 +6,7 @@ import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .tm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .tm-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 900px; margin: 0 auto; }
+  .tm-main { flex: 1; min-width: 0; padding: 20px; max-width: 900px; margin: 0 auto; }
   .tm-header h2 { font-size: 20px; font-weight: 700; margin: 0 0 16px; }
   .tm-controls { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; }
   .tm-controls input { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--erp-border); font-size: 13px; }

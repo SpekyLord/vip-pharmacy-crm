@@ -32,16 +32,26 @@ function renderSalesReceipt(sale, lineProducts = []) {
       const expiryInfo = item.expiry_date
         ? ` | Exp: ${new Date(item.expiry_date).toLocaleDateString('en-PH', { year: 'numeric', month: 'short' })}`
         : '';
+      // Phase R2 — show GROSS amount per line; per-line discount is shown in
+      // a small chip under the product name, the discount sum is in the totals
+      // block. Keeps `Qty × Price = Amount` math correct on the printed line.
+      const grossAmount = Number(item.line_gross_amount)
+        || (Number(item.qty) || 0) * (Number(item.unit_price) || 0);
+      const discountPct = Number(item.line_discount_percent) || 0;
+      const discountChip = discountPct > 0
+        ? `<div style="font-size:11px;color:#b45309;margin-top:2px;">Less ${discountPct}% (${formatCurrency(item.line_discount_amount || 0)})</div>`
+        : '';
 
       return `
         <tr>
           <td style="padding:6px 8px;border-bottom:1px solid #eee;">${i + 1}</td>
           <td style="padding:6px 8px;border-bottom:1px solid #eee;">
             ${productName}${batchInfo}${expiryInfo}
+            ${discountChip}
           </td>
           <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:center;">${item.qty}</td>
           <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">${formatCurrency(item.unit_price)}</td>
-          <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">${formatCurrency(item.line_total || item.qty * item.unit_price)}</td>
+          <td style="padding:6px 8px;border-bottom:1px solid #eee;text-align:right;">${formatCurrency(grossAmount)}</td>
         </tr>`;
     }).join('');
   }
@@ -102,6 +112,10 @@ function renderSalesReceipt(sale, lineProducts = []) {
   </table>
 
   <div class="totals">
+    ${sale.total_discount > 0 ? `
+      <div class="row"><span>Total Sales (VAT Inclusive):</span><span>${formatCurrency(sale.total_gross_before_discount || ((sale.invoice_total || 0) + (sale.total_discount || 0)))}</span></div>
+      <div class="row" style="color:#b45309;"><span>Less: Discount:</span><span>(${formatCurrency(sale.total_discount)})</span></div>
+    ` : ''}
     ${sale.total_vat > 0 ? `
       <div class="row"><span>Net of VAT:</span><span>${formatCurrency(sale.total_net_of_vat)}</span></div>
       <div class="row"><span>VAT (12%):</span><span>${formatCurrency(sale.total_vat)}</span></div>

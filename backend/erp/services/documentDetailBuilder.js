@@ -282,6 +282,13 @@ function buildSalesDetails(item) {
     batch_lot_no: li.batch_lot_no || null,
     fifo_override: !!li.fifo_override,
     override_reason: li.override_reason || null,
+    // Phase R2 — Sales Discount. Surface so Approval Hub + Reversal Console
+    // detail panels can show the GROSS line + the discount applied + the
+    // post-discount line_total. Without these, the president would see only
+    // post-discount totals with no audit trail for the discount itself.
+    line_discount_percent: Number(li.line_discount_percent) || 0,
+    line_discount_amount: Number(li.line_discount_amount) || 0,
+    line_gross_amount: Number(li.line_gross_amount) || ((Number(li.qty) || 0) * (Number(li.unit_price) || 0)),
   }));
   const overrideLineCount = lines.filter(l => l.fifo_override).length;
   return {
@@ -305,6 +312,12 @@ function buildSalesDetails(item) {
     invoice_total: item.invoice_total,
     total_vat: item.total_vat,
     total_net_of_vat: item.total_net_of_vat,
+    // Phase R2 — header-level discount aggregates so the Approval Hub /
+    // Reversal Console / future BIR audit panels can render the BIR-net-method
+    // breakdown: Total Sales (VAT Inclusive) → Less: Discount → Amount Due.
+    total_discount: Number(item.total_discount) || 0,
+    total_gross_before_discount: Number(item.total_gross_before_discount)
+      || ((Number(item.invoice_total) || 0) + (Number(item.total_discount) || 0)),
     csi_photo_url: item.csi_photo_url,
     csi_received_photo_url: item.csi_received_photo_url || null,
     csi_received_attachment_id: item.csi_received_attachment_id || null,

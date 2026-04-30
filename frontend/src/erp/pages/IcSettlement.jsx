@@ -12,7 +12,7 @@ import WorkflowGuide from '../components/WorkflowGuide';
 
 const pageStyles = `
   .ics-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .ics-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1100px; margin: 0 auto; }
+  .ics-main { flex: 1; min-width: 0; padding: 20px; max-width: 1100px; margin: 0 auto; }
   .ics-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
   .ics-header h1 { font-size: 22px; color: var(--erp-text); margin: 0; }
   .btn { padding: 8px 16px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }

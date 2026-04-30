@@ -43,7 +43,7 @@ const emptyLine = () => ({ product_id: '', batch_lot_no: '', expiry_date: '', qt
 
 const pageStyles = `
   .grn-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .grn-main { flex: 1; min-width: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 24px; max-width: 1280px; margin: 0 auto; }
+  .grn-main { flex: 1; min-width: 0; padding: 24px; max-width: 1280px; margin: 0 auto; }
   .grn-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
   .grn-header h1 { font-size: 24px; color: var(--erp-text, #132238); margin: 0; }
   .grn-header p { margin: 4px 0 0; color: var(--erp-muted); font-size: 13px; line-height: 1.5; max-width: 720px; }

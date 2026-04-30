@@ -16,6 +16,88 @@
 
 ---
 
+## PHASE R2 — Sales Discount (Line-Level, BIR-Standard Net Method) ✅ COMPLETE (Apr 30, 2026)
+
+**Goal:** Add per-line discount % to Sales Entry / Draft CSI / POSTED CSI print. Hospital contract discounts get a real surface, real audit, and BIR-correct VAT treatment (RR 16-2005 trade discount on the face of the invoice — VAT base shrinks).
+
+**Method:** Net method (book SALES_REVENUE at discounted amount, no contra). Chosen for fastest ship + zero COA migration. Phase R3 may switch to gross+contra if mgmt reporting demands it.
+
+### R2.1 — SalesLine model ✅
+- [x] Add `line_discount_percent` (Number, 0..100) to `lineItemSchema`
+- [x] Add `line_discount_amount` (Number, computed in pre-save) to `lineItemSchema`
+- [x] Add `line_gross_amount` (Number, qty × unit_price) to `lineItemSchema`
+- [x] Add `total_discount` + `total_gross_before_discount` aggregates to `salesLineSchema`
+- [x] Pre-save hook: clamp 0..100, compute `line_total = gross - discount`, VAT on `line_total`, aggregate header totals
+
+### R2.2 — Auto-journal compatibility ✅
+- [x] Verify `autoJournal.journalFromSale` reads `invoice_total` + `total_vat` (after-discount values) — **no change needed**
+- [x] Healthcheck asserts no `SALES_DISCOUNT` contra crept in (defends against accidental gross+contra drift)
+
+### R2.3 — CSI Draft Overlay (VIP + MG-and-CO) ✅
+- [x] `csiDraftRenderer.buildTotalsView`: `less_discount` reads `sale.total_discount` (with derive-from-lines fallback)
+- [x] `total_sales_vat_inclusive` shows GROSS-before-discount; `amount_due` / `total_amount_due` show after-discount
+- [x] `salesController.generateCsiDraft.lineDisplay.amount` = GROSS line amount so booklet `Qty × Price = Amount` reconciles
+- [x] Both VIP (`cols.description`) and MG-and-CO (`cols.articles`) overlays render via the same totals fields union
+
+### R2.4 — POSTED CSI print template ✅
+- [x] `salesReceipt.js` renders "Total Sales (VAT Inclusive) → Less: Discount" rows when `total_discount > 0`
+- [x] Per-line discount chip ("Less N% (₱X)") under product name when line carries one
+- [x] Per-line "Amount" cell shows GROSS (not after-discount) so on-screen math reconciles
+
+### R2.5 — Sales Controller ✅
+- [x] `createSale` early-rejects discount > cap (with privileged bypass)
+- [x] `validateSales` per-row gate uses cached cap; VAT-balance check updated to compute `gross - discount`
+- [x] Schema's hard 0..100 still applies via Mongoose validators
+
+### R2.6 — Lookup-driven cap (Rule #3, subscription-ready) ✅
+- [x] New `SALES_DISCOUNT_CONFIG` category seeded with `DEFAULT { max_percent: 100, default_percent: 0, require_reason_above: 0 }`, `insert_only_metadata: true`
+- [x] Helper `backend/utils/salesDiscountConfig.js` (60s cache, mirrors `teamActivityThresholds.js` pattern)
+- [x] `canBypassDiscountCap(req)` honors president/admin/finance — escalation route doesn't need a lookup edit for one-off bigger contracts
+
+### R2.7 — Sales Entry frontend ✅
+- [x] Desktop CSS grid widened to 9 cols (Disc% inserted between Price and Total)
+- [x] Mobile card flex row gets the same input alongside Qty/Price/Total + per-line discount preview chip
+- [x] `computeLineGross` / `computeLineDiscountAmount` / `computeLineTotal` mirror SalesLine pre-save hook
+- [x] All 5 `line_items` default stubs seed `line_discount_percent: ''`
+- [x] Tooltip on desktop input previews computed discount amount
+
+### R2.8 — WorkflowGuide banner (Rule #1) ✅
+- [x] `sales-entry` step 3 mentions Discount % field
+- [x] Draft CSI overlay step explains totals block adapts when discount > 0
+
+### R2.9 — Healthcheck ✅
+- [x] `backend/scripts/healthcheckSalesDiscount.js` — 33 wiring contracts (model + autoJournal + controller + renderer + receipt + frontend + lookup + helper + workflow banner)
+- [x] PASSES 33/33
+
+### R2.10 — Documentation ✅
+- [x] CLAUDE-ERP.md status header + Phase R2 section
+- [x] PHASETASK-ERP.md (this section)
+
+### R2.11 — Apr-30-evening Rule #2 wiring sweep ✅ (post-original-ship hardening)
+Original ship correctly wired model + controller + CSI overlay + receipt + frontend input, but a thorough Rule #2 audit found two end-to-end gaps that would have hidden the discount from key downstream surfaces:
+
+- [x] **Approval Hub / Reversal Console detail panel** — `documentDetailBuilder.buildSalesDetails` did NOT pass `line_discount_percent` / `line_discount_amount` / `line_gross_amount` / `total_discount` / `total_gross_before_discount`. President opening a CSI card saw `Total: 900` but no audit trail for the discount. **FIX:** [backend/erp/services/documentDetailBuilder.js](../backend/erp/services/documentDetailBuilder.js) `buildSalesDetails` now surfaces all five fields. [frontend/src/erp/components/DocumentDetailPanel.jsx](../frontend/src/erp/components/DocumentDetailPanel.jsx) `module === 'SALES'` block adds a `hasAnyDiscount` derived flag, conditionally renders **Gross + Disc %** columns in the line table, and adds a **Total Sales (VAT Inclusive) → Less: Discount** footer pair when `total_discount > 0`. No-discount CSIs render identically to pre-R2 (no UI-density penalty).
+- [x] **`SALES_DISCOUNT_CONFIG` cache hot-reload** — `salesDiscountConfig.invalidate(entityId)` was exported but never wired into [backend/erp/controllers/lookupGenericController.js](../backend/erp/controllers/lookupGenericController.js) save paths. Admin edits to `max_percent` waited up to 60s before taking effect — inconsistent with `PAYSLIP_PROXY_ROSTER` / `PRICE_RESOLUTION_RULES` / etc. **FIX:** declared `SALES_DISCOUNT_CONFIG_CATEGORIES = new Set([...])`, imported `invalidateSalesDiscountCache`, and busted in all four save paths (create / update / remove / seedCategory).
+- [x] **Healthcheck extended** — added 7 assertions (now 40/40 PASS, was 33/33).
+- [x] **Live Playwright UI smoke (deferred from original ship — closed Apr 30 2026)** — logged in as president, navigated to `/erp/sales/entry`, typed qty=10 / unit_price=100 / discount=10 in the new fields → per-line Total cell renders **900.00** and the row-header total renders **₱900.00**, exactly matching BIR net method `1000 - 10% = 900`. Screenshot at `r2-discount-math-smoke.png`. Confirms `computeLineTotal` client math + 9-column desktop grid + Disc % spinbutton wiring with the BIR-trade-discount tooltip are all live.
+- [x] CLAUDE-ERP.md updated with Apr-30-evening hardening sub-section under Phase R2.
+
+**Files touched (post-original-ship hardening, 4):**
+- `backend/erp/services/documentDetailBuilder.js` — buildSalesDetails surfaces 5 new discount fields
+- `backend/erp/controllers/lookupGenericController.js` — SALES_DISCOUNT_CONFIG cache hot-reload in 4 save paths
+- `frontend/src/erp/components/DocumentDetailPanel.jsx` — SALES detail panel renders Disc %/Gross columns + Less: Discount footer
+- `backend/scripts/healthcheckSalesDiscount.js` — 7 new assertions
+
+---
+
+### Future Phase R3 (DEFERRED, ~1-2 days)
+
+**Hospital Discount Master** — per-hospital, per-product, BDM-negotiated default discounts with validity dates. The form auto-fills `line_discount_percent` when BDM picks the hospital. Reuses the reserved `default_percent` + `require_reason_above` config keys. `require_reason_above` will hook into a `SALES_DISCOUNT_REASONS` Lookup so > N% triggers a reason picker (analogous to FIFO override reason).
+
+**Optional Phase R4 (DEFERRED, ~half-day)** — switch to gross+contra method (book `SALES_REVENUE` at gross, debit a `SALES_DISCOUNT` contra-account). Requires new COA code + `journalFromSale` rewrite. Only worth it if mgmt reporting demands gross-vs-net visibility on the income statement.
+
+---
+
 ## PHASE 0 — ADD ERP SCAFFOLD (NO CRM CHANGES) ✅ COMPLETE
 **Goal:** Add ERP folder structure and navigation alongside existing CRM. CRM must still work perfectly — zero files moved, zero imports changed.
 
@@ -8139,6 +8221,84 @@ Three concentric gates on `POST /:id/waybill`:
 - Browser smoke once a missing-waybill fixture exists.
 - Apply the same fallback pattern to direct GRN approval (e.g., display the waybill thumbnail + warning on `approveGrn` endpoint for admin-only direct path) — Phase 32R design already routes most approvals through UT, so low priority.
 - Consider lookup-driven `WAYBILL_OVERRIDE_ROLES` if future emergency-bypass policy is approved (with required `grn.waybill_override_reason` justification). Out of scope today.
+
+---
+
+## Phase G4.5h Part A — Idempotent `postSingleUndertaking` (Apr 30 2026)
+
+### Problem
+G4.5g (Apr 24) shipped the defense-in-depth waybill gate and recovered Judy Mae's 300 units of Tropin via mongosh, but UT-ACC042326-002 was left orphaned in `SUBMITTED` state. Clicking Acknowledge on the orphaned UT calls `postSingleUndertaking` → `approveGrnCore`, which throws `expected PENDING` ([inventoryController.js:835](../backend/erp/controllers/inventoryController.js#L835)) because the linked GRN is already APPROVED (the recovery flipped it). The only paths to clear the UT were either (a) Reject — leaves a contradictory "GRN approved, UT rejected" trail; or (b) another mongosh edit — the same kind of operation that produced the original ghost approval. Neither is acceptable.
+
+Secondary concern: the SUBMITTED → ACKNOWLEDGED transition has a small race window. The two call sites (`acknowledgeUndertaking` + `universalApprovalController.approvalHandlers.undertaking`) each gate-check `doc.status === 'SUBMITTED'` OUTSIDE `withTransaction`. If two callers hit the same UT concurrently (rare but possible), both pass the outer gate and both try to flip + cascade. The pre-G4.5h-A code would double-write the InventoryLedger.
+
+### Fix (Part A)
+**Backend — `backend/erp/controllers/undertakingController.js#postSingleUndertaking`**
+1. **Outer brittle SUBMITTED check removed.** The synchronous `if (doc.status !== 'SUBMITTED') throw ...` at the top of the function (which was redundant with the two call-site gates AND brittle against mid-flight mutations) is replaced by an atomic claim INSIDE `withTransaction`.
+2. **Atomic SUBMITTED → ACKNOWLEDGED claim.** `Undertaking.findOneAndUpdate({_id, status: 'SUBMITTED'}, {$set: {status: 'ACKNOWLEDGED', acknowledged_by, acknowledged_at}}, {new: true, session})` is the new gate. Only one caller can claim the transition. The caller's reference doc is mutated via `Object.assign(doc, claimed.toObject())` so the response stays consistent.
+3. **Concurrent-ack handler.** When `findOneAndUpdate` returns null, the body re-fetches the doc inside the session.
+   - `current.status === 'ACKNOWLEDGED'` → set `alreadyAcknowledged: true`, mirror the current doc into the caller's reference, return idempotent no-op (no audit row written; the original ack already wrote one). The caller's response message reflects the truth.
+   - any other state (REJECTED / DELETION_REQUESTED) → throw `Undertaking is ${current.status}, expected SUBMITTED` so callers get the precise reason.
+4. **Cascade idempotency via GRN status peek.** Before calling `approveGrnCore`, peek `GrnEntry.findById(linked_grn_id).select('status event_id').session(session)`. If `status === 'APPROVED'`, the InventoryLedger + TransactionEvent rows already exist; skip the cascade and load the existing GRN as `updatedGrn`. Set `cascadeSkipped: true` so audit + caller can record what happened. Closes the UT-002 orphan scenario.
+5. **Audit moved OUTSIDE `withTransaction`.** Matches the A.5.5 doctorMergeService pattern. Audit failure no longer rolls back a committed acknowledge. Audit row is written only when `alreadyAcknowledged === false` (the original ack already wrote a row for the prior commit).
+6. **Audit note distinguishes the cascade-skipped path** with `linked GRN ${updatedGrn?._id} was already APPROVED (cascade skipped, idempotent path; GRN event_id=${updatedGrn?.event_id})` so reviewers can immediately tell why no new ledger rows landed.
+7. **Return shape extended.** `{ undertaking, grn, alreadyAcknowledged, cascadeSkipped }`. Existing consumers of `{ undertaking }` (Approval Hub dispatcher) keep working — superset return is backwards-compatible.
+
+**Backend — `acknowledgeUndertaking` response message**
+- Three messages branched on the new flags:
+  - `Undertaking was already acknowledged — no change` (alreadyAcknowledged true)
+  - `Undertaking acknowledged — linked GRN was already APPROVED (no new stock posted)` (cascadeSkipped true)
+  - `Undertaking acknowledged — GRN auto-approved` (normal cascade path)
+- The flags also flow through `data.alreadyAcknowledged` and `data.cascadeSkipped` so the frontend can render an appropriate toast.
+
+**Backend — `universalApprovalController.approvalHandlers.undertaking`**
+- Unchanged. Still destructures `{ undertaking }` from `postSingleUndertaking`. The new return shape is a superset.
+
+**Healthcheck — `backend/erp/scripts/healthcheckPostSingleUndertakingIdempotency.js` (NEW)**
+- 14-check static wiring contract:
+  1. Brittle outer SUBMITTED check removed
+  2. Atomic findOneAndUpdate present with correct fields
+  3. Concurrent-ack handler returns alreadyAcknowledged
+  4. Concurrent-ack handler throws precise current-status error for non-ACKNOWLEDGED states
+  5. GRN status peek with `.select('status event_id')`
+  6. Cascade-skipped branch sets the flag and does NOT call approveGrnCore
+  7. Audit `ErpAuditLog.logChange` is OUTSIDE `withTransaction`
+  8. Audit note explicitly mentions "cascade skipped" + "idempotent path"
+  9. Return shape includes `alreadyAcknowledged` + `cascadeSkipped`
+  10. acknowledgeUndertaking response message branches on the new flags
+  11. universalApprovalController dispatcher still destructures only `{ undertaking }`
+  12. approveGrnCore still throws when `grn.status !== 'PENDING'` (intentionally NOT relaxed — the peek dodges the throw, the gate stays as a guardrail)
+  13. acknowledgeUndertaking still has the outer SUBMITTED gate (clean 400)
+  14. universalApprovalController.approvalHandlers.undertaking still has its outer SUBMITTED gate (clean throw)
+
+### Preserved guards
+- **Rule #20** — period lock at call sites unchanged; cascade still inside `session.withTransaction`; audit moves out so audit failure doesn't roll back.
+- **Rule #21** — `acknowledgeUndertaking` still uses `widenFilterForProxy` to load the UT before calling the core.
+- **Source-of-truth invariant** — `approveGrnCore`'s `if (grn.status !== 'PENDING')` gate is intentionally NOT relaxed. `postSingleUndertaking` peeks first and skips; the gate stays in place as a guardrail against accidental double-cascade by some future caller.
+- **Outer SUBMITTED gates kept** at both call sites. The atomic claim is defense-in-depth for the race window between gate and txn body, not a substitute.
+
+### Verification (Apr 30, 2026)
+- `node -c backend/erp/controllers/undertakingController.js` → clean.
+- `node backend/erp/scripts/healthcheckPostSingleUndertakingIdempotency.js` → **14/14 PASS**.
+- `node backend/erp/scripts/healthcheckWaybillRecovery.js` → 11/11 PASS (regression).
+- `npx vite build` → clean in 12.58s.
+- Browser smoke (UT-002): **deferred to operator** — log in as president, open Approval Hub, click Acknowledge on UT-ACC042326-002. Expected: HTTP 200, `data.cascadeSkipped: true`, message "Undertaking acknowledged — linked GRN was already APPROVED (no new stock posted)". UT flips to ACKNOWLEDGED with the president's user_id; GRN unchanged; no new InventoryLedger rows; new ErpAuditLog row with `note` containing `cascade skipped, idempotent path; GRN event_id=...`.
+
+### Files touched (4)
+- `backend/erp/controllers/undertakingController.js` (postSingleUndertaking rewrite + acknowledgeUndertaking response)
+- `backend/erp/scripts/healthcheckPostSingleUndertakingIdempotency.js` (NEW)
+- `CLAUDE-ERP.md` (Phase G4.5h Part A entry)
+- `docs/PHASETASK-ERP.md` (this section)
+
+### Deferred to Parts B + C (next session)
+
+| Gap | Part | Sketch |
+|---|---|---|
+| `recordPhysicalCount` posts straight to ledger — no `gateApproval` / `TransactionEvent` / `periodLockCheck` / `roleCheck` | **B** | New `PhysicalCount` model. Split into `submitPhysicalCount` (DRAFT→SUBMITTED + gateApproval) + `approvePhysicalCount` (SUBMITTED→APPROVED inside withTransaction: TransactionEvent + ADJUSTMENT InventoryLedger rows). Wire `universalApprovalController.approvalHandlers.physical_count`. New `MODULE_DEFAULT_ROLES.PHYSICAL_COUNT` (defaults `[admin, finance, president]`). Frontend `MyStock.jsx` PhysicalCountModal calls `submitPhysicalCount` (returns 202 if not authorized). New 22-point healthcheck. ~8 files, ~1 day. |
+| Receiving new stock without ever reconciling existing stock | **C** | New lookup category `PHYSICAL_COUNT_GATE` (`REQUIRED` 1/0 default 0; `MAX_AGE_DAYS` default 30). Helper `backend/erp/utils/getMostRecentPhysicalCount.js`. Add to `postSingleUndertaking` AFTER the GRN-status peek, BEFORE `approveGrnCore` — throw 400 if gate is on AND no recent APPROVED PhysicalCount exists. `OPENING_BALANCE` seed (`stockSeedService.js:163`) emits TransactionEvent + ErpAuditLog so a fresh subscriber install can satisfy the gate. Approval Hub UT row + frontend MyStock badge surface "Last physical count: X days ago". |
+| Direct `/grn/:id/approve` endpoint still exists (Phase 32R intended UT-first) | optional | Gate behind `GRN_SETTINGS.ALLOW_DIRECT_APPROVE` (default 0) with forced reason + audit. Only ship if user wants belt-and-suspenders; G4.5g defense-in-depth waybill check already covers most cases. |
+| Ghost-approval root cause | open | Working hypothesis: manual mongosh edit while Judy Mae had admin role (per G4.5g handoff). Defense-in-depth waybill gate (G4.5g) + Part A idempotency means a future ghost approval can be cleared via the normal UI flow. Investigation deferred unless a second incident occurs. |
+
+Plan doc: `~/.claude/plans/phase-g4-5h-physical-count-governance.md`. Follow-up handoff: `memory/handoff_phase_g4_5h_part_b_c_apr30_2026.md`.
 
 ---
 

@@ -251,7 +251,7 @@ export default function GrnAuditView() {
 }
 
 const pageStyles = `
-  .ga-main { flex: 1; min-width: 0; overflow-y: auto; padding: 24px; max-width: 1100px; margin: 0 auto; }
+  .ga-main { flex: 1; min-width: 0; padding: 24px; max-width: 1100px; margin: 0 auto; }
   .ga-panel { background: #fff; border: 1px solid #dbe4f0; border-radius: 12px; padding: 18px; margin-bottom: 14px; }
   .ga-panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 10px; flex-wrap: wrap; }
   .ga-panel-head h2 { margin: 0; font-size: 16px; color: #132238; }

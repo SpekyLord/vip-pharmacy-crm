@@ -14,7 +14,7 @@ const LEVEL_COLORS = {
 
 const pageStyles = `
   .atm-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .atm-main { flex: 1; min-width: 0; overflow-y: auto; padding: 20px; max-width: 1200px; margin: 0 auto; }
+  .atm-main { flex: 1; min-width: 0; padding: 20px; max-width: 1200px; margin: 0 auto; }
   .atm-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
   .atm-header h2 { font-size: 20px; font-weight: 700; color: var(--erp-text, #1a1a2e); margin: 0; }
   .atm-table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--erp-panel, #fff); border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.06); }

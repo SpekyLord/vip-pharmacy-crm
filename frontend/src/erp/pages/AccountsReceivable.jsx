@@ -15,7 +15,7 @@ const BUCKET_LABELS = {
 
 const pageStyles = `
   .ar-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .ar-main { flex: 1; min-width: 0; overflow-y: auto; padding: 24px; max-width: 1360px; margin: 0 auto; }
+  .ar-main { flex: 1; min-width: 0; padding: 24px; max-width: 1360px; margin: 0 auto; }
   .ar-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
   .ar-header h1 { font-size: 24px; color: var(--erp-text); margin: 0; }
   .ar-header p { margin: 4px 0 0; color: var(--erp-muted); font-size: 13px; line-height: 1.5; max-width: 760px; }

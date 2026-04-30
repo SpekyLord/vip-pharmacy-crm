@@ -296,10 +296,22 @@ body.dark-mode .vip-select__option--is-focused {
   --mobile-navbar-offset: 72px;
 }
 
+/* Apr 30 2026 — dropped `min-height: 0`. With it, .admin-layout was capped
+   to viewport height (because flex column min-height: 0 lets the flex item
+   shrink below content), which combined with any `<page>-main { overflow-y:
+   auto }` rule across ~90 ERP pages created an inner scroll context. Under
+   the global hide-scrollbars rule above, that scroll context was invisible
+   and only worked while the cursor was over the main column — manifested
+   as "page won't scroll on laptop" on long forms (SMER, Sales, AR, etc.).
+   Dropping it lets .admin-layout grow with content; body-scroll handles
+   overflow. The leftover `<page>-main { overflow-y: auto }` rules become
+   harmless dead weight (height of the *-main now matches its content).
+   Pages that genuinely need an inner scroll region (OcrTest) explicitly
+   re-establish the height cap via their own `.admin-page.<key>` overrides
+   that set `height: 100vh; overflow: hidden`. */
 .admin-layout {
   display: flex;
   flex: 1;
-  min-height: 0;
 }
 
 @media (max-width: 768px) {
@@ -319,20 +331,23 @@ body.dark-mode .vip-select__option--is-focused {
   overflow: hidden;
 }
 
+/* Apr 30 2026 — dropped overflow-y: auto + -webkit-overflow-scrolling.
+   Reason: combined with the global hide-all-scrollbars rule above (* {
+   scrollbar-width: none } and *::-webkit-scrollbar { display: none }),
+   the inner scroll container made body-scroll silently fail on long
+   ERP forms (SMER, Expenses, PrfCalf, etc.) when WorkflowGuide pushed
+   content past the viewport — the user had no visible scrollbar AND
+   wheel events only fired while the cursor was over .admin-main, so
+   scrolling appeared broken on laptop. Mobile worked because touch-drag
+   scrolls any container regardless of cursor position. Pages that
+   genuinely need an internal scroll region (OcrTest) opt in via their
+   own scoped override. */
 .admin-main {
   flex: 1;
   padding: 0;
   min-width: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
   display: flex;
   flex-direction: column;
-}
-
-@media (max-width: 768px) {
-  .admin-main {
-    overflow-x: auto;
-  }
 }
 
 .erp-back-btn {

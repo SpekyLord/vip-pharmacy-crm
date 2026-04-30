@@ -12,6 +12,19 @@ const lineItemSchema = new mongoose.Schema({
   qty: { type: Number, required: true, min: 1 },
   unit: { type: String, trim: true },
   unit_price: { type: Number, required: true },
+  // Phase R2 — Sales Discount. BDM-entered per-line discount percentage
+  // (0-100). Applied as a trade discount on the face of the invoice, BIR-
+  // standard treatment per RR 16-2005: VAT base shrinks to the discounted
+  // amount. NET METHOD — SALES_REVENUE is booked at the discounted amount,
+  // no contra account. Backwards-compat: missing/null defaults to 0.
+  line_discount_percent: { type: Number, default: 0, min: 0, max: 100 },
+  // Computed in pre-save: qty * unit_price * (line_discount_percent / 100).
+  // Stored for audit + report use; never trust client-supplied value.
+  line_discount_amount: { type: Number, default: 0 },
+  // Computed in pre-save: qty * unit_price (gross BEFORE discount, VAT-
+  // inclusive). Useful for reporting "list price vs realized" without
+  // re-deriving on every read.
+  line_gross_amount: { type: Number, default: 0 },
   line_total: { type: Number },
   vat_amount: { type: Number },
   net_of_vat: { type: Number },
@@ -123,6 +136,14 @@ const salesLineSchema = new mongoose.Schema({
   invoice_total: { type: Number, default: 0 },
   total_vat: { type: Number, default: 0 },
   total_net_of_vat: { type: Number, default: 0 },
+  // Phase R2 — Sales Discount. Sum of all line_items[].line_discount_amount.
+  // Computed in pre-save. VAT-inclusive (matches the units of line_gross_amount
+  // and invoice_total: gross_before_discount = invoice_total + total_discount).
+  total_discount: { type: Number, default: 0 },
+  // Sum of line_gross_amount (qty × unit_price, before any discount). Used by
+  // CSI overlay totals block and salesReceipt print template to show "Total
+  // Sales (VAT Inclusive) → Less: Discount → Net" without recomputing.
+  total_gross_before_discount: { type: Number, default: 0 },
 
   status: {
     type: String,
@@ -209,6 +230,8 @@ salesLineSchema.pre('save', async function () {
   let invoiceTotal = 0;
   let totalVat = 0;
   let totalNetOfVat = 0;
+  let totalDiscount = 0;
+  let totalGrossBeforeDiscount = 0;
 
   for (const item of this.line_items) {
     // Normalize batch and unit
@@ -219,11 +242,29 @@ salesLineSchema.pre('save', async function () {
       item.unit = normalizeUnit(item.unit);
     }
 
-    // Auto-compute line totals
-    item.line_total = item.qty * item.unit_price;
+    // Phase R2 — Sales Discount. BIR-standard trade-discount-on-face-of-invoice.
+    // VAT base shrinks to the discounted amount (RR 16-2005). Net method — no
+    // contra account; SALES_REVENUE is booked at the discounted figure.
+    //
+    //   gross_before_discount  = qty × unit_price                       (VAT-inclusive)
+    //   line_discount_amount   = gross × (discount_pct / 100)           (VAT-inclusive)
+    //   line_total             = gross - discount                       (VAT-inclusive, after discount)
+    //   vat_amount             = line_total × VAT_RATE / (1 + VAT_RATE) (VAT on shrunk base)
+    //   net_of_vat             = line_total - vat_amount                (post-discount net)
+    //
+    // Clamp discount_pct to [0, 100] defensively — schema validators run before
+    // this hook but a hand-crafted save() bypassing validation could slip through.
+    const discountPct = Math.max(0, Math.min(100, Number(item.line_discount_percent) || 0));
+    item.line_discount_percent = discountPct;
+
+    const gross = item.qty * item.unit_price;
+    item.line_gross_amount = Math.round(gross * 100) / 100;
+    item.line_discount_amount = Math.round(gross * (discountPct / 100) * 100) / 100;
+    item.line_total = Math.round((gross - item.line_discount_amount) * 100) / 100;
 
     // VAT computation (assume VATABLE unless product says otherwise)
-    // The controller should set vat_amount explicitly for EXEMPT/ZERO products
+    // The controller should set vat_amount explicitly for EXEMPT/ZERO products.
+    // VAT is computed on the post-discount line_total — discount reduces VAT.
     if (item.vat_amount === undefined || item.vat_amount === null) {
       item.vat_amount = item.line_total / (1 + VAT_RATE) * VAT_RATE;
     }
@@ -232,11 +273,15 @@ salesLineSchema.pre('save', async function () {
     invoiceTotal += item.line_total;
     totalVat += item.vat_amount;
     totalNetOfVat += item.net_of_vat;
+    totalDiscount += item.line_discount_amount;
+    totalGrossBeforeDiscount += item.line_gross_amount;
   }
 
   this.invoice_total = Math.round(invoiceTotal * 100) / 100;
   this.total_vat = Math.round(totalVat * 100) / 100;
   this.total_net_of_vat = Math.round(totalNetOfVat * 100) / 100;
+  this.total_discount = Math.round(totalDiscount * 100) / 100;
+  this.total_gross_before_discount = Math.round(totalGrossBeforeDiscount * 100) / 100;
 });
 
 // Indexes

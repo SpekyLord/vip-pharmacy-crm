@@ -48,7 +48,7 @@ const styles = {
 
 const pageStyles = `
   .collaterals-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
-  .collaterals-main { flex: 1; min-width: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 24px; }
+  .collaterals-main { flex: 1; min-width: 0; padding: 24px; }
   .collaterals-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
   @media (max-width: 768px) {
