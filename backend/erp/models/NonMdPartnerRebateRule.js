@@ -1,5 +1,5 @@
 /**
- * NonMdPartnerRebateRule — Phase VIP-1.B (Apr 2026)
+ * NonMdPartnerRebateRule — Phase VIP-1.B / Phase R1 (Apr 2026)
  *
  * Preset rebate matrix for NON-MD partners (pharmacist staff, hospital admin
  * personnel, supply-chain reps). Replaces the error-prone manual entry of
@@ -7,35 +7,47 @@
  * matrix once and the Collection bridge auto-fills `partner_tags` from rule
  * matches.
  *
+ * Phase R1 (Apr 29 2026) — schema simplification:
+ *   - `partner_id` now refs `Doctor` (not PeopleMaster). Non-MD partners are
+ *     just Doctor rows whose `client_type !== 'Medical Doctor'`. The non-MD
+ *     dropdown filters by client_type AND partnership_status='PARTNER' AND
+ *     partner_agreement_date != null. Mirrors the Tier-A 3-gate logic.
+ *   - `hospital_id` flips REQUIRED — every non-MD rebate is per-hospital.
+ *     Auto-filled from the partner's Doctor.hospitals[] on the form.
+ *   - `customer_id`, `product_code`, `priority` REMOVED — match grain is
+ *     simply (entity, partner, hospital). Multiple rules at same key all
+ *     earn (independent obligations to different non-MD partners).
+ *   - `calculation_mode` added (lookup-driven via NONMD_REBATE_CALC_MODE):
+ *       * EXCLUDE_MD_COVERED (default) — base = Σ collected lines NOT
+ *         covered by an active MD Tier-A rule for the same hospital.
+ *       * TOTAL_COLLECTION — base = collection.net_of_vat (gross − VAT − CWT)
+ *         regardless of MD overlap. Doubles cost when MD rebate also fires
+ *         on the same products; business policy permits this.
+ *
  * Why a separate model from MdProductRebate:
- *   - Different legal posture: non-MD partners are NOT covered by the
- *     RA 6675 / RA 9502 dispensing-prescription concerns. No 3-gate.
- *   - Different match grain: non-MD rebates can be entity-wide OR scoped by
- *     hospital/customer/product. MD rebates are always per-(MD × product).
- *   - Different audit trail: non-MD goes through partner_tags + PRF; MD goes
- *     through md_rebate_lines + PRF (Phase 2 Collection.js bridge).
+ *   - Different legal posture: non-MD partners are NOT covered by RA 6675
+ *     RA 9502 dispensing-prescription concerns. No 3-gate hard-lock at
+ *     schema level (partner_agreement_date is enforced as a UI gate, not a
+ *     pre-save hook — non-MD partners have looser legal posture).
+ *   - Different match grain: per-(partner × hospital) only. MD rebates are
+ *     per-(MD × hospital × product).
  *
- * Match priority (most-specific wins, then priority asc):
- *   1. (partner_id, hospital_id, customer_id, product_code) — full-tuple
- *   2. (partner_id, hospital_id, product_code)
- *   3. (partner_id, customer_id, product_code)
- *   4. (partner_id, product_code)
- *   5. (partner_id, hospital_id) — any product
- *   6. (partner_id, customer_id) — any product
- *   7. (partner_id) — global rule for this partner
+ * Audit trail: non-MD goes through partner_tags + autoPrfRouting → PrfCalf.
+ * BIR_FLAG = INTERNAL on the resulting JE (autoJournal Phase 0 invariant)
+ * regardless of whether PRF is later disbursed to the partner — internal
+ * cost allocation, never on BIR P&L.
  *
- * Conditions are AND-combined within a row. Empty fields = no constraint on
- * that dimension. The matrix walker (matrixWalker.js, Phase 2) iterates
- * by (priority asc, specificity desc) and short-circuits on first match.
- *
- * Subscription posture:
- *   - entity_id required (Rule #19).
- *   - Per-row is_active toggle so subscribers can pause without deletion.
- *   - effective_from/to mirror CreditRule.js pattern for plan-versioning
- *     compatibility (Phase SG-4).
+ * Subscription posture (Rule #19 + #3):
+ *   - entity_id required (multi-tenant isolation).
+ *   - calculation_mode default + label come from `NONMD_REBATE_CALC_MODE`
+ *     lookup category — subscribers configure via Control Center.
+ *   - Per-row is_active toggle.
+ *   - effective_from/to mirror CreditRule.js for plan-versioning.
  */
 
 const mongoose = require('mongoose');
+
+const NON_MD_CALC_MODES = ['EXCLUDE_MD_COVERED', 'TOTAL_COLLECTION'];
 
 const nonMdPartnerRebateRuleSchema = new mongoose.Schema(
   {
@@ -45,12 +57,11 @@ const nonMdPartnerRebateRuleSchema = new mongoose.Schema(
       required: [true, 'entity_id is required'],
       index: true,
     },
-    // Partner is a PeopleMaster row tagged as a non-MD rebate-eligible person
-    // (pharmacist staff, hospital admin, etc.). The PeopleMaster.position +
-    // metadata.is_non_md_partner gate is enforced by the admin UI, not here.
+    // Phase R1 — partner_id is now a Doctor _id (the row whose client_type !=
+    // 'Medical Doctor' and partnership_status === 'PARTNER').
     partner_id: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'PeopleMaster',
+      ref: 'Doctor',
       required: [true, 'partner_id is required'],
       index: true,
     },
@@ -58,21 +69,33 @@ const nonMdPartnerRebateRuleSchema = new mongoose.Schema(
     rule_name: { type: String, required: true, trim: true },
     description: { type: String, trim: true, default: '' },
 
-    // ── Match conditions (AND-combined, all optional) ───────────────────────
+    // ── Match dimension (REQUIRED in Phase R1) ─────────────────────────────
+    // Hospital_id is auto-filled from Doctor.hospitals[] on the form. If the
+    // partner has multiple hospitals, admin picks one. Same partner at
+    // multiple hospitals = multiple rule rows.
     hospital_id: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Hospital',
-      default: null,
+      required: [true, 'hospital_id is required (Phase R1)'],
+      index: true,
     },
-    customer_id: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Customer',
-      default: null,
+
+    // ── Calculation mode (Phase R1) ────────────────────────────────────────
+    // EXCLUDE_MD_COVERED → base = Σ lines not covered by MD Tier-A on the
+    //                      same hospital (default — protects against double
+    //                      paying on the same line item).
+    // TOTAL_COLLECTION   → base = collection.net_of_vat (gross − VAT − CWT)
+    //                      regardless of MD overlap. Used when admin wants
+    //                      a flat partnership-wide pct on every CSI.
+    calculation_mode: {
+      type: String,
+      enum: {
+        values: NON_MD_CALC_MODES,
+        message: `calculation_mode must be one of: ${NON_MD_CALC_MODES.join(', ')}`,
+      },
+      default: 'EXCLUDE_MD_COVERED',
+      required: [true, 'calculation_mode is required'],
     },
-    // Product matched by code (string), not _id, so the rule survives
-    // ProductMaster _id changes during catalog re-imports. Empty string =
-    // matches every product.
-    product_code: { type: String, trim: true, default: '' },
 
     // ── Output ─────────────────────────────────────────────────────────────
     rebate_pct: {
@@ -83,7 +106,6 @@ const nonMdPartnerRebateRuleSchema = new mongoose.Schema(
     },
 
     // ── Versioning + activation ────────────────────────────────────────────
-    priority: { type: Number, default: 100, min: 0 },
     is_active: { type: Boolean, default: true, index: true },
     effective_from: { type: Date, default: Date.now },
     effective_to: { type: Date, default: null },
@@ -94,14 +116,17 @@ const nonMdPartnerRebateRuleSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Composite index for the matrix walk (matrixWalker.js Phase 2):
-// "Find active rules for (entity, partner) effective at csi_date,
-// optionally narrowed by hospital/customer/product".
+// Composite index for the matrix walk:
+// "Find active rules for (entity, partner, hospital) effective at csi_date".
+// NOT unique — Phase R1 supports multiple active rules at the same key (e.g.
+// effective-dated promo rate stacked with a base rate, or just an admin
+// staging an upcoming change while the current rule still runs). Walker
+// returns all matches, each earns full %.
 nonMdPartnerRebateRuleSchema.index({
   entity_id: 1,
   partner_id: 1,
+  hospital_id: 1,
   is_active: 1,
-  priority: 1,
 });
 
 // Effective-dating sanity.
@@ -113,3 +138,4 @@ nonMdPartnerRebateRuleSchema.pre('save', function (next) {
 });
 
 module.exports = mongoose.model('NonMdPartnerRebateRule', nonMdPartnerRebateRuleSchema);
+module.exports.NON_MD_CALC_MODES = NON_MD_CALC_MODES;

@@ -15,7 +15,7 @@
  * Role gates are backend-driven via BIR_ROLES (birAccess.js). The route
  * guard here is `BIR_FILING` (admin/finance/president/bookkeeper).
  *
- * Route: /admin/bir
+ * Route: /erp/bir
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -302,7 +302,7 @@ export default function BIRCompliancePage() {
                         const period = c.period_month || c.period_quarter;
                         const isClickable = period && (f.form_code === '2550M' || f.form_code === '2550Q');
                         const target = isClickable
-                          ? `/admin/bir/${f.form_code}/${year}/${period}`
+                          ? `/erp/bir/${f.form_code}/${year}/${period}`
                           : null;
                         const cellTitle = `${c.period_label} — ${meta.label}${c.due_date ? `\nDue ${new Date(c.due_date).toLocaleDateString()}` : ''}${isClickable ? '\n(Click to open form detail)' : ''}`;
                         return (

@@ -6245,3 +6245,117 @@ const hasProxy = hasPc || hasGrn;
 **No new lookup category, no new DANGER entry.** The PROXY_ENTRY_ROLES.INVENTORY + VALID_OWNER_ROLES.INVENTORY rows from G4.5x/y remain authoritative for both new keys (single role allowlist, cleanly subscription-ready).
 
 **Verification:** `node -c` green. Banner re-rendered. Lazy-seed fires on first GET of `/api/erp/lookup-values/SUB_PERMISSION_KEYS` per entity — admin opens ErpAccessManager and the two new checkboxes appear.
+
+---
+
+## Phase R1 — Rebate Stack Relocation + Hardening (Apr 29 2026)
+
+> Branch: `feat/rebate-stack-relocation` (worktree at `.worktrees/rebate-stack-relocation`).
+> Phase 1 (mechanical relocation) shipped commit `328ade3`. Phase 2A/2B (this section) is the schema + engine + form hardening on top.
+> NOT pushed (per erp-remote no-push policy).
+
+### Why
+
+The eight rebate / BIR / SC-PWD pages were misplaced at `/admin/*` in the CRM frontend. Phase 1 relocated them to `/erp/*` so they don't ship to the Year-2 Pharmacy SaaS bundle. While auditing the four rebate forms during Phase 1, four schema / UX issues surfaced that justified bundling the fix into Phase 2 (locked design Apr 29 evening with the user):
+
+1. `MdProductRebate` was per-(MD × product) — same MD at different hospitals routinely has different rates per institutional MOA. **Schema bug**, fixed by adding required `hospital_id`.
+2. `NonMdPartnerRebateRule` had four optional dimensions (hospital, customer, product_code) plus priority — unnecessary complexity. The actual operator intent is per-(partner × hospital). Dropped customer / product_code / priority; flipped hospital_id to required; added `calculation_mode`.
+3. The non-MD form was using `partner_id: ref PeopleMaster`, but operator workflow stores all partners (MD and non-MD) on the Doctor collection with `clientType` discriminator. Flipped `partner_id` ref to Doctor so the form filter can do `clientType != 'MD'`.
+4. The Tier-A form was importing CRM `productService` (storefront DB, ~12 items) instead of ERP ProductMaster (full hospital catalog). Swapped to `useProducts()` (the ERP hook).
+
+### Locked design (Apr 29 2026 evening)
+
+- **Single-flow PRF/CALF for ALL rebates.** Both MD Tier-A AND non-MD partner accruals route to PrfCalf via `autoPrfRouting` on Collection POSTED. No `IncentivePayout` PAID_DIRECT path. The `bir_flag: 'INTERNAL'` invariant on PRF + PRF-derived JEs (autoJournal Phase 0) holds even after disbursement to MD or non-MD recipients — internal cost allocation, never on BIR P&L. Avoids PRC Code of Ethics kickback exposure for MDs; keeps non-MD rebates on the same accounting path so the audit story is uniform.
+- **Multiple matches at the same key all earn full % independently.** Walker functions return arrays (`matchAllMdProductRebates`, `matchAllNonMdPartnerRebateRules`) instead of single best-match. No winner-take-all.
+- **Hospital scoping is mandatory** for both MD Tier-A and non-MD rules. Auto-filled from Doctor.hospitals[]; pickable when MD has multiple hospital affiliations; admin must add at least one hospital to the VIP Client profile before creating a rule.
+- **calculation_mode per non-MD rule** (lookup-driven via `NONMD_REBATE_CALC_MODE`):
+  - `EXCLUDE_MD_COVERED` (default, safe) — base = Σ collected lines NOT covered by MD Tier-A on the same hospital.
+  - `TOTAL_COLLECTION` — base = `collection.net_of_vat` regardless of MD overlap. Doubled cost on overlap is accepted business policy when admin explicitly opts in.
+
+### Schema changes
+
+| Model | Phase R1 change |
+|---|---|
+| `MdProductRebate` | ADD `hospital_id` (required, ref Hospital). Composite index now `(entity_id, doctor_id, hospital_id, product_id, is_active)`. |
+| `NonMdPartnerRebateRule` | `partner_id` ref flipped `PeopleMaster → Doctor`. `hospital_id` flipped optional → REQUIRED. ADD `calculation_mode` enum (`EXCLUDE_MD_COVERED` default \| `TOTAL_COLLECTION`). DROP `customer_id`, `product_code`, `priority`. Composite index now `(entity_id, partner_id, hospital_id, is_active)`. |
+| `Collection.partner_tags[]` | ADD `calculation_mode` (denormalized from matched rule for amount math). |
+| `Collection.md_rebate_lines[]` | ADD `hospital_id` (audit trail — which hospital's rule fired). |
+
+### Engine changes
+
+| File | Change |
+|---|---|
+| [`backend/erp/services/matrixWalker.js`](backend/erp/services/matrixWalker.js) | Added `matchAllMdProductRebates` + `matchAllNonMdPartnerRebateRules` (return arrays). Both single-match wrappers now require `hospital_id`. `getActiveTierAProductIds` accepts optional `hospital_id` filter. |
+| [`backend/erp/services/rebateAccrualEngine.js`](backend/erp/services/rebateAccrualEngine.js) | `resolvePatientMd` now also resolves `md.hospital_id` (from PatientMdAttribution.hospital_id when set, fallback to Doctor.hospitals[0]). `accrueForOrder` skips Tier-A when no hospital_id resolves. Added "single-flow PRF/CALF" doc block on the engine header. |
+| [`backend/erp/models/Collection.js`](backend/erp/models/Collection.js) | Pre-save bridge swaps to multi-match walkers, passes `csiHospitalId` (= SalesLine.hospital_id ‖ Collection.hospital_id) to Tier-A walk, captures hospital_id on each md_rebate_line, branches partner_tags amount math on `tag.calculation_mode`. |
+
+### Forms (Phase 2B)
+
+| File | Change |
+|---|---|
+| [`frontend/src/erp/pages/RebateMatrixPage.jsx`](frontend/src/erp/pages/RebateMatrixPage.jsx) | MD picker filters by `clientType=MD AND PARTNER AND agreement_date`. Hospital dropdown derived from selected MD's `hospitals[]` (auto-fill if 1; pickable otherwise). Product picker swapped to ERP ProductMaster via `useProducts()` (brand_name + generic_name + dosage_strength). Hospital column added to the table. |
+| [`frontend/src/erp/pages/NonMdRebateMatrixPage.jsx`](frontend/src/erp/pages/NonMdRebateMatrixPage.jsx) | Partner picker filters by `clientType != MD AND PARTNER AND agreement_date`. Hospital required + auto-filled from partner.hospitals[]. calculation_mode radio (lookup-driven via NONMD_REBATE_CALC_MODE with inline `CALC_MODE_FALLBACK` so the page never goes dark). Dropped form fields: customer_id, product_code, priority. Calculation Mode column added to the table. |
+| [`frontend/src/erp/pages/CapitationRulesPage.jsx`](frontend/src/erp/pages/CapitationRulesPage.jsx) | Labels updated to operator vocabulary ("Rule name" → "Program label" with Q-period placeholder; "Frequency window" → "Cadence"). Banner: "Online Pharmacy only — activates with VIP-1.D." Schema unchanged. |
+| [`frontend/src/erp/pages/CommissionMatrixPage.jsx`](frontend/src/erp/pages/CommissionMatrixPage.jsx) | Payee dropdown filters by `role=staff` server-side (Phase S2 — admins don't draw commission). Product picker swapped from free-text to ProductMaster (stored value is product _id). Per-line routing banner explains SalesLine.bdm_id attribution. |
+
+### Lookup seeds
+
+`NONMD_REBATE_CALC_MODE` added to [`backend/erp/controllers/lookupGenericController.js`](backend/erp/controllers/lookupGenericController.js) `SEED_DEFAULTS`. Two rows (`EXCLUDE_MD_COVERED` default + `TOTAL_COLLECTION` opt-in), both `insert_only_metadata: true` so admin label/color edits survive future re-seeds. Lazy-seeds on first GET per entity; can be triggered explicitly via `node backend/erp/scripts/seedAllLookups.js`.
+
+### Migration script
+
+[`backend/erp/scripts/migratePhaseR1RebateSchema.js`](backend/erp/scripts/migratePhaseR1RebateSchema.js) — dry-run-by-default. Backfills:
+- `MdProductRebate.hospital_id` ← Doctor.hospitals[0] (skip + warn if MD has none).
+- `NonMdPartnerRebateRule.hospital_id` ← Doctor.hospitals[0] of partner_id.
+- `NonMdPartnerRebateRule.calculation_mode` ← `EXCLUDE_MD_COVERED`.
+- $unset legacy `customer_id` / `product_code` / `priority` fields.
+
+Memory expects very few existing rows (rebate matrix admin-only HOLD per `project_saas_scope_rebate_proprietary_apr29_2026`), so this is a near-greenfield run on dev. Production may have zero rows.
+
+Run: `node backend/erp/scripts/migratePhaseR1RebateSchema.js` (dry-run) then `--apply` to commit. BLOCKED rows print to console for manual admin fix.
+
+### BIR_FLAG invariant (re-affirmed by user Apr 29 2026)
+
+> "for non MD also, BIR Flag is still Internal Only"
+
+PRF and CALF default to `bir_flag: 'INTERNAL'` ([backend/erp/models/PrfCalf.js:103](backend/erp/models/PrfCalf.js#L103)). `autoPrfRouting.ensurePrfForBucket` explicitly stamps `bir_flag: 'INTERNAL'` ([line 238](backend/erp/services/autoPrfRouting.js#L238)). `autoJournal.journalFromPrfCalf` (Phase 0 commit `bc57fba`) inherits the policy on the JE. After PRF disbursement, the cash outflow to MD or non-MD partner stays on the INTERNAL ledger — never reported on BIR P&L. PRC Code of Ethics kickback exposure for MDs is mitigated because outflows are sourced from CME, advisory honoraria with formal MOA, and patient programs (admin-controlled disbursement, audit-traceable).
+
+### Verification (Phase 3 — partial; Playwright deferred)
+
+- `node backend/scripts/healthcheckRebateCommissionWiring.js` → 109/109 PASS (was 86/86; +23 Phase R1 assertions covering hospital_id schema, calculation_mode field, multi-match walker exports, engine hospital scoping, migration script presence, seed lookup category, dropped field absence)
+- `node backend/scripts/healthcheckBirVatReturnWiring.js` → 39/39 PASS (untouched)
+- `npx vite build` → green in 11.52s
+- `node -c` syntax check on every modified backend file → PASS
+- **Playwright UI smoke DEFERRED** — Playwright MCP not loaded in this session. Recommended smoke for the next session that has MCP loaded:
+  - `/erp/rebate-matrix` Add Rule modal: pick MD → Hospital auto-fills (or becomes pickable) → ProductMaster items render → submit creates row → row shows in table with Hospital column populated.
+  - `/erp/non-md-rebate-matrix` Add Rule modal: pick non-MD partner → Hospital auto-fills → calculation_mode radio defaults to EXCLUDE_MD_COVERED → submit → row shows in table with Calculation Mode pill.
+  - `/erp/capitation-rules` Add Rule modal: labels read "Program label" + "Cadence". Yellow VIP-1.D banner visible above the page heading.
+  - `/erp/commission-matrix` Add Rule modal: Payee dropdown contains only staff users (no admins). Product picker shows ProductMaster items. Blue per-line routing banner visible above the tabs.
+  - Negative path: staff role hits any `/erp/*` rebate page → 403 / sidebar entry hidden.
+
+### Files touched (Phase 2A + 2B)
+
+**Backend (8 modified, 1 new):**
+- modified: [backend/erp/models/MdProductRebate.js](backend/erp/models/MdProductRebate.js) — required hospital_id + composite index
+- modified: [backend/erp/models/NonMdPartnerRebateRule.js](backend/erp/models/NonMdPartnerRebateRule.js) — partner_id→Doctor, hospital_id required, calculation_mode added, customer_id/product_code/priority dropped
+- modified: [backend/erp/models/Collection.js](backend/erp/models/Collection.js) — partner_tags.calculation_mode + md_rebate_lines.hospital_id; bridge passes hospital_id + branches calculation_mode + multi-match earn-all
+- modified: [backend/erp/services/matrixWalker.js](backend/erp/services/matrixWalker.js) — hospital_id required, multi-match exports
+- modified: [backend/erp/services/rebateAccrualEngine.js](backend/erp/services/rebateAccrualEngine.js) — hospital scoping + single-flow PRF doc block
+- modified: [backend/erp/controllers/mdProductRebateController.js](backend/erp/controllers/mdProductRebateController.js) — hospital_id query filter
+- modified: [backend/erp/controllers/nonMdPartnerRebateRuleController.js](backend/erp/controllers/nonMdPartnerRebateRuleController.js) — allowed-fields list updated
+- modified: [backend/erp/controllers/lookupGenericController.js](backend/erp/controllers/lookupGenericController.js) — NONMD_REBATE_CALC_MODE seed
+- modified: [backend/scripts/healthcheckRebateCommissionWiring.js](backend/scripts/healthcheckRebateCommissionWiring.js) — Phase R1 assertions
+- new: [backend/erp/scripts/migratePhaseR1RebateSchema.js](backend/erp/scripts/migratePhaseR1RebateSchema.js)
+
+**Frontend (5 modified):**
+- modified: [frontend/src/erp/pages/RebateMatrixPage.jsx](frontend/src/erp/pages/RebateMatrixPage.jsx)
+- modified: [frontend/src/erp/pages/NonMdRebateMatrixPage.jsx](frontend/src/erp/pages/NonMdRebateMatrixPage.jsx)
+- modified: [frontend/src/erp/pages/CapitationRulesPage.jsx](frontend/src/erp/pages/CapitationRulesPage.jsx)
+- modified: [frontend/src/erp/pages/CommissionMatrixPage.jsx](frontend/src/erp/pages/CommissionMatrixPage.jsx)
+- modified: [frontend/src/components/common/PageGuide.jsx](frontend/src/components/common/PageGuide.jsx) — banners updated for all four pages
+
+### Subscription posture
+
+- All four pages remain admin-gated via lookup-driven role categories `REBATE_ROLES` and `COMMISSION_ROLES` — subscribers configure access via Control Center → Lookup Tables.
+- All schema enums (`calculation_mode`, `partnership_status`, `client_type`) are validation gates only; UI labels come from lookups (`NONMD_REBATE_CALC_MODE`, `DOCTOR_PARTNERSHIP_STATUS`, `VIP_CLIENT_TYPE`) with inline fallbacks so the page never goes dark on a Lookup outage (Rule #3).
+- Single-flow PRF/CALF design simplifies the Year-2 Pharmacy SaaS spin-out — one accounting path to expose vs three modes was a real divergence risk for multi-tenant subscribers.

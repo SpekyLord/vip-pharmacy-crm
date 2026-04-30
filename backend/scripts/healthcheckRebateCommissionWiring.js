@@ -83,10 +83,19 @@ expect(collection.includes('md_rebate_lines'), 'Collection.md_rebate_lines field
 expect(collection.includes('mdRebateLineSchema'), 'Collection.mdRebateLineSchema declared');
 expect(collection.includes('total_md_rebates'), 'Collection.total_md_rebates roll-up present');
 expect(collection.includes('commission_rule_id'), 'Collection.settled_csis.commission_rule_id provenance present');
-expect(collection.includes('matchMdProductRebate'), 'Collection pre-save calls matchMdProductRebate');
+// Phase R1 (Apr 29 2026): bridge swapped to multi-match walkers (earn-all
+// semantics) and now passes hospital_id to Tier-A. Non-MD walker no longer
+// takes customer_id / product_code; per-tag calculation_mode drives the
+// rebate_amount math.
+expect(collection.includes('matchAllMdProductRebates'), 'Collection pre-save calls matchAllMdProductRebates (Phase R1 multi-match)');
 expect(collection.includes('matchStaffCommissionRule'), 'Collection pre-save calls matchStaffCommissionRule');
 expect(collection.includes('matchNonMdPartnerRebateRule'), 'Collection pre-save calls matchNonMdPartnerRebateRule');
+expect(collection.includes('csiHospitalId'), 'Collection pre-save resolves CSI hospital_id (Phase R1)');
+expect(collection.includes('hospital_id: csiHospitalId'), 'Collection pre-save passes hospital_id to Tier-A walk + audit row');
 expect(collection.includes('tierAExcludedNet'), 'Collection pre-save tracks Tier-A exclusion');
+expect(collection.includes('partnerBaseExclude') && collection.includes('partnerBaseTotal'), 'Collection pre-save branches per calculation_mode');
+expect(collection.includes("calculation_mode: { type: String"), 'partner_tags.calculation_mode field declared');
+expect(collection.includes("hospital_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital'"), 'mdRebateLineSchema.hospital_id captured for audit');
 
 // ── 4. PrfCalf metadata field + idempotency index ──────────────────────
 const prfCalf = read('backend/erp/models/PrfCalf.js');
@@ -109,11 +118,11 @@ expect(collCtrl.includes("'metadata.auto_generated_by': 'autoPrfRouting'"), 'col
 // ── 7. Frontend App.jsx routes ──────────────────────────────────────────
 const appJsx = read('frontend/src/App.jsx');
 [
-  '/admin/rebate-matrix',
-  '/admin/non-md-rebate-matrix',
-  '/admin/capitation-rules',
-  '/admin/commission-matrix',
-  '/admin/payout-ledger',
+  '/erp/rebate-matrix',
+  '/erp/non-md-rebate-matrix',
+  '/erp/capitation-rules',
+  '/erp/commission-matrix',
+  '/erp/payout-ledger',
 ].forEach(p => expect(appJsx.includes(`path="${p}"`), `App.jsx route ${p}`));
 [
   'RebateMatrixPage',
@@ -126,11 +135,11 @@ const appJsx = read('frontend/src/App.jsx');
 // ── 8. Sidebar entries ──────────────────────────────────────────────────
 const sidebar = read('frontend/src/components/common/Sidebar.jsx');
 [
-  '/admin/rebate-matrix',
-  '/admin/non-md-rebate-matrix',
-  '/admin/capitation-rules',
-  '/admin/commission-matrix',
-  '/admin/payout-ledger',
+  '/erp/rebate-matrix',
+  '/erp/non-md-rebate-matrix',
+  '/erp/capitation-rules',
+  '/erp/commission-matrix',
+  '/erp/payout-ledger',
 ].forEach(p => expect(sidebar.includes(p), `Sidebar links ${p}`));
 
 // ── 9. PageGuide entries ────────────────────────────────────────────────
@@ -168,6 +177,41 @@ const lookupCtrl = read('backend/erp/controllers/lookupGenericController.js');
 ['REBATE_ROLES', 'COMMISSION_ROLES', 'REBATE_PAYOUT_STATUS', 'STAFF_COMMISSION_PAYEE_ROLE', 'MD_CAPITATION_FREQUENCY'].forEach(cat => {
   warn(lookupCtrl.includes(cat), `lookupGenericController seeds ${cat}`);
 });
+// Phase R1 (Apr 29 2026) — non-MD calculation_mode lookup category.
+expect(lookupCtrl.includes('NONMD_REBATE_CALC_MODE'), 'NONMD_REBATE_CALC_MODE seeded in lookupGenericController');
+expect(lookupCtrl.includes("'EXCLUDE_MD_COVERED'") && lookupCtrl.includes("'TOTAL_COLLECTION'"), 'NONMD_REBATE_CALC_MODE rows EXCLUDE_MD_COVERED + TOTAL_COLLECTION present');
+
+// ── 13. Phase R1 schema assertions ───────────────────────────────────────
+const mdRebateModel = read('backend/erp/models/MdProductRebate.js');
+expect(mdRebateModel.includes('hospital_id') && mdRebateModel.includes("required: [true, 'hospital_id is required (Phase R1)']"), 'MdProductRebate.hospital_id required (Phase R1)');
+expect(/index\(\{[^}]*entity_id:\s*1[^}]*doctor_id:\s*1[^}]*hospital_id:\s*1[^}]*product_id:\s*1/s.test(mdRebateModel), 'MdProductRebate composite index includes hospital_id (Phase R1)');
+
+const nonMdModel = read('backend/erp/models/NonMdPartnerRebateRule.js');
+expect(/partner_id:\s*\{[^}]*ref:\s*'Doctor'/s.test(nonMdModel), 'NonMdPartnerRebateRule.partner_id refs Doctor (Phase R1)');
+expect(/hospital_id:\s*\{[^}]*required:\s*\[true,\s*'hospital_id is required \(Phase R1\)'\]/s.test(nonMdModel), 'NonMdPartnerRebateRule.hospital_id required (Phase R1)');
+expect(nonMdModel.includes('calculation_mode'), 'NonMdPartnerRebateRule.calculation_mode field present');
+expect(nonMdModel.includes("'EXCLUDE_MD_COVERED'") && nonMdModel.includes("'TOTAL_COLLECTION'"), 'NonMdPartnerRebateRule.calculation_mode enum populated');
+expect(!/customer_id:\s*\{/.test(nonMdModel), 'NonMdPartnerRebateRule.customer_id field DROPPED (Phase R1)');
+expect(!/product_code:\s*\{/.test(nonMdModel), 'NonMdPartnerRebateRule.product_code field DROPPED (Phase R1)');
+expect(!/priority:\s*\{\s*type:/.test(nonMdModel), 'NonMdPartnerRebateRule.priority field DROPPED (Phase R1)');
+
+// ── 14. matrixWalker exports Phase R1 multi-match helpers ────────────────
+const walker = read('backend/erp/services/matrixWalker.js');
+expect(walker.includes('matchAllMdProductRebates'), 'matrixWalker exports matchAllMdProductRebates (Phase R1)');
+expect(walker.includes('matchAllNonMdPartnerRebateRules'), 'matrixWalker exports matchAllNonMdPartnerRebateRules (Phase R1)');
+expect(/matchMdProductRebate\(\{[\s\S]{0,200}hospital_id/.test(walker), 'matrixWalker.matchMdProductRebate signature includes hospital_id');
+expect(/matchNonMdPartnerRebateRule\(\{[\s\S]{0,200}hospital_id/.test(walker), 'matrixWalker.matchNonMdPartnerRebateRule signature includes hospital_id');
+
+// ── 15. rebateAccrualEngine hospital scoping + PRF convergence note ──────
+const engine = read('backend/erp/services/rebateAccrualEngine.js');
+expect(engine.includes('Phase R1') && engine.includes('hospital scoping'), 'rebateAccrualEngine documents Phase R1 hospital scoping');
+expect(engine.includes('md.hospital_id'), 'rebateAccrualEngine.accrueForOrder gates Tier-A on md.hospital_id');
+expect(engine.includes('hospital_id: md.hospital_id'), 'rebateAccrualEngine passes hospital_id to matchMdProductRebate + getActiveTierAProductIds');
+expect(engine.includes('STAYS INTERNAL'), 'rebateAccrualEngine documents BIR_FLAG INTERNAL invariant post-disbursement');
+
+// ── 16. Phase R1 migration script exists ─────────────────────────────────
+const migrationScript = read('backend/erp/scripts/migratePhaseR1RebateSchema.js');
+expect(migrationScript.includes('migratePhaseR1RebateSchema') && migrationScript.includes('--apply'), 'Phase R1 migration script present + has --apply gate');
 
 console.log('\n─────────────────────────────────────────────');
 

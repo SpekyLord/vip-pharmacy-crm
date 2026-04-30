@@ -50,26 +50,37 @@ function effectiveDatingClause(asOfDate) {
 }
 
 /**
- * matchMdProductRebate — Tier-A lookup.
+ * matchMdProductRebate — Tier-A lookup (single-match, back-compat).
  *
- * Returns the single active rule row for (entity, doctor, product) effective
- * at asOfDate, or null. There SHOULD be at most one row per tuple at any
- * given time (admin UI enforces — old row deactivated before new one added).
- * If multiple are found (shouldn't happen but defensive), the most-recently-
- * created wins.
+ * Returns the single most-recently-created active rule row for
+ * (entity, doctor, hospital, product) effective at asOfDate, or null.
+ *
+ * Phase R1 (Apr 29 2026): hospital_id is now required for a match. Callers
+ * that need every match (the "multiple partners earn full %" semantics) must
+ * call `matchAllMdProductRebates` instead. This single-match API is preserved
+ * for storefront Order.paid (one MD attribution per patient → at most one
+ * rule at the (doctor, hospital, product) key per the admin UI).
  *
  * @param {Object} opts
  * @param {ObjectId|string} opts.entity_id
  * @param {ObjectId|string} opts.doctor_id
+ * @param {ObjectId|string} opts.hospital_id  REQUIRED in Phase R1
  * @param {ObjectId|string} opts.product_id
  * @param {Date} [opts.asOfDate] — defaults to now
  * @returns {Promise<MdProductRebate|null>} lean doc or null
  */
-async function matchMdProductRebate({ entity_id, doctor_id, product_id, asOfDate } = {}) {
-  if (!entity_id || !doctor_id || !product_id) return null;
+async function matchMdProductRebate({
+  entity_id,
+  doctor_id,
+  hospital_id,
+  product_id,
+  asOfDate,
+} = {}) {
+  if (!entity_id || !doctor_id || !hospital_id || !product_id) return null;
   const filter = {
     entity_id,
     doctor_id,
+    hospital_id,
     product_id,
     ...effectiveDatingClause(asOfDate),
   };
@@ -77,23 +88,47 @@ async function matchMdProductRebate({ entity_id, doctor_id, product_id, asOfDate
 }
 
 /**
- * matchNonMdPartnerRebateRule — picks the most-specific active rule for the
- * given (partner, optional hospital/customer/product) tuple.
+ * matchAllMdProductRebates — Phase R1 multi-match Tier-A lookup.
  *
- * Specificity score (sum of matched optional dimensions, higher = more
- * specific):
- *   +1 hospital_id matches
- *   +1 customer_id matches
- *   +1 product_code matches non-empty
+ * Returns ALL active rule rows for (entity, doctor, hospital, product)
+ * effective at asOfDate. Locked design (Apr 29 2026): when multiple rules
+ * exist at the same key (rare — typically a base rate plus an effective-
+ * dated promo), each rule earns full % independently. The Collection bridge
+ * pushes one md_rebate_lines entry per matching rule.
  *
- * Ties broken by priority asc, then createdAt desc.
+ * @returns {Promise<MdProductRebate[]>} lean docs (possibly empty)
+ */
+async function matchAllMdProductRebates({
+  entity_id,
+  doctor_id,
+  hospital_id,
+  product_id,
+  asOfDate,
+} = {}) {
+  if (!entity_id || !doctor_id || !hospital_id || !product_id) return [];
+  const filter = {
+    entity_id,
+    doctor_id,
+    hospital_id,
+    product_id,
+    ...effectiveDatingClause(asOfDate),
+  };
+  return MdProductRebate.find(filter).sort({ createdAt: -1 }).lean();
+}
+
+/**
+ * matchNonMdPartnerRebateRule — Phase R1 single-match (back-compat).
+ *
+ * Returns the most-recently-created active rule row for
+ * (entity, partner, hospital). Phase R1 dropped customer_id / product_code /
+ * priority — match grain is purely (partner × hospital). For the
+ * "multiple partners earn full %" semantics that the Collection bridge
+ * needs, call `matchAllNonMdPartnerRebateRules` instead.
  *
  * @param {Object} opts
  * @param {ObjectId|string} opts.entity_id
  * @param {ObjectId|string} opts.partner_id
- * @param {ObjectId|string} [opts.hospital_id]
- * @param {ObjectId|string} [opts.customer_id]
- * @param {string} [opts.product_code]
+ * @param {ObjectId|string} opts.hospital_id  REQUIRED in Phase R1
  * @param {Date} [opts.asOfDate]
  * @returns {Promise<NonMdPartnerRebateRule|null>}
  */
@@ -101,48 +136,44 @@ async function matchNonMdPartnerRebateRule({
   entity_id,
   partner_id,
   hospital_id,
-  customer_id,
-  product_code,
   asOfDate,
 } = {}) {
-  if (!entity_id || !partner_id) return null;
-  // Pull all candidates for this partner; rank in JS so we can score
-  // specificity without a complex aggregation.
-  const candidates = await NonMdPartnerRebateRule.find({
+  if (!entity_id || !partner_id || !hospital_id) return null;
+  return NonMdPartnerRebateRule.findOne({
     entity_id,
     partner_id,
+    hospital_id,
     ...effectiveDatingClause(asOfDate),
-  }).lean();
-  if (!candidates.length) return null;
+  })
+    .sort({ createdAt: -1 })
+    .lean();
+}
 
-  const scored = [];
-  for (const c of candidates) {
-    let score = 0;
-    let dq = false;
-    if (c.hospital_id) {
-      if (!hospital_id || String(c.hospital_id) !== String(hospital_id)) dq = true;
-      else score += 1;
-    }
-    if (!dq && c.customer_id) {
-      if (!customer_id || String(c.customer_id) !== String(customer_id)) dq = true;
-      else score += 1;
-    }
-    if (!dq && c.product_code) {
-      if (!product_code || c.product_code !== product_code) dq = true;
-      else score += 1;
-    }
-    if (!dq) scored.push({ score, rule: c });
-  }
-  if (!scored.length) return null;
-
-  scored.sort((a, b) => {
-    if (a.score !== b.score) return b.score - a.score; // higher score first
-    if ((a.rule.priority || 100) !== (b.rule.priority || 100)) {
-      return (a.rule.priority || 100) - (b.rule.priority || 100);
-    }
-    return new Date(b.rule.createdAt) - new Date(a.rule.createdAt);
-  });
-  return scored[0].rule;
+/**
+ * matchAllNonMdPartnerRebateRules — Phase R1 multi-match.
+ *
+ * Returns ALL active rules for (entity, partner, hospital). Used by the
+ * Collection bridge so that when multiple non-MD partners (or multiple
+ * effective-dated rules for one partner) exist at the same hospital, each
+ * earns full % independently per its own calculation_mode.
+ *
+ * @returns {Promise<NonMdPartnerRebateRule[]>}
+ */
+async function matchAllNonMdPartnerRebateRules({
+  entity_id,
+  partner_id,
+  hospital_id,
+  asOfDate,
+} = {}) {
+  if (!entity_id || !partner_id || !hospital_id) return [];
+  return NonMdPartnerRebateRule.find({
+    entity_id,
+    partner_id,
+    hospital_id,
+    ...effectiveDatingClause(asOfDate),
+  })
+    .sort({ createdAt: -1 })
+    .lean();
 }
 
 /**
@@ -240,31 +271,38 @@ async function matchStaffCommissionRule({
 }
 
 /**
- * getActiveTierAProductIds — returns the set of product_ids that have an
- * active MdProductRebate row for the given (entity, doctor) at asOfDate.
+ * getActiveTierAProductIds — returns the set of product_ids that have any
+ * active MdProductRebate row for the given (entity, doctor [, hospital])
+ * at asOfDate.
  *
- * Used by:
- *   - rebateAccrualEngine (Phase 2) to decide Tier-A vs Tier-B fork at
- *     accrual time.
- *   - MdCapitationRule.excluded_product_ids sync job (Phase 2).
+ * Phase R1 (Apr 29 2026): hospital_id is now an OPTIONAL filter. When
+ * supplied, only rules pinned to that hospital count — this is the
+ * Collection bridge's needed semantics: a CSI for hospital A only excludes
+ * products with active Tier-A rules pinned to hospital A. When omitted
+ * (back-compat for older callers like the MdCapitationRule sync job), every
+ * hospital's rules contribute.
  *
  * @param {Object} opts
  * @param {ObjectId|string} opts.entity_id
  * @param {ObjectId|string} opts.doctor_id
+ * @param {ObjectId|string} [opts.hospital_id]  Phase R1 — optional filter
  * @param {Date} [opts.asOfDate]
  * @returns {Promise<ObjectId[]>}
  */
-async function getActiveTierAProductIds({ entity_id, doctor_id, asOfDate } = {}) {
+async function getActiveTierAProductIds({
+  entity_id,
+  doctor_id,
+  hospital_id,
+  asOfDate,
+} = {}) {
   if (!entity_id || !doctor_id) return [];
-  const rows = await MdProductRebate.find({
+  const filter = {
     entity_id,
     doctor_id,
     ...effectiveDatingClause(asOfDate),
-  })
-    .select('product_id')
-    .lean();
-  // De-dupe (defensive — schema doesn't enforce uniqueness on (entity,doctor,product)
-  // since admin may stage a future-dated row alongside an active one).
+  };
+  if (hospital_id) filter.hospital_id = hospital_id;
+  const rows = await MdProductRebate.find(filter).select('product_id').lean();
   const seen = new Set();
   const out = [];
   for (const r of rows) {
@@ -280,7 +318,9 @@ async function getActiveTierAProductIds({ entity_id, doctor_id, asOfDate } = {})
 module.exports = {
   effectiveDatingClause,
   matchMdProductRebate,
+  matchAllMdProductRebates,
   matchNonMdPartnerRebateRule,
+  matchAllNonMdPartnerRebateRules,
   matchStaffCommissionRule,
   getActiveTierAProductIds,
 };

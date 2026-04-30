@@ -11,8 +11,8 @@
  * lookup remains the source of truth for subscriber re-skinning.
  *
  * Routes:
- *   /admin/bir/2550M/:year/:month
- *   /admin/bir/2550Q/:year/:quarter
+ *   /erp/bir/2550M/:year/:month
+ *   /erp/bir/2550Q/:year/:quarter
  *
  * Backend: backend/erp/controllers/birController.js
  *   compute2550M / compute2550Q / exportVatReturnCsv
@@ -235,8 +235,8 @@ export default function BirVatReturnDetailPage() {
           <main className="vat-main">
             <div className="vat-card">
               <h1 className="vat-h1"><AlertTriangle size={20} color="#b91c1c" /> Invalid form parameters</h1>
-              <p>This route requires <code>/admin/bir/2550M/:year/:month</code> or <code>/admin/bir/2550Q/:year/:quarter</code>.</p>
-              <button className="vat-btn vat-btn-secondary" onClick={() => navigate('/admin/bir')}>
+              <p>This route requires <code>/erp/bir/2550M/:year/:month</code> or <code>/erp/bir/2550Q/:year/:quarter</code>.</p>
+              <button className="vat-btn vat-btn-secondary" onClick={() => navigate('/erp/bir')}>
                 <ArrowLeft size={14} /> Back to dashboard
               </button>
             </div>
@@ -262,7 +262,7 @@ export default function BirVatReturnDetailPage() {
         <main className="vat-main">
           <div className="vat-row" style={{ justifyContent: 'space-between', marginBottom: '1rem' }}>
             <div>
-              <button className="vat-btn vat-btn-secondary" onClick={() => navigate('/admin/bir')}>
+              <button className="vat-btn vat-btn-secondary" onClick={() => navigate('/erp/bir')}>
                 <ArrowLeft size={14} /> BIR Dashboard
               </button>
             </div>

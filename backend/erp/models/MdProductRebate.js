@@ -37,9 +37,17 @@
  * a given collection's csi_date. Rules with no effective_to apply forever.
  *
  * Match priority for the rebate engine walk:
- *   (entity_id, doctor_id, product_id, is_active=true, csi_date in [from,to])
+ *   (entity_id, doctor_id, hospital_id, product_id, is_active=true,
+ *    csi_date in [from,to])
  *   exact-match only — no wildcard / pattern matching at this layer. Bulk
- *   rebate plans should be modeled as multiple rows.
+ *   rebate plans should be modeled as multiple rows. Multiple matches at the
+ *   same key are ALLOWED — every match earns its full % independently
+ *   (Phase R1 locked Apr 29 2026: no winner-take-all).
+ *
+ * Phase R1 (Apr 29 2026) — `hospital_id` becomes a REQUIRED match dimension.
+ * Same MD at different hospitals routinely has different rebate rates and
+ * different product coverage (separate MOAs per institution); the prior
+ * `(entity, doctor, product)` shape was unrepresentable for that case.
  */
 
 const mongoose = require('mongoose');
@@ -56,6 +64,17 @@ const mdProductRebateSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Doctor',
       required: [true, 'doctor_id is required'],
+      index: true,
+    },
+    // Phase R1 (Apr 29 2026) — hospital scoping is REQUIRED. Same doctor at
+    // different hospitals = different agreements + different rates + different
+    // product coverage. Pulled from Doctor.hospitals[] (the agreement-bearing
+    // institution) on the form. The rebate engine matches on (doctor, hospital,
+    // product) so a CSI for hospital A only fires rules whose hospital_id == A.
+    hospital_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Hospital',
+      required: [true, 'hospital_id is required (Phase R1)'],
       index: true,
     },
     // ProductMaster lives in the website DB; cross-DB ref by ObjectId only.
@@ -108,10 +127,14 @@ const mdProductRebateSchema = new mongoose.Schema(
 );
 
 // Composite index for the rebate-engine match walk:
-// "Find active row for (entity, doctor, product) effective at csi_date".
+// "Find active rows for (entity, doctor, hospital, product) effective at
+// csi_date". Note: NOT unique — Phase R1 supports multiple active rows at the
+// same key (rare but valid: e.g. an effective-dated promo rate alongside a
+// base rate). The matrix walker returns ALL matches, all earn full %.
 mdProductRebateSchema.index({
   entity_id: 1,
   doctor_id: 1,
+  hospital_id: 1,
   product_id: 1,
   is_active: 1,
 });

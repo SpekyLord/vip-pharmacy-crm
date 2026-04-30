@@ -1,31 +1,56 @@
 /**
- * RebateMatrixPage — Phase VIP-1.B Phase 4 (Apr 2026)
+ * RebateMatrixPage — Phase VIP-1.B / Phase R1 (Apr 2026)
  *
- * Tier-A MD per-product rebate matrix administration. Lists active +
- * inactive MdProductRebate rows with Doctor enrichment + filter by PARTNER
- * status. Create modal enforces the schema's 3-gate validation server-side
- * (we surface the error verbatim — keep error messaging consistent with
- * the matrix's authoritative source of truth).
+ * Tier-A MD per-(MD × hospital × product) rebate matrix administration.
+ * Lists active + inactive MdProductRebate rows with Doctor + Hospital +
+ * ProductMaster enrichment, filter by PARTNER status.
  *
- * Route: /admin/rebate-matrix
+ * Phase R1 (Apr 29 2026):
+ *   - hospital_id required on every rule (same MD at different hospitals
+ *     routinely has different rates — separate MOA per institution).
+ *   - Hospital dropdown is sourced from the selected MD's `hospitals[]`
+ *     array (auto-fill if exactly 1; pickable if multiple). No standalone
+ *     hospital input — admin maintains MD↔hospital affiliations on the
+ *     VIP Client profile.
+ *   - Product dropdown swaps from CRM `productService` (storefront DB) to
+ *     ERP `useProducts()` (ProductMaster — full hospital distribution
+ *     catalog). Label uses brand_name + generic_name + dosage_strength
+ *     per Rule #4.
+ *   - MD-only filter: `clientType='MD' AND partnership_status='PARTNER'
+ *     AND partner_agreement_date IS NOT NULL`. Pharmacists, purchasers,
+ *     administrators belong on the Non-MD form.
+ *   - All MD Tier-A rebates route to PRF/CALF (single-flow design,
+ *     bir_flag=INTERNAL even after disbursement; PRC Code of Ethics
+ *     guardrail). No payout_mode dropdown — see CLAUDE.md SaaS Spin-Out
+ *     Scope section.
+ *
+ * Route: /erp/rebate-matrix
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Handshake, RefreshCw, Plus, X, AlertTriangle, Loader, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import PageGuide from '../../components/common/PageGuide';
 import doctorService from '../../services/doctorService';
-import productService from '../../services/productService';
+import useProducts from '../hooks/useProducts';
 import rebateCommissionService from '../../erp/services/rebateCommissionService';
+import api from '../../services/api';
 
-// Format real product label per Rule #4: brand + (generic) + dosage
+// Phase R1: ERP ProductMaster shape (brand_name + generic_name + dosage_strength)
+// per Rule #4 (full identifier, never just brand_name).
 function formatProductLabel(p) {
   if (!p) return '';
-  const brand = p.name || '';
-  const generic = p.genericName ? ` (${p.genericName})` : '';
-  const dosage = p.dosage ? ` ${p.dosage}` : '';
+  const brand = p.brand_name || p.name || '';
+  const generic = p.generic_name ? ` (${p.generic_name})` : (p.genericName ? ` (${p.genericName})` : '');
+  const dosage = p.dosage_strength ? ` ${p.dosage_strength}` : (p.dosage ? ` ${p.dosage}` : '');
   return `${brand}${generic}${dosage}`.trim();
+}
+
+// MD discriminator. The Doctor model stores the lookup CODE (default 'MD');
+// the lookup LABEL is 'Medical Doctor'. Treat both as MD for back-compat.
+function isMd(d) {
+  return d?.clientType === 'MD' || d?.clientType === 'Medical Doctor';
 }
 
 const fmtPct = (n) => `${(Number(n || 0)).toFixed(2)}%`;
@@ -38,7 +63,8 @@ export default function RebateMatrixPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [filterActive, setFilterActive] = useState('true'); // 'true' | 'false' | ''
   const [partnerDoctors, setPartnerDoctors] = useState([]);
-  const [products, setProducts] = useState([]);
+  const [hospitals, setHospitals] = useState([]);
+  const { products } = useProducts();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -55,34 +81,34 @@ export default function RebateMatrixPage() {
     }
   }, [filterActive]);
 
-  // Pre-load PARTNER MDs for create modal — matches the 3-gate
-  // (PARTNER + agreement_date) so rejected rules surface fast.
+  // Phase R1: only MDs (clientType='MD') with PARTNER + agreement_date.
+  // Pharmacists, purchasers, administrators belong on the Non-MD form.
   const loadPartners = useCallback(async () => {
     try {
       const res = await doctorService.getAll({ partnership_status: 'PARTNER', limit: 500 });
-      const list = (res?.data || []).filter(d => d.partner_agreement_date);
+      const list = (res?.data || []).filter(d => isMd(d) && d.partner_agreement_date);
       setPartnerDoctors(list);
     } catch (err) {
-      console.warn('Failed to load PARTNER doctors:', err.message);
+      console.warn('Failed to load PARTNER MDs:', err.message);
       setPartnerDoctors([]);
     }
   }, []);
 
-  // Load real products from website DB so admin picks brand+generic+dosage
-  // (Rule #4: never just brand_name — always show full identifier).
-  const loadProducts = useCallback(async () => {
+  // Phase R1: pre-load hospitals so the MD's hospitals[] array can be
+  // resolved to readable names in the dropdown.
+  const loadHospitals = useCallback(async () => {
     try {
-      const res = await productService.getAll({ limit: 1000 });
-      setProducts(res?.data || []);
+      const res = await api.get('/erp/hospitals', { params: { limit: 500 } });
+      setHospitals(res?.data?.data || res?.data || []);
     } catch (err) {
-      console.warn('Failed to load products:', err.message);
-      setProducts([]);
+      console.warn('Failed to load hospitals:', err.message);
+      setHospitals([]);
     }
   }, []);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadPartners(); }, [loadPartners]);
-  useEffect(() => { loadProducts(); }, [loadProducts]);
+  useEffect(() => { loadHospitals(); }, [loadHospitals]);
 
   const handleDeactivate = async (id, label) => {
     if (!window.confirm(`Deactivate "${label}"? Future Collection rebates will stop matching this rule.`)) return;
@@ -150,6 +176,7 @@ export default function RebateMatrixPage() {
                 <thead style={{ background: '#f1f5f9' }}>
                   <tr>
                     <th style={{ padding: '10px 12px', textAlign: 'left' }}>MD</th>
+                    <th style={{ padding: '10px 12px', textAlign: 'left' }}>Hospital</th>
                     <th style={{ padding: '10px 12px', textAlign: 'left' }}>Product</th>
                     <th style={{ padding: '10px 12px', textAlign: 'right' }}>Rebate %</th>
                     <th style={{ padding: '10px 12px', textAlign: 'left' }}>Effective From</th>
@@ -172,6 +199,14 @@ export default function RebateMatrixPage() {
                         ) : (
                           <span style={{ color: '#94a3b8' }}>(missing)</span>
                         )}
+                      </td>
+                      <td style={{ padding: '10px 12px' }}>
+                        {(() => {
+                          const hid = r.hospital_id?._id || r.hospital_id;
+                          const h = hospitals.find(x => String(x._id) === String(hid));
+                          if (h) return h.hospital_name || h.name || '—';
+                          return hid ? <span style={{ color: '#94a3b8' }}>{String(hid).slice(-6)}</span> : <span style={{ color: '#dc2626' }}>(unset)</span>;
+                        })()}
                       </td>
                       <td style={{ padding: '10px 12px' }}>{r.product_label || <span style={{ color: '#94a3b8' }}>{String(r.product_id).slice(-6)}</span>}</td>
                       <td style={{ padding: '10px 12px', textAlign: 'right', fontWeight: 600 }}>{fmtPct(r.rebate_pct)}</td>
@@ -205,6 +240,7 @@ export default function RebateMatrixPage() {
         <CreateRebateModal
           partners={partnerDoctors}
           products={products}
+          hospitals={hospitals}
           onClose={() => setShowCreate(false)}
           onCreated={() => { setShowCreate(false); load(); }}
         />
@@ -213,9 +249,10 @@ export default function RebateMatrixPage() {
   );
 }
 
-function CreateRebateModal({ partners, products, onClose, onCreated }) {
+function CreateRebateModal({ partners, products, hospitals, onClose, onCreated }) {
   const [form, setForm] = useState({
     doctor_id: '',
+    hospital_id: '',
     product_id: '',
     product_label: '',
     rebate_pct: 5,
@@ -226,6 +263,35 @@ function CreateRebateModal({ partners, products, onClose, onCreated }) {
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState(null);
 
+  // Phase R1: Hospital options derived from the selected MD's hospitals[].
+  // Auto-fill if exactly one; pickable otherwise.
+  const selectedMd = useMemo(() => partners.find(p => p._id === form.doctor_id), [partners, form.doctor_id]);
+  const mdHospitalOptions = useMemo(() => {
+    if (!selectedMd?.hospitals?.length) return [];
+    return selectedMd.hospitals
+      .map(h => {
+        const hid = h.hospital_id?._id || h.hospital_id;
+        const full = hospitals.find(x => String(x._id) === String(hid));
+        return {
+          _id: hid,
+          name: full?.hospital_name || full?.name || (hid ? `Hospital ${String(hid).slice(-6)}` : '(unknown)'),
+          is_primary: !!h.is_primary,
+        };
+      })
+      .filter(o => o._id);
+  }, [selectedMd, hospitals]);
+
+  // Auto-fill hospital_id when there is exactly one (and clear when MD changes).
+  useEffect(() => {
+    if (mdHospitalOptions.length === 1) {
+      setForm(f => ({ ...f, hospital_id: mdHospitalOptions[0]._id }));
+    } else if (mdHospitalOptions.length === 0) {
+      setForm(f => ({ ...f, hospital_id: '' }));
+    }
+    // multiple → leave the user to pick
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.doctor_id]);
+
   const onSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -233,6 +299,7 @@ function CreateRebateModal({ partners, products, onClose, onCreated }) {
     try {
       const payload = {
         doctor_id: form.doctor_id,
+        hospital_id: form.hospital_id,
         product_id: form.product_id,
         product_label: form.product_label,
         rebate_pct: Number(form.rebate_pct),
@@ -286,15 +353,47 @@ function CreateRebateModal({ partners, products, onClose, onCreated }) {
           )}
         </div>
 
+        {/* Phase R1: Hospital is REQUIRED. Sourced from selected MD's hospitals[].
+            Auto-fills when there is exactly 1; pickable otherwise. If the MD has
+            no hospitals[], admin must add one on the VIP Client profile first. */}
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ display: 'block', fontSize: 12, color: '#475569', marginBottom: 4 }}>Hospital (Phase R1 — required)</label>
+          <select
+            value={form.hospital_id}
+            onChange={(e) => setForm({ ...form, hospital_id: e.target.value })}
+            required
+            disabled={!form.doctor_id}
+            style={{ width: '100%', padding: 8, borderRadius: 6, border: '1px solid #cbd5e1', background: !form.doctor_id ? '#f8fafc' : '#fff' }}
+          >
+            <option value="">{form.doctor_id ? 'Select hospital…' : 'Pick an MD first'}</option>
+            {mdHospitalOptions.map(h => (
+              <option key={h._id} value={h._id}>
+                {h.name}{h.is_primary ? ' (primary)' : ''}
+              </option>
+            ))}
+          </select>
+          {form.doctor_id && mdHospitalOptions.length === 0 && (
+            <div style={{ fontSize: 11, color: '#b45309', marginTop: 4 }}>
+              This MD has no hospital affiliations. Add at least one on the VIP Client profile before creating a Tier-A rule.
+            </div>
+          )}
+          {mdHospitalOptions.length === 1 && (
+            <div style={{ fontSize: 11, color: '#0369a1', marginTop: 4 }}>
+              Only hospital affiliation — auto-filled. Add more on the VIP Client profile if the MD also serves elsewhere.
+            </div>
+          )}
+        </div>
+
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12, marginBottom: 12 }}>
           <div>
-            <label style={{ display: 'block', fontSize: 12, color: '#475569', marginBottom: 4 }}>Product (brand + generic + dosage)</label>
+            <label style={{ display: 'block', fontSize: 12, color: '#475569', marginBottom: 4 }}>Product (ProductMaster — brand + generic + dosage)</label>
             <select
               value={form.product_id}
               onChange={(e) => {
                 const pid = e.target.value;
                 const p = products.find(x => x._id === pid);
-                // Auto-fill product_label from real product (Rule #4: brand + generic + dosage).
+                // Auto-fill product_label from ProductMaster (Phase R1: ERP catalog,
+                // not CRM storefront). Rule #4: brand + generic + dosage.
                 setForm({ ...form, product_id: pid, product_label: formatProductLabel(p) });
               }}
               required
@@ -309,7 +408,7 @@ function CreateRebateModal({ partners, products, onClose, onCreated }) {
             </select>
             {products.length === 0 && (
               <div style={{ fontSize: 11, color: '#b45309', marginTop: 4 }}>
-                No products loaded. Check /admin/products or website DB connection.
+                No products loaded. Confirm /erp/product-master has rows for this entity.
               </div>
             )}
           </div>
