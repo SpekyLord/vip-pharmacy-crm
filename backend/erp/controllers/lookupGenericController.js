@@ -2945,6 +2945,15 @@ const SEED_DEFAULTS = {
     { code: 'TIER_B_CAPITATION', label: 'Tier-B (per-patient capitation)', insert_only_metadata: true, metadata: { sort_order: 2, description: 'MdCapitationRule matched on storefront Order, frequency-windowed.' } },
     { code: 'NON_MD',            label: 'Non-MD partner',          insert_only_metadata: true, metadata: { sort_order: 3, description: 'NonMdPartnerRebateRule matched. Pharmacist staff, hospital admin, etc. Not 3-gated.' } },
   ],
+  // Phase R1 (Apr 29 2026) — non-MD partner rebate calculation_mode.
+  // Drives the partner_tags rebate_amount math in the Collection bridge.
+  // EXCLUDE_MD_COVERED is the safe default — TOTAL_COLLECTION can double-pay
+  // on overlap with MD Tier-A so admin must choose explicitly per rule.
+  // Subscribers tune labels via Control Center; defaults survive re-seeds.
+  NONMD_REBATE_CALC_MODE: [
+    { code: 'EXCLUDE_MD_COVERED', label: 'Exclude MD-covered lines (default)', insert_only_metadata: true, metadata: { sort_order: 1, description: 'Base = Σ collected lines NOT covered by MD Tier-A on the same hospital. Protects against double-paying.' } },
+    { code: 'TOTAL_COLLECTION',   label: 'Total collection (overlap allowed)',  insert_only_metadata: true, metadata: { sort_order: 2, description: 'Base = collection.net_of_vat (gross − VAT − CWT) regardless of MD overlap. Doubled cost is accepted business policy.' } },
+  ],
   MD_CAPITATION_FREQUENCY: [
     { code: 'PER_PATIENT_PER_MONTH',   label: 'Per patient per month',   insert_only_metadata: true, metadata: { sort_order: 1, description: 'One accrual per (patient, MD) per calendar month.' } },
     { code: 'PER_PATIENT_PER_QUARTER', label: 'Per patient per quarter', insert_only_metadata: true, metadata: { sort_order: 2, description: 'One accrual per (patient, MD) per calendar quarter.' } },

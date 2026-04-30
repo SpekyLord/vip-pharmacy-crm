@@ -310,7 +310,7 @@ function BirCalendarTile({ tile }) {
   const v = tile?.value || {};
   const overdueClass = v.overdue > 0 ? 'cp-bad' : v.due_30d > 0 ? 'cp-warn' : 'cp-good';
   return (
-    <TileShell title="BIR Calendar" icon="📑" status={tile?.status} message={tile?.message} to="/admin/bir" footer={<>{fmtNum(v.filed_this_quarter)} filed this quarter</>}>
+    <TileShell title="BIR Calendar" icon="📑" status={tile?.status} message={tile?.message} to="/erp/bir" footer={<>{fmtNum(v.filed_this_quarter)} filed this quarter</>}>
       <div className={`cp-tile-value ${overdueClass}`}>{fmtNum(v.overdue)}</div>
       <div className="cp-tile-sub">overdue · {fmtNum(v.due_30d)} due in 30 d</div>
       {v.upcoming?.length > 0 && (

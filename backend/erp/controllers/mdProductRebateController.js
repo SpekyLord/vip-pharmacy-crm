@@ -55,6 +55,10 @@ const list = catchAsync(async (req, res) => {
   if (req.query.doctor_id && mongoose.Types.ObjectId.isValid(req.query.doctor_id)) {
     filter.doctor_id = new mongoose.Types.ObjectId(req.query.doctor_id);
   }
+  // Phase R1: hospital_id is part of the match key.
+  if (req.query.hospital_id && mongoose.Types.ObjectId.isValid(req.query.hospital_id)) {
+    filter.hospital_id = new mongoose.Types.ObjectId(req.query.hospital_id);
+  }
   if (req.query.product_id && mongoose.Types.ObjectId.isValid(req.query.product_id)) {
     filter.product_id = new mongoose.Types.ObjectId(req.query.product_id);
   }

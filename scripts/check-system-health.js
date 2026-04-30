@@ -1074,10 +1074,10 @@ function checkBirComplianceWiring() {
 
   // Frontend wiring
   const frontendFiles = [
-    ['frontend/src/pages/admin/BIRCompliancePage.jsx',   ['birService', 'BIRCompliancePage', 'getDashboard']],
+    ['frontend/src/erp/pages/BIRCompliancePage.jsx',   ['birService', 'BIRCompliancePage', 'getDashboard']],
     ['frontend/src/erp/services/birService.js',          ["BASE = '/erp/bir'", 'runDataQuality', 'markFiled', 'updateEntityConfig', 'getDashboard']],
-    ['frontend/src/App.jsx',                             ['/admin/bir', 'BIRCompliancePage', 'BIR_FILING']],
-    ['frontend/src/components/common/Sidebar.jsx',       ['/admin/bir', 'BIR Compliance', 'BOOKKEEPER']],
+    ['frontend/src/App.jsx',                             ['/erp/bir', 'BIRCompliancePage', 'BIR_FILING']],
+    ['frontend/src/components/common/Sidebar.jsx',       ['/erp/bir', 'BIR Compliance', 'BOOKKEEPER']],
     ['frontend/src/components/common/PageGuide.jsx',     ["'bir-compliance'"]],
   ];
   for (const [file, needles] of frontendFiles) {

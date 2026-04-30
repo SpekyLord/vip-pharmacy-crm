@@ -183,23 +183,24 @@ const products = await Product.find({ _id: { $in: productIds } }).select('name c
 
 > **Strategic intent (locked Apr 29 2026)**: the rebate engine is the proprietary moat. It does NOT ship to SaaS subscribers. The CRM SaaS bundle = field sales + BDM management + VIP Client management + Visits + CPT + CLM + Messaging + Stats. Nothing else.
 
-### Proprietary — currently misplaced at `/admin/*` in CRM frontend (technical debt; move to `/erp/*` before SaaS spin-out)
+### Proprietary — RELOCATED `/admin/*` → `/erp/*` Apr 29 2026 evening (Phase 1 of Rebate Stack Relocation)
 
-The seven pages below are wired in [Sidebar.jsx:1124-1138](frontend/src/components/common/Sidebar.jsx#L1124-L1138) and lazy-imported in [App.jsx:91-95](frontend/src/App.jsx#L91-L95). They live in `frontend/src/pages/admin/` (CRM frontend) but are ERP/finance semantics. Today they would ship to any CRM SaaS subscriber. Plan a dedicated phase to relocate them under `/erp/*` and `frontend/src/erp/pages/` BEFORE the CRM SaaS goes multi-tenant.
+The eight pages below were moved from `frontend/src/pages/admin/` to `frontend/src/erp/pages/` and re-routed from `/admin/*` to `/erp/*`. Old `/admin/*` paths remain as 30-day redirect shims in App.jsx (remove after May 29 2026). Backend routes were already under `backend/erp/routes/` — frontend-only relocation. UX hardening (schema fixes for `MdProductRebate.hospital_id`, payout routing to PRF/CALF, `client_type` filter on partner dropdowns, ProductMaster swap, calculation_mode toggle on non-MD) is **Phase 2A/2B**, separate.
 
-| Sidebar Label | Current Route | Page | Reason it's proprietary |
+| Sidebar Label | New Route | Page | Reason it's proprietary |
 |---|---|---|---|
-| MD Rebate Matrix | `/admin/rebate-matrix` | `RebateMatrixPage.jsx` | Patient → MD attribution math, the USP |
-| Non-MD Rebate | `/admin/non-md-rebate-matrix` | `NonMdRebateMatrixPage.jsx` | Pharmacy partnership economics |
-| Capitation | `/admin/capitation-rules` | `CapitationRulesPage.jsx` | Per-MD per-period payout rules |
-| Commission Matrix | `/admin/commission-matrix` | `CommissionMatrixPage.jsx` | Currently wired to the rebate/incentive ledger; if subscribers need commissions for their own reps, build a separate generic version |
-| Payout Ledger | `/admin/payout-ledger` | `PayoutLedgerPage.jsx` | Reads `IncentivePayout` from the rebate engine |
-| BIR Compliance | `/admin/bir` | `BIRCompliancePage.jsx` | VIP's filings (1601-EQ, 2550Q, 2307, etc.); subscribers run their own books |
-| SC/PWD Sales Book | `/admin/scpwd-sales-book` | `SCPWDSalesBookPage.jsx` | RA 9994 + BIR RR 7-2010 — VIP's filings |
+| MD Rebate Matrix | `/erp/rebate-matrix` | `erp/pages/RebateMatrixPage.jsx` | Per (MD × Hospital × Product × %) — the proprietary moat |
+| Non-MD Rebate | `/erp/non-md-rebate-matrix` | `erp/pages/NonMdRebateMatrixPage.jsx` | Pharmacy partnership economics |
+| Capitation | `/erp/capitation-rules` | `erp/pages/CapitationRulesPage.jsx` | Online-pharmacy MD per-patient pay (VIP-1.D) |
+| Commission Matrix | `/erp/commission-matrix` | `erp/pages/CommissionMatrixPage.jsx` | Wired to rebate/incentive ledger; per-line BDM commission |
+| Payout Ledger | `/erp/payout-ledger` | `erp/pages/PayoutLedgerPage.jsx` | Reads `IncentivePayout` + PRF/CALF from rebate engine |
+| BIR Compliance | `/erp/bir` | `erp/pages/BIRCompliancePage.jsx` | VIP's filings (1601-EQ, 2550Q, 2307, etc.); subscribers run their own books |
+| BIR Form Detail | `/erp/bir/:formCode/:year/:period` | `erp/pages/BirVatReturnDetailPage.jsx` | 2550M / 2550Q form-detail sub-page of BIR Compliance |
+| SC/PWD Sales Book | `/erp/scpwd-sales-book` | `erp/pages/SCPWDSalesBookPage.jsx` | RA 9994 + BIR RR 7-2010 — VIP's filings |
 
-**Backend note**: confirm each page's backend routes are already under `backend/erp/` (most of the rebate stack is — `frontend/src/erp/services/rebateCommissionService.js` exists, which is the giveaway). If any backend routes leaked into `backend/routes/`, move them too as part of the same phase.
+**All-mode payout routing (locked Apr 29 2026)**: per "for simplicity in accounting put it to one place and just internal" decision, ALL Tier-A MD rebate accruals route to PRF/CALF balances (the per-MD bucket model PrfCalf already supports). No `IncentivePayout` PAID_DIRECT path for MD rebates — outflows happen via PRF disbursement when admin spends on legitimate CME / patient programs / advisory honoraria with formal MOA. Avoids PRC Code of Ethics kickback exposure. Phase 2A wires this routing.
 
-**Why this matters**: when Year-2 multi-tenant kicks in, every line of CRM-frontend code that's not behind a tenant-isolation gate becomes a leak risk (Rule #0d — "a leak across tenants is an end-of-business event in regulated SaaS"). Moving these to `/erp/*` is cleaner than feature-flagging them subscriber-by-subscriber.
+**Why this matters**: when Year-2 multi-tenant kicks in, every line of CRM-frontend code that's not behind a tenant-isolation gate becomes a leak risk (Rule #0d — "a leak across tenants is an end-of-business event in regulated SaaS"). The relocation closes that gap before the SaaS bundle is cut.
 
 ### Subscriber-shippable (stays in CRM frontend)
 

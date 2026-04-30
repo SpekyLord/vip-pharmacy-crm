@@ -9816,3 +9816,59 @@ UX patch on G4.5x/y. Splits the bundled `inventory.grn_proxy_entry` into TWO exp
 - `backend/erp/controllers/lookupGenericController.js`
 - `frontend/src/erp/components/WorkflowGuide.jsx`
 - `CLAUDE-ERP.md` + `docs/PHASETASK-ERP.md`
+
+---
+
+## Phase R1 — Rebate Stack Relocation + Hardening (Apr 29 2026)
+
+> Worktree: `.worktrees/rebate-stack-relocation` on `feat/rebate-stack-relocation` (NOT pushed). Phase 1 mechanical relocation = commit `328ade3`. Phase 2A/2B = this section, on top.
+
+### Scope
+
+Phase 1 (mechanical): 8 finance/back-office pages moved `/admin/* → /erp/*` so they don't ship to the Year-2 Pharmacy SaaS bundle (`MdRebateMatrix`, `NonMdRebateMatrix`, `Capitation`, `Commission`, `PayoutLedger`, `BIRCompliance`, `BirVatReturnDetail`, `SCPWDSalesBook`). 30-day redirect shims kept in App.jsx.
+
+Phase 2A/2B (this phase): schema hardening + form UX hardening + lookup-driven calculation_mode + migration + healthcheck. Locked design Apr 29 2026 evening with the user.
+
+### Phase 2A deliverables (schema + engine, ~3h)
+
+- ✅ `MdProductRebate.hospital_id` REQUIRED. Composite index `(entity_id, doctor_id, hospital_id, product_id, is_active)`.
+- ✅ `NonMdPartnerRebateRule` schema simplified: `partner_id` ref `Doctor` (was PeopleMaster); `hospital_id` REQUIRED; `calculation_mode` enum added; `customer_id`/`product_code`/`priority` DROPPED.
+- ✅ `Collection.partner_tags[].calculation_mode` denormalized.
+- ✅ `Collection.md_rebate_lines[].hospital_id` audit trail.
+- ✅ `matrixWalker` exports `matchAllMdProductRebates` + `matchAllNonMdPartnerRebateRules` (multi-match arrays). Single-match wrappers now require hospital_id.
+- ✅ Collection.js bridge: hospital_id pass-through, multi-match earn-all, calculation_mode branch on partner_tags amount.
+- ✅ rebateAccrualEngine.resolvePatientMd resolves md.hospital_id (PatientMdAttribution.hospital_id ‖ Doctor.hospitals[0]); accrueForOrder skips Tier-A when no hospital_id resolves.
+- ✅ Single-flow PRF/CALF doc block; bir_flag=INTERNAL invariant re-affirmed (PRC Code of Ethics guardrail; non-MD parity).
+
+### Phase 2B deliverables (forms, ~2h)
+
+- ✅ `RebateMatrixPage.jsx` — MD-only filter (`clientType=MD AND PARTNER AND agreement_date`), Hospital dropdown sourced from MD's hospitals[] (auto-fill if 1; pickable if multiple), ProductMaster swap via `useProducts()`, Hospital column in table.
+- ✅ `NonMdRebateMatrixPage.jsx` — Non-MD filter (`clientType != MD AND PARTNER AND agreement_date`), Hospital required + auto-filled, calculation_mode radio (lookup-driven), dropped fields, Calc Mode column.
+- ✅ `CapitationRulesPage.jsx` — labels relabeled ("Rule name"→"Program label"; "Frequency window"→"Cadence"), VIP-1.D dependency banner.
+- ✅ `CommissionMatrixPage.jsx` — Payee filter `role=staff`, ProductMaster picker, per-line routing banner.
+
+### Lookup category added
+
+`NONMD_REBATE_CALC_MODE` (2 rows: `EXCLUDE_MD_COVERED` default, `TOTAL_COLLECTION` opt-in). Both `insert_only_metadata: true`. Lazy-seed on first GET per entity.
+
+### Migration
+
+`backend/erp/scripts/migratePhaseR1RebateSchema.js` — dry-run by default. Backfills hospital_id from Doctor.hospitals[0]; default calculation_mode; $unset legacy fields. BLOCKED rows print for manual fix.
+
+### Verification
+
+- `node backend/scripts/healthcheckRebateCommissionWiring.js` → 109/109 PASS (was 86; +23 Phase R1 assertions)
+- `node backend/scripts/healthcheckBirVatReturnWiring.js` → 39/39 PASS
+- `npx vite build` → green in 11.52s
+- `node -c` syntax on every modified backend file → PASS
+- Playwright UI smoke deferred — recommended smoke list in CLAUDE-ERP.md "Phase R1" section
+
+### Files touched
+
+Backend (9 modified, 1 new): MdProductRebate.js, NonMdPartnerRebateRule.js, Collection.js, matrixWalker.js, rebateAccrualEngine.js, mdProductRebateController.js, nonMdPartnerRebateRuleController.js, lookupGenericController.js, healthcheckRebateCommissionWiring.js + NEW migratePhaseR1RebateSchema.js.
+
+Frontend (5 modified): RebateMatrixPage.jsx, NonMdRebateMatrixPage.jsx, CapitationRulesPage.jsx, CommissionMatrixPage.jsx, PageGuide.jsx (banners for all 4 pages).
+
+### Subscription posture
+
+Both schema enums (`calculation_mode`, `partnership_status`) are validation gates; UI labels come from lookups with inline fallbacks (Rule #3). Single-flow PRF/CALF simplifies Year-2 Pharmacy SaaS — one accounting path vs three modes was a real divergence risk. bir_flag=INTERNAL invariant holds for both MD and non-MD disbursements.

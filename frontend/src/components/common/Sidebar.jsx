@@ -1050,8 +1050,9 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
         {
           title: 'BIR Filing',
           items: [
-            { path: '/admin/bir', label: 'BIR Compliance', icon: ShieldCheck },
-            { path: '/admin/scpwd-sales-book', label: 'SC/PWD Sales Book', icon: ShieldCheck },
+            // Relocated /admin/* → /erp/* per SaaS scope decision Apr 29 2026.
+            { path: '/erp/bir', label: 'BIR Compliance', icon: ShieldCheck },
+            { path: '/erp/scpwd-sales-book', label: 'SC/PWD Sales Book', icon: ShieldCheck },
           ],
         },
         {
@@ -1063,7 +1064,7 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
         },
       ],
       bottomTabs: [
-        { path: '/admin/bir', label: 'BIR', icon: ShieldCheck, end: true },
+        { path: '/erp/bir', label: 'BIR', icon: ShieldCheck, end: true },
       ],
     };
   }
@@ -1118,24 +1119,26 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
               { path: '/admin/message-templates', label: 'Msg Templates', icon: MessageSquare },
               { path: '/admin/clm-sessions', label: 'CLM Sessions', icon: Presentation },
               { path: '/admin/clm-branding', label: 'CLM Branding', icon: Presentation },
+              // Relocated /admin/* → /erp/* per SaaS scope decision Apr 29
+              // 2026 (rebate stack is proprietary; must not ship to Year-2
+              // Pharmacy SaaS subscribers). Old /admin/* paths are retained
+              // as redirect shims in App.jsx for 30 days post-relocation.
               // Phase VIP-1.H — SC/PWD Sales Book (RA 9994 + BIR RR 7-2010).
-              // Route guard admin-only; backend layers lookup-driven SCPWD_ROLES
-              // per gate so finance/president can be added per entity.
-              { path: '/admin/scpwd-sales-book', label: 'SC/PWD Sales Book', icon: ShieldCheck },
+              { path: '/erp/scpwd-sales-book', label: 'SC/PWD Sales Book', icon: ShieldCheck },
               // Phase VIP-1.J — BIR Compliance Dashboard (the accountant
               // dashboard). Tracks every BIR obligation × entity × period;
               // copy-paste UX into eBIR Forms; .dat for Alphalist Data Entry;
               // PDF for loose-leaf books. Route guard is BIR_FILING set;
               // backend layers lookup-driven BIR_ROLES per gate.
-              { path: '/admin/bir', label: 'BIR Compliance', icon: ShieldCheck },
+              { path: '/erp/bir', label: 'BIR Compliance', icon: ShieldCheck },
               // Phase VIP-1.B Phase 4 — Rebate + Commission matrix admin + Payout ledger.
               // Route guard admin-only; backend layers lookup-driven
               // REBATE_ROLES / COMMISSION_ROLES per endpoint.
-              { path: '/admin/rebate-matrix', label: 'MD Rebate Matrix', icon: Target },
-              { path: '/admin/non-md-rebate-matrix', label: 'Non-MD Rebate', icon: Target },
-              { path: '/admin/capitation-rules', label: 'Capitation', icon: Target },
-              { path: '/admin/commission-matrix', label: 'Commission Matrix', icon: Trophy },
-              { path: '/admin/payout-ledger', label: 'Payout Ledger', icon: Wallet },
+              { path: '/erp/rebate-matrix', label: 'MD Rebate Matrix', icon: Target },
+              { path: '/erp/non-md-rebate-matrix', label: 'Non-MD Rebate', icon: Target },
+              { path: '/erp/capitation-rules', label: 'Capitation', icon: Target },
+              { path: '/erp/commission-matrix', label: 'Commission Matrix', icon: Trophy },
+              { path: '/erp/payout-ledger', label: 'Payout Ledger', icon: Wallet },
               { path: '/admin/settings', label: 'Programs', icon: Settings },
             ],
           },
