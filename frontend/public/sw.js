@@ -15,7 +15,14 @@
 // Phase N — bumped to v2 because we added multipart-rebuild logic to the
 // queue replay path. Cache name bump forces clients to drop the old SW
 // cleanly during activate() and pick up the new replay contract.
-const CACHE_VERSION = 'v2';
+//
+// Apr 30 2026 — bumped to v3: the static-asset stale-while-revalidate
+// fallback was incorrectly catching API non-GET requests (POST/PUT/PATCH
+// to non-queueable paths like /api/erp/approvals/universal-approve), which
+// triggered cache.put(POST) rejections in console. Fixed by excluding
+// /api/ from the static-asset path. Bumping the version forces a fresh
+// SW install so production clients pick up the corrected routing.
+const CACHE_VERSION = 'v3';
 const SHELL_CACHE = `vip-shell-${CACHE_VERSION}`;
 const CLM_CACHE = `vip-clm-${CACHE_VERSION}`;
 const DATA_CACHE = `vip-data-${CACHE_VERSION}`;
@@ -470,6 +477,18 @@ self.addEventListener('fetch', (event) => {
       return;
     }
     // Non-cacheable API: just try network
+    return;
+  }
+
+  // ── API non-GET that fell through to here (PUT/PATCH/POST to a path
+  // that wasn't in QUEUEABLE_API_PATHS, e.g. /api/erp/approvals/* or any
+  // other ERP mutation): let the browser handle it directly. We must NOT
+  // route these through the static-asset stale-while-revalidate path
+  // below, because cache.put() rejects for non-GET requests with a
+  // TypeError that surfaces as an unhandled promise rejection. The
+  // response itself would still pass through, but the noise pollutes the
+  // console and makes real errors harder to spot.
+  if (url.pathname.startsWith('/api/')) {
     return;
   }
 

@@ -71,7 +71,7 @@ The remaining ~60 ERP pages keep their `overflow-y: auto` on `<page>-main` (`.ap
 - [x] Vite build green (16.49s after root fix; 25.13s during the initial 30-page hygiene round; both runs clean, no syntax or chunk-size regressions).
 - [x] Post-fix grep confirms exactly 60 remaining ERP pages still have the `*-main { overflow-y: auto }` dead-weight rule and the 30 hygiene-cleaned pages no longer have it.
 - [x] No backend syntax (`node -c`) checks needed — pure CSS / JSX style-prop change. No JS modified beyond the inline `style={{ overflow }}` removal in HospitalList (verified by Vite build).
-- [ ] Browser smoke (Playwright): drive to `/erp/sales/entry` (or `/erp/smer`), confirm body-scroll past viewport while WorkflowGuide is visible.
+- [x] Browser smoke (Playwright): driven to `/erp/smer` + `/erp/sales/entry` + `/erp/accounts-payable` (pre- and post-Round 2 sweep) — body-scrolls past viewport with WorkflowGuide visible; `.admin-layout.minHeight: "auto"` (root fix landed); cleaned pages report `*-main.overflowY: "visible"` (Round 2 sweep landed). PASS on all three. Re-ratified Apr 30 2026 evening before final memory update.
 
 ### UX-Scroll.5 — Documentation ✅
 - [x] CLAUDE-ERP.md status header updated (v8.2) + Phase UX-Scroll section

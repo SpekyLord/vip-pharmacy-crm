@@ -1106,7 +1106,23 @@ const DOC_TYPE_HYDRATION = {
   PRF:                 { modelName: 'PrfCalf',           populate: [{ path: 'bdm_id', select: 'name email' }] },
   CALF:                { modelName: 'PrfCalf',           populate: [{ path: 'bdm_id', select: 'name email' }] },
   GRN:                 { modelName: 'GrnEntry',          populate: [{ path: 'warehouse_id', select: 'warehouse_name warehouse_code' }, { path: 'vendor_id', select: 'vendor_name' }, { path: 'bdm_id', select: 'name email' }] },
-  UNDERTAKING:         { modelName: 'Undertaking',       populate: [{ path: 'requested_by', select: 'name email' }] },
+  // Phase G4.5h-W follow-up (Apr 30, 2026) — gateApproval-held UTs stay DRAFT
+  // and surface in the Hub via the APPROVAL_REQUEST path. Without populating
+  // bdm_id + linked_grn_id (incl. nested vendor) here, buildUndertakingDetails
+  // sees `grn = null`, the waybill fallback can't reach grn.waybill_photo_url,
+  // and the Hub row renders BDM=— GRN=— + a false-positive "no waybill" warning
+  // even though the UT has the mirror and the GRN has the original. Mirrors the
+  // populate shape used by MODULE_QUERIES.UNDERTAKING.query (SUBMITTED path).
+  UNDERTAKING:         { modelName: 'Undertaking',       populate: [
+    { path: 'bdm_id', select: 'name email' },
+    { path: 'warehouse_id', select: 'warehouse_name warehouse_code' },
+    {
+      path: 'linked_grn_id',
+      select: 'grn_number grn_date source_type po_id po_number vendor_id waybill_photo_url undertaking_photo_url reassignment_id status',
+      populate: { path: 'vendor_id', select: 'vendor_name' },
+    },
+    { path: 'recorded_on_behalf_of', select: 'name' },
+  ] },
   CREDIT_NOTE:         { modelName: 'CreditNote',        populate: [{ path: 'bdm_id', select: 'name email' }] },
   INCOME_REPORT:       { modelName: 'IncomeReport',      populate: [{ path: 'bdm_id', select: 'name email' }] },
   PAYSLIP:             { modelName: 'Payslip',           populate: [{ path: 'user_id', select: 'name email' }] },
@@ -1159,7 +1175,9 @@ async function buildApprovalRequestDetails(req) {
   try {
     let query = Model.findById(req.doc_id);
     for (const p of (hydration.populate || [])) {
-      if (p?.path) query = query.populate(p.path, p.select);
+      // Object form so nested `populate` (e.g. linked_grn_id → vendor_id under
+      // UNDERTAKING) is honored. The two-arg form silently dropped it.
+      if (p?.path) query = query.populate(p);
     }
     const doc = await query.lean();
     if (!doc) return { details: buildDocumentDetails(moduleKey, req), moduleKey };
@@ -1219,7 +1237,8 @@ async function buildGapModulePendingItems(opts) {
 
     let query = Model.find({ _id: { $in: ids } });
     const pops = opts.populateByDocType[docType] || [];
-    for (const p of pops) query = query.populate(p.path, p.select);
+    // Object form (mirrors buildApprovalRequestDetails) so nested populate is honored.
+    for (const p of pops) query = query.populate(p);
     const docs = await query.lean();
     const docMap = new Map(docs.map(d => [String(d._id), d]));
     for (const r of reqs) {

@@ -43,6 +43,17 @@ const emptyRow = () => ({
   _isNew: true
 });
 
+// Existing DRAFT rows are loaded with populated refs (hospital_id, customer_id,
+// product_id come back as objects); fresh edits arrive as ID strings. Coerce
+// both shapes to a string ID so the update payload matches createSale's contract.
+const idOf = (x) => (x && typeof x === 'object' && x._id) ? String(x._id) : (x ? String(x) : x);
+
+// Mark a server-loaded row as having unsaved edits. New rows already flow
+// through createSale; non-DRAFT rows can't be updated server-side (controller
+// rejects with 400), so we skip dirty-flagging there to keep the Save count
+// accurate.
+const markDirty = (row) => (row._isNew || (row.status && row.status !== 'DRAFT')) ? row : { ...row, _isDirty: true };
+
 const pageStyles = `
   .sales-entry-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
   .sales-main { flex: 1; min-width: 0; padding: 20px; max-width: 1400px; margin: 0 auto; }
@@ -689,7 +700,7 @@ export default function SalesEntry() {
   const updateRow = useCallback((idx, field, value) => {
     setRows(prev => {
       const updated = [...prev];
-      updated[idx] = { ...updated[idx], [field]: value };
+      updated[idx] = markDirty({ ...updated[idx], [field]: value });
       return updated;
     });
   }, []);
@@ -731,7 +742,7 @@ export default function SalesEntry() {
       }
 
       row.line_items = items;
-      updated[rowIdx] = row;
+      updated[rowIdx] = markDirty(row);
       return updated;
     });
   }, [productOptions]);
@@ -747,7 +758,7 @@ export default function SalesEntry() {
         ...row.line_items,
         { product_id: '', qty: '', unit: '', unit_price: '', line_discount_percent: '', item_key: '', batch_lot_no: '', fifo_override: false, override_reason: '' }
       ];
-      updated[rowIdx] = row;
+      updated[rowIdx] = markDirty(row);
       return updated;
     });
   }, []);
@@ -760,7 +771,7 @@ export default function SalesEntry() {
       if (row.line_items.length === 0) {
         row.line_items = [{ product_id: '', qty: '', unit: '', unit_price: '', line_discount_percent: '', item_key: '', batch_lot_no: '', fifo_override: false, override_reason: '' }];
       }
-      updated[rowIdx] = row;
+      updated[rowIdx] = markDirty(row);
       return updated;
     });
   }, []);
@@ -829,14 +840,21 @@ export default function SalesEntry() {
     return (computeLineGross(item) - computeLineDiscountAmount(item)).toFixed(2);
   };
 
-  // Save all new/dirty rows as DRAFTs
+  // Save all new/dirty rows as DRAFTs. New rows POST via createSale; existing
+  // DRAFT rows that have been edited (markDirty fired on updateRow / updateLineItem
+  // / addLineItem / removeLineItem) PUT via updateSale. Backend rejects updates
+  // to non-DRAFT rows, and markDirty already gates by status, so this is safe.
   const saveAll = async () => {
     setActionLoading('save');
     try {
       const savedIds = [];
+      const updatedIds = [];
+      const failures = [];
       const warnings = [];
       for (const row of rows) {
-        if (!row._isNew) continue;
+        const isCreate = !!row._isNew;
+        const isUpdate = !row._isNew && !!row._isDirty;
+        if (!isCreate && !isUpdate) continue;
 
         // Warn instead of silently skipping rows missing hospital/customer
         if (!row.hospital_id && !row.customer_id) {
@@ -873,10 +891,14 @@ export default function SalesEntry() {
           sale_type: saleType,
           // Phase G4.5a — proxy entry. Empty = self; otherwise file under the
           // selected BDM (backend gates via sales.proxy_entry sub-perm + role
-          // membership in PROXY_ENTRY_ROLES.SALES lookup).
+          // membership in PROXY_ENTRY_ROLES.SALES lookup). Update path strips
+          // assigned_to server-side (ownership is locked on edit), so this is
+          // a no-op for dirty rows — kept for create symmetry.
           assigned_to: assignedTo || undefined,
-          hospital_id: row.hospital_id || undefined,
-          customer_id: row.customer_id || undefined,
+          // idOf coerces populated refs (loaded DRAFTs come back as objects)
+          // back to ID strings so the update payload matches createSale's contract.
+          hospital_id: idOf(row.hospital_id) || undefined,
+          customer_id: idOf(row.customer_id) || undefined,
           csi_date: row.csi_date,
           doc_ref: row.doc_ref || undefined,
           warehouse_id: warehouseId || undefined,
@@ -885,7 +907,7 @@ export default function SalesEntry() {
           csi_photo_url: row.csi_photo_url || undefined,
           csi_attachment_id: row.csi_attachment_id || undefined,
           line_items: validItems.map(li => ({
-            product_id: li.product_id,
+            product_id: idOf(li.product_id),
             item_key: li.item_key,
             qty: parseFloat(li.qty),
             unit: li.unit,
@@ -900,18 +922,31 @@ export default function SalesEntry() {
           }))
         };
 
-        const res = await sales.createSale(payload);
-        if (res?.data) savedIds.push(res.data._id);
+        try {
+          if (isCreate) {
+            const res = await sales.createSale(payload);
+            if (res?.data) savedIds.push(res.data._id);
+          } else {
+            const res = await sales.updateSale(row._id, payload);
+            if (res?.data) updatedIds.push(res.data._id);
+          }
+        } catch (err) {
+          // Per-row failure: keep going so other dirty rows still get saved,
+          // surface a row-scoped error rather than aborting the whole batch.
+          const label = row.doc_ref ? `CSI ${row.doc_ref}` : (row.invoice_number || `Row`);
+          const msg = err?.response?.data?.message || err?.message || 'unknown error';
+          failures.push(`${label}: ${msg}`);
+        }
       }
 
-      // Show accumulated warnings to BDM
-      if (warnings.length > 0) {
-        showError(null, warnings.join('\n'));
+      // Show accumulated warnings + per-row failures to BDM
+      if (warnings.length > 0 || failures.length > 0) {
+        showError(null, [...warnings, ...failures].join('\n'));
       }
 
-      if (savedIds.length) {
+      if (savedIds.length || updatedIds.length) {
         await loadSales();
-      } else if (rows.some(r => r._isNew) && warnings.length === 0) {
+      } else if (rows.some(r => r._isNew) && warnings.length === 0 && failures.length === 0) {
         showError(null, 'No rows saved. Make sure each row has a hospital or customer selected' + (saleType === 'CSI' ? ' and a CSI#' : ''));
       }
     } catch (err) {
@@ -993,9 +1028,19 @@ export default function SalesEntry() {
                     <button className="btn btn-outline" onClick={addRow}>+ Add Row</button>
                   </div>
                   <div className="sales-actions-group">
-                    <button className="btn btn-primary" onClick={saveAll} disabled={actionLoading === 'save'}>
-                      {actionLoading === 'save' ? 'Saving...' : 'Save Drafts'}
-                    </button>
+                    {(() => {
+                      const pending = rows.filter(r => r._isNew || r._isDirty).length;
+                      return (
+                        <button
+                          className="btn btn-primary"
+                          onClick={saveAll}
+                          disabled={actionLoading === 'save' || pending === 0}
+                          title={pending === 0 ? 'No new or edited rows to save' : `${pending} row(s) pending save`}
+                        >
+                          {actionLoading === 'save' ? 'Saving...' : `Save Drafts${pending > 0 ? ` (${pending})` : ''}`}
+                        </button>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
@@ -1103,6 +1148,9 @@ export default function SalesEntry() {
                             </span>
                             {r.source === 'OPENING_AR' && (
                               <span className="status-badge" style={{ background: '#fef3c7', color: '#92400e', marginLeft: 4 }} title="Pre-live-date — no inventory deduction">Opening AR</span>
+                            )}
+                            {r._isDirty && (
+                              <span title="Unsaved edits — Save Service Invoice to persist" style={{ marginLeft: 4, color: '#d97706', fontSize: 14, fontWeight: 700 }}>●</span>
                             )}
                           </td>
                           <td style={{ padding: '6px 8px', textAlign: 'center' }}>
@@ -1280,6 +1328,9 @@ export default function SalesEntry() {
                       {row.source === 'OPENING_AR' && (
                         <span className="status-badge" style={{ background: '#fef3c7', color: '#92400e', marginLeft: 4 }} title="Pre-live-date — no inventory deduction">Opening AR</span>
                       )}
+                      {row._isDirty && (
+                        <span title="Unsaved edits — click Save Drafts to persist" style={{ marginLeft: 6, color: '#d97706', fontSize: 16, fontWeight: 700 }}>●</span>
+                      )}
                     </td>
                     <td style={{ paddingTop: 10 }}>
                       {row.status === 'DRAFT' && (
@@ -1415,6 +1466,9 @@ export default function SalesEntry() {
                   </span>
                   {row.source === 'OPENING_AR' && (
                     <span className="status-badge" style={{ background: '#fef3c7', color: '#92400e', marginLeft: 4, fontSize: 10 }} title="Pre-live-date — no inventory deduction">Opening AR</span>
+                  )}
+                  {row._isDirty && (
+                    <span title="Unsaved edits — Save Drafts to persist" style={{ color: '#d97706', fontSize: 14, fontWeight: 700 }}>●</span>
                   )}
                 </div>
                 {isRejectedRow(row) && (

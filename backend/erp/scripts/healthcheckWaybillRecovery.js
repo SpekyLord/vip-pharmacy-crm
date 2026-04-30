@@ -143,6 +143,50 @@ check(
   'Update WORKFLOW_GUIDES["undertaking-entry"] in frontend/src/erp/components/WorkflowGuide.jsx'
 );
 
+// 12. DOC_TYPE_HYDRATION.UNDERTAKING populates linked_grn_id with waybill_photo_url
+//     selected — without this, gateApproval-held DRAFT UTs surface in the Hub
+//     via the APPROVAL_REQUEST path with grn=null in buildUndertakingDetails,
+//     the waybill fallback can't reach grn.waybill_photo_url, and the row shows
+//     a false-positive "no waybill" warning. (Apr 30, 2026 follow-up.)
+check(
+  'DOC_TYPE_HYDRATION.UNDERTAKING populates linked_grn_id with waybill fields',
+  () => {
+    const src = read('backend/erp/services/universalApprovalService.js');
+    const block = src.split('UNDERTAKING:')[2] || ''; // [0]=before MODULE_QUERIES, [1]=MODULE_QUERIES.UNDERTAKING, [2]=DOC_TYPE_HYDRATION.UNDERTAKING
+    return /path:\s*['"]linked_grn_id['"]/.test(block)
+      && /waybill_photo_url/.test(block)
+      && /undertaking_photo_url/.test(block);
+  },
+  'Edit DOC_TYPE_HYDRATION.UNDERTAKING in backend/erp/services/universalApprovalService.js — must populate linked_grn_id with waybill_photo_url + undertaking_photo_url selected'
+);
+
+// 13. DOC_TYPE_HYDRATION.UNDERTAKING populates bdm_id (so Hub row shows BDM name,
+//     not "—", for gateApproval-held UTs).
+check(
+  'DOC_TYPE_HYDRATION.UNDERTAKING populates bdm_id',
+  () => {
+    const src = read('backend/erp/services/universalApprovalService.js');
+    const block = src.split('UNDERTAKING:')[2] || '';
+    return /path:\s*['"]bdm_id['"]/.test(block);
+  },
+  'Add { path: "bdm_id", select: "name email" } to DOC_TYPE_HYDRATION.UNDERTAKING populate array'
+);
+
+// 14. buildApprovalRequestDetails uses object-form populate so nested populate
+//     (linked_grn_id → vendor_id) is honored. The legacy two-arg form silently
+//     dropped the nested populate field.
+check(
+  'buildApprovalRequestDetails uses object-form populate (supports nested)',
+  () => {
+    const src = read('backend/erp/services/universalApprovalService.js');
+    // Match the for-loop body — must call query.populate(p) (single-arg object form),
+    // not query.populate(p.path, p.select) which discards nested populate config.
+    return /query\s*=\s*query\.populate\(\s*p\s*\)/.test(src)
+      && !/query\s*=\s*query\.populate\(\s*p\.path\s*,\s*p\.select\s*\)/.test(src);
+  },
+  'In buildApprovalRequestDetails, change `query.populate(p.path, p.select)` to `query.populate(p)` so nested populate (e.g. linked_grn_id → vendor_id) fires'
+);
+
 // ── Report ──────────────────────────────────────────────────────────────────
 let failed = 0;
 console.log('\n— Phase G4.5h-W Waybill Recovery wiring healthcheck —\n');

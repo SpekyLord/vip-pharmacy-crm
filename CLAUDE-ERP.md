@@ -5365,6 +5365,28 @@ Wired into:
 - `node -c` clean on both modified backend files.
 - `scripts/check-system-health.js` — 5/5 sections green, including extended proxy-entry check that verifies the VALID_OWNER_ROLES path end-to-end.
 
+### Phase G4.5a follow-up — Field-input priority: proxy context wins over logged-in BDM (April 29, 2026)
+
+**Rule.** When a form is in proxy context (a target BDM / warehouse selected via OwnerPicker, WarehousePicker, or `assigned_to`), every field input that has a per-BDM scope must source its options from the **proxy/target** context — not the logged-in user's own profile. The logged-in user's profile is only the fallback when proxy context is empty (self-entry).
+
+**Why.** A proxy filing on behalf of another BDM sees a form populated with the proxy's own hospitals/customers/warehouses/products/territories. The proxy then can't find the target's hospital in the dropdown and either keys garbage or gives up. Rule #21 (no silent self-fallback) plugs this on the backend filter side; this rule plugs it on the input-population side. Without it, the proxy gate gets opened but the form is unfillable — defeating the whole point of proxy entry.
+
+**Reference implementation.** [SalesEntry.jsx:560-575](frontend/src/erp/pages/SalesEntry.jsx#L560-L575) (commit `0a98481`). The hospital dropdown was previously hydrated by the cached, unscoped `useHospitals()` hook, which reads "my tagged hospitals" for the logged-in user. After the change it calls `useHospitals({ warehouseId })` — passing the WarehousePicker's selected value — so the dropdown follows the **selected** warehouse's tagged hospitals. [hospitalController.getAll](backend/erp/controllers/hospitalController.js) accepts `?warehouse_id=` and gates it the same way `GET /warehouse/my` does, so this can't be abused to enumerate hospitals on warehouses the caller has no access to. [useHospitals](frontend/src/erp/hooks/useHospitals.js) bypasses its session cache when scoped, so toggling warehouse always refetches.
+
+**How to apply.** When you wire a new proxy-aware page (or audit an existing one), check every dropdown / autocomplete / list-of-options that's keyed by BDM identity:
+- Hospitals → scope by selected warehouse (Sales, Opening AR, Collections, GRN paths)
+- Customers → scope by `assigned_to` if non-empty; else self
+- Products → scope by selected warehouse (stock-bound) or selected entity (master-data)
+- Territories / regions → scope by `assigned_to` if non-empty
+- Default cost center / petty cash fund → scope by `assigned_to` if non-empty
+
+If the field's options are independent of BDM identity (e.g. payment modes, lookup categories), no change. If the field would be empty for the proxy because they're not the target — fix it. The grep that catches this audit is `useHospitals\(\)|useCustomers\(\)\.\.\.|usePeople\(\) without an ownerId arg|productOptions filtered by req\.bdmId on the backend`.
+
+**Bulletproof bar.**
+- Backend: warehouse-access guard mirrors `GET /warehouse/my` so a privilege-check exists at the source.
+- Frontend: scoped path bypasses the module cache; cache only holds the self-scope result.
+- Symmetric to the existing GRN warehouse cross-check ([G4.5b §2](#)) — a proxy can't write into a warehouse they don't own *and* can't see options for one outside the target's access.
+
 ---
 
 ## Phase G4.5b — Proxy Entry for Collections + GRN (April 22, 2026)
