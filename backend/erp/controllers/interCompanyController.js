@@ -14,6 +14,14 @@ const ErpAuditLog = require('../models/ErpAuditLog');
 const { catchAsync } = require('../../middleware/errorHandler');
 const { ROLES } = require('../../constants/roles');
 const interCompanyService = require('../services/interCompanyService');
+const { canProxyEntry, getValidOwnerRolesForModule } = require('../utils/resolveOwnerScope');
+
+// Phase G4.5dd (Apr 30 2026) — Internal Stock Reassignment proxy options.
+// Pairs sub-perm `inventory.internal_transfer_proxy` with PROXY_ENTRY_ROLES
+// + VALID_OWNER_ROLES rows whose code is INTERNAL_TRANSFER. Distinct namespace
+// from `grn_proxy_entry` because reassignment shifts ownership (KPI / commission
+// impact) — must be a separate explicit grant, not bundled.
+const INTERNAL_TRANSFER_PROXY_OPTS = { subKey: 'internal_transfer_proxy', lookupCode: 'INTERNAL_TRANSFER' };
 
 /**
  * POST /transfers — Create DRAFT transfer (president/admin only)
@@ -472,11 +480,19 @@ const TransactionEvent = require('../models/TransactionEvent');
 const { consumeSpecificBatch } = require('../services/fifoEngine');
 
 /**
- * POST /reassign — Create PENDING reassignment (president/admin)
- * Same entity, different BDMs. Requires finance approval.
+ * POST /reassign — Create PENDING reassignment.
+ * Same entity, different BDMs. Requires finance/admin approval to deduct stock.
+ *
+ * Phase G4.5dd (Apr 30 2026) — proxy gate added. Caller must be admin/finance/
+ * president OR hold `inventory.internal_transfer_proxy` AND a role in
+ * PROXY_ENTRY_ROLES.INTERNAL_TRANSFER. Source + target BDMs are validated
+ * against VALID_OWNER_ROLES.INTERNAL_TRANSFER and same-entity (defense in
+ * depth — a privileged role passing admin _ids would corrupt KPI/commission).
+ * Approval (the dispositive stock-deduction action) remains admin/finance/
+ * president only — see approveReassignment.
  */
 const createReassignment = catchAsync(async (req, res) => {
-  const { source_bdm_id, target_bdm_id, source_warehouse_id, target_warehouse_id, reassignment_date, line_items, undertaking_photo_url, ocr_data, notes, territory_code } = req.body;
+  const { source_bdm_id, target_bdm_id, source_warehouse_id, target_warehouse_id, reassignment_date, line_items, undertaking_photo_url, ocr_data, notes } = req.body;
 
   if (!source_bdm_id || !target_bdm_id) {
     return res.status(400).json({ success: false, message: 'Source and target custodians are required' });
@@ -495,6 +511,54 @@ const createReassignment = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Entity ID required' });
   }
 
+  // Phase G4.5dd — Proxy gate. Privileged users always pass; everyone else must
+  // hold `inventory.internal_transfer_proxy` AND a role in PROXY_ENTRY_ROLES.
+  // INTERNAL_TRANSFER. Without this gate, any user with `inventory.transfers`
+  // (the route-level sub-perm — broadly granted for IC visibility) could
+  // create cross-BDM reassignments.
+  const privileged = req.isAdmin || req.isFinance || req.isPresident;
+  if (!privileged) {
+    const { canProxy } = await canProxyEntry(req, 'inventory', INTERNAL_TRANSFER_PROXY_OPTS);
+    if (!canProxy) {
+      return res.status(403).json({
+        success: false,
+        message: 'Internal Stock Reassignment proxy denied. Your role or Access Template does not grant cross-BDM internal-transfer rights for inventory. Required: inventory.internal_transfer_proxy + role in PROXY_ENTRY_ROLES.INTERNAL_TRANSFER.'
+      });
+    }
+  }
+
+  // Defense-in-depth — validate source + target BDMs are valid owners and
+  // belong to the caller's entity. Mirrors resolveOwnerForWrite hardening so
+  // a privileged caller can't accidentally pass an admin _id and corrupt
+  // per-BDM KPI / commission ledgers.
+  const User = require('../../models/User');
+  const validOwnerRoles = await getValidOwnerRolesForModule(entityId, 'inventory', 'INTERNAL_TRANSFER');
+  const [srcUser, tgtUser] = await Promise.all([
+    User.findById(source_bdm_id).select('role entity_id entity_ids isActive name').lean(),
+    User.findById(target_bdm_id).select('role entity_id entity_ids isActive name').lean(),
+  ]);
+  for (const [label, u, id] of [['Source', srcUser, source_bdm_id], ['Target', tgtUser, target_bdm_id]]) {
+    if (!u) {
+      return res.status(400).json({ success: false, message: `${label} BDM not found (${id})` });
+    }
+    if (!u.isActive) {
+      return res.status(400).json({ success: false, message: `${label} BDM ${u.name || id} is inactive` });
+    }
+    if (!validOwnerRoles.includes(u.role)) {
+      return res.status(400).json({
+        success: false,
+        message: `${label} role '${u.role}' is not a valid owner for Internal Stock Reassignment. Configured (VALID_OWNER_ROLES.INTERNAL_TRANSFER): ${validOwnerRoles.join(', ')}.`
+      });
+    }
+    const userEntities = [u.entity_id, ...(u.entity_ids || [])].filter(Boolean).map(String);
+    if (!userEntities.includes(String(entityId))) {
+      return res.status(400).json({
+        success: false,
+        message: `${label} BDM ${u.name || id} is not assigned to the current entity. Cross-entity reassignment is not permitted — use Inter-Company Transfer instead.`
+      });
+    }
+  }
+
   // Validate products exist within the caller's entity. Without entity_id, a
   // user could pass product_ids from a sibling entity and the reassignment
   // would silently accept them. Mirrors the GRN-create fix in inventoryController.
@@ -509,22 +573,13 @@ const createReassignment = catchAsync(async (req, res) => {
     if (!li.item_key) li.item_key = productMap.get(li.product_id.toString()).item_key;
   }
 
-  // Auto-generate reassignment_ref: TERRITORY-MMDDYY-SEQ
+  // reassignment_ref is now auto-generated by the StockReassignment pre-save
+  // hook via docNumbering — format IST-{TERRITORY|ENTITY}{MMDDYY}-{NNN}, atomic
+  // DocSequence. Phase G4.5dd-r1 (Apr 30 2026): the legacy `territory_code`
+  // input was dropped, controller no longer touches the ref.
   const refDate = reassignment_date ? new Date(reassignment_date) : new Date();
-  const mm = String(refDate.getMonth() + 1).padStart(2, '0');
-  const dd = String(refDate.getDate()).padStart(2, '0');
-  const yy = String(refDate.getFullYear()).slice(-2);
-  const dateCode = `${mm}${dd}${yy}`;
-  const prefix = territory_code ? territory_code.toUpperCase() : 'STR';
-  const dayCount = await StockReassignment.countDocuments({
-    entity_id: entityId,
-    reassignment_ref: new RegExp(`^${prefix}-${dateCode}-`)
-  });
-  const seq = String(dayCount + 1).padStart(3, '0');
-  const reassignment_ref = `${prefix}-${dateCode}-${seq}`;
 
   const reassignment = await StockReassignment.create({
-    reassignment_ref,
     entity_id: entityId,
     source_bdm_id,
     target_bdm_id,
@@ -563,6 +618,20 @@ const approveReassignment = catchAsync(async (req, res) => {
 
   if (!['APPROVED', 'REJECTED'].includes(action)) {
     return res.status(400).json({ success: false, message: 'Action must be APPROVED or REJECTED' });
+  }
+
+  // Phase G4.5dd — explicit role gate on approval. Two-person rule: the proxy
+  // (staff with `inventory.internal_transfer_proxy`) may CREATE the PENDING
+  // reassignment, but APPROVE — which deducts FIFO stock from source and shifts
+  // ownership — must be admin / finance / president. Closes the latent gap
+  // where the route-level `inventory.transfers` sub-perm alone permitted any
+  // grantee to approve. President always passes; CEO is denied (view-only).
+  const isApprover = req.isAdmin || req.isFinance || req.isPresident;
+  if (!isApprover) {
+    return res.status(403).json({
+      success: false,
+      message: 'Approval of Internal Stock Reassignment is restricted to admin, finance, or president. Two-person rule on stock-ownership changes — proxies may create but not approve.'
+    });
   }
 
   const entityScope = req.isPresident ? {} : { entity_id: req.entityId };

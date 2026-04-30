@@ -452,17 +452,17 @@ const WORKFLOW_GUIDES = {
   'transfers': {
     title: 'Stock Transfers',
     steps: [
-      'Create a transfer order to move stock between warehouses',
-      'Select source warehouse, target warehouse, and products',
-      'Subsidiary entities can browse parent company products — configurable via PRODUCT_CATALOG_ACCESS lookup',
-      'Enter quantities to transfer — each order is assigned a human-readable ref at save time: ICT-{ENTITY}{MMDDYY}-{NNN} (e.g. ICT-VIP041826-001)',
-      'Validate and Post — updates inventory in both warehouses',
+      'Inter-Company tab — moves stock between entities (uses transfer prices set by president). Each order is assigned ICT-{ENTITY}{MMDDYY}-{NNN}.',
+      'Internal tab — moves stock between BDM custodians within the same entity, warehouse-to-warehouse. Pick source / target BDM + warehouse, then line items. Reference number auto-assigned: IST-{TERRITORY|ENTITY}{MMDDYY}-{NNN}, same scheme as ICT / JE / CALF / PO.',
+      'Subsidiary entities can browse parent company products on IC transfers — configurable via PRODUCT_CATALOG_ACCESS lookup.',
+      'Validate and Post (IC) updates both warehouses. Internal reassignment goes PENDING → APPROVED (FIFO-deducts source) → AWAITING_GRN → COMPLETED (after receiver enters GRN).',
+      'Two-person rule on Internal: any user with the create grant can submit a PENDING reassignment, but APPROVE — which deducts FIFO stock from source and shifts ownership — is reserved for admin/finance/president.',
     ],
     next: [
       { label: 'Receive Transfer', path: '/erp/transfers/receive' },
       { label: 'View Inventory', path: '/erp/my-stock' },
     ],
-    tip: 'Inter-company transfers (between entities) use transfer prices set by the president. Subsidiary product catalog access is lookup-driven. Transfer refs use the source entity\'s short_name as the code (admin-editable in Entity management, cache-busted on rename) — subsidiaries get their own prefix without a code change, matching JE/CALF/PO numbering. Legacy transfers created before the numbering rollout show their original ICT-YYYYMMDD-NNN format; new transfers use the unified format.',
+    tip: 'Inter-company transfers (between entities) use transfer prices set by the president. Subsidiary product catalog access is lookup-driven. Transfer refs use the source entity\'s short_name as the code (admin-editable in Entity management, cache-busted on rename) — subsidiaries get their own prefix without a code change, matching JE/CALF/PO numbering. Legacy transfers created before the numbering rollout show their original ICT-YYYYMMDD-NNN format; new transfers use the unified format. Phase G4.5dd (Apr 30 2026): an eBDM (back-office BDM) can create Internal reassignments on behalf of field BDMs by ticking inventory.internal_transfer_proxy on their Access Template + appending \'staff\' to PROXY_ENTRY_ROLES.INTERNAL_TRANSFER in Control Center → Lookup Tables. Approval stays admin/finance/president regardless — that gate is non-delegable.',
   },
   'transfers-receive': {
     title: 'Receiving Stock Transfers',

@@ -149,7 +149,7 @@ export default function Smer() {
   const canProxySmer = user?.role === ROLES.PRESIDENT
     || (isPrivileged && hasSubPermission('expenses', 'smer_proxy'))
     || (isBdm && hasSubPermission('expenses', 'smer_proxy'));
-  const { getSmerList, getSmerById, createSmer, updateSmer, deleteDraftSmer, validateSmer, submitSmer, reopenSmer, getSmerCrmMdCounts, getRevolvingFundAmount, getPerdiemConfig, overridePerdiemDay, loading } = useExpenses();
+  const { getSmerList, getSmerById, createSmer, updateSmer, deleteDraftSmer, validateSmer, submitSmer, reopenSmer, revertSmer, getSmerCrmMdCounts, getRevolvingFundAmount, getPerdiemConfig, overridePerdiemDay, loading } = useExpenses();
   const { settings } = useSettings();
   const { options: activityTypeOpts } = useLookupOptions('ACTIVITY_TYPE');
   const ACTIVITY_TYPES = activityTypeOpts.map(o => o.code);
@@ -515,6 +515,13 @@ export default function Smer() {
   const handleDelete = async (id) => {
     if (!canWrite) { showError(null, 'Read-only: pick your own BDM or get expenses.smer_proxy ticked to file on behalf.'); return; }
     try { await deleteDraftSmer(id); loadSmers(); } catch (err) { showError(err, 'Could not delete SMER'); }
+  };
+  // Revert VALID → DRAFT so the BDM can edit. Confirms once because reverting
+  // clears the validation snapshot and forces a re-validate before submit.
+  const handleRevert = async (id) => {
+    if (!canWrite) { showError(null, 'Read-only: pick your own BDM or get expenses.smer_proxy ticked to file on behalf.'); return; }
+    if (!window.confirm('Revert this SMER to DRAFT? You will need to re-validate before submitting.')) return;
+    try { await revertSmer(id); loadSmers(); } catch (err) { showError(err, 'Could not revert SMER'); }
   };
 
   const isManagement = ROLE_SETS.MANAGEMENT.includes(user?.role);
@@ -885,6 +892,9 @@ export default function Smer() {
                       <td style={{ padding: 8, textAlign: 'center' }}>
                         {editableStatuses.includes(s.status) && (
                           <button onClick={() => handleEditSmer(s)} style={{ marginRight: 4, padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', background: '#fff', cursor: 'pointer' }}>Edit</button>
+                        )}
+                        {s.status === 'VALID' && (
+                          <button onClick={() => handleRevert(s._id)} title="Revert to DRAFT so you can edit. You will need to re-validate before submitting." style={{ marginRight: 4, padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #eab308', background: '#fff', color: '#b45309', cursor: 'pointer' }}>↶ Revert</button>
                         )}
                         {s.status === 'DRAFT' && (
                           <button onClick={() => handleDelete(s._id)} style={{ padding: '2px 8px', fontSize: 12, borderRadius: 4, border: '1px solid #ef4444', background: '#fff', color: '#ef4444', cursor: 'pointer' }}>Del</button>
