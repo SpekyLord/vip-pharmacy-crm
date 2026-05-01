@@ -949,12 +949,67 @@ const approvalHandlers = {
   // Tone matches Rule #20 — never bypass gateApproval/periodLockCheck and never demote a
   // POSTED financial document via reject; require explicit reverse instead.
 
-  purchasing: async (id, action, userId, reason) => buildGroupBReject({
-    actionType: 'purchasing', id, action, userId, reason,
-    modelByDocType: { SUPPLIER_INVOICE: 'SupplierInvoice' },
-    fallbackModel: 'PurchaseOrder',
-    terminalStates: ['POSTED', 'CLOSED', 'CANCELLED'],
-  }),
+  // Phase G6.7-PC4 (May 01 2026) — Purchasing: branches on action like petty_cash
+  // and journal. Approve/post path delegates to the new postSingleSupplierInvoice
+  // helper (extracted from purchasingController.postInvoice). The helper handles
+  // status guard, period lock against the invoice's own entity, atomic JE post
+  // + status flip, VAT ledger entry, and idempotency on POSTED. Reject stays
+  // on buildGroupBReject (terminalStates: POSTED/CLOSED/CANCELLED — never demote).
+  //
+  // Note: PURCHASE_ORDER doc_type still falls through reject only — POs are
+  // approved via dedicated approvePO / receivePO routes that already gate
+  // through gateApproval. The Hub purchasing surface is currently SI-only.
+  purchasing: async (id, action, userId, reason) => {
+    if (action === 'reject') {
+      return buildGroupBReject({
+        actionType: 'purchasing', id, action, userId, reason,
+        modelByDocType: { SUPPLIER_INVOICE: 'SupplierInvoice' },
+        fallbackModel: 'PurchaseOrder',
+        terminalStates: ['POSTED', 'CLOSED', 'CANCELLED'],
+      });
+    }
+    if (action === 'approve' || action === 'post') {
+      const ApprovalRequest = require('../models/ApprovalRequest');
+      const SupplierInvoice = require('../models/SupplierInvoice');
+      const { postSingleSupplierInvoice } = require('./purchasingController');
+
+      // Group B id-semantics: id IS the ApprovalRequest._id; deref to invoice._id.
+      // Fall back to treating id as the invoice _id directly so direct dispatches still work.
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list
+      const request = await ApprovalRequest.findById(id).lean();
+      const invoiceId = (request && request.doc_id) ? request.doc_id : id;
+
+      // Helper enforces status guard + period lock + JE atomicity + idempotency.
+      const { invoice, je } = await postSingleSupplierInvoice(invoiceId, userId);
+
+      // Close the originating ApprovalRequest. The shared auto-resolve at L1130-1160
+      // keys on `{ doc_id: id }` (Group A id-semantics) and never matches Group B.
+      if (request) {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id resolved from gated approver via entity-scoped list above
+        await ApprovalRequest.updateOne(
+          { _id: id, status: 'PENDING' },
+          {
+            $set: {
+              status: 'APPROVED',
+              decided_by: userId,
+              decided_at: new Date(),
+              decision_reason: reason || 'Approved via Approval Hub',
+            },
+            $push: {
+              history: {
+                status: 'APPROVED',
+                by: userId,
+                reason: reason || 'Approved via Approval Hub',
+              },
+            },
+          }
+        );
+      }
+
+      return { invoice, journal_entry: je };
+    }
+    throw new Error(`Unsupported action for purchasing: ${action}`);
+  },
 
   // Phase G6.7-PC2 (Apr 30 2026) — Journal: branches on action like petty_cash.
   // Approve/post path delegates to the existing journalEngine.postJournal helper
@@ -1025,19 +1080,147 @@ const approvalHandlers = {
     throw new Error(`Unsupported action for journal: ${action}`);
   },
 
-  banking: async (id, action, userId, reason) => buildGroupBReject({
-    actionType: 'banking', id, action, userId, reason,
-    modelByDocType: { BANK_RECON: 'BankStatement' },
-    fallbackModel: 'BankStatement',
-    terminalStates: ['FINALIZED'],
-  }),
+  // Phase G6.7-PC7 (May 01 2026) — Banking: branches on action.
+  // Approve/post path delegates to bankReconService.finalizeRecon (already
+  // exported as a callable helper — same posture as journalEngine.postJournal).
+  // The helper throws "Already finalized" on terminal state, so the Hub guard
+  // peeks status FIRST and short-circuits cleanly to preserve idempotency.
+  //
+  // CAUTION: BankStatement.status === 'FINALIZED' is immutable — there is no
+  // un-finalize path. The peek guard means re-clicking Approve from the Hub
+  // is safe (no double JE creation, no double balance write), but the cost of
+  // a wrong-fire here is HIGHER than other modules. Smoke carefully.
+  banking: async (id, action, userId, reason) => {
+    if (action === 'reject') {
+      return buildGroupBReject({
+        actionType: 'banking', id, action, userId, reason,
+        modelByDocType: { BANK_RECON: 'BankStatement' },
+        fallbackModel: 'BankStatement',
+        terminalStates: ['FINALIZED'],
+      });
+    }
+    if (action === 'approve' || action === 'post') {
+      const ApprovalRequest = require('../models/ApprovalRequest');
+      const BankStatement = require('../models/BankStatement');
+      const { finalizeRecon } = require('../services/bankReconService');
 
-  ic_transfer: async (id, action, userId, reason) => buildGroupBReject({
-    actionType: 'ic_transfer', id, action, userId, reason,
-    modelByDocType: { IC_TRANSFER: 'InterCompanyTransfer', IC_SETTLEMENT: 'IcSettlement' },
-    fallbackModel: 'InterCompanyTransfer',
-    terminalStates: ['POSTED', 'CANCELLED', 'RECEIVED'],
-  }),
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list
+      const request = await ApprovalRequest.findById(id).lean();
+      const stmtId = (request && request.doc_id) ? request.doc_id : id;
+
+      // Idempotency peek: finalizeRecon throws on FINALIZED; the Hub treats
+      // re-fire as success so the request can be cleanly closed.
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: stmtId resolved from gated approver
+      const stmtPre = await BankStatement.findById(stmtId).lean();
+      if (!stmtPre) throw new Error('Bank statement not found');
+
+      let finalizeResult;
+      if (stmtPre.status === 'FINALIZED') {
+        finalizeResult = {
+          status: 'FINALIZED',
+          closing_balance: stmtPre.closing_balance,
+          adjustment_jes: 0,
+          already_finalized: true,
+        };
+      } else {
+        finalizeResult = await finalizeRecon(stmtId, userId);
+      }
+
+      // Close the originating ApprovalRequest.
+      if (request) {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id resolved from gated approver via entity-scoped list above
+        await ApprovalRequest.updateOne(
+          { _id: id, status: 'PENDING' },
+          {
+            $set: {
+              status: 'APPROVED',
+              decided_by: userId,
+              decided_at: new Date(),
+              decision_reason: reason || 'Approved via Approval Hub',
+            },
+            $push: {
+              history: {
+                status: 'APPROVED',
+                by: userId,
+                reason: reason || 'Approved via Approval Hub',
+              },
+            },
+          }
+        );
+      }
+
+      return finalizeResult;
+    }
+    throw new Error(`Unsupported action for banking: ${action}`);
+  },
+
+  // Phase G6.7-PC6 (May 01 2026) — IC Transfer + IC Settlement: branches on
+  // BOTH action AND doc_type because the `ic_transfer` Hub type covers TWO
+  // physical models with different lifecycles:
+  //   - doc_type IC_TRANSFER    → InterCompanyTransfer (DRAFT → APPROVED, no JE)
+  //                                → approveSingleIcTransfer
+  //   - doc_type IC_SETTLEMENT  → IcSettlement (DRAFT → POSTED + TransactionEvent)
+  //                                → postSingleIcSettlement
+  // Both helpers are idempotent on their terminal/post-gate states.
+  // Reject delegates to buildGroupBReject (terminalStates: POSTED/CANCELLED/RECEIVED).
+  ic_transfer: async (id, action, userId, reason) => {
+    if (action === 'reject') {
+      return buildGroupBReject({
+        actionType: 'ic_transfer', id, action, userId, reason,
+        modelByDocType: { IC_TRANSFER: 'InterCompanyTransfer', IC_SETTLEMENT: 'IcSettlement' },
+        fallbackModel: 'InterCompanyTransfer',
+        terminalStates: ['POSTED', 'CANCELLED', 'RECEIVED'],
+      });
+    }
+    if (action === 'approve' || action === 'post') {
+      const ApprovalRequest = require('../models/ApprovalRequest');
+
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list
+      const request = await ApprovalRequest.findById(id).lean();
+      const docId = (request && request.doc_id) ? request.doc_id : id;
+      const docType = request?.doc_type || 'IC_TRANSFER';
+
+      let result;
+      if (docType === 'IC_SETTLEMENT') {
+        const IcSettlement = require('../models/IcSettlement');
+        const { postSingleIcSettlement } = require('./icSettlementController');
+        const { settlement } = await postSingleIcSettlement(docId, userId);
+        result = { settlement, doc_type: 'IC_SETTLEMENT' };
+      } else {
+        // Default to IC_TRANSFER (the more common case — transfer approval).
+        const InterCompanyTransfer = require('../models/InterCompanyTransfer');
+        const { approveSingleIcTransfer } = require('./interCompanyController');
+        const { transfer } = await approveSingleIcTransfer(docId, userId);
+        result = { transfer, doc_type: 'IC_TRANSFER' };
+      }
+
+      // Close the originating ApprovalRequest.
+      if (request) {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id resolved from gated approver via entity-scoped list above
+        await ApprovalRequest.updateOne(
+          { _id: id, status: 'PENDING' },
+          {
+            $set: {
+              status: 'APPROVED',
+              decided_by: userId,
+              decided_at: new Date(),
+              decision_reason: reason || 'Approved via Approval Hub',
+            },
+            $push: {
+              history: {
+                status: 'APPROVED',
+                by: userId,
+                reason: reason || 'Approved via Approval Hub',
+              },
+            },
+          }
+        );
+      }
+
+      return result;
+    }
+    throw new Error(`Unsupported action for ic_transfer: ${action}`);
+  },
 
   // Petty Cash — supports BOTH approve/post (atomic balance + status flip)
   // and reject. Approve path mirrors the Group A pattern (postSingleSmer /
@@ -1096,21 +1279,228 @@ const approvalHandlers = {
     throw new Error(`Unsupported action for petty_cash: ${action}`);
   },
 
-  sales_goal_plan: async (id, action, userId, reason) => buildGroupBReject({
-    actionType: 'sales_goal_plan', id, action, userId, reason,
-    modelByDocType: { SALES_GOAL_PLAN: 'SalesGoalPlan' },
-    fallbackModel: 'SalesGoalPlan',
-    // CLOSED = normal end-of-life; REVERSED = President-Reverse cascade (Phase SG-3R).
-    // Both are terminal — must not be demoted to REJECTED.
-    terminalStates: ['CLOSED', 'REVERSED'],
-  }),
+  // Phase G6.7-PC5 (May 01 2026) — Sales Goal Plan: branches on action.
+  // Approve/post path delegates to postSingleSalesGoalPlan helper (extracted
+  // from salesGoalController.activatePlan). Helper runs the full activation
+  // cascade inside a single transaction:
+  //   1. Generate plan.reference (idempotent — preserved across reopen)
+  //   2. plan.status DRAFT → ACTIVE
+  //   3. SalesGoalTargets DRAFT → ACTIVE (cascade)
+  //   4. Auto-enroll eligible BDMs (idempotent at BDM level)
+  //   5. Lazy-seed KPI_VARIANCE_THRESHOLDS.GLOBAL
+  //   6. Sync IncentivePlan header (O(1))
+  //   7. STATUS_CHANGE audit log
+  // Helper short-circuits on plan.status === 'ACTIVE' so re-clicking Approve
+  // from the Hub never double-enrolls or burns a fresh reference number.
+  // Reject delegates to buildGroupBReject (terminalStates: CLOSED/REVERSED).
+  sales_goal_plan: async (id, action, userId, reason) => {
+    if (action === 'reject') {
+      return buildGroupBReject({
+        actionType: 'sales_goal_plan', id, action, userId, reason,
+        modelByDocType: {
+          PLAN_ACTIVATE:   'SalesGoalPlan',
+          SALES_GOAL_PLAN: 'SalesGoalPlan',
+        },
+        fallbackModel: 'SalesGoalPlan',
+        // CLOSED = normal end-of-life; REVERSED = President-Reverse cascade (Phase SG-3R).
+        // Both are terminal — must not be demoted to REJECTED.
+        terminalStates: ['CLOSED', 'REVERSED'],
+      });
+    }
+    if (action === 'approve' || action === 'post') {
+      const ApprovalRequest = require('../models/ApprovalRequest');
+      const SalesGoalPlan = require('../models/SalesGoalPlan');
+      const { postSingleSalesGoalPlan } = require('./salesGoalController');
 
-  incentive_payout: async (id, action, userId, reason) => buildGroupBReject({
-    actionType: 'incentive_payout', id, action, userId, reason,
-    modelByDocType: { INCENTIVE_PAYOUT: 'IncentivePayout' },
-    fallbackModel: 'IncentivePayout',
-    terminalStates: ['PAID', 'REVERSED'],
-  }),
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list
+      const request = await ApprovalRequest.findById(id).lean();
+      const planId = (request && request.doc_id) ? request.doc_id : id;
+
+      // Helper enforces DRAFT-only guard + transaction atomicity + idempotency.
+      // Plan-adjacent doc_types (BULK_TARGETS_IMPORT, PLAN_NEW_VERSION,
+      // TARGET_REVISION, STATEMENT_DISPATCH) — for now we only handle
+      // PLAN_ACTIVATE here. Other doc_types fall through to the helper which
+      // will throw "Only DRAFT plans can be activated" if applied to a
+      // non-plan; admin should use module-specific endpoints for those.
+      const docType = request?.doc_type || 'PLAN_ACTIVATE';
+      if (docType !== 'PLAN_ACTIVATE' && docType !== 'SALES_GOAL_PLAN') {
+        // Plan-adjacent doc_types have no model-backed activation. Just close
+        // the request — admin should use the module-specific endpoint to
+        // actually act on the underlying intent (bulk-import, version-cut, etc.)
+        if (request) {
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id resolved from gated approver
+          await ApprovalRequest.updateOne(
+            { _id: id, status: 'PENDING' },
+            {
+              $set: {
+                status: 'APPROVED',
+                decided_by: userId,
+                decided_at: new Date(),
+                decision_reason: reason || `Approved via Approval Hub — admin must trigger ${docType} action separately`,
+              },
+              $push: {
+                history: { status: 'APPROVED', by: userId, reason: reason || 'Approved via Approval Hub' },
+              },
+            }
+          );
+        }
+        return { approved: true, doc_type: docType, request_id: id };
+      }
+
+      const { plan, enrollmentSummary } = await postSingleSalesGoalPlan(planId, userId);
+
+      // Close the originating ApprovalRequest.
+      if (request) {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id resolved from gated approver via entity-scoped list above
+        await ApprovalRequest.updateOne(
+          { _id: id, status: 'PENDING' },
+          {
+            $set: {
+              status: 'APPROVED',
+              decided_by: userId,
+              decided_at: new Date(),
+              decision_reason: reason || 'Approved via Approval Hub',
+            },
+            $push: {
+              history: {
+                status: 'APPROVED',
+                by: userId,
+                reason: reason || 'Approved via Approval Hub',
+              },
+            },
+          }
+        );
+      }
+
+      return { plan, enrollment: enrollmentSummary };
+    }
+    throw new Error(`Unsupported action for sales_goal_plan: ${action}`);
+  },
+
+  // Phase G6.7-PC3 (Apr 30 2026) — Incentive Payout: branches on action AND on
+  // the underlying ApprovalRequest.doc_type (the controller emits FOUR doc_types:
+  // PAYOUT_APPROVE, PAYOUT_PAY, PAYOUT_REVERSE, STATEMENT_DISPATCH). Each maps
+  // to a different lifecycle helper:
+  //   - PAYOUT_APPROVE   → postSinglePayoutApproval (ACCRUED → APPROVED, no JE)
+  //   - PAYOUT_PAY       → postSinglePayoutPayment  (→ PAID, settlement JE)
+  //   - PAYOUT_REVERSE   → postSinglePayoutReversal (→ REVERSED, storno JE)
+  //   - STATEMENT_DISPATCH → no doc state change; just close the request.
+  //                          (Actual dispatch runs via the dedicated endpoint
+  //                          dispatchStatementsForPeriod which has its own gate.)
+  // All three lifecycle helpers are idempotent on terminal state — re-clicking
+  // Approve from the Hub never double-posts a JE. Reject delegates to the
+  // shared buildGroupBReject (POSTED/PAID/REVERSED rows are protected as terminal).
+  incentive_payout: async (id, action, userId, reason) => {
+    if (action === 'reject') {
+      return buildGroupBReject({
+        actionType: 'incentive_payout', id, action, userId, reason,
+        modelByDocType: {
+          PAYOUT_APPROVE: 'IncentivePayout',
+          PAYOUT_PAY: 'IncentivePayout',
+          PAYOUT_REVERSE: 'IncentivePayout',
+          INCENTIVE_PAYOUT: 'IncentivePayout',
+        },
+        fallbackModel: 'IncentivePayout',
+        terminalStates: ['PAID', 'REVERSED'],
+      });
+    }
+    if (action === 'approve' || action === 'post') {
+      const ApprovalRequest = require('../models/ApprovalRequest');
+      const IncentivePayout = require('../models/IncentivePayout');
+      const {
+        postSinglePayoutApproval,
+        postSinglePayoutPayment,
+        postSinglePayoutReversal,
+      } = require('./incentivePayoutController');
+
+      // Hub passes ApprovalRequest._id (Group B id-semantics); deref to payout._id.
+      // Fall back to treating id as the payout _id directly so direct dispatches still work.
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
+      const request = await ApprovalRequest.findById(id).lean();
+      const docType = request?.doc_type || 'PAYOUT_PAY';
+
+      // STATEMENT_DISPATCH has no underlying IncentivePayout — request.doc_id points
+      // at the requester userId for audit. Just close the request; admin must
+      // separately call /statements/dispatch to actually mass-mail (that endpoint
+      // has its own gateApproval and runs the email loop).
+      if (docType === 'STATEMENT_DISPATCH') {
+        if (request) {
+          // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id resolved from gated approver via entity-scoped list above
+          await ApprovalRequest.updateOne(
+            { _id: id, status: 'PENDING' },
+            {
+              $set: {
+                status: 'APPROVED',
+                decided_by: userId,
+                decided_at: new Date(),
+                decision_reason: reason || 'Approved via Approval Hub — admin must trigger dispatch separately',
+              },
+              $push: {
+                history: {
+                  status: 'APPROVED',
+                  by: userId,
+                  reason: reason || 'Approved via Approval Hub',
+                },
+              },
+            }
+          );
+        }
+        return { dispatch_authorized: true, request_id: id };
+      }
+
+      const payoutId = (request && request.doc_id) ? request.doc_id : id;
+
+      // Branch on doc_type. Helpers are idempotent on terminal state.
+      let result;
+      if (docType === 'PAYOUT_APPROVE') {
+        result = await postSinglePayoutApproval(payoutId, userId);
+      } else if (docType === 'PAYOUT_REVERSE') {
+        // Reversal requires a non-empty reason. The Hub passes the approver's
+        // decision_reason; if blank, fall back to a sentinel so the helper
+        // doesn't 400 (the original BDM-side reason is in the ApprovalRequest
+        // description if needed for forensics).
+        const reversalReason = (reason && reason.trim()) || `Reversed via Approval Hub (request ${String(id).slice(-6)})`;
+        result = await postSinglePayoutReversal(payoutId, userId, reversalReason);
+      } else {
+        // PAYOUT_PAY (default — the most common authority-gates-then-pays flow).
+        // No paid_via passed: the helper falls through to CASH_ON_HAND inside
+        // postSettlementJournal. Subscribers who want the Hub to pick a specific
+        // PaymentMode at approve time can extend the request UI to capture it
+        // and pass via approve_data — out of scope for PC3.
+        result = await postSinglePayoutPayment(payoutId, userId);
+      }
+
+      // Close the originating ApprovalRequest. The shared auto-resolve at L1130-1160
+      // keys on `{ doc_id: id }` (Group A id-semantics where id IS the underlying doc),
+      // which never matches Group B items (id IS the ApprovalRequest._id). Without this
+      // explicit close, the request would stay PENDING in the Hub after a successful approve.
+      if (request) {
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id resolved from gated approver via entity-scoped list above
+        await ApprovalRequest.updateOne(
+          { _id: id, status: 'PENDING' },
+          {
+            $set: {
+              status: 'APPROVED',
+              decided_by: userId,
+              decided_at: new Date(),
+              decision_reason: reason || 'Approved via Approval Hub',
+            },
+            $push: {
+              history: {
+                status: 'APPROVED',
+                by: userId,
+                reason: reason || 'Approved via Approval Hub',
+              },
+            },
+          }
+        );
+      }
+
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: payoutId resolved from gated approver via entity-scoped list above
+      return await IncentivePayout.findById(payoutId).lean();
+    }
+    throw new Error(`Unsupported action for incentive_payout: ${action}`);
+  },
 };
 
 /**

@@ -1018,8 +1018,33 @@ const MODULE_QUERIES = [
       return buildGapModulePendingItems({
         entityId,
         module: 'INCENTIVE_PAYOUT',
-        docTypeToModel: { INCENTIVE_PAYOUT: 'IncentivePayout' },
+        // Phase G6.7-PC3 (May 01 2026) — incentive payouts emit FOUR distinct
+        // doc_types from gateApproval; all four hydrate to the same physical
+        // model so the Hub panel can show tier_label / period / amount on each
+        // row. Legacy `INCENTIVE_PAYOUT` retained for backward-compat with any
+        // pre-PC3 PENDING requests still in the queue.
+        docTypeToModel: {
+          PAYOUT_APPROVE:   'IncentivePayout',
+          PAYOUT_PAY:       'IncentivePayout',
+          PAYOUT_REVERSE:   'IncentivePayout',
+          INCENTIVE_PAYOUT: 'IncentivePayout',
+        },
         populateByDocType: {
+          PAYOUT_APPROVE: [
+            { path: 'bdm_id', select: 'name email' },
+            { path: 'plan_id', select: 'plan_name fiscal_year reference' },
+            { path: 'journal_id', select: 'je_number je_date' },
+          ],
+          PAYOUT_PAY: [
+            { path: 'bdm_id', select: 'name email' },
+            { path: 'plan_id', select: 'plan_name fiscal_year reference' },
+            { path: 'journal_id', select: 'je_number je_date' },
+          ],
+          PAYOUT_REVERSE: [
+            { path: 'bdm_id', select: 'name email' },
+            { path: 'plan_id', select: 'plan_name fiscal_year reference' },
+            { path: 'journal_id', select: 'je_number je_date' },
+          ],
           INCENTIVE_PAYOUT: [
             { path: 'bdm_id', select: 'name email' },
             { path: 'plan_id', select: 'plan_name fiscal_year reference' },
@@ -1027,8 +1052,8 @@ const MODULE_QUERIES = [
           ],
         },
         actionType: 'incentive_payout',
-        // Payout-adjacent doc_types (STATEMENT_DISPATCH, bulk actions) have
-        // no model-backed doc — fall back to the ApprovalRequest so the panel
+        // STATEMENT_DISPATCH (admin requests dispatch of monthly statements) has
+        // no model-backed doc; fall back to the ApprovalRequest so the panel
         // can still render doc_ref / amount / description.
         fallbackToRequest: true,
       });

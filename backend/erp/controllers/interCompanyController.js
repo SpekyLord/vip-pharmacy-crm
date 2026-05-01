@@ -182,36 +182,38 @@ const getTransferById = catchAsync(async (req, res) => {
 });
 
 /**
- * PATCH /transfers/:id/approve — DRAFT → APPROVED (president only)
+ * Phase G6.7-PC6 (May 01 2026) — Shared lifecycle helper for IC Transfer
+ * approval. Single source of truth for the DRAFT → APPROVED transition (the
+ * status-flip + audit log step; NO stock movement, NO JE — that fires on ship).
+ *
+ * Used by:
+ *   1. approveTransfer (BDM-direct route): runs gateApproval + entity scope,
+ *      then calls this helper.
+ *   2. universalApprovalController.approvalHandlers.ic_transfer (Approval Hub,
+ *      doc_type === 'IC_TRANSFER'): gate has already passed; calls helper directly.
+ *
+ * Idempotency: short-circuits when transfer.status === 'APPROVED' or any
+ * downstream state (SHIPPED/RECEIVED/POSTED) so re-clicking Approve from the
+ * Hub never demotes a shipped transfer back to APPROVED.
+ *
+ * No period lock: APPROVED is a pre-financial state — no JE, no stock move.
+ * Period gate fires on shipTransfer / postTransfer downstream.
  */
-const approveTransfer = catchAsync(async (req, res) => {
-  const entityFilter = req.isPresident ? {} : {
-    $or: [{ source_entity_id: req.entityId }, { target_entity_id: req.entityId }]
-  };
-  const transfer = await InterCompanyTransfer.findOne({ _id: req.params.id, ...entityFilter });
-  if (!transfer) return res.status(404).json({ success: false, message: 'Transfer not found' });
+async function approveSingleIcTransfer(transferId, userId) {
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- helper resolves entity from transfer; caller provides authorization
+  const transfer = await InterCompanyTransfer.findById(transferId);
+  if (!transfer) throw Object.assign(new Error('Transfer not found'), { statusCode: 404 });
+
+  // Idempotent on APPROVED and any downstream state (already past the gate).
+  if (['APPROVED', 'SHIPPED', 'RECEIVED', 'POSTED'].includes(transfer.status)) {
+    return { transfer, already_approved: true };
+  }
   if (transfer.status !== 'DRAFT') {
-    return res.status(400).json({ success: false, message: `Cannot approve transfer in ${transfer.status} status` });
+    throw Object.assign(new Error(`Cannot approve transfer in ${transfer.status} status`), { statusCode: 400 });
   }
 
-  // Authority matrix gate
-  const { gateApproval } = require('../services/approvalService');
-  const totalAmount = (transfer.line_items || []).reduce((sum, li) => sum + ((li.qty || 0) * (li.unit_cost || 0)), 0);
-  const gated = await gateApproval({
-    entityId: transfer.source_entity_id,
-    module: 'IC_TRANSFER',
-    docType: 'IC_TRANSFER',
-    docId: transfer._id,
-    docRef: transfer.transfer_ref,
-    amount: transfer.total_amount || totalAmount,
-    description: `IC transfer ${transfer.transfer_ref}`,
-    requesterId: req.user._id,
-    requesterName: req.user.name || req.user.email,
-  }, res);
-  if (gated) return;
-
   transfer.status = 'APPROVED';
-  transfer.approved_by = req.user._id;
+  transfer.approved_by = userId;
   transfer.approved_at = new Date();
   await transfer.save();
 
@@ -223,11 +225,48 @@ const approveTransfer = catchAsync(async (req, res) => {
     field_changed: 'status',
     old_value: 'DRAFT',
     new_value: 'APPROVED',
-    changed_by: req.user._id,
-    note: `IC Transfer ${transfer.transfer_ref} approved`
+    changed_by: userId,
+    note: `IC Transfer ${transfer.transfer_ref} approved`,
   });
 
-  res.json({ success: true, message: 'Transfer approved', data: transfer });
+  return { transfer, already_approved: false };
+}
+
+/**
+ * PATCH /transfers/:id/approve — DRAFT → APPROVED (president only)
+ */
+const approveTransfer = catchAsync(async (req, res) => {
+  const entityFilter = req.isPresident ? {} : {
+    $or: [{ source_entity_id: req.entityId }, { target_entity_id: req.entityId }]
+  };
+  const transferPre = await InterCompanyTransfer.findOne({ _id: req.params.id, ...entityFilter }).lean();
+  if (!transferPre) return res.status(404).json({ success: false, message: 'Transfer not found' });
+  if (transferPre.status !== 'DRAFT') {
+    return res.status(400).json({ success: false, message: `Cannot approve transfer in ${transferPre.status} status` });
+  }
+
+  // Authority matrix gate (caller-responsibility — helper does NOT gate)
+  const { gateApproval } = require('../services/approvalService');
+  const totalAmount = (transferPre.line_items || []).reduce((sum, li) => sum + ((li.qty || 0) * (li.unit_cost || 0)), 0);
+  const gated = await gateApproval({
+    entityId: transferPre.source_entity_id,
+    module: 'IC_TRANSFER',
+    docType: 'IC_TRANSFER',
+    docId: transferPre._id,
+    docRef: transferPre.transfer_ref,
+    amount: transferPre.total_amount || totalAmount,
+    description: `IC transfer ${transferPre.transfer_ref}`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
+  try {
+    const { transfer } = await approveSingleIcTransfer(transferPre._id, req.user._id);
+    res.json({ success: true, message: 'Transfer approved', data: transfer });
+  } catch (err) {
+    return res.status(err.statusCode || 400).json({ success: false, message: err.message, code: err.code });
+  }
 });
 
 /**
@@ -795,5 +834,7 @@ module.exports = {
   createReassignment,
   approveReassignment,
   getReassignments,
-  presidentReverseIcTransfer
+  presidentReverseIcTransfer,
+  // Phase G6.7-PC6 — shared helper for the Approval Hub.
+  approveSingleIcTransfer,
 };

@@ -44,6 +44,243 @@ function currentPeriodString() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 }
 
+// ─── SHARED LIFECYCLE HELPERS (G6.7-PC3) ────────────────────────────────
+// These helpers are the single source of truth for IncentivePayout state
+// transitions. The BDM-direct routes (approvePayout / payPayout / reversePayout)
+// AND the Approval Hub handler (universalApprovalController.approvalHandlers
+// .incentive_payout) call into these. Authorization (gateApproval +
+// erpSubAccessCheck) is the CALLER's responsibility — these helpers only
+// enforce business invariants (status guards, period lock, JE atomicity,
+// audit + integration event).
+//
+// Idempotency: each helper short-circuits when the payout is already in the
+// terminal state for that transition (re-firing from the Hub never
+// double-posts a JE).
+
+/**
+ * ACCRUED → APPROVED (no JE, no period lock — this is a pure status flip
+ * that promises authority will pay later).
+ */
+async function postSinglePayoutApproval(payoutId, userId, notes) {
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- helper resolves entity from payout; caller provides authorization
+  const payout = await IncentivePayout.findById(payoutId);
+  if (!payout) throw Object.assign(new Error('Payout not found'), { statusCode: 404 });
+
+  if (payout.status === 'APPROVED' || payout.status === 'PAID') {
+    return { payout, already_terminal: true };
+  }
+  if (payout.status !== 'ACCRUED') {
+    throw Object.assign(new Error(`Cannot approve payout in status ${payout.status}`), { statusCode: 400 });
+  }
+
+  const previousStatus = payout.status;
+  payout.status = 'APPROVED';
+  payout.approved_by = userId;
+  payout.approved_at = new Date();
+  if (notes) payout.notes = notes;
+  await payout.save();
+
+  await ErpAuditLog.logChange({
+    entity_id: payout.entity_id,
+    bdm_id: payout.bdm_id || null,
+    log_type: 'STATUS_CHANGE',
+    target_ref: payout._id.toString(),
+    target_model: 'IncentivePayout',
+    field_changed: 'status',
+    old_value: previousStatus,
+    new_value: 'APPROVED',
+    changed_by: userId,
+    note: `Approved incentive payout ${payout.tier_label || payout.tier_code} for ${payout.period} — ₱${(payout.tier_budget || 0).toLocaleString()}`,
+  });
+
+  try {
+    const { emit, INTEGRATION_EVENTS } = require('../services/integrationHooks');
+    emit(INTEGRATION_EVENTS.PAYOUT_APPROVED, {
+      entity_id: payout.entity_id,
+      actor_id: userId,
+      ref: String(payout._id),
+      data: {
+        bdm_id: payout.bdm_id ? String(payout.bdm_id) : null,
+        period: payout.period,
+        tier_code: payout.tier_code,
+        tier_budget: payout.tier_budget,
+      },
+    });
+  } catch (err) { console.warn('[postSinglePayoutApproval] integrationHooks emit skipped:', err.message); }
+
+  return { payout, already_terminal: false };
+}
+
+/**
+ * ACCRUED | APPROVED → PAID with a settlement JE.
+ *
+ * Resolves paid_via via paidViaOpts.{paid_via_id, paid_via} (PaymentMode);
+ * falls back to CASH_ON_HAND inside postSettlementJournal when blank — the
+ * Hub path typically passes nothing and relies on this fallback (the
+ * authority approving in the Hub doesn't usually fill out a payment-mode
+ * picker; the BDM-direct UI does).
+ *
+ * Period lock against the payout's OWN entity (cross-entity-safe for Hub
+ * approvers acting on someone else's entity).
+ */
+async function postSinglePayoutPayment(payoutId, userId, paidViaOpts = {}) {
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- helper resolves entity from payout; caller provides authorization
+  const payout = await IncentivePayout.findById(payoutId);
+  if (!payout) throw Object.assign(new Error('Payout not found'), { statusCode: 404 });
+
+  if (payout.status === 'PAID') {
+    return { payout, settlementJe: null, already_paid: true };
+  }
+  if (!['ACCRUED', 'APPROVED'].includes(payout.status)) {
+    throw Object.assign(new Error(`Cannot pay payout in status ${payout.status}`), { statusCode: 400 });
+  }
+
+  // Period lock against the payout's OWN entity (Hub approvers may be cross-entity privileged).
+  try {
+    await checkPeriodOpen(payout.entity_id, currentPeriodString());
+  } catch (err) {
+    if (err.code === 'PERIOD_LOCKED') {
+      throw Object.assign(new Error(err.message), { statusCode: err.status || 400, code: err.code });
+    }
+    throw err;
+  }
+
+  // Resolve paid_via PaymentMode (optional — falls back to CASH_ON_HAND in postSettlementJournal)
+  const { paid_via, paid_via_id, notes } = paidViaOpts || {};
+  let paymentModeDoc = null;
+  if (paid_via_id) {
+    paymentModeDoc = await PaymentMode.findById(paid_via_id).lean();
+  } else if (paid_via) {
+    paymentModeDoc = await PaymentMode.findOne({ code: paid_via }).lean();
+  }
+
+  // Resolve BDM label for JE description
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- person_id derived from same-entity payout
+  const person = payout.person_id
+    ? await PeopleMaster.findById(payout.person_id).select('full_name bdm_code').lean()
+    : null;
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id derived from same-entity payout
+  const plan = await SalesGoalPlan.findById(payout.plan_id).select('reference plan_name').lean();
+  const bdmLabel = person ? `${person.full_name}${person.bdm_code ? ` (${person.bdm_code})` : ''}` : 'BDM';
+
+  // Post settlement JE — JE landing is a hard-fail boundary
+  const settlementJe = await postSettlementJournal(payout, plan?.reference, bdmLabel, userId, paymentModeDoc);
+
+  const previousStatus = payout.status;
+  payout.status = 'PAID';
+  payout.paid_by = userId;
+  payout.paid_at = new Date();
+  payout.paid_via = paymentModeDoc?.code || paid_via || '';
+  payout.settlement_journal_id = settlementJe._id;
+  if (notes) payout.notes = notes;
+  await payout.save();
+
+  await ErpAuditLog.logChange({
+    entity_id: payout.entity_id,
+    bdm_id: payout.bdm_id || null,
+    log_type: 'STATUS_CHANGE',
+    target_ref: payout._id.toString(),
+    target_model: 'IncentivePayout',
+    field_changed: 'status',
+    old_value: previousStatus,
+    new_value: 'PAID',
+    changed_by: userId,
+    note: `Paid incentive payout ${payout.tier_label || payout.tier_code} for ${payout.period} — ₱${(payout.tier_budget || 0).toLocaleString()} via ${payout.paid_via || 'cash'} — JE ${settlementJe.je_number}`,
+  });
+
+  try {
+    const { emit, INTEGRATION_EVENTS } = require('../services/integrationHooks');
+    emit(INTEGRATION_EVENTS.PAYOUT_PAID, {
+      entity_id: payout.entity_id,
+      actor_id: userId,
+      ref: String(payout._id),
+      data: {
+        bdm_id: payout.bdm_id ? String(payout.bdm_id) : null,
+        period: payout.period,
+        tier_code: payout.tier_code,
+        tier_budget: payout.tier_budget,
+        paid_via: payout.paid_via,
+        settlement_je: settlementJe.je_number,
+      },
+    });
+  } catch (err) { console.warn('[postSinglePayoutPayment] integrationHooks emit skipped:', err.message); }
+
+  return { payout, settlementJe, already_paid: false };
+}
+
+/**
+ * Any non-REVERSED → REVERSED with a SAP Storno of the accrual JE.
+ * Requires payout.journal_id (the original accrual JE) and a non-empty reason.
+ */
+async function postSinglePayoutReversal(payoutId, userId, reason) {
+  if (!reason || !String(reason).trim()) {
+    throw Object.assign(new Error('Reversal reason is required'), { statusCode: 400 });
+  }
+  const trimmedReason = String(reason).trim();
+
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- helper resolves entity from payout; caller provides authorization
+  const payout = await IncentivePayout.findById(payoutId);
+  if (!payout) throw Object.assign(new Error('Payout not found'), { statusCode: 404 });
+
+  if (payout.status === 'REVERSED') {
+    return { payout, reversalJe: null, already_reversed: true };
+  }
+  if (!payout.journal_id) {
+    throw Object.assign(new Error('Cannot reverse — no accrual journal linked to this payout'), { statusCode: 400 });
+  }
+
+  try {
+    await checkPeriodOpen(payout.entity_id, currentPeriodString());
+  } catch (err) {
+    if (err.code === 'PERIOD_LOCKED') {
+      throw Object.assign(new Error(err.message), { statusCode: err.status || 400, code: err.code });
+    }
+    throw err;
+  }
+
+  const reversalJe = await reverseAccrualJournal(payout.journal_id, trimmedReason, userId, payout.entity_id);
+
+  const previousStatus = payout.status;
+  payout.status = 'REVERSED';
+  payout.reversed_by = userId;
+  payout.reversed_at = new Date();
+  payout.reversal_reason = trimmedReason;
+  payout.reversal_journal_id = reversalJe._id;
+  await payout.save();
+
+  await ErpAuditLog.logChange({
+    entity_id: payout.entity_id,
+    bdm_id: payout.bdm_id || null,
+    log_type: 'PRESIDENT_REVERSAL',
+    target_ref: payout._id.toString(),
+    target_model: 'IncentivePayout',
+    field_changed: 'status',
+    old_value: previousStatus,
+    new_value: 'REVERSED',
+    changed_by: userId,
+    note: `Reversed incentive payout ${payout.tier_label || payout.tier_code} for ${payout.period} — ₱${(payout.tier_budget || 0).toLocaleString()} — reason: ${trimmedReason} — reversal JE ${reversalJe.je_number}`,
+  });
+
+  try {
+    const { emit, INTEGRATION_EVENTS } = require('../services/integrationHooks');
+    emit(INTEGRATION_EVENTS.PAYOUT_REVERSED, {
+      entity_id: payout.entity_id,
+      actor_id: userId,
+      ref: String(payout._id),
+      data: {
+        bdm_id: payout.bdm_id ? String(payout.bdm_id) : null,
+        period: payout.period,
+        tier_code: payout.tier_code,
+        tier_budget: payout.tier_budget,
+        reason: trimmedReason,
+        reversal_je: reversalJe.je_number,
+      },
+    });
+  } catch (err) { console.warn('[postSinglePayoutReversal] integrationHooks emit skipped:', err.message); }
+
+  return { payout, reversalJe, already_reversed: false };
+}
+
 // ─── READ ────────────────────────────────────────────────────────────────
 
 exports.listPayouts = catchAsync(async (req, res) => {
@@ -155,173 +392,84 @@ exports.getPayable = catchAsync(async (req, res) => {
 
 exports.approvePayout = catchAsync(async (req, res) => {
   const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
-  const payout = await IncentivePayout.findOne({ _id: req.params.id, ...entityScope });
-  if (!payout) return res.status(404).json({ success: false, message: 'Payout not found' });
-  if (payout.status !== 'ACCRUED') {
-    return res.status(400).json({ success: false, message: `Cannot approve payout in status ${payout.status}` });
+  const payoutPre = await IncentivePayout.findOne({ _id: req.params.id, ...entityScope }).lean();
+  if (!payoutPre) return res.status(404).json({ success: false, message: 'Payout not found' });
+  if (payoutPre.status !== 'ACCRUED') {
+    return res.status(400).json({ success: false, message: `Cannot approve payout in status ${payoutPre.status}` });
   }
 
   const gated = await gateApproval({
-    entityId: payout.entity_id,
+    entityId: payoutPre.entity_id,
     module: 'INCENTIVE_PAYOUT',
     docType: 'PAYOUT_APPROVE',
-    docId: payout._id,
-    docRef: payout.journal_number || String(payout._id),
-    amount: payout.tier_budget || 0,
-    description: `Approve incentive payout — ${payout.tier_label || payout.tier_code} — ${payout.period}`,
+    docId: payoutPre._id,
+    docRef: payoutPre.journal_number || String(payoutPre._id),
+    amount: payoutPre.tier_budget || 0,
+    description: `Approve incentive payout — ${payoutPre.tier_label || payoutPre.tier_code} — ${payoutPre.period}`,
     requesterId: req.user._id,
     requesterName: req.user.name || req.user.email,
   }, res);
   if (gated) return;
 
-  const previousStatus = payout.status;
-  payout.status = 'APPROVED';
-  payout.approved_by = req.user._id;
-  payout.approved_at = new Date();
-  if (req.body?.notes) payout.notes = req.body.notes;
-  await payout.save();
-
-  await ErpAuditLog.logChange({
-    entity_id: payout.entity_id,
-    bdm_id: payout.bdm_id || null,
-    log_type: 'STATUS_CHANGE',
-    target_ref: payout._id.toString(),
-    target_model: 'IncentivePayout',
-    field_changed: 'status',
-    old_value: previousStatus,
-    new_value: 'APPROVED',
-    changed_by: req.user._id,
-    note: `Approved incentive payout ${payout.tier_label || payout.tier_code} for ${payout.period} — ₱${(payout.tier_budget || 0).toLocaleString()}`,
-  });
-
-  // Phase SG-6 #32 — fire integration event (non-blocking).
   try {
-    const { emit, INTEGRATION_EVENTS } = require('../services/integrationHooks');
-    emit(INTEGRATION_EVENTS.PAYOUT_APPROVED, {
-      entity_id: payout.entity_id,
-      actor_id: req.user._id,
-      ref: String(payout._id),
-      data: {
-        bdm_id: payout.bdm_id ? String(payout.bdm_id) : null,
-        period: payout.period,
-        tier_code: payout.tier_code,
-        tier_budget: payout.tier_budget,
-      },
-    });
-  } catch (err) { console.warn('[approvePayout] integrationHooks emit skipped:', err.message); }
-
-  res.json({ success: true, data: payout, message: 'Payout approved' });
+    const { payout } = await postSinglePayoutApproval(payoutPre._id, req.user._id, req.body?.notes);
+    res.json({ success: true, data: payout, message: 'Payout approved' });
+  } catch (err) {
+    return res.status(err.statusCode || 400).json({ success: false, message: err.message, code: err.code });
+  }
 });
 
 exports.payPayout = catchAsync(async (req, res) => {
   const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
-  const payout = await IncentivePayout.findOne({ _id: req.params.id, ...entityScope });
-  if (!payout) return res.status(404).json({ success: false, message: 'Payout not found' });
-  if (!['ACCRUED', 'APPROVED'].includes(payout.status)) {
-    return res.status(400).json({ success: false, message: `Cannot pay payout in status ${payout.status}` });
+  const payoutPre = await IncentivePayout.findOne({ _id: req.params.id, ...entityScope }).lean();
+  if (!payoutPre) return res.status(404).json({ success: false, message: 'Payout not found' });
+  if (!['ACCRUED', 'APPROVED'].includes(payoutPre.status)) {
+    return res.status(400).json({ success: false, message: `Cannot pay payout in status ${payoutPre.status}` });
   }
 
-  // periodLockCheck middleware runs on the current settlement period (derived
-  // from req.body.period or now). Explicit safety check in case the middleware
-  // can't resolve a period from the request body.
-  try {
-    await checkPeriodOpen(payout.entity_id, currentPeriodString());
-  } catch (err) {
-    if (err.code === 'PERIOD_LOCKED') {
-      return res.status(err.status || 400).json({ success: false, message: err.message, code: err.code });
-    }
-    throw err;
-  }
-
+  // Authority gate runs BEFORE the helper so non-authority callers route to
+  // the Approval Hub via gateApproval (writes ApprovalRequest + responds 202).
+  // The helper itself will re-check period lock against the payout's entity.
   const gated = await gateApproval({
-    entityId: payout.entity_id,
+    entityId: payoutPre.entity_id,
     module: 'INCENTIVE_PAYOUT',
     docType: 'PAYOUT_PAY',
-    docId: payout._id,
-    docRef: payout.journal_number || String(payout._id),
-    amount: payout.tier_budget || 0,
-    description: `Pay incentive payout — ${payout.tier_label || payout.tier_code} — ${payout.period}`,
+    docId: payoutPre._id,
+    docRef: payoutPre.journal_number || String(payoutPre._id),
+    amount: payoutPre.tier_budget || 0,
+    description: `Pay incentive payout — ${payoutPre.tier_label || payoutPre.tier_code} — ${payoutPre.period}`,
     requesterId: req.user._id,
     requesterName: req.user.name || req.user.email,
   }, res);
   if (gated) return;
 
-  // Resolve paid_via: accept either PaymentMode _id or code
-  const { paid_via, paid_via_id, notes } = req.body || {};
-  let paymentModeDoc = null;
-  if (paid_via_id) {
-    paymentModeDoc = await PaymentMode.findById(paid_via_id).lean();
-  } else if (paid_via) {
-    paymentModeDoc = await PaymentMode.findOne({ code: paid_via }).lean();
-  }
-
-  const person = payout.person_id
-    // eslint-disable-next-line vip-tenant/require-entity-filter -- person_id is unique; payout fetched with entityScope above
-    ? await PeopleMaster.findById(payout.person_id).select('full_name bdm_code').lean()
-    : null;
-  // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id is unique; payout fetched with entityScope above
-  const plan = await SalesGoalPlan.findById(payout.plan_id).select('reference plan_name').lean();
-  const bdmLabel = person ? `${person.full_name}${person.bdm_code ? ` (${person.bdm_code})` : ''}` : 'BDM';
-
-  // Post settlement JE — wrapped try/catch so we don't flip status unless the JE lands.
-  let settlementJe;
   try {
-    settlementJe = await postSettlementJournal(payout, plan?.reference, bdmLabel, req.user._id, paymentModeDoc);
-  } catch (err) {
-    return res.status(400).json({ success: false, message: `Settlement journal failed: ${err.message}` });
-  }
-
-  const previousStatus = payout.status;
-  payout.status = 'PAID';
-  payout.paid_by = req.user._id;
-  payout.paid_at = new Date();
-  payout.paid_via = paymentModeDoc?.code || paid_via || '';
-  payout.settlement_journal_id = settlementJe._id;
-  if (notes) payout.notes = notes;
-  await payout.save();
-
-  await ErpAuditLog.logChange({
-    entity_id: payout.entity_id,
-    bdm_id: payout.bdm_id || null,
-    log_type: 'STATUS_CHANGE',
-    target_ref: payout._id.toString(),
-    target_model: 'IncentivePayout',
-    field_changed: 'status',
-    old_value: previousStatus,
-    new_value: 'PAID',
-    changed_by: req.user._id,
-    note: `Paid incentive payout ${payout.tier_label || payout.tier_code} for ${payout.period} — ₱${(payout.tier_budget || 0).toLocaleString()} via ${payout.paid_via || 'cash'} — JE ${settlementJe.je_number}`,
-  });
-
-  // Phase SG-6 #32 — fire integration event (payroll/accounting subscribers).
-  try {
-    const { emit, INTEGRATION_EVENTS } = require('../services/integrationHooks');
-    emit(INTEGRATION_EVENTS.PAYOUT_PAID, {
-      entity_id: payout.entity_id,
-      actor_id: req.user._id,
-      ref: String(payout._id),
-      data: {
-        bdm_id: payout.bdm_id ? String(payout.bdm_id) : null,
-        period: payout.period,
-        tier_code: payout.tier_code,
-        tier_budget: payout.tier_budget,
-        paid_via: payout.paid_via,
-        settlement_je: settlementJe.je_number,
-      },
+    const { paid_via, paid_via_id, notes } = req.body || {};
+    const { payout, settlementJe } = await postSinglePayoutPayment(
+      payoutPre._id,
+      req.user._id,
+      { paid_via, paid_via_id, notes }
+    );
+    res.json({
+      success: true,
+      data: payout,
+      message: settlementJe
+        ? 'Payout paid — settlement journal posted'
+        : 'Payout already paid (idempotent)',
     });
-  } catch (err) { console.warn('[payPayout] integrationHooks emit skipped:', err.message); }
-
-  res.json({ success: true, data: payout, message: 'Payout paid — settlement journal posted' });
+  } catch (err) {
+    return res.status(err.statusCode || 400).json({ success: false, message: err.message, code: err.code });
+  }
 });
 
 exports.reversePayout = catchAsync(async (req, res) => {
   const entityScope = req.isPresident ? {} : { entity_id: req.entityId };
-  const payout = await IncentivePayout.findOne({ _id: req.params.id, ...entityScope });
-  if (!payout) return res.status(404).json({ success: false, message: 'Payout not found' });
-  if (payout.status === 'REVERSED') {
+  const payoutPre = await IncentivePayout.findOne({ _id: req.params.id, ...entityScope }).lean();
+  if (!payoutPre) return res.status(404).json({ success: false, message: 'Payout not found' });
+  if (payoutPre.status === 'REVERSED') {
     return res.status(400).json({ success: false, message: 'Payout already reversed' });
   }
-  if (!payout.journal_id) {
+  if (!payoutPre.journal_id) {
     return res.status(400).json({ success: false, message: 'Cannot reverse — no accrual journal linked to this payout' });
   }
 
@@ -330,76 +478,25 @@ exports.reversePayout = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Reversal reason is required' });
   }
 
-  // periodLockCheck on current period (reversal posts to now)
-  try {
-    await checkPeriodOpen(payout.entity_id, currentPeriodString());
-  } catch (err) {
-    if (err.code === 'PERIOD_LOCKED') {
-      return res.status(err.status || 400).json({ success: false, message: err.message, code: err.code });
-    }
-    throw err;
-  }
-
   const gated = await gateApproval({
-    entityId: payout.entity_id,
+    entityId: payoutPre.entity_id,
     module: 'INCENTIVE_PAYOUT',
     docType: 'PAYOUT_REVERSE',
-    docId: payout._id,
-    docRef: payout.journal_number || String(payout._id),
-    amount: payout.tier_budget || 0,
-    description: `Reverse incentive payout — ${payout.tier_label || payout.tier_code} — ${payout.period} — ${reason}`,
+    docId: payoutPre._id,
+    docRef: payoutPre.journal_number || String(payoutPre._id),
+    amount: payoutPre.tier_budget || 0,
+    description: `Reverse incentive payout — ${payoutPre.tier_label || payoutPre.tier_code} — ${payoutPre.period} — ${reason}`,
     requesterId: req.user._id,
     requesterName: req.user.name || req.user.email,
   }, res);
   if (gated) return;
 
-  let reversalJe;
   try {
-    reversalJe = await reverseAccrualJournal(payout.journal_id, reason, req.user._id, payout.entity_id);
+    const { payout } = await postSinglePayoutReversal(payoutPre._id, req.user._id, reason);
+    res.json({ success: true, data: payout, message: 'Payout reversed — storno journal posted' });
   } catch (err) {
-    return res.status(400).json({ success: false, message: `Reversal journal failed: ${err.message}` });
+    return res.status(err.statusCode || 400).json({ success: false, message: err.message, code: err.code });
   }
-
-  const previousStatus = payout.status;
-  payout.status = 'REVERSED';
-  payout.reversed_by = req.user._id;
-  payout.reversed_at = new Date();
-  payout.reversal_reason = reason;
-  payout.reversal_journal_id = reversalJe._id;
-  await payout.save();
-
-  await ErpAuditLog.logChange({
-    entity_id: payout.entity_id,
-    bdm_id: payout.bdm_id || null,
-    log_type: 'PRESIDENT_REVERSAL',
-    target_ref: payout._id.toString(),
-    target_model: 'IncentivePayout',
-    field_changed: 'status',
-    old_value: previousStatus,
-    new_value: 'REVERSED',
-    changed_by: req.user._id,
-    note: `Reversed incentive payout ${payout.tier_label || payout.tier_code} for ${payout.period} — ₱${(payout.tier_budget || 0).toLocaleString()} — reason: ${reason} — reversal JE ${reversalJe.je_number}`,
-  });
-
-  // Phase SG-6 #32 — fire integration event.
-  try {
-    const { emit, INTEGRATION_EVENTS } = require('../services/integrationHooks');
-    emit(INTEGRATION_EVENTS.PAYOUT_REVERSED, {
-      entity_id: payout.entity_id,
-      actor_id: req.user._id,
-      ref: String(payout._id),
-      data: {
-        bdm_id: payout.bdm_id ? String(payout.bdm_id) : null,
-        period: payout.period,
-        tier_code: payout.tier_code,
-        tier_budget: payout.tier_budget,
-        reason,
-        reversal_je: reversalJe.je_number,
-      },
-    });
-  } catch (err) { console.warn('[reversePayout] integrationHooks emit skipped:', err.message); }
-
-  res.json({ success: true, data: payout, message: 'Payout reversed — storno journal posted' });
 });
 
 // ─── COMPENSATION STATEMENT (Phase SG-Q2 Week 3) ────────────────────────
@@ -889,4 +986,12 @@ exports.dispatchStatementsForPeriod = catchAsync(async (req, res) => {
     failures,
   });
 });
+
+// G6.7-PC3 — shared lifecycle helpers exported for the Approval Hub
+// (universalApprovalController.approvalHandlers.incentive_payout). These are
+// the same helpers the BDM-direct routes above use, so the BDM and Hub paths
+// produce identical state + JEs + audit + integration events.
+exports.postSinglePayoutApproval = postSinglePayoutApproval;
+exports.postSinglePayoutPayment = postSinglePayoutPayment;
+exports.postSinglePayoutReversal = postSinglePayoutReversal;
 

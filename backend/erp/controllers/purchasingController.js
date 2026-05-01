@@ -441,55 +441,71 @@ const validateInvoice = catchAsync(async (req, res) => {
   });
 });
 
-const postInvoice = catchAsync(async (req, res) => {
-  const invoice = await SupplierInvoice.findOne({ _id: req.params.id, entity_id: req.entityId });
-  if (!invoice) return res.status(404).json({ success: false, message: 'Supplier invoice not found' });
-  if (invoice.status === 'POSTED') return res.status(400).json({ success: false, message: 'Invoice is already posted' });
-  if (invoice.status === 'DRAFT' && !req.body.force) {
-    return res.status(400).json({ success: false, message: 'Invoice must be VALIDATED before posting. Use force=true to bypass.' });
+/**
+ * Phase G6.7-PC4 (May 01 2026) — Shared lifecycle helper for Supplier Invoice
+ * post. Single source of truth for the SI DRAFT|VALIDATED → POSTED transition.
+ *
+ * Used by:
+ *   1. postInvoice (BDM-direct route): runs gateApproval + force-flag guard,
+ *      then calls this helper.
+ *   2. universalApprovalController.approvalHandlers.purchasing (Approval Hub):
+ *      gate has already passed; calls this helper directly.
+ *
+ * Authorization is the CALLER's responsibility — this helper only enforces
+ * business invariants (status guard, period lock, JE atomicity, VAT entry).
+ *
+ * Idempotency: short-circuits when invoice.status === 'POSTED' so re-clicking
+ * Approve from the Hub never double-posts.
+ *
+ * Cross-entity-safe: period lock uses invoice.entity_id (NOT a passed
+ * entityId), so a privileged Hub approver acting on someone else's entity
+ * still hits the right period.
+ */
+async function postSingleSupplierInvoice(invoiceId, userId) {
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- helper resolves entity from invoice; caller provides authorization
+  const invoice = await SupplierInvoice.findById(invoiceId);
+  if (!invoice) throw Object.assign(new Error('Supplier invoice not found'), { statusCode: 404 });
+
+  if (invoice.status === 'POSTED') {
+    return { invoice, je: null, already_posted: true };
+  }
+  if (!['DRAFT', 'VALIDATED'].includes(invoice.status)) {
+    throw Object.assign(new Error(`Cannot post supplier invoice in status ${invoice.status}`), { statusCode: 400 });
   }
 
-  // Authority matrix gate
-  const { gateApproval } = require('../services/approvalService');
-  const gated = await gateApproval({
-    entityId: req.entityId,
-    module: 'PURCHASING',
-    docType: 'SUPPLIER_INVOICE',
-    docId: invoice._id,
-    docRef: invoice.invoice_ref,
-    amount: invoice.total_amount,
-    description: `Supplier invoice ${invoice.invoice_ref}`,
-    requesterId: req.user._id,
-    requesterName: req.user.name || req.user.email,
-  }, res);
-  if (gated) return;
-
-  // Period lock check
+  // Period lock against the invoice's OWN entity (cross-entity-safe for Hub approvers)
   const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
   const invPeriod = dateToPeriod(invoice.invoice_date || new Date());
-  await checkPeriodOpen(req.entityId, invPeriod);
+  try {
+    await checkPeriodOpen(invoice.entity_id, invPeriod);
+  } catch (err) {
+    if (err.code === 'PERIOD_LOCKED') {
+      throw Object.assign(new Error(err.message), { statusCode: err.status || 400, code: err.code });
+    }
+    throw err;
+  }
 
   // Fetch vendor TIN for VAT ledger entry
-  // eslint-disable-next-line vip-tenant/require-entity-filter -- vendor_id from same-entity-scoped invoice (loaded with entity_id upstream)
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- vendor_id from same-entity-scoped invoice
   const vendor = await VendorMaster.findById(invoice.vendor_id).select('tin').lean();
 
   // Build JE data using existing journalFromAP — wrap in transaction for atomicity
-  const jeData = await journalFromAP(invoice.toObject(), req.user._id);
+  const jeData = await journalFromAP(invoice.toObject(), userId);
   const postSession = await mongoose.startSession();
   let je;
   await postSession.withTransaction(async () => {
-    je = await createAndPostJournal(req.entityId, jeData, { session: postSession });
+    je = await createAndPostJournal(invoice.entity_id, jeData, { session: postSession });
     invoice.status = 'POSTED';
     invoice.event_id = je._id;
     await invoice.save({ session: postSession });
   });
   postSession.endSession();
 
-  // VAT Ledger — INPUT VAT from supplier invoice
+  // VAT Ledger — INPUT VAT from supplier invoice (best-effort; log failures)
   const inputVat = invoice.input_vat || invoice.vat_amount || 0;
   if (inputVat > 0) {
     await createVatEntry({
-      entity_id: req.entityId,
+      entity_id: invoice.entity_id,
       period: je.period,
       vat_type: 'INPUT',
       source_module: 'SUPPLIER_INVOICE',
@@ -498,25 +514,60 @@ const postInvoice = catchAsync(async (req, res) => {
       hospital_or_vendor: invoice.vendor_id,
       tin: vendor?.tin || '',
       gross_amount: invoice.total_amount || (invoice.net_amount + inputVat),
-      vat_amount: inputVat
+      vat_amount: inputVat,
     }).catch(async (err) => {
       console.error('VAT entry failed for SI:', invoice.invoice_ref, err.message);
-      await ErpAuditLog.logChange({ entity_id: req.entityId, log_type: 'LEDGER_ERROR', target_ref: invoice.invoice_ref, target_model: 'VatLedger', field_changed: 'vat_entry', old_value: '', new_value: err.message, changed_by: req.user._id, note: `INPUT VAT entry failed for SI ${invoice.invoice_ref}` }).catch(() => {});
+      await ErpAuditLog.logChange({
+        entity_id: invoice.entity_id, log_type: 'LEDGER_ERROR', target_ref: invoice.invoice_ref,
+        target_model: 'VatLedger', field_changed: 'vat_entry', old_value: '', new_value: err.message,
+        changed_by: userId, note: `INPUT VAT entry failed for SI ${invoice.invoice_ref}`,
+      }).catch(() => {});
     });
   }
 
-  res.json({ success: true, data: { invoice, journal_entry: je } });
-
   // Non-blocking: notify management of posted supplier invoice
   notifyDocumentPosted({
-    entityId: req.entityId,
+    entityId: invoice.entity_id,
     module: 'Purchasing',
     docType: 'Supplier Invoice',
     docRef: invoice.invoice_ref,
-    postedBy: req.user.name || req.user.email,
+    postedBy: 'system',
     amount: invoice.total_amount,
     period: je?.period,
   }).catch(err => console.error('SI post notification failed:', err.message));
+
+  return { invoice, je, already_posted: false };
+}
+
+const postInvoice = catchAsync(async (req, res) => {
+  const invoicePre = await SupplierInvoice.findOne({ _id: req.params.id, entity_id: req.entityId }).lean();
+  if (!invoicePre) return res.status(404).json({ success: false, message: 'Supplier invoice not found' });
+  if (invoicePre.status === 'POSTED') return res.status(400).json({ success: false, message: 'Invoice is already posted' });
+  if (invoicePre.status === 'DRAFT' && !req.body.force) {
+    return res.status(400).json({ success: false, message: 'Invoice must be VALIDATED before posting. Use force=true to bypass.' });
+  }
+
+  // Authority matrix gate (caller-responsibility — helper does NOT gate)
+  const { gateApproval } = require('../services/approvalService');
+  const gated = await gateApproval({
+    entityId: req.entityId,
+    module: 'PURCHASING',
+    docType: 'SUPPLIER_INVOICE',
+    docId: invoicePre._id,
+    docRef: invoicePre.invoice_ref,
+    amount: invoicePre.total_amount,
+    description: `Supplier invoice ${invoicePre.invoice_ref}`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
+  try {
+    const { invoice, je } = await postSingleSupplierInvoice(invoicePre._id, req.user._id);
+    res.json({ success: true, data: { invoice, journal_entry: je } });
+  } catch (err) {
+    return res.status(err.statusCode || 400).json({ success: false, message: err.message, code: err.code });
+  }
 });
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -609,6 +660,8 @@ module.exports = {
   addPOActivity, generateShareLink, emailPO,
   // Supplier Invoices
   createInvoice, updateInvoice, getInvoices, getInvoiceById, validateInvoice, postInvoice,
+  // Phase G6.7-PC4 — shared lifecycle helper for the Approval Hub.
+  postSingleSupplierInvoice,
   // AP
   apLedger, apAging, apConsolidated, grni, recordPayment, paymentHistory
 };
