@@ -221,6 +221,25 @@ VIP Client mgmt, BDM mgmt, Visits, Reports, Statistics, Activity Monitor, GPS Ve
 
 ---
 
+## /schedule Policy (Locked May 01 2026)
+
+`/schedule` (remote agents on cron / one-shot) is **opt-in for narrow, high-value cases only** — not a general productivity layer. Cost-benefit decided May 01 2026:
+
+**Use `/schedule` for:**
+1. **Dated one-shot cleanups** — concrete deletion/cleanup PRs tied to a known future date (e.g., 30-day redirect-shim removals, time-limited migration sweeps). Currently scheduled:
+   - **May 28 2026 16:00 UTC** — Remove `/admin/*` redirect shims for the rebate-stack relocation (Phase 1, locked Apr 29 2026, commit 328ade3). Routine ID `trig_011Lcy2dn9Db5xpe3WYmMGps`. Idempotent — exits cleanly if shims already removed.
+2. **Time-bounded grace windows** — when a hardcoded TODO says "remove once X ages N days." Example candidate: MD-merge 30-day hard-delete cron (CLAUDE.md note 12b — defer until first audit row ages, then schedule a recurring weekly sweep).
+
+**Do NOT use `/schedule` for:**
+- Healthcheck sweeps — already run per-phase, every commit. Recurring agent duplicates work + burns tokens on green runs.
+- Auto-commit / auto-push — chronic "DO NOT git add ." intermingling means a background agent will sweep up unrelated WIP. Shipping risk far exceeds convenience value.
+- PR babysitting / triage — Gregg ships 2–3 phases/day with hands-on Playwright ratification. No bottleneck to automate.
+- Memory/handoff cleanup — these are *now* work, not scheduled work. Do them in-session.
+
+**Why locked:** annual cost of recurring agents is non-trivial (~$10–15/yr each). Two yeses above cost ~$10/yr combined and replace cognitive load that would otherwise rot. Everything else is ceremony. Re-evaluate when a new dated cleanup or a true subscriber-facing recurring sweep appears.
+
+---
+
 ## API Patterns
 
 ### Response Format
