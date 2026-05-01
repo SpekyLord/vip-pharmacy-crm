@@ -433,6 +433,44 @@ Two separate fingerprints, same procedure:
 
 ---
 
+## SECTION 9c — Scenario: President Inbox Swarm ("Inbox not updating")
+
+> Triggered by: president complains "inbox is not updating, presidents inbox is not getting the latest update" — typically with a screenshot showing 5+ consecutive `[GUARD]` rows from System Agent.
+
+### What it means
+
+Two concurrent causes — both rooted in commits shipped 2026-04-30 evening:
+
+1. **G9.R11 hide is working as designed.** `AI_AGENT_REPORTS` folder is hidden from president's main INBOX virtual folder via `INBOX_HIDDEN_FOLDERS_BY_ROLE` lookup. Real AI agent reports live in the "AI Agents" rail tab (click to view). This is intentional — un-hide via Control Center → Lookup Tables only if president wants the noise back.
+
+2. **Historical `[GUARD]` pile.** 1004+ rows emitted by retired `guardAlerter.js` middleware (deleted 2026-04-30 commit `5ad27a1`). Category `compliance_alert` → folder `AI_AGENT_REPORTS` — same folder as legitimate AI reports, so the swarm drowns the real signal.
+
+### Steps
+
+1. **Clean the swarm (per-user, reversible):**
+   ```bash
+   cd /var/www/vip-pharmacy-crm/backend
+   node scripts/tempInboxArchiveGuards.js                            # dry-run, see top 20 titles
+   node scripts/tempInboxArchiveGuards.js --apply --soft-delete      # commit
+   ```
+   Default email is `yourpartner@viosintegrated.net` (president). For other admins, pass `--email=other@x.com` and re-run. The script prints the exact `db.messages.updateMany($pull...)` undo command on completion. With `--soft-delete`, the existing INBOX_RETENTION agent purges the rows in 30 days; without it, rows stay in DB indefinitely just hidden from inbox.
+
+2. **If president wants AI Agents folder back in main Inbox view:**
+   Control Center → Lookup Tables → `INBOX_HIDDEN_FOLDERS_BY_ROLE` → edit `president` row → drop `'AI_AGENT_REPORTS'` from `metadata.hidden_folders`. Effect immediate, no restart, lookup-driven (Rule #3).
+
+3. **If the same swarm rebuilds:** `guardAlerter.js` was retired but if the dedup cache or some replay path is still emitting, grep `pm2 logs vip-crm-api` for `[guard-alerter]`. There should be ZERO new emissions post-2026-04-30. If non-zero, file a bug — the retirement is incomplete.
+
+### Won't catch
+
+- Other admin-likes (finance / CEO) — script is per-user. If they also complain, run script once per email.
+- Real AI agent reports buried under the swarm — those are NOT GUARD rows. Once swarm is archived, real reports become visible in AI Agents folder.
+
+### Related backlog
+
+The 1004 GUARD rows represent past tenant-isolation violations in code (Rule #19). Most underlying bugs may still exist. Triage backlog (priority models, classification rubric) lives at [project_guard_triage_backlog_may01_2026.md](../../../.claude/projects/c--Users-LENOVO-OneDrive-Documents-VIP-and-VS-CODE-VIP-IP-VIP-CRM-ERP-vip-pharmacy-crm/memory/project_guard_triage_backlog_may01_2026.md) (Claude memory). Pick up cold via in-session subagent dispatch — **NOT** via `/schedule` (rejected per global CLAUDE.md Rule 0g).
+
+---
+
 ## SECTION 10 — Maintenance Windows
 
 Recommended cadence for planned (non-emergency) work:

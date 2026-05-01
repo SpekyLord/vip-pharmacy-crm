@@ -8,7 +8,9 @@
  *
  * Delete after triage.
  */
-require('dotenv').config();
+// Resolve .env relative to script location, not CWD (repo's .env is in backend/).
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const mongoose = require('mongoose');
 
 const PRESIDENT_EMAIL = 'yourpartner@viosintegrated.net';
