@@ -322,64 +322,68 @@ exports.updatePlan = catchAsync(async (req, res) => {
   res.json({ success: true, data: plan, message: 'Plan updated' });
 });
 
-exports.activatePlan = catchAsync(async (req, res) => {
-  const plan = await SalesGoalPlan.findOne({ _id: req.params.id, ...req.tenantFilter });
-  if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
+/**
+ * Phase G6.7-PC5 (May 01 2026) — Shared lifecycle helper for Sales Goal Plan
+ * activation. Single source of truth for the DRAFT → ACTIVE transition + its
+ * full cascade:
+ *
+ *   1. Generate plan.reference (SG-#-FY#) on first activation
+ *   2. Flip plan.status to ACTIVE + stamp approved_by/approved_at
+ *   3. Cascade-flip SalesGoalTargets DRAFT → ACTIVE
+ *   4. Auto-enroll eligible BDMs (idempotent at BDM level)
+ *   5. Lazy-seed KPI_VARIANCE_THRESHOLDS.GLOBAL
+ *   6. Sync IncentivePlan header (O(1) via unique index)
+ *   7. Emit STATUS_CHANGE audit log
+ *
+ * All seven steps run inside a single mongoose.withTransaction so any failure
+ * rolls back the whole activation — the plan reference number is NEVER burned
+ * on rollback.
+ *
+ * Used by:
+ *   1. activatePlan (BDM-direct route): runs gateApproval, then calls helper.
+ *   2. universalApprovalController.approvalHandlers.sales_goal_plan
+ *      (Approval Hub): gate has already passed; calls helper directly.
+ *
+ * Authorization is the CALLER's responsibility — this helper only enforces
+ * business invariants (DRAFT-only guard, transaction atomicity).
+ *
+ * Idempotency: short-circuits when plan.status === 'ACTIVE' so re-clicking
+ * Approve from the Hub never double-enrolls / double-emits.
+ */
+async function postSingleSalesGoalPlan(planId, userId) {
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- helper resolves entity from plan; caller provides authorization
+  const plan = await SalesGoalPlan.findById(planId);
+  if (!plan) throw Object.assign(new Error('Plan not found'), { statusCode: 404 });
+
+  if (plan.status === 'ACTIVE') {
+    return { plan, enrollmentSummary: { enrolled: 0, skipped: 0 }, already_active: true };
+  }
   if (plan.status !== 'DRAFT') {
-    return res.status(400).json({ success: false, message: 'Only DRAFT plans can be activated' });
+    throw Object.assign(new Error('Only DRAFT plans can be activated'), { statusCode: 400 });
   }
 
-  // ── Default-Roles Gate (Phase G4) ─────────────────────────────────────────
-  // Non-authorized submitters are held in the Approval Hub (HTTP 202).
-  const gated = await gateApproval({
-    entityId: plan.entity_id,
-    module: 'SALES_GOAL_PLAN',
-    docType: 'PLAN_ACTIVATE',
-    docId: plan._id,
-    docRef: plan.reference || `${plan.plan_name} FY${plan.fiscal_year}`,
-    amount: plan.target_revenue || 0,
-    description: `Activate Sales Goal Plan — ${plan.plan_name} FY${plan.fiscal_year}`,
-    requesterId: req.user._id,
-    requesterName: req.user.name || req.user.email,
-  }, res);
-  if (gated) return;
-
-  // ── Transaction wrap (matches expenseController.js:248-269) ────────────────
   let enrollmentSummary = { enrolled: 0, skipped: 0 };
-  let priorReference = plan.reference;
+  const priorReference = plan.reference;
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
-      // Populate reference on first activation (preserved across reopen → re-activate)
       if (!plan.reference) {
         plan.reference = await generateSalesGoalNumber({ entityId: plan.entity_id });
       }
       plan.status = 'ACTIVE';
-      plan.approved_by = req.user._id;
+      plan.approved_by = userId;
       plan.approved_at = new Date();
       await plan.save({ session });
 
-      // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id is unique; plan fetched with entity scope above
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- plan_id is unique; plan fetched above
       await SalesGoalTarget.updateMany(
         { plan_id: plan._id, status: 'DRAFT' },
         { $set: { status: 'ACTIVE' } },
         { session }
       );
 
-      // Auto-enroll active eligible BDMs (idempotent; lookup-driven roles)
-      enrollmentSummary = await autoEnrollEligibleBdms(plan, req.user._id, session);
-
-      // Phase SG-Q2 W3 follow-up — lazy-seed KPI_VARIANCE_THRESHOLDS.GLOBAL so
-      // kpiVarianceAgent fires on day one for a fresh subsidiary without
-      // requiring an admin to open Control Center first. Non-fatal; the agent
-      // also has in-memory defaults as a final safety net.
+      enrollmentSummary = await autoEnrollEligibleBdms(plan, userId, session);
       await salesGoalService.ensureKpiVarianceGlobalThreshold(plan.entity_id, session);
-
-      // Phase SG-4 #21 — sync the IncentivePlan header so it points at this
-      // newly-activated version and mark any prior version as superseded.
-      // Header is the single source of truth (O(1) via the unique index on
-      // {entity_id, fiscal_year}). Idempotent. Wrapped in the same transaction
-      // so a failure rolls back the activation.
       await incentivePlanService.syncHeaderOnActivation(plan, { session });
 
       await ErpAuditLog.logChange([{
@@ -390,7 +394,7 @@ exports.activatePlan = catchAsync(async (req, res) => {
         field_changed: 'status',
         old_value: 'DRAFT',
         new_value: 'ACTIVE',
-        changed_by: req.user._id,
+        changed_by: userId,
         note: `Activated plan ${plan.reference || plan.plan_name} — auto-enrolled ${enrollmentSummary.enrolled} BDM(s)${priorReference ? '' : ' (reference assigned: ' + plan.reference + ')'}`,
       }], { session });
     });
@@ -398,7 +402,7 @@ exports.activatePlan = catchAsync(async (req, res) => {
     session.endSession();
   }
 
-  // Phase SG-Q2 W3 — Plan-lifecycle notification (fire-and-forget; never blocks).
+  // Post-commit fire-and-forget: notification + integration event.
   notifySalesGoalPlanLifecycle({
     entityId: plan.entity_id,
     planId: plan._id,
@@ -406,16 +410,15 @@ exports.activatePlan = catchAsync(async (req, res) => {
     planName: plan.plan_name,
     fiscalYear: plan.fiscal_year,
     event: 'ACTIVATED',
-    triggeredBy: req.user.name || req.user.email,
+    triggeredBy: 'system',
     enrollmentCount: enrollmentSummary.enrolled,
   }).catch(e => console.error('[notifySalesGoalPlanLifecycle ACTIVATED] failed:', e.message));
 
-  // Phase SG-6 #32 — emit integration event (payroll/HR/finance subscribers).
   try {
     const { emit, INTEGRATION_EVENTS } = require('../services/integrationHooks');
     emit(INTEGRATION_EVENTS.PLAN_ACTIVATED, {
       entity_id: plan.entity_id,
-      actor_id: req.user._id,
+      actor_id: userId,
       ref: plan.reference || String(plan._id),
       data: {
         plan_id: String(plan._id),
@@ -425,14 +428,46 @@ exports.activatePlan = catchAsync(async (req, res) => {
         target_revenue: plan.target_revenue,
       },
     });
-  } catch (err) { console.warn('[activatePlan] integrationHooks emit skipped:', err.message); }
+  } catch (err) { console.warn('[postSingleSalesGoalPlan] integrationHooks emit skipped:', err.message); }
 
-  res.json({
-    success: true,
-    data: plan,
-    message: `Plan activated — ${enrollmentSummary.enrolled} BDM(s) auto-enrolled${enrollmentSummary.skipped ? ` (${enrollmentSummary.skipped} already enrolled)` : ''}`,
-    enrollment: enrollmentSummary,
-  });
+  return { plan, enrollmentSummary, already_active: false };
+}
+
+exports.postSingleSalesGoalPlan = postSingleSalesGoalPlan;
+
+exports.activatePlan = catchAsync(async (req, res) => {
+  const planPre = await SalesGoalPlan.findOne({ _id: req.params.id, ...req.tenantFilter }).lean();
+  if (!planPre) return res.status(404).json({ success: false, message: 'Plan not found' });
+  if (planPre.status !== 'DRAFT') {
+    return res.status(400).json({ success: false, message: 'Only DRAFT plans can be activated' });
+  }
+
+  // ── Default-Roles Gate (Phase G4) ─────────────────────────────────────────
+  // Non-authorized submitters are held in the Approval Hub (HTTP 202).
+  const gated = await gateApproval({
+    entityId: planPre.entity_id,
+    module: 'SALES_GOAL_PLAN',
+    docType: 'PLAN_ACTIVATE',
+    docId: planPre._id,
+    docRef: planPre.reference || `${planPre.plan_name} FY${planPre.fiscal_year}`,
+    amount: planPre.target_revenue || 0,
+    description: `Activate Sales Goal Plan — ${planPre.plan_name} FY${planPre.fiscal_year}`,
+    requesterId: req.user._id,
+    requesterName: req.user.name || req.user.email,
+  }, res);
+  if (gated) return;
+
+  try {
+    const { plan, enrollmentSummary } = await postSingleSalesGoalPlan(planPre._id, req.user._id);
+    res.json({
+      success: true,
+      data: plan,
+      message: `Plan activated — ${enrollmentSummary.enrolled} BDM(s) auto-enrolled${enrollmentSummary.skipped ? ` (${enrollmentSummary.skipped} already enrolled)` : ''}`,
+      enrollment: enrollmentSummary,
+    });
+  } catch (err) {
+    return res.status(err.statusCode || 400).json({ success: false, message: err.message, code: err.code });
+  }
 });
 
 exports.reopenPlan = catchAsync(async (req, res) => {

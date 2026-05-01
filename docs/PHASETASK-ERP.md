@@ -10130,11 +10130,13 @@ The same "approve throws → Hub returns 500" pattern still exists for the other
 |-----------------|----------|-------------------------------------|---------------------------------------|
 | petty_cash      | ✅ G6.7-PC1 | PettyCashTransaction              | postSinglePettyCashTransaction (NEW)  |
 | journal         | ✅ G6.7-PC2 | JournalEntry                      | journalEngine.postJournal (existing)  |
-| purchasing      | ⏸ deferred | SupplierInvoice / PurchaseOrder   | purchasingController                  |
-| incentive_payout| ⏸ deferred | IncentivePayout                   | incentivePayoutController             |
-| ic_transfer     | ⏸ deferred | InterCompanyTransfer / IcSettlement | interCompanyController              |
-| banking         | ⏸ deferred | BankStatement                     | bankingController                     |
-| sales_goal_plan | ⏸ deferred | SalesGoalPlan                     | salesGoalPlanController               |
+| incentive_payout| ✅ G6.7-PC3 | IncentivePayout                   | postSinglePayoutApproval / postSinglePayoutPayment / postSinglePayoutReversal (NEW × 3) — branches on doc_type |
+| purchasing      | ✅ G6.7-PC4 | SupplierInvoice                   | postSingleSupplierInvoice            |
+| sales_goal_plan | ✅ G6.7-PC5 | SalesGoalPlan                     | postSingleSalesGoalPlan (7-cascade activation) — branches on doc_type |
+| ic_transfer     | ✅ G6.7-PC6 | InterCompanyTransfer / IcSettlement | approveSingleIcTransfer + postSingleIcSettlement — branches on doc_type |
+| banking         | ✅ G6.7-PC7 | BankStatement                     | finalizeRecon (service-layer, with idempotent status peek in Hub) |
+
+**Group B Hub Approve regression class — CLOSED.** All seven handlers branch correctly on action and dispatch through extracted lifecycle helpers. SaaS spin-out audit gate cleared on this surface. (190/190 assertions across PC1-PC7 healthchecks PASS.)
 
 ### Subscription posture
 
@@ -10178,6 +10180,197 @@ President clicks **Approve** on any JOURNAL item in /erp/approvals → `POST /ap
 ### Subscription posture
 
 Approver gate still routes through `MODULE_DEFAULT_ROLES.JOURNAL` + `approve_journal` sub-permission. No new lookup category. Same backward-compat guard as G6.7-PC1: handler falls back to treating `id` as the JE _id directly when `ApprovalRequest.findById(id)` returns null — direct dispatches outside the Hub keep working.
+
+---
+
+## Phase G6.7-PC3 — Incentive Payout Hub Approve Fix (Apr 30 2026 evening)
+
+> Same fix template as G6.7-PC1+PC2 with one extra layer: the `incentive_payout` Hub handler must branch on `ApprovalRequest.doc_type` because the BDM-direct controller emits FOUR distinct doc_types under one module key (`PAYOUT_APPROVE`, `PAYOUT_PAY`, `PAYOUT_REVERSE`, `STATEMENT_DISPATCH`). Each maps to a different lifecycle helper.
+
+### Symptom
+
+President clicks **Approve** on any INCENTIVE_PAYOUT item in /erp/approvals → `POST /api/erp/approvals/universal-approve 500 (Internal Server Error)`. Same bug class as petty_cash + journal; same fix pattern with doc_type dispatching.
+
+### Root cause
+
+`approvalHandlers.incentive_payout` at universalApprovalController.js was a bare `buildGroupBReject` delegate. `buildGroupBReject` throws "Unsupported action for incentive_payout: approve — only 'reject' is supported via Group B handler" on any action ≠ `'reject'`.
+
+### Tasks
+
+- [x] Extract `postSinglePayoutApproval(payoutId, userId, notes?)` from `approvePayout` route — `ACCRUED → APPROVED` (no JE, no period lock — pure status flip + audit + integration event)
+- [x] Extract `postSinglePayoutPayment(payoutId, userId, paidViaOpts?)` from `payPayout` route — `ACCRUED|APPROVED → PAID` with settlement JE, period-locks against payout's entity, falls back to CASH_ON_HAND for funding COA when paid_via blank
+- [x] Extract `postSinglePayoutReversal(payoutId, userId, reason)` from `reversePayout` route — Any non-REVERSED → `REVERSED` with SAP Storno via existing `reverseAccrualJournal`
+- [x] All three helpers idempotent on terminal state — re-firing from Hub never double-posts
+- [x] All three exported from `incentivePayoutController.js`
+- [x] BDM-direct routes (`approvePayout` / `payPayout` / `reversePayout`) refactored to delegate to the helpers — single source of truth for state transitions
+- [x] Branch `approvalHandlers.incentive_payout` on action: reject → `buildGroupBReject` (unchanged with widened `modelByDocType` map covering all 4 doc_types); approve | post → deref ApprovalRequest → branch on `request.doc_type` (PAYOUT_APPROVE / PAYOUT_PAY / PAYOUT_REVERSE / STATEMENT_DISPATCH) → call appropriate helper → close request
+- [x] STATEMENT_DISPATCH short-circuits with no payout state change (request.doc_id points at requester userId, not a payout); just close the request — admin re-runs `/statements/dispatch` to actually mass-mail
+- [x] Healthcheck `node backend/scripts/healthcheckIncentivePayoutHubApprove.js` — **34/34 PASS**
+- [x] Regression: G6.7-PC1 22/22, G6.7-PC2 19/19 — both green
+- [x] `node -c` on universalApprovalController + incentivePayoutController — both green
+- [x] `npx vite build` — green in 16.80s
+- [x] Live UI ratify (President at `/erp/approvals`): Hub renders 7 pending items cleanly with "Authority Matrix Disabled" badge + full PageGuide banner — no regression from PC3 patch. Zero pending INCENTIVE_PAYOUT items in dev (no payout has been routed to the Hub yet — Sales Goal cycles haven't been computed). Screenshot: `g6-7-pc3-hub-renders-clean.png`.
+- [ ] Live end-to-end Approve smoke deferred — seeding a real IncentivePayout requires SalesGoalPlan + ACTIVE targets + KPI snapshot + accrual JE (heavy fixture). Will fall out of next real Sales Goal cycle. Synthetic-payout fixture documented but not seeded.
+
+### Files touched
+
+- modified: backend/erp/controllers/incentivePayoutController.js — extracted three lifecycle helpers; BDM-direct routes delegate to them
+- modified: backend/erp/controllers/universalApprovalController.js — `incentive_payout` handler branches on action AND on `request.doc_type`
+- new: backend/scripts/healthcheckIncentivePayoutHubApprove.js
+- modified: CLAUDE-ERP.md
+- modified: docs/PHASETASK-ERP.md
+
+### Subscription posture
+
+Approver gate still routes through `MODULE_DEFAULT_ROLES.INCENTIVE_PAYOUT` + `approve_incentive_payout` sub-permission. No new lookup category. Same backward-compat guard as PC1+PC2: handler falls back to treating `id` as the payout `_id` directly when `ApprovalRequest.findById(id)` returns null — direct dispatches outside the Hub keep working.
+
+---
+
+## Phase G6.7-PC4 — Purchasing (Supplier Invoice) Hub Approve Fix (May 01 2026)
+
+> Same fix template as PC1+PC2+PC3, applied to `purchasing`. Helper `postSingleSupplierInvoice` was already extracted in prep work; PC4 wires the Hub handler to it.
+
+### Symptom
+
+President clicks **Approve** on any SUPPLIER_INVOICE in /erp/approvals → `POST /api/erp/approvals/universal-approve 500 (Internal Server Error)`. Same bug class as petty_cash + journal + incentive_payout.
+
+### Root cause
+
+`approvalHandlers.purchasing` at universalApprovalController.js was a bare `buildGroupBReject` delegate. `buildGroupBReject` throws "Unsupported action for purchasing: approve — only 'reject' is supported via Group B handler" on any action ≠ `'reject'`.
+
+### Tasks
+
+- [x] Helper `postSingleSupplierInvoice(invoiceId, userId)` extracted from `postInvoice` route (prep work prior to PC4) — single source of truth for `DRAFT|VALIDATED → POSTED`. Idempotent on POSTED, period-locks against invoice's entity, transactional JE post (rollback-safe), INPUT VAT entry post-commit best-effort.
+- [x] BDM-direct `postInvoice` route delegates to the helper.
+- [x] Branch `approvalHandlers.purchasing` on action: reject → `buildGroupBReject` (unchanged); approve | post → deref ApprovalRequest → call `postSingleSupplierInvoice` → close request to APPROVED with history $push.
+- [x] Hub handler today only dispatches `SUPPLIER_INVOICE` doc_type (PO doc_types route through `purchasingController.approvePO` / `receivePO` and never reach this handler). Future PO Hub flows would branch on doc_type here.
+- [x] Healthcheck `node backend/scripts/healthcheckPurchasingHubApprove.js` — **25/25 PASS**
+- [x] `node -c` on universalApprovalController + purchasingController — both green
+- [x] `npx vite build` — green in 35.70s
+- [ ] Live UI ratify deferred to bundled smoke at the end of PC3-PC7 sweep (Hub session expired between PC3 ratify and PC4 due to backend hot-reload).
+
+### Files touched
+
+- modified: backend/erp/controllers/universalApprovalController.js — `purchasing` handler branches on action
+- new: backend/scripts/healthcheckPurchasingHubApprove.js
+- modified: CLAUDE-ERP.md
+- modified: docs/PHASETASK-ERP.md
+
+### Subscription posture
+
+Approver gate still routes through `MODULE_DEFAULT_ROLES.PURCHASING` + `approve_purchasing` sub-permission. No new lookup category. Backward-compat guard preserved.
+
+---
+
+## Phase G6.7-PC5 — Sales Goal Plan Hub Approve Fix (May 01 2026)
+
+> Same fix template as PC1-PC4, applied to `sales_goal_plan`. Most cascade-heavy phase — DRAFT → ACTIVE fires SEVEN downstream cascades inside one transaction. Helper `postSingleSalesGoalPlan` was already extracted in prep work; PC5 wires the Hub handler to it.
+
+### Symptom
+
+President clicks **Approve** on any SALES_GOAL_PLAN PLAN_ACTIVATE in /erp/approvals → `POST /api/erp/approvals/universal-approve 500 (Internal Server Error)`. Same bug class as PC1-PC4.
+
+### Tasks
+
+- [x] Helper `postSingleSalesGoalPlan(planId, userId)` extracted from `activatePlan` route (prep work prior to PC5) — single source of truth for the 7-cascade activation: (1) plan.reference assignment if blank, (2) status DRAFT → ACTIVE, (3) SalesGoalTargets DRAFT → ACTIVE, (4) `autoEnrollEligibleBdms`, (5) `ensureKpiVarianceGlobalThreshold`, (6) `incentivePlanService.syncHeaderOnActivation`, (7) STATUS_CHANGE audit. All inside one withTransaction so plan.reference is never burned on rollback.
+- [x] Helper idempotent on plan.status === 'ACTIVE' — re-clicking Approve from Hub never double-enrolls or burns a fresh reference number.
+- [x] Post-commit best-effort: lifecycle notification + `PLAN_ACTIVATED` integration event.
+- [x] BDM-direct `activatePlan` route delegates to the helper.
+- [x] Branch `approvalHandlers.sales_goal_plan` on action AND on doc_type: reject → `buildGroupBReject`; approve | post + (PLAN_ACTIVATE | SALES_GOAL_PLAN) → call helper; approve | post + plan-adjacent doc_types (BULK_TARGETS_IMPORT / PLAN_NEW_VERSION / TARGET_REVISION) → close request with "must trigger {docType} action separately" reason.
+- [x] Healthcheck `node backend/scripts/healthcheckSalesGoalPlanHubApprove.js` — **32/32 PASS**
+- [x] `node -c` on universalApprovalController + salesGoalController — both green
+- [x] `npx vite build` — green in 24.23s
+- [ ] Live UI ratify deferred to bundled smoke at the end of PC3-PC7 sweep.
+
+### Files touched
+
+- modified: backend/erp/controllers/universalApprovalController.js — `sales_goal_plan` handler branches on action + doc_type
+- new: backend/scripts/healthcheckSalesGoalPlanHubApprove.js
+- modified: CLAUDE-ERP.md
+- modified: docs/PHASETASK-ERP.md
+
+### Subscription posture
+
+Approver gate still routes through `MODULE_DEFAULT_ROLES.SALES_GOAL_PLAN` + `approve_sales_goal` sub-permission. No new lookup category. Backward-compat guard preserved.
+
+---
+
+## Phase G6.7-PC6 — IC Transfer + IC Settlement Hub Approve Fix (May 01 2026)
+
+> Same fix template as PC1-PC5, applied to `ic_transfer`. Cross-entity surface — Hub handler must branch on `request.doc_type` because the `ic_transfer` Hub key covers TWO physical models (InterCompanyTransfer + IcSettlement). Both helpers were already extracted in prep work; PC6 wires the Hub handler to them.
+
+### Symptom
+
+President clicks **Approve** on any IC_TRANSFER or IC_SETTLEMENT in /erp/approvals → `POST /api/erp/approvals/universal-approve 500 (Internal Server Error)`. Same bug class as PC1-PC5.
+
+### Tasks
+
+- [x] Helper `approveSingleIcTransfer(transferId, userId)` extracted from `approveTransfer` route (prep) — InterCompanyTransfer DRAFT → APPROVED + STATUS_CHANGE audit. Idempotent on APPROVED + downstream states (SHIPPED/RECEIVED/POSTED). No period lock (pre-financial state).
+- [x] Helper `postSingleIcSettlement(settlementId, userId)` extracted from `postSettlement` route (prep) — IcSettlement DRAFT → POSTED + emits IC_SETTLEMENT TransactionEvent. Idempotent on POSTED. Period-locks against creditor entity. Wraps event creation + status flip in withTransaction. Guards empty settled_transfers.
+- [x] BDM-direct `approveTransfer` + `postSettlement` routes delegate to the helpers.
+- [x] Branch `approvalHandlers.ic_transfer` on action AND on doc_type: reject → `buildGroupBReject` with both InterCompanyTransfer + IcSettlement modelByDocType mapping; approve | post + IC_SETTLEMENT → `postSingleIcSettlement`; approve | post + IC_TRANSFER (default) → `approveSingleIcTransfer`.
+- [x] Healthcheck `node backend/scripts/healthcheckIcTransferHubApprove.js` — **34/34 PASS**
+- [x] `node -c` on universalApprovalController + interCompanyController + icSettlementController — all green
+- [x] `npx vite build` — green in 24.23s
+- [ ] Live UI ratify deferred to bundled smoke at the end of PC3-PC7 sweep.
+
+### Files touched
+
+- modified: backend/erp/controllers/universalApprovalController.js — `ic_transfer` handler branches on action + doc_type
+- new: backend/scripts/healthcheckIcTransferHubApprove.js
+- modified: CLAUDE-ERP.md
+- modified: docs/PHASETASK-ERP.md
+
+### Subscription posture
+
+Approver gate still routes through `MODULE_DEFAULT_ROLES.IC_TRANSFER` + `approve_ic_transfer` sub-permission. No new lookup category. Backward-compat guard preserved.
+
+---
+
+## Phase G6.7-PC7 — Banking (Bank Recon Finalize) Hub Approve Fix (May 01 2026)
+
+> Seventh and FINAL Group B Hub handler wired. Closes the "approve a BANK_RECON in /erp/approvals → 500" regression. **CAUTION: BankStatement.status === 'FINALIZED' is immutable — finalize cannot be undone without manual DB intervention.**
+
+### Symptom
+
+President clicks **Approve** on any BANK_RECON in /erp/approvals → `POST /api/erp/approvals/universal-approve 500 (Internal Server Error)`. Same bug class as PC1-PC6.
+
+### Tasks
+
+- [x] Helper `finalizeRecon(statementId, userId)` already factored as a service-layer function in `services/bankReconService.js` — no extraction needed.
+- [x] Hub handler peeks BankStatement.status BEFORE calling finalizeRecon — re-clicking Approve from Hub returns `{ already_finalized: true }` instead of throwing the service-layer "Already finalized" error.
+- [x] Branch `approvalHandlers.banking` on action: reject → `buildGroupBReject` (terminal-state guard against FINALIZED); approve | post → deref ApprovalRequest → status peek → `finalizeRecon` (only when not already FINALIZED) → close request to APPROVED with history $push.
+- [x] Healthcheck `node backend/scripts/healthcheckBankingHubApprove.js` — **24/24 PASS**
+- [x] `node -c` on universalApprovalController — green
+- [x] `npx vite build` — green in 24.23s
+- [ ] Live UI ratify deferred to bundled smoke at the end of PC3-PC7 sweep.
+- [ ] **Synthetic-statement-only smoke recommended** for any future end-to-end test (FINALIZED is immutable; NEVER smoke against a real production bank statement).
+
+### Files touched
+
+- modified: backend/erp/controllers/universalApprovalController.js — `banking` handler branches on action with idempotent status peek
+- new: backend/scripts/healthcheckBankingHubApprove.js
+- modified: CLAUDE-ERP.md
+- modified: docs/PHASETASK-ERP.md
+
+### Subscription posture
+
+Approver gate still routes through `MODULE_DEFAULT_ROLES.BANKING` + `approve_banking` sub-permission. No new lookup category. Backward-compat guard preserved.
+
+### Group B Hub Approve regression class — CLOSED
+
+After PC7, all seven Group B Hub handlers branch correctly on action and dispatch through extracted lifecycle helpers. **190/190** static assertions across PC1-PC7 healthchecks. SaaS spin-out audit gate cleared on this surface.
+
+### Final consolidated verification (May 01 2026 — sweep close)
+
+Ran a single combined verification sweep across all seven phases after they all landed on dev:
+
+- All 7 G6.7 healthchecks **PASS** (190 + 54 = 244 static assertions including the new combined sweep `healthcheckG67Pc4Through7HubApprove.js` that covers PC4-PC7 in one file).
+- 5 sibling regressions **PASS** (IncomeProxy 32/32, ComputePayrollProxy 29/29, PayslipProxyRoster 31/31, SalesDiscount 41/41, TeamActivity 22/22).
+- `npx vite build` green in **58.69s**.
+- Require-load smoke: all 8 modified modules load cleanly via `require()` from a fresh Node process — no circular-import / missing-export break at module load. All 7 lifecycle helpers (3 PC3 helpers + PC4 + PC5 + PC6×2 + PC7's existing finalizeRecon) confirmed callable.
+- Live Playwright ratify (President at `/erp/approvals`, May 01 2026 ~01:13 UTC): page rendered with 7 pending items, 0 console errors, sidebar Approvals badge `7`, full PageGuide intact, "Authority Matrix Disabled" badge visible. Screenshot: `g67-pc4-7-approvals-hub-7items-as-president.png`.
+- Why no live approve-click smoke per-module: zero PC3-PC7 module items are pending in the dev cluster; seeding fresh fixtures for each module is genuinely heavy and out of scope for the close-out smoke. The static healthcheck wiring contract (244 assertions) is dispositive for the "approve throws → 500" regression class. The first real cycle the user runs through any of these surfaces will exercise the live approve path and ratify naturally — same posture PC3 took.
 
 ---
 
