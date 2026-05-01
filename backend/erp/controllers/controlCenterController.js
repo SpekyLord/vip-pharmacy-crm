@@ -109,7 +109,17 @@ exports.getHealth = catchAsync(async (req, res) => {
         // never push the card above 100%. Numerator stays as live DB categories
         // for the entity. Matches the same union already used by lookupGenericController
         // when building the category picker list (line ~2035).
-        const seedKeys = Object.keys(require('./lookupGenericController').SEED_DEFAULTS || {});
+        //
+        // SEED_DEFAULTS entries declared as empty arrays (e.g. PAYSLIP_PROXY_ROSTER —
+        // admin populates one row per clerk on-demand, no canonical defaults) are
+        // EXCLUDED from the denominator. They have nothing to seed, so they are not
+        // "available to configure" until admin actually creates a row — at which
+        // point they join the union via the live-DB side. Without this filter,
+        // every entity that hasn't yet had admin add an on-demand row shows
+        // Incomplete on the card (cosmetic-only, but bad first impression for
+        // SaaS subscribers per Rule #19).
+        const seedDefaults = require('./lookupGenericController').SEED_DEFAULTS || {};
+        const seedKeys = Object.keys(seedDefaults).filter(k => Array.isArray(seedDefaults[k]) && seedDefaults[k].length > 0);
         const unionSize = new Set([...seedKeys, ...lookupCategories]).size;
         return {
           categories_configured: lookupCategories.length,
