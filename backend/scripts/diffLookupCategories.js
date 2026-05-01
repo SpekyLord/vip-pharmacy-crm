@@ -65,7 +65,7 @@ async function categoriesByCluster(uri, entityId, label) {
 
   try {
     const match = entityId ? { entity_id: new mongoose.Types.ObjectId(entityId) } : {};
-    const rows = await conn.collection('lookups').aggregate([
+    const rows = await conn.collection('erp_lookups').aggregate([
       { $match: match },
       { $group: { _id: '$category', row_count: { $sum: 1 } } },
       { $sort: { _id: 1 } }
