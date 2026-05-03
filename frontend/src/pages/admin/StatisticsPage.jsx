@@ -26,6 +26,7 @@ import {
   UserCheck,
   ChevronLeft,
   Package,
+  Presentation,
 } from 'lucide-react';
 import {
   BarChart,
@@ -51,6 +52,9 @@ import userService from '../../services/userService';
 import programService from '../../services/programService';
 import supportTypeService from '../../services/supportTypeService';
 import visitService from '../../services/visitService';
+// Phase D.4c — CLM Pitch Performance tab pulls per-BDM × per-slide × per-product
+// matrices for the president/COO coaching surface.
+import clmService from '../../services/clmService';
 
 import SelectField from '../../components/common/Select';
 
@@ -1590,6 +1594,11 @@ const StatisticsPage = () => {
   const [teamActivity, setTeamActivity] = useState(null);
   const [teamActivityLoading, setTeamActivityLoading] = useState(false);
 
+  // Phase D.4c (May 2026) — CLM Pitch Performance tab. Lookup-driven
+  // thresholds; lazy-loaded on first activate (mirrors team-activity).
+  const [clmPerformance, setClmPerformance] = useState(null);
+  const [clmPerformanceLoading, setClmPerformanceLoading] = useState(false);
+
   // BDM Performance tab
   const [bdmEmployees, setBdmEmployees] = useState([]);
   const [selectedBdmId, setSelectedBdmId] = useState('');
@@ -1700,6 +1709,19 @@ const StatisticsPage = () => {
     }
   };
 
+  // Phase D.4c — CLM Pitch Performance. Default 90-day window; thresholds
+  // resolved server-side from CLM_PERFORMANCE_THRESHOLDS lookup with inline
+  // DEFAULTS fallback so the tab never goes dark on a Lookup outage.
+  const fetchClmPerformance = async () => {
+    try {
+      setClmPerformanceLoading(true);
+      const res = await clmService.getPerformanceMatrix().catch(() => ({ data: null }));
+      setClmPerformance(res.data || null);
+    } finally {
+      setClmPerformanceLoading(false);
+    }
+  };
+
   // Load overview on mount
   useEffect(() => {
     loadedTabsRef.current.add('overview');
@@ -1716,6 +1738,7 @@ const StatisticsPage = () => {
     else if (activeTab === 'products') fetchProductsData();
     else if (activeTab === 'heatmap') fetchHeatmapData();
     else if (activeTab === 'team-activity') fetchTeamActivity();
+    else if (activeTab === 'clm-performance') fetchClmPerformance();
   }, [activeTab]);
 
   // Fetch DCR data when BDM or cycle changes
@@ -1768,6 +1791,8 @@ const StatisticsPage = () => {
       fetchHeatmapData();
     } else if (activeTab === 'team-activity') {
       fetchTeamActivity();
+    } else if (activeTab === 'clm-performance') {
+      fetchClmPerformance();
     }
   };
 
@@ -1897,6 +1922,34 @@ const StatisticsPage = () => {
                 <Calendar size={18} />
                 Daily Heatmap
               </button>
+              {/* Phase D.4c — CLM Pitch Performance (coaching surface). Badge
+                  counts BDMs flagged below threshold so admin sees at a glance
+                  whether to drill in. */}
+              <button
+                className={`tab-btn ${activeTab === 'clm-performance' ? 'active' : ''}`}
+                onClick={() => setActiveTab('clm-performance')}
+                title="Per-BDM × per-slide × per-product pitch coaching"
+              >
+                <Presentation size={18} />
+                CLM Performance
+                {clmPerformance?.bdmComparison && clmPerformance?.thresholds && (
+                  (() => {
+                    const t = clmPerformance.thresholds;
+                    const flagged = clmPerformance.bdmComparison.filter((row) => {
+                      if (row.totalSessions < (t.flag_below_total_sessions ?? 5)) return false;
+                      const conv = row.conversionRate ?? 0;
+                      const dwell = row.avgDwellSecondsPerSlide ?? 0;
+                      return (
+                        conv < (t.target_conversion_rate_pct ?? 30) ||
+                        dwell < (t.min_avg_dwell_seconds_per_slide ?? 10)
+                      );
+                    }).length;
+                    return flagged > 0
+                      ? <span className="tab-badge" style={{ background: '#dc2626' }}>{flagged}</span>
+                      : null;
+                  })()
+                )}
+              </button>
             </div>
 
             <div className="tabs-content">
@@ -1940,6 +1993,14 @@ const StatisticsPage = () => {
 
               {activeTab === 'heatmap' && (
                 <DailyHeatmapTab data={heatmapData} />
+              )}
+
+              {activeTab === 'clm-performance' && (
+                <CLMPerformanceTab
+                  data={clmPerformance}
+                  loading={clmPerformanceLoading}
+                  onBdmDrillDown={handleBdmDrillDown}
+                />
               )}
             </div>
           </div>
@@ -3279,6 +3340,376 @@ const DailyHeatmapTab = ({ data }) => {
             </tr>
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+};
+
+/* =============================================================================
+   COMPONENT: CLMPerformanceTab — Phase D.4c (May 2026)
+   President/COO coaching surface. Three panels stacked:
+     1. BDM Comparison Table (sortable, color-coded vs threshold)
+     2. Slide Performance Heatmap (dwell + drop-off% per slide)
+     3. Top Products by Interest Rate (per-BDM × per-product matrix)
+   Thresholds come from the server (CLM_PERFORMANCE_THRESHOLDS lookup, lookup-
+   driven so subscribers tune per-entity without code deploy — Rule #3).
+   onBdmDrillDown forwards to the BDM Performance tab pre-selected on click,
+   matching the pattern used by Team Activity and Overview chart-click.
+   ============================================================================= */
+
+const clmPerfTabStyles = `
+  .clm-perf-section {
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--line-200, #e5e7eb);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow-soft);
+  }
+  .clm-perf-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .clm-perf-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--ink-900, #111827);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .clm-perf-window {
+    font-size: 12px;
+    color: var(--ink-500, #6b7280);
+  }
+  .clm-perf-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+  }
+  .clm-perf-table thead th {
+    text-align: left;
+    background: #f9fafb;
+    color: var(--ink-700, #374151);
+    font-weight: 600;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line-200, #e5e7eb);
+    position: sticky;
+    top: 0;
+  }
+  body.dark-mode .clm-perf-table thead th {
+    background: #1e293b;
+  }
+  .clm-perf-table tbody td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line-200, #e5e7eb);
+    color: var(--ink-700, #374151);
+  }
+  .clm-perf-table tbody tr {
+    cursor: pointer;
+    transition: background-color 0.12s ease;
+  }
+  .clm-perf-table tbody tr:hover {
+    background: #f3f4f6;
+  }
+  body.dark-mode .clm-perf-table tbody tr:hover {
+    background: #1e293b;
+  }
+  .clm-perf-num { text-align: right; font-variant-numeric: tabular-nums; }
+  .clm-perf-flag-pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .clm-perf-flag-ok { background: #dcfce7; color: #166534; }
+  .clm-perf-flag-warn { background: #fef3c7; color: #92400e; }
+  .clm-perf-flag-bad { background: #fee2e2; color: #991b1b; }
+  .clm-perf-flag-muted { background: #e5e7eb; color: #6b7280; }
+  .clm-perf-empty {
+    padding: 24px;
+    text-align: center;
+    color: var(--ink-500, #6b7280);
+    font-size: 14px;
+  }
+  .clm-perf-thresholds-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--ink-500, #6b7280);
+    margin-top: 8px;
+  }
+  .clm-perf-thresholds-bar span {
+    background: #f3f4f6;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  body.dark-mode .clm-perf-thresholds-bar span {
+    background: #1e293b;
+  }
+  .clm-perf-slide-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 0;
+    border-bottom: 1px dashed var(--line-200, #e5e7eb);
+  }
+  .clm-perf-slide-bar-row:last-child { border-bottom: none; }
+  .clm-perf-slide-label {
+    width: 90px;
+    font-weight: 600;
+    color: var(--ink-700, #374151);
+    font-size: 12px;
+  }
+  .clm-perf-slide-bar-track {
+    flex: 1;
+    height: 12px;
+    background: #f3f4f6;
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
+  }
+  .clm-perf-slide-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #22c55e, #86efac);
+    border-radius: 6px;
+  }
+  .clm-perf-slide-bar-meta {
+    width: 200px;
+    text-align: right;
+    font-size: 12px;
+    color: var(--ink-500, #6b7280);
+    font-variant-numeric: tabular-nums;
+  }
+`;
+
+const CLMPerformanceTab = ({ data, loading, onBdmDrillDown }) => {
+  const [sortKey, setSortKey] = useState('totalSessions');
+  const [sortDir, setSortDir] = useState('desc');
+
+  if (loading) {
+    return <LoadingSpinner />;
+  }
+  if (!data) {
+    return (
+      <div>
+        <style>{clmPerfTabStyles}</style>
+        <p className="clm-perf-empty">CLM performance data not available.</p>
+      </div>
+    );
+  }
+
+  const t = data.thresholds || {};
+  const window = data.window || {};
+  const bdmRows = Array.isArray(data.bdmComparison) ? [...data.bdmComparison] : [];
+  const slideRows = Array.isArray(data.slidePerformance) ? data.slidePerformance : [];
+  const productRows = Array.isArray(data.bdmProductMatrix) ? data.bdmProductMatrix : [];
+
+  // Helper — flag pill rendering vs thresholds.
+  const flagPill = (row) => {
+    if (row.totalSessions < (t.flag_below_total_sessions ?? 5)) {
+      return <span className="clm-perf-flag-pill clm-perf-flag-muted">new BDM</span>;
+    }
+    const conv = row.conversionRate ?? 0;
+    const dwell = row.avgDwellSecondsPerSlide ?? 0;
+    const dur = row.avgDurationMinutes ?? 0;
+    if (conv < (t.target_conversion_rate_pct ?? 30) || dwell < (t.min_avg_dwell_seconds_per_slide ?? 10)) {
+      return <span className="clm-perf-flag-pill clm-perf-flag-bad">coach</span>;
+    }
+    if (dur < (t.target_avg_session_minutes ?? 8)) {
+      return <span className="clm-perf-flag-pill clm-perf-flag-warn">short</span>;
+    }
+    return <span className="clm-perf-flag-pill clm-perf-flag-ok">on track</span>;
+  };
+
+  bdmRows.sort((a, b) => {
+    const av = a[sortKey] ?? 0;
+    const bv = b[sortKey] ?? 0;
+    if (typeof av === 'string') {
+      return sortDir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+    }
+    return sortDir === 'asc' ? av - bv : bv - av;
+  });
+
+  const headerClick = (key) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('desc');
+    }
+  };
+
+  const fmtPct = (n) => (typeof n === 'number' ? `${n.toFixed(1)}%` : '—');
+  const fmtNum = (n, digits = 1) => (typeof n === 'number' ? n.toFixed(digits) : '—');
+
+  // Slide bar widths normalized to the longest dwell so the visual heatmap
+  // ranks slides by dwell time at a glance.
+  const maxSlideDwellSec = Math.max(1, ...slideRows.map((s) => s.avgDurationSeconds ?? 0));
+
+  // Top 30 product rows by interestRate then timesPresented. Backend already
+  // sorts but we cap on the frontend so the table stays readable.
+  const topProducts = productRows.slice(0, 30);
+
+  return (
+    <div>
+      <style>{clmPerfTabStyles}</style>
+
+      {/* Window + thresholds reference bar */}
+      <div className="clm-perf-section">
+        <div className="clm-perf-header">
+          <div className="clm-perf-title">
+            <Presentation size={16} />
+            CLM Pitch Performance — coaching matrix
+          </div>
+          {window.startDate && (
+            <div className="clm-perf-window">
+              {new Date(window.startDate).toLocaleDateString()} → {new Date(window.endDate).toLocaleDateString()}
+            </div>
+          )}
+        </div>
+        <div className="clm-perf-thresholds-bar">
+          <span>min dwell ≥ {t.min_avg_dwell_seconds_per_slide ?? 10}s/slide</span>
+          <span>target session ≥ {t.target_avg_session_minutes ?? 8} min</span>
+          <span>target conversion ≥ {t.target_conversion_rate_pct ?? 30}%</span>
+          <span>min slides viewed ≥ {t.min_slides_viewed ?? 4}</span>
+          <span>flag if sessions ≥ {t.flag_below_total_sessions ?? 5}</span>
+        </div>
+      </div>
+
+      {/* PANEL 1 — BDM Comparison Table */}
+      <div className="clm-perf-section">
+        <div className="clm-perf-header">
+          <div className="clm-perf-title">
+            <Users size={16} />
+            BDM Comparison ({bdmRows.length})
+          </div>
+        </div>
+        {bdmRows.length === 0 ? (
+          <p className="clm-perf-empty">No completed CLM sessions in this window.</p>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table className="clm-perf-table">
+              <thead>
+                <tr>
+                  <th>Status</th>
+                  <th onClick={() => headerClick('bdmName')} style={{ cursor: 'pointer' }}>BDM</th>
+                  <th onClick={() => headerClick('totalSessions')} style={{ cursor: 'pointer' }} className="clm-perf-num">Sessions</th>
+                  <th onClick={() => headerClick('avgDurationMinutes')} style={{ cursor: 'pointer' }} className="clm-perf-num">Avg duration</th>
+                  <th onClick={() => headerClick('avgSlidesViewed')} style={{ cursor: 'pointer' }} className="clm-perf-num">Avg slides</th>
+                  <th onClick={() => headerClick('avgDwellSecondsPerSlide')} style={{ cursor: 'pointer' }} className="clm-perf-num">Avg dwell/slide</th>
+                  <th onClick={() => headerClick('conversionRate')} style={{ cursor: 'pointer' }} className="clm-perf-num">Conversion</th>
+                  <th onClick={() => headerClick('avgInterestLevel')} style={{ cursor: 'pointer' }} className="clm-perf-num">Avg interest</th>
+                  <th onClick={() => headerClick('earlyExitCount')} style={{ cursor: 'pointer' }} className="clm-perf-num">Early exits</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bdmRows.map((row) => (
+                  <tr
+                    key={row.userId}
+                    onClick={() => onBdmDrillDown && onBdmDrillDown(row.userId)}
+                    title="Click to drill into this BDM's Performance tab"
+                  >
+                    <td>{flagPill(row)}</td>
+                    <td>{row.bdmName}</td>
+                    <td className="clm-perf-num">{row.totalSessions}</td>
+                    <td className="clm-perf-num">{fmtNum(row.avgDurationMinutes)} min</td>
+                    <td className="clm-perf-num">{fmtNum(row.avgSlidesViewed)}</td>
+                    <td className="clm-perf-num">{fmtNum(row.avgDwellSecondsPerSlide)} s</td>
+                    <td className="clm-perf-num">{fmtPct(row.conversionRate)}</td>
+                    <td className="clm-perf-num">{fmtNum(row.avgInterestLevel, 1)}</td>
+                    <td className="clm-perf-num">{row.earlyExitCount}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* PANEL 2 — Slide Performance Heatmap */}
+      <div className="clm-perf-section">
+        <div className="clm-perf-header">
+          <div className="clm-perf-title">
+            <BarChart3 size={16} />
+            Slide Performance ({slideRows.length} slides)
+          </div>
+        </div>
+        {slideRows.length === 0 ? (
+          <p className="clm-perf-empty">No slide events recorded.</p>
+        ) : (
+          <div>
+            {slideRows.map((slide) => {
+              const widthPct = ((slide.avgDurationSeconds ?? 0) / maxSlideDwellSec) * 100;
+              const dropOffWarn = (slide.dropOffRate ?? 0) > 25;
+              return (
+                <div key={slide.slideIndex} className="clm-perf-slide-bar-row">
+                  <div className="clm-perf-slide-label">
+                    Slide {slide.slideIndex + 1}
+                  </div>
+                  <div className="clm-perf-slide-bar-track">
+                    <div
+                      className="clm-perf-slide-bar-fill"
+                      style={{ width: `${widthPct.toFixed(0)}%` }}
+                    />
+                  </div>
+                  <div className="clm-perf-slide-bar-meta">
+                    {fmtNum(slide.avgDurationSeconds)}s avg
+                    {' · '}
+                    {slide.viewCount} views
+                    {' · '}
+                    <span style={{ color: dropOffWarn ? '#dc2626' : 'inherit' }}>
+                      {fmtPct(slide.dropOffRate)} drop-off
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* PANEL 3 — Top Products by Interest Rate */}
+      <div className="clm-perf-section">
+        <div className="clm-perf-header">
+          <div className="clm-perf-title">
+            <Package size={16} />
+            Top Products × BDM ({topProducts.length})
+          </div>
+        </div>
+        {topProducts.length === 0 ? (
+          <p className="clm-perf-empty">No products presented in this window.</p>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table className="clm-perf-table">
+              <thead>
+                <tr>
+                  <th>BDM</th>
+                  <th>Product</th>
+                  <th className="clm-perf-num">Times presented</th>
+                  <th className="clm-perf-num">Interest rate</th>
+                  <th className="clm-perf-num">Avg time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topProducts.map((row, i) => (
+                  <tr key={`${row.userId}-${row.productId}-${i}`}>
+                    <td>{row.bdmName}</td>
+                    <td>{row.productName || '(unnamed product)'}</td>
+                    <td className="clm-perf-num">{row.timesPresented}</td>
+                    <td className="clm-perf-num">{fmtPct(row.interestRate)}</td>
+                    <td className="clm-perf-num">{fmtNum(row.avgTimeSpentSeconds)} s</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

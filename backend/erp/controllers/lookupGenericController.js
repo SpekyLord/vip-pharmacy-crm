@@ -2478,6 +2478,31 @@ const SEED_DEFAULTS = {
     { code: 'DEFAULT', label: 'Team Activity Cockpit — red-flag thresholds', insert_only_metadata: true, metadata: { red_flag_consecutive_workdays: 2, gap_warning_workdays: 1, target_call_rate: 80 } },
   ],
 
+  // Phase D.4c (May 2026) — CLM Pitch Performance thresholds. Powers the
+  // /admin/statistics → CLM Performance tab so the president/COO can see
+  // which BDMs are rushing through the deck, which slides have low dwell,
+  // and which products convert best per BDM. Subscribers tune per-entity
+  // via Control Center → Lookup Tables → CLM_PERFORMANCE_THRESHOLDS.
+  // insert_only_metadata: true → admin tweaks survive future re-seeds.
+  // Rule #3 + Rule #19: no hardcoded business values.
+  //
+  //   - min_avg_dwell_seconds_per_slide: 10 — avg dwell below this = the
+  //     BDM is "rushing through the deck" (didn't read headline + bullet).
+  //   - target_avg_session_minutes: 8 — pitches under 8min flagged as
+  //     "too short to land", aligns with 6-slide × ~80s deck designer
+  //     intent.
+  //   - target_conversion_rate_pct: 30 — % of completed sessions ending
+  //     in outcome='interested' or 'already_partner'. Below floor = pitch
+  //     isn't landing OR prospect quality is low.
+  //   - min_slides_viewed: 4 — sessions exiting before slide 4 (the
+  //     partnership-ask slide) flagged as "early exit".
+  //   - flag_below_total_sessions: 5 — hide flags for new BDMs with too
+  //     few sessions for averages to be meaningful (avoid noise on the
+  //     2-session BDM whose averages are just noise).
+  CLM_PERFORMANCE_THRESHOLDS: [
+    { code: 'DEFAULT', label: 'CLM Pitch Performance — dwell + conversion thresholds', insert_only_metadata: true, metadata: { min_avg_dwell_seconds_per_slide: 10, target_avg_session_minutes: 8, target_conversion_rate_pct: 30, min_slides_viewed: 4, flag_below_total_sessions: 5 } },
+  ],
+
   // Phase R2 — Sales Discount config. Lookup-driven so admin can cap how
   // aggressive a discount BDMs can apply without a code deploy. Subscriber-
   // ready: each pharmacy/subsidiary picks its own ceiling.

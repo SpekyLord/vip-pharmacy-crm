@@ -357,12 +357,13 @@ const PAGE_GUIDES = {
       'Programs tab shows program and support type coverage across VIP Clients.',
       'Products tab shows which products are being presented most and by which BDMs.',
       'Daily Heatmap tab shows visit intensity across all BDMs and working days in one grid.',
+      'CLM Performance tab is the pitch-coaching surface — per-BDM × per-slide × per-product matrix over the last 90 days. Status pill ("on track" / "short" / "coach" / "new BDM") flags BDMs rushing through the deck or missing the conversion threshold. Click any BDM row to drill into their DCR.',
     ],
     next: [
       { label: 'Reports', path: '/admin/reports' },
       { label: 'Activity Monitor', path: '/admin/activity' },
     ],
-    tip: 'Red-flag thresholds (consecutive idle workdays, target call rate) come from the TEAM_ACTIVITY_THRESHOLDS lookup — admin tunes them in Control Center → Lookup Tables without a code deploy.',
+    tip: 'Threshold lookups are subscriber-tunable in Control Center → Lookup Tables: TEAM_ACTIVITY_THRESHOLDS for the red-flag rule, CLM_PERFORMANCE_THRESHOLDS for pitch dwell + conversion floors. No code deploy required.',
   },
   'communication-log': {
     title: 'Communication Log',

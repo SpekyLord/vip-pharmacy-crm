@@ -1488,3 +1488,63 @@ Category `TEAM_ACTIVITY_THRESHOLDS`, code `DEFAULT`:
 - "Mark as expected idle" override for legitimate gaps (annual leave, training week) — requires a per-BDM exception lookup
 - Year-2 SaaS: per-tenant Team Activity widget — generalizes cleanly because everything is already lookup-driven
 
+---
+
+## Phase D.4c — CLM Pitch Performance Coaching Surface (May 2026, SHIPPED)
+
+> Phase 2 follow-up from CLAUDE.md note 13b CLM gate v2 ("which slides do BDMs dwell on / which products convert best per pitch"). Closes the deferred D.4c entry from `handoff_deferred_index_may04_2026.md`.
+
+### Why
+Once Mae and the rest of the BDM team are pitching the partnership deck nightly, the president/COO needs to know:
+- **Who is rushing through the deck?** (avg dwell per slide too low → didn't read out the headline + one bullet)
+- **Who is pitching too short?** (avg session under target → MD never saw the partnership ask)
+- **Where are MDs disengaging?** (drop-off% per slide spikes → that slide bleeds attention)
+- **Which products land well per BDM?** (interest rate × times presented → which products to push)
+
+Without this surface, coaching is anecdotal: admin tells the BDM "you need to sell better" with no data to point to a specific slide or product.
+
+### What shipped
+New tab in [/admin/statistics](../frontend/src/pages/admin/StatisticsPage.jsx) → **CLM Performance**. Three stacked panels over a 90-day default window:
+
+1. **BDM Comparison Table** — sortable columns: Sessions / Avg duration / Avg slides / Avg dwell-per-slide / Conversion% / Avg interest / Early exits. Status pill: `on track` (green), `short` (yellow, sessions too brief), `coach` (red, low conversion or low dwell), `new BDM` (gray, < 5 sessions). Click row → drills into BDM Performance tab pre-selected (mirrors Team Activity drill-down).
+2. **Slide Performance Heatmap** — bar chart per slide showing avg dwell + view count + drop-off%. Drop-off > 25% rendered red so admin sees immediately which slide loses MDs.
+3. **Top Products × BDM Matrix** — per-BDM × per-product rows (timesPresented, interestRate%, avgTimeSpent). Sorted server-side by interestRate then count; capped at 30 rows on the frontend so the table stays readable.
+
+### Files (3 new + 5 modified)
+- NEW: [backend/utils/clmPerformanceThresholds.js](../backend/utils/clmPerformanceThresholds.js) — lookup helper with inline `DEFAULTS` + 60s cache + `invalidate()` (mirrors `teamActivityThresholds.js`)
+- NEW: [backend/scripts/healthcheckClmPerformance.js](../backend/scripts/healthcheckClmPerformance.js) — 34-point static wiring verifier
+- MODIFIED: [backend/controllers/clmController.js](../backend/controllers/clmController.js) — added `getPerformanceMatrix` asyncHandler (~190 lines, 3 independent aggregation pipelines + `resolveEntityId()` Rule-#21 scope)
+- MODIFIED: [backend/routes/clmRoutes.js](../backend/routes/clmRoutes.js) — `GET /sessions/performance` mounted with `adminOnly` BEFORE `/sessions/:id` generic
+- MODIFIED: [backend/erp/controllers/lookupGenericController.js](../backend/erp/controllers/lookupGenericController.js) — `CLM_PERFORMANCE_THRESHOLDS` seed entry with 5 metadata keys
+- MODIFIED: [frontend/src/services/clmService.js](../frontend/src/services/clmService.js) — `getPerformanceMatrix(params)`
+- MODIFIED: [frontend/src/pages/admin/StatisticsPage.jsx](../frontend/src/pages/admin/StatisticsPage.jsx) — `CLMPerformanceTab` component (~280 lines + styles), tab button + state + lazy-load + Refresh handler, drill-down via existing `handleBdmDrillDown`
+- MODIFIED: [frontend/src/components/common/PageGuide.jsx](../frontend/src/components/common/PageGuide.jsx) — `statistics-page` banner mentions the new tab + threshold-tunability
+
+### Lookup-driven (Rule #3)
+Category `CLM_PERFORMANCE_THRESHOLDS`, code `DEFAULT`:
+- `min_avg_dwell_seconds_per_slide: 10` — below = "rushing through the deck"
+- `target_avg_session_minutes: 8` — below = "too rushed", aligns with 6-slide × ~80s designer intent
+- `target_conversion_rate_pct: 30` — % of completed sessions ending in `interested` or `already_partner`
+- `min_slides_viewed: 4` — sessions exiting before slide 4 (the partnership-ask slide) = "early exit"
+- `flag_below_total_sessions: 5` — hide flags for new BDMs whose 1-2 sessions can't carry meaningful averages
+
+`insert_only_metadata: true` so admin overrides survive `seedAllLookups.js` re-runs. Subscriber tunes per-entity in Control Center → Lookup Tables — zero code deploy.
+
+### Verification (Rule 0b)
+- Healthcheck: **34/34 PASS** — `node backend/scripts/healthcheckClmPerformance.js`
+- Backend syntax: PASS — `node -c` on all 4 touched backend files
+- Live HTTP smoke (admin / president): GET `/api/clm/sessions/performance` returns 200 with `window` + `thresholds` (5 default keys) + `bdmComparison` (1 row, Mae 8 sessions) + `slidePerformance` (5 slides) + `bdmProductMatrix` (6 rows). Threshold lookup-row not yet seeded for this entity but the helper falls back to inline `DEFAULTS` cleanly.
+- Sibling regressions: see "Verification" section below in commit summary.
+
+### Subscription-readiness posture (Rule #0d)
+- All thresholds lookup-driven — no hardcoded "10 seconds" or "30%" anywhere in business logic
+- `entity_id` filter through `resolveEntityId()` (Rule #21 — president cross-entity by default + admin/finance working entity + optional `?entity_id=` override). Helper caches per-entity_id with TTL+invalidate.
+- `ROLES.STAFF` consistent with Phase S2 (no legacy `'employee'`/`'contractor'` strings)
+- No `'VIP'` or single-cluster Mongo URI assumptions in the new code
+- Existing `getAnalytics` endpoint untouched — no regression risk on existing callers
+
+### Open items
+- Optional: surface a date-range picker in the tab header (currently fixed at 90 days). Backend already accepts `?startDate&endDate`. ~30 min frontend wire-up.
+- Optional: drill-down "click a slide" → list of sessions where that slide was the drop-off point. Backend already has the data; would be ~1 hr.
+- Year-2 SaaS: per-tenant CLM Performance widget — generalizes cleanly because everything is already lookup-driven + entity-scoped.
+
