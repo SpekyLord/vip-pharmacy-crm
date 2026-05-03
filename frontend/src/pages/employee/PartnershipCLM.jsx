@@ -330,7 +330,7 @@ const PartnershipCLM = () => {
   // After the post-session modal closes, navigate the BDM forward to
   // VisitLogger so they can upload the proof-of-visit photo and submit the
   // visit (which links to the just-saved CLMSession via session_group_id).
-  // Handles BOTH entry paths:
+  // Handles BOTH entry paths SYMMETRICALLY:
   //   - Merged flow (incomingDoctorId + incomingGroupId from URL — BDM
   //     started in VisitLogger, clicked "Start Presentation"): returns to
   //     VisitLogger with that UUID so the original draft is restored.
@@ -339,18 +339,17 @@ const PartnershipCLM = () => {
   //     visit links to the just-saved CLMSession.
   //
   // options.pendingSession (default false) — when true, append clm_pending=1
-  // and session_group_id so VisitLogger renders the "CLM session not
-  // finalized" banner that gates Submit. Only applies in MERGED mode (Skip
-  // in direct mode keeps the BDM on /bdm/partnership — they may have
-  // intentionally chosen not to log a visit).
+  // so VisitLogger renders the "CLM session not finalized" banner that gates
+  // Submit. SAME behavior in both modes per locked design (May 04 2026): the
+  // hurried BDM presents → Skip → forward to VisitLogger to take the selfie
+  // proof immediately while the doctor is still present, then Resume CLM
+  // afterward to fill in interest/outcome/notes (which is required to unlock
+  // Submit). Visits in BOTH channels cannot be counted without filling the
+  // Session Complete form.
   const returnAfterCLM = useCallback((options = {}) => {
     const doctorIdToUse = incomingDoctorId || selectedDoctor?._id;
     const uuidToUse = incomingGroupId || activeIdempotencyKey;
     if (!doctorIdToUse || !uuidToUse) return;
-    // Skip in direct mode: leave the BDM on /bdm/partnership (post-modal
-    // step='doctor' was set by handleEndPresentation). Don't yank them
-    // somewhere they didn't ask to go.
-    if (options.pendingSession && !incomingDoctorId) return;
     const params = new URLSearchParams();
     params.set('doctorId', doctorIdToUse);
     params.set('session_group_id', uuidToUse);
@@ -793,21 +792,28 @@ const PartnershipCLM = () => {
                   </select>
                 </div>
                 <div className="clm-form-group">
-                  <label>Notes</label>
-                  <textarea rows={3} placeholder="Key observations, objections, questions asked..." value={endForm.bdmNotes} onChange={(e) => setEndForm((f) => ({ ...f, bdmNotes: e.target.value }))} />
+                  <label>
+                    Notes <span style={{ color: '#dc2626' }}>*</span>
+                  </label>
+                  <textarea
+                    rows={3}
+                    placeholder="Key observations, objections, questions asked... (required)"
+                    value={endForm.bdmNotes}
+                    onChange={(e) => setEndForm((f) => ({ ...f, bdmNotes: e.target.value }))}
+                  />
                 </div>
                 <div className="clm-form-group">
-                  <label>Follow-up Date</label>
+                  <label>Follow-up Date <span style={{ color: '#9ca3af', fontWeight: 400 }}>(optional)</span></label>
                   <input type="date" value={endForm.followUpDate} onChange={(e) => setEndForm((f) => ({ ...f, followUpDate: e.target.value }))} />
                 </div>
-                {incomingDoctorId && incomingGroupId && (
-                  <p className="clm-return-hint">
-                    Save Session to record interest, outcome, and notes — Visit
-                    Submit unlocks afterward. Skip returns you to the visit log
-                    but Submit stays blocked until you resume and Save this
-                    session.
-                  </p>
-                )}
+                <p className="clm-return-hint">
+                  Interest Level, Outcome, and Notes are required so admin can
+                  coach and refine the deck. Save Session forwards you to the
+                  visit log to upload the proof-of-visit photo. Skip lets you
+                  capture the selfie first if the client is leaving — but Visit
+                  Submit stays blocked until you Resume CLM and Save this
+                  session.
+                </p>
                 <div className="clm-modal-actions">
                   <button
                     className="clm-modal-cancel"
@@ -815,7 +821,29 @@ const PartnershipCLM = () => {
                   >
                     Skip
                   </button>
-                  <button className="clm-modal-submit" onClick={handleSubmitEnd}>Save Session</button>
+                  <button
+                    className="clm-modal-submit"
+                    onClick={handleSubmitEnd}
+                    disabled={
+                      !endForm.bdmNotes?.trim() ||
+                      !(endForm.interestLevel >= 1 && endForm.interestLevel <= 5) ||
+                      !endForm.outcome
+                    }
+                    style={
+                      !endForm.bdmNotes?.trim() ||
+                      !(endForm.interestLevel >= 1 && endForm.interestLevel <= 5) ||
+                      !endForm.outcome
+                        ? { opacity: 0.5, cursor: 'not-allowed' }
+                        : undefined
+                    }
+                    title={
+                      !endForm.bdmNotes?.trim()
+                        ? 'Fill in Notes to enable Save Session'
+                        : 'Save Session and forward to visit log'
+                    }
+                  >
+                    Save Session
+                  </button>
                 </div>
               </div>
             </div>
