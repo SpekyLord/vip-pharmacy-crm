@@ -30,7 +30,11 @@
  *
  * Delete the script after triage.
  */
-require('dotenv').config();
+// Resolve .env relative to script location, not CWD. The repo's .env lives
+// in backend/, so running from /var/www/vip-pharmacy-crm without `cd backend`
+// would otherwise leave MONGO_URI undefined and crash on mongoose.connect().
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const mongoose = require('mongoose');
 
 const args = Object.fromEntries(

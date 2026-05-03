@@ -89,6 +89,8 @@ const SCPWDSalesBookPage = lazyRetry(() => import('./erp/pages/SCPWDSalesBookPag
 const BIRCompliancePage = lazyRetry(() => import('./erp/pages/BIRCompliancePage'));
 // Phase VIP-1.J / J1 — 2550M / 2550Q VAT return form-detail page
 const BirVatReturnDetailPage = lazyRetry(() => import('./erp/pages/BirVatReturnDetailPage'));
+// Phase VIP-1.J / J2 — 1601-EQ + 1606 EWT form-detail page (shared; adds 2307 + SAWT toolbar)
+const BirEwtReturnDetailPage = lazyRetry(() => import('./erp/pages/BirEwtReturnDetailPage'));
 // Phase VIP-1.B Phase 4 — Rebate + Commission matrix admin + Payout ledger
 const RebateMatrixPage = lazyRetry(() => import('./erp/pages/RebateMatrixPage'));
 const NonMdRebateMatrixPage = lazyRetry(() => import('./erp/pages/NonMdRebateMatrixPage'));
@@ -635,7 +637,28 @@ function App() {
 
           {/* Phase VIP-1.J / J1 — 2550M / 2550Q form-detail page.
               Same BIR_FILING role-set guard; backend layers VIEW_DASHBOARD +
-              EXPORT_FORM scopes per route via birAccess.userHasBirRole(). */}
+              EXPORT_FORM scopes per route via birAccess.userHasBirRole().
+              Phase J2 adds 1601-EQ + 1606 — explicit routes BEFORE the
+              shared `:formCode` wildcard so React Router dispatches to
+              BirEwtReturnDetailPage for those EWT codes (J1 page rejects
+              non-2550 form codes early so the wildcard fallback would
+              also redirect, but explicit beats implicit). */}
+          <Route
+            path="/erp/bir/1601-EQ/:year/:period"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BIR_FILING}>
+                <BirEwtReturnDetailPage formCodeOverride="1601-EQ" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/bir/1606/:year/:period"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BIR_FILING}>
+                <BirEwtReturnDetailPage formCodeOverride="1606" />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/erp/bir/:formCode/:year/:period"
             element={

@@ -102,6 +102,16 @@ const prfCalfSchema = new mongoose.Schema({
   // BIR flag
   bir_flag: { type: String, default: 'INTERNAL' }, // Lookup: BIR_FLAG
 
+  // Phase VIP-1.J / J2 — BIR Alphanumeric Tax Code for rent withholding
+  // (Form 1606 — 5% withheld on real-property rent paid to a landlord).
+  // Optional. Set on PRF rows whose `payee_type` is a landlord. The engine
+  // emits a WithholdingLedger row at post time when (a) atc_code is set,
+  // (b) entity.rent_withholding_active is true, and (c) the doc is a PRF
+  // (CALF advances aren't payee payments). landlord_kind/id frozen at post.
+  atc_code: { type: String, trim: true, uppercase: true, default: null },
+  withholding_payee_kind: { type: String, trim: true, default: null },
+  withholding_payee_id: { type: mongoose.Schema.Types.ObjectId, default: null },
+
   notes: { type: String, trim: true },
 
   // Lifecycle: DRAFT → VALID → ERROR → POSTED

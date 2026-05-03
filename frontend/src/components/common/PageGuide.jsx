@@ -128,6 +128,24 @@ const PAGE_GUIDES = {
     ],
     tip: 'The dashboard is your accountant view — no BIR form ships from VIP CRM directly to BIR (we have no eFPS integration). The deliverable is a copy-paste UX into eBIR Forms for monthly + quarterly forms, .dat files for Alphalist Data Entry (SAWT, QAP, 1604-CF, 1604-E), and PDFs for the loose-leaf Books of Accounts. Phases J1-J7 add the per-form aggregators + serializers; J0 ships the dashboard, data-quality agent, and tax-config UI.',
   },
+  'bir-ewt-return': {
+    title: 'BIR 1601-EQ / 1606 — Expanded Withholding Tax',
+    steps: [
+      'Pre-flight: Tax Config must have entity.withholding_active = true (1601-EQ) or rent_withholding_active = true (1606). When OFF the engine writes nothing — the page renders zeros and Schedule is empty. Toggle from BIR Compliance Dashboard → Tax Config.',
+      'Engine activates: when an Expense line carries an ATC code (e.g. WI010 5% professional fees) AND the entity is withholding-active, the engine writes a WithholdingLedger row at post time. Same pattern for PRF rent lines + WI160/WC160 + rent_withholding_active.',
+      'Threshold flip: WI010 (5%) auto-flips to WI011 (10%) when YTD payout to a payee crosses ₱720k. The flip is per-payee per-year — historical 5% rows stay 5% in alphalist (correct, that\'s what BIR expects).',
+      'Each card is one BIR field on the form. Click the copy icon and paste directly into eBIRForms 7.x. Schedule rows below the boxes show per-payee × ATC detail — finance reviews them before signing off.',
+      'Per-payee 2307 PDF: each Schedule row in 1601-EQ has a "2307 PDF" button that generates the BIR Form 2307 (Certificate of Creditable Tax Withheld) for that payee × quarter. Send the PDF to the contractor / supplier — they need it for their own income-tax filing.',
+      'SAWT (.dat alphalist): use the SAWT toolbar button on the 1601-EQ page to export the BIR Alphalist Data Entry .dat file for the quarter. Import into the Alphalist Data Entry tool (BIR-published software) before submitting the 1601-EQ.',
+      'Lifecycle: Export CSV → Mark Reviewed (president) → Mark Filed (bookkeeper, after eBIR submission) → CONFIRMED (auto-flip when BIR email lands, or manual with reference number).',
+    ],
+    next: [
+      { label: 'BIR Compliance Dashboard', path: '/erp/bir' },
+      { label: 'Expenses (set ATC code per line)', path: '/erp/expenses' },
+      { label: 'PRF / CALF (set ATC on rent PRFs)', path: '/erp/prf-calf' },
+    ],
+    tip: 'Finance ledger gates: every WithholdingLedger row starts as PENDING. Review under "VAT/EWT Tagging" (Phase G3 surface, /erp/accounting) and tag INCLUDE before exporting CSVs — the aggregator only counts INCLUDE rows. Mirrors the VAT ledger discipline so 1601-EQ totals always match what finance signed off.',
+  },
   'bir-vat-return': {
     title: 'BIR 2550M / 2550Q VAT Return',
     steps: [

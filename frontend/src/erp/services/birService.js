@@ -144,6 +144,80 @@ export async function exportVatReturnCsv(formCode, year, period) {
   return { blob, filename, contentHash };
 }
 
+// ── Phase J2 — 1601-EQ + 1606 + 2307-OUT + SAWT EWT endpoints ──────────
+export async function compute1601EQ(year, quarter) {
+  const { data } = await api.get(`${BASE}/forms/1601-EQ/${year}/${quarter}/compute`);
+  return data?.data || null;
+}
+
+export async function compute1606(year, month) {
+  const { data } = await api.get(`${BASE}/forms/1606/${year}/${month}/compute`);
+  return data?.data || null;
+}
+
+export async function listEwtPayees(year, quarter) {
+  const { data } = await api.get(`${BASE}/forms/1601-EQ/${year}/${quarter}/payees`);
+  return data?.data || { payees: [] };
+}
+
+export async function getWithholdingPosture(year) {
+  const params = year ? { year } : {};
+  const { data } = await api.get(`${BASE}/withholding/posture`, { params });
+  return data?.data || null;
+}
+
+/**
+ * Common downloader for blob endpoints (CSV/PDF/.dat). Mirrors
+ * exportVatReturnCsv error-blob unwrap so server 403/404 messages
+ * surface as plain JSON to the caller's toast.
+ */
+async function downloadBlob(url, fallbackFilename) {
+  let response;
+  try {
+    response = await api.get(url, { responseType: 'blob' });
+  } catch (err) {
+    if (err?.response?.data instanceof Blob) {
+      try {
+        const text = await err.response.data.text();
+        err.response.data = JSON.parse(text);
+      } catch { /* not JSON */ }
+    }
+    throw err;
+  }
+  const blob = response.data;
+  const cd = response.headers?.['content-disposition'] || '';
+  const match = cd.match(/filename="([^"]+)"/);
+  const filename = match ? match[1] : fallbackFilename;
+  const contentHash = response.headers?.['x-content-hash'] || null;
+  const objUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(objUrl);
+  return { blob, filename, contentHash };
+}
+
+export async function exportEwtCsv(formCode, year, period) {
+  const fallback = formCode === '1601-EQ'
+    ? `1601EQ_${year}-Q${period}.csv`
+    : `1606_${year}-${String(period).padStart(2, '0')}.csv`;
+  return downloadBlob(`${BASE}/forms/${formCode}/${year}/${period}/export.csv`, fallback);
+}
+
+export async function exportSawtDat(year, quarter) {
+  return downloadBlob(`${BASE}/forms/SAWT/${year}/${quarter}/export.dat`, `SAWT_${year}_Q${quarter}.dat`);
+}
+
+export async function export2307Pdf(year, quarter, payeeKind, payeeId) {
+  return downloadBlob(
+    `${BASE}/forms/2307-OUT/${year}/${quarter}/${encodeURIComponent(payeeKind)}/${encodeURIComponent(payeeId)}/export.pdf`,
+    `2307_${payeeKind}_${payeeId}_${year}-Q${quarter}.pdf`,
+  );
+}
+
 export default {
   getDashboard,
   getEntityConfig,
@@ -159,4 +233,12 @@ export default {
   compute2550M,
   compute2550Q,
   exportVatReturnCsv,
+  // Phase J2
+  compute1601EQ,
+  compute1606,
+  listEwtPayees,
+  getWithholdingPosture,
+  exportEwtCsv,
+  exportSawtDat,
+  export2307Pdf,
 };

@@ -32,7 +32,18 @@ const expenseLineSchema = new mongoose.Schema({
   notes: { type: String, trim: true },
   // Batch upload fields
   bir_flag: { type: String, default: 'BOTH' }, // Lookup: BIR_FLAG
-  is_assorted: { type: Boolean, default: false }
+  is_assorted: { type: Boolean, default: false },
+
+  // Phase VIP-1.J / J2 — BIR Alphanumeric Tax Code for Expanded Withholding.
+  // Optional. Set on contractor/professional-fee or rent line items so the
+  // engine emits a WithholdingLedger row at post time. Validated against the
+  // BIR_ATC_CODES lookup (subscriber-extensible). When null, no withholding
+  // is applied — the line is treated as a non-EWT expense.
+  atc_code: { type: String, trim: true, uppercase: true, default: null },
+  // Frozen at post time so payee renames don't rewrite alphalist history.
+  // Set by the engine; not user-editable.
+  withholding_payee_kind: { type: String, trim: true, default: null },
+  withholding_payee_id: { type: mongoose.Schema.Types.ObjectId, default: null }
 }, { _id: true });
 
 const expenseEntrySchema = new mongoose.Schema({

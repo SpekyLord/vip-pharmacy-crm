@@ -22,6 +22,10 @@ const Entity = require('../models/Entity');
 const BirFilingStatus = require('../models/BirFilingStatus');
 const BirDataQualityRun = require('../models/BirDataQualityRun');
 const Lookup = require('../models/Lookup');
+// Phase VIP-1.J / J2 — withholding posture is computed from
+// WithholdingLedger rows (real data) once the engine is active.
+const withholdingService = require('./withholdingService');
+const PeopleMaster = require('../models/PeopleMaster');
 
 const TTL_MS = 60_000;
 const _cache = new Map();
@@ -303,17 +307,37 @@ async function buildDashboard({ entityId, year }) {
   }
   recentExports.sort((a, b) => b.exported_at - a.exported_at);
 
-  // ── 6. Withholding posture (Phase J2 will populate; J0 stub) ──
-  const withholdingPosture = {
-    enabled: !!entity.withholding_active,
-    note: entity.withholding_active
-      ? 'Withholding engine active. Phase J2 will populate per-contractor counts.'
-      : 'Withholding engine OFF for this entity. Per-contractor exposure surfaces in Phase J2.',
-    contractors_not_withheld: 0,
-    estimated_ytd_payout: 0,
-    estimated_annual_payout: 0,
-    threshold_trip_at: 720_000,
-  };
+  // ── 6. Withholding posture (Phase J2 — live from WithholdingLedger) ──
+  // When withholding_active=true, posture pulls real numbers from the
+  // ledger. When false, posture surfaces a "build-only" stub so the card
+  // still renders without firing a per-tile aggregate that would always
+  // return zeros.
+  let withholdingPosture;
+  if (entity.withholding_active) {
+    const live = await withholdingService.buildPosture(entityId, year);
+    // Count contractors who are PS_ELIGIBLE / SUBSIDIARY but withhold_active=false.
+    const exposedCount = await PeopleMaster.countDocuments({
+      entity_id: entityId,
+      bdm_stage: { $in: ['PS_ELIGIBLE', 'TRANSITIONING', 'SUBSIDIARY'] },
+      withhold_active: { $ne: true },
+      is_active: true,
+    });
+    withholdingPosture = {
+      ...live,
+      note: 'Withholding engine active. Numbers from WithholdingLedger this year.',
+      contractors_not_withheld: exposedCount,
+    };
+  } else {
+    withholdingPosture = {
+      enabled: false,
+      note: 'Withholding engine OFF for this entity. Toggle Entity.withholding_active when profit-sharing kicks in (Phase VIP-1.B).',
+      contractors_not_withheld: 0,
+      estimated_ytd_payout: 0,
+      estimated_annual_payout: 0,
+      threshold_trip_at: 720_000,
+      breakdown: [],
+    };
+  }
 
   const payload = {
     year,

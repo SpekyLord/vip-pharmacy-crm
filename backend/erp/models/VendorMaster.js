@@ -42,6 +42,24 @@ const vendorMasterSchema = new mongoose.Schema({
   },
   is_active: { type: Boolean, default: true },
 
+  // ── Phase VIP-1.J / J2 — BIR withholding posture ──
+  // Identical pattern to PeopleMaster.withhold_active. Per-vendor toggle on
+  // top of entity-level switches. For landlords, set `is_landlord = true` +
+  // `default_atc_code = 'WI160'` (individual) or `'WC160'` (corporate) — the
+  // engine consults this when posting a PRF rent line. For TWA-eligible
+  // suppliers (top-withholding-agent posture), set `default_atc_code = 'WI080'`
+  // (goods) or `'WI081'` (services); the engine then withholds 1%/2% on every
+  // post-tax expense line tied to this vendor.
+  withhold_active: { type: Boolean, default: false },
+  default_atc_code: { type: String, trim: true, uppercase: true, default: null },
+  is_landlord: { type: Boolean, default: false },
+  // Legal-entity classification for ATC bucket choice (individual vs corporate).
+  payee_kind: {
+    type: String,
+    enum: ['INDIVIDUAL', 'CORPORATION', 'PARTNERSHIP', 'OTHER', null],
+    default: null,
+  },
+
   // ── Phase H5 — Vendor Auto-Learn from Claude Wins ──
   // When Claude successfully classifies an OR/GAS_RECEIPT that didn't match any existing
   // VendorMaster entry, the OCR pipeline creates a new vendor here (or appends a fresh OCR

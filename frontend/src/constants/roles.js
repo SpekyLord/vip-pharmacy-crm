@@ -20,11 +20,15 @@ export const ROLES = Object.freeze({
   FINANCE: 'finance',
   PRESIDENT: 'president',
   CEO: 'ceo',
+  // Phase VIP-1.J — taxes-only auth tier for the external/in-house bookkeeper.
+  // Mirrors backend/constants/roles.js. Sees only /erp/bir + form-detail
+  // pages; backend select:false on payroll fields.
+  BOOKKEEPER: 'bookkeeper',
   MEDREP: 'medrep',           // legacy CRM role (being removed in CRM Phase A, Change 1)
 });
 
 // All valid system roles
-export const ALL_ROLES = [ROLES.ADMIN, ROLES.STAFF, ROLES.FINANCE, ROLES.PRESIDENT, ROLES.CEO, ROLES.MEDREP];
+export const ALL_ROLES = [ROLES.ADMIN, ROLES.STAFF, ROLES.FINANCE, ROLES.PRESIDENT, ROLES.CEO, ROLES.BOOKKEEPER, ROLES.MEDREP];
 
 // ── Named Permission Sets ──────────────────────────────────────────
 export const ROLE_SETS = Object.freeze({
@@ -36,6 +40,12 @@ export const ROLE_SETS = Object.freeze({
   ADMIN_ONLY: [ROLES.ADMIN],
   ERP_FINANCE: [ROLES.STAFF, ROLES.ADMIN, ROLES.FINANCE],
   MANAGEMENT: [ROLES.ADMIN, ROLES.FINANCE, ROLES.PRESIDENT],
+  // Phase VIP-1.J — BIR Compliance Dashboard guard. Backend layers
+  // BIR_ROLES lookup gates per scope (VIEW_DASHBOARD / EXPORT_FORM /
+  // MARK_FILED / ...) — frontend route-guard is just the broad set.
+  // Pre-J2 this set was undefined which short-circuited the route guard
+  // entirely (ProtectedRoute defaults to allowedRoles=[] → no gate).
+  BIR_FILING: [ROLES.ADMIN, ROLES.FINANCE, ROLES.PRESIDENT, ROLES.BOOKKEEPER],
 });
 
 // ── Helper Functions ───────────────────────────────────────────────

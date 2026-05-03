@@ -256,6 +256,56 @@ export default function BIRCompliancePage() {
                 </div>
               </div>
 
+              {/* Phase VIP-1.J / J2 — Withholding Posture card.
+                  Always renders so finance sees the on/off posture; numbers
+                  go live once an entity flips withholding_active=true and
+                  posts an expense / PRF rent line with an ATC code. */}
+              <div className="bir-card">
+                <div className="bir-h2">
+                  <ShieldCheck size={16} /> Withholding Posture (1601-EQ + 1606)
+                  <span className="bir-pill" style={{ background: dashboard.withholding_posture?.enabled ? '#dcfce7' : '#fef9c3', color: dashboard.withholding_posture?.enabled ? '#15803d' : '#854d0e', marginLeft: 'auto' }}>
+                    {dashboard.withholding_posture?.enabled ? 'Engine ON' : 'Engine OFF (build-only)'}
+                  </span>
+                </div>
+                <p style={{ fontSize: '0.82rem', color: '#6b7280', marginBottom: '0.5rem' }}>{dashboard.withholding_posture?.note}</p>
+                <div className="bir-row" style={{ gap: '1.5rem', fontSize: '0.85rem' }}>
+                  <span>Contractors not withheld: <strong>{dashboard.withholding_posture?.contractors_not_withheld ?? 0}</strong></span>
+                  <span>YTD payout: <strong>₱{(dashboard.withholding_posture?.estimated_ytd_payout || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</strong></span>
+                  <span>YTD withheld: <strong>₱{(dashboard.withholding_posture?.estimated_ytd_withheld || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</strong></span>
+                  <span>Annualized: <strong>₱{(dashboard.withholding_posture?.estimated_annual_payout || 0).toLocaleString('en-PH', { minimumFractionDigits: 0 })}</strong></span>
+                  <span>Threshold trip: <strong>₱{(dashboard.withholding_posture?.threshold_trip_at || 720000).toLocaleString('en-PH')}</strong></span>
+                </div>
+                {dashboard.withholding_posture?.breakdown?.length > 0 && (
+                  <details style={{ marginTop: '0.6rem' }}>
+                    <summary style={{ fontSize: '0.85rem', cursor: 'pointer', color: '#374151' }}>
+                      Top {dashboard.withholding_posture.breakdown.length} payee × ATC buckets
+                    </summary>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', marginTop: '0.4rem' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid #e5e7eb', color: '#6b7280' }}>
+                          <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem' }}>ATC</th>
+                          <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem' }}>Payee</th>
+                          <th style={{ textAlign: 'right', padding: '0.3rem 0.5rem' }}>Gross</th>
+                          <th style={{ textAlign: 'right', padding: '0.3rem 0.5rem' }}>Withheld</th>
+                          <th style={{ textAlign: 'right', padding: '0.3rem 0.5rem' }}>Last</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dashboard.withholding_posture.breakdown.slice(0, 10).map((r, i) => (
+                          <tr key={i} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                            <td style={{ padding: '0.3rem 0.5rem' }}><span className="bir-pill" style={{ background: '#dbeafe', color: '#1e40af' }}>{r.atc_code}</span></td>
+                            <td style={{ padding: '0.3rem 0.5rem' }}>{r.payee_name || '(unnamed)'}</td>
+                            <td style={{ padding: '0.3rem 0.5rem', textAlign: 'right' }}>₱{(r.gross || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
+                            <td style={{ padding: '0.3rem 0.5rem', textAlign: 'right' }}>₱{(r.withheld || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
+                            <td style={{ padding: '0.3rem 0.5rem', textAlign: 'right' }}>{r.last_period}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </details>
+                )}
+              </div>
+
               {/* Upcoming deadlines */}
               <div className="bir-card">
                 <div className="bir-h2"><Calendar size={16} /> Upcoming deadlines (next 30 days)</div>
@@ -295,14 +345,22 @@ export default function BIRCompliancePage() {
                       <div /> {/* spacer for label column alignment */}
                       {f.cells.map(c => {
                         const meta = STATUS_META[c.status] || STATUS_META.DRAFT;
-                        // Phase VIP-1.J / J1: 2550M and 2550Q have a form-detail page;
-                        // other forms (J2+) drill-down lands here later. Cell is
+                        // Phase VIP-1.J / J1: 2550M and 2550Q drill into the VAT
+                        // form-detail page. Phase J2 (Apr 2026) adds 1601-EQ and
+                        // 1606 + makes SAWT clickable (drilling into the same
+                        // 1601-EQ page since both share the EWT ledger — the SAWT
+                        // toolbar button on the EWT page exports the .dat file).
+                        // Other forms (J3+) drill-down lands here later. Cell is
                         // clickable only when the target exists, so the user does
                         // not get a 404 on unbuilt forms.
                         const period = c.period_month || c.period_quarter;
-                        const isClickable = period && (f.form_code === '2550M' || f.form_code === '2550Q');
+                        const drillableForms = ['2550M', '2550Q', '1601-EQ', '1606'];
+                        const isClickable = period && (drillableForms.includes(f.form_code) || f.form_code === 'SAWT');
+                        // SAWT redirects to the 1601-EQ page (same quarter) — its
+                        // .dat export is a button on that page.
+                        const targetForm = f.form_code === 'SAWT' ? '1601-EQ' : f.form_code;
                         const target = isClickable
-                          ? `/erp/bir/${f.form_code}/${year}/${period}`
+                          ? `/erp/bir/${targetForm}/${year}/${period}`
                           : null;
                         const cellTitle = `${c.period_label} — ${meta.label}${c.due_date ? `\nDue ${new Date(c.due_date).toLocaleDateString()}` : ''}${isClickable ? '\n(Click to open form detail)' : ''}`;
                         return (
