@@ -292,6 +292,10 @@ const PartnershipCLM = () => {
           'in_person',
         );
         setActiveSession(res.data);
+        if (res.resumed) {
+          const docName = `${selectedDoctor.firstName || ''} ${selectedDoctor.lastName || ''}`.trim() || 'Dr.';
+          toast(`Resuming in-progress CLM session for ${docName}`, { icon: '\u{1F501}' });
+        }
       } else {
         // Offline: create a local draft session
         const offlineSession = {
