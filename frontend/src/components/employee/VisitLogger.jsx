@@ -711,8 +711,8 @@ const VisitLogger = ({ doctor, onSuccess }) => {
           <p style={{ color: '#78350f', fontSize: 13, marginTop: 0 }}>
             Take this VIP Client through the partnership deck before logging
             the visit. Slide events and product interest are captured to the
-            same encounter (linked by ID). Optional — if you don't have an
-            opportunity to present, skip this and go straight to the photo
+            same encounter (linked by ID). Optional — if you don&apos;t have
+            an opportunity to present, skip this and go straight to the photo
             proof below.
           </p>
           <button
@@ -752,7 +752,7 @@ const VisitLogger = ({ doctor, onSuccess }) => {
           </h3>
           <p style={{ color: '#78350f', fontSize: 13, marginTop: 0 }}>
             You started a partnership presentation for this VIP Client but
-            didn't record the session details (interest level, outcome, notes).
+            didn&apos;t record the session details (interest level, outcome, notes).
             Visit Submit is blocked until you resume the CLM session and Save
             it — or you can record the session as &quot;Not Interested&quot; if
             no follow-up is warranted.
