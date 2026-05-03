@@ -79,13 +79,29 @@ const startSession = asyncHandler(async (req, res) => {
   // 'in_person' (avoids 400 on a hostile/buggy client value).
   const sessionMode = mode === 'remote' ? 'remote' : 'in_person';
 
-  // Idempotency check — prevent duplicate offline syncs
-  // If client sends X-Idempotency-Key header, check if a session with that key already exists.
-  // If so, return 409 Conflict so the client knows to delete the draft.
+  // Idempotency check — two distinct cases share the same key check:
+  //   1. Resume — same user, status='in_progress' → return 200 with existing
+  //      so the BDM can re-enter the presenter and finalize the session
+  //      (Phase N+ merged-flow gate — Skip on Session Complete modal forwards
+  //      the BDM to VisitLogger with clm_pending=1; clicking "Resume CLM
+  //      session" re-hits this endpoint with the same idempotencyKey).
+  //   2. Duplicate offline sync — completed session OR different user →
+  //      return 409 so the offline queue knows to drop the draft.
   const idempotencyKey = req.headers['x-idempotency-key'];
   if (idempotencyKey) {
     const existing = await CLMSession.findOne({ idempotencyKey }).lean();
     if (existing) {
+      const sameUser = String(existing.user) === String(req.user._id);
+      const inProgress = existing.status === 'in_progress';
+      if (sameUser && inProgress) {
+        // Resume — let the client pick up where it left off.
+        return res.status(200).json({
+          success: true,
+          message: 'Resumed in-progress session.',
+          data: existing,
+          resumed: true,
+        });
+      }
       return res.status(409).json({
         success: false,
         message: 'Duplicate session — already synced.',
@@ -140,6 +156,18 @@ const startSession = asyncHandler(async (req, res) => {
     if (err && err.code === 11000 && idempotencyKey) {
       const existing = await CLMSession.findOne({ idempotencyKey }).lean();
       if (existing) {
+        // Same Resume vs duplicate-sync split as the pre-check above —
+        // a race that lost the insert still wants the same semantics.
+        const sameUser = String(existing.user) === String(req.user._id);
+        const inProgress = existing.status === 'in_progress';
+        if (sameUser && inProgress) {
+          return res.status(200).json({
+            success: true,
+            message: 'Resumed in-progress session.',
+            data: existing,
+            resumed: true,
+          });
+        }
         return res.status(409).json({
           success: false,
           message: 'Duplicate session — already synced.',
