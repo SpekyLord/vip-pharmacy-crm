@@ -9565,7 +9565,7 @@ Backend:
 
 ---
 
-## Phase VIP-1.J — BIR Tax Compliance Suite (J0 SHIPPED + SMOKE-PASSED Apr 27 2026; J1 SHIPPED Apr 28 2026; J2-J7 deferred)
+## Phase VIP-1.J — BIR Tax Compliance Suite (J0 SHIPPED Apr 27 2026; J1 SHIPPED Apr 28 2026; J2 SHIPPED May 03 2026; J3-J7 deferred)
 
 **Sequence**: J0 (foundation) ✅ -> J1 (VAT) ✅ -> J2 (EWT) ⬅ START HERE -> J3 (Compensation) -> J4 (Annual Alphalists) -> J5 (Books of Accounts) -> J6 (Inbound 2307) -> J7 (1702 Annual Income Tax)
 
@@ -9657,8 +9657,60 @@ Commits `80b2798` + `68c711d` on `origin/dev` (Apr 27 13:28 + 13:41 PHT). Live H
 - **J1.2.x — eBIRForms XML import**: stretch goal once bookkeeper confirms format stability.
 - **J1.3.x — golden-file fixture tests**: lock CSV byte format with snapshot in `backend/erp/services/__fixtures__/`.
 
-### J2 — 1601-EQ + 1606 + Outbound 2307 + SAWT (~3 days)
-New `WithholdingLedger` model (direction OUTBOUND, ATC code, payee, period). Engine triggers on Payroll post (contractors, when active) + Expense post (rent line). 1601-EQ + 1606 copy-paste pages. Outbound 2307 PDF per contractor per quarter. SAWT `.dat` writer with golden-file fixtures. Withholding Posture card on dashboard. PS-eligibility auto-flip.
+### J2 — 1601-EQ + 1606 + Outbound 2307 + SAWT (May 03 2026, uncommitted on dev) — ✅ SHIPPED
+
+**J2.1 WithholdingLedger model** (`backend/erp/models/WithholdingLedger.js`) — ✅ shipped
+- Sub-ledger row per (source line × ATC code). Direction enum (OUTBOUND only writes today; INBOUND/COMPENSATION reserved for J3/J6). Polymorphic payee (PeopleMaster/VendorMaster/Hospital/Doctor/Other) with frozen snapshots (name/TIN/address) so renames don't rewrite alphalist history. finance_tag enum mirrors VatLedger semantics. 4 indexes: aggregator-friendly + per-payee + reversal-by-event + finance-review.
+
+**J2.2 withholdingService** (`backend/erp/services/withholdingService.js`) — ✅ shipped
+- `resolveAtcCodeForExpenseLine` (1601-EQ) + `resolveAtcCodeForPrfRent` (1606) ATC resolvers with WI010↔WI011 YTD threshold flip on ₱720k crossover. 60s ATC metadata cache. `createWithholdingEntries` (bulk insert + session-aware) + `deleteWithholdingEntriesForEvent` (idempotent reversal). `buildPosture` aggregator for dashboard card.
+
+**J2.3 withholdingReturnService** (`backend/erp/services/withholdingReturnService.js`) — ✅ shipped
+- `compute1601EQ` (14-box layout, Schedule 1+2+TOTAL sections, per-payee schedule). `compute1606` (6-box layout, per-landlord schedule). `export2307Pdf` via pdfkit. `exportSawtDat` per BIR Alphalist Data Entry v7.x (`H1|...` / `D1|...` / `T1|...`). `exportEwtCsv` with SHA-256 audit-log append.
+
+**J2.4 Engine triggers** (`backend/erp/controllers/expenseController.js`) — ✅ shipped
+- New helpers `emitEwtForExpense` + `emitEwtForPrfRent` (best-effort, idempotent). Wired into legacy `submitExpenses`, approval-hub `postSingleExpense`, CALF cascade source path, and `postSinglePrfCalf` (rent path). `reopenExpenses` invokes `deleteWithholdingEntriesForEvent` after journal reversal.
+
+**J2.5 Schema fields on 4 models** — ✅ shipped
+- `ExpenseEntry` line: `atc_code` + `withholding_payee_kind` + `withholding_payee_id` (frozen snapshots).
+- `PrfCalf`: same three fields (rent on PRFs only).
+- `PeopleMaster`: `withhold_active` (per-person toggle) + `default_atc_code` (start bucket).
+- `VendorMaster`: `withhold_active` + `default_atc_code` + `is_landlord` + `payee_kind` (INDIVIDUAL/CORPORATION/PARTNERSHIP/OTHER).
+
+**J2.6 Controller endpoints + routes** (`backend/erp/controllers/birController.js`, `backend/erp/routes/birRoutes.js`) — ✅ shipped
+- 6 new endpoints: compute1601EQ + compute1606 + listEwtPayees + exportEwtCsv + export2307Pdf + exportSawtDat + getWithholdingPosture.
+- Routes wired BEFORE J1 catch-all `/forms/:formCode/:year/:period/export.csv` so EWT codes don't fall through. Healthcheck enforces ordering.
+
+**J2.7 Frontend page** (`frontend/src/erp/pages/BirEwtReturnDetailPage.jsx`) — ✅ shipped
+- Handles BOTH 1601-EQ + 1606. Per-box copy cards. Per-payee schedule table with per-row "2307 PDF" button (1601-EQ only). SAWT toolbar button (1601-EQ only). Lifecycle (Mark Reviewed/Filed/Confirmed) wired.
+
+**J2.8 App.jsx routes + heatmap drill-down** — ✅ shipped
+- `/erp/bir/1601-EQ/:year/:period` + `/erp/bir/1606/:year/:period` BEFORE the J1 wildcard. `BIRCompliancePage` heatmap `drillableForms` extended; SAWT cells redirect to 1601-EQ.
+
+**J2.9 Withholding Posture card** (`backend/erp/services/birDashboardService.js` + `frontend/src/erp/pages/BIRCompliancePage.jsx`) — ✅ shipped
+- Live numbers from `withholdingService.buildPosture` when engine ON. PeopleMaster scan for `contractors_not_withheld` count. Dashboard renders engine on/off pill + 5-stat row + drill-down `<details>` with top 10 payee×ATC buckets.
+
+**J2.10 Latent J1 wiring fix** (`frontend/src/constants/roles.js`) — ✅ shipped
+- Pre-J2 `ROLE_SETS.BIR_FILING` was undefined; `ProtectedRoute` defaulted to `[]` → no gate. J2 adds `BIR_FILING: [admin, finance, president, bookkeeper]` + `ROLES.BOOKKEEPER` constant + extends `ALL_ROLES`. Backend was already correct (lookup-driven via birAccess).
+
+**J2.11 PageGuide entry `bir-ewt-return`** (`frontend/src/components/common/PageGuide.jsx`) — ✅ shipped
+- 7-step workflow (pre-flight → engine activation → threshold flip → per-box copy → 2307 PDF → SAWT → lifecycle).
+
+**J2.12 Health check** (`backend/scripts/healthcheckBirEwtWiring.js`) — ✅ shipped
+- 124 assertions across 18 sections. Verified passing May 03 2026: `node backend/scripts/healthcheckBirEwtWiring.js` → `✓ All Phase VIP-1.J / J2 wiring checks passed`.
+
+**J2.13 Verification evidence (May 03 2026)**
+- 124/124 J2 healthcheck assertions PASS.
+- 13 sibling regression healthchecks PASS (BIR VAT 39/39, Sales Discount 41/41, Executive Cockpit 64/64, Team Activity 22/22, Income Proxy 32/32, Compute Payroll 29/29, Payslip Roster 31/31, Petty Cash Hub 22/22, SmerRevert 18/18, Activity Per-Diem 34/34, Inbox Triage 36/36, Journal Hub 19/19, Internal Transfer 26/26).
+- Vite build green 12.86s; `BirEwtReturnDetailPage-qAZZLw64.js` chunked.
+- Live HTTP smoke as president: compute1601EQ/1606/posture/listPayees → 200 with proper shapes; bad quarter/month → 400; CSV/PDF/.dat exports → 403 (EXPORT_FORM gate, by design — president NOT in role list); J1 2550M regression preserved (200 + exempt_sales=50). CORS headers `Content-Disposition,X-Content-Hash` exposed.
+- Playwright MCP profile-locked (same env constraint as R1 + UX-Scroll smokes); HTTP smoke is exhaustive coverage of the data contract.
+
+**J2.x open follow-ups (not blocking J3)**:
+- **J2.1.x — Expense ATC dropdown UI**: add per-line ATC `<SelectField>` to Expenses.jsx (driven by BIR_ATC_CODES, filtered by metadata.applies_to). Engine reads the field already; UI is the only gap. (~1 hr)
+- **J2.2.x — PS-eligibility auto-flip**: when `evaluateProfitSharingEligibility(contractor)` flips true the FIRST time, set `PeopleMaster.withhold_active=true` + emit MessageInbox alert. Hook lives in rebate engine — wire when VIP-1.B Phase 5 lands.
+- **J2.3.x — golden SAWT fixture**: snapshot a real-data Q1 `.dat` payload at `backend/erp/services/__fixtures__/SAWT_2026-Q1_VIP.dat` + add fixture-equality test. Detects accidental serializer drift.
+- **J2.4.x — Inbound 2307 (J6 prep)**: WithholdingLedger.DIRECTIONS reserves INBOUND but doesn't write today; CwtLedger remains source-of-truth. J6 decides migrate vs. coexist.
 
 ### J3 — 1601-C + 1604-CF (~1.5 days)
 Payslip -> WithholdingLedger bridge (direction COMPENSATION). 1601-C copy-paste page. 1604-CF Annual Alphalist `.dat` writer (Schedules 7.1 / 7.2 / 7.3).

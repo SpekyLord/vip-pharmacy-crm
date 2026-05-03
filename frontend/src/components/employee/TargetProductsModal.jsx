@@ -23,6 +23,9 @@ const TargetProductsModal = ({ doctor, onClose, onSaved }) => {
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  // True when the specialization-scoped query returned 0 and we fell back to all products.
+  // Drives the yellow info note so the BDM understands why the list isn't filtered.
+  const [usedFallback, setUsedFallback] = useState(false);
 
   // Slots: array of { product: string (id) | '', status: 'showcasing' | 'accepted' }
   const [slots, setSlots] = useState(() => {
@@ -37,19 +40,34 @@ const TargetProductsModal = ({ doctor, onClose, onSaved }) => {
     return initial;
   });
 
-  // Fetch products filtered by doctor's specialization (fallback to all)
+  // Fetch products filtered by doctor's specialization, falling back to all active
+  // products when the specialization-scoped query returns nothing. Specialization is
+  // free-form text (Doctor.js:42 — "Pedia Hema", "Im Car", "Breast Surg") and the
+  // backend matches it as an exact, case-insensitive element of the product's
+  // `targetSpecializations` array, so any whitespace/abbreviation mismatch yields
+  // an empty list. The fallback keeps the modal usable; the yellow note explains
+  // why the filter wasn't applied.
   useEffect(() => {
     let cancelled = false;
     const fetchProducts = async () => {
       try {
-        let res;
+        let list = [];
+        let fellBack = false;
         if (doctor?.specialization) {
-          res = await productService.getBySpecialization(doctor.specialization);
+          const res = await productService.getBySpecialization(doctor.specialization);
+          list = res.data || [];
+          if (list.length === 0) {
+            const all = await productService.getAll({ limit: 0 });
+            list = all.data || [];
+            fellBack = true;
+          }
         } else {
-          res = await productService.getAll({ limit: 0 });
+          const res = await productService.getAll({ limit: 0 });
+          list = res.data || [];
         }
         if (!cancelled) {
-          setProducts(res.data || []);
+          setProducts(list);
+          setUsedFallback(fellBack);
         }
       } catch {
         if (!cancelled) setError('Failed to load products');
@@ -121,6 +139,18 @@ const TargetProductsModal = ({ doctor, onClose, onSaved }) => {
 
         {error && <div className="tpm-error">{error}</div>}
 
+        {!loadingProducts && usedFallback && (
+          <div className="tpm-note">
+            No products tagged for <strong>{doctor?.specialization}</strong> — showing all active products.
+          </div>
+        )}
+
+        {!loadingProducts && products.length === 0 ? (
+          <div className="tpm-empty">
+            <p>No active products in the catalog yet.</p>
+            <p className="tpm-empty-hint">Ask your admin to add products in Product Management.</p>
+          </div>
+        ) : (
         <div className="tpm-slots">
           {slots.map((slot, i) => (
             <div key={i} className={`tpm-slot ${slot.product ? 'tpm-slot-filled' : ''}`}>
@@ -177,6 +207,7 @@ const TargetProductsModal = ({ doctor, onClose, onSaved }) => {
             </div>
           ))}
         </div>
+        )}
 
         <div className="tpm-actions">
           <button className="btn btn-secondary btn-sm" onClick={onClose} type="button">
@@ -185,7 +216,7 @@ const TargetProductsModal = ({ doctor, onClose, onSaved }) => {
           <button
             className="btn btn-primary btn-sm"
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || (!loadingProducts && products.length === 0)}
             type="button"
           >
             {saving ? 'Saving...' : 'Save'}
@@ -238,6 +269,33 @@ const TargetProductsModal = ({ doctor, onClose, onSaved }) => {
           background: #fef2f2; border: 1px solid #fecaca;
           border-radius: 8px; color: #b91c1c;
           font-size: 13px; font-weight: 500;
+        }
+
+        .tpm-note {
+          margin: 0 24px 8px;
+          padding: 10px 14px;
+          background: #fffbeb; border: 1px solid #fde68a;
+          border-radius: 8px; color: #92400e;
+          font-size: 12px; line-height: 1.4;
+        }
+        .tpm-note strong { color: #78350f; }
+
+        .tpm-empty {
+          margin: 8px 24px 16px;
+          padding: 24px 16px;
+          border: 1px dashed #d1d5db;
+          border-radius: 12px;
+          background: #f9fafb;
+          text-align: center;
+        }
+        .tpm-empty p {
+          margin: 0;
+          font-size: 14px; font-weight: 600; color: #374151;
+        }
+        .tpm-empty-hint {
+          margin-top: 6px !important;
+          font-size: 12px !important; font-weight: 400 !important;
+          color: #6b7280 !important;
         }
 
         .tpm-slots {

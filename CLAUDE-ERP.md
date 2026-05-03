@@ -6109,11 +6109,87 @@ See `docs/PHASETASK-ERP.md` (`WEEK-1 STABILIZATION — DAY 4`) for the full file
 
 ---
 
-## Phase VIP-1.J — BIR Tax Compliance Suite (J0 + J1 SHIPPED Apr 27-28 2026, J2-J7 deferred)
+## Phase VIP-1.J — BIR Tax Compliance Suite (J0 + J1 + J2 SHIPPED Apr 27 – May 03 2026, J3-J7 deferred)
 
 **Goal**: replace the bookkeeper-as-black-box workflow with a president-facing BIR Compliance Dashboard + per-form copy-paste UX into eBIR Forms + `.dat` exports for Alphalist Data Entry + loose-leaf Books of Accounts PDFs. Covers VIP, Balai Lawaan, online pharmacy, MG, CO, and future SaaS subscribers.
 
-**Status (Apr 28 2026)**: J0 + J1 shipped. J0 (Compliance Dashboard + Foundation + Data Quality Agent + inbound-email parser) is on `origin/dev` (commits `80b2798` + `68c711d`) and live-smoke green — see Apr 27 entry below. **J1 (2550M Monthly + 2550Q Quarterly VAT compute + CSV export) is uncommitted on `dev`** — `vatReturnService` aggregator + 3 new endpoints + `BirVatReturnDetailPage` + heatmap cell-click drill-down + 39-check wiring healthcheck (passing). J2-J7 (~10 working days regulatory tax forms) still deferred — see memory `handoff_vip_1_j_phases_j1_j7_apr27_2026.md` and plan `~/.claude/plans/vip-1-j-bir-compliance.md`.
+**Status (May 03 2026)**: J0 + J1 + J2 shipped. J0 (Compliance Dashboard + Foundation + Data Quality Agent + inbound-email parser) is on `origin/dev` (commits `80b2798` + `68c711d`) and live-smoke green. J1 (2550M Monthly + 2550Q Quarterly VAT compute + CSV export) shipped Apr 28 2026, healthcheck 39/39 passing. **J2 (1601-EQ + 1606 + 2307-OUT + SAWT — uncommitted on `dev` May 03 2026)** — full withholding-tax engine + per-form aggregators + 2307 PDF generator + SAWT `.dat` writer + Withholding Posture card on dashboard + 124-check wiring healthcheck (passing). HTTP smoke green end-to-end (Playwright MCP profile-locked, deferred). J3-J7 (~7 working days remaining: compensation withholding + alphalists + books of accounts + 1702 income tax) still deferred — plan `~/.claude/plans/vip-1-j-bir-compliance.md`.
+
+### J2 — 1601-EQ + 1606 + 2307-OUT + SAWT EWT (May 03 2026, uncommitted on dev)
+
+**What shipped**:
+
+1. **`backend/erp/models/WithholdingLedger.js`** (new) — sub-ledger for outbound EWT events. One row per (source line × ATC code). Fields: `entity_id`, `period` ('YYYY-MM'), `direction` (`OUTBOUND` only writes today; `INBOUND`/`COMPENSATION` reserved for J3/J6), `atc_code`, `form_code` (denormalized for fast heatmap groups), `payee_kind` enum + `payee_id` (polymorphic — VendorMaster / PeopleMaster / Hospital / Doctor / Other), three frozen snapshots (`payee_name_snapshot` / `payee_tin_snapshot` / `payee_address_snapshot` — payee renames don't rewrite alphalist history), `gross_amount` + `withholding_rate` + `withheld_amount`, `source_module` + `source_doc_ref` + `source_event_id` (links to GL via TransactionEvent) + `source_line_id`, `finance_tag` enum (PENDING / INCLUDE / EXCLUDE / DEFER — mirrors VatLedger semantics), YTD denormals (`ytd_gross_at_post`), notes. Indexes: `{entity_id, period, direction, atc_code}` (1601-EQ aggregation), `{entity_id, payee_kind, payee_id, period}` (per-payee 2307 generation), `{source_event_id}` (reversal lookup), `{entity_id, finance_tag}` (finance review queue).
+2. **`backend/erp/services/withholdingService.js`** (new) — engine API:
+   - `resolveAtcCodeForExpenseLine({ entity, line, vendor, period })` — returns the ATC descriptor or null. Decision tree: (1) explicit `line.atc_code` wins; (2) `vendor.withhold_active && vendor.default_atc_code` (TWA WI080/WI081); (3) null → no withholding. **YTD threshold flip**: WI010 (5%) auto-flips to WI011 (10%) when YTD payout for the payee crosses ₱720k. The flip is per-payee per-year — historical 5% rows stay 5% in the alphalist (correct, that's what BIR expects). Threshold lookup-overridable via Settings `WITHHOLDING_THRESHOLD_INDIVIDUAL_LOW`. ATC catalog read via `getAtcMetadata` (60s cache, busts on lookup edit) — falls back to inline `DEFAULT_RATES` if the lookup is empty.
+   - `resolveAtcCodeForPrfRent({ entity, prf, vendor })` — same shape for 1606. Distinguishes WI160 (individual lessor) vs WC160 (corporate) via `vendor.payee_kind`. Skips when entity.rent_withholding_active=false OR doc.doc_type !== 'PRF'.
+   - `createWithholdingEntries(entries, { session })` — bulk insert; honors caller-passed Mongoose session (for transactional posts).
+   - `deleteWithholdingEntriesForEvent(eventId)` — reversal path (mirrors `journalEngine.js:168` VatLedger.deleteMany cadence). Idempotent.
+   - `buildPosture(entityId, year)` — aggregates posture metrics for the dashboard card (top-50 payee × ATC buckets + YTD totals + annualized estimate by linear extrapolation).
+3. **`backend/erp/services/withholdingReturnService.js`** (new) — return-side aggregators + serializers:
+   - `compute1601EQ({ entityId, year, quarter })` — sums OUTBOUND `WithholdingLedger.finance_tag='INCLUDE'` rows for the three quarter months, EXCLUDING WI160/WC160 (which belong to 1606). Returns 14 BIR boxes per Schedule (Sch1: WI010/011/WC010/011 each gross+tax; Sch2: WI080/081 TWA; Total: total_gross + total_withheld) + per-payee `schedule` array.
+   - `compute1606({ entityId, year, month })` — same shape for the rent codes only; per-landlord schedule.
+   - `export2307Pdf({ entityId, payeeKind, payeeId, year, quarter, entity })` — renders BIR Form 2307 (Certificate of Creditable Tax Withheld) PDF using `pdfkit`. Reads exclusively from snapshot fields so payee renames don't rewrite issued certificates. Returns `{ buffer, contentHash, totals, payee, rowCount }`. Throws if no INCLUDE-tagged rows for the (payee, quarter).
+   - `exportSawtDat({ entityId, year, quarter, userId, entity })` — emits the BIR Alphalist Data Entry v7.x `.dat` payload (header `H1|TIN|RegName|...`, detail `D1|Seq|PayeeTIN|...|ATC|Gross|Rate|Withheld`, trailer `T1|Count|TotalBase|TotalWithheld`). Pipe-separated, CRLF terminators. `serializeSawtDat()` exported standalone so a future jurisdiction-specific writer can replace it via DI without touching the consumer. SAWT excludes WI160/WC160 (rent goes through 1606/QAP).
+   - `exportEwtCsv(...)` — CSV summary per box layout + per-payee schedule appendix. Same Rule #20 audit-log append pattern as J1 (`exportFormCsv`): SHA-256 hash + byte length + filename + user → BirFilingStatus.export_audit_log.
+4. **Engine triggers** in [expenseController.js](backend/erp/controllers/expenseController.js):
+   - New helpers `emitEwtForExpense(doc, userId)` + `emitEwtForPrfRent(doc, userId)`. Both are best-effort + non-fatal: failures log to `[WITHHOLDING_FAILURE]` for backfill, posts still succeed (mirrors `[AUTO_JOURNAL_FAILURE]`). Idempotent: every emit calls `deleteWithholdingEntriesForEvent` before insertMany — re-acknowledge replays cleanly.
+   - Wired into ALL three POSTED transitions: legacy `submitExpenses` (line ~2480), approval-hub `postSingleExpense` (after `[AUTO_JOURNAL_FAILURE]` block), and CALF cascade-to-Expense path inside `postSinglePrfCalf` (captured into `cascadedExpenseSource` and emitted post-transaction so the `withTransaction` scope stays tight). PRF rent path: `postSinglePrfCalf` ends with `await emitEwtForPrfRent(doc, userId)`.
+   - `reopenExpenses` invokes `deleteWithholdingEntriesForEvent` AFTER successful journal reversal — keeps audit ordering consistent.
+5. **Schema fields**:
+   - `ExpenseEntry` line schema gains `atc_code` + `withholding_payee_kind` + `withholding_payee_id` (frozen snapshot fields).
+   - `PrfCalf` gains the same three fields (rent on PRF only — CALF advances skipped).
+   - `PeopleMaster` gains `withhold_active` (per-person toggle on top of `Entity.withholding_active`) + `default_atc_code` (start bucket for resolver).
+   - `VendorMaster` gains `withhold_active` + `default_atc_code` + `is_landlord` + `payee_kind` (INDIVIDUAL/CORPORATION/PARTNERSHIP/OTHER) for ATC bucket choice on rent + TWA suppliers.
+6. **6 new controller endpoints** in [birController.js](backend/erp/controllers/birController.js):
+   - `GET /forms/1601-EQ/:year/:quarter/compute` — VIEW_DASHBOARD scope. Returns `{ totals, meta:{schedule,...}, filing_row }`.
+   - `GET /forms/1606/:year/:month/compute` — VIEW_DASHBOARD.
+   - `GET /forms/1601-EQ/:year/:quarter/payees` — VIEW_DASHBOARD. Per-payee × ATC schedule for 2307 PDF generation.
+   - `GET /forms/1601-EQ|1606/:year/:period/export.csv` — EXPORT_FORM. Streams CSV + SHA-256 hash header. **Routed BEFORE J1 catch-all** so EWT codes don't fall through to the VAT controller (health check enforces this).
+   - `GET /forms/SAWT/:year/:quarter/export.dat` — EXPORT_FORM. Streams the .dat payload + SHA-256 + audit-log row.
+   - `GET /forms/2307-OUT/:year/:quarter/:payeeKind/:payeeId/export.pdf` — EXPORT_FORM. Streams PDF + audit-log row + per-payee BirFilingStatus row (one per (entity, payee, year-quarter)).
+   - `GET /withholding/posture?year=N` — VIEW_DASHBOARD. Surfaces the dashboard card data.
+7. **`frontend/src/erp/pages/BirEwtReturnDetailPage.jsx`** (new) — handles BOTH 1601-EQ and 1606. Per-box copy cards (sections SCH1 / SCH2 / RENT / TOTAL). Per-payee schedule table below boxes with a "2307 PDF" action button per row (1601-EQ only). SAWT `.dat` toolbar button (1601-EQ only — quarterly form, no monthly equivalent for 1606). Lifecycle buttons (Mark Reviewed / Filed / Confirmed) call the J0 endpoints. Hook-order disciplined (`useMemo` BEFORE early-return, mirrors J1).
+8. **App.jsx** lazy-imports the new page + wires explicit routes `/erp/bir/1601-EQ/:year/:period` + `/erp/bir/1606/:year/:period` BEFORE the J1 wildcard `/erp/bir/:formCode/:year/:period` so React Router dispatches the EWT page for those codes.
+9. **Dashboard extensions** in [BIRCompliancePage.jsx](frontend/src/erp/pages/BIRCompliancePage.jsx):
+   - **Withholding Posture card** (new section above Upcoming Deadlines): renders engine on/off pill + 5-stat row (Contractors not withheld / YTD payout / YTD withheld / Annualized / Threshold trip) + `<details>` drill-down showing top 10 payee×ATC buckets.
+   - **Heatmap drill-down extended**: `drillableForms = ['2550M', '2550Q', '1601-EQ', '1606']` and SAWT cells redirect to the matching 1601-EQ quarter (since SAWT export is a button on that page).
+10. **Withholding Posture wired live** in [birDashboardService.js](backend/erp/services/birDashboardService.js): when `entity.withholding_active=true`, calls `withholdingService.buildPosture` for real numbers. Adds `contractors_not_withheld` count via PeopleMaster scan (PS_ELIGIBLE / TRANSITIONING / SUBSIDIARY with `withhold_active=false`). Stub posture remains for entities still on the old "build-only" posture.
+11. **Latent J1 wiring fix (Rule #2 sweep)**: pre-J2 `frontend/src/constants/roles.js` had no `ROLE_SETS.BIR_FILING` symbol; `App.jsx` referenced it on the J1 route guard, which short-circuited because `ProtectedRoute` defaults to `allowedRoles=[]` (no gate). J2 adds `BIR_FILING: [admin, finance, president, bookkeeper]` + `ROLES.BOOKKEEPER` constant + extends `ALL_ROLES`. Backend route guards were already correct (lookup-driven via `birAccess.userHasBirRole`); the frontend was the silent gap.
+12. **`bir-ewt-return` PageGuide entry** in [PageGuide.jsx](frontend/src/components/common/PageGuide.jsx) — 7-step workflow (pre-flight / engine activation / threshold flip / per-box copy / 2307 PDF / SAWT / lifecycle).
+13. **Health check** [healthcheckBirEwtWiring.js](backend/scripts/healthcheckBirEwtWiring.js) — 124 assertions across 18 sections (model + indexes; service API; return service + SAWT serializer + box layouts; controller endpoints + role gates; route ordering; engine wiring sweep; schema fields on 4 models; ATC seed in lookup defaults; frontend service + page; App.jsx routes + ordering; heatmap drill-down + posture card; PageGuide entry; ROLE_SETS.BIR_FILING; backend roles; dashboard service Withholding Posture wiring; CORS exposed-headers; pdfkit dependency). **Verified passing May 03 2026.** Sibling regression healthchecks (BIR VAT 39/39, Sales Discount 41/41, Executive Cockpit 64/64, Team Activity 22/22, Income Proxy 32/32, Compute Payroll Proxy 29/29, Payslip Proxy Roster 31/31, Petty Cash Hub Approve 22/22, SmerRevert 18/18, Activity Per-Diem 34/34, Inbox Triage 36/36, Journal Hub 19/19, Internal Transfer Proxy 26/26) ALL PASS.
+14. **Vite build green** 12.86s, `BirEwtReturnDetailPage-qAZZLw64.js` chunked.
+15. **Live HTTP smoke green** as president (May 03 2026):
+    - `GET /forms/1601-EQ/2026/2/compute` → 200 with 14-box layout + empty schedule (no posted EWT yet)
+    - `GET /forms/1606/2026/4/compute` → 200 with 6-box layout
+    - `GET /withholding/posture?year=2026` → 200, `enabled:true` (entity has `withholding_active=true`), zero numbers as expected (no ledger data)
+    - `GET /forms/1601-EQ/2026/2/payees` → 200, empty array
+    - `GET /forms/1601-EQ/2026/9/compute` → **400** (validation: invalid quarter)
+    - `GET /forms/1606/2026/13/compute` → **400** (validation: invalid month)
+    - `GET /forms/1601-EQ/2026/2/export.csv` → **403** by design (president NOT in EXPORT_FORM lookup; gate works)
+    - `GET /forms/SAWT/2026/2/export.dat` → **403** (same gate)
+    - `GET /forms/2307-OUT/.../export.pdf` → **403** (same gate)
+    - **CORS exposure verified**: `Access-Control-Expose-Headers: Content-Disposition,X-Content-Hash` present on the 403 response.
+    - **J1 regression**: `GET /forms/2550M/2026/4/compute` → 200 with `exempt_sales:50` preserved.
+
+**Subscription-readiness checklist (Rule #3 + Rule #19 — J2)**:
+- All reads scoped via `req.entityId`; `WithholdingLedger.aggregate` always filters on entity_id.
+- ATC catalog driven by `BIR_ATC_CODES` lookup (extensible per jurisdiction). `metadata.rate` overrides; falls back to inline `DEFAULT_RATES`.
+- Threshold (₱720k YTD) overridable per entity via `Settings.WITHHOLDING_THRESHOLD_INDIVIDUAL_LOW`.
+- Role gates via `BIR_ROLES` lookup (VIEW_DASHBOARD compute, EXPORT_FORM exports). `bookkeeper` role can be added to EXPORT_FORM per entity without code changes.
+- Master switches: `Entity.withholding_active` (1601-EQ engine) + `Entity.rent_withholding_active` (1606 engine) — engine writes nothing when both off, page renders zeros (no exposure of dormant infrastructure).
+- Per-payee toggle: `PeopleMaster.withhold_active` + `VendorMaster.withhold_active` — mass posting before profit-sharing kicks in stays a no-op.
+- SAWT serializer is DI-ready — `serializeSawtDat({entity, year, quarter, schedule})` is a pure function, future country variants drop in without controller changes.
+- Frozen snapshots on every WithholdingLedger row mean BIR-audit history is immutable to renames.
+- Idempotent emit (delete-by-event then insert) means re-acknowledge / cascade-replay produces stable ledger state.
+
+**Open follow-ups (J2.x polish, not blocking J3)**:
+- **J2.1 — Expense ATC dropdown UI**: today the engine reads `line.atc_code` from the model; `Expenses.jsx` does not yet render an ATC `<SelectField>` per line. Add it (driven by `BIR_ATC_CODES` lookup, filtered by `metadata.applies_to`) so finance can tag during data entry rather than back-editing — ~1 hour. Engine already works for codes set via direct DB writes / vendor `default_atc_code`.
+- **J2.2 — PS-eligibility auto-flip**: when `evaluateProfitSharingEligibility(contractor)` flips true the FIRST time, set `PeopleMaster.withhold_active=true` + emit a `MessageInbox` alert to admin/finance/president. Hook lives in the rebate engine (Phase VIP-1.B) — wire when VIP-1.B Phase 5 lands.
+- **J2.3 — golden SAWT fixture**: snapshot a known-good `.dat` byte string at `backend/erp/services/__fixtures__/SAWT_2026-Q1_VIP.dat` and add a fixture-equality test. Detects accidental serializer drift on refactor. (~30 min once we have a real-data Q1.)
+- **J2.4 — Inbound 2307 (J6 prep)**: the `INBOUND` direction in `WithholdingLedger.DIRECTIONS` is reserved but unused today; CwtLedger remains the source of truth. J6 either migrates or lets them coexist — don't delete the enum slot.
+
+
 
 ### J1 — 2550M / 2550Q VAT Return (Apr 28 2026, uncommitted on dev)
 

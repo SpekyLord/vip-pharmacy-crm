@@ -91,6 +91,20 @@ const peopleMasterSchema = new mongoose.Schema(
       tin: { type: String, select: false },
     },
 
+    // ═══ Phase VIP-1.J / J2 — BIR withholding posture ═══
+    // `withhold_active` is the per-payee toggle that sits on top of the
+    // entity-level `Entity.withholding_active` master switch. Both must be
+    // true before the engine emits a WithholdingLedger row for a person.
+    // Default false today: the engine is "build-only" until profit-sharing
+    // kicks in (Phase VIP-1.B). PS-eligibility flip will set this true and
+    // notify admin/finance via MessageInbox (see withholdingService).
+    withhold_active: { type: Boolean, default: false },
+    // Default ATC bucket for this person — engine still asks
+    // `getAtcCodeForPayee()` at post time so YTD threshold flips work
+    // (WI010 ≤ ₱720k → WI011 > ₱720k). This field is the START bucket the
+    // resolver uses when no historical YTD data exists yet.
+    default_atc_code: { type: String, trim: true, uppercase: true, default: null },
+
     // ═══ Bank Account (sensitive) ═══
     bank_account: {
       bank: { type: String, select: false },

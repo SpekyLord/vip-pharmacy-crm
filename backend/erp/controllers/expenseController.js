@@ -34,6 +34,143 @@ const { processOcr } = require('../ocr/ocrProcessor');
 const { classifyExpense } = require('../services/expenseClassifier');
 const { uploadErpDocument } = require('../services/documentUpload');
 const { compressImage } = require('../../middleware/upload');
+// Phase VIP-1.J / J2 — withholding-tax engine.
+// withholdingService writes WithholdingLedger rows when an expense or PRF
+// rent line carries an ATC code AND the entity has the matching master
+// switch enabled. Required at module top so the post path stays synchronous.
+const Entity = require('../models/Entity');
+const VendorMaster = require('../models/VendorMaster');
+const withholdingService = require('../services/withholdingService');
+
+// ═══════════════════════════════════════════
+// PHASE VIP-1.J / J2 — Withholding ledger emit helpers
+// ═══════════════════════════════════════════
+// emitEwtForExpense / emitEwtForPrfRent are called AFTER the document flips
+// to POSTED. Both are best-effort + non-fatal: if the engine throws, the
+// post still succeeds and `[WITHHOLDING_FAILURE]` is logged for backfill.
+// Mirrors the AUTO_JOURNAL_FAILURE pattern used for VAT + journal writes.
+//
+// Idempotency: every emit deletes prior rows for the same `source_event_id`
+// before re-inserting. That makes a re-acknowledge / re-post safe and
+// matches the journal engine's reversal-then-rewrite cadence in
+// journalEngine.js:168.
+async function emitEwtForExpense(doc, userId) {
+  if (!doc?.entity_id || !doc?.event_id) return { skipped: true, reason: 'NO_ENTITY_OR_EVENT' };
+  try {
+    const entity = await Entity.findById(doc.entity_id).lean();
+    if (!entity?.withholding_active) return { skipped: true, reason: 'WITHHOLDING_OFF' };
+
+    // Pre-fetch vendor objects for any line that has vendor_id set (one
+    // round-trip — keeps the loop O(1) DB calls per line + 1 batched
+    // vendor read).
+    const vendorIds = [...new Set((doc.lines || []).map(l => l.vendor_id).filter(Boolean).map(String))];
+    const vendorMap = new Map();
+    if (vendorIds.length) {
+      const vendors = await VendorMaster.find({
+        _id: { $in: vendorIds },
+        entity_id: doc.entity_id,
+      }).lean();
+      vendors.forEach(v => vendorMap.set(String(v._id), v));
+    }
+
+    const entries = [];
+    for (const line of (doc.lines || [])) {
+      const vendor = line.vendor_id ? vendorMap.get(String(line.vendor_id)) : null;
+      const resolved = await withholdingService.resolveAtcCodeForExpenseLine({
+        entity, line, vendor, period: doc.period,
+      });
+      if (!resolved) continue;
+      const gross = Number(line.amount || 0);
+      const withheld = gross * resolved.rate;
+      entries.push({
+        entity_id: doc.entity_id,
+        period: doc.period,
+        direction: 'OUTBOUND',
+        atc_code: resolved.atc_code,
+        form_code: resolved.form_code,
+        payee_kind: resolved.payee_kind,
+        payee_id: resolved.payee_id,
+        payee_name_snapshot: resolved.payee_name_snapshot,
+        payee_tin_snapshot: resolved.payee_tin_snapshot,
+        payee_address_snapshot: resolved.payee_address_snapshot,
+        gross_amount: gross,
+        withholding_rate: resolved.rate,
+        withheld_amount: withheld,
+        source_module: 'EXPENSE',
+        source_doc_ref: `EXP-${doc.period}-${doc.cycle}`,
+        source_event_id: doc.event_id,
+        source_line_id: line._id,
+        bdm_id: doc.bdm_id,
+        finance_tag: 'PENDING',
+      });
+    }
+
+    // Idempotent: delete prior rows for this event then re-insert. The
+    // delete is no-op on a fresh post; on re-acknowledge it cleans state.
+    await withholdingService.deleteWithholdingEntriesForEvent(doc.event_id);
+    if (entries.length) await withholdingService.createWithholdingEntries(entries);
+    return { skipped: false, count: entries.length };
+  } catch (err) {
+    console.error('[WITHHOLDING_FAILURE] ExpenseEntry', String(doc._id), err.message);
+    return { skipped: true, reason: 'ERROR', error: err.message };
+  }
+}
+
+async function emitEwtForPrfRent(doc, userId) {
+  if (!doc?.entity_id || !doc?.event_id) return { skipped: true, reason: 'NO_ENTITY_OR_EVENT' };
+  if (doc.doc_type !== 'PRF') return { skipped: true, reason: 'NOT_PRF' };
+  if (!doc.atc_code) return { skipped: true, reason: 'NO_ATC' };
+  try {
+    const entity = await Entity.findById(doc.entity_id).lean();
+    if (!entity?.rent_withholding_active) return { skipped: true, reason: 'RENT_WITHHOLDING_OFF' };
+
+    // Vendor lookup — partner_id on PrfCalf points to a Doctor, not a Vendor,
+    // for partner rebates. For RENT PRFs, the engine expects partner_id to
+    // be a Vendor _id (landlord). We try Vendor first; if not found, the
+    // resolver still works using the PRF's payee_name + atc_code.
+    let vendor = null;
+    if (doc.partner_id) {
+      vendor = await VendorMaster.findOne({
+        _id: doc.partner_id,
+        entity_id: doc.entity_id,
+      }).lean();
+    }
+
+    const resolved = await withholdingService.resolveAtcCodeForPrfRent({ entity, prf: doc, vendor });
+    if (!resolved) return { skipped: true, reason: 'RESOLVER_RETURNED_NULL' };
+
+    const gross = Number(doc.rebate_amount || doc.amount || 0);
+    const withheld = gross * resolved.rate;
+    const entries = [{
+      entity_id: doc.entity_id,
+      period: doc.period,
+      direction: 'OUTBOUND',
+      atc_code: resolved.atc_code,
+      form_code: resolved.form_code,
+      payee_kind: resolved.payee_kind,
+      payee_id: resolved.payee_id,
+      payee_name_snapshot: resolved.payee_name_snapshot,
+      payee_tin_snapshot: resolved.payee_tin_snapshot,
+      payee_address_snapshot: resolved.payee_address_snapshot,
+      gross_amount: gross,
+      withholding_rate: resolved.rate,
+      withheld_amount: withheld,
+      source_module: 'PRF_CALF',
+      source_doc_ref: `PRF-${doc.prf_number || doc._id}`,
+      source_event_id: doc.event_id,
+      source_line_id: null,
+      bdm_id: doc.bdm_id,
+      finance_tag: 'PENDING',
+    }];
+
+    await withholdingService.deleteWithholdingEntriesForEvent(doc.event_id);
+    await withholdingService.createWithholdingEntries(entries);
+    return { skipped: false, count: 1 };
+  } catch (err) {
+    console.error('[WITHHOLDING_FAILURE] PrfCalf', String(doc._id), err.message);
+    return { skipped: true, reason: 'ERROR', error: err.message };
+  }
+}
 
 // ═══════════════════════════════════════════
 // HELPERS
@@ -2334,6 +2471,10 @@ const submitExpenses = catchAsync(async (req, res) => {
     } catch (jeErr) {
       console.error('[AUTO_JOURNAL_FAILURE] ExpenseEntry', String(entry._id), jeErr.message);
     }
+    // Phase VIP-1.J / J2 — emit WithholdingLedger rows (no-op when entity
+    // has withholding_active=false). Best-effort: post still succeeds on
+    // failure; failures land in [WITHHOLDING_FAILURE] log for backfill.
+    await emitEwtForExpense(entry, req.user._id);
   }
 
   res.json({ success: true, message: `Posted ${entries.length} expense(s)` });
@@ -2369,6 +2510,18 @@ const reopenExpenses = catchAsync(async (req, res) => {
     entry.posted_at = undefined;
     entry.posted_by = undefined;
     await entry.save();
+
+    // Phase VIP-1.J / J2 — drop EWT rows tied to the reversed event so a
+    // re-post starts from a clean ledger state. Idempotent (no-op when no
+    // rows). MUST happen AFTER journal reversal to keep audit ordering
+    // consistent.
+    if (entry.event_id) {
+      try {
+        await withholdingService.deleteWithholdingEntriesForEvent(entry.event_id);
+      } catch (whErr) {
+        console.error('[WITHHOLDING_FAILURE] reopen ExpenseEntry', String(entry._id), whErr.message);
+      }
+    }
 
     await ErpAuditLog.logChange({
       entity_id: entry.entity_id,
@@ -3952,6 +4105,10 @@ const postSingleExpense = async (doc, userId) => {
       });
     }
   } catch (jeErr) { console.error('[AUTO_JOURNAL_FAILURE] ExpenseEntry (approval hub)', String(doc._id), jeErr.message); }
+
+  // Phase VIP-1.J / J2 — emit WithholdingLedger rows. Best-effort, see
+  // emitEwtForExpense for non-fatal failure handling.
+  await emitEwtForExpense(doc, userId);
 };
 
 // Phase G4.5h — One-Acknowledge cascade. Matches the GRN→UT gold standard at
@@ -3964,6 +4121,11 @@ const postSingleExpense = async (doc, userId) => {
 // [AUTO_JOURNAL_FAILURE] logs so repostMissingJEs.js can backfill.
 const postSinglePrfCalf = async (doc, userId) => {
   const session = await mongoose.startSession();
+  // Phase VIP-1.J / J2 — capture cascaded source so its EWT can be emitted
+  // AFTER the withTransaction commits. Keeps the transaction tight (no
+  // best-effort writes inside) and mirrors the standalone post path's
+  // post-transaction emit cadence.
+  let cascadedExpenseSource = null;
   try {
     await session.withTransaction(async () => {
       // 1) Post the CALF/PRF itself — status + event
@@ -4096,8 +4258,22 @@ const postSinglePrfCalf = async (doc, userId) => {
       } catch (srcJeErr) {
         console.error('[AUTO_JOURNAL_FAILURE] CALF-cascade source', String(source._id), srcJeErr.message);
       }
+
+      // Capture for post-transaction EWT emit. The withTransaction scope
+      // intentionally excludes best-effort writes (mirrors how VAT writes
+      // happen alongside JE creation, not as part of the same atomic txn).
+      if (sourceType === 'EXPENSE') {
+        cascadedExpenseSource = source;
+      }
     });
   } finally { session.endSession(); }
+
+  // Phase VIP-1.J / J2 — emit EWT for the cascaded source EXPENSE after the
+  // CALF transaction commits. Best-effort, idempotent (delete-by-event then
+  // re-insert) so a re-acknowledge replays cleanly.
+  if (cascadedExpenseSource) {
+    await emitEwtForExpense(cascadedExpenseSource, userId);
+  }
 
   // Post-transaction: link DocumentAttachments to the CALF event (non-critical)
   // eslint-disable-next-line vip-tenant/require-entity-filter -- source_id is unique; doc fetched by Approval Hub with entity scope
@@ -4105,6 +4281,13 @@ const postSinglePrfCalf = async (doc, userId) => {
     { source_model: 'PrfCalf', source_id: doc._id },
     { $set: { event_id: doc.event_id } }
   ).catch(() => {});
+
+  // Phase VIP-1.J / J2 — rent-line PRFs emit a 1606 WithholdingLedger row
+  // when entity.rent_withholding_active is true. PRFs without atc_code
+  // short-circuit before any DB read. CALF docs are skipped (advances
+  // aren't payee payments). Cascade-EXPENSE rows below are emitted via
+  // their own emitEwtForExpense call.
+  await emitEwtForPrfRent(doc, userId);
 };
 
 // President-only: SAP Storno reversal for Expenses (ORE/ACCESS), CALF, and PRF.

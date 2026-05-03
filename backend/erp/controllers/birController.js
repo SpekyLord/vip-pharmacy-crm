@@ -27,6 +27,9 @@ const BirDataQualityRun = require('../models/BirDataQualityRun');
 const birDashboardService = require('../services/birDashboardService');
 const birDataQualityAgent = require('../../agents/birDataQualityAgent');
 const vatReturnService = require('../services/vatReturnService');
+// Phase VIP-1.J / J2 — Withholding (1601-EQ + 1606 + 2307-OUT + SAWT).
+const withholdingReturnService = require('../services/withholdingReturnService');
+const withholdingService = require('../services/withholdingService');
 const { userHasBirRole } = require('../../utils/birAccess');
 
 function requireEntity(req, res) {
@@ -569,6 +572,212 @@ exports.exportVatReturnCsv = catchAsync(async (req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('X-Content-Hash', contentHash);
   res.send(csvContent);
+});
+
+// ── Phase J2 — 1601-EQ + 1606 EWT aggregator + CSV / PDF / .dat export ─
+//
+// VIEW_DASHBOARD gates compute endpoints (read-only).
+// EXPORT_FORM gates every export path (CSV + PDF + .dat) because each one
+// appends a SHA-256 hash to BirFilingStatus.export_audit_log per Rule #20.
+// listEwtPayees is a thin compute-style read; gated by VIEW_DASHBOARD.
+
+exports.compute1601EQ = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.params.year);
+  const quarter = parseQuarter(req.params.quarter);
+  if (!year || !quarter) {
+    return res.status(400).json({ success: false, message: 'Invalid year/quarter. Year ≥ 2024, quarter 1-4.' });
+  }
+  const result = await withholdingReturnService.compute1601EQ({ entityId: req.entityId, year, quarter });
+  const row = await BirFilingStatus.findOne({
+    entity_id: req.entityId, form_code: '1601-EQ',
+    period_year: year, period_quarter: quarter, period_month: null, period_payee_id: null,
+  }).lean();
+  res.json({ success: true, data: { ...result, filing_row: row || null } });
+});
+
+exports.compute1606 = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.params.year);
+  const month = parseMonth(req.params.month);
+  if (!year || !month) {
+    return res.status(400).json({ success: false, message: 'Invalid year/month. Year ≥ 2024, month 1-12.' });
+  }
+  const result = await withholdingReturnService.compute1606({ entityId: req.entityId, year, month });
+  const row = await BirFilingStatus.findOne({
+    entity_id: req.entityId, form_code: '1606',
+    period_year: year, period_month: month, period_quarter: null, period_payee_id: null,
+  }).lean();
+  res.json({ success: true, data: { ...result, filing_row: row || null } });
+});
+
+exports.listEwtPayees = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.params.year);
+  const quarter = parseQuarter(req.params.quarter);
+  if (!year || !quarter) {
+    return res.status(400).json({ success: false, message: 'Invalid year/quarter.' });
+  }
+  // Returns the per-payee × ATC schedule that drives 2307 PDF generation
+  // and SAWT row preview. Same shape as withholdingReturnService.listPayees.
+  const months = ['01','02','03','04','05','06','07','08','09','10','11','12'].slice((quarter - 1) * 3, quarter * 3).map(m => `${year}-${m}`);
+  const payees = await withholdingReturnService.listPayees(req.entityId, months);
+  res.json({ success: true, data: { year, quarter, periods: months, payees } });
+});
+
+exports.exportEwtCsv = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'EXPORT_FORM'))) return;
+  const formCode = req.params.formCode;
+  if (formCode !== '1601-EQ' && formCode !== '1606') {
+    return res.status(400).json({ success: false, message: `Export not implemented for ${formCode}. Phase J2 supports 1601-EQ / 1606 here; 2550M/Q goes through exportVatReturnCsv.` });
+  }
+  const year = parseYear(req.params.year);
+  if (!year) return res.status(400).json({ success: false, message: 'Invalid year.' });
+
+  let periodMonthOrQuarter;
+  if (formCode === '1606') {
+    periodMonthOrQuarter = parseMonth(req.params.period);
+    if (!periodMonthOrQuarter) return res.status(400).json({ success: false, message: 'Invalid month (1-12).' });
+  } else {
+    periodMonthOrQuarter = parseQuarter(req.params.period);
+    if (!periodMonthOrQuarter) return res.status(400).json({ success: false, message: 'Invalid quarter (1-4).' });
+  }
+
+  const entity = await Entity.findById(req.entityId).lean();
+  if (!entity) return res.status(404).json({ success: false, message: 'Entity not found.' });
+
+  const { csvContent, contentHash, filename } = await withholdingReturnService.exportEwtCsv({
+    formCode, entityId: req.entityId, year, periodMonthOrQuarter, userId: req.user?._id, entity,
+  });
+  birDashboardService.invalidate(req.entityId);
+
+  console.log('[BIR_EXPORT_EWT_RETURN]', JSON.stringify({
+    user: req.user?.email, role: req.user?.role,
+    entity_id: String(req.entityId),
+    form_code: formCode, year, period: periodMonthOrQuarter,
+    content_hash: contentHash,
+    byte_length: Buffer.byteLength(csvContent, 'utf8'),
+    ip: req.ip, ts: new Date().toISOString(),
+  }));
+
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('X-Content-Hash', contentHash);
+  res.send(csvContent);
+});
+
+exports.export2307Pdf = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'EXPORT_FORM'))) return;
+  const year = parseYear(req.params.year);
+  const quarter = parseQuarter(req.params.quarter);
+  const { payeeKind, payeeId } = req.params;
+  if (!year || !quarter || !payeeId) {
+    return res.status(400).json({ success: false, message: 'Invalid year/quarter/payeeId.' });
+  }
+  const allowedKinds = ['PeopleMaster', 'VendorMaster', 'Hospital', 'Doctor', 'Other'];
+  if (!allowedKinds.includes(payeeKind)) {
+    return res.status(400).json({ success: false, message: `Invalid payeeKind. One of: ${allowedKinds.join(', ')}` });
+  }
+
+  const entity = await Entity.findById(req.entityId).lean();
+  if (!entity) return res.status(404).json({ success: false, message: 'Entity not found.' });
+
+  let result;
+  try {
+    result = await withholdingReturnService.export2307Pdf({
+      entityId: req.entityId, payeeKind, payeeId, year, quarter, entity,
+    });
+  } catch (err) {
+    return res.status(404).json({ success: false, message: err.message });
+  }
+
+  // Append PDF audit-log row to the per-payee BirFilingStatus row (creates if missing).
+  const filter = {
+    entity_id: req.entityId, form_code: '2307-OUT',
+    period_year: year, period_month: null, period_quarter: null,
+    period_payee_id: payeeId,
+  };
+  let row = await BirFilingStatus.findOne(filter);
+  if (!row) {
+    row = new BirFilingStatus({
+      ...filter,
+      period_payee_kind: payeeKind,
+      status: 'DRAFT',
+      totals_snapshot: result.totals,
+    });
+  } else {
+    row.totals_snapshot = result.totals;
+  }
+  const filename = `2307_${payeeKind}_${payeeId}_${year}-Q${quarter}.pdf`;
+  row.export_audit_log.push({
+    exported_at: new Date(),
+    exported_by: req.user?._id,
+    artifact_kind: 'PDF',
+    filename,
+    content_hash: result.contentHash,
+    byte_length: result.buffer.length,
+    notes: `2307 ${year}-Q${quarter} ${result.payee.name} (${result.rowCount} rows)`,
+  });
+  await row.save();
+  birDashboardService.invalidate(req.entityId);
+
+  console.log('[BIR_EXPORT_2307_PDF]', JSON.stringify({
+    user: req.user?.email, role: req.user?.role,
+    entity_id: String(req.entityId),
+    payee_kind: payeeKind, payee_id: String(payeeId),
+    year, quarter, content_hash: result.contentHash,
+    byte_length: result.buffer.length, ip: req.ip,
+    ts: new Date().toISOString(),
+  }));
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('X-Content-Hash', result.contentHash);
+  res.send(result.buffer);
+});
+
+exports.exportSawtDat = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'EXPORT_FORM'))) return;
+  const year = parseYear(req.params.year);
+  const quarter = parseQuarter(req.params.quarter);
+  if (!year || !quarter) {
+    return res.status(400).json({ success: false, message: 'Invalid year/quarter.' });
+  }
+  const entity = await Entity.findById(req.entityId).lean();
+  if (!entity) return res.status(404).json({ success: false, message: 'Entity not found.' });
+
+  const { datContent, contentHash, filename } = await withholdingReturnService.exportSawtDat({
+    entityId: req.entityId, year, quarter, userId: req.user?._id, entity,
+  });
+  birDashboardService.invalidate(req.entityId);
+
+  console.log('[BIR_EXPORT_SAWT_DAT]', JSON.stringify({
+    user: req.user?.email, role: req.user?.role,
+    entity_id: String(req.entityId),
+    year, quarter, content_hash: contentHash,
+    byte_length: Buffer.byteLength(datContent, 'utf8'),
+    ip: req.ip, ts: new Date().toISOString(),
+  }));
+
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('X-Content-Hash', contentHash);
+  res.send(datContent);
+});
+
+// ── Withholding Posture (read-only summary for the dashboard) ──────────
+exports.getWithholdingPosture = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.query.year) || new Date().getFullYear();
+  const posture = await withholdingService.buildPosture(req.entityId, year);
+  res.json({ success: true, data: { year, ...posture } });
 });
 
 exports._test = { parseBirConfirmation };

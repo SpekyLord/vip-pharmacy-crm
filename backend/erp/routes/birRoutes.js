@@ -34,6 +34,23 @@ router.get('/forms', ctrl.listFilings);
 // look up a Mongo _id named "2550M".
 router.get('/forms/2550M/:year/:month/compute', ctrl.compute2550M);
 router.get('/forms/2550Q/:year/:quarter/compute', ctrl.compute2550Q);
+
+// ── Phase J2 — 1601-EQ + 1606 + 2307-OUT + SAWT EWT routes ──
+// EWT-specific compute / list / export.{csv,pdf,dat} endpoints. The
+// per-form catch-all `/forms/:formCode/:year/:period/export.csv` from J1
+// would otherwise catch `1601-EQ` exports and dispatch to the VAT
+// controller (which rejects with HTTP 400). So J2 export.csv must be
+// declared BEFORE the J1 catch-all to claim 1601-EQ + 1606 routes.
+router.get('/forms/1601-EQ/:year/:quarter/compute', ctrl.compute1601EQ);
+router.get('/forms/1606/:year/:month/compute', ctrl.compute1606);
+router.get('/forms/1601-EQ/:year/:quarter/payees', ctrl.listEwtPayees);
+router.get('/forms/1601-EQ/:year/:quarter/export.csv', ctrl.exportEwtCsv);
+router.get('/forms/1606/:year/:month/export.csv', ctrl.exportEwtCsv);
+router.get('/forms/SAWT/:year/:quarter/export.dat', ctrl.exportSawtDat);
+router.get('/forms/2307-OUT/:year/:quarter/:payeeKind/:payeeId/export.pdf', ctrl.export2307Pdf);
+router.get('/withholding/posture', ctrl.getWithholdingPosture);
+
+// J1 catch-all CSV export (lower priority — must come AFTER J2 specific routes).
 router.get('/forms/:formCode/:year/:period/export.csv', ctrl.exportVatReturnCsv);
 
 router.get('/forms/:id', ctrl.getFiling);

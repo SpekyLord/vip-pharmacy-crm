@@ -11,7 +11,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import toast from 'react-hot-toast';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import CameraCapture from './CameraCapture';
 import ProductDetailModal from './ProductDetailModal';
 import EngagementTypeSelector from './EngagementTypeSelector';
@@ -278,6 +278,13 @@ const visitLoggerStyles = `
 
 const VisitLogger = ({ doctor, onSuccess }) => {
   const navigate = useNavigate();
+  // Detect a return-from-CLM with an unfinalized session — set by
+  // PartnershipCLM when the BDM ends the presenter via Skip (or the
+  // overlay) instead of Save Session. Triggers a yellow banner that
+  // disables Submit until the BDM resumes and records the session.
+  const [searchParams] = useSearchParams();
+  const clmPending = searchParams.get('clm_pending') === '1';
+  const incomingSessionGroupId = searchParams.get('session_group_id');
   const [photos, setPhotos] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -300,7 +307,9 @@ const VisitLogger = ({ doctor, onSuccess }) => {
   //   - CameraCapture's draftId prop (Blob persistence)
   //   - Visit.session_group_id at submit time (server-side CLM linkage)
   //   - CLMSession.idempotencyKey when "Start Presentation" is invoked
-  const draftIdRef = useRef(generateUuid());
+  // When returning from CLM with ?session_group_id=, prefer that UUID so the
+  // visit submit links to the existing CLMSession (Resume CLM flow).
+  const draftIdRef = useRef(incomingSessionGroupId || generateUuid());
 
   // Phase N — Online/offline awareness. The submit branch reads this; the
   // banner text adapts; auto-save only fires when there's something worth
@@ -313,6 +322,10 @@ const VisitLogger = ({ doctor, onSuccess }) => {
 
   // Phase N — Restore draft if VisitLogger remounts after a tab close.
   // Match by doctor._id so re-opening a different VIP Client starts fresh.
+  // When NO draft exists, seed productsDiscussed from the VIP Client's tagged
+  // Target Products. We co-locate the seed inside this effect instead of a
+  // separate one to avoid racing with the async restore (which would otherwise
+  // override the seed by replacing formData with the persisted draft fields).
   useEffect(() => {
     if (!doctor?._id) return;
     let cancelled = false;
@@ -320,10 +333,25 @@ const VisitLogger = ({ doctor, onSuccess }) => {
       try {
         const drafts = await offlineStore.getVisitDrafts();
         const match = drafts.find((d) => d.doctorId === doctor._id);
-        if (match && !cancelled) {
+        if (cancelled) return;
+        // Seed productsDiscussed from the VIP Client's tagged Target Products
+        // when the picker is empty — applies whether or not a stale draft
+        // exists, because the auto-save creates a content-bearing draft
+        // (visitType='regular') on first mount that would otherwise lock the
+        // picker empty across reloads.
+        const targets = (doctor.targetProducts || [])
+          .map((t) => t.product?._id || t.product)
+          .filter(Boolean);
+        if (match) {
           draftIdRef.current = match.id;
           if (match.formFields) {
-            setFormData((prev) => ({ ...prev, ...match.formFields }));
+            setFormData((prev) => {
+              const next = { ...prev, ...match.formFields };
+              if (next.productsDiscussed?.length === 0 && targets.length > 0) {
+                next.productsDiscussed = targets;
+              }
+              return next;
+            });
           }
           // Photo restoration — re-hydrate object URLs for each persisted ref.
           if (Array.isArray(match.photoRefs) && match.photoRefs.length > 0) {
@@ -337,13 +365,19 @@ const VisitLogger = ({ doctor, onSuccess }) => {
               toast.success(`Restored ${restored.length} photo(s) from a saved draft.`, { duration: 4000 });
             }
           }
+        } else if (targets.length > 0) {
+          setFormData((prev) => (
+            prev.productsDiscussed.length === 0
+              ? { ...prev, productsDiscussed: targets }
+              : prev
+          ));
         }
       } catch (err) {
         console.warn('[VisitLogger] Phase N draft restore failed:', err);
       }
     })();
     return () => { cancelled = true; };
-  }, [doctor?._id]);
+  }, [doctor?._id, doctor?.targetProducts]);
 
   // Phase N — Auto-save the draft on photos / formData change. Debounced
   // by useEffect's natural batching; a real user types or captures slowly
@@ -371,13 +405,22 @@ const VisitLogger = ({ doctor, onSuccess }) => {
     const fetchProducts = async () => {
       if (!doctor?._id) return;
       try {
-        let response;
+        let list = [];
         if (doctor?.specialization) {
-          response = await productService.getBySpecialization(doctor.specialization);
+          const r = await productService.getBySpecialization(doctor.specialization);
+          list = r.data || [];
+          // Free-form specializations (Doctor.js:42) often don't exact-match any
+          // product's targetSpecializations array — fall back to the full active
+          // catalog so the picker isn't silently empty.
+          if (list.length === 0) {
+            const all = await productService.getAll({ limit: 0 });
+            list = all.data || [];
+          }
         } else {
-          response = await productService.getAll({ limit: 0 });
+          const r = await productService.getAll({ limit: 0 });
+          list = r.data || [];
         }
-        setProducts(response.data || []);
+        setProducts(list);
       } catch (err) {
         console.error('Failed to fetch products:', err);
       }
@@ -441,6 +484,14 @@ const VisitLogger = ({ doctor, onSuccess }) => {
     e.preventDefault();
 
     if (loading || submittingRef.current) {
+      return;
+    }
+
+    // Phase N+ — Block submission when a CLM session is pending finalization.
+    // The disabled Submit button covers the happy path; this guard handles
+    // programmatic / form-submit-via-Enter-key races.
+    if (clmPending) {
+      toast.error('Resume the CLM session above and Save it before submitting this visit.');
       return;
     }
 
@@ -646,18 +697,23 @@ const VisitLogger = ({ doctor, onSuccess }) => {
         )}
       </div>
 
-      {/* Phase N — "Start Presentation" — bridges the Visit and CLM into a
-          single encounter. The same UUID (draftIdRef) lands on both
+      {/* Phase N — "Run Partnership Presentation" — bridges the Visit and CLM
+          into a single encounter. The same UUID (draftIdRef) lands on both
           CLMSession.idempotencyKey and Visit.session_group_id so admin
-          analytics can travel either direction. Available once a doctor
-          and at least one product are picked. */}
-      {doctor?._id && formData.productsDiscussed.length > 0 && (
+          analytics can travel either direction. Always rendered when a doctor
+          is loaded — BDM can pick products inside the CLM picker, or skip
+          products entirely (CLM has its own "Skip — Present without products"
+          path). When the BDM returns with clm_pending=1, this panel is
+          replaced by the warning banner that gates Submit. */}
+      {doctor?._id && !clmPending && (
         <div className="form-section" style={{ background: '#fef3c7', borderColor: '#fcd34d' }}>
           <h3 style={{ borderColor: '#fcd34d' }}>Run Partnership Presentation</h3>
           <p style={{ color: '#78350f', fontSize: 13, marginTop: 0 }}>
             Take this VIP Client through the partnership deck before logging
             the visit. Slide events and product interest are captured to the
-            same encounter (linked by ID).
+            same encounter (linked by ID). Optional — if you don't have an
+            opportunity to present, skip this and go straight to the photo
+            proof below.
           </p>
           <button
             type="button"
@@ -679,7 +735,49 @@ const VisitLogger = ({ doctor, onSuccess }) => {
               cursor: 'pointer',
             }}
           >
-            ▶ Start Presentation
+            &#9654; Start Presentation
+            {formData.productsDiscussed.length > 0
+              ? ` with ${formData.productsDiscussed.length} Product${formData.productsDiscussed.length === 1 ? '' : 's'}`
+              : ''}
+          </button>
+        </div>
+      )}
+      {/* When the BDM presented but did NOT save the Session Complete form,
+          PartnershipCLM appends ?clm_pending=1 on the way back. Block Submit
+          and offer a one-click Resume so the BDM can record the session. */}
+      {doctor?._id && clmPending && (
+        <div className="form-section" style={{ background: '#fef3c7', borderColor: '#dc2626' }}>
+          <h3 style={{ borderColor: '#fca5a5', color: '#991b1b' }}>
+            CLM session not finalized
+          </h3>
+          <p style={{ color: '#78350f', fontSize: 13, marginTop: 0 }}>
+            You started a partnership presentation for this VIP Client but
+            didn't record the session details (interest level, outcome, notes).
+            Visit Submit is blocked until you resume the CLM session and Save
+            it — or you can record the session as &quot;Not Interested&quot; if
+            no follow-up is warranted.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              navigate(
+                `/bdm/partnership?doctorId=${doctor._id}` +
+                `&session_group_id=${draftIdRef.current}` +
+                `&products=${formData.productsDiscussed.join(',')}`,
+              );
+            }}
+            style={{
+              padding: '10px 18px',
+              background: '#dc2626',
+              color: '#fff',
+              border: 'none',
+              borderRadius: 8,
+              fontSize: 14,
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Resume CLM session
           </button>
         </div>
       )}
@@ -833,12 +931,15 @@ const VisitLogger = ({ doctor, onSuccess }) => {
       <div className="form-actions">
         <button
           type="submit"
-          disabled={loading || photos.length === 0}
+          disabled={loading || photos.length === 0 || clmPending}
           className="btn btn-primary btn-large"
         >
           {loading ? 'Submitting...' : 'Submit Visit'}
         </button>
-        {photos.length === 0 && (
+        {clmPending && (
+          <p className="submit-hint">Resume the CLM session above to enable Submit.</p>
+        )}
+        {!clmPending && photos.length === 0 && (
           <p className="submit-hint">Take at least 1 photo to submit</p>
         )}
       </div>

@@ -9,7 +9,7 @@
  * 5. View past session history
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import CLMPresenter from '../../components/employee/CLMPresenter';
@@ -52,6 +52,7 @@ const PartnershipCLM = () => {
   // session_group_id is the same UUID that becomes Visit.session_group_id
   // and CLMSession.idempotencyKey, joining the two halves of the encounter.
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const incomingDoctorId = searchParams.get('doctorId');
   const incomingGroupId = searchParams.get('session_group_id');
   const incomingProductsCsv = searchParams.get('products') || '';
@@ -73,6 +74,12 @@ const PartnershipCLM = () => {
   const [activeSession, setActiveSession] = useState(null);
   const [selectedDoctor, setSelectedDoctor] = useState(null);
   const [selectedProductIds, setSelectedProductIds] = useState(new Set());
+  // Tracks the idempotencyKey/UUID used to start the in-flight CLMSession
+  // so the post-modal navigation can forward it to VisitLogger as
+  // session_group_id — links the eventual Visit to the just-saved CLM
+  // session whether the BDM started in /bdm/partnership directly OR via
+  // the VisitLogger merged flow.
+  const [activeIdempotencyKey, setActiveIdempotencyKey] = useState(null);
 
   // ── Post-session modal ────────────────────────────────────────
   const [showEndModal, setShowEndModal] = useState(false);
@@ -159,12 +166,20 @@ const PartnershipCLM = () => {
     if (!doc) return;
     prefilledRef.current = true;
     setSelectedDoctor(doc);
+    // Source priority: explicit ?products= CSV from VisitLogger (just-now BDM
+    // pick) wins; otherwise fall back to the VIP Client's tagged Target Products
+    // so the BDM doesn't have to re-select what they already curated.
     if (incomingProductsCsv) {
       const ids = incomingProductsCsv
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean);
       setSelectedProductIds(new Set(ids));
+    } else {
+      const targetIds = (doc.targetProducts || [])
+        .map((t) => t.product?._id || t.product)
+        .filter(Boolean);
+      if (targetIds.length > 0) setSelectedProductIds(new Set(targetIds));
     }
     setStep('products');
     setTab('present');
@@ -213,9 +228,15 @@ const PartnershipCLM = () => {
   }, [products, productSearch]);
 
   // ── Select doctor → go to product selection ───────────────────
+  // Seed the picker from the VIP Client's tagged Target Products. The BDM can
+  // still toggle freely on the products step — the prefill is a starting
+  // point, not a lock. Empty targetProducts → empty Set (BDM picks manually).
   const handleSelectDoctor = (doctor) => {
     setSelectedDoctor(doctor);
-    setSelectedProductIds(new Set());
+    const targetIds = (doctor.targetProducts || [])
+      .map((t) => t.product?._id || t.product)
+      .filter(Boolean);
+    setSelectedProductIds(new Set(targetIds));
     setProductSearch('');
     setStep('products');
   };
@@ -249,6 +270,13 @@ const PartnershipCLM = () => {
         }
       }
       const productIds = Array.from(selectedProductIds);
+      // Resolve the idempotencyKey ONCE for all branches (online, offline,
+      // network-error fallback) — the same UUID becomes Visit.session_group_id
+      // when the BDM forwards to VisitLogger after Save Session, joining the
+      // Visit + CLMSession by that UUID at server-side stamping time.
+      const idempotencyKey = incomingGroupId
+        || `clm_${Date.now()}_${selectedDoctor._id}_${Math.random().toString(36).slice(2, 10)}`;
+      setActiveIdempotencyKey(idempotencyKey);
 
       if (navigator.onLine) {
         // Online: normal API flow.
@@ -256,8 +284,6 @@ const PartnershipCLM = () => {
         // "Start Presentation") as idempotencyKey so visitController can
         // resolve the linked CLMSession by that same UUID at submit time.
         // Generates a fresh key when standalone (no incomingGroupId).
-        const idempotencyKey = incomingGroupId
-          || `clm_${Date.now()}_${selectedDoctor._id}_${Math.random().toString(36).slice(2, 10)}`;
         const res = await clmService.startSession(
           selectedDoctor._id,
           location,
@@ -270,6 +296,7 @@ const PartnershipCLM = () => {
         // Offline: create a local draft session
         const offlineSession = {
           _id: `offline_${Date.now()}`,
+          idempotencyKey,
           offlineQueued: true,
           doctor: selectedDoctor._id,
           location,
@@ -282,9 +309,14 @@ const PartnershipCLM = () => {
       setStep('presenting');
       toast.success('Presentation started');
     } catch {
-      // Network error — fall back to offline mode
+      // Network error — fall back to offline mode. Reuse the inbound
+      // session_group_id when present so the merged-flow linkage survives.
+      const fallbackKey = incomingGroupId
+        || `clm_${Date.now()}_${selectedDoctor._id}_${Math.random().toString(36).slice(2, 10)}`;
+      setActiveIdempotencyKey(fallbackKey);
       const offlineSession = {
         _id: `offline_${Date.now()}`,
+        idempotencyKey: fallbackKey,
         offlineQueued: true,
         doctor: selectedDoctor._id,
         startedAt: new Date().toISOString(),
@@ -294,6 +326,37 @@ const PartnershipCLM = () => {
       toast('Presenting offline — session will sync later', { icon: '\u{1F4E1}' });
     }
   };
+
+  // After the post-session modal closes, navigate the BDM forward to
+  // VisitLogger so they can upload the proof-of-visit photo and submit the
+  // visit (which links to the just-saved CLMSession via session_group_id).
+  // Handles BOTH entry paths:
+  //   - Merged flow (incomingDoctorId + incomingGroupId from URL — BDM
+  //     started in VisitLogger, clicked "Start Presentation"): returns to
+  //     VisitLogger with that UUID so the original draft is restored.
+  //   - Direct flow (BDM landed on /bdm/partnership directly, picked a doctor,
+  //     started CLM): forwards selectedDoctor + activeIdempotencyKey so the
+  //     visit links to the just-saved CLMSession.
+  //
+  // options.pendingSession (default false) — when true, append clm_pending=1
+  // and session_group_id so VisitLogger renders the "CLM session not
+  // finalized" banner that gates Submit. Only applies in MERGED mode (Skip
+  // in direct mode keeps the BDM on /bdm/partnership — they may have
+  // intentionally chosen not to log a visit).
+  const returnAfterCLM = useCallback((options = {}) => {
+    const doctorIdToUse = incomingDoctorId || selectedDoctor?._id;
+    const uuidToUse = incomingGroupId || activeIdempotencyKey;
+    if (!doctorIdToUse || !uuidToUse) return;
+    // Skip in direct mode: leave the BDM on /bdm/partnership (post-modal
+    // step='doctor' was set by handleEndPresentation). Don't yank them
+    // somewhere they didn't ask to go.
+    if (options.pendingSession && !incomingDoctorId) return;
+    const params = new URLSearchParams();
+    params.set('doctorId', doctorIdToUse);
+    params.set('session_group_id', uuidToUse);
+    if (options.pendingSession) params.set('clm_pending', '1');
+    navigate(`/bdm/visit/new?${params.toString()}`);
+  }, [incomingDoctorId, incomingGroupId, selectedDoctor, activeIdempotencyKey, navigate]);
 
   // ── End presentation (offline-aware) ─────────────────────────
   const handleEndPresentation = async (sessionId, slideEvents) => {
@@ -320,6 +383,7 @@ const PartnershipCLM = () => {
   const handleSubmitEnd = async () => {
     if (!endSessionData?.sessionId) {
       setShowEndModal(false);
+      returnAfterCLM();
       return;
     }
     try {
@@ -361,6 +425,7 @@ const PartnershipCLM = () => {
       setProductInterest({});
       setEndForm({ interestLevel: 3, outcome: 'maybe', bdmNotes: '', followUpDate: '' });
       if (!isOfflineSession) fetchData();
+      returnAfterCLM();
     } catch {
       // Last resort: save as offline draft
       try {
@@ -389,6 +454,7 @@ const PartnershipCLM = () => {
       setEndSessionData(null);
       setProductInterest({});
       setEndForm({ interestLevel: 3, outcome: 'maybe', bdmNotes: '', followUpDate: '' });
+      returnAfterCLM();
     }
   };
 
@@ -672,7 +738,10 @@ const PartnershipCLM = () => {
 
           {/* ── End session modal ────────────────────────────────── */}
           {showEndModal && (
-            <div className="clm-modal-overlay" onClick={() => setShowEndModal(false)}>
+            <div
+              className="clm-modal-overlay"
+              onClick={() => { setShowEndModal(false); returnAfterCLM({ pendingSession: true }); }}
+            >
               <div className="clm-modal" onClick={(e) => e.stopPropagation()}>
                 <h2>Session Complete</h2>
                 <p className="clm-modal-subtitle">
@@ -731,8 +800,21 @@ const PartnershipCLM = () => {
                   <label>Follow-up Date</label>
                   <input type="date" value={endForm.followUpDate} onChange={(e) => setEndForm((f) => ({ ...f, followUpDate: e.target.value }))} />
                 </div>
+                {incomingDoctorId && incomingGroupId && (
+                  <p className="clm-return-hint">
+                    Save Session to record interest, outcome, and notes — Visit
+                    Submit unlocks afterward. Skip returns you to the visit log
+                    but Submit stays blocked until you resume and Save this
+                    session.
+                  </p>
+                )}
                 <div className="clm-modal-actions">
-                  <button className="clm-modal-cancel" onClick={() => setShowEndModal(false)}>Skip</button>
+                  <button
+                    className="clm-modal-cancel"
+                    onClick={() => { setShowEndModal(false); returnAfterCLM({ pendingSession: true }); }}
+                  >
+                    Skip
+                  </button>
                   <button className="clm-modal-submit" onClick={handleSubmitEnd}>Save Session</button>
                 </div>
               </div>
@@ -830,6 +912,7 @@ const pageStyles = `
   .clm-star-btn { background: none; border: none; cursor: pointer; padding: 4px; }
   .clm-form-group select, .clm-form-group textarea, .clm-form-group input[type="date"] { width: 100%; padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 14px; color: #1f2937; background: white; outline: none; }
   .clm-form-group select:focus, .clm-form-group textarea:focus, .clm-form-group input:focus { border-color: #D4A017; box-shadow: 0 0 0 3px rgba(212,160,23,0.1); }
+  .clm-return-hint { margin: 12px 0 0; padding: 10px 14px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; color: #1d4ed8; font-size: 12.5px; line-height: 1.45; }
   .clm-modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
   .clm-modal-cancel { padding: 10px 20px; border: 1px solid #e5e7eb; border-radius: 8px; background: white; color: #6b7280; font-size: 14px; cursor: pointer; }
   .clm-modal-submit { padding: 10px 20px; border: none; border-radius: 8px; background: #1f2937; color: #D4A017; font-size: 14px; font-weight: 500; cursor: pointer; }
