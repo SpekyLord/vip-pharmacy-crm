@@ -9954,10 +9954,11 @@ Trial-balance-driven annual return aggregator. Pulls POSTED JEs (`bir_flag IN [B
 
 #### J7.10 — Verification posture (Rule 0b) ✅
 - [x] J7 healthcheck **143/143 PASS**.
-- [x] Sibling regressions all green: J6 inbound 2307 107/107, J5 BOOKS, J4 1604E+QAP 97/97, J3 Part B 1604CF 66/66, J3 Part A Compensation 78/78, J2 EWT, J1 VAT, ClmIdempotency.
-- [x] Vite production build green (17.69s); `Bir1702DetailPage-DNIRVkIu.js` lazy chunk emits.
+- [x] Sibling regressions all green: J6 inbound 2307 107/107, J5 BOOKS, J4 1604E+QAP 97/97, J3 Part B 1604CF 66/66, J3 Part A Compensation 78/78, J2 EWT, J1 VAT, ClmIdempotency, ClmPerformance 34/34, TeamActivity 22/22.
+- [x] Vite production build green (16.48s); `Bir1702DetailPage-DNIRVkIu.js` lazy chunk emits.
 - [x] Syntax check passes on all 8 modified backend files.
-- [ ] Live HTTP smoke + Playwright UI smoke deferred — MCP browser locked (same condition as J3 Part B / J4 / J5 / J6).
+- [x] **Live HTTP smoke 7/7 PASS** (president cookies, VIP entity 69cd76ec7f6beb5888bd1a53). Cases: compute 1702 → 200 (full payload, RCIT ₱35,371.83, MCIT disabled with explanatory basis, TB balanced ₱342,359.11=₱342,359.11, 1 abnormal flagged, 9 mis-tagged flagged, J6 CWT splice intact); compute 1701 against CORP entity → 200 stub with redirect message; PATCH manual as president → 403 EDIT_1702_MANUAL (gate works); POST mark-filed as president → 403 MARK_FILED (gate works); GET /forms/1702/abc → 400; GET /forms/1702/2023 → 400; GET /forms/1702/2026/cwt-rollup (J6) → 200 with pending exposure ₱9 / 1 cert (J6 unchanged).
+- [x] **Live Playwright UI smoke PASS** at /erp/bir/1702/2026 as president, **0 console errors**: 24 boxes rendered with correct values + currency formatting, 7 H2 sections, 3 integrity banners (1 abnormal + 9 mis-tagged + ₱9 CWT-at-risk with deep-link to /erp/bir/2307-IN/2026), 5 manual-credit input fields with help text, CWT quarterly breakdown table (4 quarters + Total row), 5 schedules collapsible (Revenue 1 acct ₱149,446.42, COGS 2 accts ₱7,959.11, OPEX 3 accts ₱0, Mis-tagged 9 accts), Mark FILED button rendered + enabled, Status pill = Draft, PageGuide bir-1702 8-step banner rendered. Screenshot: `frontend/.playwright-mcp/j7-1702-detail-page-smoke.png`.
 
 ### Plan + handoff
 Full plan: `~/.claude/plans/vip-1-j-bir-compliance.md`. Suite complete — 16 working days estimate.
