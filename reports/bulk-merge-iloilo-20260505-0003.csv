@@ -1,0 +1,6 @@
+timestamp,group_key,winner_id,winner_name,winner_visits,winner_completeness,loser_id,loser_name,loser_visits,loser_completeness,audit_id,status,error_msg
+2026-05-04T16:03:02.368Z,alabado|liza grace t.,69b6ed23b5564521af6b1c30,Liza Grace T. Alabado,1,2,69b6eb2fb5564521af6b17af,Liza Grace T. Alabado,0,2,69f8c3387fe98465e17b4ec5,SUCCESS,
+2026-05-04T16:03:04.535Z,alacapa|lilluck f.,69b6ed23b5564521af6b1c31,Lilluck F. Alacapa,2,2,69b6eb2fb5564521af6b17b0,Lilluck F. Alacapa,0,2,69f8c33a7fe98465e17b4ee7,SUCCESS,
+2026-05-04T16:03:06.612Z,alava|leonor,69b6eb2fb5564521af6b17b3,Leonor Alava,2,2,69b6ed23b5564521af6b1c34,Leonor Alava,2,2,69f8c33c7fe98465e17b4f0d,SUCCESS,
+2026-05-04T16:03:08.871Z,alava|ryndell,69b6eb2fb5564521af6b17b2,Ryndell Alava,2,2,69b6ed23b5564521af6b1c33,Ryndell Alava,1,2,69f8c33e7fe98465e17b4f31,SUCCESS,
+2026-05-04T16:03:11.009Z,alfaro|ma. ester,69b6ed23b5564521af6b1c38,Ma. Ester Alfaro,2,2,69b6eb2fb5564521af6b17b7,Ma. Ester Alfaro,1,2,69f8c3417fe98465e17b4f55,SUCCESS,
