@@ -577,19 +577,21 @@ const VALID_TRANSITIONS = {
 };
 
 async function transitionIncomeStatus(reportId, action, userId, data = {}) {
+  const { ApiError } = require('../../middleware/errorHandler');
   const transition = VALID_TRANSITIONS[action];
   if (!transition) {
-    throw new Error(`Invalid action: ${action}`);
+    throw new ApiError(400, `Invalid action: ${action}`);
   }
 
   // eslint-disable-next-line vip-tenant/require-entity-filter -- workflow helper called by 4 incomeController endpoints; entity_id pre-validation belongs at the controller layer (confirmIncome at L417 already does this; review/return/credit follow the same pattern). Refactor to push entityId into this signature is tracked separately.
   const report = await IncomeReport.findById(reportId);
   if (!report) {
-    throw new Error('Income report not found');
+    throw new ApiError(404, 'Income report not found');
   }
 
   if (!transition.from.includes(report.status)) {
-    throw new Error(
+    throw new ApiError(
+      400,
       `Cannot ${action} from status ${report.status}. Expected: ${transition.from.join(' or ')}`
     );
   }

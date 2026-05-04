@@ -72,10 +72,18 @@ export default function OwnerPicker({
   // Self option so the dropdown forces a BDM selection — matches the backend
   // Rule #21 guard in resolveOwnerScope.js.
   const callerIsValidOwner = validOwnerRoles.includes(role);
+  // A valid owner (BDM-shaped role) IS the owner of per-BDM records and never
+  // needs a "record on behalf of" dropdown — they file under themselves. Only
+  // non-owner privileged roles (admin/finance/president/back-office contractor)
+  // need the picker. Without this gate, a misconfigured lookup that adds 'staff'
+  // to PROXY_ENTRY_ROLES.<MODULE> would cause every BDM to fire /erp/people on
+  // mount and 403 (BDMs lack people read access) — needless console noise on
+  // every Sales / Opening AR / Expenses / Income / PettyCash page mount.
+  const showPicker = canProxy && !callerIsValidOwner;
 
   useEffect(() => {
     let alive = true;
-    if (!canProxy) return;
+    if (!showPicker) return;
     (async () => {
       setPeopleLoading(true);
       try {
@@ -89,10 +97,10 @@ export default function OwnerPicker({
       }
     })();
     return () => { alive = false; };
-  }, [canProxy, getPeopleList]);
+  }, [showPicker, getPeopleList]);
 
   if (rolesLoading || validOwnerLoading) return null;
-  if (!canProxy) return null;
+  if (!showPicker) return null;
 
   const selfLabel = callerIsValidOwner
     ? `Self — ${user?.name || 'me'} (${role})`

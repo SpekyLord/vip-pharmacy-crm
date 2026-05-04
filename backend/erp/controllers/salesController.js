@@ -562,6 +562,19 @@ const getSales = catchAsync(async (req, res) => {
   // proxy. Non-proxy callers stay scoped to their own bdm_id via tenantFilter.
   const filter = await widenFilterForProxy(req, 'sales', { subKey: 'proxy_entry' });
 
+  // Rule #21 — tenantFilter middleware sets {} for president (sees-all-entities by
+  // design for create-stamp). On reads that produces a cross-entity leak: a
+  // president working on MG and CO. would see VIP Sales / Opening AR rows. Apply
+  // the working-entity scope explicitly here, mirroring the pattern in
+  // collectionController.getArAgingEndpoint. Privileged callers opt out via
+  // ?entity_id=<id> for cross-entity audit views.
+  const privileged = req.isPresident || req.isAdmin || req.isFinance;
+  if (privileged && req.query.entity_id) {
+    filter.entity_id = req.query.entity_id;
+  } else if (req.entityId) {
+    filter.entity_id = req.entityId;
+  }
+
   if (req.query.status) filter.status = req.query.status;
   if (req.query.hospital_id) filter.hospital_id = req.query.hospital_id;
   if (req.query.customer_id) filter.customer_id = req.query.customer_id;

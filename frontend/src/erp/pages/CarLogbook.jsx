@@ -17,8 +17,6 @@ import { useAuth } from '../../hooks/useAuth';
 // When the user has expenses.car_logbook_proxy ticked AND their role is in
 // PROXY_ENTRY_ROLES.CAR_LOGBOOK, they can write to the currently selected BDM's
 // logbook via body.assigned_to on save. Lookup-driven per Rule #3.
-import useErpSubAccess from '../hooks/useErpSubAccess';
-
 // ── Generic Scan Modal (reused for ODOMETER and GAS_RECEIPT) ──
 
 function ScanModal({ open, onClose, onApply, docType, title }) {
@@ -147,10 +145,13 @@ export default function CarLogbook() {
   // expenses.car_logbook_proxy ticked) can WRITE to the selected BDM's logbook.
   // President always eligible. Lookup-driven proxy-role gate is evaluated on
   // the backend; the frontend only needs the sub-perm check to surface the UI.
-  const { hasSubPermission } = useErpSubAccess();
+  //
+  // Direct sub_permissions read (NOT hasSubPermission) — proxy entry is an
+  // explicit elevation that must NEVER be inherited from module=FULL. Mirrors
+  // backend hasProxySubPermission in resolveOwnerScope.js. See SMER.jsx for
+  // the corresponding fix.
   const canProxyCarLogbook = user?.role === ROLES.PRESIDENT
-    || (isPrivileged && hasSubPermission('expenses', 'car_logbook_proxy'))
-    || (isBdm && hasSubPermission('expenses', 'car_logbook_proxy'));
+    || ((isPrivileged || isBdm) && !!user?.erp_access?.sub_permissions?.expenses?.car_logbook_proxy);
   const {
     getCarLogbookList, createCarLogbook, updateCarLogbook, deleteDraftCarLogbook,
     validateCarLogbook, submitCarLogbook, reopenCarLogbook, submitFuelForApproval,
