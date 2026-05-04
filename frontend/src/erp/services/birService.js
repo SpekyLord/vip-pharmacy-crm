@@ -248,6 +248,26 @@ export async function export2316Pdf(year, payeeId) {
   );
 }
 
+// Phase J4 — 1604-E (annual EWT alphalist) + QAP (quarterly EWT alphalist)
+
+export async function compute1604E(year) {
+  const { data } = await api.get(`${BASE}/forms/1604-E/${year}/compute`);
+  return data?.data || null;
+}
+
+export async function export1604EDat(year) {
+  return downloadBlob(`${BASE}/forms/1604-E/${year}/export.dat`, `1604E_${year}.dat`);
+}
+
+export async function computeQAP(year, quarter) {
+  const { data } = await api.get(`${BASE}/forms/QAP/${year}/${quarter}/compute`);
+  return data?.data || null;
+}
+
+export async function exportQAPDat(year, quarter) {
+  return downloadBlob(`${BASE}/forms/QAP/${year}/${quarter}/export.dat`, `QAP_${year}_Q${quarter}.dat`);
+}
+
 export default {
   getDashboard,
   getEntityConfig,
@@ -278,4 +298,9 @@ export default {
   compute1604CF,
   export1604CFDat,
   export2316Pdf,
+  // Phase J4
+  compute1604E,
+  export1604EDat,
+  computeQAP,
+  exportQAPDat,
 };

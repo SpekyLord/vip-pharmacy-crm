@@ -926,6 +926,115 @@ exports.export2316Pdf = catchAsync(async (req, res) => {
   res.send(result.buffer);
 });
 
+// ── Phase J4 — 1604-E Annual EWT Alphalist + QAP Quarterly Alphalist ────
+//
+// 1604-E mirrors compute1604CF (annual, period_year only) but for OUTBOUND-
+// direction WithholdingLedger rows (vendors / contractors / hospitals) and
+// uses a single flat per-(payee × ATC) schedule instead of the 7.1/7.2/7.3
+// compensation partition.
+//
+// QAP mirrors SAWT in shape (quarterly, year+quarter encoded) but covers the
+// 1601-EQ ATC subset — finance posture and entity scoping behave identically
+// to 1601-EQ + SAWT for Rule #20 traceability.
+//
+// VIEW_DASHBOARD gates compute. EXPORT_FORM gates .dat (BIR Alphalist Data
+// Entry v7.x) because each appends a SHA-256 hash to BirFilingStatus.export
+// _audit_log per Rule #20.
+
+exports.compute1604E = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.params.year);
+  if (!year) {
+    return res.status(400).json({ success: false, message: 'Invalid year. Year ≥ 2024.' });
+  }
+  const result = await withholdingReturnService.compute1604E({ entityId: req.entityId, year });
+  const row = await BirFilingStatus.findOne({
+    entity_id: req.entityId, form_code: '1604-E',
+    period_year: year, period_month: null, period_quarter: null, period_payee_id: null,
+  }).lean();
+  res.json({ success: true, data: { ...result, filing_row: row || null } });
+});
+
+exports.export1604EDat = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'EXPORT_FORM'))) return;
+  const year = parseYear(req.params.year);
+  if (!year) return res.status(400).json({ success: false, message: 'Invalid year.' });
+
+  const entity = await Entity.findById(req.entityId).lean();
+  if (!entity) return res.status(404).json({ success: false, message: 'Entity not found.' });
+
+  const { datContent, contentHash, filename, totals } = await withholdingReturnService.export1604EDat({
+    entityId: req.entityId, year, userId: req.user?._id, entity,
+  });
+  birDashboardService.invalidate(req.entityId);
+
+  console.log('[BIR_EXPORT_1604E_DAT]', JSON.stringify({
+    user: req.user?.email, role: req.user?.role,
+    entity_id: String(req.entityId),
+    year,
+    distinct_payees: totals.distinct_payees,
+    payee_lines: totals.payee_lines,
+    content_hash: contentHash,
+    byte_length: Buffer.byteLength(datContent, 'utf8'),
+    ip: req.ip, ts: new Date().toISOString(),
+  }));
+
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('X-Content-Hash', contentHash);
+  res.send(datContent);
+});
+
+exports.computeQAP = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.params.year);
+  const quarter = parseQuarter(req.params.quarter);
+  if (!year || !quarter) {
+    return res.status(400).json({ success: false, message: 'Invalid year/quarter. Year ≥ 2024, quarter 1-4.' });
+  }
+  const result = await withholdingReturnService.computeQAP({ entityId: req.entityId, year, quarter });
+  const row = await BirFilingStatus.findOne({
+    entity_id: req.entityId, form_code: 'QAP',
+    period_year: year, period_quarter: quarter, period_month: null, period_payee_id: null,
+  }).lean();
+  res.json({ success: true, data: { ...result, filing_row: row || null } });
+});
+
+exports.exportQAPDat = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'EXPORT_FORM'))) return;
+  const year = parseYear(req.params.year);
+  const quarter = parseQuarter(req.params.quarter);
+  if (!year || !quarter) return res.status(400).json({ success: false, message: 'Invalid year/quarter.' });
+
+  const entity = await Entity.findById(req.entityId).lean();
+  if (!entity) return res.status(404).json({ success: false, message: 'Entity not found.' });
+
+  const { datContent, contentHash, filename, totals } = await withholdingReturnService.exportQAPDat({
+    entityId: req.entityId, year, quarter, userId: req.user?._id, entity,
+  });
+  birDashboardService.invalidate(req.entityId);
+
+  console.log('[BIR_EXPORT_QAP_DAT]', JSON.stringify({
+    user: req.user?.email, role: req.user?.role,
+    entity_id: String(req.entityId),
+    year, quarter,
+    distinct_payees: totals.distinct_payees,
+    payee_lines: totals.payee_lines,
+    content_hash: contentHash,
+    byte_length: Buffer.byteLength(datContent, 'utf8'),
+    ip: req.ip, ts: new Date().toISOString(),
+  }));
+
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('X-Content-Hash', contentHash);
+  res.send(datContent);
+});
+
 // ── Withholding Posture (read-only summary for the dashboard) ──────────
 exports.getWithholdingPosture = catchAsync(async (req, res) => {
   if (!requireEntity(req, res)) return;

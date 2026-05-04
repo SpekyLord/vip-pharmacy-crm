@@ -93,6 +93,7 @@ const BirVatReturnDetailPage = lazyRetry(() => import('./erp/pages/BirVatReturnD
 const BirEwtReturnDetailPage = lazyRetry(() => import('./erp/pages/BirEwtReturnDetailPage'));
 // Phase VIP-1.J / J3 Part B — 1604-CF Annual Compensation Alphalist + Form 2316 PDF
 const Bir1604CFDetailPage = lazyRetry(() => import('./erp/pages/Bir1604CFDetailPage'));
+const BirAlphalistEwtPage = lazyRetry(() => import('./erp/pages/BirAlphalistEwtPage'));
 // Phase VIP-1.B Phase 4 — Rebate + Commission matrix admin + Payout ledger
 const RebateMatrixPage = lazyRetry(() => import('./erp/pages/RebateMatrixPage'));
 const NonMdRebateMatrixPage = lazyRetry(() => import('./erp/pages/NonMdRebateMatrixPage'));
@@ -686,6 +687,30 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.BIR_FILING}>
                 <Bir1604CFDetailPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* Phase J4 (May 2026) — 1604-E Annual + QAP Quarterly EWT Alphalists.
+              Annual variant uses /erp/bir/1604-E/:year (year-only — must beat
+              the wildcard fallback below). Quarterly variant uses
+              /erp/bir/QAP/:year/:quarter — same shape as 1601-EQ (which is
+              currently caught by the wildcard) but the explicit :quarter
+              segment lets the alphalist page replace box-grid rendering with
+              the per-(payee × ATC) schedule layout. Route MUST stay above the
+              `/erp/bir/:formCode/:year/:period` wildcard. */}
+          <Route
+            path="/erp/bir/1604-E/:year"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BIR_FILING}>
+                <BirAlphalistEwtPage formCodeOverride="1604-E" />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/bir/QAP/:year/:quarter"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BIR_FILING}>
+                <BirAlphalistEwtPage formCodeOverride="QAP" />
               </ProtectedRoute>
             }
           />

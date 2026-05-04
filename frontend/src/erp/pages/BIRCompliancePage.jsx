@@ -359,8 +359,12 @@ export default function BIRCompliancePage() {
                         // year-only path: /erp/bir/1604-CF/:year). Annual cells
                         // have null period_month + null period_quarter, so the
                         // drillability check + URL construction both branch.
-                        const monthlyOrQuarterlyForms = ['2550M', '2550Q', '1601-EQ', '1606', '1601-C'];
-                        const annualForms = ['1604-CF'];
+                        // Phase J4 (May 2026) — 1604-E added (annual) + QAP
+                        // added (quarterly). 1604-E uses /erp/bir/1604-E/:year
+                        // (year-only path, same shape as 1604-CF). QAP uses
+                        // /erp/bir/QAP/:year/:quarter (same shape as 1601-EQ).
+                        const monthlyOrQuarterlyForms = ['2550M', '2550Q', '1601-EQ', '1606', '1601-C', 'QAP'];
+                        const annualForms = ['1604-CF', '1604-E'];
                         const isAnnualForm = annualForms.includes(f.form_code);
                         const isClickable =
                           (period && (monthlyOrQuarterlyForms.includes(f.form_code) || f.form_code === 'SAWT'))

@@ -24,13 +24,14 @@
  *   • Quarterly: 1601-EQ + SAWT + outbound 2307 sum three months.
  *
  * What is NOT in this file (deferred to subsequent J phases):
- *   • QAP + 1604-E annual alphalists (J4).
  *   • 2307 inbound reconciliation (J6) — uses CwtLedger, not this ledger.
+ *   • Books of Accounts (J5) and 1702 Annual Income Tax (J7) — separate services.
  *
  * Phase history in this file:
  *   • J2 (Apr 2026): 1601-EQ + 1606 + 2307-OUT + SAWT
  *   • J3 Part A (May 04 2026): 1601-C monthly compensation
  *   • J3 Part B (May 04 2026): 1604-CF annual alphalist + 2316 employee cert
+ *   • J4 (May 04 2026): 1604-E annual EWT alphalist + QAP quarterly EWT alphalist
  */
 
 const crypto = require('crypto');
@@ -776,6 +777,341 @@ async function export2316Pdf({ entityId, payeeId, year, entity }) {
   };
 }
 
+// ── Phase J4 — 1604-E (annual) + QAP (quarterly) EWT alphalists (May 2026) ─
+/**
+ * Annual + quarterly OUTBOUND-direction alphalists. Both forms share the
+ * same per-payee × per-ATC schedule shape (one row per (payee × ATC) pair
+ * — what BIR Alphalist Data Entry v7.x expects on the `.dat` D1 line). The
+ * year/quarter scope is the only difference.
+ *
+ * Scope (per BIR posture + this codebase's split):
+ *   • 1604-E covers the EWT subset 1601-EQ reports — WI010/WI011/WC010/
+ *     WC011/WI080/WI081. Rent (WI160/WC160) goes through 1606's per-month
+ *     filings + its own annual roll-up (out of scope here).
+ *   • QAP covers the same EWT subset for one quarter — complements 1601-EQ
+ *     by enumerating the per-payee detail behind the form's totals boxes.
+ *
+ * finance_tag is 'INCLUDE' strict — finance has the judgment call on each
+ * OUTBOUND row (vendor/contractor/hospital). PENDING rows are NOT in the
+ * alphalist (matches 1601-EQ + SAWT posture). Do NOT auto-INCLUDE OUTBOUND
+ * the way J3 Part B does for COMPENSATION — compensation has no judgment
+ * call (tax determined upstream by payslipCalc), but EWT rates depend on
+ * vendor characterization (corp/indiv, TWA registration, threshold flips).
+ *
+ * Snapshot pattern (Rule #20): rows read frozen `payee_*_snapshot` fields
+ * from WithholdingLedger; vendor renames or TIN changes do NOT rewrite a
+ * closed year. There is no "vendor terminated" partition — BIR doesn't
+ * ask for a separated-vendor schedule on 1604-E.
+ */
+const J4_OUTBOUND_ATCS = ['WI010', 'WI011', 'WC010', 'WC011', 'WI080', 'WI081'];
+
+async function compute1604E({ entityId, year }) {
+  if (!entityId) throw new Error('entityId is required');
+  if (!Number.isInteger(year) || year < 2024 || year > 2099) throw new Error('Invalid year. Year ≥ 2024.');
+
+  const periods = [];
+  for (let m = 1; m <= 12; m++) periods.push(`${year}-${pad2(m)}`);
+
+  const schedule = await listPayees(entityId, periods, J4_OUTBOUND_ATCS);
+
+  // Distinct payee count across the year (a payee may appear under multiple
+  // ATCs — count once per payee_id for the BIR-reported headcount).
+  const distinctPayees = new Set(schedule.map(r => `${r.payee_kind}:${r.payee_id}`)).size;
+
+  // Per-ATC totals for the form's summary boxes.
+  const byAtc = new Map();
+  for (const code of J4_OUTBOUND_ATCS) byAtc.set(code, { gross: 0, withheld: 0, count: 0 });
+  for (const r of schedule) {
+    const bucket = byAtc.get(r.atc_code);
+    if (!bucket) continue;
+    bucket.gross += r.gross;
+    bucket.withheld += r.withheld;
+    bucket.count += 1;
+  }
+
+  const totals = {
+    payee_lines: schedule.length,
+    distinct_payees: distinctPayees,
+    gross_total: round2(schedule.reduce((s, r) => s + r.gross, 0)),
+    withheld_total: round2(schedule.reduce((s, r) => s + r.withheld, 0)),
+  };
+  for (const code of J4_OUTBOUND_ATCS) {
+    const b = byAtc.get(code);
+    totals[`${code.toLowerCase()}_gross`] = round2(b.gross);
+    totals[`${code.toLowerCase()}_tax`] = round2(b.withheld);
+    totals[`${code.toLowerCase()}_count`] = b.count;
+  }
+
+  const meta = {
+    form_code: '1604-E',
+    entity_id: entityId,
+    period_year: year,
+    period_label: String(year),
+    period_months: periods,
+    atc_subset: J4_OUTBOUND_ATCS,
+    source_counts: {
+      ledger_payee_atc_rows: schedule.length,
+      distinct_payees: distinctPayees,
+      atc_buckets: J4_OUTBOUND_ATCS.filter(c => byAtc.get(c).count > 0).length,
+    },
+    schedule,                   // flat per-(payee × ATC) — BIR `.dat` D1 contract
+    computed_at: new Date(),
+  };
+
+  return { totals, meta };
+}
+
+async function computeQAP({ entityId, year, quarter }) {
+  if (!entityId) throw new Error('entityId is required');
+  if (!Number.isInteger(year) || year < 2024 || year > 2099) throw new Error('Invalid year. Year ≥ 2024.');
+  if (!Number.isInteger(quarter) || quarter < 1 || quarter > 4) throw new Error('Invalid quarter (1-4)');
+
+  const periods = quarterPeriods(year, quarter);
+  const schedule = await listPayees(entityId, periods, J4_OUTBOUND_ATCS);
+
+  const distinctPayees = new Set(schedule.map(r => `${r.payee_kind}:${r.payee_id}`)).size;
+
+  const byAtc = new Map();
+  for (const code of J4_OUTBOUND_ATCS) byAtc.set(code, { gross: 0, withheld: 0, count: 0 });
+  for (const r of schedule) {
+    const bucket = byAtc.get(r.atc_code);
+    if (!bucket) continue;
+    bucket.gross += r.gross;
+    bucket.withheld += r.withheld;
+    bucket.count += 1;
+  }
+
+  const totals = {
+    payee_lines: schedule.length,
+    distinct_payees: distinctPayees,
+    gross_total: round2(schedule.reduce((s, r) => s + r.gross, 0)),
+    withheld_total: round2(schedule.reduce((s, r) => s + r.withheld, 0)),
+  };
+  for (const code of J4_OUTBOUND_ATCS) {
+    const b = byAtc.get(code);
+    totals[`${code.toLowerCase()}_gross`] = round2(b.gross);
+    totals[`${code.toLowerCase()}_tax`] = round2(b.withheld);
+    totals[`${code.toLowerCase()}_count`] = b.count;
+  }
+
+  const meta = {
+    form_code: 'QAP',
+    entity_id: entityId,
+    period_year: year,
+    period_quarter: quarter,
+    period_label: `${year}-Q${quarter}`,
+    period_months: periods,
+    atc_subset: J4_OUTBOUND_ATCS,
+    source_counts: {
+      ledger_payee_atc_rows: schedule.length,
+      distinct_payees: distinctPayees,
+      atc_buckets: J4_OUTBOUND_ATCS.filter(c => byAtc.get(c).count > 0).length,
+    },
+    schedule,
+    computed_at: new Date(),
+  };
+
+  return { totals, meta };
+}
+
+// ── 1604-E .dat writer (BIR Alphalist Data Entry v7.x — annual EWT) ─────
+/**
+ * Header line (H):
+ *   H1604E|TIN|RegName|Branch|Year|FormType
+ *
+ * Detail line (D1) per (payee × ATC):
+ *   D1|Seq|PayeeTIN|RegName|FirstName|MiddleName|Address|Nature|ATC|Gross|Rate|Withheld
+ *
+ * Trailer (T):
+ *   T1604E|RecordCount|TotalGross|TotalWithheld
+ *
+ * Mirrors serializeSawtDat byte-for-byte on the D1/T1 lines so the BIR
+ * Alphalist Data Entry v7.x importer sees the same record shape it accepts
+ * from SAWT/QAP — only the H/T tag distinguishes 1604-E.
+ *
+ * Subscribers can swap this serializer via DI (same lookup-driven module
+ * path pattern as serializeSawtDat) when the Vios SaaS spin-out lands in
+ * a non-PH jurisdiction.
+ */
+function serialize1604EDat({ entity, year, totals, meta }) {
+  const lines = [];
+  lines.push([
+    'H1604E',
+    entity?.tin || 'NOT SET',
+    sanitize(entity?.entity_name || ''),
+    'HEAD OFFICE',
+    String(year),
+    '1604E',
+  ].join('|'));
+
+  let totalGross = 0;
+  let totalWithheld = 0;
+  (meta?.schedule || []).forEach((r, idx) => {
+    const detail = [
+      'D1',
+      String(idx + 1).padStart(6, '0'),
+      r.payee_tin || '',
+      sanitize(r.payee_kind === 'VendorMaster' || r.payee_kind === 'Hospital' ? r.payee_name : ''),
+      sanitize(r.payee_kind === 'PeopleMaster' || r.payee_kind === 'Doctor' ? r.payee_name : ''),
+      '',                                   // middle name — payee-name split deferred to a future refactor
+      sanitize(r.payee_address || ''),
+      'BUSINESS',
+      r.atc_code || '',
+      r.gross.toFixed(2),
+      ((r.withheld / Math.max(1, r.gross)) * 100).toFixed(2),
+      r.withheld.toFixed(2),
+    ];
+    totalGross += r.gross;
+    totalWithheld += r.withheld;
+    lines.push(detail.join('|'));
+  });
+
+  lines.push([
+    'T1604E',
+    String((meta?.schedule || []).length).padStart(6, '0'),
+    totalGross.toFixed(2),
+    totalWithheld.toFixed(2),
+  ].join('|'));
+
+  return lines.join('\r\n') + '\r\n';
+}
+
+// ── QAP .dat writer (BIR Alphalist Data Entry v7.x — quarterly EWT) ─────
+/**
+ * Header line (H):
+ *   HQAP|TIN|RegName|Branch|Period|FormType|Year|Quarter
+ *
+ * Detail line (D1) per (payee × ATC) — identical shape to SAWT/1604-E so
+ * the BIR importer reuses the same record contract.
+ *
+ * Trailer (T):
+ *   TQAP|RecordCount|TotalGross|TotalWithheld
+ */
+function serializeQAPDat({ entity, year, quarter, totals, meta }) {
+  const lines = [];
+  lines.push([
+    'HQAP',
+    entity?.tin || 'NOT SET',
+    sanitize(entity?.entity_name || ''),
+    'HEAD OFFICE',
+    `${year}Q${quarter}`,
+    'QAP',
+    String(year),
+    String(quarter),
+  ].join('|'));
+
+  let totalGross = 0;
+  let totalWithheld = 0;
+  (meta?.schedule || []).forEach((r, idx) => {
+    const detail = [
+      'D1',
+      String(idx + 1).padStart(6, '0'),
+      r.payee_tin || '',
+      sanitize(r.payee_kind === 'VendorMaster' || r.payee_kind === 'Hospital' ? r.payee_name : ''),
+      sanitize(r.payee_kind === 'PeopleMaster' || r.payee_kind === 'Doctor' ? r.payee_name : ''),
+      '',
+      sanitize(r.payee_address || ''),
+      'BUSINESS',
+      r.atc_code || '',
+      r.gross.toFixed(2),
+      ((r.withheld / Math.max(1, r.gross)) * 100).toFixed(2),
+      r.withheld.toFixed(2),
+    ];
+    totalGross += r.gross;
+    totalWithheld += r.withheld;
+    lines.push(detail.join('|'));
+  });
+
+  lines.push([
+    'TQAP',
+    String((meta?.schedule || []).length).padStart(6, '0'),
+    totalGross.toFixed(2),
+    totalWithheld.toFixed(2),
+  ].join('|'));
+
+  return lines.join('\r\n') + '\r\n';
+}
+
+async function export1604EDat({ entityId, year, userId, entity }) {
+  if (!Number.isInteger(year)) throw new Error('Invalid year.');
+  const { totals, meta } = await compute1604E({ entityId, year });
+
+  const datContent = serialize1604EDat({ entity, year, totals, meta });
+  const contentHash = crypto.createHash('sha256').update(datContent, 'utf8').digest('hex');
+  const filename = `1604E_${year}.dat`;
+
+  const filter = {
+    entity_id: entityId,
+    form_code: '1604-E',
+    period_year: year,
+    period_month: null,
+    period_quarter: null,
+    period_payee_id: null,
+  };
+  let row = await BirFilingStatus.findOne(filter);
+  if (!row) {
+    row = new BirFilingStatus({
+      ...filter,
+      status: 'DRAFT',
+      totals_snapshot: totals,
+    });
+  } else {
+    row.totals_snapshot = totals;
+  }
+  row.export_audit_log.push({
+    exported_at: new Date(),
+    exported_by: userId,
+    artifact_kind: 'DAT',
+    filename,
+    content_hash: contentHash,
+    byte_length: Buffer.byteLength(datContent, 'utf8'),
+    notes: `1604-E ${year} export (${totals.distinct_payees} payees / ${totals.payee_lines} lines)`,
+  });
+  await row.save();
+
+  return { row, datContent, contentHash, filename, totals, meta };
+}
+
+async function exportQAPDat({ entityId, year, quarter, userId, entity }) {
+  if (!Number.isInteger(year) || !Number.isInteger(quarter)) throw new Error('Invalid year/quarter.');
+  const { totals, meta } = await computeQAP({ entityId, year, quarter });
+
+  const datContent = serializeQAPDat({ entity, year, quarter, totals, meta });
+  const contentHash = crypto.createHash('sha256').update(datContent, 'utf8').digest('hex');
+  const filename = `QAP_${year}_Q${quarter}.dat`;
+
+  const filter = {
+    entity_id: entityId,
+    form_code: 'QAP',
+    period_year: year,
+    period_quarter: quarter,
+    period_month: null,
+    period_payee_id: null,
+  };
+  let row = await BirFilingStatus.findOne(filter);
+  if (!row) {
+    row = new BirFilingStatus({
+      ...filter,
+      status: 'DRAFT',
+      totals_snapshot: totals,
+    });
+  } else {
+    row.totals_snapshot = totals;
+  }
+  row.export_audit_log.push({
+    exported_at: new Date(),
+    exported_by: userId,
+    artifact_kind: 'DAT',
+    filename,
+    content_hash: contentHash,
+    byte_length: Buffer.byteLength(datContent, 'utf8'),
+    notes: `QAP ${year}-Q${quarter} export (${totals.distinct_payees} payees / ${totals.payee_lines} lines)`,
+  });
+  await row.save();
+
+  return { row, datContent, contentHash, filename, totals, meta };
+}
+
 // ── 2307 outbound PDF generator (per payee per quarter) ─────────────────
 /**
  * Renders a BIR Form 2307 (Certificate of Creditable Tax Withheld at Source)
@@ -1135,6 +1471,13 @@ module.exports = {
   serialize1604CFDat,
   export1604CFDat,
   export2316Pdf,
+  // Phase J4 — Annual + quarterly OUTBOUND-direction EWT alphalists
+  compute1604E,
+  serialize1604EDat,
+  export1604EDat,
+  computeQAP,
+  serializeQAPDat,
+  exportQAPDat,
   exportEwtCsv,
   export2307Pdf,
   exportSawtDat,

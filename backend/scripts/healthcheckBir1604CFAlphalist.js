@@ -273,8 +273,8 @@ expect(/snapshot/i.test(pageGuide.slice(pageGuide.indexOf("'bir-1604cf-alphalist
 
 // ── 12. BIRCompliancePage heatmap drill-down for 1604-CF ─────────────────
 const dashPage = read('frontend/src/erp/pages/BIRCompliancePage.jsx');
-expect(/annualForms = \[['"]1604-CF['"]\]/.test(dashPage),
-  'BIRCompliancePage heatmap declares annualForms = ["1604-CF"]');
+expect(/annualForms = \[[^\]]*['"]1604-CF['"]/.test(dashPage),
+  'BIRCompliancePage heatmap annualForms list includes "1604-CF"');
 expect(/isAnnualForm[\s\S]*\?\s*`\/erp\/bir\/\$\{targetForm\}\/\$\{year\}`/.test(dashPage),
   'BIRCompliancePage 1604-CF cell builds year-only URL for annual forms');
 expect(/'1601-C'/.test(dashPage),

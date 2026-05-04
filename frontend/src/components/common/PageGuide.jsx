@@ -182,6 +182,42 @@ const PAGE_GUIDES = {
     ],
     tip: 'The 2316 PDF audit-trail logs each generation as a separate BirFilingStatus row (form_code=2316, period_payee_id=<employee>) — so the dashboard\'s recent-exports strip shows every employee certificate. Subscribers in jurisdictions with different annual cert formats can swap the PDF renderer via the same DI seam used by the SAWT serializer (lookup-driven module path future).',
   },
+  'bir-1604e-alphalist': {
+    title: 'BIR 1604-E — Annual Alphalist of Payees Subject to Expanded Withholding',
+    steps: [
+      'Pre-flight: this page rolls up 12 months of OUTBOUND-direction WithholdingLedger rows for the calendar year — the same engine that feeds the quarterly 1601-EQ and SAWT reports. Scope is the EWT subset (WI010 / WI011 / WC010 / WC011 / WI080 / WI081). Rent (WI160 / WC160) is reported separately on Form 1606 monthly + its own annual roll-up — out of scope here.',
+      'Each row is a (payee × ATC) pair — same shape as the BIR Alphalist Data Entry v7.x D1 line. A single payee may appear under multiple ATCs (e.g. a corporate vendor that crosses the ₱720k threshold mid-year shows under both WC010 and WC011). The "Distinct Payees" total counts each payee once; the "Payee × ATC Lines" total matches the .dat record count.',
+      'Per-ATC card breakdown shows gross + tax + line count for each of the 6 EWT ATCs. Use this to reconcile against the four 1601-EQ quarterly returns: the sum of the four QAP files for the year MUST match the 1604-E annual numbers within rounding (sub-ledger ≠ GL = bug).',
+      'finance_tag is INCLUDE strict — PENDING rows are excluded so finance has the judgment call on each contractor (corp vs indiv classification, TWA registration, threshold flips). Tag rows on the Withholding Posture card on /erp/bir before they roll into the alphalist.',
+      'Toolbar "Export .dat" generates the BIR Alphalist Data Entry v7.x payload. Open Alphalist Data Entry, import the .dat, validate, and submit. The exported file carries a SHA-256 hash so re-exports with different content are detectable.',
+      'Lifecycle: Export .dat → Mark Reviewed (president sign-off) → Mark Filed (bookkeeper, after Alphalist submission with reference number) → CONFIRMED (auto-flip when BIR confirmation email lands). 1604-E is annual; due March 1 of the following year per BIR RR 2-98 + RMC 18-2003.',
+      'Snapshot pattern: every alphalist row reads frozen payee_name + payee_tin from WithholdingLedger — never live VendorMaster / Hospital / Doctor. Subsequent renames or TIN updates do NOT rewrite the alphalist of a closed year. To retroactively fix a TIN, reverse the affected expense / PRF documents via Reversal Console + re-post.',
+    ],
+    next: [
+      { label: 'BIR Compliance Dashboard', path: '/erp/bir' },
+      { label: 'QAP — Quarterly Alphalist (sibling)', path: '/erp/bir' },
+      { label: '1601-EQ — Quarterly EWT (sibling)', path: '/erp/bir' },
+    ],
+    tip: 'Cross-check: sum of 4 QAP exports for the year should equal the 1604-E export within a few centavos (rounding only). If a quarter\'s QAP is missing payees that show up in 1604-E, it usually means the missing quarter\'s rows are still PENDING — go INCLUDE them on the Withholding Posture card. Subscribers in jurisdictions outside PH can swap the .dat serializer via the same DI seam used by SAWT (lookup-driven module path).',
+  },
+  'bir-qap-alphalist': {
+    title: 'BIR QAP — Quarterly Alphalist of Payees (1601-EQ Companion)',
+    steps: [
+      'Pre-flight: this page rolls up 3 months of OUTBOUND-direction WithholdingLedger rows for one quarter — the per-payee detail behind the totals on the matching 1601-EQ return. Scope is the same EWT subset as 1604-E (WI010 / WI011 / WC010 / WC011 / WI080 / WI081). Rent goes through Form 1606 separately.',
+      'BIR requires QAP to be filed alongside 1601-EQ each quarter. Submit cadence: 1601-EQ totals via eBIRForms + QAP .dat via Alphalist Data Entry v7.x — both due by the last day of the month following the quarter close (e.g. Q1 due April 30).',
+      'Each row is a (payee × ATC) pair — same .dat D1 line shape as 1604-E and SAWT. Sort is gross descending so big-ticket payees appear first (eyeball-audit pattern).',
+      'finance_tag is INCLUDE strict — PENDING rows are excluded. Same posture as 1601-EQ + SAWT — tag rows on the Withholding Posture card before they roll into the alphalist.',
+      'Toolbar "Export .dat" generates the BIR Alphalist Data Entry v7.x payload. Import into Alphalist Data Entry, validate, submit. Re-exports carry a fresh SHA-256 hash so the audit log distinguishes them.',
+      'Lifecycle: Export .dat → Mark Reviewed (president sign-off) → Mark Filed (after Alphalist submission with reference number) → CONFIRMED. Per-quarter — file Q1 by April 30, Q2 by July 31, Q3 by October 31, Q4 by January 31 of the following year.',
+      'Cross-reference: the totals here MUST match the 1601-EQ totals for the same year-quarter. If they diverge, one report has stale cache or someone tagged rows differently across the two surfaces — Recompute both and compare.',
+    ],
+    next: [
+      { label: 'BIR Compliance Dashboard', path: '/erp/bir' },
+      { label: '1601-EQ Quarterly EWT (the matching return)', path: '/erp/bir' },
+      { label: '1604-E Annual Alphalist (parent roll-up)', path: '/erp/bir' },
+    ],
+    tip: 'QAP and SAWT are siblings — both quarterly alphalists, both BIR Alphalist Data Entry v7.x format, both per-(payee × ATC). The difference is direction: QAP reports OUTBOUND withholding (you withholding tax for payees), SAWT reports INBOUND (your customers withholding tax from you for the SAWT credit you claim against income tax). They share the D1/T1 shape so the BIR importer accepts both via the same record contract.',
+  },
   'bir-vat-return': {
     title: 'BIR 2550M / 2550Q VAT Return',
     steps: [
