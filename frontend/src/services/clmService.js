@@ -88,6 +88,14 @@ const clmService = {
     const response = await api.get('/clm/sessions/analytics', { params });
     return response.data;
   },
+
+  // Phase D.4c — CLM Pitch Performance matrix (admin coaching surface).
+  // Returns { window, thresholds, bdmComparison, slidePerformance, bdmProductMatrix }.
+  // Default window is the last 90 days when no startDate/endDate is passed.
+  getPerformanceMatrix: async (params = {}) => {
+    const response = await api.get('/clm/sessions/performance', { params });
+    return response.data;
+  },
 };
 
 export default clmService;

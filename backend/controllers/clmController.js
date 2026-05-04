@@ -11,6 +11,10 @@
 const CLMSession = require('../models/CLMSession');
 const CrmProduct = require('../models/CrmProduct');
 const { isAdminLike, isPresidentLike } = require('../constants/roles');
+// Phase D.4c — lookup-driven thresholds for the CLM Performance admin tab.
+// Lazy-cache + inline DEFAULTS so subscribers tune flag rules per-entity
+// without a code deploy (Rule #3, Rule #19).
+const { getThresholds: getClmPerformanceThresholds } = require('../utils/clmPerformanceThresholds');
 
 // ── Helpers ─────────────────────────────────────────────────────────
 const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
@@ -682,6 +686,292 @@ const getAnalytics = asyncHandler(async (req, res) => {
   });
 });
 
+// ── Phase D.4c — CLM Pitch Performance matrix ───────────────────────
+//
+// President/COO coaching surface. Returns three per-BDM aggregations
+// + a per-slide heatmap + the active threshold set so the frontend can
+// flag rows that fall short. Intentionally separate from getAnalytics
+// (which is the existing high-level summary) — one endpoint per surface
+// keeps regressions contained.
+//
+// Query params:
+//   startDate, endDate    — ISO yyyy-mm-dd (optional). Defaults to last 90d
+//                           so the page is useful on first load without a
+//                           date filter.
+//   userId                — narrow to one BDM for drill-down (optional).
+//   entity_id             — president-only override; admin/finance pull
+//                           their working entity automatically (Rule #21).
+//
+// Aggregations (all $match the same window):
+//   1. bdmComparison      — group by user; totalSessions, avgDurationMs,
+//                           avgSlidesViewed, avgInterestLevel, conversion
+//                           counts (interested + already_partner / total).
+//                           Joined with users for name + role.
+//   2. slidePerformance   — group by slideEvents.slideIndex (unwound);
+//                           avgDurationMs, viewCount, dropOffCount (sessions
+//                           where this is the LAST slide, indicating exit).
+//   3. bdmProductMatrix   — group by user × product (productsPresented
+//                           unwound); timesPresented, interestCount, avgTime.
+//                           Pre-aggregated per-BDM rather than top-N so the
+//                           UI can render a sortable per-BDM table.
+//
+// All three pipelines respect entity_id + userId filters.
+const getPerformanceMatrix = asyncHandler(async (req, res) => {
+  const mongoose = require('mongoose');
+  const { startDate, endDate, userId } = req.query;
+
+  // Default window — last 90 days. Enough to smooth weekly variance but
+  // fresh enough to be coachable. Admin can narrow via query.
+  const windowEnd = endDate ? new Date(endDate) : new Date();
+  const windowStart = startDate
+    ? new Date(startDate)
+    : new Date(windowEnd.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+  const match = {
+    status: 'completed',
+    createdAt: { $gte: windowStart, $lte: windowEnd },
+  };
+  const entityId = resolveEntityId(req);
+  if (entityId) match.entity_id = new mongoose.Types.ObjectId(entityId);
+  if (userId) match.user = new mongoose.Types.ObjectId(userId);
+
+  // 1. Per-BDM comparison — flagged client-side against thresholds.
+  const bdmComparison = await CLMSession.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: '$user',
+        totalSessions: { $sum: 1 },
+        avgDurationMs: { $avg: '$totalDurationMs' },
+        avgSlidesViewed: { $avg: '$slidesViewedCount' },
+        avgInterestLevel: { $avg: '$interestLevel' },
+        interestedCount: {
+          $sum: { $cond: [{ $eq: ['$outcome', 'interested'] }, 1, 0] },
+        },
+        alreadyPartnerCount: {
+          $sum: { $cond: [{ $eq: ['$outcome', 'already_partner'] }, 1, 0] },
+        },
+        notInterestedCount: {
+          $sum: { $cond: [{ $eq: ['$outcome', 'not_interested'] }, 1, 0] },
+        },
+        // Sum of all per-session aggregate dwell time (across slideEvents)
+        // so we can compute a TRUE per-slide average (not skewed by sessions
+        // that closed early). reduce $sum on the durationMs array.
+        totalSlideDwellMs: {
+          $sum: {
+            $reduce: {
+              input: { $ifNull: ['$slideEvents', []] },
+              initialValue: 0,
+              in: { $add: ['$$value', { $ifNull: ['$$this.durationMs', 0] }] },
+            },
+          },
+        },
+        totalSlideEvents: {
+          $sum: { $size: { $ifNull: ['$slideEvents', []] } },
+        },
+        earlyExitCount: {
+          $sum: {
+            $cond: [
+              { $lt: [{ $ifNull: ['$slidesViewedCount', 0] }, 4] },
+              1,
+              0,
+            ],
+          },
+        },
+      },
+    },
+    {
+      $addFields: {
+        conversionRate: {
+          $cond: [
+            { $gt: ['$totalSessions', 0] },
+            {
+              $multiply: [
+                {
+                  $divide: [
+                    { $add: ['$interestedCount', '$alreadyPartnerCount'] },
+                    '$totalSessions',
+                  ],
+                },
+                100,
+              ],
+            },
+            0,
+          ],
+        },
+        avgDwellMsPerSlide: {
+          $cond: [
+            { $gt: ['$totalSlideEvents', 0] },
+            { $divide: ['$totalSlideDwellMs', '$totalSlideEvents'] },
+            0,
+          ],
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: 'users',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'bdm',
+      },
+    },
+    { $unwind: { path: '$bdm', preserveNullAndEmptyArrays: true } },
+    {
+      $project: {
+        userId: '$_id',
+        bdmName: { $ifNull: ['$bdm.name', 'Unknown BDM'] },
+        bdmEmail: '$bdm.email',
+        bdmRole: '$bdm.role',
+        totalSessions: 1,
+        avgDurationMs: 1,
+        avgDurationMinutes: { $divide: ['$avgDurationMs', 60000] },
+        avgSlidesViewed: 1,
+        avgInterestLevel: 1,
+        interestedCount: 1,
+        alreadyPartnerCount: 1,
+        notInterestedCount: 1,
+        earlyExitCount: 1,
+        conversionRate: 1,
+        avgDwellMsPerSlide: 1,
+        avgDwellSecondsPerSlide: { $divide: ['$avgDwellMsPerSlide', 1000] },
+        _id: 0,
+      },
+    },
+    { $sort: { totalSessions: -1 } },
+  ]);
+
+  // 2. Per-slide heatmap — drop-off detection from slidesViewedCount.
+  // A session that exited at slide N never visited N+1, N+2, ... so we
+  // count drop-offs as: sessions where slidesViewedCount === slideIndex+1
+  // (because slideIndex is 0-based). The frontend renders this as a bar
+  // pair: average dwell + drop-off% per slide.
+  const slidePerformance = await CLMSession.aggregate([
+    { $match: match },
+    { $unwind: { path: '$slideEvents', preserveNullAndEmptyArrays: false } },
+    {
+      $group: {
+        _id: '$slideEvents.slideIndex',
+        slideTitle: { $first: '$slideEvents.slideTitle' },
+        avgDurationMs: { $avg: '$slideEvents.durationMs' },
+        viewCount: { $sum: 1 },
+      },
+    },
+    { $sort: { _id: 1 } },
+    {
+      $project: {
+        slideIndex: '$_id',
+        slideTitle: 1,
+        avgDurationMs: 1,
+        avgDurationSeconds: { $divide: ['$avgDurationMs', 1000] },
+        viewCount: 1,
+        _id: 0,
+      },
+    },
+  ]);
+
+  // Compute drop-off counts in a separate pipeline that's grouped by the
+  // session's terminal slide index (slidesViewedCount-1 since the count is
+  // 1-based). Easier than trying to detect "is this the last slide event"
+  // mid-pipeline.
+  const dropOffByTerminalSlide = await CLMSession.aggregate([
+    { $match: match },
+    {
+      $group: {
+        _id: { $subtract: [{ $ifNull: ['$slidesViewedCount', 0] }, 1] },
+        dropOffCount: { $sum: 1 },
+      },
+    },
+  ]);
+  const dropOffMap = new Map(
+    dropOffByTerminalSlide
+      .filter((d) => d._id >= 0)
+      .map((d) => [d._id, d.dropOffCount])
+  );
+  slidePerformance.forEach((slide) => {
+    slide.dropOffCount = dropOffMap.get(slide.slideIndex) || 0;
+    slide.dropOffRate =
+      slide.viewCount > 0
+        ? (slide.dropOffCount / slide.viewCount) * 100
+        : 0;
+  });
+
+  // 3. Per-BDM × per-product matrix — for the table panel.
+  const bdmProductMatrix = await CLMSession.aggregate([
+    { $match: match },
+    { $unwind: { path: '$productsPresented', preserveNullAndEmptyArrays: false } },
+    {
+      $group: {
+        _id: {
+          user: '$user',
+          product: '$productsPresented.product',
+        },
+        productName: { $first: '$productsPresented.productName' },
+        timesPresented: { $sum: 1 },
+        interestCount: {
+          $sum: { $cond: ['$productsPresented.interestShown', 1, 0] },
+        },
+        avgTimeSpentMs: { $avg: '$productsPresented.timeSpentMs' },
+      },
+    },
+    {
+      $addFields: {
+        interestRate: {
+          $cond: [
+            { $gt: ['$timesPresented', 0] },
+            {
+              $multiply: [
+                { $divide: ['$interestCount', '$timesPresented'] },
+                100,
+              ],
+            },
+            0,
+          ],
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: 'users',
+        localField: '_id.user',
+        foreignField: '_id',
+        as: 'bdm',
+      },
+    },
+    { $unwind: { path: '$bdm', preserveNullAndEmptyArrays: true } },
+    {
+      $project: {
+        userId: '$_id.user',
+        productId: '$_id.product',
+        bdmName: { $ifNull: ['$bdm.name', 'Unknown BDM'] },
+        productName: 1,
+        timesPresented: 1,
+        interestCount: 1,
+        avgTimeSpentMs: 1,
+        avgTimeSpentSeconds: { $divide: ['$avgTimeSpentMs', 1000] },
+        interestRate: 1,
+        _id: 0,
+      },
+    },
+    { $sort: { interestRate: -1, timesPresented: -1 } },
+  ]);
+
+  // Resolve thresholds against the request's entity. President sees
+  // global/null-entity thresholds; admin/finance see their working entity.
+  const thresholds = await getClmPerformanceThresholds(entityId);
+
+  res.json({
+    success: true,
+    data: {
+      window: { startDate: windowStart, endDate: windowEnd },
+      thresholds,
+      bdmComparison,
+      slidePerformance,
+      bdmProductMatrix,
+    },
+  });
+});
+
 module.exports = {
   startSession,
   endSession,
@@ -695,6 +985,8 @@ module.exports = {
   getAllSessions,
   getSessionById,
   getAnalytics,
+  // Phase D.4c — admin coaching surface (per-BDM × per-slide × per-product)
+  getPerformanceMatrix,
   // Phase N — public deck viewer (anonymous, rate-limited)
   getPublicDeck,
 };

@@ -9,6 +9,7 @@
  * GET    /api/clm/sessions/my                    - Get current BDM's sessions
  * GET    /api/clm/sessions/all                   - Get all sessions (admin)
  * GET    /api/clm/sessions/analytics             - Get analytics summary (admin)
+ * GET    /api/clm/sessions/performance           - Phase D.4c: per-BDM × slide × product coaching matrix (admin)
  * GET    /api/clm/sessions/:id                   - Get session by ID
  * PUT    /api/clm/sessions/:id/end               - End / complete a session
  * PUT    /api/clm/sessions/:id/slides            - Record slide events (batch)
@@ -38,6 +39,8 @@ const {
   getAllSessions,
   getSessionById,
   getAnalytics,
+  // Phase D.4c — admin coaching surface
+  getPerformanceMatrix,
   // Phase N — public anonymous deck viewer
   getPublicDeck,
 } = require('../controllers/clmController');
@@ -62,6 +65,9 @@ router.use(protect);
 // ── Admin routes (specific paths FIRST — before the /:id generic) ───
 router.get('/sessions/all', adminOnly, getAllSessions);
 router.get('/sessions/analytics', adminOnly, getAnalytics);
+// Phase D.4c — MUST stay above the /:id generic so 'performance' isn't
+// captured as an ObjectId param.
+router.get('/sessions/performance', adminOnly, getPerformanceMatrix);
 
 // ── BDM + Admin routes ──────────────────────────────────────────────
 router.get('/sessions/my', adminOrEmployee, getMySessions);

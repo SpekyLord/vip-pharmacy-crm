@@ -357,12 +357,13 @@ const PAGE_GUIDES = {
       'Programs tab shows program and support type coverage across VIP Clients.',
       'Products tab shows which products are being presented most and by which BDMs.',
       'Daily Heatmap tab shows visit intensity across all BDMs and working days in one grid.',
+      'CLM Performance tab is the pitch-coaching surface — per-BDM × per-slide × per-product matrix over the last 90 days. Status pill ("on track" / "short" / "coach" / "new BDM") flags BDMs rushing through the deck or missing the conversion threshold. Click any BDM row to drill into their DCR.',
     ],
     next: [
       { label: 'Reports', path: '/admin/reports' },
       { label: 'Activity Monitor', path: '/admin/activity' },
     ],
-    tip: 'Red-flag thresholds (consecutive idle workdays, target call rate) come from the TEAM_ACTIVITY_THRESHOLDS lookup — admin tunes them in Control Center → Lookup Tables without a code deploy.',
+    tip: 'Threshold lookups are subscriber-tunable in Control Center → Lookup Tables: TEAM_ACTIVITY_THRESHOLDS for the red-flag rule, CLM_PERFORMANCE_THRESHOLDS for pitch dwell + conversion floors. No code deploy required.',
   },
   'communication-log': {
     title: 'Communication Log',
@@ -566,14 +567,15 @@ const PAGE_GUIDES = {
       'Pick the VIP Client you are pitching to and the products you plan to feature',
       'Tap "Start Presentation" to go full-screen — swipe left/right to navigate slides',
       'Show the QR on the final slide so the VIP Client can message you on Messenger',
-      'End the session to record interest level, outcome, and follow-up date',
+      'On Session Complete, fill Interest Level + Outcome + Notes (all required) — then Save Session forwards you to Visit Logger to take the proof selfie',
+      'Skip is allowed if the client is leaving — but Visit Submit stays blocked with a red banner until you Resume CLM and Save this session (Notes-required gate)',
       'Review your past sessions in the History tab',
     ],
     next: [
       { label: 'My Visits', path: '/bdm/visits' },
       { label: 'Dashboard', path: '/bdm' },
     ],
-    tip: 'Each product you select shows on slide 5. Mark which ones the VIP Client was interested in before ending the session. Skipping products is allowed — slide 5 will show a neutral empty-state card instead of specific products. If offline, your CLM drafts sync automatically when connectivity returns and you\'ll see a confirmation toast + audit entry in your Inbox.',
+    tip: 'Each product you select shows on slide 5. Mark which ones the VIP Client was interested in before ending the session. Save Session is disabled until Notes is filled (Interest defaults to 3, Outcome to "maybe", Follow-up Date is optional). If you Skip, the visit page will show a red "CLM session not finalized" banner — click "Resume CLM session" to come back here and Save. Skipping products entirely is fine — slide 5 shows a neutral empty-state card. Offline drafts sync when connectivity returns. If you re-enter an in-progress session you will see a "Resuming in-progress CLM session" toast.',
   },
   'clm-sessions-admin': {
     title: 'CLM Sessions Overview',
