@@ -9565,7 +9565,7 @@ Backend:
 
 ---
 
-## Phase VIP-1.J — BIR Tax Compliance Suite (J0 SHIPPED Apr 27 2026; J1 SHIPPED Apr 28 2026; J2 SHIPPED May 03 2026; J3 Part A + Part B + J4 + J5 SHIPPED May 04 2026; J6-J7 deferred)
+## Phase VIP-1.J — BIR Tax Compliance Suite (J0 SHIPPED Apr 27 2026; J1 SHIPPED Apr 28 2026; J2 SHIPPED May 03 2026; J3 Part A + Part B + J4 + J5 + J6 SHIPPED May 04 2026; J7 deferred)
 
 **Sequence**: J0 (foundation) ✅ -> J1 (VAT) ✅ -> J2 (EWT) ✅ -> J3 Part A (1601-C Compensation) ✅ -> J3 Part B (1604-CF Annual Alphalist + 2316) ✅ -> J4 (1604-E Annual + QAP Quarterly EWT Alphalists) ✅ -> J5 (Books of Accounts loose-leaf PDFs) ✅ -> J6 (Inbound 2307) ⬅ START HERE -> J7 (1702 Annual Income Tax)
 
@@ -9885,8 +9885,29 @@ Annual + quarterly OUTBOUND-direction alphalists. 1604-E rolls up the calendar y
 - ✅ Direct service smoke: SALES_JOURNAL April 2026 → 3,520-byte PDF magic %PDF, 1 page; GL Annual 2026 → 39,411-byte PDF, 11 pages; Sworn Declaration → 3,304-byte PDF.
 - ⏸ Playwright UI smoke deferred — MCP browser locked (same condition as J3/J4/Phase R1 handoffs).
 
-### J6 — Inbound 2307 Reconciliation (~1 day)
-Surface "Hospitals withheld but no 2307 received" gap. Quarterly CWT credit summary. Workflow: PENDING_2307 -> RECEIVED on PDF upload -> roll-up to 1702.
+### J6 — Inbound 2307 Reconciliation — ✅ SHIPPED MAY 04 2026 EVENING (UNCOMMITTED ON DEV)
+Surface "Hospitals withheld but no 2307 received" gap. Quarterly CWT credit summary. Workflow: PENDING_2307 → RECEIVED on cert reference saved → EXCLUDED on finance disqualify → roll-up into 1702 Creditable Tax Withheld credit (J7 consumer endpoint live at `/forms/1702/:year/cwt-rollup`).
+
+**Source-of-truth decision**: COEXIST. CwtLedger is and remains the source-of-truth for INBOUND CWT — engine writes from `collectionController + journalFromCWT` are unchanged. WithholdingLedger.DIRECTIONS reserves `'INBOUND'` but writing through both ledgers would risk double-counting; J6 extends CwtLedger with reconciliation lifecycle fields instead.
+
+**Sub-tasks (8/8 shipped)**:
+
+- [x] **J6.1 — CwtLedger schema extension**: `status` enum + `received_at` / `received_by` + `cert_2307_url` / `cert_filename` / `cert_content_hash` / `cert_notes` + `excluded_reason` / `excluded_by` / `excluded_at` + `tagged_for_1702_year`. Two new compound indexes for reconciliation queue + 1702 rollup. `statics.STATUSES` exposed.
+- [x] **J6.2 — cwtService.createCwtEntry defaults**: status='PENDING_2307' + tagged_for_1702_year=year on every new collection-driven row. Backwards-compat preserved (caller can override).
+- [x] **J6.3 — cwt2307ReconciliationService (NEW)**: 7 public functions (`compute2307InboundSummary`, `listInboundRows`, `markReceived`, `markPending`, `excludeRow`, `buildInboundPosture`, `compute1702CwtRollup`) + `_internals` (round2 / sanitize / _hashRowState / ensureObjectId / quartersForYear / emptyQuarterBucket). Hospital name + TIN denormalized for display.
+- [x] **J6.4 — birController endpoints (7 new)**: compute / list / mark-received / mark-pending / exclude / inbound-posture / 1702-cwt-rollup. Read endpoints VIEW_DASHBOARD, write endpoints RECONCILE_INBOUND_2307. Structured `[BIR_2307_INBOUND_*]` log lines (Rule #20 audit posture).
+- [x] **J6.5 — birRoutes ordering**: 8 new routes mounted BEFORE J1 catch-all. Quarterly route before annual (specificity beats generality).
+- [x] **J6.6 — birAccess gate + BIR_ROLES seed**: `RECONCILE_INBOUND_2307` (default `[admin, finance, bookkeeper]`) lookup-driven via existing `getRolesFor` cache; `userHasBirRole()` switch updated; lookupGenericController seed row with `insert_only_metadata: true`.
+- [x] **J6.7 — birDashboardService wiring**: `inbound_2307_posture` always renders (not gated on `withholding_active` — INBOUND CWT depends on collections-with-CWT). Non-fatal fallback if service throws.
+- [x] **J6.8 — Frontend wiring**: birService 7 new helpers + `Bir2307InboundPage.jsx` (NEW, period selector + per-hospital breakdown + status tabs + receive/revert/exclude modals) + App.jsx 2 routes mounted before wildcard (quarterly first) + BIRCompliancePage drill-down + Inbound 2307 Posture card + PageGuide `bir-2307-inbound` entry.
+
+**Verification posture (Rule 0b)**:
+
+- ✅ Healthcheck **107/107 PASS** (`node backend/scripts/healthcheckBir2307Inbound.js`).
+- ✅ Sibling regressions all green: J5 BOOKS 119/119, J4 1604E+QAP 97/97, J3 Part B 1604CF 66/66, J3 Part A Compensation 78/78, J2 EWT 124/124, J1 VAT 39/39, ClmIdempotency 6/6, ClmPerformance 34/34, TeamActivity 22/22, SalesDiscount 41/41.
+- ✅ Vite production build green; `Bir2307InboundPage-Dge-rIvf.js` lazy chunk emitted.
+- ✅ Pure-function smoke (round2 / sanitize / emptyQuarterBucket) green via in-process `node -e`.
+- ⏸ **Live HTTP smoke and Playwright UI smoke deferred** — MCP browser locked (same condition as J3 Part B + J4 + J5). Re-smoke targets in CLAUDE-ERP.md J6 section.
 
 ### J7 — 1702 Annual Income Tax (~1.5 days)
 Trial Balance -> adjusting entries -> Gross Income -> Allowable Deductions -> Taxable Income -> Tax Due -> less Creditable Tax Withheld (J6) + Quarterly Income Tax Paid -> Net Payable. Copy-paste page per BIR field.
@@ -10636,3 +10657,44 @@ Two flaws in the existing folder routing surfaced when the user complained about
 - Lookup-only: edit president row in `INBOX_HIDDEN_FOLDERS_BY_ROLE` to drop `AI_AGENT_REPORTS`. Effect immediate.
 - Briefing re-routing: `db.messages.updateMany({ folder: 'EXECUTIVE_BRIEF', category: 'briefing' }, { $set: { folder: 'AI_AGENT_REPORTS' } })` (mongo shell one-liner).
 - Code: revert the commit; lookup rows + repointed messages stay (forward-compatible — folder strings are not enum-validated, old code skips `EXECUTIVE_BRIEF` gracefully).
+
+---
+
+## Phase Sales-CR-Edit — `updateCollection` ERROR-gate widening (May 04 2026)
+
+> Bonus fix shipped in commit `b4c8973` (titled "Add smoke visit CLM pending banner configuration" — controller change buried in the diff). Closes the dead-end where a Validate-flagged Collection Receipt could not be edited to fix violations and re-validate.
+
+### Symptom
+
+User clicks Validate on a DRAFT CR; row flips to ERROR with violation messages. User clicks Save (or any save-pathing action) on the row → HTTP 404 `"Draft collection not found"`. No way to fix the violations short of Delete + recreate.
+
+### Root cause
+
+[backend/erp/controllers/collectionController.js — updateCollection](backend/erp/controllers/collectionController.js) was loading rows with `findOne({ ..., status: 'DRAFT' })` — a hardcoded gate that diverged from [validateCollections](backend/erp/controllers/collectionController.js) (line 219) which already used the lookup-driven `getEditableStatuses(entityId, 'COLLECTION')` helper (fallback `['DRAFT','ERROR']`).
+
+### Tasks
+
+- [x] Replace hardcoded `status: 'DRAFT'` with `status: { $in: editable }` where `editable = await getEditableStatuses(req.entityId, 'COLLECTION')`.
+- [x] Update 404 message to `"Editable collection not found (must be DRAFT or ERROR)"` so the failure mode is explicit.
+- [x] Add a comment block above the change describing the asymmetry-fix rationale + editable-statuses contract.
+- [x] Preserve ownership lock: body's `assigned_to` / `bdm_id` / `recorded_on_behalf_of` still stripped on save (Phase G4.5b — proxy cannot silently reassign).
+- [x] `node -c backend/erp/controllers/collectionController.js` — clean.
+- [x] Live HTTP smoke (handoff §L.2 in [handoff_sales_collection_ar_smoke_may04_2026.md](../memory/handoff_sales_collection_ar_smoke_may04_2026.md)) — DRAFT → ERROR → VALID → POSTED round-trip on CR `SMOKE-CR-001` succeeded only after this fix.
+- [x] D2-full smoke GREEN: 3 auto-emitted JEs balanced (₱891 + ₱9 CWT + ₱24.11 commission), AR Aging Iloilo Mission row dropped on settlement, entity-scope guard PASS-WITH-NOTE on 4 surfaces.
+- [ ] Live click-by-click Playwright walk (Validate button on the list row → ERROR → fix in modal → re-Validate → Submit) — deferred. The N.3 audit notes the Collection edit UI may not have a dedicated edit page; the list-row Validate flow is the only proven click path.
+
+### Files touched (b4c8973)
+
+- modified: [backend/erp/controllers/collectionController.js](backend/erp/controllers/collectionController.js) (+6/-2)
+- modified: [frontend/src/erp/pages/AccountsReceivable.jsx](frontend/src/erp/pages/AccountsReceivable.jsx) — D9 keyless-Fragment fix (separate concern)
+- new: `frontend/test-fixtures/{cr,csi,cwt-2307,deposit}.png` — 1×1 placeholder PNGs for Playwright photo-gate smokes
+- modified: CLAUDE-ERP.md (Phase Sales-CR-Edit entry)
+- modified: docs/PHASETASK-ERP.md (this entry)
+
+### Subscription posture
+
+Already lookup-driven by virtue of using the existing Phase G6 helper. Per-entity `MODULE_REJECTION_CONFIG.COLLECTION.metadata.editable_statuses` governs editability — subscribers tune via Control Center → Lookup Tables. Fallback `['DRAFT','ERROR']` preserves historical behavior. No new lookup category. No backwards-incompat. Rule #3 + Rule #19 aligned.
+
+### Why this entry exists
+
+Commit `b4c8973`'s title only mentions the smoke YAMLs; `git log --grep updateCollection` returns nothing. This entry + the CLAUDE-ERP.md mirror surface the architectural decision so future archaeology finds it. Equivalent of N.3 in the smoke handoff.

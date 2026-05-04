@@ -3175,6 +3175,12 @@ const SEED_DEFAULTS = {
     { code: 'MARK_CONFIRMED',    label: 'Mark form CONFIRMED (manual override)',           insert_only_metadata: true, metadata: { roles: ['admin', 'finance'],                            sort_order: 5, description: 'Manual confirmation when the email-parser bridge cannot match (e.g., subject-line variance).' } },
     { code: 'RUN_DATA_AUDIT',    label: 'Trigger Data Quality scan on demand',             insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president', 'bookkeeper'], sort_order: 6, description: 'Run the TIN + address completeness sweep ad-hoc. Nightly cron always runs regardless.' } },
     { code: 'MANAGE_TAX_CONFIG', label: 'Edit per-entity tax config (TIN, RDO, tax_type)', insert_only_metadata: true, metadata: { roles: ['admin', 'president'],                          sort_order: 7, description: 'Senior gate — wrong TIN/RDO breaks every export and every alphalist row.' } },
+    // Phase VIP-1.J / J6 (May 2026) — Inbound 2307 reconciliation. Bookkeeper
+    // does the data entry (receives the certificate, types the URL/filename),
+    // finance excludes duplicates / void rows. President sees but doesn't act
+    // here — receipt is data entry, not sign-off. Same lookup-driven posture
+    // as the rest of BIR_ROLES so subscribers tune via Control Center.
+    { code: 'RECONCILE_INBOUND_2307', label: 'Reconcile inbound 2307 certificates (Phase J6)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'bookkeeper'],          sort_order: 8, description: 'Mark hospital 2307 cert RECEIVED, revert to PENDING, or EXCLUDE (duplicate/void). Drives 1702 Creditable Tax Withheld credit roll-up.' } },
   ],
 
   // BIR_BOA_BOOK_CATALOG — Phase J5 (May 2026). Per-entity classification

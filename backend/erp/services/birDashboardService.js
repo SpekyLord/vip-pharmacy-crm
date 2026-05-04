@@ -25,6 +25,9 @@ const Lookup = require('../models/Lookup');
 // Phase VIP-1.J / J2 — withholding posture is computed from
 // WithholdingLedger rows (real data) once the engine is active.
 const withholdingService = require('./withholdingService');
+// Phase VIP-1.J / J6 — Inbound 2307 reconciliation posture sourced from
+// CwtLedger (collection-driven INBOUND CWT rows).
+const cwt2307ReconciliationService = require('./cwt2307ReconciliationService');
 const PeopleMaster = require('../models/PeopleMaster');
 
 const TTL_MS = 60_000;
@@ -339,6 +342,26 @@ async function buildDashboard({ entityId, year }) {
     };
   }
 
+  // ── 7. Inbound 2307 reconciliation posture (Phase J6) ──────────────
+  // Always renders — INBOUND CWT depends on collections-with-CWT, not on
+  // the withholding-engine toggle. Even an entity that never withholds
+  // outbound may still have hospitals withholding from their collections.
+  let inbound2307Posture;
+  try {
+    inbound2307Posture = await cwt2307ReconciliationService.buildInboundPosture(entityId, year);
+  } catch (err) {
+    console.warn('[birDashboard] inbound 2307 posture failed (non-fatal):', err.message);
+    inbound2307Posture = {
+      enabled: true,
+      pending_count: 0, pending_cwt: 0,
+      received_count: 0, received_cwt: 0,
+      excluded_count: 0, excluded_cwt: 0,
+      total_cwt: 0, received_pct: 0,
+      cwt_credit_for_1702: 0, top_pending_hospitals: [],
+      note: 'Posture unavailable — CwtLedger query failed. Check ERP logs.',
+    };
+  }
+
   const payload = {
     year,
     entity: taxConfig,
@@ -347,6 +370,7 @@ async function buildDashboard({ entityId, year }) {
     deadlines,
     recent_exports: recentExports.slice(0, 20),
     withholding_posture: withholdingPosture,
+    inbound_2307_posture: inbound2307Posture,
     generated_at: new Date(),
   };
 

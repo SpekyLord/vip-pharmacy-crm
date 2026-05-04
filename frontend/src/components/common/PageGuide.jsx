@@ -218,6 +218,24 @@ const PAGE_GUIDES = {
     ],
     tip: 'QAP and SAWT are siblings — both quarterly alphalists, both BIR Alphalist Data Entry v7.x format, both per-(payee × ATC). The difference is direction: QAP reports OUTBOUND withholding (you withholding tax for payees), SAWT reports INBOUND (your customers withholding tax from you for the SAWT credit you claim against income tax). They share the D1/T1 shape so the BIR importer accepts both via the same record contract.',
   },
+  'bir-2307-inbound': {
+    title: 'BIR 2307 Inbound — Hospital CWT Reconciliation',
+    steps: [
+      'Pre-flight: every collection-driven CWT row is auto-created in PENDING_2307 status when a collection posts with cwt_amount > 0 (collectionController → cwtService.createCwtEntry). This page does NOT create rows — it reconciles them.',
+      'Workflow: Hospital pays VIP → Collection POSTED → CwtLedger row created PENDING_2307 → Hospital eventually mails / emails BIR Form 2307 paper or PDF → bookkeeper opens THIS page → finds the matching CR row → clicks "Mark Received" → types where they saved the file (Drive link / S3 URI / shared folder path) + filename + optional SHA-256 hash → row flips to RECEIVED → credit rolls into 1702 (Phase J7).',
+      'Use the period selector (Annual or per-quarter) to scope the view. Status tabs split the table by Pending / Received / Excluded / All. Search filters by CR number, hospital name, or TIN.',
+      'The totals card surfaces "1702 credit at risk" — the ₱ amount of CWT credit you LOSE if pending 2307s never arrive before the 1702 income tax deadline. Use the per-hospital breakdown to find the worst-offending hospitals to chase.',
+      'IMPORTANT: we do NOT store the PDF file bytes. The bookkeeper hosts the PDF wherever convenient (Drive folder, S3 bucket, shared filesystem) and types the URL/path in the modal. The audit trail is the URL + filename + optional SHA-256 hash + the `received_at` / `received_by` timestamp on the CwtLedger row. BIR auditors examining the trail can fetch the PDF themselves.',
+      'Subscription-readiness: role gates are lookup-driven via BIR_ROLES (RECONCILE_INBOUND_2307 — defaults admin/finance/bookkeeper for write actions; VIEW_DASHBOARD for reads). Subscribers reconfigure per entity via Control Center → Lookup Tables without code changes (Rule #3 / Rule #19).',
+      'EXCLUDE is finance\'s manual override: row is disqualified from the 1702 credit (e.g., duplicate hospital re-issued certificate, void collection). Reason is required and audited. EXCLUDED rows can be restored (RESTORE flips back to PENDING_2307).',
+    ],
+    next: [
+      { label: 'BIR Compliance Dashboard', path: '/erp/bir' },
+      { label: 'Collections (where CWT rows originate)', path: '/erp/collections' },
+      { label: 'Sales Hub', path: '/erp/sales' },
+    ],
+    tip: 'The 1702 credit-at-risk number IS your collection chasing priority. Sort the per-hospital breakdown by Pending CWT descending — that\'s the list of phone calls / emails the bookkeeper makes to get certificates in the door before April 15. Phase J7 will read RECEIVED rows tagged_for_1702_year=YEAR as the "Less: Creditable Tax Withheld" line on the 1702 form. Pending rows are visible to J7 as exposure but do NOT count toward the credit until received.',
+  },
   'bir-boa-books': {
     title: 'BIR Books of Accounts — Loose-Leaf PDFs',
     steps: [

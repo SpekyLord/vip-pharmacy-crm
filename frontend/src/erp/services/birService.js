@@ -301,6 +301,62 @@ export async function exportBookSwornDeclaration(year, bookCode) {
   );
 }
 
+// ── Phase J6 — Inbound 2307 Reconciliation + 1702 CWT credit rollup ───
+// Read endpoints use VIEW_DASHBOARD; write endpoints (mark-received /
+// mark-pending / exclude) use RECONCILE_INBOUND_2307.
+
+export async function compute2307Inbound(year, quarter) {
+  const path = quarter
+    ? `${BASE}/forms/2307-IN/${year}/${quarter}/compute`
+    : `${BASE}/forms/2307-IN/${year}/compute`;
+  const { data } = await api.get(path);
+  return data?.data || null;
+}
+
+export async function list2307InboundRows(year, { quarter, status, hospitalId } = {}) {
+  const params = {};
+  if (quarter) params.quarter = quarter;
+  if (status) params.status = status;
+  if (hospitalId) params.hospital_id = hospitalId;
+  const { data } = await api.get(`${BASE}/forms/2307-IN/${year}/list`, { params });
+  return data?.data || { rows: [], total: 0 };
+}
+
+export async function markReceived2307Inbound(year, rowId, payload = {}) {
+  const { data } = await api.post(
+    `${BASE}/forms/2307-IN/${year}/rows/${rowId}/mark-received`,
+    payload,
+  );
+  return data?.data || null;
+}
+
+export async function markPending2307Inbound(year, rowId) {
+  const { data } = await api.post(
+    `${BASE}/forms/2307-IN/${year}/rows/${rowId}/mark-pending`,
+    {},
+  );
+  return data?.data || null;
+}
+
+export async function exclude2307InboundRow(year, rowId, reason) {
+  const { data } = await api.post(
+    `${BASE}/forms/2307-IN/${year}/rows/${rowId}/exclude`,
+    { reason },
+  );
+  return data?.data || null;
+}
+
+export async function getInboundCwtPosture(year) {
+  const params = year ? { year } : {};
+  const { data } = await api.get(`${BASE}/withholding/inbound-posture`, { params });
+  return data?.data || null;
+}
+
+export async function compute1702CwtRollup(year) {
+  const { data } = await api.get(`${BASE}/forms/1702/${year}/cwt-rollup`);
+  return data?.data || null;
+}
+
 export default {
   getDashboard,
   getEntityConfig,
@@ -341,4 +397,12 @@ export default {
   computeBook,
   exportBookPdf,
   exportBookSwornDeclaration,
+  // Phase J6
+  compute2307Inbound,
+  list2307InboundRows,
+  markReceived2307Inbound,
+  markPending2307Inbound,
+  exclude2307InboundRow,
+  getInboundCwtPosture,
+  compute1702CwtRollup,
 };

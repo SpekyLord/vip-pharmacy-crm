@@ -32,6 +32,8 @@ const withholdingReturnService = require('../services/withholdingReturnService')
 const withholdingService = require('../services/withholdingService');
 // Phase VIP-1.J / J5 — Books of Accounts (Loose-Leaf PDFs).
 const bookOfAccountsService = require('../services/bookOfAccountsService');
+// Phase VIP-1.J / J6 — Inbound 2307 reconciliation + 1702 credit rollup.
+const cwt2307ReconciliationService = require('../services/cwt2307ReconciliationService');
 const { userHasBirRole } = require('../../utils/birAccess');
 
 function requireEntity(req, res) {
@@ -1235,6 +1237,163 @@ exports.exportBookSwornDeclarationPdf = catchAsync(async (req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
   res.setHeader('X-Content-Hash', result.contentHash);
   res.send(result.buffer);
+});
+
+// ── Phase J6 — Inbound 2307 Reconciliation + 1702 CWT credit rollup ────
+//
+// CwtLedger is the source-of-truth for INBOUND CWT — every row is auto-
+// created on collection post when row.cwt_amount > 0 (collectionController
+// :614 → cwtService.createCwtEntry). J6 adds a reconciliation lifecycle on
+// top: PENDING_2307 (default) → RECEIVED (bookkeeper attests receipt) or
+// EXCLUDED (finance disqualifies). RECEIVED rows tagged for a year roll up
+// into the 1702 Creditable Tax Withheld credit (J7).
+//
+// VIEW_DASHBOARD gates the read endpoints (compute / list / posture /
+// 1702 rollup). RECONCILE_INBOUND_2307 gates the write endpoints
+// (mark-received / mark-pending / exclude). Both are lookup-driven via
+// BIR_ROLES (Rule #3 / Rule #19).
+
+function parseQuarterCode(v) {
+  if (!v) return null;
+  const upper = String(v).toUpperCase();
+  return ['Q1', 'Q2', 'Q3', 'Q4'].includes(upper) ? upper : null;
+}
+
+exports.compute2307Inbound = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.params.year);
+  if (!year) return res.status(400).json({ success: false, message: 'Invalid year. Year ≥ 2024.' });
+  const rawQuarter = req.params.quarter !== undefined ? req.params.quarter : null;
+  let quarter = null;
+  if (rawQuarter !== null && rawQuarter !== undefined && rawQuarter !== '') {
+    // Accept both `Q1` and `1` for the quarter URL segment.
+    quarter = parseQuarterCode(rawQuarter);
+    if (!quarter) {
+      const numeric = parseQuarter(rawQuarter);
+      if (numeric) quarter = `Q${numeric}`;
+    }
+    if (!quarter) {
+      return res.status(400).json({ success: false, message: 'Invalid quarter. Use Q1..Q4 or 1..4.' });
+    }
+  }
+  const data = await cwt2307ReconciliationService.compute2307InboundSummary({
+    entityId: req.entityId, year, quarter,
+  });
+  res.json({ success: true, data });
+});
+
+exports.list2307InboundRows = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.params.year);
+  if (!year) return res.status(400).json({ success: false, message: 'Invalid year. Year ≥ 2024.' });
+  const quarter = req.query.quarter ? (parseQuarterCode(req.query.quarter) || `Q${parseQuarter(req.query.quarter) || ''}`) : null;
+  const status = req.query.status && ['PENDING_2307', 'RECEIVED', 'EXCLUDED'].includes(req.query.status) ? req.query.status : null;
+  const hospitalId = req.query.hospital_id || null;
+  const rows = await cwt2307ReconciliationService.listInboundRows({
+    entityId: req.entityId, year,
+    quarter: quarter && quarter !== 'Q' ? quarter : null,
+    status,
+    hospitalId,
+  });
+  res.json({ success: true, data: { rows, total: rows.length } });
+});
+
+exports.markReceived2307Inbound = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'RECONCILE_INBOUND_2307'))) return;
+  const { rowId } = req.params;
+  if (!rowId) return res.status(400).json({ success: false, message: 'rowId is required.' });
+  const { cert_2307_url, cert_filename, cert_content_hash, cert_notes } = req.body || {};
+  try {
+    const row = await cwt2307ReconciliationService.markReceived(rowId, {
+      entityId: req.entityId, userId: req.user?._id,
+      cert_2307_url, cert_filename, cert_content_hash, cert_notes,
+    });
+    console.log('[BIR_2307_INBOUND_MARK_RECEIVED]', JSON.stringify({
+      user: req.user?.email, role: req.user?.role,
+      entity_id: String(req.entityId),
+      row_id: String(row._id), cr_no: row.cr_no, cwt: row.cwt_amount,
+      year: row.year, quarter: row.quarter,
+      content_hash: row.cert_content_hash, has_url: !!row.cert_2307_url,
+      ts: new Date().toISOString(),
+    }));
+    res.json({ success: true, data: row });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+    throw err;
+  }
+});
+
+exports.markPending2307Inbound = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'RECONCILE_INBOUND_2307'))) return;
+  const { rowId } = req.params;
+  if (!rowId) return res.status(400).json({ success: false, message: 'rowId is required.' });
+  try {
+    const row = await cwt2307ReconciliationService.markPending(rowId, {
+      entityId: req.entityId, userId: req.user?._id,
+    });
+    console.log('[BIR_2307_INBOUND_MARK_PENDING]', JSON.stringify({
+      user: req.user?.email, role: req.user?.role,
+      entity_id: String(req.entityId),
+      row_id: String(row._id), cr_no: row.cr_no,
+      year: row.year, quarter: row.quarter,
+      ts: new Date().toISOString(),
+    }));
+    res.json({ success: true, data: row });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+    throw err;
+  }
+});
+
+exports.exclude2307InboundRow = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'RECONCILE_INBOUND_2307'))) return;
+  const { rowId } = req.params;
+  if (!rowId) return res.status(400).json({ success: false, message: 'rowId is required.' });
+  const { reason } = req.body || {};
+  if (!reason || !String(reason).trim()) {
+    return res.status(400).json({ success: false, message: 'reason is required to exclude a 2307-IN row.' });
+  }
+  try {
+    const row = await cwt2307ReconciliationService.excludeRow(rowId, {
+      entityId: req.entityId, userId: req.user?._id, reason,
+    });
+    console.log('[BIR_2307_INBOUND_EXCLUDE]', JSON.stringify({
+      user: req.user?.email, role: req.user?.role,
+      entity_id: String(req.entityId),
+      row_id: String(row._id), cr_no: row.cr_no,
+      year: row.year, quarter: row.quarter,
+      reason: row.excluded_reason,
+      ts: new Date().toISOString(),
+    }));
+    res.json({ success: true, data: row });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+    throw err;
+  }
+});
+
+exports.getInboundCwtPosture = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.query.year) || new Date().getFullYear();
+  const posture = await cwt2307ReconciliationService.buildInboundPosture(req.entityId, year);
+  res.json({ success: true, data: { year, ...posture } });
+});
+
+exports.compute1702CwtRollup = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.params.year);
+  if (!year) return res.status(400).json({ success: false, message: 'Invalid year. Year ≥ 2024.' });
+  const rollup = await cwt2307ReconciliationService.compute1702CwtRollup({
+    entityId: req.entityId, year,
+  });
+  res.json({ success: true, data: rollup });
 });
 
 // ── Withholding Posture (read-only summary for the dashboard) ──────────

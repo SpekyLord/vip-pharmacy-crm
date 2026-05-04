@@ -6109,7 +6109,7 @@ See `docs/PHASETASK-ERP.md` (`WEEK-1 STABILIZATION — DAY 4`) for the full file
 
 ---
 
-## Phase VIP-1.J — BIR Tax Compliance Suite (J0 + J1 + J2 + J3 Part A + J3 Part B + J4 + J5 SHIPPED Apr 27 – May 04 2026, J6-J7 deferred)
+## Phase VIP-1.J — BIR Tax Compliance Suite (J0 + J1 + J2 + J3 Part A + J3 Part B + J4 + J5 + J6 SHIPPED Apr 27 – May 04 2026, J7 deferred)
 
 **Goal**: replace the bookkeeper-as-black-box workflow with a president-facing BIR Compliance Dashboard + per-form copy-paste UX into eBIR Forms + `.dat` exports for Alphalist Data Entry + loose-leaf Books of Accounts PDFs. Covers VIP, Balai Lawaan, online pharmacy, MG, CO, and future SaaS subscribers.
 
@@ -6466,10 +6466,115 @@ See `docs/PHASETASK-ERP.md` (`WEEK-1 STABILIZATION — DAY 4`) for the full file
 - PeriodLock `BIR_FILING` module already in the enum (J0). Books PDFs respect period lock — once a year's BOOKS row is CONFIRMED, retroactive JE edits are gated.
 
 **Open follow-ups (J5 and beyond)**:
-- **J6 — 2307-IN inbound reconciliation (~1 day)**: parse hospital-issued 2307s into CwtLedger; income-tax credit on 1702. WithholdingLedger.DIRECTIONS already reserves INBOUND.
-- **J7 — 1702/1701 income tax (~1.5 days)**: annual return aggregator pulling from GL + CwtLedger.
-- **Playwright UI smoke** for J5 (and re-smoke for J3/J4) deferred — MCP browser locked. Re-smoke when MCP unblocks: `/erp/bir/BOOKS/2026` (all 6 book cards + monthly grid + Recompute + Export PDF + Sworn Declaration buttons + audit-log strip), `/erp/bir/1604-CF/2026`, `/erp/bir/1604-E/2026`, `/erp/bir/QAP/2026/1`, `/erp/bir/1601-C/2026/4`.
+- ~~**J6 — 2307-IN inbound reconciliation (~1 day)**~~ — **SHIPPED May 04 2026** (this commit batch). See `### J6 — Inbound 2307 Reconciliation` below.
+- **J7 — 1702/1701 income tax (~1.5 days)**: annual return aggregator pulling from GL + `cwt2307ReconciliationService.compute1702CwtRollup` (the J6 endpoint already exposed at `/forms/1702/:year/cwt-rollup`).
+- **Playwright UI smoke** for J5 (and re-smoke for J3/J4) deferred — MCP browser locked. Re-smoke when MCP unblocks: `/erp/bir/BOOKS/2026` (all 6 book cards + monthly grid + Recompute + Export PDF + Sworn Declaration buttons + audit-log strip), `/erp/bir/1604-CF/2026`, `/erp/bir/1604-E/2026`, `/erp/bir/QAP/2026/1`, `/erp/bir/1601-C/2026/4`, `/erp/bir/2307-IN/2026` (J6 page).
 - **Compensation Posture card on dashboard** (still deferred from J3 Part B) — backend wired, ~30 min frontend.
+
+### J6 — Inbound 2307 Reconciliation (May 04 2026 evening, uncommitted on dev)
+
+**Goal**: close the loop on hospital-side withholding. Every collection with `cwt_amount > 0` already auto-creates a `CwtLedger` row at post time (collectionController.js:614 → cwtService.createCwtEntry). J6 adds a reconciliation lifecycle — **PENDING_2307 → RECEIVED → (or → EXCLUDED)** — so the bookkeeper can record when each hospital's BIR Form 2307 actually arrives. RECEIVED rows tagged for a year roll up into the 1702 Creditable Tax Withheld credit (Phase J7 will consume `compute1702CwtRollup`).
+
+**Source-of-truth decision (locked May 04 2026)**: COEXIST, not migrate. CwtLedger remains the single source-of-truth for INBOUND CWT. J2's WithholdingLedger.DIRECTIONS reserves `'INBOUND'` for a future migration but writing collection-driven CWT through both ledgers would risk double-counting. Engine writes (collectionController + journalFromCWT) are unchanged — backwards-compat is intact for every CwtLedger row created before this phase.
+
+**What shipped (J6)**:
+
+1. **[backend/erp/models/CwtLedger.js](backend/erp/models/CwtLedger.js)** — schema extension (12 new fields, 2 new indexes, no breaking changes):
+   - `status` enum `['PENDING_2307', 'RECEIVED', 'EXCLUDED']` default `'PENDING_2307'`. Pre-J6 rows that load without `status` get the default at read time — no backfill required.
+   - `received_at` (Date) + `received_by` (ObjectId ref User) — bookkeeper attestation timestamp.
+   - `cert_2307_url` + `cert_filename` + `cert_content_hash` + `cert_notes` — admin-supplied references to the PDF (Drive link / S3 URI / shared filesystem path). **We do NOT store PDF bytes** — bookkeeper hosts wherever convenient. Audit trail is the URL + filename + optional SHA-256 hash + the `received_at` / `received_by` stamp.
+   - `excluded_reason` + `excluded_by` + `excluded_at` — finance disqualification (duplicate, void, hospital re-issued).
+   - `tagged_for_1702_year` (Number, default = `year`) — overridable for cross-year reconciliation when a 2307 arrives after the 1702 was already filed (rare).
+   - New compound indexes: `{entity_id, status, year}` (reconciliation queue) + `{entity_id, tagged_for_1702_year, status}` (1702 rollup).
+   - `statics.STATUSES = STATUS_VALUES` for downstream consumers.
+
+2. **[backend/erp/services/cwtService.js](backend/erp/services/cwtService.js)** — `createCwtEntry` defaults `status='PENDING_2307'` and `tagged_for_1702_year=data.year` so every new collection-driven row enters the reconciliation queue automatically. Backwards-compat: callers can override (rare).
+
+3. **[backend/erp/services/cwt2307ReconciliationService.js](backend/erp/services/cwt2307ReconciliationService.js)** (NEW) — reconciliation engine + aggregators:
+   - `compute2307InboundSummary({ entityId, year, quarter? })` — annual or quarterly hospital × quarter rollup partitioned by status. Returns `{ totals: { PENDING_2307, RECEIVED, EXCLUDED, cwt_credit_received, cwt_exposure_pending, cwt_total_all, row_count }, hospitals: [...], quarters_present, period_label, generated_at }`. Hospital name + TIN denormalized for display.
+   - `listInboundRows({ entityId, year, quarter?, status?, hospitalId? })` — flat row list for the page table with hospital name resolved.
+   - `markReceived(rowId, { entityId, userId, cert_2307_url, cert_filename, cert_content_hash, cert_notes })` — PENDING_2307 → RECEIVED. Stamps `received_at` + `received_by`. EXCLUDED rows are blocked (must restore via mark-pending first).
+   - `markPending(rowId, { entityId, userId })` — RECEIVED → PENDING_2307 (undo) OR EXCLUDED → PENDING_2307 (restore). Clears `received_*` / `excluded_*` metadata as appropriate.
+   - `excludeRow(rowId, { entityId, userId, reason })` — finance disqualifies. Reason is required (≥ 1 char after trim).
+   - `buildInboundPosture(entityId, year)` — dashboard card payload: `{ enabled, pending_count, pending_cwt, received_count, received_cwt, excluded_count, excluded_cwt, total_cwt, received_pct, cwt_credit_for_1702, top_pending_hospitals: [...] (top 5), note }`.
+   - `compute1702CwtRollup({ entityId, year })` — Phase J7 consumer endpoint. Returns `{ year, cwt_credit_for_1702, quarter_breakdown: { Q1, Q2, Q3, Q4 }, by_atc: [...], pending_exposure_cwt, pending_exposure_count, generated_at }`. Reads RECEIVED rows tagged for the year (legacy backfill: when `tagged_for_1702_year` is null we accept rows whose calendar `year` matches).
+   - Pure helpers exported via `_internals` for the healthcheck (`round2`, `sanitize`, `_hashRowState`, `ensureObjectId`, `quartersForYear`, `emptyQuarterBucket`).
+
+4. **[backend/erp/controllers/birController.js](backend/erp/controllers/birController.js)** — 7 new exports gated by `birAccess`:
+   - `compute2307Inbound` (VIEW_DASHBOARD) — wraps the service summary; supports both annual (`/forms/2307-IN/:year/compute`) and quarterly (`/forms/2307-IN/:year/:quarter/compute`) URL shapes. Quarter param accepts `Q1..Q4` OR `1..4` via `parseQuarterCode`.
+   - `list2307InboundRows` (VIEW_DASHBOARD) — flat row list, supports `?quarter=`, `?status=`, `?hospital_id=`.
+   - `markReceived2307Inbound` / `markPending2307Inbound` / `exclude2307InboundRow` (RECONCILE_INBOUND_2307) — POSTs against `/forms/2307-IN/:year/rows/:rowId/{mark-received,mark-pending,exclude}`. Each emits a structured `[BIR_2307_INBOUND_*]` log line for ops monitoring (mirrors J5 audit log pattern).
+   - `getInboundCwtPosture` (VIEW_DASHBOARD) — surfaces the dashboard card.
+   - `compute1702CwtRollup` (VIEW_DASHBOARD) — `/forms/1702/:year/cwt-rollup`. Phase J7 consumer endpoint, pre-wired for the 1702 form.
+
+5. **[backend/erp/routes/birRoutes.js](backend/erp/routes/birRoutes.js)** — 8 new routes mounted **BEFORE** the J1 `/forms/:formCode/:year/:period/export.csv` catch-all. Quarterly route declared BEFORE annual (specificity beats generality so `/forms/2307-IN/2026/Q2/compute` doesn't dispatch to the annual handler):
+   - `GET /forms/2307-IN/:year/compute`
+   - `GET /forms/2307-IN/:year/:quarter/compute`
+   - `GET /forms/2307-IN/:year/list`
+   - `POST /forms/2307-IN/:year/rows/:rowId/{mark-received,mark-pending,exclude}`
+   - `GET /withholding/inbound-posture`
+   - `GET /forms/1702/:year/cwt-rollup`
+
+6. **[backend/utils/birAccess.js](backend/utils/birAccess.js)** — adds the `RECONCILE_INBOUND_2307` gate (default `[admin, finance, bookkeeper]`) wired through `getRolesFor` with the same lookup-driven posture as the existing 7 gates (60s cache, busts on Lookup edit). `userHasBirRole()` switch handles the new code; helper exports + DEFAULT_ array exported for caller introspection.
+
+7. **[backend/erp/controllers/lookupGenericController.js](backend/erp/controllers/lookupGenericController.js)** — new BIR_ROLES seed row `RECONCILE_INBOUND_2307` with `metadata.roles = ['admin', 'finance', 'bookkeeper']` and `insert_only_metadata: true` so admin overrides survive future re-seeds. Subscribers reconfigure per entity via Control Center → Lookup Tables (Rule #3).
+
+8. **[backend/erp/services/birDashboardService.js](backend/erp/services/birDashboardService.js)** — `inbound_2307_posture` added to the dashboard payload. Non-fatal: if the service throws, dashboard renders a fallback note instead of going dark. Always renders (INBOUND CWT depends on collections-with-CWT, not on the withholding-engine toggle).
+
+9. **[frontend/src/erp/services/birService.js](frontend/src/erp/services/birService.js)** — 7 new helpers (`compute2307Inbound`, `list2307InboundRows`, `markReceived2307Inbound`, `markPending2307Inbound`, `exclude2307InboundRow`, `getInboundCwtPosture`, `compute1702CwtRollup`) added to the default export. Read helpers mirror the page-level URL shapes; write helpers POST against the row-level paths.
+
+10. **[frontend/src/erp/pages/Bir2307InboundPage.jsx](frontend/src/erp/pages/Bir2307InboundPage.jsx)** (NEW) — reconciliation cockpit at `/erp/bir/2307-IN/:year(/:quarter)`:
+    - Period selector strip (Annual + Q1..Q4) — same shape as J5 BookOfAccountsPage's monthly grid.
+    - Totals card with 4 buckets (Pending / Received / Excluded / Total). Highlights "₱X of CWT credit at risk if these N pending 2307s don't arrive before 1702 closes" (the bookkeeper's chasing priority).
+    - Per-hospital breakdown table — sortable by total CWT desc by default. "Filter" button per hospital.
+    - Status tabs (Pending / Received / Excluded / All) over a row table with search box (CR no, hospital name, TIN). Per-row actions: Mark Received (modal: URL + filename + SHA-256 + notes), Revert (RECEIVED → PENDING), Exclude (modal: required reason), Restore (EXCLUDED → PENDING).
+    - PageGuide `bir-2307-inbound` banner (workflow + RECONCILE_INBOUND_2307 lookup discoverability).
+
+11. **[frontend/src/App.jsx](frontend/src/App.jsx)** — `Bir2307InboundPage` lazy-loaded; routes `/erp/bir/2307-IN/:year/:quarter` and `/erp/bir/2307-IN/:year` mounted **BEFORE** the `/erp/bir/:formCode/:year/:period` wildcard fallback. Quarterly route declared **BEFORE** annual (specificity).
+
+12. **[frontend/src/erp/pages/BIRCompliancePage.jsx](frontend/src/erp/pages/BIRCompliancePage.jsx)** — heatmap drill-down extended (`isInbound2307` branch routes to `/erp/bir/2307-IN/:year`) + new **Inbound 2307 Posture card** between the Withholding Posture card and the Upcoming Deadlines card. Card shows: received-pct pill, 4-stat row (pending count + ₱, received count + ₱, excluded count, 1702 credit YTD), top-N hospitals to chase, "Reconcile →" navigation button.
+
+13. **[frontend/src/components/common/PageGuide.jsx](frontend/src/components/common/PageGuide.jsx)** — `bir-2307-inbound` entry: 7-step workflow (pre-flight / lifecycle / period selector / chasing priority / no-PDF-bytes-stored / lookup-driven roles / EXCLUDE semantics) + 3 next-steps + tip naming `RECONCILE_INBOUND_2307` so subscribers discover the gate.
+
+14. **[backend/scripts/healthcheckBir2307Inbound.js](backend/scripts/healthcheckBir2307Inbound.js)** (NEW) — 107-assertion wiring contract across 14 sections (model schema + indexes + statics; cwtService defaults; reconciliation service public API + pure-function logic; birController exports + role gates + structured log lines; birRoutes mount order; birAccess gate; BIR_ROLES seed; dashboard service wiring; frontend service URL shapes; page imports + state + modal wiring; App.jsx route mount order including quarterly-before-annual; BIRCompliancePage drill-down + posture card; PageGuide entry; ROLE_SETS.BIR_FILING). Exits 1 on first failure so CI gates on it.
+
+**Verification posture (Rule 0b)**:
+
+- ✅ J6 healthcheck **107/107 PASS** (`node backend/scripts/healthcheckBir2307Inbound.js`).
+- ✅ Sibling regressions all green: J5 BOOKS 119/119, J4 1604E+QAP 97/97, J3 Part B 1604CF 66/66, J3 Part A Compensation 78/78, J2 EWT 124/124, J1 VAT 39/39, ClmIdempotency 6/6, ClmPerformance 34/34, TeamActivity 22/22, SalesDiscount 41/41.
+- ✅ Vite production build **green** (`Bir2307InboundPage-Dge-rIvf.js` lazy chunk emitted alongside the existing BookOfAccountsPage / Bir1604CFDetailPage / BirAlphalistEwtPage / BirEwtReturnDetailPage / BirVatReturnDetailPage chunks).
+- ✅ Pure-function smoke (in-process `node -e` against the service): `round2(1.235) → 1.24`, `sanitize('  hi  ') → 'hi'`, `sanitize('   ') → null`, `emptyQuarterBucket()` shape correct.
+- ✅ Syntax check passes on all 8 modified backend files (`node -c …`).
+- ⏭ **Live HTTP smoke and Playwright UI smoke deferred** — same MCP browser condition as J3 Part B + J4 + J5. Re-smoke targets when MCP unblocks: GET `/api/erp/bir/forms/2307-IN/2026/compute` (annual summary), GET `/forms/2307-IN/2026/Q2/compute` (quarterly), GET `/forms/2307-IN/2026/list?status=PENDING_2307`, POST `/forms/2307-IN/2026/rows/:rowId/mark-received` (with cert_2307_url payload), GET `/withholding/inbound-posture?year=2026`, GET `/forms/1702/2026/cwt-rollup`. UI walk: `/erp/bir` (Inbound 2307 Posture card renders) → click 2307-IN heatmap cell → lands on `/erp/bir/2307-IN/2026` → period selector + per-hospital table render → click "Mark Received" → modal with URL/filename/hash/notes → save → row flips to RECEIVED → "1702 credit YTD" total increments.
+
+**Subscription-ready posture (J6)**:
+
+- Per-entity `entity_id` filter on every aggregation (Rule #19). Cross-tenant leak risk = none.
+- `RECONCILE_INBOUND_2307` is lookup-driven via `BIR_ROLES`. Subscribers add their bookkeeper role / remove finance via Control Center without code deployment (Rule #3).
+- 1702 `tagged_for_1702_year` field future-proofs cross-year reconciliation (rare 2307s arriving after the 1702 was already filed).
+- COEXIST decision keeps the door open for a future migration to `WithholdingLedger.direction='INBOUND'` — the rollup endpoint shape (`compute1702CwtRollup`) already returns the by_ATC breakdown that a unified-ledger query would emit, so J7 doesn't depend on the ledger shape underneath.
+- We do NOT store PDF file bytes — eliminates the Year-2 multi-tenant blob-storage scaling question. Subscribers store wherever convenient (Drive / S3 / local).
+
+**Source-of-truth boundary**:
+
+- `CwtLedger` is the source-of-truth for INBOUND CWT. Every field needed for 1702 credit (year, quarter, cwt_amount, status, tagged_for_1702_year) is on the row.
+- The dashboard `inbound_2307_posture` card is a derivation. `compute1702CwtRollup` is a derivation. Both are pure reads; no schema duplication.
+
+**Audit posture (Rule #20)**:
+
+- Every state transition stamps the actor (`received_by` / `excluded_by`) + timestamp (`received_at` / `excluded_at`) directly on the row.
+- Structured `[BIR_2307_INBOUND_MARK_RECEIVED]` / `[..._MARK_PENDING]` / `[..._EXCLUDE]` log lines with content_hash, entity_id, year, quarter, user, ip, ts.
+- `cert_content_hash` (admin-supplied SHA-256 of the cert PDF) makes re-receipts with different bytes detectable.
+- 2307-IN form-level `BirFilingStatus` row creation is deferred to J7 1702 close — at that point the year's credit is "frozen" by the same period-lock pattern as the other forms (`PeriodLock.module='BIR_FILING'`).
+
+**Known gotchas worth noting (J6)**:
+
+1. **Pre-existing CwtLedger rows** (9 prod rows on the dev cluster as of May 04 2026) load without `status` — Mongoose returns the schema default `'PENDING_2307'` at read time. No migration required, but the bookkeeper sees a backlog of "pending" rows on first page load. Mark them received (or excluded if void) one-time to clear the queue.
+2. **Quarter URL param** accepts both `Q1..Q4` AND `1..4`. The `parseQuarterCode` helper normalizes; the controller falls back to `parseQuarter` (numeric) if the upper-case match fails. Tests should hit both forms.
+3. **Cross-year tagging** — when a 2307 arrives after the 1702 was already filed, finance can edit `tagged_for_1702_year` directly (manual DB edit until a UI is built — not on J6's critical path). The 1702 rollup honours the tag if set; falls back to calendar `year` if null (legacy rows).
+4. **No `2307-IN` entry in BirFilingStatus today** — the `2307-IN` form_code IS in the model enum (J0 reserved it) but we don't lazy-create a row per (entity, year). J6 keeps the audit trail on the CwtLedger row itself + structured logs. J7 will lazy-create the row at 1702 close so the period-lock middleware fires correctly.
+5. **Cash account derivation is unrelated** to J6 — J5's `BIR_BOA_CASH_ACCOUNTS` lookup classifies JE rows; J6 reads CwtLedger directly. The two services don't interact.
+6. **Healthcheck fragile-regex defence**: the `BIR_ROLES` seed pattern `RECONCILE_INBOUND_2307[\s\S]{0,400}roles:\s*\[\s*['"]admin['"]…\]` uses a 400-char window for the roles array. If the seed line grows beyond 400 chars (e.g., a long description added inline) the regex misses; widen if needed.
 
 ### J0 — BIR Compliance Dashboard (shipped Apr 27 2026, smoke green)
 
@@ -7505,3 +7610,65 @@ After all seven phases landed on dev, ran a combined verification sweep — keep
 **Why no live approve-click on PC3-PC7:** 0 INCENTIVE_PAYOUT / PURCHASING / SALES_GOAL_PLAN / IC_TRANSFER / BANKING items are pending in the dev cluster. Seeding fresh fixtures for each module (a real DRAFT SupplierInvoice with valid vendor + COA, a DRAFT SalesGoalPlan with ACTIVE targets + KPI snapshot, a DRAFT IcSettlement with `settled_transfers`, etc.) is genuinely heavy and out of scope for the close-out smoke. The static healthcheck wiring contract (244 assertions) is dispositive for the "approve throws → 500" regression class. The first real cycle the user runs through any of these surfaces will exercise the live approve path and ratify naturally — same posture PC3 took.
 
 **Open Group B gaps:** **NONE.** Regression class closed. SaaS spin-out audit gate cleared on this surface.
+
+---
+
+## Phase Sales-CR-Edit — `updateCollection` ERROR-gate widening (May 04 2026)
+
+> Bonus fix shipped in commit `b4c8973` (titled "Add smoke visit CLM pending banner configuration" — the controller change is buried in the diff, hence this entry so future archaeology can find it). Closes the dead-end where a Validate-flagged Collection Receipt (status `ERROR`) could not be edited to fix the violations and re-validate.
+
+### Problem
+
+[`updateCollection`](backend/erp/controllers/collectionController.js) loaded the row with `findOne({ ..., status: 'DRAFT' })`. Once `validateCollections` flipped a CR to `ERROR` (missing photos, hospital/customer mismatch, period lock, etc.), the editable lookup returned null → HTTP 404 `"Draft collection not found"`. The user could see the row in the list with the error tooltip but could not save changes — the only escape was Delete + recreate, which the proxy might not even own.
+
+Asymmetric with the rest of the lifecycle: [`validateCollections`](backend/erp/controllers/collectionController.js) at line 219 already used `getEditableStatuses(req.entityId, 'COLLECTION')` (Phase G6 lookup-driven helper, fallback `['DRAFT','ERROR']`). Update was the lone hardcoded gate.
+
+### Fix
+
+[backend/erp/controllers/collectionController.js — updateCollection](backend/erp/controllers/collectionController.js) widened to use the same lookup helper:
+
+```js
+// Before
+const collection = await Collection.findOne({ _id: req.params.id, ...scope, status: 'DRAFT' });
+if (!collection) return res.status(404).json({ success: false, message: 'Draft collection not found' });
+
+// After (b4c8973)
+const editable = await getEditableStatuses(req.entityId, 'COLLECTION');
+const collection = await Collection.findOne({ _id: req.params.id, ...scope, status: { $in: editable } });
+if (!collection) return res.status(404).json({ success: false, message: 'Editable collection not found (must be DRAFT or ERROR)' });
+```
+
+Comment block above the change documents the asymmetry-fix rationale + the editable-statuses contract so future readers see the intent without having to grep the helper.
+
+### Subscription posture (Rule #3)
+
+Already lookup-driven by virtue of using the existing Phase G6 helper:
+
+- Per-entity `MODULE_REJECTION_CONFIG.COLLECTION.metadata.editable_statuses` governs which states are editable. Default seeded `['DRAFT','ERROR']`.
+- Subscribers who want a different policy (e.g., allow edit while POSTED but pre-recon — *not recommended*) tune via Control Center → Lookup Tables → `MODULE_REJECTION_CONFIG`. No code deploy.
+- Fallback `EDITABLE_STATUSES_FALLBACK = ['DRAFT','ERROR']` in [backend/erp/services/approvalService.js](backend/erp/services/approvalService.js) preserves historical behavior when the lookup row is absent.
+- 60-second per-entity cache; `invalidateEditableStatuses(entityId, moduleKey)` busts on lookup edit.
+
+### Wiring integrity
+
+- **Ownership lock preserved** — body's `assigned_to` / `bdm_id` / `recorded_on_behalf_of` still stripped on save (Phase G4.5b). Proxy cannot silently reassign a row via update.
+- **Period-lock guard** — `validateCollections` and `submitCollections` re-evaluate against the current period on every transition; widening edit access does not bypass posting authority.
+- **Defense in depth** — Phase G4 `gateApproval()` still runs at submit-time via 4-eyes (proxy entry forces 202 to Approval Hub regardless of submitter role). Edit is a draft-state action, never a posting action — Rule #20 governing principle preserved.
+- **Mirror cycle** — DRAFT → (edit allowed) → Validate → ERROR → (edit allowed, re-validate) → VALID → Submit → 202 to Hub → POSTED. Editable statuses gate the first three; the rest are guarded by their own controller paths.
+
+### Why N.3 was needed
+
+Commit `b4c8973`'s title only mentions the bundled smoke YAMLs. The 13-file diff contains the controller change (+6/-2), the AccountsReceivable.jsx D9 keyless-Fragment fix (+4/-4), and the four `frontend/test-fixtures/*.png` (1×1 placeholder PNGs ~70 bytes each used by Playwright `setInputFiles()`). A future grep on `git log --grep updateCollection` finds nothing. This entry surfaces the architectural decision so it stays discoverable.
+
+### Verification
+
+- `node -c backend/erp/controllers/collectionController.js` — clean.
+- Live HTTP smoke in [handoff_sales_collection_ar_smoke_may04_2026.md](handoff_sales_collection_ar_smoke_may04_2026.md) §L.2: PUT `/api/erp/collections/:id` against an ERROR-status row succeeded only after this fix; confirmed end-to-end DRAFT → ERROR → VALID round-trip on CR `SMOKE-CR-001`.
+- D2-full GREEN: 3 auto-emitted JEs balanced (₱891 cash + ₱9 CWT + ₱24.11 commission), AR Aging Iloilo Mission row dropped (full settlement), 4 attack-surface entity-scope guard PASS-WITH-NOTE.
+- No new lookup row required — falls through to `EDITABLE_STATUSES_FALLBACK`. If a subscriber later edits the COLLECTION rejection config, the cache busts within 60s.
+
+### Files touched (b4c8973)
+
+- modified: [backend/erp/controllers/collectionController.js](backend/erp/controllers/collectionController.js) — `updateCollection` widened.
+- modified: [frontend/src/erp/pages/AccountsReceivable.jsx](frontend/src/erp/pages/AccountsReceivable.jsx) — D9 keyless-Fragment fix (separate concern, same commit).
+- new: `frontend/test-fixtures/{cr,csi,cwt-2307,deposit}.png` — 1×1 PNG placeholders for Playwright photo-gate smokes.

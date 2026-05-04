@@ -96,6 +96,7 @@ const Bir1604CFDetailPage = lazyRetry(() => import('./erp/pages/Bir1604CFDetailP
 const BirAlphalistEwtPage = lazyRetry(() => import('./erp/pages/BirAlphalistEwtPage'));
 // Phase VIP-1.J / J5 (May 2026) — Books of Accounts (Loose-Leaf PDFs)
 const BookOfAccountsPage = lazyRetry(() => import('./erp/pages/BookOfAccountsPage'));
+const Bir2307InboundPage = lazyRetry(() => import('./erp/pages/Bir2307InboundPage'));
 // Phase VIP-1.B Phase 4 — Rebate + Commission matrix admin + Payout ledger
 const RebateMatrixPage = lazyRetry(() => import('./erp/pages/RebateMatrixPage'));
 const NonMdRebateMatrixPage = lazyRetry(() => import('./erp/pages/NonMdRebateMatrixPage'));
@@ -726,6 +727,29 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.BIR_FILING}>
                 <BookOfAccountsPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* Phase J6 (May 2026) — Inbound 2307 Reconciliation. Two
+              shapes: annual (year only, no quarter) and quarterly. Both
+              MUST stay above the `/erp/bir/:formCode/:year/:period`
+              wildcard fallback to BirVatReturnDetailPage. The annual URL
+              shape (year only) doesn't collide with the wildcard, but the
+              quarterly URL shape DOES — declare quarterly first so React
+              Router dispatches correctly. */}
+          <Route
+            path="/erp/bir/2307-IN/:year/:quarter"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BIR_FILING}>
+                <Bir2307InboundPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/bir/2307-IN/:year"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BIR_FILING}>
+                <Bir2307InboundPage />
               </ProtectedRoute>
             }
           />

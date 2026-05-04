@@ -1,13 +1,21 @@
 /**
- * CWT Service — CWT Ledger management and BIR 2307 summary
+ * CWT Service — CWT Ledger management and BIR 2307 summary.
  *
  * PRD v5 §11.5 — CWT entries auto-created from collections with CWT.
  * 2307 summary aggregates per hospital per quarter.
+ *
+ * Phase VIP-1.J / J6 (May 2026) — Reconciliation fields default at write
+ * time so every collection-driven row starts in `PENDING_2307` and tags
+ * the calendar year as the natural 1702 credit year. Bookkeeper flips
+ * status via cwt2307ReconciliationService.markReceived once the hospital
+ * sends the certificate.
  */
 const CwtLedger = require('../models/CwtLedger');
 
 /**
- * Create a CWT ledger entry
+ * Create a CWT ledger entry. New rows default to PENDING_2307 status with
+ * the calendar year as the 1702 tagging year — bookkeeper or finance can
+ * later flip status / retag year via cwt2307ReconciliationService.
  */
 async function createCwtEntry(data) {
   return CwtLedger.create({
@@ -23,7 +31,10 @@ async function createCwtEntry(data) {
     cwt_amount: data.cwt_amount || 0,
     atc_code: data.atc_code,
     quarter: data.quarter,
-    year: data.year
+    year: data.year,
+    // J6 — reconciliation defaults
+    status: data.status || 'PENDING_2307',
+    tagged_for_1702_year: data.tagged_for_1702_year || data.year,
   });
 }
 
