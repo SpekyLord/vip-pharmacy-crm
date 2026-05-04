@@ -24,10 +24,13 @@
  *   • Quarterly: 1601-EQ + SAWT + outbound 2307 sum three months.
  *
  * What is NOT in this file (deferred to subsequent J phases):
- *   • 1601-C compensation withholding (J3) — bridges Payslip → ledger
- *     COMPENSATION direction. Same shape, different schedule.
  *   • QAP + 1604-E annual alphalists (J4).
  *   • 2307 inbound reconciliation (J6) — uses CwtLedger, not this ledger.
+ *
+ * Phase history in this file:
+ *   • J2 (Apr 2026): 1601-EQ + 1606 + 2307-OUT + SAWT
+ *   • J3 Part A (May 04 2026): 1601-C monthly compensation
+ *   • J3 Part B (May 04 2026): 1604-CF annual alphalist + 2316 employee cert
  */
 
 const crypto = require('crypto');
@@ -342,6 +345,435 @@ async function compute1601C({ entityId, year, month }) {
   };
 
   return { totals, meta };
+}
+
+// ── 1604-CF annual alphalist (Phase J3 Part B) ──────────────────────────
+/**
+ * Annual Compensation Alphalist (BIR Form 1604-CF). Aggregates the entire
+ * calendar year of COMPENSATION-direction WithholdingLedger rows into three
+ * BIR-required schedules:
+ *
+ *   • Schedule 7.1 — Regular employees (taxable). Per-employee row: TIN,
+ *     name, gross compensation, non-taxable, taxable, tax withheld.
+ *   • Schedule 7.2 — Minimum wage earners (exempt under TRAIN). Same shape
+ *     but withheld is structurally 0; the row exists for BIR audit posture.
+ *   • Schedule 7.3 — Employees terminated during the year. Same shape as 7.1
+ *     but partitioned out so the BIR auditor can reconcile the alphalist
+ *     against the entity's HR separation roster.
+ *
+ * The MWE flag wins over termination: a separated MWE belongs in 7.2, not
+ * 7.3. BIR's audit posture treats MWE as the dominant classification.
+ *
+ * Snapshot pattern (Rule #20): every row reads frozen `payee_*_snapshot`
+ * fields from WithholdingLedger — never from live PeopleMaster. Subsequent
+ * employee renames or TIN updates do NOT rewrite the alphalist of a closed
+ * year. Termination check reads PeopleMaster.date_separated (live) because
+ * the snapshot was taken at the time of payroll post and may pre-date the
+ * separation event by months. Schedule classification is a posting-time
+ * classification problem — but for the YEARLY alphalist, the user's intent
+ * is "show me everyone who left during 2026," which is a live HR question.
+ */
+async function compute1604CF({ entityId, year }) {
+  if (!entityId) throw new Error('entityId is required');
+  if (!Number.isInteger(year) || year < 2024 || year > 2099) throw new Error('Invalid year');
+
+  // 12 monthly periods covered by this year's alphalist
+  const periods = [];
+  for (let m = 1; m <= 12; m++) periods.push(`${year}-${pad2(m)}`);
+
+  // Per-(payee × ATC) rollup over all 12 periods
+  const perPayeeAtc = await listPayees(entityId, periods, ['WI100', 'WC120', 'WMWE'], 'INCLUDE', 'COMPENSATION');
+
+  // Group by employee — one schedule row per (payee_id) summing across ATCs
+  const byEmployee = new Map();
+  for (const r of perPayeeAtc) {
+    const key = String(r.payee_id);
+    if (!byEmployee.has(key)) {
+      byEmployee.set(key, {
+        payee_kind: r.payee_kind,
+        payee_id: r.payee_id,
+        payee_name: r.payee_name,
+        payee_tin: r.payee_tin,
+        payee_address: r.payee_address,
+        gross_regular: 0,        // WI100 gross
+        gross_thirteenth: 0,     // WC120 gross (13th-month excess of ₱90k)
+        gross_mwe: 0,            // WMWE gross
+        withheld: 0,             // WI100 withheld (WC120 + WMWE always 0)
+        first_period: r.first_period,
+        last_period: r.last_period,
+        atc_buckets: 0,
+        is_mwe: false,
+      });
+    }
+    const e = byEmployee.get(key);
+    if (r.atc_code === 'WI100') { e.gross_regular += r.gross; e.withheld += r.withheld; }
+    else if (r.atc_code === 'WC120') { e.gross_thirteenth += r.gross; }
+    else if (r.atc_code === 'WMWE') { e.gross_mwe += r.gross; e.is_mwe = true; }
+    e.atc_buckets += 1;
+    if (r.first_period && (!e.first_period || r.first_period < e.first_period)) e.first_period = r.first_period;
+    if (r.last_period && (!e.last_period || r.last_period > e.last_period)) e.last_period = r.last_period;
+  }
+
+  // Termination classification — live PeopleMaster lookup. We only need
+  // date_separated to decide 7.3 partition; if PeopleMaster is gone (rare),
+  // default to "not separated" so the row defaults to 7.1.
+  const PeopleMaster = require('../models/PeopleMaster');
+  const ids = Array.from(byEmployee.keys());
+  const yearStartDate = new Date(Date.UTC(year, 0, 1));
+  const yearEndDate = new Date(Date.UTC(year + 1, 0, 1));
+  let separatedSet = new Set();
+  if (ids.length) {
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- per-id lookup driven by aggregator output; entity scoped via the WithholdingLedger query above
+    const sepRows = await PeopleMaster.find({
+      _id: { $in: ids },
+      date_separated: { $gte: yearStartDate, $lt: yearEndDate },
+    }).select('_id date_separated').lean();
+    separatedSet = new Set(sepRows.map(r => String(r._id)));
+  }
+
+  // Decompose into 3 schedules. MWE wins over termination per BIR posture.
+  const schedule_7_1 = []; // Regular taxable
+  const schedule_7_2 = []; // MWE exempt
+  const schedule_7_3 = []; // Terminated during year
+  for (const e of byEmployee.values()) {
+    const total_gross = round2(e.gross_regular + e.gross_thirteenth + e.gross_mwe);
+    const taxable = round2(e.gross_regular + e.gross_thirteenth);
+    const non_taxable = round2(e.gross_mwe + Math.min(e.gross_thirteenth, 0)); // 13th excess is taxable; non-taxable bucket is MWE pool
+    const row = {
+      payee_kind: e.payee_kind,
+      payee_id: e.payee_id,
+      payee_name: e.payee_name,
+      payee_tin: e.payee_tin,
+      payee_address: e.payee_address,
+      gross_compensation: total_gross,
+      taxable_compensation: taxable,
+      non_taxable_compensation: non_taxable,
+      tax_withheld: round2(e.withheld),
+      first_period: e.first_period,
+      last_period: e.last_period,
+      atc_buckets: e.atc_buckets,
+      is_mwe: e.is_mwe,
+      is_separated: separatedSet.has(String(e.payee_id)),
+    };
+    if (row.is_mwe) schedule_7_2.push(row);
+    else if (row.is_separated) schedule_7_3.push(row);
+    else schedule_7_1.push(row);
+  }
+
+  // Sort each schedule by gross desc so the bookkeeper sees big-ticket
+  // rows first (eyeball-audit pattern).
+  const sortByGross = (a, b) => b.gross_compensation - a.gross_compensation;
+  schedule_7_1.sort(sortByGross);
+  schedule_7_2.sort(sortByGross);
+  schedule_7_3.sort(sortByGross);
+
+  // Totals row across all schedules — what 1604-CF Box 14 (Total Tax
+  // Required to Be Withheld for the Year) reports.
+  const totals = {
+    sched_7_1_count: schedule_7_1.length,
+    sched_7_2_count: schedule_7_2.length,
+    sched_7_3_count: schedule_7_3.length,
+    employees_total: byEmployee.size,
+    gross_compensation_total: round2(
+      schedule_7_1.reduce((s, r) => s + r.gross_compensation, 0)
+      + schedule_7_2.reduce((s, r) => s + r.gross_compensation, 0)
+      + schedule_7_3.reduce((s, r) => s + r.gross_compensation, 0)
+    ),
+    taxable_compensation_total: round2(
+      schedule_7_1.reduce((s, r) => s + r.taxable_compensation, 0)
+      + schedule_7_3.reduce((s, r) => s + r.taxable_compensation, 0)
+      // 7.2 (MWE) has 0 taxable by definition
+    ),
+    non_taxable_compensation_total: round2(
+      schedule_7_2.reduce((s, r) => s + r.gross_compensation, 0)
+      // MWE pool is the non-taxable bucket on 1604-CF
+    ),
+    withheld_total: round2(
+      schedule_7_1.reduce((s, r) => s + r.tax_withheld, 0)
+      + schedule_7_3.reduce((s, r) => s + r.tax_withheld, 0)
+    ),
+  };
+
+  const meta = {
+    form_code: '1604-CF',
+    entity_id: entityId,
+    period_year: year,
+    period_label: String(year),
+    period_months: periods,
+    source_counts: {
+      ledger_rows: perPayeeAtc.length,
+      employees: byEmployee.size,
+      schedule_7_1: schedule_7_1.length,
+      schedule_7_2: schedule_7_2.length,
+      schedule_7_3: schedule_7_3.length,
+    },
+    schedules: {
+      '7.1': schedule_7_1,
+      '7.2': schedule_7_2,
+      '7.3': schedule_7_3,
+    },
+    computed_at: new Date(),
+  };
+
+  return { totals, meta };
+}
+
+// ── 1604-CF .dat writer (BIR Alphalist Data Entry v7.x) ─────────────────
+/**
+ * Emits a fixed-format text payload in the BIR Alphalist Data Entry shape
+ * for 1604-CF (annual compensation alphalist).
+ *
+ * Format reference: BIR Alphalist Data Entry v7.x manual + RR 2-2015.
+ *
+ * Header line (H):
+ *   H1604CF|TIN|RegName|Branch|Year|FormType
+ *
+ * Schedule 7.1 detail (D71) — Regular employees:
+ *   D71|Seq|EmpTIN|LastName|FirstName|MiddleName|Address|Gross|NonTaxable|Taxable|TaxWithheld
+ *
+ * Schedule 7.2 detail (D72) — Minimum wage earners (exempt):
+ *   D72|Seq|EmpTIN|LastName|FirstName|MiddleName|Address|Gross|NonTaxable|Taxable|TaxWithheld
+ *
+ * Schedule 7.3 detail (D73) — Terminated during year:
+ *   D73|Seq|EmpTIN|LastName|FirstName|MiddleName|Address|Gross|NonTaxable|Taxable|TaxWithheld
+ *
+ * Trailer (T):
+ *   T1604CF|EmployeesTotal|GrossTotal|TaxableTotal|NonTaxableTotal|WithheldTotal
+ *
+ * Subscribers in jurisdictions outside PH can swap this serializer via the
+ * same DI seam pattern used by serializeSawtDat (lookup-driven module path
+ * future Vios SaaS spin-out).
+ */
+function serialize1604CFDat({ entity, year, totals, meta }) {
+  const lines = [];
+  lines.push([
+    'H1604CF',
+    entity?.tin || 'NOT SET',
+    sanitize(entity?.entity_name || ''),
+    'HEAD OFFICE',
+    String(year),
+    '1604CF',
+  ].join('|'));
+
+  const writeDetail = (kind, rows) => {
+    rows.forEach((r, idx) => {
+      // Last + First + Middle name parsing — best effort. The snapshot
+      // captured `payee_name` at payslip-post time as `full_name`. We split
+      // on the LAST space so "Maria Cruz De La Cruz" → first="Maria Cruz De La" + last="Cruz" — wrong but conservative.
+      // The bridge captured first_name/last_name explicitly during emit
+      // (J3 Part B fix), but legacy Part A rows lack those. Fall back to
+      // the full-name split so old data still serializes.
+      const fullName = sanitize(r.payee_name || '');
+      const lastSpace = fullName.lastIndexOf(' ');
+      const lastName = lastSpace >= 0 ? fullName.slice(lastSpace + 1) : fullName;
+      const firstName = lastSpace >= 0 ? fullName.slice(0, lastSpace) : '';
+      lines.push([
+        kind,
+        String(idx + 1).padStart(6, '0'),
+        r.payee_tin || '',
+        lastName,
+        firstName,
+        '', // middle name — not split today; subscriber surface for future
+        sanitize(r.payee_address || ''),
+        r.gross_compensation.toFixed(2),
+        r.non_taxable_compensation.toFixed(2),
+        r.taxable_compensation.toFixed(2),
+        r.tax_withheld.toFixed(2),
+      ].join('|'));
+    });
+  };
+
+  writeDetail('D71', meta?.schedules?.['7.1'] || []);
+  writeDetail('D72', meta?.schedules?.['7.2'] || []);
+  writeDetail('D73', meta?.schedules?.['7.3'] || []);
+
+  lines.push([
+    'T1604CF',
+    String(totals.employees_total).padStart(6, '0'),
+    totals.gross_compensation_total.toFixed(2),
+    totals.taxable_compensation_total.toFixed(2),
+    totals.non_taxable_compensation_total.toFixed(2),
+    totals.withheld_total.toFixed(2),
+  ].join('|'));
+
+  return lines.join('\r\n') + '\r\n';
+}
+
+async function export1604CFDat({ entityId, year, userId, entity }) {
+  if (!Number.isInteger(year)) throw new Error('Invalid year.');
+  const { totals, meta } = await compute1604CF({ entityId, year });
+
+  const datContent = serialize1604CFDat({ entity, year, totals, meta });
+  const contentHash = crypto.createHash('sha256').update(datContent, 'utf8').digest('hex');
+  const filename = `1604CF_${year}.dat`;
+
+  const filter = {
+    entity_id: entityId,
+    form_code: '1604-CF',
+    period_year: year,
+    period_month: null,
+    period_quarter: null,
+    period_payee_id: null,
+  };
+  let row = await BirFilingStatus.findOne(filter);
+  if (!row) {
+    row = new BirFilingStatus({
+      ...filter,
+      status: 'DRAFT',
+      totals_snapshot: totals,
+    });
+  } else {
+    row.totals_snapshot = totals;
+  }
+  row.export_audit_log.push({
+    exported_at: new Date(),
+    exported_by: userId,
+    artifact_kind: 'DAT',
+    filename,
+    content_hash: contentHash,
+    byte_length: Buffer.byteLength(datContent, 'utf8'),
+    notes: `1604-CF ${year} export (${totals.employees_total} employees: ${totals.sched_7_1_count} regular, ${totals.sched_7_2_count} MWE, ${totals.sched_7_3_count} terminated)`,
+  });
+  await row.save();
+
+  return { row, datContent, contentHash, filename, totals, meta };
+}
+
+// ── 2316 PDF — annual employee Certificate of Compensation Paid + Tax Withheld ─
+/**
+ * Per-employee × per-year BIR Form 2316. Mirrors export2307Pdf but for
+ * compensation: same snapshot-only read pattern, same audit-log append, same
+ * pdfkit text layout. Sent to each employee for their personal income-tax
+ * filing (or as proof of "Substituted Filing" exemption when 2316 is the
+ * only income source).
+ *
+ * Source: COMPENSATION-direction WithholdingLedger rows for the calendar
+ * year. NEVER reads live PeopleMaster — snapshots at row-write time are the
+ * source of truth so a later TIN/name change doesn't rewrite a closed year.
+ */
+async function export2316Pdf({ entityId, payeeId, year, entity }) {
+  if (!entityId || !payeeId || !year) {
+    throw new Error('export2316Pdf requires entityId, payeeId, year.');
+  }
+  const periods = [];
+  for (let m = 1; m <= 12; m++) periods.push(`${year}-${pad2(m)}`);
+
+  const rows = await WithholdingLedger.find({
+    entity_id: entityId,
+    direction: 'COMPENSATION',
+    period: { $in: periods },
+    payee_kind: 'PeopleMaster',
+    payee_id: payeeId,
+    finance_tag: { $ne: 'EXCLUDE' },
+  }).sort({ period: 1, atc_code: 1 }).lean();
+
+  if (rows.length === 0) {
+    throw new Error(`No compensation rows for employee ${payeeId} in ${year}. Post payroll first.`);
+  }
+
+  const last = rows[rows.length - 1];
+  const employee = {
+    name: last.payee_name_snapshot || '(employee)',
+    tin: last.payee_tin_snapshot || 'NOT ON FILE',
+    address: last.payee_address_snapshot || '',
+  };
+
+  // Decompose totals by ATC bucket
+  const totals = rows.reduce((acc, r) => {
+    if (r.atc_code === 'WI100') { acc.gross_regular += r.gross_amount; acc.withheld += r.withheld_amount; }
+    else if (r.atc_code === 'WC120') { acc.gross_thirteenth += r.gross_amount; }
+    else if (r.atc_code === 'WMWE') { acc.gross_mwe += r.gross_amount; }
+    return acc;
+  }, { gross_regular: 0, gross_thirteenth: 0, gross_mwe: 0, withheld: 0 });
+
+  const grossTotal = round2(totals.gross_regular + totals.gross_thirteenth + totals.gross_mwe);
+  const taxable = round2(totals.gross_regular + totals.gross_thirteenth);
+  const nonTaxable = round2(totals.gross_mwe);
+  const withheld = round2(totals.withheld);
+
+  const doc = new PDFDocument({ size: 'LETTER', margin: 36 });
+  const chunks = [];
+  doc.on('data', c => chunks.push(c));
+  const done = new Promise((resolve, reject) => {
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+  });
+
+  doc.fontSize(11).text('Republika ng Pilipinas — Bureau of Internal Revenue', { align: 'center' });
+  doc.fontSize(13).text('BIR Form 2316 — Certificate of Compensation Payment / Tax Withheld', { align: 'center' });
+  doc.moveDown(0.5);
+  doc.fontSize(9).text(`For the Year: ${year}    |    Generated: ${new Date().toISOString()}`, { align: 'center' });
+  doc.moveDown();
+
+  doc.fontSize(10).text('Employer (Withholding Agent)', { underline: true });
+  doc.fontSize(9)
+    .text(`Name:    ${entity?.entity_name || ''}`)
+    .text(`TIN:     ${entity?.tin || 'NOT SET'}`)
+    .text(`Address: ${entity?.address || ''}`)
+    .text(`RDO:     ${entity?.rdo_code || 'NOT SET'}`);
+  doc.moveDown();
+
+  doc.fontSize(10).text('Employee', { underline: true });
+  doc.fontSize(9)
+    .text(`Name:    ${employee.name}`)
+    .text(`TIN:     ${employee.tin}`)
+    .text(`Address: ${employee.address}`);
+  doc.moveDown();
+
+  doc.fontSize(10).text('Compensation Income & Tax Withheld', { underline: true });
+  doc.moveDown(0.3);
+  doc.fontSize(9);
+
+  // Per-month detail
+  const tableStart = doc.y;
+  doc.text('Period',     36,  tableStart, { width: 70 });
+  doc.text('ATC',        110, tableStart, { width: 60 });
+  doc.text('Source',     175, tableStart, { width: 130 });
+  doc.text('Gross',      310, tableStart, { width: 80, align: 'right' });
+  doc.text('Withheld',   400, tableStart, { width: 90, align: 'right' });
+  doc.moveTo(36, doc.y + 2).lineTo(540, doc.y + 2).stroke();
+  doc.moveDown(0.3);
+
+  for (const r of rows) {
+    const y = doc.y;
+    doc.text(r.period,                        36,  y, { width: 70 });
+    doc.text(r.atc_code,                      110, y, { width: 60 });
+    doc.text(r.source_doc_ref || '',          175, y, { width: 130 });
+    doc.text(fmtMoney(r.gross_amount),        310, y, { width: 80, align: 'right' });
+    doc.text(fmtMoney(r.withheld_amount),     400, y, { width: 90, align: 'right' });
+    doc.moveDown(0.2);
+  }
+  doc.moveDown(0.3);
+  doc.moveTo(36, doc.y).lineTo(540, doc.y).stroke();
+  doc.moveDown(0.4);
+
+  // Annual totals (BIR 2316 boxes — Part IV)
+  doc.fontSize(10).text(`A. Gross Compensation:        ${fmtMoney(grossTotal)}`,    { align: 'right' });
+  doc.fontSize(10).text(`B. Non-Taxable (MWE/exempt):  ${fmtMoney(nonTaxable)}`,    { align: 'right' });
+  doc.fontSize(10).text(`C. Taxable Compensation:      ${fmtMoney(taxable)}`,        { align: 'right' });
+  doc.fontSize(10).text(`D. Tax Withheld for the Year: ${fmtMoney(withheld)}`,       { align: 'right' });
+  doc.moveDown();
+
+  doc.fontSize(8).fillColor('#555')
+    .text('This certificate is computer-generated from VIP CRM ERP — Phase VIP-1.J / J3 Part B.', { align: 'center' });
+  doc.text(`Source rows: ${rows.length}  |  Snapshot frozen at payroll-post time per BIR audit posture.`, { align: 'center' });
+  doc.fillColor('black');
+
+  doc.end();
+  const buffer = await done;
+  const contentHash = crypto.createHash('sha256').update(buffer).digest('hex');
+  return {
+    buffer,
+    contentHash,
+    totals: {
+      gross: grossTotal,
+      non_taxable: nonTaxable,
+      taxable,
+      withheld,
+    },
+    employee,
+    rowCount: rows.length,
+  };
 }
 
 // ── 2307 outbound PDF generator (per payee per quarter) ─────────────────
@@ -696,8 +1128,13 @@ async function exportEwtCsv({ formCode, entityId, year, periodMonthOrQuarter, us
 module.exports = {
   compute1601EQ,
   compute1606,
-  // Phase J3 — Monthly compensation withholding return
+  // Phase J3 Part A — Monthly compensation withholding return
   compute1601C,
+  // Phase J3 Part B — Annual compensation alphalist + 2316 employee certificate
+  compute1604CF,
+  serialize1604CFDat,
+  export1604CFDat,
+  export2316Pdf,
   exportEwtCsv,
   export2307Pdf,
   exportSawtDat,

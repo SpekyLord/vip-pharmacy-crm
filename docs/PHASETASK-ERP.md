@@ -9565,9 +9565,9 @@ Backend:
 
 ---
 
-## Phase VIP-1.J — BIR Tax Compliance Suite (J0 SHIPPED Apr 27 2026; J1 SHIPPED Apr 28 2026; J2 SHIPPED May 03 2026; J3 Part A SHIPPED May 04 2026; J3 Part B + J4-J7 deferred)
+## Phase VIP-1.J — BIR Tax Compliance Suite (J0 SHIPPED Apr 27 2026; J1 SHIPPED Apr 28 2026; J2 SHIPPED May 03 2026; J3 Part A SHIPPED + COMMITTED May 04 2026; J3 Part B SHIPPED May 04 2026 evening; J4-J7 deferred)
 
-**Sequence**: J0 (foundation) ✅ -> J1 (VAT) ✅ -> J2 (EWT) ✅ -> J3 Part A (1601-C Compensation) ✅ -> J3 Part B (1604-CF Annual Alphalist + 2316) ⬅ START HERE -> J4 (Annual Alphalists for EWT/QAP) -> J5 (Books of Accounts) -> J6 (Inbound 2307) -> J7 (1702 Annual Income Tax)
+**Sequence**: J0 (foundation) ✅ -> J1 (VAT) ✅ -> J2 (EWT) ✅ -> J3 Part A (1601-C Compensation) ✅ -> J3 Part B (1604-CF Annual Alphalist + 2316) ✅ -> J4 (Annual Alphalists for EWT/QAP) ⬅ START HERE -> J5 (Books of Accounts) -> J6 (Inbound 2307) -> J7 (1702 Annual Income Tax)
 
 ### J0 — Compliance Dashboard + Foundation (~3-4 days) — ✅ SHIPPED + SMOKE-PASSED
 
@@ -9759,12 +9759,50 @@ Payslip -> WithholdingLedger bridge (direction COMPENSATION) on payroll-post (le
 - ✅ Live HTTP smoke 5/5 (compute1601C 200 + comp-posture 200 + bad year/month 400 + EXPORT_FORM 403 + CORS exposes Content-Disposition + X-Content-Hash)
 - ⏸ Playwright UI smoke deferred — MCP browser locked by user's active Chrome (same condition as Phase R1 handoff). HTTP smoke + static healthcheck is the Rule 0b alternative.
 
-### J3 Part B — 1604-CF Annual Alphalist + Form 2316 PDF (~1 day)
-Annual compensation alphalist `.dat` writer with 3 BIR Schedules:
-- **Schedule 7.1** — Regular employees (taxable). Per-employee row: TIN, name, gross compensation, non-taxable, taxable, tax withheld.
-- **Schedule 7.2** — Minimum wage earners (exempt). Same shape but withheld is structurally 0.
-- **Schedule 7.3** — Terminated employees during the year (separate schedule for BIR audit).
-Per-employee BIR Form 2316 PDF (annual employee certificate of compensation paid + tax withheld). `compute1604CF` aggregator (year-encoded sum across 12 months, partitions per employee by `employment_type` + termination_date). Frontend route `/erp/bir/1604-CF/:year` + page (separate from BirEwtReturnDetailPage — different shape than monthly returns) + service wrapper `compute1604CF(year)` + `export1604CFDat(year)`. Golden fixture for the `.dat` byte string per BIR Alphalist Data Entry v7.x. Healthcheck extension. Heatmap drill-down for 1604-CF cells.
+### J3 Part B — 1604-CF Annual Alphalist + Form 2316 PDF (May 04 2026 evening, uncommitted on dev) — ✅ SHIPPED
+
+3-Schedule annual compensation alphalist `.dat` writer + per-employee Form 2316 PDF + heatmap drill-down for 1604-CF (annual) AND 1601-C (Part A drill-down was missing).
+
+**J3 Part B.1 Aggregator + serializer + 2316 PDF** (`backend/erp/services/withholdingReturnService.js`) — ✅ shipped
+- `compute1604CF({ entityId, year })` — year-encoded sum across 12 monthly periods. Reads COMPENSATION rows via `listPayees` with 3-ATC filter + INCLUDE + COMPENSATION direction. Groups by `payee_id` (one row per employee summing across WI100/WC120/WMWE buckets). Partitions into Schedule 7.1 (regular taxable), 7.2 (MWE — exempt), 7.3 (terminated during year via live `PeopleMaster.date_separated` lookup). MWE wins over termination per BIR audit posture.
+- `serialize1604CFDat({ entity, year, totals, meta })` — fixed-format `.dat` per BIR Alphalist Data Entry v7.x. Header `H1604CF`, per-schedule detail `D71`/`D72`/`D73`, trailer `T1604CF`. Strict CRLF line endings, pipe-separator with `sanitize()` strip.
+- `export1604CFDat({ entityId, year, userId, entity })` — wraps compute + serialize, SHA-256 + audit-log append + `BirFilingStatus` upsert.
+- `export2316Pdf({ entityId, payeeId, year, entity })` — per-employee annual cert PDFkit. Mirrors `export2307Pdf` shape. Reads ONLY snapshots from WithholdingLedger (never live PeopleMaster).
+
+**J3 Part B.2 Snapshot bug fix in Part A bridge** (`backend/erp/services/withholdingService.js`) — ✅ shipped
+- `.select('+government_ids.tin full_name first_name last_name employment_type')` — TIN was `select: false` on the schema; Part A's `person.tin` read returned undefined, leading to empty TIN snapshots which would break 1604-CF (BIR auditors validate by TIN).
+- `personSnapshot` extended to capture `first_name` + `last_name` for clean alphalist name parsing.
+- `finance_tag: 'INCLUDE'` — auto-tag (no judgment call on compensation; tax was determined upstream by `payslipCalc`). Without this, 1601-C and 1604-CF aggregators would show zeros until finance manually tagged every row.
+
+**J3 Part B.3 Controller + routes** (`backend/erp/controllers/birController.js` + `backend/erp/routes/birRoutes.js`) — ✅ shipped
+- `compute1604CF` (VIEW_DASHBOARD) → `GET /forms/1604-CF/:year/compute`
+- `export1604CFDat` (EXPORT_FORM) → `GET /forms/1604-CF/:year/export.dat` + `[BIR_EXPORT_1604CF_DAT]` ops audit
+- `export2316Pdf` (EXPORT_FORM) → `GET /forms/2316/:year/:payeeId/export.pdf` + `[BIR_EXPORT_2316_PDF]` ops audit
+- All 3 mounted BEFORE the J1 catch-all `/forms/:formCode/:year/:period/export.csv`.
+
+**J3 Part B.4 Model schema extension** (`backend/erp/models/BirFilingStatus.js`) — ✅ shipped
+- `FORM_CODES` enum gained `'2316'` (per-employee per-year).
+- `perPayeeForms` validator gained `'2316'` so the pre-validate hook enforces `period_payee_id` + `period_payee_kind`.
+- 1604-CF was already in `annualForms` (J0 schema) — no change needed.
+
+**J3 Part B.5 Frontend** (`frontend/src/erp/services/birService.js` + `frontend/src/erp/pages/Bir1604CFDetailPage.jsx` + `frontend/src/App.jsx`) — ✅ shipped
+- `birService.compute1604CF(year)` + `export1604CFDat(year)` + `export2316Pdf(year, payeeId)`.
+- New page `Bir1604CFDetailPage.jsx` with 3-schedule layout (separate from `BirEwtReturnDetailPage` because annual schedule shape ≠ monthly box layout): header card + aggregation summary + annual totals (5 BIR boxes) + 3 schedule tables with per-row 2316 PDF buttons + lifecycle (Reviewed → Filed → Confirmed) + export audit log.
+- App.jsx: `Bir1604CFDetailPage` lazy-imported + `/erp/bir/1604-CF/:year` route mounted BEFORE `/erp/bir/:formCode/:year/:period` wildcard.
+
+**J3 Part B.6 PageGuide + heatmap drill-down** (`frontend/src/components/common/PageGuide.jsx` + `frontend/src/erp/pages/BIRCompliancePage.jsx`) — ✅ shipped
+- `bir-1604cf-alphalist` 7-step entry: pre-flight, 3-schedule layout, MWE/termination classification source, 2316 PDF + Substituted Filing posture, .dat export + Alphalist Data Entry v7.x import, lifecycle, snapshot pattern.
+- `BIRCompliancePage` heatmap: `monthlyOrQuarterlyForms` gained `'1601-C'` (Part A omission), `annualForms = ['1604-CF']` enables annual cell drilling with year-only URL.
+
+**J3 Part B.7 Healthcheck** (`backend/scripts/healthcheckBir1604CFAlphalist.js`) — ✅ shipped
+- 66 assertions across 14 sections including a `serialize1604CFDat` round-trip test with synthetic 3-employee fixture asserting H1604CF header + D71/D72/D73 detail lines + T1604CF trailer with money totals + CRLF-strict line endings.
+
+**J3 Part B verification posture (May 04 2026 evening)**:
+- ✅ J3 Part B healthcheck **66/66 PASS** (`node backend/scripts/healthcheckBir1604CFAlphalist.js`)
+- ✅ J3 Part A regression **78/78 PASS**, J2 EWT **124/124 PASS**, J1 VAT **39/39 PASS**, ClmIdempotency **6/6 PASS**, ClmPerformance **34/34 PASS**, TeamActivity **22/22 PASS**, SalesDiscount **41/41 PASS**
+- ✅ Vite frontend build green in **1m 38s** (Bir1604CFDetailPage emitted as own chunk: `Bir1604CFDetailPage-CNYgnKQ8.js`)
+- ✅ Live HTTP smoke 5/5 PASS (compute=200 with empty schedules / invalid year=400 / .dat=403 EXPORT_FORM gate / 2316=403 EXPORT_FORM gate / wrong-shape URL=404 — proves URL contract is strict)
+- ⏸ Playwright UI smoke deferred — MCP browser locked (same condition as J3 Part A + Phase R1 handoffs). HTTP smoke + serializer round-trip in healthcheck is the Rule 0b alternative.
 
 ### J4 — QAP + 1604-E (~2 days)
 QAP quarterly `.dat` writer. 1604-E annual `.dat` writer. Cross-references VIP-1.B rebate payouts.

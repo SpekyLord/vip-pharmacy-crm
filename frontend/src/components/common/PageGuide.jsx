@@ -164,6 +164,24 @@ const PAGE_GUIDES = {
     ],
     tip: 'The compensation engine is idempotent on payslip._id — re-posting the same payslip (after reopen) deletes prior compensation rows and re-emits. This means partial 1601-C totals after a mid-month reopen are normal until you re-post the affected payslips. The legacy direct-post path AND the cascade Approval Hub path BOTH emit, so a clerk-submitted run cleared by admin produces the same compensation rows as a president-direct post.',
   },
+  'bir-1604cf-alphalist': {
+    title: 'BIR 1604-CF — Annual Compensation Alphalist',
+    steps: [
+      'Pre-flight: this page rolls up 12 months of COMPENSATION-direction WithholdingLedger rows for the calendar year. The data is fed by every payroll post during the year (legacy direct-post path + G4.5cc Hub-cascade path) — same engine that drives the monthly 1601-C report. If you see zero employees, no payroll has been posted for the year yet.',
+      'Three schedules per BIR Form 1604-CF: (7.1) Regular employees with taxable compensation, (7.2) Minimum Wage Earners (exempt under TRAIN), (7.3) Employees terminated during the year. MWE classification wins over termination — a separated MWE belongs in 7.2.',
+      'MWE classification reads PeopleMaster.employment_type === "MWE". Termination classification reads PeopleMaster.date_separated falling within the calendar year (live HR signal — the snapshot at payroll-post time may pre-date the separation by months).',
+      'Each row has a "2316 PDF" button — generates the BIR Form 2316 (Certificate of Compensation Paid / Tax Withheld) PDF for that employee × year. Distribute to every employee for their personal income-tax filing (or as proof of "Substituted Filing" exemption when 2316 is the only income source).',
+      'Toolbar "Export .dat" generates the BIR Alphalist Data Entry v7.x payload. Open Alphalist Data Entry, import the .dat, validate, and submit. The exported file carries a SHA-256 hash so re-exports with different content are detectable.',
+      'Lifecycle: Export .dat → Mark Reviewed (president sign-off) → Mark Filed (bookkeeper, after Alphalist submission with reference number) → CONFIRMED (auto-flip when BIR confirmation email lands at yourpartner@viosintegrated.net). 1604-CF is annual; due January 31 of the following year per BIR RR 2-2015.',
+      'Snapshot pattern: every alphalist row reads frozen payee_name + payee_tin from WithholdingLedger — never live PeopleMaster. Subsequent employee renames or TIN updates do NOT rewrite the alphalist of a closed year. To retroactively fix a TIN, reopen the affected payroll periods via Reversal Console + re-post.',
+    ],
+    next: [
+      { label: 'BIR Compliance Dashboard', path: '/erp/bir' },
+      { label: '1601-C Monthly Compensation (sibling)', path: '/erp/bir' },
+      { label: 'Payroll (post payslips for the year)', path: '/erp/payroll' },
+    ],
+    tip: 'The 2316 PDF audit-trail logs each generation as a separate BirFilingStatus row (form_code=2316, period_payee_id=<employee>) — so the dashboard\'s recent-exports strip shows every employee certificate. Subscribers in jurisdictions with different annual cert formats can swap the PDF renderer via the same DI seam used by the SAWT serializer (lookup-driven module path future).',
+  },
   'bir-vat-return': {
     title: 'BIR 2550M / 2550Q VAT Return',
     steps: [

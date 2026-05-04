@@ -803,6 +803,129 @@ exports.exportSawtDat = catchAsync(async (req, res) => {
   res.send(datContent);
 });
 
+// ── Phase J3 Part B — 1604-CF Annual Compensation Alphalist + Form 2316 ─
+//
+// 1604-CF mirrors compute1606 / compute1601C in shape but is annual
+// (period_year only — no month / quarter encoding). The .dat export targets
+// BIR Alphalist Data Entry v7.x; the per-employee 2316 PDF is the year-end
+// counterpart of the per-payee 2307 PDF (substitute filing exemption).
+//
+// VIEW_DASHBOARD gates compute. EXPORT_FORM gates both .dat and PDF
+// because each appends a SHA-256 hash to BirFilingStatus.export_audit_log
+// per Rule #20.
+
+exports.compute1604CF = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.params.year);
+  if (!year) {
+    return res.status(400).json({ success: false, message: 'Invalid year. Year ≥ 2024.' });
+  }
+  const result = await withholdingReturnService.compute1604CF({ entityId: req.entityId, year });
+  const row = await BirFilingStatus.findOne({
+    entity_id: req.entityId, form_code: '1604-CF',
+    period_year: year, period_month: null, period_quarter: null, period_payee_id: null,
+  }).lean();
+  res.json({ success: true, data: { ...result, filing_row: row || null } });
+});
+
+exports.export1604CFDat = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'EXPORT_FORM'))) return;
+  const year = parseYear(req.params.year);
+  if (!year) return res.status(400).json({ success: false, message: 'Invalid year.' });
+
+  const entity = await Entity.findById(req.entityId).lean();
+  if (!entity) return res.status(404).json({ success: false, message: 'Entity not found.' });
+
+  const { datContent, contentHash, filename, totals } = await withholdingReturnService.export1604CFDat({
+    entityId: req.entityId, year, userId: req.user?._id, entity,
+  });
+  birDashboardService.invalidate(req.entityId);
+
+  console.log('[BIR_EXPORT_1604CF_DAT]', JSON.stringify({
+    user: req.user?.email, role: req.user?.role,
+    entity_id: String(req.entityId),
+    year, employees_total: totals.employees_total,
+    content_hash: contentHash,
+    byte_length: Buffer.byteLength(datContent, 'utf8'),
+    ip: req.ip, ts: new Date().toISOString(),
+  }));
+
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('X-Content-Hash', contentHash);
+  res.send(datContent);
+});
+
+exports.export2316Pdf = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'EXPORT_FORM'))) return;
+  const year = parseYear(req.params.year);
+  const { payeeId } = req.params;
+  if (!year || !payeeId) {
+    return res.status(400).json({ success: false, message: 'Invalid year/payeeId.' });
+  }
+
+  const entity = await Entity.findById(req.entityId).lean();
+  if (!entity) return res.status(404).json({ success: false, message: 'Entity not found.' });
+
+  let result;
+  try {
+    result = await withholdingReturnService.export2316Pdf({
+      entityId: req.entityId, payeeId, year, entity,
+    });
+  } catch (err) {
+    return res.status(404).json({ success: false, message: err.message });
+  }
+
+  // Per-employee BirFilingStatus row (form_code='2316', period_payee_id=payeeId).
+  // Schema requires period_payee_kind for per-payee forms; compensation is
+  // always PeopleMaster-scoped.
+  const filter = {
+    entity_id: req.entityId, form_code: '2316',
+    period_year: year, period_month: null, period_quarter: null,
+    period_payee_id: payeeId,
+  };
+  let row = await BirFilingStatus.findOne(filter);
+  if (!row) {
+    row = new BirFilingStatus({
+      ...filter,
+      period_payee_kind: 'PeopleMaster',
+      status: 'DRAFT',
+      totals_snapshot: result.totals,
+    });
+  } else {
+    row.totals_snapshot = result.totals;
+  }
+  const filename = `2316_${payeeId}_${year}.pdf`;
+  row.export_audit_log.push({
+    exported_at: new Date(),
+    exported_by: req.user?._id,
+    artifact_kind: 'PDF',
+    filename,
+    content_hash: result.contentHash,
+    byte_length: result.buffer.length,
+    notes: `2316 ${year} ${result.employee.name} (${result.rowCount} ledger rows)`,
+  });
+  await row.save();
+  birDashboardService.invalidate(req.entityId);
+
+  console.log('[BIR_EXPORT_2316_PDF]', JSON.stringify({
+    user: req.user?.email, role: req.user?.role,
+    entity_id: String(req.entityId),
+    payee_id: String(payeeId),
+    year, content_hash: result.contentHash,
+    byte_length: result.buffer.length, ip: req.ip,
+    ts: new Date().toISOString(),
+  }));
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('X-Content-Hash', result.contentHash);
+  res.send(result.buffer);
+});
+
 // ── Withholding Posture (read-only summary for the dashboard) ──────────
 exports.getWithholdingPosture = catchAsync(async (req, res) => {
   if (!requireEntity(req, res)) return;

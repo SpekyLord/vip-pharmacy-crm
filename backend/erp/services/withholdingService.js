@@ -441,17 +441,29 @@ async function emitCompensationWithholdingForPayslip(payslip, opts = {}) {
 
   // Snapshot the employee for the alphalist — read PeopleMaster lazily so
   // the bridge stays decoupled from full population.
-  let personSnapshot = { name: '', tin: '', address: '', employment_type: null };
+  // J3 Part B (May 2026) — TIN lives at `government_ids.tin` and is `select:
+  // false` on the schema, so the explicit .select('+government_ids.tin') is
+  // mandatory. Reading `person.tin` (Part A's typo) always returned undefined
+  // → empty snapshot → 1604-CF alphalist with no TINs, which BIR rejects.
+  // PeopleMaster has no `address` field today; BIR Alphalist Data Entry
+  // accepts empty employee address (the EMPLOYER address is the filing
+  // address, captured via Entity.address). Future schema additions for an
+  // employee home address would extend this snapshot.
+  let personSnapshot = { name: '', tin: '', address: '', employment_type: null, first_name: '', last_name: '' };
   try {
     const PeopleMaster = require('../models/PeopleMaster');
     // eslint-disable-next-line vip-tenant/require-entity-filter -- by-id lookup driven by payslip.person_id; payslip itself is entity-scoped at the caller
-    const person = await PeopleMaster.findById(payslip.person_id).lean();
+    const person = await PeopleMaster.findById(payslip.person_id)
+      .select('+government_ids.tin full_name first_name last_name employment_type')
+      .lean();
     if (person) {
       personSnapshot = {
         name: person.full_name || person.first_name || '(unnamed employee)',
-        tin: person.tin || '',
-        address: person.address || '',
+        tin: person.government_ids?.tin || '',
+        address: '', // PeopleMaster has no employee address field today
         employment_type: person.employment_type || null,
+        first_name: person.first_name || '',
+        last_name: person.last_name || '',
       };
     }
   } catch (err) {
@@ -462,6 +474,15 @@ async function emitCompensationWithholdingForPayslip(payslip, opts = {}) {
   const entries = [];
 
   // Common row shape — direction COMPENSATION, source PAYROLL.
+  // J3 Part B (May 2026) — compensation rows auto-tag INCLUDE because the
+  // tax was determined upstream by payslipCalc's BIR graduated tax-table
+  // math; there is no finance judgment call to make (unlike OUTBOUND rows
+  // where finance may decide a contractor isn't subject to withholding).
+  // Auto-INCLUDE makes the 1601-C and 1604-CF aggregators (which filter
+  // strict INCLUDE) immediately visible after a payroll post — without it,
+  // every entity would see "compensation totals always 0" until they
+  // discovered the EWT-tagging UI. Subscribers can override per row via
+  // finance UI; downstream filters use $ne 'EXCLUDE' so the override sticks.
   const baseRow = {
     entity_id: payslip.entity_id,
     period: payslip.period,
@@ -475,7 +496,7 @@ async function emitCompensationWithholdingForPayslip(payslip, opts = {}) {
     source_doc_ref: `Payslip ${payslip.period} ${personSnapshot.name}`.trim(),
     source_event_id: payslip._id,
     bdm_id: opts.userId || payslip.posted_by || null,
-    finance_tag: 'PENDING',
+    finance_tag: 'INCLUDE',
     notes: null,
   };
 

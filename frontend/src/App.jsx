@@ -91,6 +91,8 @@ const BIRCompliancePage = lazyRetry(() => import('./erp/pages/BIRCompliancePage'
 const BirVatReturnDetailPage = lazyRetry(() => import('./erp/pages/BirVatReturnDetailPage'));
 // Phase VIP-1.J / J2 — 1601-EQ + 1606 EWT form-detail page (shared; adds 2307 + SAWT toolbar)
 const BirEwtReturnDetailPage = lazyRetry(() => import('./erp/pages/BirEwtReturnDetailPage'));
+// Phase VIP-1.J / J3 Part B — 1604-CF Annual Compensation Alphalist + Form 2316 PDF
+const Bir1604CFDetailPage = lazyRetry(() => import('./erp/pages/Bir1604CFDetailPage'));
 // Phase VIP-1.B Phase 4 — Rebate + Commission matrix admin + Payout ledger
 const RebateMatrixPage = lazyRetry(() => import('./erp/pages/RebateMatrixPage'));
 const NonMdRebateMatrixPage = lazyRetry(() => import('./erp/pages/NonMdRebateMatrixPage'));
@@ -670,6 +672,20 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.BIR_FILING}>
                 <BirEwtReturnDetailPage formCodeOverride="1601-C" />
+              </ProtectedRoute>
+            }
+          />
+          {/* Phase J3 Part B (May 2026) — 1604-CF Annual Compensation Alphalist.
+              Annual encoding (year-only — no :period segment) and a different
+              schedule shape than the monthly EWT pages, so this is a separate
+              page (Bir1604CFDetailPage) rather than another formCodeOverride.
+              Route MUST stay above the `/erp/bir/:formCode/:year/:period`
+              wildcard fallback. */}
+          <Route
+            path="/erp/bir/1604-CF/:year"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BIR_FILING}>
+                <Bir1604CFDetailPage />
               </ProtectedRoute>
             }
           />

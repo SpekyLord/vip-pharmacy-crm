@@ -231,6 +231,23 @@ export async function export2307Pdf(year, quarter, payeeKind, payeeId) {
   );
 }
 
+// ── Phase J3 Part B — 1604-CF Annual Alphalist + Form 2316 ────────────
+export async function compute1604CF(year) {
+  const { data } = await api.get(`${BASE}/forms/1604-CF/${year}/compute`);
+  return data?.data || null;
+}
+
+export async function export1604CFDat(year) {
+  return downloadBlob(`${BASE}/forms/1604-CF/${year}/export.dat`, `1604CF_${year}.dat`);
+}
+
+export async function export2316Pdf(year, payeeId) {
+  return downloadBlob(
+    `${BASE}/forms/2316/${year}/${encodeURIComponent(payeeId)}/export.pdf`,
+    `2316_${payeeId}_${year}.pdf`,
+  );
+}
+
 export default {
   getDashboard,
   getEntityConfig,
@@ -254,7 +271,11 @@ export default {
   exportEwtCsv,
   exportSawtDat,
   export2307Pdf,
-  // Phase J3
+  // Phase J3 Part A
   compute1601C,
   getCompensationPosture,
+  // Phase J3 Part B
+  compute1604CF,
+  export1604CFDat,
+  export2316Pdf,
 };

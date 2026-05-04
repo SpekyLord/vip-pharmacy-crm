@@ -51,12 +51,19 @@ router.get('/forms/2307-OUT/:year/:quarter/:payeeKind/:payeeId/export.pdf', ctrl
 router.get('/withholding/posture', ctrl.getWithholdingPosture);
 
 // ── Phase J3 — 1601-C Monthly Compensation Withholding routes (May 2026) ──
-// Same priority concern as J2 — must beat the J1 catch-all below. 1604-CF
-// (annual alphalist) ships in J3 Part B; routes are reserved here for
-// fast follow-up but not yet wired to controllers.
+// Same priority concern as J2 — must beat the J1 catch-all below.
 router.get('/forms/1601-C/:year/:month/compute', ctrl.compute1601C);
 router.get('/forms/1601-C/:year/:month/export.csv', ctrl.exportEwtCsv);
 router.get('/withholding/comp-posture', ctrl.getCompensationPosture);
+
+// ── Phase J3 Part B — 1604-CF Annual Alphalist + Form 2316 (May 2026) ──
+// Annual encoding (year only — no :period segment) so the route doesn't
+// collide with the catch-all below. The 2316 PDF is per-employee per-year:
+// route shape mirrors export2307Pdf but trimmed (no quarter, no payeeKind —
+// 2316 is always PeopleMaster-scoped).
+router.get('/forms/1604-CF/:year/compute', ctrl.compute1604CF);
+router.get('/forms/1604-CF/:year/export.dat', ctrl.export1604CFDat);
+router.get('/forms/2316/:year/:payeeId/export.pdf', ctrl.export2316Pdf);
 
 // J1 catch-all CSV export (lower priority — must come AFTER J2/J3 specific routes).
 router.get('/forms/:formCode/:year/:period/export.csv', ctrl.exportVatReturnCsv);
