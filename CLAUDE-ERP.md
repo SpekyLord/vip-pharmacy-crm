@@ -6599,9 +6599,27 @@ See `docs/PHASETASK-ERP.md` (`WEEK-1 STABILIZATION — DAY 4`) for the full file
 **Verification posture (Rule 0b)**:
 - ✅ J7 healthcheck **143/143 PASS** (`node backend/scripts/healthcheckBir1702.js`).
 - ✅ Sibling regressions all green: J6 inbound 2307 107/107, J5 BOOKS, J4 1604E+QAP 97/97, J3 Part B 1604CF 66/66, J3 Part A Compensation 78/78, J2 EWT, J1 VAT, ClmIdempotency.
-- ✅ Vite production build green (17.69s); `Bir1702DetailPage-DNIRVkIu.js` lazy chunk emits alongside the existing BIR pages.
+- ✅ Vite production build green (16.48s); `Bir1702DetailPage-DNIRVkIu.js` lazy chunk emits alongside the existing BIR pages.
 - ✅ Syntax check passes on all 8 modified backend files (`node -c …`).
-- ⏭ Live HTTP smoke + Playwright UI smoke deferred — MCP browser locked (same condition as J3 Part B / J4 / J5 / J6).
+- ✅ **Live HTTP smoke 7/7 PASS** (president cookies, VIP entity 69cd76ec7f6beb5888bd1a53):
+  - `GET /forms/1702/2026/compute` → 200 with full payload — Gross Sales ₱149,446.42, COGS ₱7,959.11, Gross Income ₱141,487.31, Net Taxable Income ₱141,487.31, RCIT @ 25% = ₱35,371.83, MCIT disabled (`MCIT_DISABLED_NO_REGISTRATION_DATE`), Tax Due ₱35,371.83, CWT ₱0 (1 PENDING cert at ₱9 from J6 surfaces as exposure), Net Payable ₱35,371.83. TB balanced (DR=CR=₱342,359.11), 1 abnormal account flagged, 9 mis-tagged balance-sheet lines flagged.
+  - `GET /forms/1701/2026/compute` (CORP entity) → 200 stub:`true` with `reason: "Entity tax_type=CORP is not SOLE_PROP. 1701 is for sole-proprietorship..."` — graceful degradation, no crash.
+  - `PATCH /forms/1702/2026/manual` as **president** → **403** with `required_scope: 'EDIT_1702_MANUAL'` (correct — gate is `[admin, finance, bookkeeper]`; president excluded by design — same posture as J6 mark-received).
+  - `POST /forms/1702/2026/mark-filed` as **president** → **403** with `required_scope: 'MARK_FILED'` (correct — same gate as the rest of J0-J6).
+  - `GET /forms/1702/abc/compute` → **400** "Invalid year. Year ≥ 2024." (alpha-only year string rejected).
+  - `GET /forms/1702/2023/compute` → **400** "Invalid year. Year ≥ 2024." (sub-floor year rejected).
+  - `GET /forms/1702/2026/cwt-rollup` (J6 endpoint regression) → 200, pending exposure ₱9 / 1 cert / Q1=Q2=Q3=Q4=0 — **J6 unchanged by J7**.
+- ✅ **Live Playwright UI smoke PASS** (president on http://localhost:5173/erp/bir/1702/2026, 0 console errors):
+  - Page header `BIR 1702 — Annual Income Tax (Corp) — 2026` + Draft pill + Refresh.
+  - All 7 H2 sections rendered: Filing entity / Tax Computation — CORP_REGULAR_RATE (25.00%) / Tax Credits / Manual Credits (admin-supplied) / CWT Credit — Per-Quarter Breakdown (J6) / Schedules — Revenue / COGS / OPEX / Filing Lifecycle.
+  - 24 boxes rendered with correct values (Box 13 Gross Sales ₱149,446.42, Box 15 Gross Income ₱141,487.31 emphasized blue, Box 22 MCIT @ 2.00% = ₱0.00 with `MCIT_DISABLED_NO_REGISTRATION_DATE` basis label, Box 23 Income Tax Due ₱35,371.83 highlighted red because > 0, Box 30 Net Tax Payable ₱35,371.83 same red highlight, Box 24 CWT (J6 rollup) = ₱0.00 with "From RECEIVED 2307s tagged 2026" hint).
+  - 3 integrity banners surfaced correctly: 1 abnormal balance warning, 9 mis-tagged balance-sheet lines warning, ₱9 CWT credit at risk warning with "Reconcile 2307-IN →" deep-link button.
+  - 5 manual-credit input fields rendering (Quarterly 1702-Q YTD / Foreign Tax Credit / Prior Year Overpayment / Other Credits / Manual CWT Override) with help text, Save button enabled.
+  - CWT quarterly breakdown table rendering 4 quarters + Total row.
+  - 5 schedules collapsible (Revenue 1 account ₱149,446.42 + COGS 2 accounts ₱7,959.11 + OPEX 3 accounts ₱0 + Mis-tagged 9 accounts).
+  - Mark FILED button rendered + enabled (gate-403 will fire on click as president, but the button DOM is wired).
+  - PageGuide `bir-1702` 8-step banner rendered above the warnings.
+  - Screenshot: `frontend/.playwright-mcp/j7-1702-detail-page-smoke.png` (full page, 1× scale).
 
 **Subscription-ready posture (J7)**:
 - Per-entity scoping on every aggregation (`entity_id` filter, Rule #19).
