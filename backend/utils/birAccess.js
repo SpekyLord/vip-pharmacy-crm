@@ -43,6 +43,11 @@ const DEFAULT_MANAGE_TAX_CONFIG = [ROLES.ADMIN, ROLES.PRESIDENT];
 // excludes duplicate / void rows. President sees but doesn't act here —
 // receipt is data entry, not sign-off.
 const DEFAULT_RECONCILE_INBOUND_2307 = [ROLES.ADMIN, ROLES.FINANCE, ROLES.BOOKKEEPER];
+// Phase VIP-1.J / J7 — Annual 1702/1701 manual fields gate. The manual fields
+// (1702-Q paid YTD, foreign tax credit, prior-year overpayment) are stamped
+// onto BirFilingStatus.totals_snapshot. Same default as RECONCILE_INBOUND_2307
+// because both are bookkeeper-driven data entry tasks.
+const DEFAULT_EDIT_1702_MANUAL = [ROLES.ADMIN, ROLES.FINANCE, ROLES.BOOKKEEPER];
 
 const TTL_MS = 60_000;
 const _cache = new Map();
@@ -76,6 +81,7 @@ const getMarkConfirmedRoles    = (entityId) => getRolesFor(entityId, 'MARK_CONFI
 const getRunDataAuditRoles     = (entityId) => getRolesFor(entityId, 'RUN_DATA_AUDIT',    DEFAULT_RUN_DATA_AUDIT);
 const getManageTaxConfigRoles  = (entityId) => getRolesFor(entityId, 'MANAGE_TAX_CONFIG', DEFAULT_MANAGE_TAX_CONFIG);
 const getReconcileInbound2307Roles = (entityId) => getRolesFor(entityId, 'RECONCILE_INBOUND_2307', DEFAULT_RECONCILE_INBOUND_2307);
+const getEdit1702ManualRoles       = (entityId) => getRolesFor(entityId, 'EDIT_1702_MANUAL',       DEFAULT_EDIT_1702_MANUAL);
 
 /**
  * Helper for express middleware — returns true if the requesting user holds
@@ -96,6 +102,7 @@ async function userHasBirRole(req, code) {
     case 'RUN_DATA_AUDIT':    roles = await getRunDataAuditRoles(req.entityId); break;
     case 'MANAGE_TAX_CONFIG': roles = await getManageTaxConfigRoles(req.entityId); break;
     case 'RECONCILE_INBOUND_2307': roles = await getReconcileInbound2307Roles(req.entityId); break;
+    case 'EDIT_1702_MANUAL':       roles = await getEdit1702ManualRoles(req.entityId); break;
     default:                  return false;
   }
   return Array.isArray(roles) && roles.includes(userRole);
@@ -147,6 +154,7 @@ module.exports = {
   getRunDataAuditRoles,
   getManageTaxConfigRoles,
   getReconcileInbound2307Roles,
+  getEdit1702ManualRoles,
   userHasBirRole,
   requireBirRole,
   invalidate,
@@ -158,4 +166,5 @@ module.exports = {
   DEFAULT_RUN_DATA_AUDIT,
   DEFAULT_MANAGE_TAX_CONFIG,
   DEFAULT_RECONCILE_INBOUND_2307,
+  DEFAULT_EDIT_1702_MANUAL,
 };

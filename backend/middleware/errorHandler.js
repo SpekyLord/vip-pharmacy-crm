@@ -77,6 +77,18 @@ const handleDuplicateKeyError = (err) => {
     return new ApiError(400, 'You have already visited this doctor this week. Only one visit per doctor per week is allowed.');
   }
 
+  // Phase A.5.2 — VIP Client canonical-name collision. Once the partial-unique
+  // index ships, two BDMs trying to create the same MD will hit this. Surface
+  // a 409 with a clear, actionable message instead of the raw field name.
+  // (A.5.3 will replace this with the full DUPLICATE_VIP_CLIENT 409 contract +
+  // "rename or join coverage" modal; this is the minimum UX gate for A.5.2.)
+  if (err.keyValue && err.keyValue.vip_client_name_clean) {
+    return new ApiError(
+      409,
+      'A VIP Client with this name already exists. Rename yours, or contact admin to share coverage.',
+    );
+  }
+
   const field = Object.keys(err.keyValue)[0];
   const message = `${field} already exists. Please use a different value.`;
   return new ApiError(400, message);

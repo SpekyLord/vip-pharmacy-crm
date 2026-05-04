@@ -34,6 +34,8 @@ const withholdingService = require('../services/withholdingService');
 const bookOfAccountsService = require('../services/bookOfAccountsService');
 // Phase VIP-1.J / J6 — Inbound 2307 reconciliation + 1702 credit rollup.
 const cwt2307ReconciliationService = require('../services/cwt2307ReconciliationService');
+// Phase VIP-1.J / J7 — Annual Income Tax Return (1702 / 1701) helper.
+const incomeTaxReturnService = require('../services/incomeTaxReturnService');
 const { userHasBirRole } = require('../../utils/birAccess');
 
 function requireEntity(req, res) {
@@ -1403,6 +1405,284 @@ exports.getWithholdingPosture = catchAsync(async (req, res) => {
   const year = parseYear(req.query.year) || new Date().getFullYear();
   const posture = await withholdingService.buildPosture(req.entityId, year);
   res.json({ success: true, data: { year, ...posture } });
+});
+
+// ── Phase J7 — Annual Income Tax Return (1702 Corporation / 1701 Sole Prop) ─
+//
+// 1702 reads POSTED JEs (bir_flag IN [BOTH, BIR]) for fiscal year, partitions
+// by COA into Revenue / COGS / OPEX / Non-Opex / BIR-only, derives Tax Due
+// (RCIT vs MCIT), then subtracts CWT credit (J6 rollup) + admin-supplied
+// manual credits. 1701 stub falls through to the same aggregator with the
+// TRAIN graduated brackets (or 8% flat rate election).
+//
+// Read endpoints (compute / list-credits): VIEW_DASHBOARD.
+// Update-manual:   EDIT_1702_MANUAL (bookkeeper writes 1702-Q paid, foreign
+//                  tax credit, etc. into BirFilingStatus.totals_snapshot).
+// Mark-filed (annual close): delegates to the generic markFiled handler
+// because BirFilingStatus.form_code='1702' is annual-encoded — same lifecycle
+// pattern as 1604-CF / 1604-E / BOOKS. Filing additionally lazy-creates a
+// 2307-IN annual-closure row stamping the CWT credit + the cert audit
+// references rolled up from the J6 reconciliation.
+
+function loadManualOverridesFromRow(row) {
+  const snap = row?.totals_snapshot || {};
+  return {
+    quarterly_paid_ytd_php: Number(snap.quarterly_paid_ytd_php || 0),
+    foreign_tax_credit_php: Number(snap.foreign_tax_credit_php || 0),
+    prior_year_overpayment_php: Number(snap.prior_year_overpayment_php || 0),
+    other_credits_php: Number(snap.other_credits_php || 0),
+    manual_cwt_override: Number(snap.manual_cwt_override || 0),
+  };
+}
+
+exports.compute1702 = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.params.year);
+  if (!year) return res.status(400).json({ success: false, message: 'Invalid year. Year ≥ 2024.' });
+
+  // Lazy-load the persisted 1702 row so the service can fold in admin-saved
+  // manual credits. Absent → manual fields default to 0.
+  const filingRow = await BirFilingStatus.findOne({
+    entity_id: req.entityId, form_code: '1702',
+    period_year: year, period_month: null, period_quarter: null, period_payee_id: null,
+  }).lean();
+  const manualOverrides = filingRow ? loadManualOverridesFromRow(filingRow) : {};
+
+  let result;
+  try {
+    result = await incomeTaxReturnService.compute1702({
+      entityId: req.entityId, year, manualOverrides,
+    });
+  } catch (err) {
+    if (err.message?.includes('1701') || err.message?.includes('SOLE_PROP')) {
+      // Entity is sole-prop; redirect caller to 1701.
+      return res.status(400).json({ success: false, message: err.message, code: 'USE_1701' });
+    }
+    throw err;
+  }
+  res.json({ success: true, data: { ...result, filing_row: filingRow || null } });
+});
+
+exports.compute1701 = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.params.year);
+  if (!year) return res.status(400).json({ success: false, message: 'Invalid year. Year ≥ 2024.' });
+
+  const filingRow = await BirFilingStatus.findOne({
+    entity_id: req.entityId, form_code: '1701',
+    period_year: year, period_month: null, period_quarter: null, period_payee_id: null,
+  }).lean();
+  const manualOverrides = filingRow ? loadManualOverridesFromRow(filingRow) : {};
+
+  const result = await incomeTaxReturnService.compute1701({
+    entityId: req.entityId, year, manualOverrides,
+  });
+  res.json({ success: true, data: { ...result, filing_row: filingRow || null } });
+});
+
+/**
+ * Persist admin-supplied manual fields onto the 1702 (or 1701) BirFilingStatus
+ * row's totals_snapshot. Lazy-creates the row in DRAFT if it doesn't exist.
+ *
+ * Body schema:
+ *   {
+ *     form_code: '1702' | '1701',
+ *     manual: {
+ *       quarterly_paid_ytd_php,
+ *       foreign_tax_credit_php,
+ *       prior_year_overpayment_php,
+ *       other_credits_php,
+ *       manual_cwt_override         // 0 = use J6 auto-rollup
+ *     },
+ *     notes: ''                      // optional admin notes — appended to row.notes
+ *   }
+ */
+exports.update1702Manual = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'EDIT_1702_MANUAL'))) return;
+  const year = parseYear(req.params.year);
+  if (!year) return res.status(400).json({ success: false, message: 'Invalid year. Year ≥ 2024.' });
+
+  const formCode = req.params.formCode === '1701' ? '1701' : '1702';
+  const { manual = {}, notes } = req.body || {};
+
+  // Coerce + clamp non-negative — manual credits are always ≥ 0.
+  const manualClean = {
+    quarterly_paid_ytd_php: Math.max(0, Number(manual.quarterly_paid_ytd_php) || 0),
+    foreign_tax_credit_php: Math.max(0, Number(manual.foreign_tax_credit_php) || 0),
+    prior_year_overpayment_php: Math.max(0, Number(manual.prior_year_overpayment_php) || 0),
+    other_credits_php: Math.max(0, Number(manual.other_credits_php) || 0),
+    manual_cwt_override: Math.max(0, Number(manual.manual_cwt_override) || 0),
+  };
+
+  const filter = {
+    entity_id: req.entityId, form_code: formCode,
+    period_year: year, period_month: null, period_quarter: null, period_payee_id: null,
+  };
+  let row = await BirFilingStatus.findOne(filter);
+  if (!row) {
+    row = new BirFilingStatus({
+      ...filter,
+      status: 'DRAFT',
+      totals_snapshot: { ...manualClean },
+    });
+  } else {
+    row.totals_snapshot = { ...(row.totals_snapshot || {}), ...manualClean };
+  }
+  if (typeof notes === 'string' && notes.trim()) row.notes = notes.trim();
+  await row.save();
+  birDashboardService.invalidate(req.entityId);
+
+  console.log('[BIR_1702_UPDATE_MANUAL]', JSON.stringify({
+    user: req.user?.email, role: req.user?.role,
+    entity_id: String(req.entityId),
+    form_code: formCode, year,
+    manual: manualClean,
+    ip: req.ip, ts: new Date().toISOString(),
+  }));
+
+  res.json({ success: true, data: row });
+});
+
+/**
+ * Mark a 1702 / 1701 row FILED. Beyond the generic markFiled lifecycle, this
+ * additionally lazy-creates a `2307-IN` annual-closure row freezing the CWT
+ * credit that was claimed against the year's income tax. The closure row's
+ * totals_snapshot stamps:
+ *   - cwt_credit_for_1702      — the rolled-up RECEIVED CWT amount
+ *   - quarter_breakdown        — per-Q breakdown for audit
+ *   - by_atc                   — per-(quarter × ATC) lines
+ *   - pending_exposure_cwt     — NOT credited (PENDING rows that didn't
+ *                                arrive in time — surfaces what was forfeit)
+ *   - tagged_for_1702_year     — the 1702 year (for cross-year audit)
+ *
+ * Period-lock for the 1702 fires via the standard mark-filed lifecycle on
+ * the 1702 row (`PeriodLock.module = 'BIR_FILING'`); the 2307-IN closure is
+ * the audit twin.
+ */
+exports.mark1702Filed = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'MARK_FILED'))) return;
+  const year = parseYear(req.params.year);
+  if (!year) return res.status(400).json({ success: false, message: 'Invalid year. Year ≥ 2024.' });
+  const formCode = req.params.formCode === '1701' ? '1701' : '1702';
+  const { bir_reference_number, notes } = req.body || {};
+
+  // 1. Flip the 1702 row to FILED — lazy-create if missing (admin filed
+  // without ever computing — rare but valid).
+  const filter = {
+    entity_id: req.entityId, form_code: formCode,
+    period_year: year, period_month: null, period_quarter: null, period_payee_id: null,
+  };
+  let row = await BirFilingStatus.findOne(filter);
+  if (!row) {
+    row = new BirFilingStatus({ ...filter, status: 'DRAFT' });
+  }
+  if (row.status === 'CONFIRMED') {
+    return res.status(409).json({ success: false, message: `${formCode} ${year} is already CONFIRMED.` });
+  }
+  row.status = 'FILED';
+  row.filed_at = new Date();
+  row.filed_by = req.user._id;
+  if (bir_reference_number && String(bir_reference_number).trim()) {
+    row.bir_reference_number = String(bir_reference_number).trim();
+  }
+  if (notes) row.notes = notes;
+
+  // Stamp the computed totals into totals_snapshot so historical filings
+  // are immutable (the year's CWT rollup will change as more 2307s arrive,
+  // but THIS row is what the bookkeeper actually filed).
+  try {
+    const compute = formCode === '1702'
+      ? await incomeTaxReturnService.compute1702({
+          entityId: req.entityId, year,
+          manualOverrides: loadManualOverridesFromRow(row),
+        })
+      : await incomeTaxReturnService.compute1701({
+          entityId: req.entityId, year,
+          manualOverrides: loadManualOverridesFromRow(row),
+        });
+    row.totals_snapshot = {
+      ...(row.totals_snapshot || {}),  // preserve manual fields
+      filed_boxes: compute.boxes,
+      filed_at: row.filed_at,
+      filed_rates_used: compute.rates_used || null,
+      filed_election: compute.election || null,
+    };
+  } catch (err) {
+    // Computation failure is non-fatal — the row still flips to FILED so
+    // admin isn't stuck with a CONFIRMED-blocked dashboard. Stamp the error.
+    row.totals_snapshot = {
+      ...(row.totals_snapshot || {}),
+      compute_error_at_filing: err.message,
+    };
+  }
+
+  await row.save();
+
+  // 2. Lazy-create the 2307-IN annual-closure row (Phase J7 model relax).
+  //    period_payee_id null + period_month null + period_quarter null => annual.
+  if (formCode === '1702') {
+    const cwtRollup = await cwt2307ReconciliationService.compute1702CwtRollup({
+      entityId: req.entityId, year,
+    });
+    const closureFilter = {
+      entity_id: req.entityId, form_code: '2307-IN',
+      period_year: year, period_month: null, period_quarter: null, period_payee_id: null,
+    };
+    let closureRow = await BirFilingStatus.findOne(closureFilter);
+    if (!closureRow) {
+      closureRow = new BirFilingStatus({
+        ...closureFilter,
+        status: 'FILED',
+        totals_snapshot: {
+          cwt_credit_for_1702: cwtRollup.cwt_credit_for_1702,
+          quarter_breakdown: cwtRollup.quarter_breakdown,
+          by_atc: cwtRollup.by_atc,
+          pending_exposure_cwt: cwtRollup.pending_exposure_cwt,
+          pending_exposure_count: cwtRollup.pending_exposure_count,
+          tagged_for_1702_year: year,
+          claimed_against_1702_filed_at: row.filed_at,
+        },
+        filed_at: row.filed_at,
+        filed_by: req.user._id,
+        bir_reference_number: row.bir_reference_number || null,
+        notes: `Annual closure: 2307 inbound CWT credit claimed against 1702 ${year}`,
+      });
+    } else if (closureRow.status !== 'CONFIRMED') {
+      // Re-stamp on re-file (admin reopened then re-filed 1702).
+      closureRow.status = 'FILED';
+      closureRow.filed_at = row.filed_at;
+      closureRow.filed_by = req.user._id;
+      closureRow.totals_snapshot = {
+        ...(closureRow.totals_snapshot || {}),
+        cwt_credit_for_1702: cwtRollup.cwt_credit_for_1702,
+        quarter_breakdown: cwtRollup.quarter_breakdown,
+        by_atc: cwtRollup.by_atc,
+        pending_exposure_cwt: cwtRollup.pending_exposure_cwt,
+        pending_exposure_count: cwtRollup.pending_exposure_count,
+        tagged_for_1702_year: year,
+        claimed_against_1702_filed_at: row.filed_at,
+      };
+    }
+    await closureRow.save();
+  }
+
+  birDashboardService.invalidate(req.entityId);
+
+  console.log('[BIR_1702_MARK_FILED]', JSON.stringify({
+    user: req.user?.email, role: req.user?.role,
+    entity_id: String(req.entityId),
+    form_code: formCode, year,
+    bir_reference_number: row.bir_reference_number,
+    cwt_credit: row.totals_snapshot?.filed_boxes?.cwt_credit,
+    net_payable: row.totals_snapshot?.filed_boxes?.net_payable,
+    ip: req.ip, ts: new Date().toISOString(),
+  }));
+
+  res.json({ success: true, data: row });
 });
 
 exports._test = { parseBirConfirmation };

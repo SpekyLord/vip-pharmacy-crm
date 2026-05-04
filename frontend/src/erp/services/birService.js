@@ -357,6 +357,33 @@ export async function compute1702CwtRollup(year) {
   return data?.data || null;
 }
 
+// ── Phase J7 — Annual Income Tax Return (1702 / 1701) ─────────────────
+export async function compute1702(year) {
+  const { data } = await api.get(`${BASE}/forms/1702/${year}/compute`);
+  return data?.data || null;
+}
+
+export async function compute1701(year) {
+  const { data } = await api.get(`${BASE}/forms/1701/${year}/compute`);
+  return data?.data || null;
+}
+
+export async function update1702Manual(year, payload, formCode = '1702') {
+  const path = formCode === '1701'
+    ? `${BASE}/forms/1701/${year}/manual`
+    : `${BASE}/forms/1702/${year}/manual`;
+  const { data } = await api.patch(path, payload || {});
+  return data?.data || null;
+}
+
+export async function mark1702Filed(year, payload, formCode = '1702') {
+  const path = formCode === '1701'
+    ? `${BASE}/forms/1701/${year}/mark-filed`
+    : `${BASE}/forms/1702/${year}/mark-filed`;
+  const { data } = await api.post(path, payload || {});
+  return data?.data || null;
+}
+
 export default {
   getDashboard,
   getEntityConfig,
@@ -405,4 +432,9 @@ export default {
   exclude2307InboundRow,
   getInboundCwtPosture,
   compute1702CwtRollup,
+  // Phase J7
+  compute1702,
+  compute1701,
+  update1702Manual,
+  mark1702Filed,
 };

@@ -72,6 +72,13 @@ const REBATE_COMMISSION_ROLES_CATEGORIES = new Set(['REBATE_ROLES', 'COMMISSION_
 // before being honored by the BIR dashboard.
 const BIR_ROLES_CATEGORIES = new Set(['BIR_ROLES']);
 
+// Phase VIP-1.J / J7 (May 2026) — bust the income-tax rates cache when admin
+// edits BIR_INCOME_TAX_RATES (e.g., raises CORP_REGULAR_RATE from 0.25 to a
+// future rate). Same 60s TTL invariant as BIR_ROLES — without this hook the
+// 1702 page would compute tax due using the stale rate for up to a minute.
+const { invalidate: invalidateIncomeTaxRatesCache } = require('../../utils/incomeTaxRates');
+const BIR_INCOME_TAX_RATES_CATEGORIES = new Set(['BIR_INCOME_TAX_RATES']);
+
 // Phase EC-1 (Apr 2026) — bust the executive-cockpit role cache when admin
 // edits EXECUTIVE_COCKPIT_ROLES. Same 60s TTL invariant; without this hook a
 // fresh role addition (e.g., adding `cfo` to VIEW_FINANCIAL) would wait up
@@ -3181,6 +3188,31 @@ const SEED_DEFAULTS = {
     // here — receipt is data entry, not sign-off. Same lookup-driven posture
     // as the rest of BIR_ROLES so subscribers tune via Control Center.
     { code: 'RECONCILE_INBOUND_2307', label: 'Reconcile inbound 2307 certificates (Phase J6)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'bookkeeper'],          sort_order: 8, description: 'Mark hospital 2307 cert RECEIVED, revert to PENDING, or EXCLUDE (duplicate/void). Drives 1702 Creditable Tax Withheld credit roll-up.' } },
+    // Phase VIP-1.J / J7 (May 2026) — Annual 1702 / 1701 close gate. Bookkeeper
+    // computes + reviews; admin/finance file. President is in MARK_REVIEWED
+    // for the sign-off. Manual fields (1702-Q paid YTD, foreign tax credit,
+    // prior-year overpayment) are admin-supplied via update-manual, gated
+    // here. Subscribers can collapse to admin-only via Control Center.
+    { code: 'EDIT_1702_MANUAL', label: 'Edit 1702/1701 manual credits (1702-Q paid, foreign credit, prior-year overpayment)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'bookkeeper'], sort_order: 9, description: 'Admin-supplied tax credits stored on BirFilingStatus.totals_snapshot. Required to close out the 1702 net payable line.' } },
+  ],
+
+  // BIR_INCOME_TAX_RATES — Phase VIP-1.J / J7 (May 2026). Per-entity income
+  // tax rate configuration for the annual 1702 (CORP / OPC / PARTNERSHIP)
+  // and 1701 (SOLE_PROP) returns. Rates are CREATE Act (RA 11534) defaults
+  // for corporations and TRAIN Act (RA 10963) defaults for individuals.
+  // insert_only_metadata: true so subscriber overrides survive future
+  // re-seeds (e.g., if BIR ratchets MCIT_RATE back to 1% under RR 5-2021,
+  // subscribers who already lowered theirs aren't reverted to the code
+  // default). Subscribers configure per entity via Control Center →
+  // Lookup Tables — Rule #3 / Rule #19.
+  BIR_INCOME_TAX_RATES: [
+    { code: 'CORP_REGULAR_RATE',              label: 'Corporate Regular Income Tax Rate (RCIT)',                     insert_only_metadata: true, metadata: { value: 0.25,         sort_order: 10, description: 'CREATE Act 2021+ default 25%. Lower SME rate applies when both ceilings met.' } },
+    { code: 'CORP_SME_RATE',                  label: 'Corporate SME Income Tax Rate',                                insert_only_metadata: true, metadata: { value: 0.20,         sort_order: 20, description: 'CREATE Act SME rate 20%. Applies when net taxable income ≤ ₱5M AND total assets (ex-land) ≤ ₱100M.' } },
+    { code: 'CORP_SME_TAXABLE_THRESHOLD_PHP', label: 'Corporate SME Net-Taxable-Income Ceiling (PHP)',               insert_only_metadata: true, metadata: { value: 5_000_000,    sort_order: 30, description: 'Net taxable income must not exceed this for SME rate eligibility (CREATE Act default ₱5M).' } },
+    { code: 'CORP_SME_ASSETS_THRESHOLD_PHP',  label: 'Corporate SME Total-Assets Ceiling (PHP, excludes land)',      insert_only_metadata: true, metadata: { value: 100_000_000,  sort_order: 40, description: 'Total assets excluding land must not exceed this for SME rate eligibility (CREATE Act default ₱100M).' } },
+    { code: 'MCIT_RATE',                      label: 'Minimum Corporate Income Tax (MCIT) Rate',                     insert_only_metadata: true, metadata: { value: 0.02,         sort_order: 50, description: 'Applied to gross income from year 4 of operations onward; compared against RCIT — higher prevails. RR 5-2021 cut to 1% Jul 1 2020 thru Jun 30 2023, restored to 2% thereafter.' } },
+    { code: 'MCIT_GRACE_YEARS',               label: 'MCIT Grace Years (years before MCIT applies)',                 insert_only_metadata: true, metadata: { value: 3,            sort_order: 60, description: 'Years of operations during which MCIT does NOT apply. After this, MCIT kicks in. Default 3 — i.e., MCIT applies year 4 onward per NIRC §27(E).' } },
+    { code: 'INDIVIDUAL_8PCT_FLAT_RATE',      label: '1701 Optional 8% Flat Rate (gross sales/receipts)',            insert_only_metadata: true, metadata: { value: 0.08,         sort_order: 70, description: 'TRAIN Act §24(A)(2)(b) — sole-prop election alternative to graduated brackets. Eligible only if gross sales ≤ VAT threshold AND not VAT-registered.' } },
   ],
 
   // BIR_BOA_BOOK_CATALOG — Phase J5 (May 2026). Per-entity classification
@@ -3467,6 +3499,7 @@ exports.create = catchAsync(async (req, res) => {
   if (SCPWD_ROLES_CATEGORIES.has(cat)) invalidateScpwdRolesCache(req.entityId);
   if (REBATE_COMMISSION_ROLES_CATEGORIES.has(cat)) invalidateRebateCommissionCache(req.entityId);
   if (BIR_ROLES_CATEGORIES.has(cat)) invalidateBirRolesCache(req.entityId);
+  if (BIR_INCOME_TAX_RATES_CATEGORIES.has(cat)) invalidateIncomeTaxRatesCache(req.entityId);
   if (EXECUTIVE_COCKPIT_ROLES_CATEGORIES.has(cat)) invalidateCockpitRolesCache(req.entityId);
   if (PRICE_RESOLVER_CATEGORIES.has(cat)) invalidatePriceCache(req.entityId);
   if (SALES_DISCOUNT_CONFIG_CATEGORIES.has(cat)) invalidateSalesDiscountCache(req.entityId);
@@ -3502,6 +3535,7 @@ exports.update = catchAsync(async (req, res) => {
   if (SCPWD_ROLES_CATEGORIES.has(item.category)) invalidateScpwdRolesCache(item.entity_id);
   if (REBATE_COMMISSION_ROLES_CATEGORIES.has(item.category)) invalidateRebateCommissionCache(item.entity_id);
   if (BIR_ROLES_CATEGORIES.has(item.category)) invalidateBirRolesCache(item.entity_id);
+  if (BIR_INCOME_TAX_RATES_CATEGORIES.has(item.category)) invalidateIncomeTaxRatesCache(item.entity_id);
   if (EXECUTIVE_COCKPIT_ROLES_CATEGORIES.has(item.category)) invalidateCockpitRolesCache(item.entity_id);
   if (PRICE_RESOLVER_CATEGORIES.has(item.category)) invalidatePriceCache(item.entity_id);
   if (SALES_DISCOUNT_CONFIG_CATEGORIES.has(item.category)) invalidateSalesDiscountCache(item.entity_id);
@@ -3529,6 +3563,7 @@ exports.remove = catchAsync(async (req, res) => {
   if (SCPWD_ROLES_CATEGORIES.has(item.category)) invalidateScpwdRolesCache(item.entity_id);
   if (REBATE_COMMISSION_ROLES_CATEGORIES.has(item.category)) invalidateRebateCommissionCache(item.entity_id);
   if (BIR_ROLES_CATEGORIES.has(item.category)) invalidateBirRolesCache(item.entity_id);
+  if (BIR_INCOME_TAX_RATES_CATEGORIES.has(item.category)) invalidateIncomeTaxRatesCache(item.entity_id);
   if (EXECUTIVE_COCKPIT_ROLES_CATEGORIES.has(item.category)) invalidateCockpitRolesCache(item.entity_id);
   if (PRICE_RESOLVER_CATEGORIES.has(item.category)) invalidatePriceCache(item.entity_id);
   if (SALES_DISCOUNT_CONFIG_CATEGORIES.has(item.category)) invalidateSalesDiscountCache(item.entity_id);
@@ -3558,6 +3593,7 @@ exports.seedCategory = catchAsync(async (req, res) => {
   if (SCPWD_ROLES_CATEGORIES.has(category)) invalidateScpwdRolesCache(req.entityId);
   if (REBATE_COMMISSION_ROLES_CATEGORIES.has(category)) invalidateRebateCommissionCache(req.entityId);
   if (BIR_ROLES_CATEGORIES.has(category)) invalidateBirRolesCache(req.entityId);
+  if (BIR_INCOME_TAX_RATES_CATEGORIES.has(category)) invalidateIncomeTaxRatesCache(req.entityId);
   if (EXECUTIVE_COCKPIT_ROLES_CATEGORIES.has(category)) invalidateCockpitRolesCache(req.entityId);
   if (PRICE_RESOLVER_CATEGORIES.has(category)) invalidatePriceCache(req.entityId);
   if (SALES_DISCOUNT_CONFIG_CATEGORIES.has(category)) invalidateSalesDiscountCache(req.entityId);

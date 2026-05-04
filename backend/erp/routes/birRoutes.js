@@ -103,7 +103,28 @@ router.post('/forms/2307-IN/:year/rows/:rowId/exclude', ctrl.exclude2307InboundR
 router.get('/withholding/inbound-posture', ctrl.getInboundCwtPosture);
 router.get('/forms/1702/:year/cwt-rollup', ctrl.compute1702CwtRollup);
 
-// J1 catch-all CSV export (lower priority — must come AFTER J2/J3/J4/J5/J6 specific routes).
+// ── Phase J7 — Annual Income Tax Return (1702 / 1701) (May 2026) ───────
+// 1702 (CORP/OPC/PARTNERSHIP) and 1701 (SOLE_PROP) compute + manual-update
+// + mark-filed. Year-only encoding (no period segment) — both must be
+// declared BEFORE the J1 `/forms/:formCode/:year/:period/export.csv` catch-
+// all and BEFORE the per-id `/forms/:id` GET. The mark-filed route lazy-
+// creates the 2307-IN annual-closure BirFilingStatus row stamping the CWT
+// credit claimed against the year's income tax (audit twin).
+router.get('/forms/1702/:year/compute', ctrl.compute1702);
+router.get('/forms/1701/:year/compute', ctrl.compute1701);
+router.patch('/forms/1702/:year/manual', ctrl.update1702Manual);
+router.patch('/forms/1701/:year/manual', (req, res, next) => {
+  // Inject formCode for the shared handler — same shape as 1702.
+  req.params.formCode = '1701';
+  return ctrl.update1702Manual(req, res, next);
+});
+router.post('/forms/1702/:year/mark-filed', ctrl.mark1702Filed);
+router.post('/forms/1701/:year/mark-filed', (req, res, next) => {
+  req.params.formCode = '1701';
+  return ctrl.mark1702Filed(req, res, next);
+});
+
+// J1 catch-all CSV export (lower priority — must come AFTER J2/J3/J4/J5/J6/J7 specific routes).
 router.get('/forms/:formCode/:year/:period/export.csv', ctrl.exportVatReturnCsv);
 
 router.get('/forms/:id', ctrl.getFiling);

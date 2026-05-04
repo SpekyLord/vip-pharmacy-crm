@@ -1,0 +1,904 @@
+- generic [ref=e7]:
+  - navigation [ref=e8]:
+    - generic [ref=e9]:
+      - img "VIP" [ref=e11]
+      - generic "Platform switch" [ref=e12]:
+        - link "CRM" [ref=e13] [cursor=pointer]:
+          - /url: /admin
+          - img [ref=e15]
+          - text: CRM
+        - link "ERP" [ref=e20] [cursor=pointer]:
+          - /url: /erp
+          - img [ref=e22]
+          - text: ERP
+    - generic [ref=e25]:
+      - img [ref=e27]
+      - generic "ERP tabs" [ref=e32]:
+        - link "Dashboard" [ref=e33] [cursor=pointer]:
+          - /url: /erp
+          - img [ref=e35]
+          - generic [ref=e40]: Dashboard
+        - link "Sales" [ref=e41] [cursor=pointer]:
+          - /url: /erp/sales
+          - img [ref=e43]
+          - generic [ref=e47]: Sales
+        - link "Inventory" [ref=e48] [cursor=pointer]:
+          - /url: /erp/my-stock
+          - img [ref=e50]
+          - generic [ref=e54]: Inventory
+        - link "Transfers" [ref=e55] [cursor=pointer]:
+          - /url: /erp/transfers
+          - img [ref=e57]
+          - generic [ref=e62]: Transfers
+        - link "Collections" [ref=e63] [cursor=pointer]:
+          - /url: /erp/collections
+          - img [ref=e65]
+          - generic [ref=e68]: Collections
+        - link "Expenses" [ref=e69] [cursor=pointer]:
+          - /url: /erp/expenses
+          - img [ref=e71]
+          - generic [ref=e74]: Expenses
+        - link "Reports" [ref=e75] [cursor=pointer]:
+          - /url: /erp/reports
+          - img [ref=e77]
+          - generic [ref=e79]: Reports
+    - generic [ref=e80]:
+      - combobox "Working entity" [ref=e81] [cursor=pointer]:
+        - option "VIP" [selected]
+        - option "Balai Lawaan"
+        - option "MG and CO."
+      - button "Toggle dark mode" [ref=e82] [cursor=pointer]:
+        - img [ref=e83]
+      - link "Inbox — 15 unread" [ref=e86] [cursor=pointer]:
+        - /url: /inbox
+        - img [ref=e87]
+        - generic: "15"
+      - generic [ref=e91]:
+        - generic [ref=e92]: GL
+        - generic [ref=e93]:
+          - generic [ref=e94]: Gregg Louie Vios
+          - generic [ref=e95]: president
+      - button "Logout" [ref=e96] [cursor=pointer]:
+        - img [ref=e97]
+        - generic [ref=e100]: Logout
+  - generic [ref=e101]:
+    - complementary [ref=e102]:
+      - button [ref=e103] [cursor=pointer]:
+        - img [ref=e104]
+      - navigation [ref=e106]:
+        - generic [ref=e108]:
+          - link "Executive Cockpit" [ref=e109] [cursor=pointer]:
+            - /url: /erp/cockpit
+            - img [ref=e111]
+            - generic [ref=e113]: Executive Cockpit
+          - link "ERP Home" [ref=e114] [cursor=pointer]:
+            - /url: /erp
+            - img [ref=e116]
+            - generic [ref=e119]: ERP Home
+        - button "Administration" [ref=e121] [cursor=pointer]:
+          - generic [ref=e122]: Administration
+          - img [ref=e123]
+        - generic [ref=e125]:
+          - button "Sales" [ref=e126] [cursor=pointer]:
+            - generic [ref=e127]: Sales
+            - img [ref=e128]
+          - generic [ref=e130]:
+            - link "Sales" [ref=e131] [cursor=pointer]:
+              - /url: /erp/sales/entry
+              - img [ref=e133]
+              - generic [ref=e136]: Sales
+            - link "Sales Transactions" [ref=e137] [cursor=pointer]:
+              - /url: /erp/sales
+              - img [ref=e139]
+              - generic [ref=e142]: Sales Transactions
+            - link "Opening AR" [ref=e143] [cursor=pointer]:
+              - /url: /erp/sales/opening-ar
+              - img [ref=e145]
+              - generic [ref=e149]: Opening AR
+            - link "Opening AR Transactions" [ref=e150] [cursor=pointer]:
+              - /url: /erp/sales/opening-ar/list
+              - img [ref=e152]
+              - generic [ref=e155]: Opening AR Transactions
+            - link "Returns / CN" [ref=e156] [cursor=pointer]:
+              - /url: /erp/credit-notes
+              - img [ref=e158]
+              - generic [ref=e161]: Returns / CN
+            - link "Hospital PO Backlog" [ref=e162] [cursor=pointer]:
+              - /url: /erp/hospital-pos/backlog
+              - img [ref=e164]
+              - generic [ref=e167]: Hospital PO Backlog
+            - link "New Hospital PO" [ref=e168] [cursor=pointer]:
+              - /url: /erp/hospital-pos/entry
+              - img [ref=e170]
+              - generic [ref=e174]: New Hospital PO
+            - link "Hospital Contract Prices" [ref=e175] [cursor=pointer]:
+              - /url: /erp/hospital-contract-prices
+              - img [ref=e177]
+              - generic [ref=e180]: Hospital Contract Prices
+        - generic [ref=e181]:
+          - button "Inventory" [ref=e182] [cursor=pointer]:
+            - generic [ref=e183]: Inventory
+            - img [ref=e184]
+          - generic [ref=e186]:
+            - link "Batch Trace" [ref=e187] [cursor=pointer]:
+              - /url: /erp/batch-trace
+              - img [ref=e189]
+              - generic [ref=e192]: Batch Trace
+            - link "Collaterals" [ref=e193] [cursor=pointer]:
+              - /url: /erp/collaterals
+              - img [ref=e195]
+              - generic [ref=e199]: Collaterals
+            - link "CSI Booklets" [ref=e200] [cursor=pointer]:
+              - /url: /erp/csi-booklets
+              - img [ref=e202]
+              - generic [ref=e204]: CSI Booklets
+            - link "DR / Consignment" [ref=e205] [cursor=pointer]:
+              - /url: /erp/dr
+              - img [ref=e207]
+              - generic [ref=e212]: DR / Consignment
+            - link "Expiry Mgmt" [ref=e213] [cursor=pointer]:
+              - /url: /erp/expiry-dashboard
+              - img [ref=e215]
+              - generic [ref=e217]: Expiry Mgmt
+            - link "GRN Entry" [ref=e218] [cursor=pointer]:
+              - /url: /erp/grn
+              - img [ref=e220]
+              - generic [ref=e224]: GRN Entry
+            - link "Inventory" [ref=e225] [cursor=pointer]:
+              - /url: /erp/my-stock
+              - img [ref=e227]
+              - generic [ref=e231]: Inventory
+            - link "Office Supplies" [ref=e232] [cursor=pointer]:
+              - /url: /erp/office-supplies
+              - img [ref=e234]
+              - generic [ref=e238]: Office Supplies
+            - link "Transfers" [ref=e239] [cursor=pointer]:
+              - /url: /erp/transfers
+              - img [ref=e241]
+              - generic [ref=e244]: Transfers
+            - link "Undertaking (Receipt)" [ref=e245] [cursor=pointer]:
+              - /url: /erp/undertaking
+              - img [ref=e247]
+              - generic [ref=e251]: Undertaking (Receipt)
+            - link "Warehouses" [ref=e252] [cursor=pointer]:
+              - /url: /erp/warehouses
+              - img [ref=e254]
+              - generic [ref=e258]: Warehouses
+        - generic [ref=e259]:
+          - button "Collections" [ref=e260] [cursor=pointer]:
+            - generic [ref=e261]: Collections
+            - img [ref=e262]
+          - generic [ref=e264]:
+            - link "AR Aging" [ref=e265] [cursor=pointer]:
+              - /url: /erp/collections/ar
+              - img [ref=e267]
+              - generic [ref=e269]: AR Aging
+            - link "Collections" [ref=e270] [cursor=pointer]:
+              - /url: /erp/collections
+              - img [ref=e272]
+              - generic [ref=e275]: Collections
+            - link "IC Settlements" [ref=e276] [cursor=pointer]:
+              - /url: /erp/ic-settlements
+              - img [ref=e278]
+              - generic [ref=e283]: IC Settlements
+        - generic [ref=e284]:
+          - button "Expenses" [ref=e285] [cursor=pointer]:
+            - generic [ref=e286]: Expenses
+            - img [ref=e287]
+          - generic [ref=e289]:
+            - link "Credit Cards" [ref=e290] [cursor=pointer]:
+              - /url: /erp/credit-cards
+              - img [ref=e292]
+              - generic [ref=e294]: Credit Cards
+            - link "Expenses" [ref=e295] [cursor=pointer]:
+              - /url: /erp/expenses
+              - img [ref=e297]
+              - generic [ref=e299]: Expenses
+        - button "Capture Hub" [ref=e301] [cursor=pointer]:
+          - generic [ref=e302]: Capture Hub
+          - img [ref=e303]
+        - button "Reports" [ref=e306] [cursor=pointer]:
+          - generic [ref=e307]: Reports
+          - img [ref=e308]
+        - button "Sales Goals" [ref=e311] [cursor=pointer]:
+          - generic [ref=e312]: Sales Goals
+          - img [ref=e313]
+        - generic [ref=e315]:
+          - button "People & HR" [ref=e316] [cursor=pointer]:
+            - generic [ref=e317]: People & HR
+            - img [ref=e318]
+          - generic [ref=e320]:
+            - link "Contractor Income" [ref=e321] [cursor=pointer]:
+              - /url: /erp/income
+              - img [ref=e323]
+              - generic [ref=e325]: Contractor Income
+            - link "Org Chart" [ref=e326] [cursor=pointer]:
+              - /url: /erp/org-chart
+              - img [ref=e328]
+              - generic [ref=e333]: Org Chart
+            - link "Payroll" [ref=e334] [cursor=pointer]:
+              - /url: /erp/payroll
+              - img [ref=e336]
+              - generic [ref=e338]: Payroll
+            - link "People" [ref=e339] [cursor=pointer]:
+              - /url: /erp/people
+              - img [ref=e341]
+              - generic [ref=e345]: People
+        - generic [ref=e346]:
+          - button "Accounting" [ref=e347] [cursor=pointer]:
+            - generic [ref=e348]: Accounting
+            - img [ref=e349]
+          - generic [ref=e351]:
+            - link "Bank Accounts" [ref=e352] [cursor=pointer]:
+              - /url: /erp/bank-accounts
+              - img [ref=e354]
+              - generic [ref=e356]: Bank Accounts
+            - link "Bank Reconciliation" [ref=e357] [cursor=pointer]:
+              - /url: /erp/bank-recon
+              - img [ref=e359]
+              - generic [ref=e363]: Bank Reconciliation
+            - link "Cashflow" [ref=e364] [cursor=pointer]:
+              - /url: /erp/cashflow
+              - img [ref=e366]
+              - generic [ref=e368]: Cashflow
+            - link "CC Ledger" [ref=e369] [cursor=pointer]:
+              - /url: /erp/credit-card-ledger
+              - img [ref=e371]
+              - generic [ref=e373]: CC Ledger
+            - link "Chart of Accounts" [ref=e374] [cursor=pointer]:
+              - /url: /erp/coa
+              - img [ref=e376]
+              - generic [ref=e378]: Chart of Accounts
+            - link "Cost Centers" [ref=e379] [cursor=pointer]:
+              - /url: /erp/cost-centers
+              - img [ref=e381]
+              - generic [ref=e385]: Cost Centers
+            - link "Fixed Assets" [ref=e386] [cursor=pointer]:
+              - /url: /erp/fixed-assets
+              - img [ref=e388]
+              - generic [ref=e390]: Fixed Assets
+            - link "Journal Entries" [ref=e391] [cursor=pointer]:
+              - /url: /erp/journals
+              - img [ref=e393]
+              - generic [ref=e395]: Journal Entries
+            - link "Loans" [ref=e396] [cursor=pointer]:
+              - /url: /erp/loans
+              - img [ref=e398]
+              - generic [ref=e400]: Loans
+            - link "Owner Equity" [ref=e401] [cursor=pointer]:
+              - /url: /erp/owner-equity
+              - img [ref=e403]
+              - generic [ref=e405]: Owner Equity
+            - link "P&L Statement" [ref=e406] [cursor=pointer]:
+              - /url: /erp/profit-loss
+              - img [ref=e408]
+              - generic [ref=e410]: P&L Statement
+            - link "Petty Cash" [ref=e411] [cursor=pointer]:
+              - /url: /erp/petty-cash
+              - img [ref=e413]
+              - generic [ref=e416]: Petty Cash
+            - link "Recurring Journals" [ref=e417] [cursor=pointer]:
+              - /url: /erp/recurring-journals
+              - img [ref=e419]
+              - generic [ref=e421]: Recurring Journals
+            - link "Trial Balance" [ref=e422] [cursor=pointer]:
+              - /url: /erp/trial-balance
+              - img [ref=e424]
+              - generic [ref=e426]: Trial Balance
+            - link "VAT & CWT" [ref=e427] [cursor=pointer]:
+              - /url: /erp/vat-compliance
+              - img [ref=e429]
+              - generic [ref=e431]: VAT & CWT
+        - generic [ref=e432]:
+          - button "Tools" [ref=e433] [cursor=pointer]:
+            - generic [ref=e434]: Tools
+            - img [ref=e435]
+          - generic [ref=e437]:
+            - link "BIR Calculator" [ref=e438] [cursor=pointer]:
+              - /url: /erp/bir-calculator
+              - img [ref=e440]
+              - generic [ref=e442]: BIR Calculator
+            - link "Data Archive" [ref=e443] [cursor=pointer]:
+              - /url: /erp/data-archive
+              - img [ref=e445]
+              - generic [ref=e448]: Data Archive
+            - link "Gov. Rates" [ref=e449] [cursor=pointer]:
+              - /url: /erp/government-rates
+              - img [ref=e451]
+              - generic [ref=e453]: Gov. Rates
+            - link "Month-End Close" [ref=e454] [cursor=pointer]:
+              - /url: /erp/month-end-close
+              - img [ref=e456]
+              - generic [ref=e458]: Month-End Close
+            - link "Payment Modes" [ref=e459] [cursor=pointer]:
+              - /url: /erp/payment-modes
+              - img [ref=e461]
+              - generic [ref=e463]: Payment Modes
+            - link "Period Locks" [ref=e464] [cursor=pointer]:
+              - /url: /erp/period-locks
+              - img [ref=e466]
+              - generic [ref=e468]: Period Locks
+        - generic [ref=e469]:
+          - button "Purchasing" [ref=e470] [cursor=pointer]:
+            - generic [ref=e471]: Purchasing
+            - img [ref=e472]
+          - generic [ref=e474]:
+            - link "Accounts Payable" [ref=e475] [cursor=pointer]:
+              - /url: /erp/accounts-payable
+              - img [ref=e477]
+              - generic [ref=e480]: Accounts Payable
+            - link "Batch Trace" [ref=e481] [cursor=pointer]:
+              - /url: /erp/batch-trace
+              - img [ref=e483]
+              - generic [ref=e486]: Batch Trace
+            - link "GRN Entry" [ref=e487] [cursor=pointer]:
+              - /url: /erp/grn
+              - img [ref=e489]
+              - generic [ref=e493]: GRN Entry
+            - link "Product Master" [ref=e494] [cursor=pointer]:
+              - /url: /erp/products
+              - img [ref=e496]
+              - generic [ref=e500]: Product Master
+            - link "Purchase Orders" [ref=e501] [cursor=pointer]:
+              - /url: /erp/purchase-orders
+              - img [ref=e503]
+              - generic [ref=e507]: Purchase Orders
+            - link "Supplier Invoices" [ref=e508] [cursor=pointer]:
+              - /url: /erp/supplier-invoices
+              - img [ref=e510]
+              - generic [ref=e514]: Supplier Invoices
+            - link "Transfers" [ref=e515] [cursor=pointer]:
+              - /url: /erp/transfers
+              - img [ref=e517]
+              - generic [ref=e520]: Transfers
+            - link "Vendors" [ref=e521] [cursor=pointer]:
+              - /url: /erp/vendors
+              - img [ref=e523]
+              - generic [ref=e528]: Vendors
+    - generic [ref=e529]:
+      - button [ref=e531] [cursor=pointer]:
+        - img [ref=e532]
+      - generic "Platform switch" [ref=e535]:
+        - link "CRM" [ref=e536] [cursor=pointer]:
+          - /url: /admin
+        - link "ERP" [ref=e537] [cursor=pointer]:
+          - /url: /erp
+      - navigation [ref=e538]:
+        - generic [ref=e540]:
+          - button "Executive Cockpit" [ref=e541] [cursor=pointer]:
+            - img [ref=e543]
+            - generic [ref=e545]: Executive Cockpit
+          - button "ERP Home" [ref=e546] [cursor=pointer]:
+            - img [ref=e548]
+            - generic [ref=e551]: ERP Home
+        - button "Administration" [ref=e553] [cursor=pointer]:
+          - generic [ref=e554]: Administration
+          - img [ref=e555]
+        - generic [ref=e557]:
+          - button "Sales" [ref=e558] [cursor=pointer]:
+            - generic [ref=e559]: Sales
+            - img [ref=e560]
+          - generic [ref=e562]:
+            - button "Sales" [ref=e563] [cursor=pointer]:
+              - img [ref=e565]
+              - generic [ref=e568]: Sales
+            - button "Sales Transactions" [ref=e569] [cursor=pointer]:
+              - img [ref=e571]
+              - generic [ref=e574]: Sales Transactions
+            - button "Opening AR" [ref=e575] [cursor=pointer]:
+              - img [ref=e577]
+              - generic [ref=e581]: Opening AR
+            - button "Opening AR Transactions" [ref=e582] [cursor=pointer]:
+              - img [ref=e584]
+              - generic [ref=e587]: Opening AR Transactions
+            - button "Returns / CN" [ref=e588] [cursor=pointer]:
+              - img [ref=e590]
+              - generic [ref=e593]: Returns / CN
+            - button "Hospital PO Backlog" [ref=e594] [cursor=pointer]:
+              - img [ref=e596]
+              - generic [ref=e599]: Hospital PO Backlog
+            - button "New Hospital PO" [ref=e600] [cursor=pointer]:
+              - img [ref=e602]
+              - generic [ref=e606]: New Hospital PO
+            - button "Hospital Contract Prices" [ref=e607] [cursor=pointer]:
+              - img [ref=e609]
+              - generic [ref=e612]: Hospital Contract Prices
+        - generic [ref=e613]:
+          - button "Inventory" [ref=e614] [cursor=pointer]:
+            - generic [ref=e615]: Inventory
+            - img [ref=e616]
+          - generic [ref=e618]:
+            - button "Batch Trace" [ref=e619] [cursor=pointer]:
+              - img [ref=e621]
+              - generic [ref=e624]: Batch Trace
+            - button "Collaterals" [ref=e625] [cursor=pointer]:
+              - img [ref=e627]
+              - generic [ref=e631]: Collaterals
+            - button "CSI Booklets" [ref=e632] [cursor=pointer]:
+              - img [ref=e634]
+              - generic [ref=e636]: CSI Booklets
+            - button "DR / Consignment" [ref=e637] [cursor=pointer]:
+              - img [ref=e639]
+              - generic [ref=e644]: DR / Consignment
+            - button "Expiry Mgmt" [ref=e645] [cursor=pointer]:
+              - img [ref=e647]
+              - generic [ref=e649]: Expiry Mgmt
+            - button "GRN Entry" [ref=e650] [cursor=pointer]:
+              - img [ref=e652]
+              - generic [ref=e656]: GRN Entry
+            - button "Inventory" [ref=e657] [cursor=pointer]:
+              - img [ref=e659]
+              - generic [ref=e663]: Inventory
+            - button "Office Supplies" [ref=e664] [cursor=pointer]:
+              - img [ref=e666]
+              - generic [ref=e670]: Office Supplies
+            - button "Transfers" [ref=e671] [cursor=pointer]:
+              - img [ref=e673]
+              - generic [ref=e676]: Transfers
+            - button "Undertaking (Receipt)" [ref=e677] [cursor=pointer]:
+              - img [ref=e679]
+              - generic [ref=e683]: Undertaking (Receipt)
+            - button "Warehouses" [ref=e684] [cursor=pointer]:
+              - img [ref=e686]
+              - generic [ref=e690]: Warehouses
+        - generic [ref=e691]:
+          - button "Collections" [ref=e692] [cursor=pointer]:
+            - generic [ref=e693]: Collections
+            - img [ref=e694]
+          - generic [ref=e696]:
+            - button "AR Aging" [ref=e697] [cursor=pointer]:
+              - img [ref=e699]
+              - generic [ref=e701]: AR Aging
+            - button "Collections" [ref=e702] [cursor=pointer]:
+              - img [ref=e704]
+              - generic [ref=e707]: Collections
+            - button "IC Settlements" [ref=e708] [cursor=pointer]:
+              - img [ref=e710]
+              - generic [ref=e715]: IC Settlements
+        - generic [ref=e716]:
+          - button "Expenses" [ref=e717] [cursor=pointer]:
+            - generic [ref=e718]: Expenses
+            - img [ref=e719]
+          - generic [ref=e721]:
+            - button "Credit Cards" [ref=e722] [cursor=pointer]:
+              - img [ref=e724]
+              - generic [ref=e726]: Credit Cards
+            - button "Expenses" [ref=e727] [cursor=pointer]:
+              - img [ref=e729]
+              - generic [ref=e731]: Expenses
+        - button "Capture Hub" [ref=e733] [cursor=pointer]:
+          - generic [ref=e734]: Capture Hub
+          - img [ref=e735]
+        - button "Reports" [ref=e738] [cursor=pointer]:
+          - generic [ref=e739]: Reports
+          - img [ref=e740]
+        - button "Sales Goals" [ref=e743] [cursor=pointer]:
+          - generic [ref=e744]: Sales Goals
+          - img [ref=e745]
+        - generic [ref=e747]:
+          - button "People & HR" [ref=e748] [cursor=pointer]:
+            - generic [ref=e749]: People & HR
+            - img [ref=e750]
+          - generic [ref=e752]:
+            - button "Contractor Income" [ref=e753] [cursor=pointer]:
+              - img [ref=e755]
+              - generic [ref=e757]: Contractor Income
+            - button "Org Chart" [ref=e758] [cursor=pointer]:
+              - img [ref=e760]
+              - generic [ref=e765]: Org Chart
+            - button "Payroll" [ref=e766] [cursor=pointer]:
+              - img [ref=e768]
+              - generic [ref=e770]: Payroll
+            - button "People" [ref=e771] [cursor=pointer]:
+              - img [ref=e773]
+              - generic [ref=e777]: People
+        - generic [ref=e778]:
+          - button "Accounting" [ref=e779] [cursor=pointer]:
+            - generic [ref=e780]: Accounting
+            - img [ref=e781]
+          - generic [ref=e783]:
+            - button "Bank Accounts" [ref=e784] [cursor=pointer]:
+              - img [ref=e786]
+              - generic [ref=e788]: Bank Accounts
+            - button "Bank Reconciliation" [ref=e789] [cursor=pointer]:
+              - img [ref=e791]
+              - generic [ref=e795]: Bank Reconciliation
+            - button "Cashflow" [ref=e796] [cursor=pointer]:
+              - img [ref=e798]
+              - generic [ref=e800]: Cashflow
+            - button "CC Ledger" [ref=e801] [cursor=pointer]:
+              - img [ref=e803]
+              - generic [ref=e805]: CC Ledger
+            - button "Chart of Accounts" [ref=e806] [cursor=pointer]:
+              - img [ref=e808]
+              - generic [ref=e810]: Chart of Accounts
+            - button "Cost Centers" [ref=e811] [cursor=pointer]:
+              - img [ref=e813]
+              - generic [ref=e817]: Cost Centers
+            - button "Fixed Assets" [ref=e818] [cursor=pointer]:
+              - img [ref=e820]
+              - generic [ref=e822]: Fixed Assets
+            - button "Journal Entries" [ref=e823] [cursor=pointer]:
+              - img [ref=e825]
+              - generic [ref=e827]: Journal Entries
+            - button "Loans" [ref=e828] [cursor=pointer]:
+              - img [ref=e830]
+              - generic [ref=e832]: Loans
+            - button "Owner Equity" [ref=e833] [cursor=pointer]:
+              - img [ref=e835]
+              - generic [ref=e837]: Owner Equity
+            - button "P&L Statement" [ref=e838] [cursor=pointer]:
+              - img [ref=e840]
+              - generic [ref=e842]: P&L Statement
+            - button "Petty Cash" [ref=e843] [cursor=pointer]:
+              - img [ref=e845]
+              - generic [ref=e848]: Petty Cash
+            - button "Recurring Journals" [ref=e849] [cursor=pointer]:
+              - img [ref=e851]
+              - generic [ref=e853]: Recurring Journals
+            - button "Trial Balance" [ref=e854] [cursor=pointer]:
+              - img [ref=e856]
+              - generic [ref=e858]: Trial Balance
+            - button "VAT & CWT" [ref=e859] [cursor=pointer]:
+              - img [ref=e861]
+              - generic [ref=e863]: VAT & CWT
+        - generic [ref=e864]:
+          - button "Tools" [ref=e865] [cursor=pointer]:
+            - generic [ref=e866]: Tools
+            - img [ref=e867]
+          - generic [ref=e869]:
+            - button "BIR Calculator" [ref=e870] [cursor=pointer]:
+              - img [ref=e872]
+              - generic [ref=e874]: BIR Calculator
+            - button "Data Archive" [ref=e875] [cursor=pointer]:
+              - img [ref=e877]
+              - generic [ref=e880]: Data Archive
+            - button "Gov. Rates" [ref=e881] [cursor=pointer]:
+              - img [ref=e883]
+              - generic [ref=e885]: Gov. Rates
+            - button "Month-End Close" [ref=e886] [cursor=pointer]:
+              - img [ref=e888]
+              - generic [ref=e890]: Month-End Close
+            - button "Payment Modes" [ref=e891] [cursor=pointer]:
+              - img [ref=e893]
+              - generic [ref=e895]: Payment Modes
+            - button "Period Locks" [ref=e896] [cursor=pointer]:
+              - img [ref=e898]
+              - generic [ref=e900]: Period Locks
+        - generic [ref=e901]:
+          - button "Purchasing" [ref=e902] [cursor=pointer]:
+            - generic [ref=e903]: Purchasing
+            - img [ref=e904]
+          - generic [ref=e906]:
+            - button "Accounts Payable" [ref=e907] [cursor=pointer]:
+              - img [ref=e909]
+              - generic [ref=e912]: Accounts Payable
+            - button "Batch Trace" [ref=e913] [cursor=pointer]:
+              - img [ref=e915]
+              - generic [ref=e918]: Batch Trace
+            - button "GRN Entry" [ref=e919] [cursor=pointer]:
+              - img [ref=e921]
+              - generic [ref=e925]: GRN Entry
+            - button "Product Master" [ref=e926] [cursor=pointer]:
+              - img [ref=e928]
+              - generic [ref=e932]: Product Master
+            - button "Purchase Orders" [ref=e933] [cursor=pointer]:
+              - img [ref=e935]
+              - generic [ref=e939]: Purchase Orders
+            - button "Supplier Invoices" [ref=e940] [cursor=pointer]:
+              - img [ref=e942]
+              - generic [ref=e946]: Supplier Invoices
+            - button "Transfers" [ref=e947] [cursor=pointer]:
+              - img [ref=e949]
+              - generic [ref=e952]: Transfers
+            - button "Vendors" [ref=e953] [cursor=pointer]:
+              - img [ref=e955]
+              - generic [ref=e960]: Vendors
+    - main [ref=e961]:
+      - generic [ref=e962]:
+        - generic [ref=e963]:
+          - button "BIR Compliance" [ref=e964] [cursor=pointer]:
+            - img [ref=e965]
+            - text: BIR Compliance
+          - heading "BIR 1702 — Annual Income Tax (Corp) — 2026" [level=1] [ref=e967]:
+            - img [ref=e968]
+            - text: BIR 1702 — Annual Income Tax (Corp) — 2026
+        - generic [ref=e971]:
+          - combobox [ref=e972]:
+            - option "2024"
+            - option "2025"
+            - option "2026" [selected]
+            - option "2027"
+          - generic [ref=e973]: Draft
+          - button "Refresh" [ref=e974] [cursor=pointer]:
+            - img [ref=e975]
+            - text: Refresh
+      - generic [ref=e980]:
+        - button "×" [ref=e981] [cursor=pointer]
+        - generic [ref=e982]:
+          - img [ref=e983]
+          - text: BIR 1702 / 1701 — Annual Income Tax Return
+        - generic [ref=e985]:
+          - generic [ref=e986]:
+            - generic [ref=e987]: "1"
+            - generic [ref=e988]: "Pre-flight: every box on this page is computed from POSTED JournalEntry rows tagged for the BIR view (bir_flag IN [BOTH, BIR]) for periods YYYY-01..YYYY-12. The aggregator partitions by COA account_code into Revenue (4000-4999), Cost of Sales (5000-5999), OPEX (6000-6999), Non-Opex (7000-7999), and BIR-only Deductions (8000-8999). Trial balance must satisfy Total DR = Total CR within ₱0.01 — a banner flags any drift before you file."
+          - generic [ref=e989]:
+            - generic [ref=e990]: "2"
+            - generic [ref=e991]: "Tax Computation (CORP/OPC/PARTNERSHIP — 1702-RT): Gross Income = Gross Sales − Cost of Sales. Net Taxable Income = Gross Income − Allowable Deductions. RCIT = Net Taxable Income × 25% (CREATE Act 2021+) OR 20% if SME (≤₱5M taxable AND ≤₱100M total assets ex-land — set Total Assets in Tax Config to qualify). MCIT = Gross Income × 2% if entity has been operating ≥4 years (set BIR Registration Date in Tax Config). Tax Due = max(RCIT, MCIT). Rates are lookup-driven via BIR_INCOME_TAX_RATES (Rule #3) so subscribers tune per entity."
+          - generic [ref=e992]:
+            - generic [ref=e993]: "3"
+            - generic [ref=e994]: "Tax Computation (1701 SOLE_PROP): Either TRAIN graduated brackets (0/15/20/25/30/35%) on Net Taxable Income, OR optional 8% flat rate on Gross Sales (admin election via Entity.tax_election_8pct — eligible only when gross sales ≤ VAT threshold AND not VAT-registered). 1701 page renders only when entity tax_type = SOLE_PROP; otherwise it shows a stub redirecting to 1702."
+          - generic [ref=e995]:
+            - generic [ref=e996]: "4"
+            - generic [ref=e997]: "Tax Credits — Creditable Tax Withheld (CWT): reads from J6 compute1702CwtRollup. ONLY RECEIVED 2307s tagged for the year count toward the credit. Pending rows surface as \"exposure\" — chase the hospitals on /erp/bir/2307-IN/:year before April 15 or the credit is forfeit. Manual CWT Override is escape-hatch for certificates verified outside the J6 reconciliation flow (rare); set to 0 to use auto."
+          - generic [ref=e998]:
+            - generic [ref=e999]: "5"
+            - generic [ref=e1000]: "Tax Credits — Manual fields: Quarterly Income Tax Paid YTD (sum of 1702-Q payments — admin types in), Foreign Tax Credit (RA 8424 §34(C)), Prior Year Overpayment Applied (carry-forward when previous 1702 elected carry-over instead of refund), Other Credits (BMBE / NOLCO / special). Click Save Manual Credits — totals_snapshot is updated and the Tax Due / Net Payable lines recompute on the next refresh."
+          - generic [ref=e1001]:
+            - generic [ref=e1002]: "6"
+            - generic [ref=e1003]: "Lifecycle: Compute → review the boxes → enter manual credits → click Mark FILED with the BIR eBIRForms reference number from your eBIR receipt. Mark FILED stamps the computed totals into BirFilingStatus.totals_snapshot (immutable historical record) AND lazy-creates a 2307-IN annual-closure row that freezes the CWT credit you claimed against this year — so future re-aggregations do not silently change historical filings."
+          - generic [ref=e1004]:
+            - generic [ref=e1005]: "7"
+            - generic [ref=e1006]: After CONFIRMED (forwarded BIR confirmation email auto-flips DRAFT→CONFIRMED via the email-bridge parser, OR Mark Confirmed manually with reference number), the period locks via PeriodLock module=BIR_FILING — backdated JE edits to the year are rejected. To revise, finance + president must reopen the period.
+          - generic [ref=e1007]:
+            - generic [ref=e1008]: "8"
+            - generic [ref=e1009]: "Subscription-readiness: tax rates lookup-driven (BIR_INCOME_TAX_RATES — CORP_REGULAR_RATE, CORP_SME_RATE, CORP_SME_TAXABLE_THRESHOLD_PHP, CORP_SME_ASSETS_THRESHOLD_PHP, MCIT_RATE, MCIT_GRACE_YEARS, INDIVIDUAL_8PCT_FLAT_RATE — all per-entity, all admin-overridable). Role gates lookup-driven via BIR_ROLES (VIEW_DASHBOARD reads, EDIT_1702_MANUAL writes manual fields, MARK_FILED files, MARK_CONFIRMED confirms). Subscribers reconfigure per entity via Control Center → Lookup Tables — no code deployment (Rule #3 / Rule #19)."
+        - generic [ref=e1010]:
+          - generic [ref=e1011]: "Next steps:"
+          - button "BIR Compliance Dashboard →" [ref=e1012] [cursor=pointer]
+          - button "Inbound 2307 Reconciliation (CWT credit source) →" [ref=e1013] [cursor=pointer]
+          - button "Books of Accounts (loose-leaf PDFs) →" [ref=e1014] [cursor=pointer]
+          - button "Period Locks (ERP) →" [ref=e1015] [cursor=pointer]
+        - generic [ref=e1016]: "Three banners must be GREEN before you file: (a) trial balance balanced (Total DR = Total CR within ₱0.01), (b) zero ABNORMAL accounts (revenue with net debit / expense with net credit signals a misposted reversal), (c) zero mis-tagged balance-sheet lines (a 2000-series account in a BIR/BOTH JE means somebody tagged a balance-sheet entry incorrectly — fix at the JE source). Filing with banners red produces a 1702 your auditor will catch. The ALL-CAPS rule of the page: numbers move when you save manual credits OR when more 2307s arrive — but Mark FILED FREEZES the totals_snapshot immutably, so what you filed is what audit sees."
+      - generic [ref=e1017]:
+        - img [ref=e1018]
+        - generic [ref=e1020]:
+          - strong [ref=e1021]: 1 account(s) have ABNORMAL balance.
+          - text: Review the schedules below — revenue with net debit / expense with net credit usually means a misposted reversal or contra-account.
+      - generic [ref=e1022]:
+        - img [ref=e1023]
+        - generic [ref=e1025]:
+          - strong [ref=e1026]: 9 balance-sheet line(s)
+          - text: were tagged BIR/BOTH and surfaced in the income tax aggregation. These should normally be tagged INTERNAL — review under Mis-tagged Lines below.
+      - generic [ref=e1027]:
+        - generic [ref=e1028]:
+          - img [ref=e1029]
+          - text: Filing entity
+        - generic [ref=e1033]:
+          - generic [ref=e1034]:
+            - generic [ref=e1035]: Entity
+            - generic [ref=e1037]: VIOS INTEGRATED PROJECTS (VIP) INC.
+          - generic [ref=e1038]:
+            - generic [ref=e1039]: TIN
+            - generic [ref=e1041]: 744-251-498-0000
+          - generic [ref=e1042]:
+            - generic [ref=e1043]: RDO Code
+            - generic [ref=e1045]: — missing —
+          - generic [ref=e1046]:
+            - generic [ref=e1047]: Tax Type
+            - generic [ref=e1049]: CORP
+          - generic [ref=e1050]:
+            - generic [ref=e1051]: Business Style
+            - generic [ref=e1053]: —
+          - generic [ref=e1054]:
+            - generic [ref=e1055]: Total Assets (PHP, ex-land)
+            - generic [ref=e1057]: ₱0.00
+            - generic [ref=e1058]: Set in Tax Config to qualify for SME rate
+      - generic [ref=e1059]:
+        - generic [ref=e1060]:
+          - img [ref=e1061]
+          - text: Tax Computation — CORP_REGULAR_RATE (25.00%)
+        - generic [ref=e1063]:
+          - generic [ref=e1064]:
+            - generic [ref=e1065]: 13. Gross Sales / Revenue
+            - generic [ref=e1066]:
+              - generic [ref=e1067]: ₱149,446.42
+              - button "Copy" [ref=e1068] [cursor=pointer]:
+                - img [ref=e1069]
+          - generic [ref=e1072]:
+            - generic [ref=e1073]: "14. Less: Cost of Sales"
+            - generic [ref=e1074]:
+              - generic [ref=e1075]: ₱7,959.11
+              - button "Copy" [ref=e1076] [cursor=pointer]:
+                - img [ref=e1077]
+          - generic [ref=e1080]:
+            - generic [ref=e1081]: 15. Gross Income
+            - generic [ref=e1082]:
+              - generic [ref=e1083]: ₱141,487.31
+              - button "Copy" [ref=e1084] [cursor=pointer]:
+                - img [ref=e1085]
+          - generic [ref=e1088]:
+            - generic [ref=e1089]: 16. Operating Expenses
+            - generic [ref=e1090]:
+              - generic [ref=e1091]: ₱0.00
+              - button "Copy" [ref=e1092] [cursor=pointer]:
+                - img [ref=e1093]
+          - generic [ref=e1096]:
+            - generic [ref=e1097]: 17. Non-Operating Expenses
+            - generic [ref=e1098]:
+              - generic [ref=e1099]: ₱0.00
+              - button "Copy" [ref=e1100] [cursor=pointer]:
+                - img [ref=e1101]
+          - generic [ref=e1104]:
+            - generic [ref=e1105]: 18. BIR-Only Deductions
+            - generic [ref=e1106]:
+              - generic [ref=e1107]: ₱0.00
+              - button "Copy" [ref=e1108] [cursor=pointer]:
+                - img [ref=e1109]
+          - generic [ref=e1112]:
+            - generic [ref=e1113]: 19. Total Allowable Deductions
+            - generic [ref=e1114]:
+              - generic [ref=e1115]: ₱0.00
+              - button "Copy" [ref=e1116] [cursor=pointer]:
+                - img [ref=e1117]
+          - generic [ref=e1120]:
+            - generic [ref=e1121]: 20. Net Taxable Income
+            - generic [ref=e1122]:
+              - generic [ref=e1123]: ₱141,487.31
+              - button "Copy" [ref=e1124] [cursor=pointer]:
+                - img [ref=e1125]
+          - generic [ref=e1128]:
+            - generic [ref=e1129]: 21. RCIT @ 25.00%
+            - generic [ref=e1130]:
+              - generic [ref=e1131]: ₱35,371.83
+              - button "Copy" [ref=e1132] [cursor=pointer]:
+                - img [ref=e1133]
+          - generic [ref=e1136]:
+            - generic [ref=e1137]: 22. MCIT @ 2.00%
+            - generic [ref=e1138]:
+              - generic [ref=e1139]: ₱0.00
+              - button "Copy" [ref=e1140] [cursor=pointer]:
+                - img [ref=e1141]
+            - generic [ref=e1144]: MCIT_DISABLED_NO_REGISTRATION_DATE
+          - generic [ref=e1145]:
+            - generic [ref=e1146]: 23. Income Tax Due (higher of)
+            - generic [ref=e1147]:
+              - generic [ref=e1148]: ₱35,371.83
+              - button "Copy" [ref=e1149] [cursor=pointer]:
+                - img [ref=e1150]
+      - generic [ref=e1153]:
+        - generic [ref=e1154]:
+          - img [ref=e1155]
+          - text: Tax Credits
+        - generic [ref=e1159]:
+          - generic [ref=e1160]:
+            - generic [ref=e1161]: 24. Creditable Tax Withheld (J6 rollup)
+            - generic [ref=e1162]:
+              - generic [ref=e1163]: ₱0.00
+              - button "Copy" [ref=e1164] [cursor=pointer]:
+                - img [ref=e1165]
+            - generic [ref=e1168]: From RECEIVED 2307s tagged 2026.
+          - generic [ref=e1169]:
+            - generic [ref=e1170]: Quarterly Income Tax Paid YTD (1702-Q)
+            - generic [ref=e1171]:
+              - generic [ref=e1172]: ₱0.00
+              - button "Copy" [ref=e1173] [cursor=pointer]:
+                - img [ref=e1174]
+          - generic [ref=e1177]:
+            - generic [ref=e1178]: Foreign Tax Credit
+            - generic [ref=e1179]:
+              - generic [ref=e1180]: ₱0.00
+              - button "Copy" [ref=e1181] [cursor=pointer]:
+                - img [ref=e1182]
+          - generic [ref=e1185]:
+            - generic [ref=e1186]: Prior Year Overpayment Applied
+            - generic [ref=e1187]:
+              - generic [ref=e1188]: ₱0.00
+              - button "Copy" [ref=e1189] [cursor=pointer]:
+                - img [ref=e1190]
+          - generic [ref=e1193]:
+            - generic [ref=e1194]: Other Credits
+            - generic [ref=e1195]:
+              - generic [ref=e1196]: ₱0.00
+              - button "Copy" [ref=e1197] [cursor=pointer]:
+                - img [ref=e1198]
+          - generic [ref=e1201]:
+            - generic [ref=e1202]: Total Credits
+            - generic [ref=e1203]:
+              - generic [ref=e1204]: ₱0.00
+              - button "Copy" [ref=e1205] [cursor=pointer]:
+                - img [ref=e1206]
+          - generic [ref=e1209]:
+            - generic [ref=e1210]: 30. Net Tax Payable / (Refund)
+            - generic [ref=e1211]:
+              - generic [ref=e1212]: ₱35,371.83
+              - button "Copy" [ref=e1213] [cursor=pointer]:
+                - img [ref=e1214]
+        - generic [ref=e1217]:
+          - img [ref=e1218]
+          - generic [ref=e1220]:
+            - strong [ref=e1221]: ₱9.00 of CWT credit at risk.
+            - text: Pending 2307s — chase the hospitals before April 15 or the credit is forfeit.
+            - button "Reconcile 2307-IN →" [ref=e1222] [cursor=pointer]
+      - generic [ref=e1223]:
+        - generic [ref=e1224]:
+          - img [ref=e1225]
+          - text: Manual Credits (admin-supplied)
+        - paragraph [ref=e1229]:
+          - text: Stored on BirFilingStatus.totals_snapshot. Recompute fires automatically on save. Set
+          - emphasis [ref=e1230]: Manual CWT Override
+          - text: to 0 to use the J6 auto-rollup (recommended).
+        - generic [ref=e1231]:
+          - generic [ref=e1232]:
+            - generic [ref=e1233]: Quarterly Income Tax Paid YTD (1702-Q sum)
+            - spinbutton [ref=e1234]: "0"
+            - generic [ref=e1235]: Sum of all 1702-Q payments for the year.
+          - generic [ref=e1236]:
+            - generic [ref=e1237]: Foreign Tax Credit
+            - spinbutton [ref=e1238]: "0"
+            - generic [ref=e1239]: Tax paid to a foreign jurisdiction (RA 8424 §34(C)).
+          - generic [ref=e1240]:
+            - generic [ref=e1241]: Prior Year Overpayment Applied
+            - spinbutton [ref=e1242]: "0"
+            - generic [ref=e1243]: Carry-forward from previous 1702 overpayment elected as carry-over.
+          - generic [ref=e1244]:
+            - generic [ref=e1245]: Other Credits
+            - spinbutton [ref=e1246]: "0"
+            - generic [ref=e1247]: BMBE / NOLCO / other special credits with documentation.
+          - generic [ref=e1248]:
+            - generic [ref=e1249]: Manual CWT Override (₱) — leave 0 to use auto
+            - spinbutton [ref=e1250]: "0"
+            - generic [ref=e1251]: Use only when a 2307 cert is verified outside the J6 reconciliation flow.
+        - button "Save Manual Credits" [ref=e1253] [cursor=pointer]:
+          - img [ref=e1254]
+          - text: Save Manual Credits
+      - generic [ref=e1258]:
+        - generic [ref=e1259]:
+          - img [ref=e1260]
+          - text: CWT Credit — Per-Quarter Breakdown (J6)
+        - table [ref=e1264]:
+          - rowgroup [ref=e1265]:
+            - row "Quarter CWT Credited CR Amount Cert Count" [ref=e1266]:
+              - columnheader "Quarter" [ref=e1267]
+              - columnheader "CWT Credited" [ref=e1268]
+              - columnheader "CR Amount" [ref=e1269]
+              - columnheader "Cert Count" [ref=e1270]
+          - rowgroup [ref=e1271]:
+            - row "Q1 ₱0.00 ₱0.00 0" [ref=e1272]:
+              - cell "Q1" [ref=e1273]
+              - cell "₱0.00" [ref=e1274]
+              - cell "₱0.00" [ref=e1275]
+              - cell "0" [ref=e1276]
+            - row "Q2 ₱0.00 ₱0.00 0" [ref=e1277]:
+              - cell "Q2" [ref=e1278]
+              - cell "₱0.00" [ref=e1279]
+              - cell "₱0.00" [ref=e1280]
+              - cell "0" [ref=e1281]
+            - row "Q3 ₱0.00 ₱0.00 0" [ref=e1282]:
+              - cell "Q3" [ref=e1283]
+              - cell "₱0.00" [ref=e1284]
+              - cell "₱0.00" [ref=e1285]
+              - cell "0" [ref=e1286]
+            - row "Q4 ₱0.00 ₱0.00 0" [ref=e1287]:
+              - cell "Q4" [ref=e1288]
+              - cell "₱0.00" [ref=e1289]
+              - cell "₱0.00" [ref=e1290]
+              - cell "0" [ref=e1291]
+            - row "Total ₱0.00 — —" [ref=e1292]:
+              - cell "Total" [ref=e1293]
+              - cell "₱0.00" [ref=e1294]
+              - cell "—" [ref=e1295]
+              - cell "—" [ref=e1296]
+      - generic [ref=e1297]:
+        - generic [ref=e1298]:
+          - img [ref=e1299]
+          - text: Schedules — Revenue / COGS / OPEX
+        - group [ref=e1301]:
+          - generic "Revenue (4000-4999) — 1 account(s) — ₱149,446.42" [ref=e1302] [cursor=pointer]
+        - group [ref=e1303]:
+          - generic "Cost of Sales (5000-5999) — 2 account(s) — ₱7,959.11" [ref=e1304] [cursor=pointer]
+        - group [ref=e1305]:
+          - generic "Operating Expenses (6000-6999) — 3 account(s) — ₱0.00" [ref=e1306] [cursor=pointer]
+        - group [ref=e1307]:
+          - generic "⚠ Mis-tagged Lines (balance-sheet accounts in BIR/BOTH JEs) — 9" [ref=e1308] [cursor=pointer]
+      - generic [ref=e1309]:
+        - generic [ref=e1310]:
+          - img [ref=e1311]
+          - text: Filing Lifecycle
+        - generic [ref=e1315]:
+          - generic [ref=e1316]: "Current status:"
+          - generic [ref=e1317]: Draft
+          - button "Mark FILED" [ref=e1318] [cursor=pointer]:
+            - img [ref=e1319]
+            - text: Mark FILED
+        - paragraph [ref=e1323]: Mark FILED stamps the computed totals into BirFilingStatus.totals_snapshot (immutable historical record) AND lazy-creates a 2307-IN annual-closure row stamping the CWT credit you claimed against this year. Period-lock fires after CONFIRMED (forwarded BIR confirmation email auto-flips DRAFT→CONFIRMED via the email-bridge parser).
