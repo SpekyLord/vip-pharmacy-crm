@@ -135,8 +135,15 @@ birFilingStatusSchema.pre('validate', function (next) {
   const quarterlyForms = ['2550Q', '1601-EQ', 'SAWT', 'QAP'];
   const annualForms = ['1604-CF', '1604-E', '1702', '1701', 'BOOKS'];
   // Phase J3 Part B — 2316 is per-employee per-year (no month/quarter); same
-  // encoding as 2307-OUT/IN but with payee_kind locked to PeopleMaster.
-  const perPayeeForms = ['2307-OUT', '2307-IN', '2316'];
+  // encoding as 2307-OUT but with payee_kind locked to PeopleMaster.
+  // Phase J7 (May 2026) — 2307-IN moved to dual-shape (per-cert audit lives
+  // on CwtLedger; the year-end *closure* row is annual-encoded). Both shapes
+  // are allowed: per-payee = audit-trail row per certificate, annual =
+  // J7's "1702 credit was filed for year Y" sign-off row. Neither shape
+  // collides with the unique index because period_payee_id null vs ObjectId
+  // are distinct keys.
+  const perPayeeForms = ['2307-OUT', '2316'];
+  const annualOrPerPayeeForms = ['2307-IN'];
   // SCPWD reuses monthly encoding (one row per month, like 2550M).
   const scpwdMonthlyForms = ['SCPWD'];
 
@@ -155,6 +162,16 @@ birFilingStatusSchema.pre('validate', function (next) {
   } else if (perPayeeForms.includes(this.form_code)) {
     if (!this.period_payee_id) return next(new Error(`${this.form_code} requires period_payee_id (per-payee scope).`));
     if (!this.period_payee_kind) return next(new Error(`${this.form_code} requires period_payee_kind.`));
+  } else if (annualOrPerPayeeForms.includes(this.form_code)) {
+    // 2307-IN: month/quarter are always null. payee_id is OPTIONAL — when
+    // null, the row is the year-end *annual closure* (one row per entity
+    // per year). When present, the row is the per-certificate audit trail
+    // (one row per CwtLedger ID). payee_kind must follow payee_id.
+    if (this.period_month) return next(new Error(`${this.form_code} cannot have period_month.`));
+    if (this.period_quarter) return next(new Error(`${this.form_code} cannot have period_quarter.`));
+    if (this.period_payee_id && !this.period_payee_kind) {
+      return next(new Error(`${this.form_code} with period_payee_id also requires period_payee_kind.`));
+    }
   }
 
   // Lifecycle timestamp consistency — FILED requires filed_at, etc.

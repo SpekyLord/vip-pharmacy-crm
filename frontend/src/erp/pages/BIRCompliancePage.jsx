@@ -421,7 +421,11 @@ export default function BIRCompliancePage() {
                         // /erp/bir/BOOKS/:year). The page is a per-book × per-month
                         // matrix internally — no :period segment on the URL.
                         const monthlyOrQuarterlyForms = ['2550M', '2550Q', '1601-EQ', '1606', '1601-C', 'QAP'];
-                        const annualForms = ['1604-CF', '1604-E', 'BOOKS'];
+                        // Phase J7 (May 2026) — 1702 (CORP) and 1701 (SOLE_PROP)
+                        // are annual income-tax helpers, year-only path
+                        // /erp/bir/1702/:year (and /erp/bir/1701/:year). Same
+                        // shape as 1604-CF / 1604-E / BOOKS.
+                        const annualForms = ['1604-CF', '1604-E', 'BOOKS', '1702', '1701'];
                         const isAnnualForm = annualForms.includes(f.form_code);
                         // Phase J6 (May 2026) — 2307-IN drills into the
                         // inbound reconciliation page. The catalog row is

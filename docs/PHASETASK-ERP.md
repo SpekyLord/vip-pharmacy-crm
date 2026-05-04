@@ -9565,9 +9565,9 @@ Backend:
 
 ---
 
-## Phase VIP-1.J — BIR Tax Compliance Suite (J0 SHIPPED Apr 27 2026; J1 SHIPPED Apr 28 2026; J2 SHIPPED May 03 2026; J3 Part A + Part B + J4 + J5 + J6 SHIPPED May 04 2026; J7 deferred)
+## Phase VIP-1.J — BIR Tax Compliance Suite (J0 SHIPPED Apr 27 2026; J1 SHIPPED Apr 28 2026; J2 SHIPPED May 03 2026; J3 Part A + Part B + J4 + J5 + J6 + J7 SHIPPED May 04 2026; suite COMPLETE)
 
-**Sequence**: J0 (foundation) ✅ -> J1 (VAT) ✅ -> J2 (EWT) ✅ -> J3 Part A (1601-C Compensation) ✅ -> J3 Part B (1604-CF Annual Alphalist + 2316) ✅ -> J4 (1604-E Annual + QAP Quarterly EWT Alphalists) ✅ -> J5 (Books of Accounts loose-leaf PDFs) ✅ -> J6 (Inbound 2307) ⬅ START HERE -> J7 (1702 Annual Income Tax)
+**Sequence**: J0 (foundation) ✅ -> J1 (VAT) ✅ -> J2 (EWT) ✅ -> J3 Part A (1601-C Compensation) ✅ -> J3 Part B (1604-CF Annual Alphalist + 2316) ✅ -> J4 (1604-E Annual + QAP Quarterly EWT Alphalists) ✅ -> J5 (Books of Accounts loose-leaf PDFs) ✅ -> J6 (Inbound 2307) ✅ -> J7 (1702 / 1701 Annual Income Tax) ✅ ⬅ SUITE COMPLETE
 
 ### J0 — Compliance Dashboard + Foundation (~3-4 days) — ✅ SHIPPED + SMOKE-PASSED
 
@@ -9909,11 +9909,58 @@ Surface "Hospitals withheld but no 2307 received" gap. Quarterly CWT credit summ
 - ✅ Pure-function smoke (round2 / sanitize / emptyQuarterBucket) green via in-process `node -e`.
 - ⏸ **Live HTTP smoke and Playwright UI smoke deferred** — MCP browser locked (same condition as J3 Part B + J4 + J5). Re-smoke targets in CLAUDE-ERP.md J6 section.
 
-### J7 — 1702 Annual Income Tax (~1.5 days)
-Trial Balance -> adjusting entries -> Gross Income -> Allowable Deductions -> Taxable Income -> Tax Due -> less Creditable Tax Withheld (J6) + Quarterly Income Tax Paid -> Net Payable. Copy-paste page per BIR field.
+### J7 — 1702 / 1701 Annual Income Tax — ✅ SHIPPED MAY 04 2026 EVENING (UNCOMMITTED ON DEV)
+Trial-balance-driven annual return aggregator. Pulls POSTED JEs (`bir_flag IN [BOTH, BIR]` for periods Y-01..Y-12), partitions by COA range into Revenue / COGS / OPEX / Non-Opex / BIR-only, derives Tax Due (RCIT vs MCIT, take higher), then subtracts CWT credit (J6 rollup) plus admin-supplied manual credits (1702-Q paid YTD, foreign tax credit, prior-year overpayment, other credits). 1701 is the SOLE_PROP variant with TRAIN graduated brackets (or 8% flat rate election). Copy-paste UX into eBIR Forms 7.x.
+
+**Subscription-ready posture** (Rule #3 / #19): per-entity scoping, lookup-driven tax rates (`BIR_INCOME_TAX_RATES` — 7 codes), lookup-driven role gates (`BIR_ROLES.EDIT_1702_MANUAL` + `MARK_FILED`). Account-code ranges live in a frozen constant; non-PRD-CoA subscribers will eventually override via `BIR_INCOME_TAX_ACCOUNT_RANGES` lookup (deferred until first such subscriber).
+
+**Status**: SHIPPED uncommitted on `dev`. 13 files (10 new + 3 modified backend + 4 modified frontend + 1 new healthcheck + 2 docs).
+
+#### J7.1 — incomeTaxRates helper ✅
+- [x] **`backend/utils/incomeTaxRates.js`** (NEW) — lazy-cache (60s TTL per `(entityId, code)`) over `BIR_INCOME_TAX_RATES` lookup with `DEFAULTS` fallback. 7 codes: `CORP_REGULAR_RATE` (0.25), `CORP_SME_RATE` (0.20), `CORP_SME_TAXABLE_THRESHOLD_PHP` (5_000_000), `CORP_SME_ASSETS_THRESHOLD_PHP` (100_000_000), `MCIT_RATE` (0.02), `MCIT_GRACE_YEARS` (3), `INDIVIDUAL_8PCT_FLAT_RATE` (0.08). Mirrors `teamActivityThresholds.js` / `clmPerformanceThresholds.js` pattern. `invalidate(entityId)` exported for cache busting.
+
+#### J7.2 — incomeTaxReturnService ✅
+- [x] **`backend/erp/services/incomeTaxReturnService.js`** (NEW) — `compute1702({ entityId, year, manualOverrides })` + `compute1701` sole-prop variant. Internals: `aggregateAnnualBirJEs` (POSTED + period range + bir_flag filter + COA join), `partitionByBucket` (revenue=4000-4999 credit-normal, COGS=5000-5999 / OPEX=6000-6999 / Non-Opex=7000-7999 / BIR-only=8000-8999 all debit-normal, abnormal flag when net opposite to normal_balance, mis-tagged balance-sheet lines surfaced separately), `determineCorpRate` (RCIT 25%, SME 20% only when both ceilings met), `determineMcit` (disabled if no `bir_registration_date`, grace until year 4, then 2% × gross income — higher prevails), `applyIndividualBrackets` (TRAIN 0/15/20/25/30/35% with frozen bracket table). Returns box-grid + schedules + cwt_rollup + integrity (trial-balance + abnormal count + mis-tagged count) + manual_overrides_in.
+
+#### J7.3 — BirFilingStatus model relax for 2307-IN ✅
+- [x] **`backend/erp/models/BirFilingStatus.js`** (MODIFIED) — moved `2307-IN` from `perPayeeForms` to a new `annualOrPerPayeeForms` set so the J7 mark-filed path can lazy-create an annual closure row (one per `(entity, year)`) WITHOUT setting `period_payee_id`. Per-cert audit trail still lives on `CwtLedger.received_at` + `cert_content_hash` (J6 pattern). Backwards-compat: J6 already sidestepped writing 2307-IN BirFilingStatus rows (audit was console.log only) so no migration needed.
+
+#### J7.4 — birController J7 endpoints ✅
+- [x] **`exports.compute1702`** — VIEW_DASHBOARD-gated GET. Lazy-loads filing row's `totals_snapshot` for manual-overrides hydration → calls service → returns boxes + schedules + cwt_rollup + filing_row. Returns HTTP 400 with `code: 'USE_1701'` for SOLE_PROP entities (frontend redirects).
+- [x] **`exports.compute1701`** — VIEW_DASHBOARD-gated GET. Same shape; service returns a stub for non-SOLE_PROP entities so heatmap drill-down doesn't crash.
+- [x] **`exports.update1702Manual`** — EDIT_1702_MANUAL-gated PATCH. Coerces non-negative; lazy-creates DRAFT row; structured `[BIR_1702_UPDATE_MANUAL]` log line. Shared handler for both 1702 and 1701 (route injects `req.params.formCode = '1701'`).
+- [x] **`exports.mark1702Filed`** — MARK_FILED-gated POST. Flips 1702 row to FILED; stamps fresh-recompute `boxes` + `rates_used` into `totals_snapshot.filed_boxes` for immutable historical record; lazy-creates `2307-IN` annual-closure row stamping `cwt_credit_for_1702` + `quarter_breakdown` + `by_atc` + `pending_exposure_cwt` + `tagged_for_1702_year`; structured `[BIR_1702_MARK_FILED]` log line. Conflict 409 if already CONFIRMED.
+
+#### J7.5 — birRoutes J7 routing ✅
+- [x] **6 new routes** (`GET /forms/1702/:year/compute`, `GET /forms/1701/:year/compute`, `PATCH /forms/1702/:year/manual`, `PATCH /forms/1701/:year/manual`, `POST /forms/1702/:year/mark-filed`, `POST /forms/1701/:year/mark-filed`) declared BEFORE the J1 `/forms/:formCode/:year/:period/export.csv` catch-all AND BEFORE the generic `/forms/:id` GET. 1701 PATCH/POST inject `formCode` param then delegate to shared handler. J6 `cwt-rollup` endpoint preserved unchanged.
+
+#### J7.6 — birAccess EDIT_1702_MANUAL gate ✅
+- [x] **`backend/utils/birAccess.js`** — new `EDIT_1702_MANUAL` scope, default `[admin, finance, bookkeeper]` (mirrors `RECONCILE_INBOUND_2307` posture). Switch case + getter wired; `DEFAULT_EDIT_1702_MANUAL` exported.
+
+#### J7.7 — Lookup seed defaults + invalidation ✅
+- [x] **`BIR_INCOME_TAX_RATES`** category seeded with 7 default rows (each `insert_only_metadata: true`). Subscriber overrides survive future re-seeds.
+- [x] **`BIR_ROLES.EDIT_1702_MANUAL`** row added to BIR_ROLES seed.
+- [x] **`BIR_INCOME_TAX_RATES_CATEGORIES`** invalidation wired at all 4 sites (create / update / soft-delete / seedCategory) — admin rate edits propagate within one cache cycle.
+
+#### J7.8 — Frontend wiring ✅
+- [x] **`Bir1702DetailPage.jsx`** (NEW, 410 lines) — single page handles both 1702 (default) and 1701 (`formCodeOverride="1701"` prop). 6 sections: integrity banners (trial balance + abnormal + mis-tagged) → entity card → Tax Computation card with Copy buttons (1702-RT box numbers 13-23 OR 1701-A free-form) → Tax Credits card (CWT from J6 + 4 manual fields + Total Credits + Net Payable) → Manual Credits panel (5 inputs gated by lifecycle ≠ CONFIRMED) → CWT quarterly breakdown table → 6 collapsible schedules → Lifecycle Actions (status pill + Mark FILED button with prompt for BIR ref number).
+- [x] **`birService.js`** — added `compute1702(year)`, `compute1701(year)`, `update1702Manual(year, payload, formCode)`, `mark1702Filed(year, payload, formCode)`.
+- [x] **`App.jsx`** — lazy import + 2 routes (`/erp/bir/1702/:year`, `/erp/bir/1701/:year`) BEFORE the wildcard `/erp/bir/:formCode/:year/:period`.
+- [x] **`BIRCompliancePage.jsx`** — `annualForms = ['1604-CF', '1604-E', 'BOOKS', '1702', '1701']` heatmap drill-down extension.
+- [x] **`PageGuide.jsx`** — `bir-1702` entry with 8-step workflow narrative + tip mentioning the 3 must-be-green banners + BIR_INCOME_TAX_RATES tunability.
+
+#### J7.9 — Healthcheck ✅
+- [x] **`backend/scripts/healthcheckBir1702.js`** (NEW, 14 sections, **143/143 PASS**) — covers helper exports + service exports + bucket math (synthetic JE row fixture) + corp rate selection (4 cases) + MCIT logic (4 cases) + TRAIN brackets (6 reference values) + model relax + controller exports + route ordering + birAccess gate + lookup seed + 4-site invalidation + frontend wiring + PageGuide entry.
+
+#### J7.10 — Verification posture (Rule 0b) ✅
+- [x] J7 healthcheck **143/143 PASS**.
+- [x] Sibling regressions all green: J6 inbound 2307 107/107, J5 BOOKS, J4 1604E+QAP 97/97, J3 Part B 1604CF 66/66, J3 Part A Compensation 78/78, J2 EWT, J1 VAT, ClmIdempotency.
+- [x] Vite production build green (17.69s); `Bir1702DetailPage-DNIRVkIu.js` lazy chunk emits.
+- [x] Syntax check passes on all 8 modified backend files.
+- [ ] Live HTTP smoke + Playwright UI smoke deferred — MCP browser locked (same condition as J3 Part B / J4 / J5 / J6).
 
 ### Plan + handoff
-Full plan: `~/.claude/plans/vip-1-j-bir-compliance.md`.
+Full plan: `~/.claude/plans/vip-1-j-bir-compliance.md`. Suite complete — 16 working days estimate.
 
 ---
 

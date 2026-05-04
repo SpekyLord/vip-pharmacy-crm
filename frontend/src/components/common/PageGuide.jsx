@@ -236,6 +236,26 @@ const PAGE_GUIDES = {
     ],
     tip: 'The 1702 credit-at-risk number IS your collection chasing priority. Sort the per-hospital breakdown by Pending CWT descending — that\'s the list of phone calls / emails the bookkeeper makes to get certificates in the door before April 15. Phase J7 will read RECEIVED rows tagged_for_1702_year=YEAR as the "Less: Creditable Tax Withheld" line on the 1702 form. Pending rows are visible to J7 as exposure but do NOT count toward the credit until received.',
   },
+  'bir-1702': {
+    title: 'BIR 1702 / 1701 — Annual Income Tax Return',
+    steps: [
+      'Pre-flight: every box on this page is computed from POSTED JournalEntry rows tagged for the BIR view (bir_flag IN [BOTH, BIR]) for periods YYYY-01..YYYY-12. The aggregator partitions by COA account_code into Revenue (4000-4999), Cost of Sales (5000-5999), OPEX (6000-6999), Non-Opex (7000-7999), and BIR-only Deductions (8000-8999). Trial balance must satisfy Total DR = Total CR within ₱0.01 — a banner flags any drift before you file.',
+      'Tax Computation (CORP/OPC/PARTNERSHIP — 1702-RT): Gross Income = Gross Sales − Cost of Sales. Net Taxable Income = Gross Income − Allowable Deductions. RCIT = Net Taxable Income × 25% (CREATE Act 2021+) OR 20% if SME (≤₱5M taxable AND ≤₱100M total assets ex-land — set Total Assets in Tax Config to qualify). MCIT = Gross Income × 2% if entity has been operating ≥4 years (set BIR Registration Date in Tax Config). Tax Due = max(RCIT, MCIT). Rates are lookup-driven via BIR_INCOME_TAX_RATES (Rule #3) so subscribers tune per entity.',
+      'Tax Computation (1701 SOLE_PROP): Either TRAIN graduated brackets (0/15/20/25/30/35%) on Net Taxable Income, OR optional 8% flat rate on Gross Sales (admin election via Entity.tax_election_8pct — eligible only when gross sales ≤ VAT threshold AND not VAT-registered). 1701 page renders only when entity tax_type = SOLE_PROP; otherwise it shows a stub redirecting to 1702.',
+      'Tax Credits — Creditable Tax Withheld (CWT): reads from J6 compute1702CwtRollup. ONLY RECEIVED 2307s tagged for the year count toward the credit. Pending rows surface as "exposure" — chase the hospitals on /erp/bir/2307-IN/:year before April 15 or the credit is forfeit. Manual CWT Override is escape-hatch for certificates verified outside the J6 reconciliation flow (rare); set to 0 to use auto.',
+      'Tax Credits — Manual fields: Quarterly Income Tax Paid YTD (sum of 1702-Q payments — admin types in), Foreign Tax Credit (RA 8424 §34(C)), Prior Year Overpayment Applied (carry-forward when previous 1702 elected carry-over instead of refund), Other Credits (BMBE / NOLCO / special). Click Save Manual Credits — totals_snapshot is updated and the Tax Due / Net Payable lines recompute on the next refresh.',
+      'Lifecycle: Compute → review the boxes → enter manual credits → click Mark FILED with the BIR eBIRForms reference number from your eBIR receipt. Mark FILED stamps the computed totals into BirFilingStatus.totals_snapshot (immutable historical record) AND lazy-creates a 2307-IN annual-closure row that freezes the CWT credit you claimed against this year — so future re-aggregations do not silently change historical filings.',
+      'After CONFIRMED (forwarded BIR confirmation email auto-flips DRAFT→CONFIRMED via the email-bridge parser, OR Mark Confirmed manually with reference number), the period locks via PeriodLock module=BIR_FILING — backdated JE edits to the year are rejected. To revise, finance + president must reopen the period.',
+      'Subscription-readiness: tax rates lookup-driven (BIR_INCOME_TAX_RATES — CORP_REGULAR_RATE, CORP_SME_RATE, CORP_SME_TAXABLE_THRESHOLD_PHP, CORP_SME_ASSETS_THRESHOLD_PHP, MCIT_RATE, MCIT_GRACE_YEARS, INDIVIDUAL_8PCT_FLAT_RATE — all per-entity, all admin-overridable). Role gates lookup-driven via BIR_ROLES (VIEW_DASHBOARD reads, EDIT_1702_MANUAL writes manual fields, MARK_FILED files, MARK_CONFIRMED confirms). Subscribers reconfigure per entity via Control Center → Lookup Tables — no code deployment (Rule #3 / Rule #19).',
+    ],
+    next: [
+      { label: 'BIR Compliance Dashboard', path: '/erp/bir' },
+      { label: 'Inbound 2307 Reconciliation (CWT credit source)', path: '/erp/bir/2307-IN' },
+      { label: 'Books of Accounts (loose-leaf PDFs)', path: '/erp/bir/BOOKS' },
+      { label: 'Period Locks (ERP)', path: '/erp/period-locks' },
+    ],
+    tip: 'Three banners must be GREEN before you file: (a) trial balance balanced (Total DR = Total CR within ₱0.01), (b) zero ABNORMAL accounts (revenue with net debit / expense with net credit signals a misposted reversal), (c) zero mis-tagged balance-sheet lines (a 2000-series account in a BIR/BOTH JE means somebody tagged a balance-sheet entry incorrectly — fix at the JE source). Filing with banners red produces a 1702 your auditor will catch. The ALL-CAPS rule of the page: numbers move when you save manual credits OR when more 2307s arrive — but Mark FILED FREEZES the totals_snapshot immutably, so what you filed is what audit sees.',
+  },
   'bir-boa-books': {
     title: 'BIR Books of Accounts — Loose-Leaf PDFs',
     steps: [

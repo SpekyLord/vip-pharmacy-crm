@@ -97,6 +97,8 @@ const BirAlphalistEwtPage = lazyRetry(() => import('./erp/pages/BirAlphalistEwtP
 // Phase VIP-1.J / J5 (May 2026) — Books of Accounts (Loose-Leaf PDFs)
 const BookOfAccountsPage = lazyRetry(() => import('./erp/pages/BookOfAccountsPage'));
 const Bir2307InboundPage = lazyRetry(() => import('./erp/pages/Bir2307InboundPage'));
+// Phase VIP-1.J / J7 (May 2026) — Annual 1702 / 1701 Income Tax Return helper
+const Bir1702DetailPage = lazyRetry(() => import('./erp/pages/Bir1702DetailPage'));
 // Phase VIP-1.B Phase 4 — Rebate + Commission matrix admin + Payout ledger
 const RebateMatrixPage = lazyRetry(() => import('./erp/pages/RebateMatrixPage'));
 const NonMdRebateMatrixPage = lazyRetry(() => import('./erp/pages/NonMdRebateMatrixPage'));
@@ -750,6 +752,27 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.BIR_FILING}>
                 <Bir2307InboundPage />
+              </ProtectedRoute>
+            }
+          />
+          {/* Phase J7 (May 2026) — Annual 1702 (CORP) and 1701 (SOLE_PROP)
+              Income Tax Return helpers. Year-only encoding (no :period
+              segment) — both MUST stay above the
+              `/erp/bir/:formCode/:year/:period` wildcard fallback to
+              BirVatReturnDetailPage (which only handles 2550M/Q). */}
+          <Route
+            path="/erp/bir/1702/:year"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BIR_FILING}>
+                <Bir1702DetailPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/erp/bir/1701/:year"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BIR_FILING}>
+                <Bir1702DetailPage formCodeOverride="1701" />
               </ProtectedRoute>
             }
           />
