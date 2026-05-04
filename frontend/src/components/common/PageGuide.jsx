@@ -93,7 +93,7 @@ const PAGE_GUIDES = {
       { label: 'VIP Clients', path: '/admin/doctors' },
       { label: 'MD Leads', path: '/admin/md-leads' },
     ],
-    tip: 'The unique-index flip on Doctor.vip_client_name_clean (Phase A.5.2) is gated on this tool — until duplicates are merged, the unique constraint cannot be applied. Default role gates: admin + president for view/execute/rollback; president-only for hard-delete (which bypasses the 30-day grace). Subscribers reconfigure per entity via Control Center → Lookup Tables → VIP_CLIENT_LIFECYCLE_ROLES.',
+    tip: 'The unique-index flip on Doctor.vip_client_name_clean (Phase A.5.2) is gated on this tool — once Candidates is empty, run "node backend/scripts/migrateVipClientCanonical.js --add-unique-index" to enforce "no two ACTIVE doctors share a name" globally. The index is partial-unique on { mergedInto: null } so soft-deleted losers stay safe (rollback works inside the 30-day grace window). Default role gates: admin + president for view/execute/rollback; president-only for hard-delete (which bypasses the grace). Subscribers reconfigure per entity via Control Center → Lookup Tables → VIP_CLIENT_LIFECYCLE_ROLES.',
   },
   'md-leads': {
     title: 'MD Partner Leads',

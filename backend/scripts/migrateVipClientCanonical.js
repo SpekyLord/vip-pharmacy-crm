@@ -21,8 +21,13 @@
  *                          active Doctors where they are missing or stale.
  *                          Safe to run repeatedly (idempotent).
  *   --add-unique-index   — after duplicates are fully merged via A.5.5 UI, flip the
- *                          `vip_client_name_clean_1` index to `{ unique: true }`.
- *                          Refuses when duplicates still exist.
+ *                          `vip_client_name_clean_1` index to UNIQUE with
+ *                          partialFilterExpression { mergedInto: null }. The
+ *                          partial filter scopes the constraint to LIVE records
+ *                          only (mirrors the merge service's soft-delete contract:
+ *                          merged losers keep their canonical key but are excluded
+ *                          from the unique index because their `mergedInto` is
+ *                          set). Refuses when active duplicates still exist.
  *
  * Usage (from project root):
  *   node backend/scripts/migrateVipClientCanonical.js
@@ -71,6 +76,8 @@ async function main() {
   await mongoose.connect(MONGO_URI);
   console.log(`Connected. Mode: ${MODE}`);
 
+  // Register User before Doctor so the .populate('assignedTo') call below resolves.
+  require('../models/User');
   const Doctor = require('../models/Doctor');
   const Visit = require('../models/Visit');
   const coll = Doctor.collection;
@@ -135,27 +142,52 @@ async function main() {
     }
 
     const existing = await coll.indexes();
-    const hasUnique = existing.some(i =>
-      i.name === 'vip_client_name_clean_1' && i.unique === true
-    );
-    if (hasUnique) {
+    // The target shape is partial-unique on { mergedInto: null } — see the
+    // schema comment in models/Doctor.js for the rationale (merge service
+    // does not rename the loser's canonical key, so a plain unique would
+    // reject merge writes + rollback).
+    const targetIndex = existing.find(i => i.name === 'vip_client_name_clean_1');
+    const hasTargetUnique =
+      targetIndex &&
+      targetIndex.unique === true &&
+      targetIndex.partialFilterExpression &&
+      // Mongo serializes { mergedInto: null } as { mergedInto: null } verbatim.
+      Object.keys(targetIndex.partialFilterExpression).length === 1 &&
+      targetIndex.partialFilterExpression.mergedInto === null;
+    if (hasTargetUnique) {
       console.log('');
-      console.log('✓ Unique index already present — nothing to do.');
+      console.log('✓ Partial-unique index already present — nothing to do.');
       await mongoose.disconnect();
       return;
     }
 
-    // Drop the non-unique A.5.1 index first, then recreate as unique.
-    const hasPlain = existing.some(i => i.name === 'vip_client_name_clean_1');
-    if (hasPlain) {
+    // Drop the existing index (plain or wrong shape) first, then recreate.
+    if (targetIndex) {
       console.log('');
-      console.log('Dropping non-unique index vip_client_name_clean_1 ...');
+      console.log(`Dropping existing index vip_client_name_clean_1 (shape mismatch) ...`);
       await coll.dropIndex('vip_client_name_clean_1');
     }
 
     try {
-      await coll.createIndex({ vip_client_name_clean: 1 }, { unique: true });
-      console.log('✓ Unique index vip_client_name_clean_1 created.');
+      // Backfill any docs missing `mergedInto` so partial-filter equality on null
+      // is unambiguous. Schema default is null but pre-A.5.1 docs may lack the
+      // field entirely. (Mongo `$eq: null` matches both null and missing, but the
+      // partial-filter form `{ mergedInto: null }` is strict equality on null —
+      // doing the backfill removes ambiguity for all readers.)
+      const seed = await coll.updateMany(
+        { mergedInto: { $exists: false } },
+        { $set: { mergedInto: null } },
+      );
+      if (seed.modifiedCount) {
+        console.log(`  Seeded mergedInto:null on ${seed.modifiedCount} legacy doc(s).`);
+      }
+
+      await coll.createIndex(
+        { vip_client_name_clean: 1 },
+        { unique: true, partialFilterExpression: { mergedInto: null } },
+      );
+      console.log('✓ Partial-unique index vip_client_name_clean_1 created');
+      console.log('  (unique within { mergedInto: null }; merged losers excluded)');
     } catch (err) {
       console.error(`✗ createIndex failed: ${err.message}`);
       // Rebuild the non-unique index so the collection isn't left without one.

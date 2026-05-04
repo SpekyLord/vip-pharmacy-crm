@@ -344,11 +344,22 @@ doctorSchema.index({ supportDuringCoverage: 1 });
 doctorSchema.index({ programsToImplement: 1 });
 doctorSchema.index({ clientType: 1 });
 doctorSchema.index({ 'hospitals.hospital_id': 1 });
-// Phase A.5 (Apr 2026) — Canonical key lookup index. NON-UNIQUE today because
-// pre-A.5.5-dedup data contains duplicates (e.g. Jake + Romela both covering Iloilo
-// created separate "Dr. Sharon" records). A.5.2 migration script flips this to
-// `{ unique: true }` via `Doctor.syncIndexes()` AFTER admin merges duplicates through
-// the A.5.5 admin merge tool. Mirrors Customer.js:108 / Hospital.js:105 in final shape.
+// Phase A.5 (Apr 2026) — Canonical key lookup index. Today the index is plain
+// (non-unique) so the A.5.2 migration script can flip it to a partial-unique
+// shape AFTER admin merges duplicates through the A.5.5 admin merge tool.
+//
+// Final shape after A.5.2 flip (built by `migrateVipClientCanonical.js
+// --add-unique-index`):
+//   { vip_client_name_clean: 1 } UNIQUE with partialFilterExpression { mergedInto: null }
+//
+// Why partialFilterExpression instead of plain unique (vs Customer.js / Hospital.js):
+//   The merge service (Phase A.5.5) soft-deletes losers by setting `isActive:false`
+//   + `mergedInto: <winner>` but DOES NOT rename `vip_client_name_clean`. After a
+//   merge, both winner and loser carry the same canonical key. A plain unique
+//   index would refuse to build (and rollback would later collide). The partial
+//   filter restricts uniqueness to live records (`mergedInto: null`), which
+//   exactly matches the "no two ACTIVE doctors share a canonical name" invariant
+//   that the merge tool's dry-run scope enforces.
 doctorSchema.index({ vip_client_name_clean: 1 });
 // Phase A.5 — merged-record lookup (cron hard-delete + rollback queries)
 doctorSchema.index({ mergedInto: 1 });
