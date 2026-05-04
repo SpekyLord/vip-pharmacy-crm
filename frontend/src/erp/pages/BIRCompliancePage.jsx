@@ -354,13 +354,28 @@ export default function BIRCompliancePage() {
                         // clickable only when the target exists, so the user does
                         // not get a 404 on unbuilt forms.
                         const period = c.period_month || c.period_quarter;
-                        const drillableForms = ['2550M', '2550Q', '1601-EQ', '1606'];
-                        const isClickable = period && (drillableForms.includes(f.form_code) || f.form_code === 'SAWT');
+                        // Phase J3 Part A — 1601-C added (monthly).
+                        // Phase J3 Part B (May 2026) — 1604-CF added (annual,
+                        // year-only path: /erp/bir/1604-CF/:year). Annual cells
+                        // have null period_month + null period_quarter, so the
+                        // drillability check + URL construction both branch.
+                        // Phase J4 (May 2026) — 1604-E added (annual) + QAP
+                        // added (quarterly). 1604-E uses /erp/bir/1604-E/:year
+                        // (year-only path, same shape as 1604-CF). QAP uses
+                        // /erp/bir/QAP/:year/:quarter (same shape as 1601-EQ).
+                        const monthlyOrQuarterlyForms = ['2550M', '2550Q', '1601-EQ', '1606', '1601-C', 'QAP'];
+                        const annualForms = ['1604-CF', '1604-E'];
+                        const isAnnualForm = annualForms.includes(f.form_code);
+                        const isClickable =
+                          (period && (monthlyOrQuarterlyForms.includes(f.form_code) || f.form_code === 'SAWT'))
+                          || isAnnualForm;
                         // SAWT redirects to the 1601-EQ page (same quarter) — its
                         // .dat export is a button on that page.
                         const targetForm = f.form_code === 'SAWT' ? '1601-EQ' : f.form_code;
                         const target = isClickable
-                          ? `/erp/bir/${targetForm}/${year}/${period}`
+                          ? (isAnnualForm
+                              ? `/erp/bir/${targetForm}/${year}`
+                              : `/erp/bir/${targetForm}/${year}/${period}`)
                           : null;
                         const cellTitle = `${c.period_label} — ${meta.label}${c.due_date ? `\nDue ${new Date(c.due_date).toLocaleDateString()}` : ''}${isClickable ? '\n(Click to open form detail)' : ''}`;
                         return (

@@ -26,6 +26,9 @@ const FORM_CODES = [
   '2307-OUT', '2307-IN', 'SAWT', 'QAP',
   '1604-CF', '1604-E', 'SCPWD',
   '1702', '1701', 'BOOKS',
+  // Phase J3 Part B (May 2026) — per-employee annual compensation cert.
+  // Mirrors 2307-OUT shape (per_payee_id required) but year-only periodicity.
+  '2316',
 ];
 
 const STATUS_CODES = ['DATA_INCOMPLETE', 'DRAFT', 'REVIEWED', 'FILED', 'CONFIRMED'];
@@ -131,7 +134,9 @@ birFilingStatusSchema.pre('validate', function (next) {
   const monthlyForms = ['2550M', '1601-C', '1606'];
   const quarterlyForms = ['2550Q', '1601-EQ', 'SAWT', 'QAP'];
   const annualForms = ['1604-CF', '1604-E', '1702', '1701', 'BOOKS'];
-  const perPayeeForms = ['2307-OUT', '2307-IN'];
+  // Phase J3 Part B — 2316 is per-employee per-year (no month/quarter); same
+  // encoding as 2307-OUT/IN but with payee_kind locked to PeopleMaster.
+  const perPayeeForms = ['2307-OUT', '2307-IN', '2316'];
   // SCPWD reuses monthly encoding (one row per month, like 2550M).
   const scpwdMonthlyForms = ['SCPWD'];
 

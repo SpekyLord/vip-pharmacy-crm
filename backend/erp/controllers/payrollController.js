@@ -256,6 +256,25 @@ const postPayroll = catchAsync(async (req, res) => {
           note: `Auto-journal failed for payslip ${fullPs?.employee_name || ps._id}`
         }).catch(() => {});
       }
+
+      // Phase VIP-1.J / J3 — emit COMPENSATION-direction WithholdingLedger
+      // rows so the 1601-C (monthly) and 1604-CF (annual) aggregators have
+      // the source rows. Best-effort + non-blocking — payslip posting must
+      // not fail if the BIR sub-ledger insert hits a transient error.
+      // Idempotent on payslip._id (deletePrior:true is the default).
+      try {
+        const { emitCompensationWithholdingForPayslip } = require('../services/withholdingService');
+        await emitCompensationWithholdingForPayslip(fullPs || ps.toObject(), { userId: req.user._id });
+      } catch (compErr) {
+        console.error('[J3_COMPENSATION_EMIT_FAILURE] Payslip', String(ps._id), compErr.message);
+        ErpAuditLog.logChange({
+          entity_id: fullPs?.entity_id || ps.entity_id, log_type: 'LEDGER_ERROR',
+          target_ref: ps._id?.toString(), target_model: 'WithholdingLedger',
+          field_changed: 'compensation_emit', new_value: compErr.message,
+          changed_by: req.user._id,
+          note: `1601-C compensation withholding emit failed for payslip ${fullPs?.employee_name || ps._id}`,
+        }).catch(() => {});
+      }
     } catch (err) {
       errors.push({ payslip_id: ps._id, error: err.message });
     }

@@ -9565,9 +9565,9 @@ Backend:
 
 ---
 
-## Phase VIP-1.J — BIR Tax Compliance Suite (J0 SHIPPED Apr 27 2026; J1 SHIPPED Apr 28 2026; J2 SHIPPED May 03 2026; J3-J7 deferred)
+## Phase VIP-1.J — BIR Tax Compliance Suite (J0 SHIPPED Apr 27 2026; J1 SHIPPED Apr 28 2026; J2 SHIPPED May 03 2026; J3 Part A + Part B + J4 SHIPPED May 04 2026; J5-J7 deferred)
 
-**Sequence**: J0 (foundation) ✅ -> J1 (VAT) ✅ -> J2 (EWT) ⬅ START HERE -> J3 (Compensation) -> J4 (Annual Alphalists) -> J5 (Books of Accounts) -> J6 (Inbound 2307) -> J7 (1702 Annual Income Tax)
+**Sequence**: J0 (foundation) ✅ -> J1 (VAT) ✅ -> J2 (EWT) ✅ -> J3 Part A (1601-C Compensation) ✅ -> J3 Part B (1604-CF Annual Alphalist + 2316) ✅ -> J4 (1604-E Annual + QAP Quarterly EWT Alphalists) ✅ -> J5 (Books of Accounts) ⬅ START HERE -> J6 (Inbound 2307) -> J7 (1702 Annual Income Tax)
 
 ### J0 — Compliance Dashboard + Foundation (~3-4 days) — ✅ SHIPPED + SMOKE-PASSED
 
@@ -9712,11 +9712,140 @@ Commits `80b2798` + `68c711d` on `origin/dev` (Apr 27 13:28 + 13:41 PHT). Live H
 - **J2.3.x — golden SAWT fixture**: snapshot a real-data Q1 `.dat` payload at `backend/erp/services/__fixtures__/SAWT_2026-Q1_VIP.dat` + add fixture-equality test. Detects accidental serializer drift.
 - **J2.4.x — Inbound 2307 (J6 prep)**: WithholdingLedger.DIRECTIONS reserves INBOUND but doesn't write today; CwtLedger remains source-of-truth. J6 decides migrate vs. coexist.
 
-### J3 — 1601-C + 1604-CF (~1.5 days)
-Payslip -> WithholdingLedger bridge (direction COMPENSATION). 1601-C copy-paste page. 1604-CF Annual Alphalist `.dat` writer (Schedules 7.1 / 7.2 / 7.3).
+### J3 Part A — 1601-C Monthly Compensation Withholding (May 04 2026, uncommitted on dev) — ✅ SHIPPED
 
-### J4 — QAP + 1604-E (~2 days)
-QAP quarterly `.dat` writer. 1604-E annual `.dat` writer. Cross-references VIP-1.B rebate payouts.
+Payslip -> WithholdingLedger bridge (direction COMPENSATION) on payroll-post (legacy + Hub-cascade paths). 1601-C monthly aggregator + 10-box copy-paste page + per-employee schedule. ATC buckets: WI100 (regular taxable comp) + WC120 (13th-month + bonuses excess of ₱90k) + WMWE (minimum-wage earner exempt under TRAIN).
+
+**J3 Part A.1 Engine bridge** (`backend/erp/services/withholdingService.js`) — ✅ shipped
+- `emitCompensationWithholdingForPayslip(payslip, opts)` writes 1-3 COMPENSATION rows per posted Payslip, idempotent on `source_event_id = payslip._id`.
+- WMWE classification via `PeopleMaster.employment_type === 'MWE'`. 13th-month exemption threshold lookup-overridable via `Settings.COMPENSATION_13TH_MONTH_EXEMPT` (default 90_000 PHP — TRAIN Law).
+- Snapshot pattern: payee_name/tin/address frozen at write time so renames don't rewrite filed history.
+- `buildCompensationPosture(entityId, year)` for 1601-C dashboard card. Sibling to `buildPosture()` (which is OUTBOUND-only).
+
+**J3 Part A.2 Aggregator + box layout** (`backend/erp/services/withholdingReturnService.js`) — ✅ shipped
+- `compute1601C({ entityId, year, month })` — sums INCLUDE-tagged COMPENSATION rows; 10-box totals (wi100/wc120/wmwe gross+tax + 4 totals) + per-employee `meta.schedule`.
+- Backward-compat refactor: `sumByAtcCode` + `listPayees` both accept optional `direction` parameter (default 'OUTBOUND' preserves J2 callers).
+- `exportEwtCsv` extended to handle formCode `'1601-C'` — calls compute1601C internally, names file `1601C_{year}-{month}.csv`. Same Rule #20 audit-log append.
+
+**J3 Part A.3 Controller + routes** (`backend/erp/controllers/birController.js` + `backend/erp/routes/birRoutes.js`) — ✅ shipped
+- New `compute1601C` + `getCompensationPosture` handlers. `exportEwtCsv` allow-list grew to `{1601-EQ, 1606, 1601-C}`.
+- 3 new routes mounted BEFORE the J1 catch-all: `GET /forms/1601-C/:year/:month/compute`, `GET /forms/1601-C/:year/:month/export.csv`, `GET /withholding/comp-posture`.
+
+**J3 Part A.4 Payslip-post wiring** (`backend/erp/controllers/payrollController.js` + `backend/erp/controllers/universalApprovalController.js`) — ✅ shipped
+- Both legacy direct-post AND G4.5cc Hub-cascade paths call `emitCompensationWithholdingForPayslip(fullPs, { userId })` AFTER `createAndPostJournal` succeeds. Failures log `[J3_COMPENSATION_EMIT_FAILURE]` to ErpAuditLog as LEDGER_ERROR; non-blocking (mirrors `[AUTO_JOURNAL_FAILURE]` posture).
+
+**J3 Part A.5 Lookup seeds** (`backend/erp/controllers/lookupGenericController.js`) — ✅ shipped
+- `BIR_ATC_CODES` SEED_DEFAULTS gained `WMWE` row (engine-internal exempt code; rate=0; form='1601-C'). Existing aspirational WI100 + WC120 rows now actively consumed.
+- `insert_only_metadata: true` protects subscriber overrides on labels/colors against future re-seeds.
+
+**J3 Part A.6 Frontend extension** (`frontend/src/erp/services/birService.js` + `frontend/src/erp/pages/BirEwtReturnDetailPage.jsx` + `frontend/src/App.jsx`) — ✅ shipped
+- New `compute1601C(year, month)` + `getCompensationPosture(year)` service wrappers.
+- `BirEwtReturnDetailPage` extended (now serves 1601-EQ + 1606 + 1601-C): validParams allows 1601-C, load() branches, SECTION_LABELS adds COMP/BNS/MWE, periodLabel + scheduleLabel helpers branch on formCode (1601-C → "Per-Employee Schedule"), PageGuide pageKey ternary (1601-C → 'bir-comp-return'), SAWT + 2307-PDF buttons stay 1601-EQ-only.
+- `<Route path="/erp/bir/1601-C/:year/:period">` mounted BEFORE `/erp/bir/:formCode/:year/:period` wildcard.
+
+**J3 Part A.7 PageGuide** (`frontend/src/components/common/PageGuide.jsx`) — ✅ shipped
+- New `bir-comp-return` 7-step entry covering pre-flight, bucket layout, per-employee schedule + threshold setting discoverability, copy-paste UX, no-2307/no-SAWT clarification, lifecycle, MWE classification.
+
+**J3 Part A.8 Healthcheck** (`backend/scripts/healthcheckBirCompensationWithholding.js`) — ✅ shipped
+- 78-assertion wiring contract verifier across 14 surfaces. Run `node backend/scripts/healthcheckBirCompensationWithholding.js` — exit 0 = clean.
+- J2 healthcheck (`healthcheckBirEwtWiring.js`) tightened 1 assertion to accept the new conditional pageKey ternary (still 124/124 PASS).
+
+**J3 Part A verification posture (May 04 2026)**:
+- ✅ J3 healthcheck 78/78 PASS
+- ✅ J2 EWT regression 124/124 PASS (after 1-line update)
+- ✅ J1 VAT regression 39/39 PASS
+- ✅ ClmIdempotency 6/6 PASS, ClmPerformance 34/34 PASS, TeamActivity 22/22 PASS, SalesDiscount 41/41 PASS
+- ✅ Vite build green in 1m 12s
+- ✅ Live HTTP smoke 5/5 (compute1601C 200 + comp-posture 200 + bad year/month 400 + EXPORT_FORM 403 + CORS exposes Content-Disposition + X-Content-Hash)
+- ⏸ Playwright UI smoke deferred — MCP browser locked by user's active Chrome (same condition as Phase R1 handoff). HTTP smoke + static healthcheck is the Rule 0b alternative.
+
+### J3 Part B — 1604-CF Annual Alphalist + Form 2316 PDF (May 04 2026 evening, uncommitted on dev) — ✅ SHIPPED
+
+3-Schedule annual compensation alphalist `.dat` writer + per-employee Form 2316 PDF + heatmap drill-down for 1604-CF (annual) AND 1601-C (Part A drill-down was missing).
+
+**J3 Part B.1 Aggregator + serializer + 2316 PDF** (`backend/erp/services/withholdingReturnService.js`) — ✅ shipped
+- `compute1604CF({ entityId, year })` — year-encoded sum across 12 monthly periods. Reads COMPENSATION rows via `listPayees` with 3-ATC filter + INCLUDE + COMPENSATION direction. Groups by `payee_id` (one row per employee summing across WI100/WC120/WMWE buckets). Partitions into Schedule 7.1 (regular taxable), 7.2 (MWE — exempt), 7.3 (terminated during year via live `PeopleMaster.date_separated` lookup). MWE wins over termination per BIR audit posture.
+- `serialize1604CFDat({ entity, year, totals, meta })` — fixed-format `.dat` per BIR Alphalist Data Entry v7.x. Header `H1604CF`, per-schedule detail `D71`/`D72`/`D73`, trailer `T1604CF`. Strict CRLF line endings, pipe-separator with `sanitize()` strip.
+- `export1604CFDat({ entityId, year, userId, entity })` — wraps compute + serialize, SHA-256 + audit-log append + `BirFilingStatus` upsert.
+- `export2316Pdf({ entityId, payeeId, year, entity })` — per-employee annual cert PDFkit. Mirrors `export2307Pdf` shape. Reads ONLY snapshots from WithholdingLedger (never live PeopleMaster).
+
+**J3 Part B.2 Snapshot bug fix in Part A bridge** (`backend/erp/services/withholdingService.js`) — ✅ shipped
+- `.select('+government_ids.tin full_name first_name last_name employment_type')` — TIN was `select: false` on the schema; Part A's `person.tin` read returned undefined, leading to empty TIN snapshots which would break 1604-CF (BIR auditors validate by TIN).
+- `personSnapshot` extended to capture `first_name` + `last_name` for clean alphalist name parsing.
+- `finance_tag: 'INCLUDE'` — auto-tag (no judgment call on compensation; tax was determined upstream by `payslipCalc`). Without this, 1601-C and 1604-CF aggregators would show zeros until finance manually tagged every row.
+
+**J3 Part B.3 Controller + routes** (`backend/erp/controllers/birController.js` + `backend/erp/routes/birRoutes.js`) — ✅ shipped
+- `compute1604CF` (VIEW_DASHBOARD) → `GET /forms/1604-CF/:year/compute`
+- `export1604CFDat` (EXPORT_FORM) → `GET /forms/1604-CF/:year/export.dat` + `[BIR_EXPORT_1604CF_DAT]` ops audit
+- `export2316Pdf` (EXPORT_FORM) → `GET /forms/2316/:year/:payeeId/export.pdf` + `[BIR_EXPORT_2316_PDF]` ops audit
+- All 3 mounted BEFORE the J1 catch-all `/forms/:formCode/:year/:period/export.csv`.
+
+**J3 Part B.4 Model schema extension** (`backend/erp/models/BirFilingStatus.js`) — ✅ shipped
+- `FORM_CODES` enum gained `'2316'` (per-employee per-year).
+- `perPayeeForms` validator gained `'2316'` so the pre-validate hook enforces `period_payee_id` + `period_payee_kind`.
+- 1604-CF was already in `annualForms` (J0 schema) — no change needed.
+
+**J3 Part B.5 Frontend** (`frontend/src/erp/services/birService.js` + `frontend/src/erp/pages/Bir1604CFDetailPage.jsx` + `frontend/src/App.jsx`) — ✅ shipped
+- `birService.compute1604CF(year)` + `export1604CFDat(year)` + `export2316Pdf(year, payeeId)`.
+- New page `Bir1604CFDetailPage.jsx` with 3-schedule layout (separate from `BirEwtReturnDetailPage` because annual schedule shape ≠ monthly box layout): header card + aggregation summary + annual totals (5 BIR boxes) + 3 schedule tables with per-row 2316 PDF buttons + lifecycle (Reviewed → Filed → Confirmed) + export audit log.
+- App.jsx: `Bir1604CFDetailPage` lazy-imported + `/erp/bir/1604-CF/:year` route mounted BEFORE `/erp/bir/:formCode/:year/:period` wildcard.
+
+**J3 Part B.6 PageGuide + heatmap drill-down** (`frontend/src/components/common/PageGuide.jsx` + `frontend/src/erp/pages/BIRCompliancePage.jsx`) — ✅ shipped
+- `bir-1604cf-alphalist` 7-step entry: pre-flight, 3-schedule layout, MWE/termination classification source, 2316 PDF + Substituted Filing posture, .dat export + Alphalist Data Entry v7.x import, lifecycle, snapshot pattern.
+- `BIRCompliancePage` heatmap: `monthlyOrQuarterlyForms` gained `'1601-C'` (Part A omission), `annualForms = ['1604-CF']` enables annual cell drilling with year-only URL.
+
+**J3 Part B.7 Healthcheck** (`backend/scripts/healthcheckBir1604CFAlphalist.js`) — ✅ shipped
+- 66 assertions across 14 sections including a `serialize1604CFDat` round-trip test with synthetic 3-employee fixture asserting H1604CF header + D71/D72/D73 detail lines + T1604CF trailer with money totals + CRLF-strict line endings.
+
+**J3 Part B verification posture (May 04 2026 evening)**:
+- ✅ J3 Part B healthcheck **66/66 PASS** (`node backend/scripts/healthcheckBir1604CFAlphalist.js`)
+- ✅ J3 Part A regression **78/78 PASS**, J2 EWT **124/124 PASS**, J1 VAT **39/39 PASS**, ClmIdempotency **6/6 PASS**, ClmPerformance **34/34 PASS**, TeamActivity **22/22 PASS**, SalesDiscount **41/41 PASS**
+- ✅ Vite frontend build green in **1m 38s** (Bir1604CFDetailPage emitted as own chunk: `Bir1604CFDetailPage-CNYgnKQ8.js`)
+- ✅ Live HTTP smoke 5/5 PASS (compute=200 with empty schedules / invalid year=400 / .dat=403 EXPORT_FORM gate / 2316=403 EXPORT_FORM gate / wrong-shape URL=404 — proves URL contract is strict)
+- ⏸ Playwright UI smoke deferred — MCP browser locked (same condition as J3 Part A + Phase R1 handoffs). HTTP smoke + serializer round-trip in healthcheck is the Rule 0b alternative.
+
+### J4 — 1604-E Annual + QAP Quarterly EWT Alphalists (~1.5 days) — ✅ SHIPPED MAY 04 2026 EVENING (UNCOMMITTED ON DEV)
+
+Annual + quarterly OUTBOUND-direction alphalists. 1604-E rolls up the calendar year for BIR's annual EWT filing (due March 1 of the following year per RR 2-98). QAP per-quarter complements 1601-EQ (due last day of the month following the quarter close). Both share the EWT subset `WI010 / WI011 / WC010 / WC011 / WI080 / WI081` — rent (WI160 / WC160) is reported separately on Form 1606 + its own annual roll-up, out of scope here.
+
+**J4.1 Service-layer aggregators + serializers + exporters** ([backend/erp/services/withholdingReturnService.js](backend/erp/services/withholdingReturnService.js)) — ✅ shipped
+- `compute1604E({ entityId, year })` — 12-period sum, single flat per-(payee × ATC) schedule sorted gross-desc. Per-ATC totals broken out (gross + tax + line count for each of the 6 EWT ATCs). Distinct-payee count uses a `(payee_kind, payee_id)` Set — multi-ATC payees count once. No MWE / 7.3 partition (vendors don't have it).
+- `computeQAP({ entityId, year, quarter })` — 3-period sum via `quarterPeriods`, same ATC subset, same flat schedule shape. `meta.form_code === 'QAP'`, `period_quarter` set.
+- `serialize1604EDat({ entity, year, totals, meta })` — header `H1604E|TIN|RegName|Branch|Year|FormType` + one `D1` line per (payee × ATC) pair (D1 contract is byte-identical to SAWT/QAP — `Seq|PayeeTIN|RegName|FirstName|MiddleName|Address|Nature|ATC|Gross|Rate|Withheld`) + trailer `T1604E|Count|TotalGross|TotalWithheld`. Pipe-separated, CRLF strict, sanitize() strips pipe + bare-LF.
+- `serializeQAPDat({ entity, year, quarter, totals, meta })` — header `HQAP|TIN|RegName|Branch|YYYYQq|QAP|YYYY|q` + same D1 line shape + trailer `TQAP|Count|TotalGross|TotalWithheld`.
+- `export1604EDat({ entityId, year, userId, entity })` — wraps compute + serialize, SHA-256 hash, `BirFilingStatus` upsert (form_code='1604-E', period_year=year, period_month=null, period_quarter=null, period_payee_id=null), audit-log append (artifact_kind='DAT', filename `1604E_${year}.dat`).
+- `exportQAPDat({ entityId, year, quarter, userId, entity })` — same shape, year+quarter scoping, filename `QAP_${year}_Q${quarter}.dat`.
+
+**J4.2 Controller handlers** ([backend/erp/controllers/birController.js](backend/erp/controllers/birController.js)) — ✅ shipped
+- `compute1604E` (VIEW_DASHBOARD) → `GET /forms/1604-E/:year/compute`
+- `export1604EDat` (EXPORT_FORM) → `GET /forms/1604-E/:year/export.dat` + `[BIR_EXPORT_1604E_DAT]` ops audit
+- `computeQAP` (VIEW_DASHBOARD) → `GET /forms/QAP/:year/:quarter/compute`
+- `exportQAPDat` (EXPORT_FORM) → `GET /forms/QAP/:year/:quarter/export.dat` + `[BIR_EXPORT_QAP_DAT]` ops audit
+- All export handlers refresh `birDashboardService.invalidate(req.entityId)` so the heatmap reflects fresh numbers.
+- All routes mounted BEFORE the J1 catch-all `/forms/:formCode/:year/:period/export.csv`.
+
+**J4.3 BirFilingStatus model** — ✅ already pre-wired (no schema change needed)
+- J0 already added `'1604-E'` to `annualForms` + `'QAP'` to `quarterlyForms` + both to the `FORM_CODES` enum.
+
+**J4.4 Frontend service + page** ([frontend/src/erp/services/birService.js](frontend/src/erp/services/birService.js) + [frontend/src/erp/pages/BirAlphalistEwtPage.jsx](frontend/src/erp/pages/BirAlphalistEwtPage.jsx) + [frontend/src/App.jsx](frontend/src/App.jsx)) — ✅ shipped
+- 4 new `birService` wrappers: `compute1604E(year)` / `export1604EDat(year)` / `computeQAP(year, quarter)` / `exportQAPDat(year, quarter)`.
+- New `BirAlphalistEwtPage` handles BOTH 1604-E and QAP via a `formCodeOverride` prop (mirrors the BirEwtReturnDetailPage 3-form pattern). Layout: header + aggregation summary + aggregate totals (4 cells) + per-ATC breakdown (6 cells, one per EWT ATC) + flat per-(payee × ATC) schedule table + lifecycle (Reviewed → Filed → Confirmed) + export audit log.
+- App.jsx mounts `/erp/bir/1604-E/:year` + `/erp/bir/QAP/:year/:quarter` BEFORE the `/erp/bir/:formCode/:year/:period` wildcard.
+
+**J4.5 PageGuide + heatmap drill-down** ([frontend/src/components/common/PageGuide.jsx](frontend/src/components/common/PageGuide.jsx) + [frontend/src/erp/pages/BIRCompliancePage.jsx](frontend/src/erp/pages/BIRCompliancePage.jsx)) — ✅ shipped
+- `bir-1604e-alphalist` 7-step entry: pre-flight, ATC scope (rent excluded), per-ATC breakdown explanation, finance_tag INCLUDE strict gate, .dat export + Alphalist Data Entry workflow, lifecycle, snapshot pattern. Tip: cross-check 4 QAP exports ≈ 1604-E within rounding.
+- `bir-qap-alphalist` 7-step entry: filed alongside 1601-EQ, quarter-by-quarter due dates, INCLUDE-strict, .dat workflow, lifecycle. Tip: QAP and SAWT share the D1/T1 shape but report opposite directions.
+- BIRCompliancePage heatmap: `annualForms` gained `'1604-E'`, `monthlyOrQuarterlyForms` gained `'QAP'` — both cells now drillable.
+
+**J4.6 Healthcheck** ([backend/scripts/healthcheckBir1604EQAPAlphalist.js](backend/scripts/healthcheckBir1604EQAPAlphalist.js)) — ✅ shipped
+- 97 assertions across 16 sections including dual `serialize1604EDat` + `serializeQAPDat` round-trip tests with synthetic 3-payee + 2-payee fixtures asserting H/T tags + entity TIN + period encoding + D1 vendor-vs-individual name placement (column 4 vs 5) + ATC + money formatting + record-count padding + trailer math + CRLF strict + line count.
+
+**J4 verification posture (May 04 2026 evening)**:
+- ✅ J4 healthcheck **97/97 PASS** (`node backend/scripts/healthcheckBir1604EQAPAlphalist.js`)
+- ✅ J3 Part B regression **66/66 PASS** (after relaxing one fragile literal-regex on the `annualForms` declaration to accept the J4 expansion to `['1604-CF', '1604-E']`).
+- ✅ J3 Part A **78/78 PASS**, J2 EWT **108/108 PASS** (filename: `healthcheckBirEwtWiring.js`), J1 VAT **39/39 PASS**, ClmIdempotency **6/6 PASS**, ClmPerformance **34/34 PASS**, TeamActivity **22/22 PASS**, SalesDiscount **41/41 PASS**
+- ✅ Vite frontend build green in **1m 02s**.
+- ⏸ HTTP smoke + Playwright UI smoke deferred — MCP browser locked (same condition as J3 Part B + Phase R1 handoffs).
 
 ### J5 — Books of Accounts loose-leaf PDFs (~2 days)
 `bookOfAccountsService.js` generates Sales / Purchase / General / GL / Cash Receipts / Cash Disbursements PDFs per entity per period. BIR-required header. Annual binding PDF + sworn declaration template.

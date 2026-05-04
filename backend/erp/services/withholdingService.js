@@ -47,12 +47,25 @@ const Settings = require('../models/Settings');
 // Inline fallbacks — used if BIR_ATC_CODES lookup is empty for the entity.
 // Mirrors lookupGenericController SEED_DEFAULTS so behavior is identical
 // whether the lookup has been seeded or not.
+//
+// Phase J3 (May 2026) — compensation buckets (WCOMP/W13TH/WMWE) are
+// engine-internal codes, NOT BIR ATC codes. They never collide with the
+// J2 EWT codes above because the COMPENSATION direction filter isolates
+// them at every aggregator query. WMWE's rate=0 reflects the TRAIN-Law
+// MWE exemption — gross is recorded for 1604-CF Schedule 7.2, withheld
+// is forced to 0.
 const DEFAULT_RATES = Object.freeze({
   WI010: 0.05, WI011: 0.10,
   WC010: 0.10, WC011: 0.15,
   WI160: 0.05, WC160: 0.05,
   WI080: 0.01, WI081: 0.02,
   WC158: 0.01,
+  // J3 — compensation withholding (rate is computed via tax tables; this
+  // is just a marker so the row passes validation. Actual withheld_amount
+  // comes from Payslip.deductions.withholding_tax — never from rate × gross).
+  WI100: 0,    // Regular taxable compensation — graduated tax table (form 1601-C)
+  WC120: 0,    // 13th-month + bonuses excess of ₱90k taxable portion (form 1601-C)
+  WMWE:  0,    // Minimum wage earner (exempt under TRAIN; reported on 1604-CF Sch 7.2)
 });
 
 const DEFAULT_FORM_FOR_ATC = Object.freeze({
@@ -61,7 +74,27 @@ const DEFAULT_FORM_FOR_ATC = Object.freeze({
   WI160: '1606',    WC160: '1606',
   WI080: '1601-EQ', WI081: '1601-EQ',
   WC158: '2307-IN',
+  // J3 — compensation buckets (BIR-actual codes; reused via direction filter)
+  WI100: '1601-C', WC120: '1601-C', WMWE: '1601-C',
 });
+
+// J3 — engine-internal codes for compensation withholding direction.
+// Centralized so the bridge helper, the aggregator, and the alphalist
+// all read the same source of truth. WI100 + WC120 mirror the BIR ATC
+// catalog for compensation income (Filipino employee, 13th-month excess);
+// WMWE is engine-internal — there is no BIR ATC for MWE because they are
+// outright exempt, but we still record the gross for 1604-CF Sch 7.2.
+const COMPENSATION_ATC_CODES = Object.freeze({
+  REGULAR: 'WI100',
+  THIRTEENTH_MONTH_EXCESS: 'WC120',
+  MWE: 'WMWE',
+});
+
+// 13th-month + bonuses tax-free threshold under TRAIN Law (RA 10963).
+// Configurable per entity via Settings — subscribers in jurisdictions with
+// different thresholds (or future PH legislative changes) override without
+// code deploy.
+const DEFAULT_THIRTEENTH_MONTH_EXEMPT_PHP = 90_000;
 
 const ATC_CACHE_TTL_MS = 60_000;
 const _atcCache = new Map();
@@ -353,6 +386,252 @@ async function buildPosture(entityId, year) {
 
 function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 
+// ── J3 — Compensation withholding bridge (Payslip → WithholdingLedger) ──
+/**
+ * Emits one or more COMPENSATION-direction WithholdingLedger rows for a
+ * POSTED Payslip. Called by payrollController + universalApprovalController
+ * AFTER createAndPostJournal so the GL + sub-ledger commit together (no
+ * orphan rows if the JE write fails).
+ *
+ * Row decomposition:
+ *   • Always emits WCOMP (regular taxable compensation) — gross_amount =
+ *     payslip.total_earnings minus the 13th-month excess and minus any MWE
+ *     gross. withheld_amount = payslip.deductions.withholding_tax.
+ *   • If payslip.earnings.thirteenth_month > exempt_threshold (₱90k by
+ *     default), emits W13TH for the EXCESS — tax tables computed it inside
+ *     payslip.deductions.withholding_tax already, so withheld_amount on
+ *     this row is 0 (just a gross-reporting marker for 1604-CF Sch 7.x).
+ *   • If person_type = 'MWE' (PeopleMaster.employment_type = MWE) emits
+ *     WMWE with withheld_amount = 0 — the entire compensation goes on
+ *     1604-CF Schedule 7.2 (MWE, exempt).
+ *
+ * Idempotency:
+ *   Emit reads the Payslip's _id as `source_event_id` (NOT the JE event id —
+ *   payslip is the source-of-truth document). Re-running emit for the same
+ *   payslip is safe via the Reversal Console call to
+ *   `deleteWithholdingEntriesForEvent(payslip._id)` before re-emit.
+ *
+ * @param {Object} payslip — full Payslip (must have entity_id, person_id,
+ *                            period, total_earnings, deductions, earnings)
+ * @param {Object} opts.session — optional Mongo session for transactional posting
+ * @param {Object} opts.entity — optional Entity row (read once by caller); if
+ *                                absent we lookup `withholding_active`-style flags lazily
+ * @param {Object} opts.userId — posted_by, denormalized into `bdm_id`
+ * @returns {{ written: Array, skipped: ?string }}
+ */
+async function emitCompensationWithholdingForPayslip(payslip, opts = {}) {
+  if (!payslip) return { written: [], skipped: 'no payslip' };
+  if (!payslip.entity_id) return { written: [], skipped: 'no entity_id on payslip' };
+  if (!payslip.period || !/^\d{4}-\d{2}$/.test(payslip.period)) {
+    return { written: [], skipped: `invalid payslip period: ${payslip.period}` };
+  }
+  if (!payslip.person_id) return { written: [], skipped: 'no person_id on payslip' };
+
+  // Resolve threshold via Settings (subscriber override). Falls back to ₱90k.
+  const exemptThreshold = await getThreshold(
+    payslip.entity_id, 'COMPENSATION_13TH_MONTH_EXEMPT', DEFAULT_THIRTEENTH_MONTH_EXEMPT_PHP
+  );
+
+  const earnings = payslip.earnings || {};
+  const deductions = payslip.deductions || {};
+  const totalEarnings = Number(payslip.total_earnings) || sumEarnings(earnings);
+  const withheldTax = Number(deductions.withholding_tax) || 0;
+  const thirteenthMonth = Number(earnings.thirteenth_month) || 0;
+  const thirteenthMonthExcess = Math.max(0, thirteenthMonth - exemptThreshold);
+
+  // Snapshot the employee for the alphalist — read PeopleMaster lazily so
+  // the bridge stays decoupled from full population.
+  // J3 Part B (May 2026) — TIN lives at `government_ids.tin` and is `select:
+  // false` on the schema, so the explicit .select('+government_ids.tin') is
+  // mandatory. Reading `person.tin` (Part A's typo) always returned undefined
+  // → empty snapshot → 1604-CF alphalist with no TINs, which BIR rejects.
+  // PeopleMaster has no `address` field today; BIR Alphalist Data Entry
+  // accepts empty employee address (the EMPLOYER address is the filing
+  // address, captured via Entity.address). Future schema additions for an
+  // employee home address would extend this snapshot.
+  let personSnapshot = { name: '', tin: '', address: '', employment_type: null, first_name: '', last_name: '' };
+  try {
+    const PeopleMaster = require('../models/PeopleMaster');
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- by-id lookup driven by payslip.person_id; payslip itself is entity-scoped at the caller
+    const person = await PeopleMaster.findById(payslip.person_id)
+      .select('+government_ids.tin full_name first_name last_name employment_type')
+      .lean();
+    if (person) {
+      personSnapshot = {
+        name: person.full_name || person.first_name || '(unnamed employee)',
+        tin: person.government_ids?.tin || '',
+        address: '', // PeopleMaster has no employee address field today
+        employment_type: person.employment_type || null,
+        first_name: person.first_name || '',
+        last_name: person.last_name || '',
+      };
+    }
+  } catch (err) {
+    console.warn(`[withholdingService.emitCompensation] PeopleMaster lookup failed for payslip ${payslip._id}:`, err.message);
+  }
+
+  const isMwe = personSnapshot.employment_type === 'MWE';
+  const entries = [];
+
+  // Common row shape — direction COMPENSATION, source PAYROLL.
+  // J3 Part B (May 2026) — compensation rows auto-tag INCLUDE because the
+  // tax was determined upstream by payslipCalc's BIR graduated tax-table
+  // math; there is no finance judgment call to make (unlike OUTBOUND rows
+  // where finance may decide a contractor isn't subject to withholding).
+  // Auto-INCLUDE makes the 1601-C and 1604-CF aggregators (which filter
+  // strict INCLUDE) immediately visible after a payroll post — without it,
+  // every entity would see "compensation totals always 0" until they
+  // discovered the EWT-tagging UI. Subscribers can override per row via
+  // finance UI; downstream filters use $ne 'EXCLUDE' so the override sticks.
+  const baseRow = {
+    entity_id: payslip.entity_id,
+    period: payslip.period,
+    direction: 'COMPENSATION',
+    payee_kind: 'PeopleMaster',
+    payee_id: payslip.person_id,
+    payee_name_snapshot: personSnapshot.name,
+    payee_tin_snapshot: personSnapshot.tin,
+    payee_address_snapshot: personSnapshot.address,
+    source_module: 'PAYROLL',
+    source_doc_ref: `Payslip ${payslip.period} ${personSnapshot.name}`.trim(),
+    source_event_id: payslip._id,
+    bdm_id: opts.userId || payslip.posted_by || null,
+    finance_tag: 'INCLUDE',
+    notes: null,
+  };
+
+  if (isMwe) {
+    // MWE: entire compensation is exempt (TRAIN Law). Withheld must be 0.
+    entries.push({
+      ...baseRow,
+      atc_code: COMPENSATION_ATC_CODES.MWE,
+      form_code: '1601-C',
+      gross_amount: round2(totalEarnings),
+      withholding_rate: 0,
+      withheld_amount: 0,
+      notes: 'MWE — exempt under TRAIN (RA 10963). Reports on 1604-CF Schedule 7.2.',
+    });
+  } else {
+    // Regular taxable compensation — gross excludes the 13th-month excess so
+    // the two row's gross_amounts sum to total_earnings (no double-count).
+    const regularGross = round2(totalEarnings - thirteenthMonthExcess);
+    if (regularGross > 0 || withheldTax > 0) {
+      entries.push({
+        ...baseRow,
+        atc_code: COMPENSATION_ATC_CODES.REGULAR,
+        form_code: '1601-C',
+        gross_amount: regularGross,
+        withholding_rate: 0, // tax-table computed; rate is meaningless on aggregate
+        withheld_amount: round2(withheldTax),
+        notes: thirteenthMonthExcess > 0
+          ? `Regular comp; 13th-month excess of ₱${round2(thirteenthMonthExcess)} reported on separate W13TH row.`
+          : null,
+      });
+    }
+    if (thirteenthMonthExcess > 0) {
+      entries.push({
+        ...baseRow,
+        atc_code: COMPENSATION_ATC_CODES.THIRTEENTH_MONTH_EXCESS,
+        form_code: '1601-C',
+        gross_amount: round2(thirteenthMonthExcess),
+        withholding_rate: 0,
+        withheld_amount: 0, // tax already counted in WCOMP row's withheld_amount
+        notes: `13th-month + bonuses excess over ₱${exemptThreshold} TRAIN exemption (RA 10963). Tax included in WCOMP row's withheld total.`,
+      });
+    }
+  }
+
+  if (!entries.length) return { written: [], skipped: 'no taxable / reportable compensation' };
+
+  // Idempotent re-emit support — caller may have run reversal first.
+  if (opts.deletePrior !== false) {
+    await deleteWithholdingEntriesForEvent(payslip._id, { session: opts.session });
+  }
+  const written = await createWithholdingEntries(entries, { session: opts.session });
+  return { written, skipped: null };
+}
+
+function sumEarnings(earnings) {
+  if (!earnings) return 0;
+  let total = 0;
+  for (const k of Object.keys(earnings)) {
+    const v = Number(earnings[k]);
+    if (Number.isFinite(v)) total += v;
+  }
+  return total;
+}
+
+// ── J3 — Compensation Posture (1601-C dashboard card) ───────────────────
+/**
+ * COMPENSATION-direction posture. Mirrors `buildPosture` (which is OUTBOUND-
+ * only) but for the 1601-C surface. Surfaces YTD totals + per-employee
+ * breakdown + simple flags ("N employees with no withholding YTD" — likely
+ * MWE or under-paid).
+ */
+async function buildCompensationPosture(entityId, year) {
+  if (!entityId || !year) {
+    return {
+      enabled: false,
+      employees_count: 0,
+      ytd_compensation: 0,
+      ytd_withheld: 0,
+      mwe_count: 0,
+      breakdown: [],
+    };
+  }
+  const yearStart = `${year}-01`;
+  const yearEnd = `${year}-12`;
+  const rows = await WithholdingLedger.aggregate([
+    {
+      $match: {
+        entity_id: new mongoose.Types.ObjectId(String(entityId)),
+        direction: 'COMPENSATION',
+        period: { $gte: yearStart, $lte: yearEnd },
+        finance_tag: { $ne: 'EXCLUDE' },
+      },
+    },
+    {
+      $group: {
+        _id: { payee_id: '$payee_id', atc_code: '$atc_code' },
+        gross: { $sum: '$gross_amount' },
+        withheld: { $sum: '$withheld_amount' },
+        count: { $sum: 1 },
+        last_period: { $max: '$period' },
+        payee_name: { $last: '$payee_name_snapshot' },
+        payee_tin: { $last: '$payee_tin_snapshot' },
+      },
+    },
+    { $sort: { gross: -1 } },
+    { $limit: 200 },
+  ]);
+
+  const totals = rows.reduce((acc, r) => {
+    acc.gross += r.gross;
+    acc.withheld += r.withheld;
+    if (r._id.atc_code === COMPENSATION_ATC_CODES.MWE) acc.mweEmployees.add(String(r._id.payee_id));
+    acc.allEmployees.add(String(r._id.payee_id));
+    return acc;
+  }, { gross: 0, withheld: 0, mweEmployees: new Set(), allEmployees: new Set() });
+
+  return {
+    enabled: true,
+    employees_count: totals.allEmployees.size,
+    ytd_compensation: round2(totals.gross),
+    ytd_withheld: round2(totals.withheld),
+    mwe_count: totals.mweEmployees.size,
+    breakdown: rows.map(r => ({
+      atc_code: r._id.atc_code,
+      payee_id: r._id.payee_id,
+      payee_name: r.payee_name,
+      payee_tin: r.payee_tin,
+      gross: round2(r.gross),
+      withheld: round2(r.withheld),
+      months_present: r.count,
+      last_period: r.last_period,
+    })),
+  };
+}
+
 module.exports = {
   resolveAtcCodeForExpenseLine,
   resolveAtcCodeForPrfRent,
@@ -362,8 +641,13 @@ module.exports = {
   getAtcMetadata,
   invalidateAtcCache,
   buildPosture,
+  // J3 — compensation withholding
+  emitCompensationWithholdingForPayslip,
+  buildCompensationPosture,
+  COMPENSATION_ATC_CODES,
+  DEFAULT_THIRTEENTH_MONTH_EXEMPT_PHP,
   DEFAULT_RATES,
   DEFAULT_FORM_FOR_ATC,
   // Test seams
-  _internals: { round2 },
+  _internals: { round2, sumEarnings },
 };

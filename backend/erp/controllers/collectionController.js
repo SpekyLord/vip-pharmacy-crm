@@ -79,9 +79,13 @@ const updateCollection = catchAsync(async (req, res) => {
   // Phase G4.5b — proxy can edit any BDM's DRAFT collection within the entity
   // when collections.proxy_entry is ticked. Non-proxy callers stay scoped to
   // their own bdm_id via the base tenantFilter.
+  // ERROR rows are also editable — once Validate flips a row to ERROR the user
+  // must be able to fix the violations and re-submit. Mirrors the editable set
+  // used by validateCollections (getEditableStatuses → ['DRAFT','ERROR']).
   const scope = await widenFilterForProxy(req, 'collections', { subKey: 'proxy_entry' });
-  const collection = await Collection.findOne({ _id: req.params.id, ...scope, status: 'DRAFT' });
-  if (!collection) return res.status(404).json({ success: false, message: 'Draft collection not found' });
+  const editable = await getEditableStatuses(req.entityId, 'COLLECTION');
+  const collection = await Collection.findOne({ _id: req.params.id, ...scope, status: { $in: editable } });
+  if (!collection) return res.status(404).json({ success: false, message: 'Editable collection not found (must be DRAFT or ERROR)' });
 
   // Ownership is locked on edit. Strip assigned_to / bdm_id / recorded_on_behalf_of
   // so a proxy can't silently reassign a row via update — reassignment requires

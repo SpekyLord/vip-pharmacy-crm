@@ -146,6 +146,78 @@ const PAGE_GUIDES = {
     ],
     tip: 'Finance ledger gates: every WithholdingLedger row starts as PENDING. Review under "VAT/EWT Tagging" (Phase G3 surface, /erp/accounting) and tag INCLUDE before exporting CSVs — the aggregator only counts INCLUDE rows. Mirrors the VAT ledger discipline so 1601-EQ totals always match what finance signed off.',
   },
+  'bir-comp-return': {
+    title: 'BIR 1601-C — Monthly Compensation Withholding',
+    steps: [
+      'Pre-flight: this report aggregates COMPENSATION-direction WithholdingLedger rows that the engine emits whenever a Payslip is POSTED (legacy direct-post path in payrollController + cascade path through the Approval Hub). If you see zero employees, post a payroll first — there\'s no separate switch to flip per Phase J3.',
+      'Bucket layout (BIR ATC codes): WI100 = regular taxable compensation (gross + tax via graduated tax tables in payslipCalc.js); WC120 = 13th-month + bonuses excess of ₱90k (gross only — its tax was already counted in the WI100 row\'s withheld); WMWE = minimum wage earners (gross only, structurally exempt under TRAIN / RA 10963). The bottom Total Net Taxable Compensation = WI100 gross + WC120 gross (excludes the MWE pool).',
+      'Per-employee schedule below the boxes shows each PeopleMaster employee × ATC bucket — drill in if a total looks off. The 13th-month exemption threshold (₱90k) is configurable per entity via Settings COMPENSATION_13TH_MONTH_EXEMPT for subscribers in jurisdictions with different thresholds (subscription-ready per Rule #19).',
+      'Each card is one BIR field. Click the copy icon and paste directly into eBIRForms 7.x for the 1601-C return. Tax computation already happened inside payslipCalc — this report just surfaces the totals the engine recorded.',
+      'No 2307 PDF here — compensation receipts use BIR Form 2316 (annual employee certificate), shipping in Phase J3 Part B alongside 1604-CF. No SAWT here either — SAWT is the EWT alphalist for 1601-EQ (Phase J2), not for compensation.',
+      'Lifecycle: Export CSV → Mark Reviewed (president sign-off) → Mark Filed (bookkeeper, after eBIR submission with reference number) → CONFIRMED (auto-flip when BIR confirmation email lands at yourpartner@viosintegrated.net).',
+      'MWE classification: an employee is treated as MWE if PeopleMaster.employment_type = "MWE". Engine forces withheld_amount=0 and routes the entire compensation to the WMWE bucket. To revoke MWE status mid-year (e.g., promotion above the minimum wage), update PeopleMaster — the change applies to NEW payslip posts; reopen + repost a closed period to retroactively re-emit (Reversal Console).',
+    ],
+    next: [
+      { label: 'BIR Compliance Dashboard', path: '/erp/bir' },
+      { label: 'Payroll (post payslips)', path: '/erp/payroll' },
+      { label: '1601-EQ EWT (sibling form)', path: '/erp/bir' },
+    ],
+    tip: 'The compensation engine is idempotent on payslip._id — re-posting the same payslip (after reopen) deletes prior compensation rows and re-emits. This means partial 1601-C totals after a mid-month reopen are normal until you re-post the affected payslips. The legacy direct-post path AND the cascade Approval Hub path BOTH emit, so a clerk-submitted run cleared by admin produces the same compensation rows as a president-direct post.',
+  },
+  'bir-1604cf-alphalist': {
+    title: 'BIR 1604-CF — Annual Compensation Alphalist',
+    steps: [
+      'Pre-flight: this page rolls up 12 months of COMPENSATION-direction WithholdingLedger rows for the calendar year. The data is fed by every payroll post during the year (legacy direct-post path + G4.5cc Hub-cascade path) — same engine that drives the monthly 1601-C report. If you see zero employees, no payroll has been posted for the year yet.',
+      'Three schedules per BIR Form 1604-CF: (7.1) Regular employees with taxable compensation, (7.2) Minimum Wage Earners (exempt under TRAIN), (7.3) Employees terminated during the year. MWE classification wins over termination — a separated MWE belongs in 7.2.',
+      'MWE classification reads PeopleMaster.employment_type === "MWE". Termination classification reads PeopleMaster.date_separated falling within the calendar year (live HR signal — the snapshot at payroll-post time may pre-date the separation by months).',
+      'Each row has a "2316 PDF" button — generates the BIR Form 2316 (Certificate of Compensation Paid / Tax Withheld) PDF for that employee × year. Distribute to every employee for their personal income-tax filing (or as proof of "Substituted Filing" exemption when 2316 is the only income source).',
+      'Toolbar "Export .dat" generates the BIR Alphalist Data Entry v7.x payload. Open Alphalist Data Entry, import the .dat, validate, and submit. The exported file carries a SHA-256 hash so re-exports with different content are detectable.',
+      'Lifecycle: Export .dat → Mark Reviewed (president sign-off) → Mark Filed (bookkeeper, after Alphalist submission with reference number) → CONFIRMED (auto-flip when BIR confirmation email lands at yourpartner@viosintegrated.net). 1604-CF is annual; due January 31 of the following year per BIR RR 2-2015.',
+      'Snapshot pattern: every alphalist row reads frozen payee_name + payee_tin from WithholdingLedger — never live PeopleMaster. Subsequent employee renames or TIN updates do NOT rewrite the alphalist of a closed year. To retroactively fix a TIN, reopen the affected payroll periods via Reversal Console + re-post.',
+    ],
+    next: [
+      { label: 'BIR Compliance Dashboard', path: '/erp/bir' },
+      { label: '1601-C Monthly Compensation (sibling)', path: '/erp/bir' },
+      { label: 'Payroll (post payslips for the year)', path: '/erp/payroll' },
+    ],
+    tip: 'The 2316 PDF audit-trail logs each generation as a separate BirFilingStatus row (form_code=2316, period_payee_id=<employee>) — so the dashboard\'s recent-exports strip shows every employee certificate. Subscribers in jurisdictions with different annual cert formats can swap the PDF renderer via the same DI seam used by the SAWT serializer (lookup-driven module path future).',
+  },
+  'bir-1604e-alphalist': {
+    title: 'BIR 1604-E — Annual Alphalist of Payees Subject to Expanded Withholding',
+    steps: [
+      'Pre-flight: this page rolls up 12 months of OUTBOUND-direction WithholdingLedger rows for the calendar year — the same engine that feeds the quarterly 1601-EQ and SAWT reports. Scope is the EWT subset (WI010 / WI011 / WC010 / WC011 / WI080 / WI081). Rent (WI160 / WC160) is reported separately on Form 1606 monthly + its own annual roll-up — out of scope here.',
+      'Each row is a (payee × ATC) pair — same shape as the BIR Alphalist Data Entry v7.x D1 line. A single payee may appear under multiple ATCs (e.g. a corporate vendor that crosses the ₱720k threshold mid-year shows under both WC010 and WC011). The "Distinct Payees" total counts each payee once; the "Payee × ATC Lines" total matches the .dat record count.',
+      'Per-ATC card breakdown shows gross + tax + line count for each of the 6 EWT ATCs. Use this to reconcile against the four 1601-EQ quarterly returns: the sum of the four QAP files for the year MUST match the 1604-E annual numbers within rounding (sub-ledger ≠ GL = bug).',
+      'finance_tag is INCLUDE strict — PENDING rows are excluded so finance has the judgment call on each contractor (corp vs indiv classification, TWA registration, threshold flips). Tag rows on the Withholding Posture card on /erp/bir before they roll into the alphalist.',
+      'Toolbar "Export .dat" generates the BIR Alphalist Data Entry v7.x payload. Open Alphalist Data Entry, import the .dat, validate, and submit. The exported file carries a SHA-256 hash so re-exports with different content are detectable.',
+      'Lifecycle: Export .dat → Mark Reviewed (president sign-off) → Mark Filed (bookkeeper, after Alphalist submission with reference number) → CONFIRMED (auto-flip when BIR confirmation email lands). 1604-E is annual; due March 1 of the following year per BIR RR 2-98 + RMC 18-2003.',
+      'Snapshot pattern: every alphalist row reads frozen payee_name + payee_tin from WithholdingLedger — never live VendorMaster / Hospital / Doctor. Subsequent renames or TIN updates do NOT rewrite the alphalist of a closed year. To retroactively fix a TIN, reverse the affected expense / PRF documents via Reversal Console + re-post.',
+    ],
+    next: [
+      { label: 'BIR Compliance Dashboard', path: '/erp/bir' },
+      { label: 'QAP — Quarterly Alphalist (sibling)', path: '/erp/bir' },
+      { label: '1601-EQ — Quarterly EWT (sibling)', path: '/erp/bir' },
+    ],
+    tip: 'Cross-check: sum of 4 QAP exports for the year should equal the 1604-E export within a few centavos (rounding only). If a quarter\'s QAP is missing payees that show up in 1604-E, it usually means the missing quarter\'s rows are still PENDING — go INCLUDE them on the Withholding Posture card. Subscribers in jurisdictions outside PH can swap the .dat serializer via the same DI seam used by SAWT (lookup-driven module path).',
+  },
+  'bir-qap-alphalist': {
+    title: 'BIR QAP — Quarterly Alphalist of Payees (1601-EQ Companion)',
+    steps: [
+      'Pre-flight: this page rolls up 3 months of OUTBOUND-direction WithholdingLedger rows for one quarter — the per-payee detail behind the totals on the matching 1601-EQ return. Scope is the same EWT subset as 1604-E (WI010 / WI011 / WC010 / WC011 / WI080 / WI081). Rent goes through Form 1606 separately.',
+      'BIR requires QAP to be filed alongside 1601-EQ each quarter. Submit cadence: 1601-EQ totals via eBIRForms + QAP .dat via Alphalist Data Entry v7.x — both due by the last day of the month following the quarter close (e.g. Q1 due April 30).',
+      'Each row is a (payee × ATC) pair — same .dat D1 line shape as 1604-E and SAWT. Sort is gross descending so big-ticket payees appear first (eyeball-audit pattern).',
+      'finance_tag is INCLUDE strict — PENDING rows are excluded. Same posture as 1601-EQ + SAWT — tag rows on the Withholding Posture card before they roll into the alphalist.',
+      'Toolbar "Export .dat" generates the BIR Alphalist Data Entry v7.x payload. Import into Alphalist Data Entry, validate, submit. Re-exports carry a fresh SHA-256 hash so the audit log distinguishes them.',
+      'Lifecycle: Export .dat → Mark Reviewed (president sign-off) → Mark Filed (after Alphalist submission with reference number) → CONFIRMED. Per-quarter — file Q1 by April 30, Q2 by July 31, Q3 by October 31, Q4 by January 31 of the following year.',
+      'Cross-reference: the totals here MUST match the 1601-EQ totals for the same year-quarter. If they diverge, one report has stale cache or someone tagged rows differently across the two surfaces — Recompute both and compare.',
+    ],
+    next: [
+      { label: 'BIR Compliance Dashboard', path: '/erp/bir' },
+      { label: '1601-EQ Quarterly EWT (the matching return)', path: '/erp/bir' },
+      { label: '1604-E Annual Alphalist (parent roll-up)', path: '/erp/bir' },
+    ],
+    tip: 'QAP and SAWT are siblings — both quarterly alphalists, both BIR Alphalist Data Entry v7.x format, both per-(payee × ATC). The difference is direction: QAP reports OUTBOUND withholding (you withholding tax for payees), SAWT reports INBOUND (your customers withholding tax from you for the SAWT credit you claim against income tax). They share the D1/T1 shape so the BIR importer accepts both via the same record contract.',
+  },
   'bir-vat-return': {
     title: 'BIR 2550M / 2550Q VAT Return',
     steps: [

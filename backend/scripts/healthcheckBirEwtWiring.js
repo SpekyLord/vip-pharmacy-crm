@@ -267,8 +267,11 @@ expect(ewtPage.includes('birService.exportSawtDat'),
   'BirEwtReturnDetailPage calls exportSawtDat (toolbar SAWT button)');
 expect(ewtPage.includes('birService.export2307Pdf'),
   'BirEwtReturnDetailPage calls export2307Pdf (per-row 2307 PDF)');
-expect(ewtPage.includes("pageKey=\"bir-ewt-return\""),
-  'BirEwtReturnDetailPage renders PageGuide with bir-ewt-return key');
+// Phase J3 (May 2026) — BirEwtReturnDetailPage now serves both EWT (1601-EQ
+// + 1606) AND compensation (1601-C). pageKey switches via inline ternary on
+// formCode; check both branches are referenced.
+expect(/'bir-ewt-return'/.test(ewtPage) && /'bir-comp-return'/.test(ewtPage),
+  'BirEwtReturnDetailPage renders PageGuide with bir-ewt-return (J2) + bir-comp-return (J3) keys');
 
 // ── 11. App.jsx wires routes ────────────────────────────────────────────
 const app = read('frontend/src/App.jsx');

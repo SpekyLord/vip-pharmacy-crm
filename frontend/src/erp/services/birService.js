@@ -155,6 +155,19 @@ export async function compute1606(year, month) {
   return data?.data || null;
 }
 
+// Phase J3 (May 2026) — 1601-C Monthly Compensation Withholding.
+// Same monthly encoding as 1606. Returns totals + per-employee schedule.
+export async function compute1601C(year, month) {
+  const { data } = await api.get(`${BASE}/forms/1601-C/${year}/${month}/compute`);
+  return data?.data || null;
+}
+
+export async function getCompensationPosture(year) {
+  const params = year ? { year } : {};
+  const { data } = await api.get(`${BASE}/withholding/comp-posture`, { params });
+  return data?.data || null;
+}
+
 export async function listEwtPayees(year, quarter) {
   const { data } = await api.get(`${BASE}/forms/1601-EQ/${year}/${quarter}/payees`);
   return data?.data || { payees: [] };
@@ -218,6 +231,43 @@ export async function export2307Pdf(year, quarter, payeeKind, payeeId) {
   );
 }
 
+// ── Phase J3 Part B — 1604-CF Annual Alphalist + Form 2316 ────────────
+export async function compute1604CF(year) {
+  const { data } = await api.get(`${BASE}/forms/1604-CF/${year}/compute`);
+  return data?.data || null;
+}
+
+export async function export1604CFDat(year) {
+  return downloadBlob(`${BASE}/forms/1604-CF/${year}/export.dat`, `1604CF_${year}.dat`);
+}
+
+export async function export2316Pdf(year, payeeId) {
+  return downloadBlob(
+    `${BASE}/forms/2316/${year}/${encodeURIComponent(payeeId)}/export.pdf`,
+    `2316_${payeeId}_${year}.pdf`,
+  );
+}
+
+// Phase J4 — 1604-E (annual EWT alphalist) + QAP (quarterly EWT alphalist)
+
+export async function compute1604E(year) {
+  const { data } = await api.get(`${BASE}/forms/1604-E/${year}/compute`);
+  return data?.data || null;
+}
+
+export async function export1604EDat(year) {
+  return downloadBlob(`${BASE}/forms/1604-E/${year}/export.dat`, `1604E_${year}.dat`);
+}
+
+export async function computeQAP(year, quarter) {
+  const { data } = await api.get(`${BASE}/forms/QAP/${year}/${quarter}/compute`);
+  return data?.data || null;
+}
+
+export async function exportQAPDat(year, quarter) {
+  return downloadBlob(`${BASE}/forms/QAP/${year}/${quarter}/export.dat`, `QAP_${year}_Q${quarter}.dat`);
+}
+
 export default {
   getDashboard,
   getEntityConfig,
@@ -241,4 +291,16 @@ export default {
   exportEwtCsv,
   exportSawtDat,
   export2307Pdf,
+  // Phase J3 Part A
+  compute1601C,
+  getCompensationPosture,
+  // Phase J3 Part B
+  compute1604CF,
+  export1604CFDat,
+  export2316Pdf,
+  // Phase J4
+  compute1604E,
+  export1604EDat,
+  computeQAP,
+  exportQAPDat,
 };

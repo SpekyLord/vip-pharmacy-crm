@@ -1,0 +1,280 @@
+- generic [ref=e3434]:
+  - navigation [ref=e3435]:
+    - generic [ref=e3436]:
+      - img "VIP" [ref=e3438]
+      - generic "Platform switch" [ref=e3439]:
+        - link "CRM" [ref=e3440] [cursor=pointer]:
+          - /url: /bdm
+          - img [ref=e3442]
+          - text: CRM
+        - link "ERP" [ref=e3447] [cursor=pointer]:
+          - /url: /erp
+          - img [ref=e3449]
+          - text: ERP
+    - generic [ref=e3452]:
+      - img [ref=e3454]
+      - generic "CRM tabs" [ref=e3459]:
+        - link "Dashboard" [ref=e3460] [cursor=pointer]:
+          - /url: /bdm
+          - generic [ref=e3461]: Dashboard
+        - link "Call Plan" [ref=e3462] [cursor=pointer]:
+          - /url: /bdm/cpt
+          - generic [ref=e3463]: Call Plan
+        - link "Visits" [ref=e3464] [cursor=pointer]:
+          - /url: /bdm/visits
+          - generic [ref=e3465]: Visits
+        - link "Inbox" [ref=e3466] [cursor=pointer]:
+          - /url: /bdm/inbox
+          - generic [ref=e3467]: Inbox
+    - generic [ref=e3468]:
+      - button "Toggle dark mode" [ref=e3469] [cursor=pointer]:
+        - img [ref=e3470]
+      - link "Inbox — 1 unread" [ref=e3473] [cursor=pointer]:
+        - /url: /inbox
+        - img [ref=e3474]
+        - generic: "1"
+      - generic [ref=e3478]:
+        - generic [ref=e3479]: MN
+        - generic [ref=e3480]:
+          - generic [ref=e3481]: Mae Navarro
+          - generic [ref=e3482]: BDM
+      - button "Logout" [ref=e3483] [cursor=pointer]:
+        - img [ref=e3484]
+        - generic [ref=e3487]: Logout
+  - generic [ref=e3488]:
+    - complementary [ref=e3489]:
+      - button [ref=e3490] [cursor=pointer]:
+        - img [ref=e3491]
+      - navigation [ref=e3493]:
+        - generic [ref=e3494]:
+          - generic [ref=e3495]: Main
+          - link "Dashboard" [ref=e3497] [cursor=pointer]:
+            - /url: /bdm
+            - img [ref=e3499]
+            - generic [ref=e3504]: Dashboard
+        - generic [ref=e3505]:
+          - button "Work" [ref=e3506] [cursor=pointer]:
+            - generic [ref=e3507]: Work
+            - img [ref=e3508]
+          - generic [ref=e3510]:
+            - link "Call Plan" [ref=e3511] [cursor=pointer]:
+              - /url: /bdm/cpt
+              - img [ref=e3513]
+              - generic [ref=e3515]: Call Plan
+            - link "Products" [ref=e3516] [cursor=pointer]:
+              - /url: /bdm/products
+              - img [ref=e3518]
+              - generic [ref=e3522]: Products
+            - link "Mail 1" [ref=e3523] [cursor=pointer]:
+              - /url: /bdm/inbox
+              - img [ref=e3525]
+              - generic [ref=e3528]: Mail
+              - generic [ref=e3529]: "1"
+            - link "My Visits" [ref=e3530] [cursor=pointer]:
+              - /url: /bdm/visits
+              - img [ref=e3532]
+              - generic [ref=e3536]: My Visits
+            - link "Comm Log" [ref=e3537] [cursor=pointer]:
+              - /url: /bdm/comm-log
+              - img [ref=e3539]
+              - generic [ref=e3541]: Comm Log
+            - link "Partnership" [ref=e3542] [cursor=pointer]:
+              - /url: /bdm/partnership
+              - img [ref=e3544]
+              - generic [ref=e3549]: Partnership
+            - link "Field Guide" [ref=e3550] [cursor=pointer]:
+              - /url: /bdm/field-guide
+              - img [ref=e3552]
+              - generic [ref=e3554]: Field Guide
+    - generic [ref=e3555]:
+      - button [ref=e3557] [cursor=pointer]:
+        - img [ref=e3558]
+      - generic "Platform switch" [ref=e3561]:
+        - link "CRM" [ref=e3562] [cursor=pointer]:
+          - /url: /bdm
+        - link "ERP" [ref=e3563] [cursor=pointer]:
+          - /url: /erp
+      - navigation [ref=e3564]:
+        - generic [ref=e3565]:
+          - generic [ref=e3566]: Main
+          - button "Dashboard" [ref=e3568] [cursor=pointer]:
+            - img [ref=e3570]
+            - generic [ref=e3575]: Dashboard
+        - generic [ref=e3576]:
+          - button "Work" [ref=e3577] [cursor=pointer]:
+            - generic [ref=e3578]: Work
+            - img [ref=e3579]
+          - generic [ref=e3581]:
+            - button "Call Plan" [ref=e3582] [cursor=pointer]:
+              - img [ref=e3584]
+              - generic [ref=e3586]: Call Plan
+            - button "Products" [ref=e3587] [cursor=pointer]:
+              - img [ref=e3589]
+              - generic [ref=e3593]: Products
+            - button "Mail 1" [ref=e3594] [cursor=pointer]:
+              - img [ref=e3596]
+              - generic [ref=e3599]: Mail
+              - generic [ref=e3600]: "1"
+            - button "My Visits" [ref=e3601] [cursor=pointer]:
+              - img [ref=e3603]
+              - generic [ref=e3607]: My Visits
+            - button "Comm Log" [ref=e3608] [cursor=pointer]:
+              - img [ref=e3610]
+              - generic [ref=e3612]: Comm Log
+            - button "Partnership" [ref=e3613] [cursor=pointer]:
+              - img [ref=e3615]
+              - generic [ref=e3620]: Partnership
+            - button "Field Guide" [ref=e3621] [cursor=pointer]:
+              - img [ref=e3623]
+              - generic [ref=e3625]: Field Guide
+    - main [ref=e3626]:
+      - generic [ref=e3627]:
+        - button "×" [ref=e3628] [cursor=pointer]
+        - generic [ref=e3629]:
+          - img [ref=e3630]
+          - text: Partnership Presentation (CLM)
+        - generic [ref=e3632]:
+          - generic [ref=e3633]:
+            - generic [ref=e3634]: "1"
+            - generic [ref=e3635]: Pick the VIP Client you are pitching to and the products you plan to feature
+          - generic [ref=e3636]:
+            - generic [ref=e3637]: "2"
+            - generic [ref=e3638]: Tap "Start Presentation" to go full-screen — swipe left/right to navigate slides
+          - generic [ref=e3639]:
+            - generic [ref=e3640]: "3"
+            - generic [ref=e3641]: Show the QR on the final slide so the VIP Client can message you on Messenger
+          - generic [ref=e3642]:
+            - generic [ref=e3643]: "4"
+            - generic [ref=e3644]: On Session Complete, fill Interest Level + Outcome + Notes (all required) — then Save Session forwards you to Visit Logger to take the proof selfie
+          - generic [ref=e3645]:
+            - generic [ref=e3646]: "5"
+            - generic [ref=e3647]: Skip is allowed if the client is leaving — but Visit Submit stays blocked with a red banner until you Resume CLM and Save this session (Notes-required gate)
+          - generic [ref=e3648]:
+            - generic [ref=e3649]: "6"
+            - generic [ref=e3650]: Review your past sessions in the History tab
+        - generic [ref=e3651]:
+          - generic [ref=e3652]: "Next steps:"
+          - button "My Visits →" [ref=e3653] [cursor=pointer]
+          - button "Dashboard →" [ref=e3654] [cursor=pointer]
+        - generic [ref=e3655]: Each product you select shows on slide 5. Mark which ones the VIP Client was interested in before ending the session. Save Session is disabled until Notes is filled (Interest defaults to 3, Outcome to "maybe", Follow-up Date is optional). If you Skip, the visit page will show a red "CLM session not finalized" banner — click "Resume CLM session" to come back here and Save. Skipping products entirely is fine — slide 5 shows a neutral empty-state card. Offline drafts sync when connectivity returns. If you re-enter an in-progress session you will see a "Resuming in-progress CLM session" toast.
+      - generic [ref=e3657]:
+        - heading "Partnership Presentation" [level=1] [ref=e3658]:
+          - img [ref=e3659]
+          - text: Partnership Presentation
+        - paragraph [ref=e3662]: Present the VIP Online Pharmacy Partnership to VIP Clients
+      - generic [ref=e3663]:
+        - button "Present" [ref=e3664] [cursor=pointer]:
+          - img [ref=e3665]
+          - text: Present
+        - button "History (26)" [ref=e3667] [cursor=pointer]:
+          - img [ref=e3668]
+          - text: History (26)
+      - generic [ref=e3670]:
+        - generic [ref=e3671]:
+          - button "Back" [ref=e3672] [cursor=pointer]:
+            - img [ref=e3673]
+            - text: Back
+          - generic [ref=e3675]:
+            - heading "Products for Dr. Allan Tenrife" [level=2] [ref=e3676]:
+              - img [ref=e3677]
+              - text: Products for Dr. Allan Tenrife
+            - paragraph [ref=e3681]:
+              - text: "Choose which products to feature in the presentation. Specialty:"
+              - strong [ref=e3682]: IM
+        - generic [ref=e3683]:
+          - generic [ref=e3684]: "2"
+          - text: Select products to present (0 selected)
+        - generic [ref=e3685]:
+          - img [ref=e3686]
+          - textbox "Search products by name, generic name, or category..." [ref=e3689]
+        - generic [ref=e3690]:
+          - generic [ref=e3691] [cursor=pointer]:
+            - img "Cefazovit" [ref=e3694]
+            - generic [ref=e3695]:
+              - heading "Cefazovit" [level=4] [ref=e3696]
+              - paragraph [ref=e3697]: Cefazolin
+              - paragraph [ref=e3698]: 1 g vial
+              - generic [ref=e3699]: Antibiotics
+          - generic [ref=e3700] [cursor=pointer]:
+            - img "Ceftazivit" [ref=e3703]
+            - generic [ref=e3704]:
+              - heading "Ceftazivit" [level=4] [ref=e3705]
+              - paragraph [ref=e3706]: Ceftazidime
+              - paragraph [ref=e3707]: 1 g vial
+              - generic [ref=e3708]: Antibiotics
+          - generic [ref=e3709] [cursor=pointer]:
+            - img "Ceftrixone" [ref=e3712]
+            - generic [ref=e3713]:
+              - heading "Ceftrixone" [level=4] [ref=e3714]
+              - paragraph [ref=e3715]: Ceftriaxone
+              - paragraph [ref=e3716]: 1 g vial
+              - generic [ref=e3717]: Antibiotics
+          - generic [ref=e3718] [cursor=pointer]:
+            - img "Dexavit" [ref=e3721]
+            - generic [ref=e3722]:
+              - heading "Dexavit" [level=4] [ref=e3723]
+              - paragraph [ref=e3724]: Dexamethasone
+              - paragraph [ref=e3725]: 4 mg/mL
+              - generic [ref=e3726]: Corticosteroid
+          - generic [ref=e3727] [cursor=pointer]:
+            - img "Losil" [ref=e3730]
+            - generic [ref=e3731]:
+              - heading "Losil" [level=4] [ref=e3732]
+              - paragraph [ref=e3733]: Hyoscine-n-Butylbromide
+              - paragraph [ref=e3734]: 20 mg/mL
+              - generic [ref=e3735]: Antispasmodic
+          - generic [ref=e3736] [cursor=pointer]:
+            - img "Neotalis" [ref=e3739]
+            - generic [ref=e3740]:
+              - heading "Neotalis" [level=4] [ref=e3741]
+              - paragraph [ref=e3742]: Neostigmine
+              - paragraph [ref=e3743]: 500 mcg/mL
+              - generic [ref=e3744]: Parasympathomimetic
+          - generic [ref=e3745] [cursor=pointer]:
+            - img "Pantrex" [ref=e3748]
+            - generic [ref=e3749]:
+              - heading "Pantrex" [level=4] [ref=e3750]
+              - paragraph [ref=e3751]: Tranexamic Acid
+              - paragraph [ref=e3752]: 500 mg/5 mL
+              - generic [ref=e3753]: Antifibrinolytic
+          - generic [ref=e3754] [cursor=pointer]:
+            - img "Qualiprazole" [ref=e3757]
+            - generic [ref=e3758]:
+              - heading "Qualiprazole" [level=4] [ref=e3759]
+              - paragraph [ref=e3760]: Omeprazole
+              - paragraph [ref=e3761]: 40 mg vial
+              - generic [ref=e3762]: Proton Pump Inhibitor
+          - generic [ref=e3763] [cursor=pointer]:
+            - img "Viprazole" [ref=e3766]
+            - generic [ref=e3767]:
+              - heading "Viprazole" [level=4] [ref=e3768]
+              - paragraph [ref=e3769]: Omeprazole
+              - paragraph [ref=e3770]: 40 mg vial
+              - generic [ref=e3771]: Proton Pump Inhibitor
+          - generic [ref=e3772] [cursor=pointer]:
+            - img "Viptriaxone" [ref=e3775]
+            - generic [ref=e3776]:
+              - heading "Viptriaxone" [level=4] [ref=e3777]
+              - paragraph [ref=e3778]: Ceftriaxone
+              - paragraph [ref=e3779]: 1 g vial
+              - generic [ref=e3780]: Antibiotics
+          - generic [ref=e3781] [cursor=pointer]:
+            - img "Vitaroxima" [ref=e3784]
+            - generic [ref=e3785]:
+              - heading "Vitaroxima" [level=4] [ref=e3786]
+              - paragraph [ref=e3787]: Cefuroxime
+              - paragraph [ref=e3788]: 750 mg vial
+              - generic [ref=e3789]: Antibiotics
+          - generic [ref=e3790] [cursor=pointer]:
+            - img "Vitral" [ref=e3793]
+            - generic [ref=e3794]:
+              - heading "Vitral" [level=4] [ref=e3795]
+              - paragraph [ref=e3796]: Tramadol
+              - paragraph [ref=e3797]: 50 mg/mL
+              - generic [ref=e3798]: Opioids
+        - generic [ref=e3799]:
+          - button "Start Presentation with 0 Products" [disabled] [ref=e3800]:
+            - img [ref=e3801]
+            - text: Start Presentation with 0 Products
+            - img [ref=e3804]
+          - button "Skip — Present without products" [ref=e3806] [cursor=pointer]

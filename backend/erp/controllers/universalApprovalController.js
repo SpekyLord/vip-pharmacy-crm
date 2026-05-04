@@ -655,6 +655,26 @@ const approvalHandlers = {
               note: `Auto-journal failed for payslip ${fullPs?.employee_name || ps._id} (G4.5cc clerk-run cascade)`,
             }).catch(() => {});
           }
+
+          // Phase VIP-1.J / J3 — emit COMPENSATION-direction WithholdingLedger
+          // rows for 1601-C / 1604-CF aggregation. Mirrors the legacy postPayroll
+          // path exactly (idempotent on payslip._id, non-blocking).
+          try {
+            const { emitCompensationWithholdingForPayslip } = require('../services/withholdingService');
+            await emitCompensationWithholdingForPayslip(fullPs || ps.toObject(), { userId });
+          } catch (compErr) {
+            console.error('[G4.5cc CASCADE J3_COMPENSATION_EMIT_FAILURE] Payslip', String(ps._id), compErr.message);
+            ErpAuditLog.logChange({
+              entity_id: fullPs?.entity_id || ps.entity_id,
+              log_type: 'LEDGER_ERROR',
+              target_ref: ps._id?.toString(),
+              target_model: 'WithholdingLedger',
+              field_changed: 'compensation_emit',
+              new_value: compErr.message,
+              changed_by: userId,
+              note: `1601-C compensation withholding emit failed for payslip ${fullPs?.employee_name || ps._id} (G4.5cc clerk-run cascade)`,
+            }).catch(() => {});
+          }
         }
       } catch (err) {
         errors.push({ payslip_id: ps._id?.toString(), error: err.message });

@@ -1,27 +1,33 @@
 /**
- * BirEwtReturnDetailPage — Phase VIP-1.J / J2 (Apr 2026)
+ * BirEwtReturnDetailPage — Phase VIP-1.J / J2 (Apr 2026) + J3 (May 2026)
  *
- * Form-detail page for BIR 1601-EQ (Quarterly Expanded Withholding Tax)
- * and 1606 (Monthly Real-Property Withholding). Each box is a copyable
- * card so the bookkeeper can paste totals into eBIRForms 7.x.
+ * Form-detail page for BIR 1601-EQ (Quarterly EWT), 1606 (Monthly Rent),
+ * and 1601-C (Monthly Compensation). Each box is a copyable card so the
+ * bookkeeper can paste totals into eBIRForms 7.x.
  *
  * Mirrors BirVatReturnDetailPage's hook-order discipline (useMemo before
  * any conditional return) and the J1 export-then-mark-FILED lifecycle.
  *
  * Adds — beyond J1 — a per-payee Schedule table (under the box grid) so
- * the bookkeeper can see which contractor / landlord drove each ATC bucket
- * before signing off. The Schedule rows feed 2307 PDF generation
- * (`Generate 2307 PDF` button per row, gated by EXPORT_FORM at the
- * backend). SAWT export shortcut sits in the toolbar — it's quarterly
- * only, so the button hides for 1606.
+ * the bookkeeper can see which contractor / landlord / employee drove
+ * each ATC bucket before signing off. For 1601-EQ the Schedule rows feed
+ * 2307 PDF generation (`Generate 2307 PDF` button per row, gated by
+ * EXPORT_FORM at the backend). SAWT export shortcut sits in the toolbar —
+ * 1601-EQ only (quarterly EWT alphalist; 1606/1601-C have no SAWT).
+ *
+ * Phase J3 (May 2026) — added 1601-C Monthly Compensation Withholding.
+ * Same monthly encoding as 1606. Per-payee schedule shows employees
+ * (PeopleMaster) instead of contractors. No 2307 button — compensation
+ * receipts use BIR Form 2316 (annual), generated separately in J3 Part B.
  *
  * Routes:
  *   /erp/bir/1601-EQ/:year/:quarter
  *   /erp/bir/1606/:year/:month
+ *   /erp/bir/1601-C/:year/:month
  *
  * Backend: backend/erp/controllers/birController.js
- *   compute1601EQ / compute1606 / listEwtPayees / exportEwtCsv /
- *   exportSawtDat / export2307Pdf
+ *   compute1601EQ / compute1606 / compute1601C / listEwtPayees /
+ *   exportEwtCsv / exportSawtDat / export2307Pdf
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -49,6 +55,10 @@ const SECTION_LABELS = {
   SCH1:  'Schedule 1 — Professional Fees & Withholding',
   SCH2:  'Schedule 2 — TWA Goods & Services',
   RENT:  'Rent — Withholding by Lessor Class',
+  // Phase J3 — 1601-C compensation sections
+  COMP:  'Schedule 1 — Regular Taxable Compensation (WI100)',
+  BNS:   'Schedule 2 — 13th-Month + Bonuses Excess (WC120)',
+  MWE:   'Schedule 3 — Minimum Wage Earners (Exempt)',
   TOTAL: 'Totals',
 };
 
@@ -57,9 +67,16 @@ function fmtMoney(n) {
 }
 
 function periodLabel(formCode, periodValue) {
-  if (formCode === '1606') return `Month ${String(periodValue).padStart(2, '0')}`;
+  if (formCode === '1606' || formCode === '1601-C') return `Month ${String(periodValue).padStart(2, '0')}`;
   if (formCode === '1601-EQ') return `Q${periodValue}`;
   return periodValue;
+}
+
+// Phase J3 — schedule label changes per form (contractors / landlords / employees).
+function scheduleLabel(formCode) {
+  if (formCode === '1606') return 'Per-Landlord Schedule';
+  if (formCode === '1601-C') return 'Per-Employee Schedule';
+  return 'Per-Payee Schedule';
 }
 
 const styles = `
@@ -116,9 +133,10 @@ export default function BirEwtReturnDetailPage({ formCodeOverride }) {
   const [copiedCode, setCopiedCode] = useState(null);
 
   const validParams = useMemo(() => {
-    if (formCode !== '1601-EQ' && formCode !== '1606') return false;
+    // Phase J3 — 1601-C added (monthly encoding like 1606).
+    if (formCode !== '1601-EQ' && formCode !== '1606' && formCode !== '1601-C') return false;
     if (!Number.isInteger(year) || year < 2024 || year > 2099) return false;
-    if (formCode === '1606' && (!Number.isInteger(period) || period < 1 || period > 12)) return false;
+    if ((formCode === '1606' || formCode === '1601-C') && (!Number.isInteger(period) || period < 1 || period > 12)) return false;
     if (formCode === '1601-EQ' && (!Number.isInteger(period) || period < 1 || period > 4)) return false;
     return true;
   }, [formCode, year, period]);
@@ -130,12 +148,13 @@ export default function BirEwtReturnDetailPage({ formCodeOverride }) {
     }
     setLoading(true);
     try {
-      const result = formCode === '1601-EQ'
-        ? await birService.compute1601EQ(year, period)
-        : await birService.compute1606(year, period);
+      let result;
+      if (formCode === '1601-EQ') result = await birService.compute1601EQ(year, period);
+      else if (formCode === '1606') result = await birService.compute1606(year, period);
+      else result = await birService.compute1601C(year, period); // 1601-C
       setData(result);
     } catch (err) {
-      const msg = err?.response?.data?.message || err?.message || 'Failed to compute EWT return';
+      const msg = err?.response?.data?.message || err?.message || 'Failed to compute withholding return';
       const scope = err?.response?.data?.required_scope;
       toast.error(scope ? `${msg} (scope: ${scope})` : msg);
     } finally {
@@ -274,7 +293,7 @@ export default function BirEwtReturnDetailPage({ formCodeOverride }) {
           <main className="ewt-main">
             <div className="ewt-card">
               <h1 className="ewt-h1"><AlertTriangle size={20} color="#b91c1c" /> Invalid form parameters</h1>
-              <p>This route requires <code>/erp/bir/1601-EQ/:year/:quarter</code> or <code>/erp/bir/1606/:year/:month</code>.</p>
+              <p>This route requires <code>/erp/bir/1601-EQ/:year/:quarter</code>, <code>/erp/bir/1606/:year/:month</code>, or <code>/erp/bir/1601-C/:year/:month</code>.</p>
               <button className="ewt-btn ewt-btn-secondary" onClick={() => navigate('/erp/bir')}>
                 <ArrowLeft size={14} /> Back to dashboard
               </button>
@@ -328,7 +347,7 @@ export default function BirEwtReturnDetailPage({ formCodeOverride }) {
                 {statusMeta.label}
               </span>
             </h1>
-            <PageGuide pageKey="bir-ewt-return" />
+            <PageGuide pageKey={formCode === '1601-C' ? 'bir-comp-return' : 'bir-ewt-return'} />
             {filingRow?.bir_reference_number && (
               <div className="ewt-meta-row">
                 <span>Filing reference: <strong>{filingRow.bir_reference_number}</strong></span>
@@ -349,7 +368,15 @@ export default function BirEwtReturnDetailPage({ formCodeOverride }) {
                 <h2 className="ewt-h2"><FileText size={16} /> Aggregation summary</h2>
                 <div className="ewt-meta-row">
                   <span>ATC buckets: <strong>{meta?.source_counts?.atc_buckets ?? 0}</strong></span>
-                  <span>{formCode === '1601-EQ' ? 'Payee lines' : 'Landlord lines'}: <strong>{meta?.source_counts?.payee_lines ?? meta?.source_counts?.landlord_lines ?? 0}</strong></span>
+                  <span>
+                    {formCode === '1601-EQ' && 'Payee lines'}
+                    {formCode === '1606' && 'Landlord lines'}
+                    {formCode === '1601-C' && 'Employee lines'}
+                    : <strong>{meta?.source_counts?.payee_lines ?? meta?.source_counts?.landlord_lines ?? meta?.source_counts?.employee_lines ?? 0}</strong>
+                  </span>
+                  {formCode === '1601-C' && (
+                    <span>Distinct employees: <strong>{meta?.source_counts?.distinct_employees ?? 0}</strong></span>
+                  )}
                   <span>Computed at: <strong>{meta.computed_at ? new Date(meta.computed_at).toLocaleString() : '—'}</strong></span>
                 </div>
               </div>
@@ -386,7 +413,7 @@ export default function BirEwtReturnDetailPage({ formCodeOverride }) {
               {schedule.length > 0 && (
                 <div className="ewt-card">
                   <h2 className="ewt-h2">
-                    <Users size={16} /> Per-{formCode === '1606' ? 'Landlord' : 'Payee'} Schedule
+                    <Users size={16} /> {scheduleLabel(formCode)}
                     <span style={{ marginLeft: 'auto', fontSize: '0.8rem', color: '#6b7280', fontWeight: 400 }}>
                       {schedule.length} row{schedule.length === 1 ? '' : 's'}
                     </span>
