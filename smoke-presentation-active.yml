@@ -1,0 +1,28 @@
+- generic [active] [ref=e1]:
+  - generic:
+    - status [ref=e1579]: Presentation started
+    - generic [ref=e1580]:
+      - generic [ref=e1581]:
+        - generic [ref=e1582]:
+          - generic [ref=e1583]: 1 / 6
+          - generic [ref=e1584]: Dr. Allan Tenrife
+        - button "End Session" [ref=e1587] [cursor=pointer]:
+          - img [ref=e1588]
+      - generic [ref=e1592]:
+        - img [ref=e1594]
+        - generic [ref=e1598]: PARTNERSHIP OPPORTUNITY
+        - heading [level=1]
+        - paragraph [ref=e1599]: A startup pharmaceutical company capitalizing on local footprint, digitalization, and AI integration
+        - img [ref=e1601]
+      - generic [ref=e1604]:
+        - button [disabled] [ref=e1605]:
+          - img [ref=e1606]
+        - generic [ref=e1608]:
+          - button [ref=e1609] [cursor=pointer]
+          - button [ref=e1610] [cursor=pointer]
+          - button [ref=e1611] [cursor=pointer]
+          - button [ref=e1612] [cursor=pointer]
+          - button [ref=e1613] [cursor=pointer]
+          - button [ref=e1614] [cursor=pointer]
+        - button [ref=e1615] [cursor=pointer]:
+          - img [ref=e1616]

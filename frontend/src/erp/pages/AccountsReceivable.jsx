@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { Fragment, useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
@@ -173,8 +173,8 @@ export default function AccountsReceivable() {
                   </thead>
                   <tbody>
                     {hospitals.map(h => (
-                      <>
-                        <tr key={h.hospital_id} onClick={() => setExpanded(expanded === h.hospital_id ? null : h.hospital_id)}>
+                      <Fragment key={h.hospital_id}>
+                        <tr onClick={() => setExpanded(expanded === h.hospital_id ? null : h.hospital_id)}>
                           <td style={{ fontWeight: 700, textAlign: 'left' }}>{h.hospital_name}</td>
                           {arBuckets.map(b => (
                             <td key={b} style={{ color: h[b] > 0 ? BUCKET_COLORS[b] : 'var(--erp-muted)', fontWeight: h[b] > 0 ? 700 : 400 }}>
@@ -231,7 +231,7 @@ export default function AccountsReceivable() {
                             </td>
                           </tr>
                         )}
-                      </>
+                      </Fragment>
                     ))}
                     {!hospitals.length && <tr><td colSpan={8} style={{ textAlign: 'center', padding: 40, color: 'var(--erp-muted)' }}>No outstanding AR</td></tr>}
                   </tbody>
