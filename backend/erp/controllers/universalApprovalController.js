@@ -510,13 +510,38 @@ const approvalHandlers = {
       // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
       const doc = await IncomeReport.findById(id);
       if (!doc) throw new Error('Income report not found');
+      const fromStatus = doc.status;
       doc.status = 'RETURNED';
       doc.return_reason = reason;
       await doc.save();
+
+      // Hub reject bypasses transitionIncomeStatus's VALID_TRANSITIONS contract
+      // (Hub allows reject from any status, while 'return' is REVIEWED-only),
+      // so mirror the decision here directly. Non-blocking.
+      try {
+        const { mirrorApprovalDecision } = require('../services/approvalService');
+        await mirrorApprovalDecision({
+          entityId: doc.entity_id,
+          module: 'INCOME',
+          docType: 'INCOME_REPORT',
+          docId: doc._id,
+          docRef: `${doc.period || ''}-${doc.cycle || ''}`.replace(/^-|-$/g, ''),
+          amount: doc.total_earnings || doc.net_pay || 0,
+          description: `Income reject (Hub) → RETURNED for ${doc.period || 'unknown'} ${doc.cycle || ''}`.trim(),
+          decision: 'REJECTED',
+          decidedBy: userId,
+          reason,
+          actionLabel: 'hub_reject',
+          metadata: { from_status: fromStatus, to_status: 'RETURNED' },
+        });
+      } catch (err) {
+        console.error(`[income_report Hub reject] audit mirror failed (report=${doc._id}):`, err.message);
+      }
       return doc;
     }
     const { transitionIncomeStatus } = require('../services/incomeCalc');
     // action maps: review → GENERATED→REVIEWED, credit → BDM_CONFIRMED→CREDITED
+    // (mirrorApprovalDecision is wired inside transitionIncomeStatus for these actions)
     return transitionIncomeStatus(id, action, userId);
   },
 

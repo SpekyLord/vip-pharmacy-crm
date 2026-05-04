@@ -21,6 +21,7 @@ import RejectionBanner from '../components/RejectionBanner';
 // (back-office staff with payroll.income_proxy or .deduction_schedule_proxy)
 // can act on behalf of a field BDM. Renders null when caller is not eligible.
 import OwnerPicker from '../components/OwnerPicker';
+import useWorkingEntity from '../../hooks/useWorkingEntity';
 
 const pageStyles = `
   .my-income-page { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -153,6 +154,10 @@ function incrementPeriod(period, n) {
 export default function MyIncome() {
   const inc = useIncome();
   const sched = useDeductionSchedule();
+  // Refetch when the user switches working entity from the navbar dropdown.
+  // The X-Entity-Id header is set by EntityContext via setWorkingEntityHeader,
+  // but the loaders still need a dep change to actually re-issue the GETs.
+  const { workingEntityId } = useWorkingEntity();
   const { options: deductionTypes } = useLookupOptions('INCOME_DEDUCTION_TYPE');
   const { options: cycleOptions } = useLookupOptions('CYCLE');
 
@@ -205,7 +210,7 @@ export default function MyIncome() {
       setReports(res?.data || []);
     } catch (err) { showError(err, 'Could not load payslips'); }
     setLoading(false);
-  }, [period, cycle, targetBdmId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [period, cycle, targetBdmId, workingEntityId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Load schedules ──
   const loadSchedules = useCallback(async () => {
@@ -219,7 +224,7 @@ export default function MyIncome() {
       setSchedules(res?.data || []);
     } catch (err) { showError(err, 'Could not load schedules'); }
     setLoading(false);
-  }, [schedStatusFilter, targetBdmId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [schedStatusFilter, targetBdmId, workingEntityId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Load projection ──
   const loadProjection = useCallback(async () => {
@@ -235,7 +240,7 @@ export default function MyIncome() {
       setProjection(res?.data || null);
     } catch { setProjection(null); }
     setProjLoading(false);
-  }, [period, cycle, targetBdmId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [period, cycle, targetBdmId, workingEntityId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (activeTab === 'payslips') { loadReports(); loadProjection(); }

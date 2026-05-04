@@ -709,6 +709,148 @@ const gateApproval = async (opts, res) => {
   return false;
 };
 
+/**
+ * Mirror a module-native approval decision into ApprovalRequest so the unified
+ * Approval History tab surfaces it.
+ *
+ * Two modes:
+ *   1. CLOSE — if a PENDING ApprovalRequest exists for (entity_id, module, doc_id),
+ *      flip it to the decision status with decided_by/decided_at/decision_reason
+ *      + history $push. This is the "Hub-routed" path (Approval Hub created the
+ *      PENDING row at submit time; the module handler decides it later).
+ *   2. CREATE — if no PENDING row exists, INSERT a new row with status set to the
+ *      decision directly. requested_at/decided_at both = now (the decision was
+ *      taken without a prior pending state, e.g. finance auto-approves their own
+ *      schedule, or a workflow transition happens via the direct module route).
+ *      requested_by defaults to decidedBy when no original requester is known.
+ *
+ * Idempotent against repeated calls within the same transition: if a non-PENDING
+ * row already exists for (entity_id, module, doc_id) with the same metadata.action_label
+ * and decided within the last 30 seconds, the call is a no-op. This guards against
+ * a controller calling the helper twice (e.g. once via direct route, once via the
+ * cascade of an upstream service).
+ *
+ * Non-fatal: any DB error is logged and swallowed. The caller's primary mutation
+ * has already persisted; a missing audit row is repairable, but a failed audit
+ * write must NOT roll back business state.
+ *
+ * @param {Object} args
+ * @param {ObjectId|String} args.entityId  required
+ * @param {String} args.module             required, uppercase canonical (e.g. 'INCOME', 'DEDUCTION_SCHEDULE')
+ * @param {String} args.docType            required, module-specific (e.g. 'INCOME_REPORT', 'INSTALLMENT')
+ * @param {ObjectId|String} args.docId     required, the underlying business doc _id
+ * @param {String} [args.docRef]           human-readable reference (period/code)
+ * @param {Number} [args.amount]           transaction amount, if applicable
+ * @param {String} [args.description]      one-line description for the history row
+ * @param {String} args.decision           required, 'APPROVED' | 'REJECTED' | 'CANCELLED'
+ * @param {ObjectId|String} args.decidedBy required, user id of the decision-maker
+ * @param {String} [args.reason]           decision reason (rejection note, comment)
+ * @param {ObjectId|String} [args.requestedBy] original requester; defaults to decidedBy
+ * @param {String} [args.actionLabel]      e.g. 'review','credit','cancel','finance_auto_approve' — stored in metadata.action_label for idempotency + display
+ * @param {Object} [args.metadata]         extra structured payload merged into ApprovalRequest.metadata
+ * @returns {Promise<{mirrored:boolean, mode:'closed'|'created'|'duplicate'|'skipped'}>}
+ */
+const mirrorApprovalDecision = async ({
+  entityId,
+  module,
+  docType,
+  docId,
+  docRef,
+  amount,
+  description,
+  decision,
+  decidedBy,
+  reason,
+  requestedBy,
+  actionLabel,
+  metadata,
+} = {}) => {
+  if (!entityId || !module || !docType || !docId || !decision || !decidedBy) {
+    return { mirrored: false, mode: 'skipped' };
+  }
+  if (!['APPROVED', 'REJECTED', 'CANCELLED'].includes(decision)) {
+    return { mirrored: false, mode: 'skipped' };
+  }
+  try {
+    const now = new Date();
+    const baseReason = reason || `${decision.toLowerCase()} via ${module.toLowerCase()} module`;
+
+    // 1. Try to close an existing PENDING request (Hub-routed path).
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id is in the filter
+    const closed = await ApprovalRequest.findOneAndUpdate(
+      { entity_id: entityId, module, doc_id: docId, status: 'PENDING' },
+      {
+        $set: {
+          status: decision,
+          decided_by: decidedBy,
+          decided_at: now,
+          decision_reason: baseReason,
+        },
+        $push: {
+          history: {
+            status: decision,
+            by: decidedBy,
+            at: now,
+            reason: baseReason,
+          },
+        },
+      },
+      { new: true }
+    );
+    if (closed) {
+      return { mirrored: true, mode: 'closed' };
+    }
+
+    // 2. Idempotency guard — if a non-PENDING row already exists with the same
+    // action_label decided within the last 30 seconds, treat as duplicate.
+    if (actionLabel) {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- entity_id is in the filter
+      const recent = await ApprovalRequest.findOne({
+        entity_id: entityId,
+        module,
+        doc_id: docId,
+        status: { $in: ['APPROVED', 'REJECTED', 'CANCELLED'] },
+        'metadata.action_label': actionLabel,
+        decided_at: { $gte: new Date(now.getTime() - 30_000) },
+      }).lean();
+      if (recent) {
+        return { mirrored: false, mode: 'duplicate' };
+      }
+    }
+
+    // 3. Create a new closed audit row (direct-route or auto-approve path).
+    await ApprovalRequest.create({
+      entity_id: entityId,
+      module,
+      doc_type: docType,
+      doc_id: docId,
+      doc_ref: docRef,
+      amount,
+      description,
+      metadata: { ...(metadata || {}), action_label: actionLabel || null },
+      requested_by: requestedBy || decidedBy,
+      requested_at: now,
+      status: decision,
+      decided_by: decidedBy,
+      decided_at: now,
+      decision_reason: baseReason,
+      history: [{
+        status: decision,
+        by: decidedBy,
+        at: now,
+        reason: baseReason,
+      }],
+    });
+    return { mirrored: true, mode: 'created' };
+  } catch (err) {
+    console.error(
+      `[mirrorApprovalDecision] failed (module=${module}, doc_id=${docId}, decision=${decision}):`,
+      err.message
+    );
+    return { mirrored: false, mode: 'skipped' };
+  }
+};
+
 module.exports = {
   isApprovalEnabled,
   findMatchingRules,
@@ -722,5 +864,6 @@ module.exports = {
   getModuleRejectionConfig,
   getEditableStatuses,
   invalidateEditableStatuses,
+  mirrorApprovalDecision,
   MODULE_KEY_ALIASES,
 };

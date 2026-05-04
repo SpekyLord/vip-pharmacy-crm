@@ -631,6 +631,47 @@ async function transitionIncomeStatus(reportId, action, userId, data = {}) {
   }
 
   await report.save();
+
+  // Audit-trail mirror: every income transition (review/return/confirm/credit)
+  // surfaces in the unified Approval History tab, regardless of whether the
+  // decision was reached via the Hub (universalApprovalController.income_report)
+  // or the direct route (incomeController.review/return/confirm/creditIncome).
+  // The IncomeReport flow does NOT pre-create an ApprovalRequest at submit
+  // time, so mirrorApprovalDecision will INSERT a closed audit row in the
+  // create-mode branch. Non-blocking — a failed audit write must not roll back
+  // the income state machine.
+  try {
+    const { mirrorApprovalDecision } = require('./approvalService');
+    const ACTION_TO_DECISION = {
+      review: 'APPROVED',   // GENERATED → REVIEWED (finance signs off)
+      return: 'REJECTED',   // REVIEWED → RETURNED (finance pushes back)
+      confirm: 'APPROVED',  // REVIEWED → BDM_CONFIRMED (BDM acknowledges)
+      credit: 'APPROVED',   // BDM_CONFIRMED → CREDITED (finance pays)
+    };
+    const decision = ACTION_TO_DECISION[action];
+    if (decision) {
+      await mirrorApprovalDecision({
+        entityId: report.entity_id,
+        module: 'INCOME',
+        docType: 'INCOME_REPORT',
+        docId: report._id,
+        docRef: `${report.period || ''}-${report.cycle || ''}`.replace(/^-|-$/g, ''),
+        amount: report.total_earnings || report.net_pay || 0,
+        description: `Income ${action} → ${transition.to} for ${report.period || 'unknown'} ${report.cycle || ''}`.trim(),
+        decision,
+        decidedBy: userId,
+        reason: action === 'return' ? (data.reason || '') : undefined,
+        actionLabel: action,
+        metadata: {
+          from_status: transition.from.join('|'),
+          to_status: transition.to,
+        },
+      });
+    }
+  } catch (err) {
+    console.error(`[transitionIncomeStatus] audit mirror failed (action=${action}, report=${report._id}):`, err.message);
+  }
+
   return report;
 }
 
