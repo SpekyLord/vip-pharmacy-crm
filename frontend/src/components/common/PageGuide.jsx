@@ -218,6 +218,24 @@ const PAGE_GUIDES = {
     ],
     tip: 'QAP and SAWT are siblings — both quarterly alphalists, both BIR Alphalist Data Entry v7.x format, both per-(payee × ATC). The difference is direction: QAP reports OUTBOUND withholding (you withholding tax for payees), SAWT reports INBOUND (your customers withholding tax from you for the SAWT credit you claim against income tax). They share the D1/T1 shape so the BIR importer accepts both via the same record contract.',
   },
+  'bir-boa-books': {
+    title: 'BIR Books of Accounts — Loose-Leaf PDFs',
+    steps: [
+      'Pre-flight: every book is a PURE READ of POSTED JournalEntry rows. Specialised journals (Sales / Purchase / Cash Receipts / Cash Disbursements / General Journal) classify each JE into exactly ONE book by deterministic priority — so summing the five specialised books equals "all POSTED JEs" with no double-count. The General Ledger is the same set of rows projected by account_code.',
+      'Six books per BIR RR 9-2009 §3: (a) Sales Journal, (b) Purchase Journal, (c) Cash Receipts Journal, (d) Cash Disbursements Journal, (e) General Journal, (f) General Ledger. Specialised journals classify each JournalEntry into exactly one bucket (priority 1=Sales, 2=Purchase, 3=Cash-DR, 4=Cash-CR, 5=GJ catch-all). Cash classification reads any DR / CR line on a "cash" account — Cash & Bank account codes 1000-1019 by PRD §11.1, or override via BIR_BOA_CASH_ACCOUNTS lookup.',
+      'Two export modes per book: per-month (one PDF per calendar month) and annual binding (12 monthly sections + a year-summary section in a single PDF). The annual binding is what gets bound, sworn-declared, and filed loose-leaf with your RDO within 15 days of year-end. Monthly exports are for management review during the year.',
+      'Sworn declaration PDF per book per year — the BIR-required cover page signed by the responsible officer (RR 9-2009 §4). Officer name / title / TIN / CTC come from the BIR_BOA_RESPONSIBLE_OFFICER lookup if seeded, otherwise underscores so you pen-fill before notarisation. The notary block is always pen-filled by the notary public.',
+      'Every PDF carries a BIR-compliant header on every page: Registered Name, TIN, RDO, Business Style, Address, Period Covered, Page X of Y. The footer logs generation timestamp + content hash. Re-exports with different content produce different hashes, so the audit log can detect tampering.',
+      'Subscription-readiness: book classification (BIR_BOA_BOOK_CATALOG), cash account list (BIR_BOA_CASH_ACCOUNTS), and responsible officer (BIR_BOA_RESPONSIBLE_OFFICER) are all per-entity Lookup categories — subscribers reconfigure via Control Center → Lookup Tables without code deployment (Rule #3 / Rule #19). Default rules in bookOfAccountsService.js fire when a lookup row is absent.',
+      'Lifecycle: Compute book per period → Export PDF → Mark Reviewed (president sign-off) → Mark Filed (bookkeeper, after binding + notarisation + RDO submission with stamp) → CONFIRMED. Annual binding due January 30 of following year per BIR RR 9-2009 (15-day grace period). Period locks (PeriodLock module=BIR_FILING) gate retroactive JE edits once a year is CONFIRMED.',
+    ],
+    next: [
+      { label: 'BIR Compliance Dashboard', path: '/erp/bir' },
+      { label: 'Journal Entry (source ledger)', path: '/erp/journal' },
+      { label: 'Sales Hub', path: '/erp/sales' },
+    ],
+    tip: 'Trial-balance check: every annual binding\'s grand totals MUST satisfy Total Debits = Total Credits within ₱0.01. The PDF flags an INVARIANT WARNING if they diverge — investigate immediately because every JE is balanced individually so a sum mismatch indicates corrupted aggregation. The cash-account derivation falls back to ChartOfAccounts (account_type=ASSET, code 1000-1019) when the BIR_BOA_CASH_ACCOUNTS lookup is unseeded — works for VIP but subscribers using non-PRD CoA codes must seed the lookup explicitly. Without cash accounts, CASH_RECEIPTS and CASH_DISBURSEMENTS books will be empty (correct — there is no cash account to match against).',
+  },
   'bir-vat-return': {
     title: 'BIR 2550M / 2550Q VAT Return',
     steps: [

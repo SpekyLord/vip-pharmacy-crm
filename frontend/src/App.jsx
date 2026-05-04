@@ -94,6 +94,8 @@ const BirEwtReturnDetailPage = lazyRetry(() => import('./erp/pages/BirEwtReturnD
 // Phase VIP-1.J / J3 Part B — 1604-CF Annual Compensation Alphalist + Form 2316 PDF
 const Bir1604CFDetailPage = lazyRetry(() => import('./erp/pages/Bir1604CFDetailPage'));
 const BirAlphalistEwtPage = lazyRetry(() => import('./erp/pages/BirAlphalistEwtPage'));
+// Phase VIP-1.J / J5 (May 2026) — Books of Accounts (Loose-Leaf PDFs)
+const BookOfAccountsPage = lazyRetry(() => import('./erp/pages/BookOfAccountsPage'));
 // Phase VIP-1.B Phase 4 — Rebate + Commission matrix admin + Payout ledger
 const RebateMatrixPage = lazyRetry(() => import('./erp/pages/RebateMatrixPage'));
 const NonMdRebateMatrixPage = lazyRetry(() => import('./erp/pages/NonMdRebateMatrixPage'));
@@ -711,6 +713,19 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={ROLE_SETS.BIR_FILING}>
                 <BirAlphalistEwtPage formCodeOverride="QAP" />
+              </ProtectedRoute>
+            }
+          />
+          {/* Phase J5 (May 2026) — Books of Accounts (Loose-Leaf PDFs).
+              Annual encoding (year-only — no :period segment). The page
+              renders a per-book × per-month matrix internally. Route MUST
+              stay above the `/erp/bir/:formCode/:year/:period` wildcard
+              fallback to BirVatReturnDetailPage. */}
+          <Route
+            path="/erp/bir/BOOKS/:year"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BIR_FILING}>
+                <BookOfAccountsPage />
               </ProtectedRoute>
             }
           />

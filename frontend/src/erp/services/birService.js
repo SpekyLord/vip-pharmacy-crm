@@ -268,6 +268,39 @@ export async function exportQAPDat(year, quarter) {
   return downloadBlob(`${BASE}/forms/QAP/${year}/${quarter}/export.dat`, `QAP_${year}_Q${quarter}.dat`);
 }
 
+// ── Phase J5 — Books of Accounts (Loose-Leaf PDFs) ────────────────────
+// Six books: SALES_JOURNAL, PURCHASE_JOURNAL, CASH_RECEIPTS,
+// CASH_DISBURSEMENTS, GENERAL_JOURNAL, GENERAL_LEDGER. Annual binding
+// (no month) OR monthly (?month=N). Sworn declaration per book per year.
+
+export async function getBooksCatalog(year) {
+  const { data } = await api.get(`${BASE}/forms/BOOKS/${year}/catalog`);
+  return data?.data || null;
+}
+
+export async function computeBook(year, bookCode, month) {
+  const params = {};
+  if (month) params.month = month;
+  const { data } = await api.get(`${BASE}/forms/BOOKS/${year}/${bookCode}/compute`, { params });
+  return data?.data || null;
+}
+
+export async function exportBookPdf(year, bookCode, month) {
+  const params = month ? `?month=${month}` : '';
+  const monthSeg = month ? `${year}-${String(month).padStart(2, '0')}` : String(year);
+  return downloadBlob(
+    `${BASE}/forms/BOOKS/${year}/${bookCode}/export.pdf${params}`,
+    `${bookCode}_${monthSeg}.pdf`,
+  );
+}
+
+export async function exportBookSwornDeclaration(year, bookCode) {
+  return downloadBlob(
+    `${BASE}/forms/BOOKS/${year}/${bookCode}/sworn-declaration.pdf`,
+    `SwornDeclaration_${bookCode}_${year}.pdf`,
+  );
+}
+
 export default {
   getDashboard,
   getEntityConfig,
@@ -303,4 +336,9 @@ export default {
   export1604EDat,
   computeQAP,
   exportQAPDat,
+  // Phase J5
+  getBooksCatalog,
+  computeBook,
+  exportBookPdf,
+  exportBookSwornDeclaration,
 };

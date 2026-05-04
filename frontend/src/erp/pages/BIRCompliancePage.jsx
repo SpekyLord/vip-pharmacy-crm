@@ -363,8 +363,11 @@ export default function BIRCompliancePage() {
                         // added (quarterly). 1604-E uses /erp/bir/1604-E/:year
                         // (year-only path, same shape as 1604-CF). QAP uses
                         // /erp/bir/QAP/:year/:quarter (same shape as 1601-EQ).
+                        // Phase J5 (May 2026) — BOOKS added (annual, year-only path:
+                        // /erp/bir/BOOKS/:year). The page is a per-book × per-month
+                        // matrix internally — no :period segment on the URL.
                         const monthlyOrQuarterlyForms = ['2550M', '2550Q', '1601-EQ', '1606', '1601-C', 'QAP'];
-                        const annualForms = ['1604-CF', '1604-E'];
+                        const annualForms = ['1604-CF', '1604-E', 'BOOKS'];
                         const isAnnualForm = annualForms.includes(f.form_code);
                         const isClickable =
                           (period && (monthlyOrQuarterlyForms.includes(f.form_code) || f.form_code === 'SAWT'))

@@ -9565,9 +9565,9 @@ Backend:
 
 ---
 
-## Phase VIP-1.J — BIR Tax Compliance Suite (J0 SHIPPED Apr 27 2026; J1 SHIPPED Apr 28 2026; J2 SHIPPED May 03 2026; J3 Part A + Part B + J4 SHIPPED May 04 2026; J5-J7 deferred)
+## Phase VIP-1.J — BIR Tax Compliance Suite (J0 SHIPPED Apr 27 2026; J1 SHIPPED Apr 28 2026; J2 SHIPPED May 03 2026; J3 Part A + Part B + J4 + J5 SHIPPED May 04 2026; J6-J7 deferred)
 
-**Sequence**: J0 (foundation) ✅ -> J1 (VAT) ✅ -> J2 (EWT) ✅ -> J3 Part A (1601-C Compensation) ✅ -> J3 Part B (1604-CF Annual Alphalist + 2316) ✅ -> J4 (1604-E Annual + QAP Quarterly EWT Alphalists) ✅ -> J5 (Books of Accounts) ⬅ START HERE -> J6 (Inbound 2307) -> J7 (1702 Annual Income Tax)
+**Sequence**: J0 (foundation) ✅ -> J1 (VAT) ✅ -> J2 (EWT) ✅ -> J3 Part A (1601-C Compensation) ✅ -> J3 Part B (1604-CF Annual Alphalist + 2316) ✅ -> J4 (1604-E Annual + QAP Quarterly EWT Alphalists) ✅ -> J5 (Books of Accounts loose-leaf PDFs) ✅ -> J6 (Inbound 2307) ⬅ START HERE -> J7 (1702 Annual Income Tax)
 
 ### J0 — Compliance Dashboard + Foundation (~3-4 days) — ✅ SHIPPED + SMOKE-PASSED
 
@@ -9847,8 +9847,43 @@ Annual + quarterly OUTBOUND-direction alphalists. 1604-E rolls up the calendar y
 - ✅ Vite frontend build green in **1m 02s**.
 - ⏸ HTTP smoke + Playwright UI smoke deferred — MCP browser locked (same condition as J3 Part B + Phase R1 handoffs).
 
-### J5 — Books of Accounts loose-leaf PDFs (~2 days)
-`bookOfAccountsService.js` generates Sales / Purchase / General / GL / Cash Receipts / Cash Disbursements PDFs per entity per period. BIR-required header. Annual binding PDF + sworn declaration template.
+### J5 — Books of Accounts loose-leaf PDFs — ✅ SHIPPED MAY 04 2026 EVENING (UNCOMMITTED ON DEV)
+
+**J5.1 Service** ([backend/erp/services/bookOfAccountsService.js](../backend/erp/services/bookOfAccountsService.js)) — ✅ shipped
+- `BOOK_CODES` (6) + `DEFAULT_BOOK_RULES` per-book metadata. Pure-function `classifyJournalEntry(je, rules, cashSet) → bookCode` with priority Sales > Purchase > Cash-DR > Cash-CR > GeneralJournal. Three lookup loaders (book rules, cash account codes, responsible officer) with graceful fallbacks (lookup → ChartOfAccounts ASSET 1000-1019 → empty). `computeBook` dispatcher routes to `computeJournalBook` (specialised) or `computeGeneralLedger` (per-account roll-up + running balance + closing balance). `exportBookPdf` produces full BIR-compliant PDF (header on every page, Page X of Y footer, monthly OR annual-binding mode, trial-balance check on GL). `exportSwornDeclaration` per-book per-year notarisation template per BIR RR 9-2009 §4.
+
+**J5.2 Controller** ([backend/erp/controllers/birController.js](../backend/erp/controllers/birController.js)) — ✅ shipped
+- 4 new exports: `getBooksCatalog` (VIEW_DASHBOARD), `computeBook` (VIEW_DASHBOARD), `exportBookPdf` (EXPORT_FORM), `exportBookSwornDeclarationPdf` (EXPORT_FORM). Each export appends SHA-256-stamped audit-log row to BIR_FILING_STATUS row (`form_code='BOOKS'`, annual encoding) per Rule #20. Structured `[BIR_EXPORT_BOOKS_PDF]` / `[BIR_EXPORT_BOOKS_SWORN]` audit-log lines.
+
+**J5.3 Routes** ([backend/erp/routes/birRoutes.js](../backend/erp/routes/birRoutes.js)) — ✅ shipped
+- `GET /forms/BOOKS/:year/catalog` + `/:bookCode/compute` + `/:bookCode/export.pdf` + `/:bookCode/sworn-declaration.pdf`. All four mounted **BEFORE** the J1 `/forms/:formCode/:year/:period/export.csv` catch-all + the `/forms/:id` catch-all (Express priority).
+
+**J5.4 Lookup seeds** ([backend/erp/controllers/lookupGenericController.js](../backend/erp/controllers/lookupGenericController.js)) — ✅ shipped
+- `BIR_BOA_BOOK_CATALOG` (6 rows, source_modules + cash_side + priority + bir_section per book, all `insert_only_metadata: true`).
+- `BIR_BOA_CASH_ACCOUNTS` (empty default — falls back to ChartOfAccounts §11.1 derivation).
+- `BIR_BOA_RESPONSIBLE_OFFICER` (empty default — falls back to underscores so subscriber pen-fills before notarisation).
+
+**J5.5 Frontend service + page** ([frontend/src/erp/services/birService.js](../frontend/src/erp/services/birService.js) + [frontend/src/erp/pages/BookOfAccountsPage.jsx](../frontend/src/erp/pages/BookOfAccountsPage.jsx)) — ✅ shipped
+- Service: `getBooksCatalog` / `computeBook` / `exportBookPdf` / `exportBookSwornDeclaration` (PDF helpers route through `downloadBlob`).
+- Page: per-book card with 12-month grid + Annual button + Recompute + Export PDF + Sworn Declaration. Status pill from BIR_FILING_STATUS row, cash codes + officer from catalog, audit-log strip showing last 30 exports.
+
+**J5.6 PageGuide + heatmap drill-down** ([frontend/src/components/common/PageGuide.jsx](../frontend/src/components/common/PageGuide.jsx) + [frontend/src/erp/pages/BIRCompliancePage.jsx](../frontend/src/erp/pages/BIRCompliancePage.jsx)) — ✅ shipped
+- New `bir-boa-books` PageGuide entry (cites BIR RR 9-2009; tip mentions trial-balance check + cash-account fallback + the three lookup categories explicitly for subscription discoverability).
+- BIRCompliancePage `annualForms` array: `['1604-CF', '1604-E']` → `['1604-CF', '1604-E', 'BOOKS']`. Clicking the BOOKS heatmap cell navigates to `/erp/bir/BOOKS/:year`.
+
+**J5.7 App.jsx route** ([frontend/src/App.jsx](../frontend/src/App.jsx)) — ✅ shipped
+- `/erp/bir/BOOKS/:year` lazy-loaded BookOfAccountsPage, route guard `ROLE_SETS.BIR_FILING`. Mounted **BEFORE** the `/erp/bir/:formCode/:year/:period` wildcard fallback.
+
+**J5.8 Healthcheck** ([backend/scripts/healthcheckBookOfAccounts.js](../backend/scripts/healthcheckBookOfAccounts.js)) — ✅ shipped
+- 119 assertions covering service exports, classifyJournalEntry priority logic exhaustively, cash-set fall-through, PRD regex boundary, _internal helpers, PDF rendering primitives (PDFDocument LETTER + bufferPages + pageAdded listener + Page X of Y stamp + SWORN DECLARATION + RR 9-2009 + SUBSCRIBED AND SWORN + Doc/Page/Book notary fields + INVARIANT WARNING on debit/credit mismatch + SHA-256 audit hashing), controller wiring (4 handlers + role gates + structured audit log strings + form_code='BOOKS' write), route mount order (BOOKS BEFORE J1 + /:id catch-alls), BirFilingStatus FORM_CODES + annualForms membership, PeriodLock BIR_FILING enum, three lookup seed categories, frontend birService exports + URL paths, page imports + service invocations + PageGuide key, App.jsx route mount order, BIRCompliancePage heatmap drill-down, ROLE_SETS.BIR_FILING.
+
+**J5 verification posture (May 04 2026 evening)**:
+- ✅ J5 healthcheck **119/119 PASS** (`node backend/scripts/healthcheckBookOfAccounts.js`).
+- ✅ Sibling regressions all green: J3 Part A 78/78, J3 Part B 66/66, J4 97/97, J2 124/124, J1 39/39, ClmIdempotency 6/6, ClmPerformance 34/34, TeamActivity 22/22, SalesDiscount 41/41.
+- ✅ Vite production build **51.24s green**, `dist/assets/BookOfAccountsPage-DbiChX5O.js` lazy chunk emitted.
+- ✅ Live HTTP smoke (president cookies, VIP entity): catalog 6 books / 7 cash codes auto-derived; SALES_JOURNAL annual 11 rows ₱315,315 balanced; SALES_JOURNAL April 9 rows ₱313,515; **GENERAL_LEDGER annual 15 accounts / 51 lines / ₱352,359.11 DR=CR (trial balance balanced — diff 0.00)**; CASH_RECEIPTS 2 rows ₱991; CASH_DISBURSEMENTS / PURCHASE_JOURNAL 0 rows. **Sub-ledger ↔ GL invariant**: SALES + PURCHASE + CASH_RECEIPTS + CASH_DISB + GJ = 352,359.11 = GL **exactly** (classifier produces a perfect partition). Bad book code → 400 with helpful message; bad month → 400; export.pdf as president → 403 (correct — EXPORT_FORM gate is admin/finance/bookkeeper).
+- ✅ Direct service smoke: SALES_JOURNAL April 2026 → 3,520-byte PDF magic %PDF, 1 page; GL Annual 2026 → 39,411-byte PDF, 11 pages; Sworn Declaration → 3,304-byte PDF.
+- ⏸ Playwright UI smoke deferred — MCP browser locked (same condition as J3/J4/Phase R1 handoffs).
 
 ### J6 — Inbound 2307 Reconciliation (~1 day)
 Surface "Hospitals withheld but no 2307 received" gap. Quarterly CWT credit summary. Workflow: PENDING_2307 -> RECEIVED on PDF upload -> roll-up to 1702.

@@ -30,6 +30,8 @@ const vatReturnService = require('../services/vatReturnService');
 // Phase VIP-1.J / J2 — Withholding (1601-EQ + 1606 + 2307-OUT + SAWT).
 const withholdingReturnService = require('../services/withholdingReturnService');
 const withholdingService = require('../services/withholdingService');
+// Phase VIP-1.J / J5 — Books of Accounts (Loose-Leaf PDFs).
+const bookOfAccountsService = require('../services/bookOfAccountsService');
 const { userHasBirRole } = require('../../utils/birAccess');
 
 function requireEntity(req, res) {
@@ -1033,6 +1035,206 @@ exports.exportQAPDat = catchAsync(async (req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('X-Content-Hash', contentHash);
   res.send(datContent);
+});
+
+// ── Phase J5 — Books of Accounts (Loose-Leaf PDFs) ─────────────────────
+//
+// Six books generated from POSTED JournalEntry rows:
+//   SALES_JOURNAL, PURCHASE_JOURNAL, CASH_RECEIPTS, CASH_DISBURSEMENTS,
+//   GENERAL_JOURNAL, GENERAL_LEDGER
+//
+// Each book is exported per-month OR as an annual binding (12 sections +
+// year summary). Sworn declaration is a separate per-book PDF for the
+// notary block. All exports append SHA-256-stamped audit-log rows to
+// BirFilingStatus(form_code='BOOKS', period_year=Y) per Rule #20.
+//
+// VIEW_DASHBOARD gates the catalog + compute endpoints. EXPORT_FORM gates
+// the PDF endpoints (each mutates the audit log).
+
+function parseBookCode(v) {
+  if (!v || typeof v !== 'string') return null;
+  return bookOfAccountsService.BOOK_CODES.includes(v) ? v : null;
+}
+
+function parseOptionalMonth(v) {
+  if (v === undefined || v === null || v === '' || v === 'annual') return null;
+  return parseMonth(v);
+}
+
+exports.getBooksCatalog = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const data = await bookOfAccountsService.getBookCatalog({ entityId: req.entityId });
+  res.json({ success: true, data });
+});
+
+exports.computeBook = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.params.year);
+  const bookCode = parseBookCode(req.params.bookCode);
+  // The month is optional — explicitly null/undefined means annual.
+  const monthRaw = req.query.month !== undefined ? req.query.month : null;
+  const month = monthRaw === null ? null : parseOptionalMonth(monthRaw);
+
+  if (!year) return res.status(400).json({ success: false, message: 'Invalid year. Year ≥ 2024.' });
+  if (!bookCode) return res.status(400).json({
+    success: false,
+    message: `Invalid book code. One of: ${bookOfAccountsService.BOOK_CODES.join(', ')}`,
+  });
+  if (monthRaw !== null && monthRaw !== '' && monthRaw !== 'annual' && month === null) {
+    return res.status(400).json({ success: false, message: 'Invalid month. 1-12 or omit for annual.' });
+  }
+
+  const data = await bookOfAccountsService.computeBook({
+    entityId: req.entityId, bookCode, year, month,
+  });
+  // Attach the BOOKS BirFilingStatus row (annual encoding) so the page can
+  // render lifecycle status + audit log.
+  const row = await BirFilingStatus.findOne({
+    entity_id: req.entityId, form_code: 'BOOKS',
+    period_year: year, period_month: null, period_quarter: null, period_payee_id: null,
+  }).lean();
+  res.json({ success: true, data: { ...data, filing_row: row || null } });
+});
+
+exports.exportBookPdf = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'EXPORT_FORM'))) return;
+  const year = parseYear(req.params.year);
+  const bookCode = parseBookCode(req.params.bookCode);
+  const monthRaw = req.query.month !== undefined ? req.query.month : null;
+  const month = monthRaw === null ? null : parseOptionalMonth(monthRaw);
+
+  if (!year) return res.status(400).json({ success: false, message: 'Invalid year. Year ≥ 2024.' });
+  if (!bookCode) return res.status(400).json({
+    success: false,
+    message: `Invalid book code. One of: ${bookOfAccountsService.BOOK_CODES.join(', ')}`,
+  });
+  if (monthRaw !== null && monthRaw !== '' && monthRaw !== 'annual' && month === null) {
+    return res.status(400).json({ success: false, message: 'Invalid month. 1-12 or omit for annual.' });
+  }
+
+  const entity = await Entity.findById(req.entityId).lean();
+  if (!entity) return res.status(404).json({ success: false, message: 'Entity not found.' });
+
+  let result;
+  try {
+    result = await bookOfAccountsService.exportBookPdf({
+      entityId: req.entityId, bookCode, year, month, entity,
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+
+  // Lazy-create the BOOKS filing-status row (annual encoding — single row
+  // per (entity, year)). Each per-book per-period export appends a fresh
+  // audit-log entry; the row's `totals_snapshot` mirrors the most recent
+  // export so dashboard tiles can show the latest figure at a glance.
+  const filter = {
+    entity_id: req.entityId, form_code: 'BOOKS',
+    period_year: year, period_month: null, period_quarter: null, period_payee_id: null,
+  };
+  let row = await BirFilingStatus.findOne(filter);
+  if (!row) {
+    row = new BirFilingStatus({
+      ...filter,
+      status: 'DRAFT',
+      totals_snapshot: { last_export: { book: bookCode, totals: result.totals } },
+    });
+  } else {
+    row.totals_snapshot = {
+      ...(row.totals_snapshot || {}),
+      last_export: { book: bookCode, totals: result.totals },
+    };
+  }
+  row.export_audit_log.push({
+    exported_at: new Date(),
+    exported_by: req.user?._id,
+    artifact_kind: 'PDF',
+    filename: result.filename,
+    content_hash: result.contentHash,
+    byte_length: result.buffer.length,
+    notes: `BOOKS ${bookCode} ${month ? `${year}-${String(month).padStart(2, '0')}` : `Annual ${year}`} (${result.rowCount} rows, ${result.page_count} pages)`,
+  });
+  await row.save();
+  birDashboardService.invalidate(req.entityId);
+
+  console.log('[BIR_EXPORT_BOOKS_PDF]', JSON.stringify({
+    user: req.user?.email, role: req.user?.role,
+    entity_id: String(req.entityId),
+    book: bookCode, year, month,
+    row_count: result.rowCount,
+    page_count: result.page_count,
+    content_hash: result.contentHash,
+    byte_length: result.buffer.length,
+    ip: req.ip, ts: new Date().toISOString(),
+  }));
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
+  res.setHeader('X-Content-Hash', result.contentHash);
+  res.send(result.buffer);
+});
+
+exports.exportBookSwornDeclarationPdf = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'EXPORT_FORM'))) return;
+  const year = parseYear(req.params.year);
+  const bookCode = parseBookCode(req.params.bookCode);
+
+  if (!year) return res.status(400).json({ success: false, message: 'Invalid year. Year ≥ 2024.' });
+  if (!bookCode) return res.status(400).json({
+    success: false,
+    message: `Invalid book code. One of: ${bookOfAccountsService.BOOK_CODES.join(', ')}`,
+  });
+
+  const entity = await Entity.findById(req.entityId).lean();
+  if (!entity) return res.status(404).json({ success: false, message: 'Entity not found.' });
+
+  let result;
+  try {
+    result = await bookOfAccountsService.exportSwornDeclaration({
+      entityId: req.entityId, bookCode, year, entity,
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+
+  // Audit-log against the same BOOKS row.
+  const filter = {
+    entity_id: req.entityId, form_code: 'BOOKS',
+    period_year: year, period_month: null, period_quarter: null, period_payee_id: null,
+  };
+  let row = await BirFilingStatus.findOne(filter);
+  if (!row) {
+    row = new BirFilingStatus({ ...filter, status: 'DRAFT', totals_snapshot: null });
+  }
+  row.export_audit_log.push({
+    exported_at: new Date(),
+    exported_by: req.user?._id,
+    artifact_kind: 'PDF',
+    filename: result.filename,
+    content_hash: result.contentHash,
+    byte_length: result.buffer.length,
+    notes: `Sworn Declaration ${bookCode} ${year}`,
+  });
+  await row.save();
+  birDashboardService.invalidate(req.entityId);
+
+  console.log('[BIR_EXPORT_BOOKS_SWORN]', JSON.stringify({
+    user: req.user?.email, role: req.user?.role,
+    entity_id: String(req.entityId),
+    book: bookCode, year,
+    content_hash: result.contentHash,
+    byte_length: result.buffer.length,
+    ip: req.ip, ts: new Date().toISOString(),
+  }));
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
+  res.setHeader('X-Content-Hash', result.contentHash);
+  res.send(result.buffer);
 });
 
 // ── Withholding Posture (read-only summary for the dashboard) ──────────

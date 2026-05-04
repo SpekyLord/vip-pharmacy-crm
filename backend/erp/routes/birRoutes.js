@@ -75,7 +75,18 @@ router.get('/forms/1604-E/:year/export.dat', ctrl.export1604EDat);
 router.get('/forms/QAP/:year/:quarter/compute', ctrl.computeQAP);
 router.get('/forms/QAP/:year/:quarter/export.dat', ctrl.exportQAPDat);
 
-// J1 catch-all CSV export (lower priority — must come AFTER J2/J3/J4 specific routes).
+// ── Phase J5 — Books of Accounts (Loose-Leaf PDFs) (May 2026) ──────────
+// MUST come BEFORE the catch-all `/forms/:formCode/:year/:period/export.csv`
+// and the per-id `/forms/:id` GET below. The book code lives in :bookCode
+// (one of SALES_JOURNAL / PURCHASE_JOURNAL / CASH_RECEIPTS /
+// CASH_DISBURSEMENTS / GENERAL_JOURNAL / GENERAL_LEDGER). Annual binding
+// = no ?month query; monthly = ?month=1..12.
+router.get('/forms/BOOKS/:year/catalog', ctrl.getBooksCatalog);
+router.get('/forms/BOOKS/:year/:bookCode/compute', ctrl.computeBook);
+router.get('/forms/BOOKS/:year/:bookCode/export.pdf', ctrl.exportBookPdf);
+router.get('/forms/BOOKS/:year/:bookCode/sworn-declaration.pdf', ctrl.exportBookSwornDeclarationPdf);
+
+// J1 catch-all CSV export (lower priority — must come AFTER J2/J3/J4/J5 specific routes).
 router.get('/forms/:formCode/:year/:period/export.csv', ctrl.exportVatReturnCsv);
 
 router.get('/forms/:id', ctrl.getFiling);
