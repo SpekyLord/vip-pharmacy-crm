@@ -9565,9 +9565,9 @@ Backend:
 
 ---
 
-## Phase VIP-1.J — BIR Tax Compliance Suite (J0 SHIPPED Apr 27 2026; J1 SHIPPED Apr 28 2026; J2 SHIPPED May 03 2026; J3-J7 deferred)
+## Phase VIP-1.J — BIR Tax Compliance Suite (J0 SHIPPED Apr 27 2026; J1 SHIPPED Apr 28 2026; J2 SHIPPED May 03 2026; J3 Part A SHIPPED May 04 2026; J3 Part B + J4-J7 deferred)
 
-**Sequence**: J0 (foundation) ✅ -> J1 (VAT) ✅ -> J2 (EWT) ⬅ START HERE -> J3 (Compensation) -> J4 (Annual Alphalists) -> J5 (Books of Accounts) -> J6 (Inbound 2307) -> J7 (1702 Annual Income Tax)
+**Sequence**: J0 (foundation) ✅ -> J1 (VAT) ✅ -> J2 (EWT) ✅ -> J3 Part A (1601-C Compensation) ✅ -> J3 Part B (1604-CF Annual Alphalist + 2316) ⬅ START HERE -> J4 (Annual Alphalists for EWT/QAP) -> J5 (Books of Accounts) -> J6 (Inbound 2307) -> J7 (1702 Annual Income Tax)
 
 ### J0 — Compliance Dashboard + Foundation (~3-4 days) — ✅ SHIPPED + SMOKE-PASSED
 
@@ -9712,8 +9712,59 @@ Commits `80b2798` + `68c711d` on `origin/dev` (Apr 27 13:28 + 13:41 PHT). Live H
 - **J2.3.x — golden SAWT fixture**: snapshot a real-data Q1 `.dat` payload at `backend/erp/services/__fixtures__/SAWT_2026-Q1_VIP.dat` + add fixture-equality test. Detects accidental serializer drift.
 - **J2.4.x — Inbound 2307 (J6 prep)**: WithholdingLedger.DIRECTIONS reserves INBOUND but doesn't write today; CwtLedger remains source-of-truth. J6 decides migrate vs. coexist.
 
-### J3 — 1601-C + 1604-CF (~1.5 days)
-Payslip -> WithholdingLedger bridge (direction COMPENSATION). 1601-C copy-paste page. 1604-CF Annual Alphalist `.dat` writer (Schedules 7.1 / 7.2 / 7.3).
+### J3 Part A — 1601-C Monthly Compensation Withholding (May 04 2026, uncommitted on dev) — ✅ SHIPPED
+
+Payslip -> WithholdingLedger bridge (direction COMPENSATION) on payroll-post (legacy + Hub-cascade paths). 1601-C monthly aggregator + 10-box copy-paste page + per-employee schedule. ATC buckets: WI100 (regular taxable comp) + WC120 (13th-month + bonuses excess of ₱90k) + WMWE (minimum-wage earner exempt under TRAIN).
+
+**J3 Part A.1 Engine bridge** (`backend/erp/services/withholdingService.js`) — ✅ shipped
+- `emitCompensationWithholdingForPayslip(payslip, opts)` writes 1-3 COMPENSATION rows per posted Payslip, idempotent on `source_event_id = payslip._id`.
+- WMWE classification via `PeopleMaster.employment_type === 'MWE'`. 13th-month exemption threshold lookup-overridable via `Settings.COMPENSATION_13TH_MONTH_EXEMPT` (default 90_000 PHP — TRAIN Law).
+- Snapshot pattern: payee_name/tin/address frozen at write time so renames don't rewrite filed history.
+- `buildCompensationPosture(entityId, year)` for 1601-C dashboard card. Sibling to `buildPosture()` (which is OUTBOUND-only).
+
+**J3 Part A.2 Aggregator + box layout** (`backend/erp/services/withholdingReturnService.js`) — ✅ shipped
+- `compute1601C({ entityId, year, month })` — sums INCLUDE-tagged COMPENSATION rows; 10-box totals (wi100/wc120/wmwe gross+tax + 4 totals) + per-employee `meta.schedule`.
+- Backward-compat refactor: `sumByAtcCode` + `listPayees` both accept optional `direction` parameter (default 'OUTBOUND' preserves J2 callers).
+- `exportEwtCsv` extended to handle formCode `'1601-C'` — calls compute1601C internally, names file `1601C_{year}-{month}.csv`. Same Rule #20 audit-log append.
+
+**J3 Part A.3 Controller + routes** (`backend/erp/controllers/birController.js` + `backend/erp/routes/birRoutes.js`) — ✅ shipped
+- New `compute1601C` + `getCompensationPosture` handlers. `exportEwtCsv` allow-list grew to `{1601-EQ, 1606, 1601-C}`.
+- 3 new routes mounted BEFORE the J1 catch-all: `GET /forms/1601-C/:year/:month/compute`, `GET /forms/1601-C/:year/:month/export.csv`, `GET /withholding/comp-posture`.
+
+**J3 Part A.4 Payslip-post wiring** (`backend/erp/controllers/payrollController.js` + `backend/erp/controllers/universalApprovalController.js`) — ✅ shipped
+- Both legacy direct-post AND G4.5cc Hub-cascade paths call `emitCompensationWithholdingForPayslip(fullPs, { userId })` AFTER `createAndPostJournal` succeeds. Failures log `[J3_COMPENSATION_EMIT_FAILURE]` to ErpAuditLog as LEDGER_ERROR; non-blocking (mirrors `[AUTO_JOURNAL_FAILURE]` posture).
+
+**J3 Part A.5 Lookup seeds** (`backend/erp/controllers/lookupGenericController.js`) — ✅ shipped
+- `BIR_ATC_CODES` SEED_DEFAULTS gained `WMWE` row (engine-internal exempt code; rate=0; form='1601-C'). Existing aspirational WI100 + WC120 rows now actively consumed.
+- `insert_only_metadata: true` protects subscriber overrides on labels/colors against future re-seeds.
+
+**J3 Part A.6 Frontend extension** (`frontend/src/erp/services/birService.js` + `frontend/src/erp/pages/BirEwtReturnDetailPage.jsx` + `frontend/src/App.jsx`) — ✅ shipped
+- New `compute1601C(year, month)` + `getCompensationPosture(year)` service wrappers.
+- `BirEwtReturnDetailPage` extended (now serves 1601-EQ + 1606 + 1601-C): validParams allows 1601-C, load() branches, SECTION_LABELS adds COMP/BNS/MWE, periodLabel + scheduleLabel helpers branch on formCode (1601-C → "Per-Employee Schedule"), PageGuide pageKey ternary (1601-C → 'bir-comp-return'), SAWT + 2307-PDF buttons stay 1601-EQ-only.
+- `<Route path="/erp/bir/1601-C/:year/:period">` mounted BEFORE `/erp/bir/:formCode/:year/:period` wildcard.
+
+**J3 Part A.7 PageGuide** (`frontend/src/components/common/PageGuide.jsx`) — ✅ shipped
+- New `bir-comp-return` 7-step entry covering pre-flight, bucket layout, per-employee schedule + threshold setting discoverability, copy-paste UX, no-2307/no-SAWT clarification, lifecycle, MWE classification.
+
+**J3 Part A.8 Healthcheck** (`backend/scripts/healthcheckBirCompensationWithholding.js`) — ✅ shipped
+- 78-assertion wiring contract verifier across 14 surfaces. Run `node backend/scripts/healthcheckBirCompensationWithholding.js` — exit 0 = clean.
+- J2 healthcheck (`healthcheckBirEwtWiring.js`) tightened 1 assertion to accept the new conditional pageKey ternary (still 124/124 PASS).
+
+**J3 Part A verification posture (May 04 2026)**:
+- ✅ J3 healthcheck 78/78 PASS
+- ✅ J2 EWT regression 124/124 PASS (after 1-line update)
+- ✅ J1 VAT regression 39/39 PASS
+- ✅ ClmIdempotency 6/6 PASS, ClmPerformance 34/34 PASS, TeamActivity 22/22 PASS, SalesDiscount 41/41 PASS
+- ✅ Vite build green in 1m 12s
+- ✅ Live HTTP smoke 5/5 (compute1601C 200 + comp-posture 200 + bad year/month 400 + EXPORT_FORM 403 + CORS exposes Content-Disposition + X-Content-Hash)
+- ⏸ Playwright UI smoke deferred — MCP browser locked by user's active Chrome (same condition as Phase R1 handoff). HTTP smoke + static healthcheck is the Rule 0b alternative.
+
+### J3 Part B — 1604-CF Annual Alphalist + Form 2316 PDF (~1 day)
+Annual compensation alphalist `.dat` writer with 3 BIR Schedules:
+- **Schedule 7.1** — Regular employees (taxable). Per-employee row: TIN, name, gross compensation, non-taxable, taxable, tax withheld.
+- **Schedule 7.2** — Minimum wage earners (exempt). Same shape but withheld is structurally 0.
+- **Schedule 7.3** — Terminated employees during the year (separate schedule for BIR audit).
+Per-employee BIR Form 2316 PDF (annual employee certificate of compensation paid + tax withheld). `compute1604CF` aggregator (year-encoded sum across 12 months, partitions per employee by `employment_type` + termination_date). Frontend route `/erp/bir/1604-CF/:year` + page (separate from BirEwtReturnDetailPage — different shape than monthly returns) + service wrapper `compute1604CF(year)` + `export1604CFDat(year)`. Golden fixture for the `.dat` byte string per BIR Alphalist Data Entry v7.x. Healthcheck extension. Heatmap drill-down for 1604-CF cells.
 
 ### J4 — QAP + 1604-E (~2 days)
 QAP quarterly `.dat` writer. 1604-E annual `.dat` writer. Cross-references VIP-1.B rebate payouts.

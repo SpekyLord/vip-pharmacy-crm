@@ -155,6 +155,19 @@ export async function compute1606(year, month) {
   return data?.data || null;
 }
 
+// Phase J3 (May 2026) — 1601-C Monthly Compensation Withholding.
+// Same monthly encoding as 1606. Returns totals + per-employee schedule.
+export async function compute1601C(year, month) {
+  const { data } = await api.get(`${BASE}/forms/1601-C/${year}/${month}/compute`);
+  return data?.data || null;
+}
+
+export async function getCompensationPosture(year) {
+  const params = year ? { year } : {};
+  const { data } = await api.get(`${BASE}/withholding/comp-posture`, { params });
+  return data?.data || null;
+}
+
 export async function listEwtPayees(year, quarter) {
   const { data } = await api.get(`${BASE}/forms/1601-EQ/${year}/${quarter}/payees`);
   return data?.data || { payees: [] };
@@ -241,4 +254,7 @@ export default {
   exportEwtCsv,
   exportSawtDat,
   export2307Pdf,
+  // Phase J3
+  compute1601C,
+  getCompensationPosture,
 };

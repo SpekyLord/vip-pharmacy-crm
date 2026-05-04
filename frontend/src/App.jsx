@@ -659,6 +659,20 @@ function App() {
               </ProtectedRoute>
             }
           />
+          {/* Phase J3 (May 2026) — 1601-C Monthly Compensation Withholding.
+              Same component as 1601-EQ / 1606 (BirEwtReturnDetailPage); the
+              formCodeOverride prop drives the per-form aggregation + box
+              layout. Route MUST stay above the `/erp/bir/:formCode/:year/:period`
+              wildcard fallback to BirVatReturnDetailPage (which only handles
+              2550M/Q). */}
+          <Route
+            path="/erp/bir/1601-C/:year/:period"
+            element={
+              <ProtectedRoute allowedRoles={ROLE_SETS.BIR_FILING}>
+                <BirEwtReturnDetailPage formCodeOverride="1601-C" />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/erp/bir/:formCode/:year/:period"
             element={

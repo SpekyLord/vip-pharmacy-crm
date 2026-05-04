@@ -53,15 +53,19 @@ function quarterPeriods(year, quarter) {
 function round2(n) { return Math.round((Number(n) || 0) * 100) / 100; }
 
 // ── Aggregation primitives ──────────────────────────────────────────────
-async function sumByAtcCode(entityId, periods, financeTag = 'INCLUDE') {
-  // Sum rows grouped by ATC code for the given period set, OUTBOUND only.
+// Phase J3 — `direction` parameter added (default 'OUTBOUND' preserves J2
+// callers). 1601-C aggregator passes 'COMPENSATION' to scope to payroll
+// rows. The same primitive is reused so finance posture (PENDING vs
+// INCLUDE) and entity scoping behave identically across forms.
+async function sumByAtcCode(entityId, periods, financeTag = 'INCLUDE', direction = 'OUTBOUND') {
+  // Sum rows grouped by ATC code for the given period set + direction.
   // PENDING rows are EXCLUDED from the official return so finance must
   // explicitly INCLUDE them — same posture as VatLedger.
   const rows = await WithholdingLedger.aggregate([
     {
       $match: {
         entity_id: entityId,
-        direction: 'OUTBOUND',
+        direction,
         period: { $in: Array.isArray(periods) ? periods : [periods] },
         finance_tag: financeTag,
       },
@@ -79,10 +83,10 @@ async function sumByAtcCode(entityId, periods, financeTag = 'INCLUDE') {
   return rows;
 }
 
-async function listPayees(entityId, periods, atcFilter = null, financeTag = 'INCLUDE') {
+async function listPayees(entityId, periods, atcFilter = null, financeTag = 'INCLUDE', direction = 'OUTBOUND') {
   const match = {
     entity_id: entityId,
-    direction: 'OUTBOUND',
+    direction,
     period: { $in: Array.isArray(periods) ? periods : [periods] },
     finance_tag: financeTag,
   };
@@ -151,9 +155,33 @@ const BOX_LAYOUT_1606 = [
   { code: 'total_withheld',  label: 'Total Tax Withheld for the Month',                         section: 'TOTAL', readonly: true, decimals: 2 },
 ];
 
+// Phase J3 — 1601-C Monthly Compensation Withholding return.
+// Box layout mirrors the BIR 1601-C form structure: regular taxable
+// compensation + 13th-month excess (taxable portion above the ₱90k TRAIN
+// exemption) + MWE (exempt — gross only) + totals. Tax-table math happens
+// upstream in payslipCalc; this report aggregates the engine's recorded
+// totals for the bookkeeper to copy into eBIRForms.
+const BOX_LAYOUT_1601_C = [
+  // Schedule 1 — taxable compensation (BIR ATC WI100)
+  { code: 'wi100_gross',    label: 'Sch 1 — WI100 Regular Taxable Compensation — Gross',           section: 'COMP',  readonly: true, decimals: 2 },
+  { code: 'wi100_tax',      label: 'Sch 1 — WI100 Tax Withheld on Regular Compensation',           section: 'COMP',  readonly: true, decimals: 2 },
+  // Schedule 2 — 13th-month + bonuses excess (BIR ATC WC120)
+  { code: 'wc120_gross',    label: 'Sch 2 — WC120 13th-Month + Bonuses (excess of ₱90k) — Gross',  section: 'BNS',   readonly: true, decimals: 2 },
+  { code: 'wc120_tax',      label: 'Sch 2 — WC120 Tax (already counted in Sch 1 total)',           section: 'BNS',   readonly: true, decimals: 2 },
+  // Schedule 3 — minimum wage earners (exempt under TRAIN)
+  { code: 'wmwe_gross',     label: 'Sch 3 — MWE Compensation — Gross (exempt under TRAIN)',         section: 'MWE',   readonly: true, decimals: 2 },
+  { code: 'wmwe_tax',       label: 'Sch 3 — MWE Tax Withheld (always 0 — exempt)',                 section: 'MWE',   readonly: true, decimals: 2 },
+  // Totals
+  { code: 'total_gross',    label: 'Total Compensation Paid',                                       section: 'TOTAL', readonly: true, decimals: 2 },
+  { code: 'total_taxable',  label: 'Net Taxable Compensation (Sch 1 + Sch 2 Gross)',                section: 'TOTAL', readonly: true, decimals: 2 },
+  { code: 'total_withheld', label: 'Total Tax Required to Be Withheld for the Month',               section: 'TOTAL', readonly: true, decimals: 2 },
+  { code: 'employee_count', label: 'Number of Employees Reported',                                   section: 'TOTAL', readonly: true, decimals: 0 },
+];
+
 function getBoxLayout(formCode) {
   if (formCode === '1601-EQ') return BOX_LAYOUT_1601_EQ;
   if (formCode === '1606') return BOX_LAYOUT_1606;
+  if (formCode === '1601-C') return BOX_LAYOUT_1601_C;
   throw new Error(`Unsupported form_code for withholding return: ${formCode}`);
 }
 
@@ -237,6 +265,79 @@ async function compute1606({ entityId, year, month }) {
     },
     box_layout: BOX_LAYOUT_1606,
     schedule,
+    computed_at: new Date(),
+  };
+
+  return { totals, meta };
+}
+
+// ── 1601-C aggregator (monthly compensation withholding — Phase J3) ─────
+/**
+ * Monthly compensation-withholding return. Reads COMPENSATION-direction
+ * rows from WithholdingLedger (emitted by `withholdingService.emitCompensation
+ * WithholdingForPayslip` at payroll-post time per Rule #20).
+ *
+ * Box decomposition (mirrors BIR Form 1601-C):
+ *   • Sch 1 (WCOMP): regular taxable compensation — gross + withheld
+ *   • Sch 2 (W13TH): 13th-month + bonuses excess of ₱90k — gross only
+ *                    (tax already counted in Sch 1 withheld)
+ *   • Sch 3 (WMWE):  minimum wage earners — gross only, withheld is
+ *                    structurally 0 (TRAIN exemption)
+ *
+ * `total_taxable` = Sch 1 gross + Sch 2 gross (the BIR-defined "Net
+ * Taxable Compensation" line, which excludes the MWE pool).
+ * `total_withheld` = Sch 1 withheld (Sch 2 + Sch 3 contribute 0).
+ * `employee_count` = distinct count of payee_id across all schedules.
+ */
+async function compute1601C({ entityId, year, month }) {
+  if (!entityId) throw new Error('entityId is required');
+  if (!Number.isInteger(year) || year < 2024 || year > 2099) throw new Error('Invalid year');
+  if (!Number.isInteger(month) || month < 1 || month > 12) throw new Error('Invalid month');
+
+  const period = monthlyPeriod(year, month);
+  const rows = await sumByAtcCode(entityId, [period], 'INCLUDE', 'COMPENSATION');
+  const byCode = new Map(rows.map(r => [r._id, r]));
+
+  const get = (code) => byCode.get(code) || { gross: 0, withheld: 0, count: 0 };
+  const wi100 = get('WI100');   // Regular taxable compensation
+  const wc120 = get('WC120');   // 13th-month excess
+  const wmwe = get('WMWE');     // Minimum wage earner (exempt)
+
+  // Distinct employee count — best effort from the payee schedule. We use
+  // the schedule's distinct payee_id set rather than the ATC group counts
+  // (those are ROW counts, not employee counts).
+  const schedule = await listPayees(entityId, [period], ['WI100', 'WC120', 'WMWE'], 'INCLUDE', 'COMPENSATION');
+  const distinctEmployees = new Set(schedule.map(s => String(s.payee_id))).size;
+
+  const totals = {
+    wi100_gross: round2(wi100.gross),
+    wi100_tax: round2(wi100.withheld),
+    wc120_gross: round2(wc120.gross),
+    wc120_tax: 0, // structural — tax already in wi100_tax
+    wmwe_gross: round2(wmwe.gross),
+    wmwe_tax: 0, // structural — exempt
+    total_gross: round2(wi100.gross + wc120.gross + wmwe.gross),
+    total_taxable: round2(wi100.gross + wc120.gross),
+    total_withheld: round2(wi100.withheld),
+    employee_count: distinctEmployees,
+  };
+
+  const meta = {
+    form_code: '1601-C',
+    entity_id: entityId,
+    period_year: year,
+    period_month: month,
+    period_label: period,
+    source_counts: {
+      atc_buckets: rows.length,
+      employee_lines: schedule.length,
+      distinct_employees: distinctEmployees,
+    },
+    box_layout: BOX_LAYOUT_1601_C,
+    schedule,
+    pending_j3b: {
+      annual_alphalist: 'Phase J3 Part B will add 1604-CF annual alphalist (.dat writer + 3 schedules).',
+    },
     computed_at: new Date(),
   };
 
@@ -545,21 +646,26 @@ async function exportEwtCsv({ formCode, entityId, year, periodMonthOrQuarter, us
     computed = await compute1601EQ({ entityId, year, quarter: periodMonthOrQuarter });
   } else if (formCode === '1606') {
     computed = await compute1606({ entityId, year, month: periodMonthOrQuarter });
+  } else if (formCode === '1601-C') {
+    // J3 — monthly compensation withholding. Uses month encoding like 1606.
+    computed = await compute1601C({ entityId, year, month: periodMonthOrQuarter });
   } else {
     throw new Error(`Unsupported EWT form: ${formCode}`);
   }
 
   const csvContent = buildEwtCsv({ ...computed, entity });
   const contentHash = crypto.createHash('sha256').update(csvContent, 'utf8').digest('hex');
-  const filename = formCode === '1601-EQ'
-    ? `1601EQ_${year}-Q${periodMonthOrQuarter}.csv`
-    : `1606_${year}-${pad2(periodMonthOrQuarter)}.csv`;
+  let filename;
+  if (formCode === '1601-EQ') filename = `1601EQ_${year}-Q${periodMonthOrQuarter}.csv`;
+  else if (formCode === '1606') filename = `1606_${year}-${pad2(periodMonthOrQuarter)}.csv`;
+  else filename = `1601C_${year}-${pad2(periodMonthOrQuarter)}.csv`; // 1601-C
 
+  const monthlyEncodedForms = ['1606', '1601-C'];
   const filter = {
     entity_id: entityId,
     form_code: formCode,
     period_year: year,
-    period_month: formCode === '1606' ? periodMonthOrQuarter : null,
+    period_month: monthlyEncodedForms.includes(formCode) ? periodMonthOrQuarter : null,
     period_quarter: formCode === '1601-EQ' ? periodMonthOrQuarter : null,
     period_payee_id: null,
   };
@@ -590,6 +696,8 @@ async function exportEwtCsv({ formCode, entityId, year, periodMonthOrQuarter, us
 module.exports = {
   compute1601EQ,
   compute1606,
+  // Phase J3 — Monthly compensation withholding return
+  compute1601C,
   exportEwtCsv,
   export2307Pdf,
   exportSawtDat,

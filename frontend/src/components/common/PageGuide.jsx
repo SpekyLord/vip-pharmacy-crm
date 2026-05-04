@@ -146,6 +146,24 @@ const PAGE_GUIDES = {
     ],
     tip: 'Finance ledger gates: every WithholdingLedger row starts as PENDING. Review under "VAT/EWT Tagging" (Phase G3 surface, /erp/accounting) and tag INCLUDE before exporting CSVs — the aggregator only counts INCLUDE rows. Mirrors the VAT ledger discipline so 1601-EQ totals always match what finance signed off.',
   },
+  'bir-comp-return': {
+    title: 'BIR 1601-C — Monthly Compensation Withholding',
+    steps: [
+      'Pre-flight: this report aggregates COMPENSATION-direction WithholdingLedger rows that the engine emits whenever a Payslip is POSTED (legacy direct-post path in payrollController + cascade path through the Approval Hub). If you see zero employees, post a payroll first — there\'s no separate switch to flip per Phase J3.',
+      'Bucket layout (BIR ATC codes): WI100 = regular taxable compensation (gross + tax via graduated tax tables in payslipCalc.js); WC120 = 13th-month + bonuses excess of ₱90k (gross only — its tax was already counted in the WI100 row\'s withheld); WMWE = minimum wage earners (gross only, structurally exempt under TRAIN / RA 10963). The bottom Total Net Taxable Compensation = WI100 gross + WC120 gross (excludes the MWE pool).',
+      'Per-employee schedule below the boxes shows each PeopleMaster employee × ATC bucket — drill in if a total looks off. The 13th-month exemption threshold (₱90k) is configurable per entity via Settings COMPENSATION_13TH_MONTH_EXEMPT for subscribers in jurisdictions with different thresholds (subscription-ready per Rule #19).',
+      'Each card is one BIR field. Click the copy icon and paste directly into eBIRForms 7.x for the 1601-C return. Tax computation already happened inside payslipCalc — this report just surfaces the totals the engine recorded.',
+      'No 2307 PDF here — compensation receipts use BIR Form 2316 (annual employee certificate), shipping in Phase J3 Part B alongside 1604-CF. No SAWT here either — SAWT is the EWT alphalist for 1601-EQ (Phase J2), not for compensation.',
+      'Lifecycle: Export CSV → Mark Reviewed (president sign-off) → Mark Filed (bookkeeper, after eBIR submission with reference number) → CONFIRMED (auto-flip when BIR confirmation email lands at yourpartner@viosintegrated.net).',
+      'MWE classification: an employee is treated as MWE if PeopleMaster.employment_type = "MWE". Engine forces withheld_amount=0 and routes the entire compensation to the WMWE bucket. To revoke MWE status mid-year (e.g., promotion above the minimum wage), update PeopleMaster — the change applies to NEW payslip posts; reopen + repost a closed period to retroactively re-emit (Reversal Console).',
+    ],
+    next: [
+      { label: 'BIR Compliance Dashboard', path: '/erp/bir' },
+      { label: 'Payroll (post payslips)', path: '/erp/payroll' },
+      { label: '1601-EQ EWT (sibling form)', path: '/erp/bir' },
+    ],
+    tip: 'The compensation engine is idempotent on payslip._id — re-posting the same payslip (after reopen) deletes prior compensation rows and re-emits. This means partial 1601-C totals after a mid-month reopen are normal until you re-post the affected payslips. The legacy direct-post path AND the cascade Approval Hub path BOTH emit, so a clerk-submitted run cleared by admin produces the same compensation rows as a president-direct post.',
+  },
   'bir-vat-return': {
     title: 'BIR 2550M / 2550Q VAT Return',
     steps: [

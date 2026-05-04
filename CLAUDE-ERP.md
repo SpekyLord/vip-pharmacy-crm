@@ -6109,11 +6109,11 @@ See `docs/PHASETASK-ERP.md` (`WEEK-1 STABILIZATION — DAY 4`) for the full file
 
 ---
 
-## Phase VIP-1.J — BIR Tax Compliance Suite (J0 + J1 + J2 SHIPPED Apr 27 – May 03 2026, J3-J7 deferred)
+## Phase VIP-1.J — BIR Tax Compliance Suite (J0 + J1 + J2 + J3 Part A SHIPPED Apr 27 – May 04 2026, J3 Part B + J4-J7 deferred)
 
 **Goal**: replace the bookkeeper-as-black-box workflow with a president-facing BIR Compliance Dashboard + per-form copy-paste UX into eBIR Forms + `.dat` exports for Alphalist Data Entry + loose-leaf Books of Accounts PDFs. Covers VIP, Balai Lawaan, online pharmacy, MG, CO, and future SaaS subscribers.
 
-**Status (May 03 2026)**: J0 + J1 + J2 shipped. J0 (Compliance Dashboard + Foundation + Data Quality Agent + inbound-email parser) is on `origin/dev` (commits `80b2798` + `68c711d`) and live-smoke green. J1 (2550M Monthly + 2550Q Quarterly VAT compute + CSV export) shipped Apr 28 2026, healthcheck 39/39 passing. **J2 (1601-EQ + 1606 + 2307-OUT + SAWT — uncommitted on `dev` May 03 2026)** — full withholding-tax engine + per-form aggregators + 2307 PDF generator + SAWT `.dat` writer + Withholding Posture card on dashboard + 124-check wiring healthcheck (passing). HTTP smoke green end-to-end (Playwright MCP profile-locked, deferred). J3-J7 (~7 working days remaining: compensation withholding + alphalists + books of accounts + 1702 income tax) still deferred — plan `~/.claude/plans/vip-1-j-bir-compliance.md`.
+**Status (May 04 2026)**: J0 + J1 + J2 shipped. J3 Part A (1601-C Monthly Compensation Withholding) ALSO shipped today, uncommitted on `dev`. J0 (Compliance Dashboard + Foundation + Data Quality Agent + inbound-email parser) is on `origin/dev` (commits `80b2798` + `68c711d`) and live-smoke green. J1 (2550M Monthly + 2550Q Quarterly VAT compute + CSV export) shipped Apr 28 2026, healthcheck 39/39 passing. J2 (1601-EQ + 1606 + 2307-OUT + SAWT, May 03 2026) — healthcheck 124/124 passing. **J3 Part A (1601-C Monthly Compensation Withholding — uncommitted on `dev` May 04 2026)** — payslip→ledger bridge (legacy + Hub-cascade paths), compute1601C aggregator + 10-box layout + per-employee schedule, exportEwtCsv extended for 1601-C, BirEwtReturnDetailPage extended (now serves 3 forms), App.jsx route + PageGuide entry + 78-check wiring healthcheck (passing). HTTP smoke 5/5 green end-to-end (Playwright UI deferred — MCP browser locked, same condition as Phase R1 handoff). **J3 Part B (1604-CF annual alphalist + Form 2316 PDF) + J4-J7** (~6.5 working days remaining: annual alphalists + books of accounts + 1702 income tax) still deferred — plan `~/.claude/plans/vip-1-j-bir-compliance.md`.
 
 ### J2 — 1601-EQ + 1606 + 2307-OUT + SAWT EWT (May 03 2026, uncommitted on dev)
 
@@ -6188,6 +6188,73 @@ See `docs/PHASETASK-ERP.md` (`WEEK-1 STABILIZATION — DAY 4`) for the full file
 - **J2.2 — PS-eligibility auto-flip**: when `evaluateProfitSharingEligibility(contractor)` flips true the FIRST time, set `PeopleMaster.withhold_active=true` + emit a `MessageInbox` alert to admin/finance/president. Hook lives in the rebate engine (Phase VIP-1.B) — wire when VIP-1.B Phase 5 lands.
 - **J2.3 — golden SAWT fixture**: snapshot a known-good `.dat` byte string at `backend/erp/services/__fixtures__/SAWT_2026-Q1_VIP.dat` and add a fixture-equality test. Detects accidental serializer drift on refactor. (~30 min once we have a real-data Q1.)
 - **J2.4 — Inbound 2307 (J6 prep)**: the `INBOUND` direction in `WithholdingLedger.DIRECTIONS` is reserved but unused today; CwtLedger remains the source of truth. J6 either migrates or lets them coexist — don't delete the enum slot.
+
+
+
+### J3 Part A — 1601-C Monthly Compensation Withholding (May 04 2026, uncommitted on dev)
+
+**Why it shipped Part-A-only**: J3 was scoped at ~1.5 days for both 1601-C (monthly compensation withholding return) and 1604-CF (annual compensation alphalist with 3 BIR schedules). 1601-C ships now because it gives admin / finance / bookkeeper a working monthly export immediately and unblocks January-onward filings; 1604-CF (Part B) is deferred to a fresh session to avoid a half-shipped annual `.dat` writer (BIR Alphalist Data Entry v7.x format compliance is golden-fixture territory).
+
+**Status (May 04 2026)**: J3 Part A backend + frontend + healthcheck (78/78 PASS) + sibling regressions (J1 39/39, J2 124/124, ClmIdempotency 6/6, ClmPerformance 34/34, TeamActivity 22/22, SalesDiscount 41/41 ALL PASS) + Vite build (1m 12s green) + live HTTP smoke (5/5 contract checks) all green. **Playwright UI smoke deferred** — MCP browser locked by user's active Chrome session (same condition as the Phase R1 handoff). HTTP smoke is the Rule 0b alternative; JSX wires are statically verified by healthcheck.
+
+**What shipped (J3 Part A)**:
+
+1. **`backend/erp/services/withholdingService.js`** (extended) — added the Payslip-to-WithholdingLedger bridge:
+   - `emitCompensationWithholdingForPayslip(payslip, opts)` — emits 1, 2, or 3 `direction='COMPENSATION'` rows per posted payslip:
+     - **WI100** (Regular taxable compensation) — `gross = total_earnings - 13th-month excess`, `withheld = payslip.deductions.withholding_tax`. Always emitted for non-MWE employees.
+     - **WC120** (13th-month + bonuses excess of ₱90k) — emitted ONLY when `earnings.thirteenth_month > exemption_threshold`; `gross = excess`, `withheld = 0` (the tax was already counted in WI100 row's withheld).
+     - **WMWE** (Minimum Wage Earner exempt under TRAIN) — emitted INSTEAD of WI100/WC120 when `PeopleMaster.employment_type === 'MWE'`. `gross = total_earnings`, `withheld = 0` (structurally — MWE compensation is fully exempt under RA 10963 / TRAIN Law). Engine-internal code; there is no BIR ATC for MWE because they are entirely exempt.
+     - **Idempotency**: `source_event_id = payslip._id` (NOT the JE event id — payslip IS the source of truth for compensation withholding). The helper calls `deleteWithholdingEntriesForEvent(payslip._id)` BEFORE re-inserting, so re-posting a payslip after Reversal Console reopen wipes prior comp rows cleanly. Set `opts.deletePrior=false` to skip the wipe.
+     - **Subscription-ready**: 13th-month exemption threshold reads `Settings.COMPENSATION_13TH_MONTH_EXEMPT` per entity (defaults `DEFAULT_THIRTEENTH_MONTH_EXEMPT_PHP = 90_000` from TRAIN Law). Subscriber jurisdictions with different thresholds override without code deploy (Rule #19).
+     - **Snapshot pattern**: reads `PeopleMaster` lazily and freezes `payee_name_snapshot` + `payee_tin_snapshot` + `payee_address_snapshot` at write time so subsequent employee renames / address corrections do NOT rewrite filed-month history (BIR auditor protection).
+   - `buildCompensationPosture(entityId, year)` — sibling to `buildPosture()` (which is OUTBOUND-only). Aggregates `direction='COMPENSATION'` rows into `{ enabled, employees_count, ytd_compensation, ytd_withheld, mwe_count, breakdown[] }`. Per-entity scoped (Rule #19).
+   - **New constants**: `COMPENSATION_ATC_CODES = { REGULAR: 'WI100', THIRTEENTH_MONTH_EXCESS: 'WC120', MWE: 'WMWE' }`. `DEFAULT_RATES` extended with `{ WI100: 0, WC120: 0, WMWE: 0 }` (rate field is a marker only — actual withheld_amount comes from payslipCalc's graduated tax-table computation, never from rate × gross). `DEFAULT_FORM_FOR_ATC` extended with the three new codes mapped to `'1601-C'`.
+2. **`backend/erp/services/withholdingReturnService.js`** (extended) — added the 1601-C aggregator:
+   - **Backwards-compat refactor**: `sumByAtcCode(entityId, periods, financeTag, direction='OUTBOUND')` and `listPayees(entityId, periods, atcFilter, financeTag, direction='OUTBOUND')` both gained an optional `direction` parameter. J2 callers don't pass it (default OUTBOUND preserves their behavior); compute1601C passes `'COMPENSATION'`. Static healthcheck verifies the default-arg signature.
+   - `compute1601C({ entityId, year, month })` — monthly compensation aggregator. Reads INCLUDE-tagged COMPENSATION rows for `period='YYYY-MM'`. Returns 10 box totals (`wi100_gross/tax`, `wc120_gross/tax`, `wmwe_gross/tax`, `total_gross`, `total_taxable` = WI100+WC120 grosses, `total_withheld` = WI100 withheld, `employee_count` = distinct payee_id count) + `meta.box_layout` + per-employee `meta.schedule`.
+   - `BOX_LAYOUT_1601_C` — 10-row layout with `section: COMP|BNS|MWE|TOTAL` (mirrors J2's section pattern). Each row has `code` + `label` + `section` + `readonly` + `decimals`.
+   - `getBoxLayout(formCode)` extended to handle `'1601-C'`.
+   - `exportEwtCsv(...)` extended to handle `formCode === '1601-C'` — calls `compute1601C` internally, builds CSV via the existing `buildEwtCsv` (which is parametric on `meta.box_layout`), names the file `1601C_{year}-{month}.csv`. Same Rule #20 audit-log append pattern (SHA-256 hash + byte length + filename + user → `BirFilingStatus.export_audit_log`). 1606 + 1601-C share the same monthly encoding via the new `monthlyEncodedForms = ['1606', '1601-C']` filter.
+3. **`backend/erp/controllers/birController.js`** (extended) — added 2 new handlers:
+   - `compute1601C` — mirrors `compute1606` exactly except dispatches to `withholdingReturnService.compute1601C`. Same VIEW_DASHBOARD birAccess gate. Looks up the matching BirFilingStatus row (by `entity_id`, `form_code='1601-C'`, `period_year`, `period_month`) and returns `{ ...result, filing_row }`.
+   - `getCompensationPosture` — mirrors `getWithholdingPosture` for the 1601-C dashboard card.
+   - `exportEwtCsv` extended: allow-list grew to `{1601-EQ, 1606, 1601-C}`; param-parsing branches on `formCode === '1606' || formCode === '1601-C'` to use month encoding.
+4. **`backend/erp/routes/birRoutes.js`** — 3 new routes mounted **BEFORE** the J1 `/forms/:formCode/:year/:period/export.csv` catch-all (Express priority — same concern as J2 routes):
+   - `GET /forms/1601-C/:year/:month/compute` → `compute1601C`
+   - `GET /forms/1601-C/:year/:month/export.csv` → `exportEwtCsv`
+   - `GET /withholding/comp-posture` → `getCompensationPosture`
+5. **`backend/erp/controllers/payrollController.js`** + **`backend/erp/controllers/universalApprovalController.js`** — both `postPayroll` paths (legacy direct-post + G4.5cc Hub-cascade) now call `emitCompensationWithholdingForPayslip(fullPs, { userId })` AFTER `createAndPostJournal` succeeds, inside the same try-catch as the JE write. Failures log `[J3_COMPENSATION_EMIT_FAILURE]` to ErpAuditLog as `LEDGER_ERROR` and are non-blocking (payroll posting must NOT fail if the BIR sub-ledger insert hits a transient error — same posture as `[AUTO_JOURNAL_FAILURE]`). Idempotency lives in the helper itself (deletePrior:true default), so re-posting after Reversal Console reopen wipes + re-emits cleanly.
+6. **`backend/erp/controllers/lookupGenericController.js`** (extended) — `BIR_ATC_CODES` SEED_DEFAULTS gained `WMWE` row alongside the existing aspirational WI100 + WC120 placeholders (which J2 had reserved but never wired). All three are now actively consumed by the engine. `WI100` + `WC120` stay BIR-actual; `WMWE` is engine-internal (no BIR ATC for MWE). Each row uses `insert_only_metadata: true` so subscriber overrides on labels/colors survive future re-seeds.
+7. **`frontend/src/erp/services/birService.js`** (extended) — `compute1601C(year, month)` + `getCompensationPosture(year)` wrappers + default exports.
+8. **`frontend/src/erp/pages/BirEwtReturnDetailPage.jsx`** (extended — page now serves 1601-EQ + 1606 + 1601-C):
+   - `validParams` extended to allow `1601-C` (monthly encoding like 1606).
+   - `load()` branches: 1601-EQ → `compute1601EQ`, 1606 → `compute1606`, 1601-C → `compute1601C`.
+   - `SECTION_LABELS` gains COMP / BNS / MWE entries for 1601-C box sections.
+   - `periodLabel` + `scheduleLabel` helpers branch on formCode (1601-C → "Per-Employee Schedule").
+   - `PageGuide pageKey` swaps via inline ternary: `formCode === '1601-C' ? 'bir-comp-return' : 'bir-ewt-return'`.
+   - SAWT toolbar button stays gated to `formCode === '1601-EQ'` (1606 + 1601-C have no SAWT).
+   - 2307 PDF button per Schedule row stays gated to `formCode === '1601-EQ'` (compensation receipts use BIR Form 2316 — annual employee certificate; ships in J3 Part B alongside 1604-CF).
+9. **`frontend/src/App.jsx`** — `<Route path="/erp/bir/1601-C/:year/:period">` mounted BEFORE the `/erp/bir/:formCode/:year/:period` wildcard fallback (route-priority parity with J2's 1601-EQ + 1606 routes).
+10. **`frontend/src/components/common/PageGuide.jsx`** — new `bir-comp-return` entry with 7-step workflow (pre-flight, bucket layout explanation, per-employee schedule + threshold setting discoverability, copy-paste UX, no-2307/no-SAWT clarification, lifecycle, MWE classification).
+11. **`backend/scripts/healthcheckBirCompensationWithholding.js`** (new) — 78-assertion wiring contract verifier across all 14 surfaces (model + 2 services + controller + routes + 2 payslip-post bridges + lookup seeds + frontend service + page + App route + PageGuide + role-set). Run: `node backend/scripts/healthcheckBirCompensationWithholding.js`. Exit 0 = clean.
+12. **`backend/scripts/healthcheckBirEwtWiring.js`** (1-line update) — the J2 healthcheck assertion `expect(... pageKey="bir-ewt-return")` was tightened to `/'bir-ewt-return'/.test(...) && /'bir-comp-return'/.test(...)` because `BirEwtReturnDetailPage` now renders BOTH page-guides via the conditional ternary. Still 124/124 PASS.
+
+**Engine semantics**:
+- Compensation tax computation already happens upstream in `payslipCalc.js` (graduated tax tables per BIR RR 11-2018 / TRAIN Law). The J3 emit just records the engine's totals — `withheld_amount` reads from `payslip.deductions.withholding_tax`, never recomputed via `rate × gross`. This is why `DEFAULT_RATES.WI100 = 0` (the rate field is a marker; the meaningful number is the actual tax-table-derived withheld_amount).
+- 13th-month decomposition: `payslip.earnings.thirteenth_month` is checked against the exemption threshold. Excess goes on a SEPARATE WC120 row with `withheld=0` (the tax is already in the WI100 row's withheld). This means `total_taxable` = WI100 gross + WC120 gross is the BIR "Net Taxable Compensation" line; `total_withheld` = WI100 withheld is the BIR "Tax Required to Be Withheld for the Month" line. WMWE is excluded from `total_taxable` (MWE compensation is exempt).
+- MWE classification: `PeopleMaster.employment_type === 'MWE'`. To revoke MWE status mid-year (e.g., promotion above the minimum wage), update PeopleMaster — the change applies to NEW payslip posts. Retroactive fix requires reopening the period via Reversal Console + re-posting (the emit's idempotency wipes + re-emits the prior comp rows under the new classification).
+
+**Subscription-ready posture (Rule #19 + Rule #3)**:
+- Per-entity Settings override for 13th-month exemption threshold — `COMPENSATION_13TH_MONTH_EXEMPT` (default 90_000 PHP).
+- Per-entity BIR_ATC_CODES lookup (lazy-seeded; subscriber edits override; `insert_only_metadata: true` protects against re-seed overwrites).
+- Per-entity BIR_ROLES lookup (existing J0 surface) drives access — VIEW_DASHBOARD + EXPORT_FORM apply to 1601-C automatically (no new role added; 1601-C is "another BIR form" from the gate's perspective).
+- Cache buster: `withholdingService.invalidateAtcCache(entityId)` already exists and is wired by the lookup edit endpoint — admin's lookup edit propagates within 60s.
+
+**Open follow-ups (J3 Part B and beyond)**:
+- **J3 Part B — 1604-CF Annual Alphalist (~1 day)**: 3-schedule `.dat` writer (Schedule 7.1 employees, Schedule 7.2 MWE, Schedule 7.3 terminated employees), per-employee BIR Form 2316 PDF generator, `compute1604CF` aggregator (year-encoded sum across 12 months), frontend route + page + service wrapper. Golden-fixture for the `.dat` byte string per BIR Alphalist Data Entry v7.x. Healthcheck extension.
+- **J3 Part B — Withholding Posture card on dashboard**: extend the existing dashboard card or add a Compensation Posture card sourced from `getCompensationPosture`. ~30 min frontend.
+- **J3 Part B — Heatmap drill-down for 1601-C cells**: dashboard heatmap currently click-drills 1601-EQ + 1606 + SAWT cells. Extend to 1601-C cells (route is wired; heatmap mapping needs the entry).
+- **Playwright UI smoke** for J3 Part A — deferred from this session because MCP browser locked. Re-smoke `/erp/bir/1601-C/2026/4` end-to-end (boxes render + Schedule shows employees + Export CSV button + Mark Reviewed lifecycle) when MCP unblocks. Static healthcheck (78/78) + Vite build green + HTTP smoke (5/5) is the Rule 0b substitute.
 
 
 

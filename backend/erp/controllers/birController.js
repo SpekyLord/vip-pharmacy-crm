@@ -613,6 +613,37 @@ exports.compute1606 = catchAsync(async (req, res) => {
   res.json({ success: true, data: { ...result, filing_row: row || null } });
 });
 
+// Phase VIP-1.J / J3 — 1601-C Monthly Compensation Withholding aggregator.
+// Mirrors compute1606's shape (monthly form, lookup by (entity, form_code,
+// year, month)). Reads COMPENSATION-direction WithholdingLedger rows that
+// the payroll-post bridge emits per Rule #20.
+exports.compute1601C = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.params.year);
+  const month = parseMonth(req.params.month);
+  if (!year || !month) {
+    return res.status(400).json({ success: false, message: 'Invalid year/month. Year ≥ 2024, month 1-12.' });
+  }
+  const result = await withholdingReturnService.compute1601C({ entityId: req.entityId, year, month });
+  const row = await BirFilingStatus.findOne({
+    entity_id: req.entityId, form_code: '1601-C',
+    period_year: year, period_month: month, period_quarter: null, period_payee_id: null,
+  }).lean();
+  res.json({ success: true, data: { ...result, filing_row: row || null } });
+});
+
+// Phase VIP-1.J / J3 — Compensation withholding posture (1601-C dashboard
+// card). Surfaces YTD comp totals + per-employee breakdown. Sibling to
+// getWithholdingPosture (which is OUTBOUND-only).
+exports.getCompensationPosture = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.query.year) || new Date().getFullYear();
+  const posture = await withholdingService.buildCompensationPosture(req.entityId, year);
+  res.json({ success: true, data: { year, ...posture } });
+});
+
 exports.listEwtPayees = catchAsync(async (req, res) => {
   if (!requireEntity(req, res)) return;
   if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
@@ -632,14 +663,15 @@ exports.exportEwtCsv = catchAsync(async (req, res) => {
   if (!requireEntity(req, res)) return;
   if (!(await ensureRole(req, res, 'EXPORT_FORM'))) return;
   const formCode = req.params.formCode;
-  if (formCode !== '1601-EQ' && formCode !== '1606') {
-    return res.status(400).json({ success: false, message: `Export not implemented for ${formCode}. Phase J2 supports 1601-EQ / 1606 here; 2550M/Q goes through exportVatReturnCsv.` });
+  // Phase J3 (May 2026) — 1601-C added. 2550M/Q stays in exportVatReturnCsv.
+  if (formCode !== '1601-EQ' && formCode !== '1606' && formCode !== '1601-C') {
+    return res.status(400).json({ success: false, message: `Export not implemented for ${formCode}. J2/J3 support 1601-EQ / 1606 / 1601-C here; 2550M/Q goes through exportVatReturnCsv.` });
   }
   const year = parseYear(req.params.year);
   if (!year) return res.status(400).json({ success: false, message: 'Invalid year.' });
 
   let periodMonthOrQuarter;
-  if (formCode === '1606') {
+  if (formCode === '1606' || formCode === '1601-C') {
     periodMonthOrQuarter = parseMonth(req.params.period);
     if (!periodMonthOrQuarter) return res.status(400).json({ success: false, message: 'Invalid month (1-12).' });
   } else {

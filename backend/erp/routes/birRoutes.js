@@ -50,7 +50,15 @@ router.get('/forms/SAWT/:year/:quarter/export.dat', ctrl.exportSawtDat);
 router.get('/forms/2307-OUT/:year/:quarter/:payeeKind/:payeeId/export.pdf', ctrl.export2307Pdf);
 router.get('/withholding/posture', ctrl.getWithholdingPosture);
 
-// J1 catch-all CSV export (lower priority — must come AFTER J2 specific routes).
+// ── Phase J3 — 1601-C Monthly Compensation Withholding routes (May 2026) ──
+// Same priority concern as J2 — must beat the J1 catch-all below. 1604-CF
+// (annual alphalist) ships in J3 Part B; routes are reserved here for
+// fast follow-up but not yet wired to controllers.
+router.get('/forms/1601-C/:year/:month/compute', ctrl.compute1601C);
+router.get('/forms/1601-C/:year/:month/export.csv', ctrl.exportEwtCsv);
+router.get('/withholding/comp-posture', ctrl.getCompensationPosture);
+
+// J1 catch-all CSV export (lower priority — must come AFTER J2/J3 specific routes).
 router.get('/forms/:formCode/:year/:period/export.csv', ctrl.exportVatReturnCsv);
 
 router.get('/forms/:id', ctrl.getFiling);
