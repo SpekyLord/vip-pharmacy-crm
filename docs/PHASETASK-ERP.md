@@ -9565,9 +9565,9 @@ Backend:
 
 ---
 
-## Phase VIP-1.J — BIR Tax Compliance Suite (J0 SHIPPED Apr 27 2026; J1 SHIPPED Apr 28 2026; J2 SHIPPED May 03 2026; J3 Part A + Part B + J4 SHIPPED May 04 2026; J5-J7 deferred)
+## Phase VIP-1.J — BIR Tax Compliance Suite (J0 SHIPPED Apr 27 2026; J1 SHIPPED Apr 28 2026; J2 SHIPPED May 03 2026; J3 Part A + Part B + J4 + J5 + J6 SHIPPED May 04 2026; J7 deferred)
 
-**Sequence**: J0 (foundation) ✅ -> J1 (VAT) ✅ -> J2 (EWT) ✅ -> J3 Part A (1601-C Compensation) ✅ -> J3 Part B (1604-CF Annual Alphalist + 2316) ✅ -> J4 (1604-E Annual + QAP Quarterly EWT Alphalists) ✅ -> J5 (Books of Accounts) ⬅ START HERE -> J6 (Inbound 2307) -> J7 (1702 Annual Income Tax)
+**Sequence**: J0 (foundation) ✅ -> J1 (VAT) ✅ -> J2 (EWT) ✅ -> J3 Part A (1601-C Compensation) ✅ -> J3 Part B (1604-CF Annual Alphalist + 2316) ✅ -> J4 (1604-E Annual + QAP Quarterly EWT Alphalists) ✅ -> J5 (Books of Accounts loose-leaf PDFs) ✅ -> J6 (Inbound 2307) ⬅ START HERE -> J7 (1702 Annual Income Tax)
 
 ### J0 — Compliance Dashboard + Foundation (~3-4 days) — ✅ SHIPPED + SMOKE-PASSED
 
@@ -9847,11 +9847,67 @@ Annual + quarterly OUTBOUND-direction alphalists. 1604-E rolls up the calendar y
 - ✅ Vite frontend build green in **1m 02s**.
 - ⏸ HTTP smoke + Playwright UI smoke deferred — MCP browser locked (same condition as J3 Part B + Phase R1 handoffs).
 
-### J5 — Books of Accounts loose-leaf PDFs (~2 days)
-`bookOfAccountsService.js` generates Sales / Purchase / General / GL / Cash Receipts / Cash Disbursements PDFs per entity per period. BIR-required header. Annual binding PDF + sworn declaration template.
+### J5 — Books of Accounts loose-leaf PDFs — ✅ SHIPPED MAY 04 2026 EVENING (UNCOMMITTED ON DEV)
 
-### J6 — Inbound 2307 Reconciliation (~1 day)
-Surface "Hospitals withheld but no 2307 received" gap. Quarterly CWT credit summary. Workflow: PENDING_2307 -> RECEIVED on PDF upload -> roll-up to 1702.
+**J5.1 Service** ([backend/erp/services/bookOfAccountsService.js](../backend/erp/services/bookOfAccountsService.js)) — ✅ shipped
+- `BOOK_CODES` (6) + `DEFAULT_BOOK_RULES` per-book metadata. Pure-function `classifyJournalEntry(je, rules, cashSet) → bookCode` with priority Sales > Purchase > Cash-DR > Cash-CR > GeneralJournal. Three lookup loaders (book rules, cash account codes, responsible officer) with graceful fallbacks (lookup → ChartOfAccounts ASSET 1000-1019 → empty). `computeBook` dispatcher routes to `computeJournalBook` (specialised) or `computeGeneralLedger` (per-account roll-up + running balance + closing balance). `exportBookPdf` produces full BIR-compliant PDF (header on every page, Page X of Y footer, monthly OR annual-binding mode, trial-balance check on GL). `exportSwornDeclaration` per-book per-year notarisation template per BIR RR 9-2009 §4.
+
+**J5.2 Controller** ([backend/erp/controllers/birController.js](../backend/erp/controllers/birController.js)) — ✅ shipped
+- 4 new exports: `getBooksCatalog` (VIEW_DASHBOARD), `computeBook` (VIEW_DASHBOARD), `exportBookPdf` (EXPORT_FORM), `exportBookSwornDeclarationPdf` (EXPORT_FORM). Each export appends SHA-256-stamped audit-log row to BIR_FILING_STATUS row (`form_code='BOOKS'`, annual encoding) per Rule #20. Structured `[BIR_EXPORT_BOOKS_PDF]` / `[BIR_EXPORT_BOOKS_SWORN]` audit-log lines.
+
+**J5.3 Routes** ([backend/erp/routes/birRoutes.js](../backend/erp/routes/birRoutes.js)) — ✅ shipped
+- `GET /forms/BOOKS/:year/catalog` + `/:bookCode/compute` + `/:bookCode/export.pdf` + `/:bookCode/sworn-declaration.pdf`. All four mounted **BEFORE** the J1 `/forms/:formCode/:year/:period/export.csv` catch-all + the `/forms/:id` catch-all (Express priority).
+
+**J5.4 Lookup seeds** ([backend/erp/controllers/lookupGenericController.js](../backend/erp/controllers/lookupGenericController.js)) — ✅ shipped
+- `BIR_BOA_BOOK_CATALOG` (6 rows, source_modules + cash_side + priority + bir_section per book, all `insert_only_metadata: true`).
+- `BIR_BOA_CASH_ACCOUNTS` (empty default — falls back to ChartOfAccounts §11.1 derivation).
+- `BIR_BOA_RESPONSIBLE_OFFICER` (empty default — falls back to underscores so subscriber pen-fills before notarisation).
+
+**J5.5 Frontend service + page** ([frontend/src/erp/services/birService.js](../frontend/src/erp/services/birService.js) + [frontend/src/erp/pages/BookOfAccountsPage.jsx](../frontend/src/erp/pages/BookOfAccountsPage.jsx)) — ✅ shipped
+- Service: `getBooksCatalog` / `computeBook` / `exportBookPdf` / `exportBookSwornDeclaration` (PDF helpers route through `downloadBlob`).
+- Page: per-book card with 12-month grid + Annual button + Recompute + Export PDF + Sworn Declaration. Status pill from BIR_FILING_STATUS row, cash codes + officer from catalog, audit-log strip showing last 30 exports.
+
+**J5.6 PageGuide + heatmap drill-down** ([frontend/src/components/common/PageGuide.jsx](../frontend/src/components/common/PageGuide.jsx) + [frontend/src/erp/pages/BIRCompliancePage.jsx](../frontend/src/erp/pages/BIRCompliancePage.jsx)) — ✅ shipped
+- New `bir-boa-books` PageGuide entry (cites BIR RR 9-2009; tip mentions trial-balance check + cash-account fallback + the three lookup categories explicitly for subscription discoverability).
+- BIRCompliancePage `annualForms` array: `['1604-CF', '1604-E']` → `['1604-CF', '1604-E', 'BOOKS']`. Clicking the BOOKS heatmap cell navigates to `/erp/bir/BOOKS/:year`.
+
+**J5.7 App.jsx route** ([frontend/src/App.jsx](../frontend/src/App.jsx)) — ✅ shipped
+- `/erp/bir/BOOKS/:year` lazy-loaded BookOfAccountsPage, route guard `ROLE_SETS.BIR_FILING`. Mounted **BEFORE** the `/erp/bir/:formCode/:year/:period` wildcard fallback.
+
+**J5.8 Healthcheck** ([backend/scripts/healthcheckBookOfAccounts.js](../backend/scripts/healthcheckBookOfAccounts.js)) — ✅ shipped
+- 119 assertions covering service exports, classifyJournalEntry priority logic exhaustively, cash-set fall-through, PRD regex boundary, _internal helpers, PDF rendering primitives (PDFDocument LETTER + bufferPages + pageAdded listener + Page X of Y stamp + SWORN DECLARATION + RR 9-2009 + SUBSCRIBED AND SWORN + Doc/Page/Book notary fields + INVARIANT WARNING on debit/credit mismatch + SHA-256 audit hashing), controller wiring (4 handlers + role gates + structured audit log strings + form_code='BOOKS' write), route mount order (BOOKS BEFORE J1 + /:id catch-alls), BirFilingStatus FORM_CODES + annualForms membership, PeriodLock BIR_FILING enum, three lookup seed categories, frontend birService exports + URL paths, page imports + service invocations + PageGuide key, App.jsx route mount order, BIRCompliancePage heatmap drill-down, ROLE_SETS.BIR_FILING.
+
+**J5 verification posture (May 04 2026 evening)**:
+- ✅ J5 healthcheck **119/119 PASS** (`node backend/scripts/healthcheckBookOfAccounts.js`).
+- ✅ Sibling regressions all green: J3 Part A 78/78, J3 Part B 66/66, J4 97/97, J2 124/124, J1 39/39, ClmIdempotency 6/6, ClmPerformance 34/34, TeamActivity 22/22, SalesDiscount 41/41.
+- ✅ Vite production build **51.24s green**, `dist/assets/BookOfAccountsPage-DbiChX5O.js` lazy chunk emitted.
+- ✅ Live HTTP smoke (president cookies, VIP entity): catalog 6 books / 7 cash codes auto-derived; SALES_JOURNAL annual 11 rows ₱315,315 balanced; SALES_JOURNAL April 9 rows ₱313,515; **GENERAL_LEDGER annual 15 accounts / 51 lines / ₱352,359.11 DR=CR (trial balance balanced — diff 0.00)**; CASH_RECEIPTS 2 rows ₱991; CASH_DISBURSEMENTS / PURCHASE_JOURNAL 0 rows. **Sub-ledger ↔ GL invariant**: SALES + PURCHASE + CASH_RECEIPTS + CASH_DISB + GJ = 352,359.11 = GL **exactly** (classifier produces a perfect partition). Bad book code → 400 with helpful message; bad month → 400; export.pdf as president → 403 (correct — EXPORT_FORM gate is admin/finance/bookkeeper).
+- ✅ Direct service smoke: SALES_JOURNAL April 2026 → 3,520-byte PDF magic %PDF, 1 page; GL Annual 2026 → 39,411-byte PDF, 11 pages; Sworn Declaration → 3,304-byte PDF.
+- ⏸ Playwright UI smoke deferred — MCP browser locked (same condition as J3/J4/Phase R1 handoffs).
+
+### J6 — Inbound 2307 Reconciliation — ✅ SHIPPED MAY 04 2026 EVENING (UNCOMMITTED ON DEV)
+Surface "Hospitals withheld but no 2307 received" gap. Quarterly CWT credit summary. Workflow: PENDING_2307 → RECEIVED on cert reference saved → EXCLUDED on finance disqualify → roll-up into 1702 Creditable Tax Withheld credit (J7 consumer endpoint live at `/forms/1702/:year/cwt-rollup`).
+
+**Source-of-truth decision**: COEXIST. CwtLedger is and remains the source-of-truth for INBOUND CWT — engine writes from `collectionController + journalFromCWT` are unchanged. WithholdingLedger.DIRECTIONS reserves `'INBOUND'` but writing through both ledgers would risk double-counting; J6 extends CwtLedger with reconciliation lifecycle fields instead.
+
+**Sub-tasks (8/8 shipped)**:
+
+- [x] **J6.1 — CwtLedger schema extension**: `status` enum + `received_at` / `received_by` + `cert_2307_url` / `cert_filename` / `cert_content_hash` / `cert_notes` + `excluded_reason` / `excluded_by` / `excluded_at` + `tagged_for_1702_year`. Two new compound indexes for reconciliation queue + 1702 rollup. `statics.STATUSES` exposed.
+- [x] **J6.2 — cwtService.createCwtEntry defaults**: status='PENDING_2307' + tagged_for_1702_year=year on every new collection-driven row. Backwards-compat preserved (caller can override).
+- [x] **J6.3 — cwt2307ReconciliationService (NEW)**: 7 public functions (`compute2307InboundSummary`, `listInboundRows`, `markReceived`, `markPending`, `excludeRow`, `buildInboundPosture`, `compute1702CwtRollup`) + `_internals` (round2 / sanitize / _hashRowState / ensureObjectId / quartersForYear / emptyQuarterBucket). Hospital name + TIN denormalized for display.
+- [x] **J6.4 — birController endpoints (7 new)**: compute / list / mark-received / mark-pending / exclude / inbound-posture / 1702-cwt-rollup. Read endpoints VIEW_DASHBOARD, write endpoints RECONCILE_INBOUND_2307. Structured `[BIR_2307_INBOUND_*]` log lines (Rule #20 audit posture).
+- [x] **J6.5 — birRoutes ordering**: 8 new routes mounted BEFORE J1 catch-all. Quarterly route before annual (specificity beats generality).
+- [x] **J6.6 — birAccess gate + BIR_ROLES seed**: `RECONCILE_INBOUND_2307` (default `[admin, finance, bookkeeper]`) lookup-driven via existing `getRolesFor` cache; `userHasBirRole()` switch updated; lookupGenericController seed row with `insert_only_metadata: true`.
+- [x] **J6.7 — birDashboardService wiring**: `inbound_2307_posture` always renders (not gated on `withholding_active` — INBOUND CWT depends on collections-with-CWT). Non-fatal fallback if service throws.
+- [x] **J6.8 — Frontend wiring**: birService 7 new helpers + `Bir2307InboundPage.jsx` (NEW, period selector + per-hospital breakdown + status tabs + receive/revert/exclude modals) + App.jsx 2 routes mounted before wildcard (quarterly first) + BIRCompliancePage drill-down + Inbound 2307 Posture card + PageGuide `bir-2307-inbound` entry.
+
+**Verification posture (Rule 0b)**:
+
+- ✅ Healthcheck **107/107 PASS** (`node backend/scripts/healthcheckBir2307Inbound.js`).
+- ✅ Sibling regressions all green: J5 BOOKS 119/119, J4 1604E+QAP 97/97, J3 Part B 1604CF 66/66, J3 Part A Compensation 78/78, J2 EWT 124/124, J1 VAT 39/39, ClmIdempotency 6/6, ClmPerformance 34/34, TeamActivity 22/22, SalesDiscount 41/41.
+- ✅ Vite production build green; `Bir2307InboundPage-Dge-rIvf.js` lazy chunk emitted.
+- ✅ Pure-function smoke (round2 / sanitize / emptyQuarterBucket) green via in-process `node -e`.
+- ⏸ **Live HTTP smoke and Playwright UI smoke deferred** — MCP browser locked (same condition as J3 Part B + J4 + J5). Re-smoke targets in CLAUDE-ERP.md J6 section.
 
 ### J7 — 1702 Annual Income Tax (~1.5 days)
 Trial Balance -> adjusting entries -> Gross Income -> Allowable Deductions -> Taxable Income -> Tax Due -> less Creditable Tax Withheld (J6) + Quarterly Income Tax Paid -> Net Payable. Copy-paste page per BIR field.
@@ -10601,3 +10657,44 @@ Two flaws in the existing folder routing surfaced when the user complained about
 - Lookup-only: edit president row in `INBOX_HIDDEN_FOLDERS_BY_ROLE` to drop `AI_AGENT_REPORTS`. Effect immediate.
 - Briefing re-routing: `db.messages.updateMany({ folder: 'EXECUTIVE_BRIEF', category: 'briefing' }, { $set: { folder: 'AI_AGENT_REPORTS' } })` (mongo shell one-liner).
 - Code: revert the commit; lookup rows + repointed messages stay (forward-compatible — folder strings are not enum-validated, old code skips `EXECUTIVE_BRIEF` gracefully).
+
+---
+
+## Phase Sales-CR-Edit — `updateCollection` ERROR-gate widening (May 04 2026)
+
+> Bonus fix shipped in commit `b4c8973` (titled "Add smoke visit CLM pending banner configuration" — controller change buried in the diff). Closes the dead-end where a Validate-flagged Collection Receipt could not be edited to fix violations and re-validate.
+
+### Symptom
+
+User clicks Validate on a DRAFT CR; row flips to ERROR with violation messages. User clicks Save (or any save-pathing action) on the row → HTTP 404 `"Draft collection not found"`. No way to fix the violations short of Delete + recreate.
+
+### Root cause
+
+[backend/erp/controllers/collectionController.js — updateCollection](backend/erp/controllers/collectionController.js) was loading rows with `findOne({ ..., status: 'DRAFT' })` — a hardcoded gate that diverged from [validateCollections](backend/erp/controllers/collectionController.js) (line 219) which already used the lookup-driven `getEditableStatuses(entityId, 'COLLECTION')` helper (fallback `['DRAFT','ERROR']`).
+
+### Tasks
+
+- [x] Replace hardcoded `status: 'DRAFT'` with `status: { $in: editable }` where `editable = await getEditableStatuses(req.entityId, 'COLLECTION')`.
+- [x] Update 404 message to `"Editable collection not found (must be DRAFT or ERROR)"` so the failure mode is explicit.
+- [x] Add a comment block above the change describing the asymmetry-fix rationale + editable-statuses contract.
+- [x] Preserve ownership lock: body's `assigned_to` / `bdm_id` / `recorded_on_behalf_of` still stripped on save (Phase G4.5b — proxy cannot silently reassign).
+- [x] `node -c backend/erp/controllers/collectionController.js` — clean.
+- [x] Live HTTP smoke (handoff §L.2 in [handoff_sales_collection_ar_smoke_may04_2026.md](../memory/handoff_sales_collection_ar_smoke_may04_2026.md)) — DRAFT → ERROR → VALID → POSTED round-trip on CR `SMOKE-CR-001` succeeded only after this fix.
+- [x] D2-full smoke GREEN: 3 auto-emitted JEs balanced (₱891 + ₱9 CWT + ₱24.11 commission), AR Aging Iloilo Mission row dropped on settlement, entity-scope guard PASS-WITH-NOTE on 4 surfaces.
+- [ ] Live click-by-click Playwright walk (Validate button on the list row → ERROR → fix in modal → re-Validate → Submit) — deferred. The N.3 audit notes the Collection edit UI may not have a dedicated edit page; the list-row Validate flow is the only proven click path.
+
+### Files touched (b4c8973)
+
+- modified: [backend/erp/controllers/collectionController.js](backend/erp/controllers/collectionController.js) (+6/-2)
+- modified: [frontend/src/erp/pages/AccountsReceivable.jsx](frontend/src/erp/pages/AccountsReceivable.jsx) — D9 keyless-Fragment fix (separate concern)
+- new: `frontend/test-fixtures/{cr,csi,cwt-2307,deposit}.png` — 1×1 placeholder PNGs for Playwright photo-gate smokes
+- modified: CLAUDE-ERP.md (Phase Sales-CR-Edit entry)
+- modified: docs/PHASETASK-ERP.md (this entry)
+
+### Subscription posture
+
+Already lookup-driven by virtue of using the existing Phase G6 helper. Per-entity `MODULE_REJECTION_CONFIG.COLLECTION.metadata.editable_statuses` governs editability — subscribers tune via Control Center → Lookup Tables. Fallback `['DRAFT','ERROR']` preserves historical behavior. No new lookup category. No backwards-incompat. Rule #3 + Rule #19 aligned.
+
+### Why this entry exists
+
+Commit `b4c8973`'s title only mentions the smoke YAMLs; `git log --grep updateCollection` returns nothing. This entry + the CLAUDE-ERP.md mirror surface the architectural decision so future archaeology finds it. Equivalent of N.3 in the smoke handoff.

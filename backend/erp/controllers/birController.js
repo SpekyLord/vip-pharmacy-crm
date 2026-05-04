@@ -30,6 +30,10 @@ const vatReturnService = require('../services/vatReturnService');
 // Phase VIP-1.J / J2 — Withholding (1601-EQ + 1606 + 2307-OUT + SAWT).
 const withholdingReturnService = require('../services/withholdingReturnService');
 const withholdingService = require('../services/withholdingService');
+// Phase VIP-1.J / J5 — Books of Accounts (Loose-Leaf PDFs).
+const bookOfAccountsService = require('../services/bookOfAccountsService');
+// Phase VIP-1.J / J6 — Inbound 2307 reconciliation + 1702 credit rollup.
+const cwt2307ReconciliationService = require('../services/cwt2307ReconciliationService');
 const { userHasBirRole } = require('../../utils/birAccess');
 
 function requireEntity(req, res) {
@@ -1033,6 +1037,363 @@ exports.exportQAPDat = catchAsync(async (req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('X-Content-Hash', contentHash);
   res.send(datContent);
+});
+
+// ── Phase J5 — Books of Accounts (Loose-Leaf PDFs) ─────────────────────
+//
+// Six books generated from POSTED JournalEntry rows:
+//   SALES_JOURNAL, PURCHASE_JOURNAL, CASH_RECEIPTS, CASH_DISBURSEMENTS,
+//   GENERAL_JOURNAL, GENERAL_LEDGER
+//
+// Each book is exported per-month OR as an annual binding (12 sections +
+// year summary). Sworn declaration is a separate per-book PDF for the
+// notary block. All exports append SHA-256-stamped audit-log rows to
+// BirFilingStatus(form_code='BOOKS', period_year=Y) per Rule #20.
+//
+// VIEW_DASHBOARD gates the catalog + compute endpoints. EXPORT_FORM gates
+// the PDF endpoints (each mutates the audit log).
+
+function parseBookCode(v) {
+  if (!v || typeof v !== 'string') return null;
+  return bookOfAccountsService.BOOK_CODES.includes(v) ? v : null;
+}
+
+function parseOptionalMonth(v) {
+  if (v === undefined || v === null || v === '' || v === 'annual') return null;
+  return parseMonth(v);
+}
+
+exports.getBooksCatalog = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const data = await bookOfAccountsService.getBookCatalog({ entityId: req.entityId });
+  res.json({ success: true, data });
+});
+
+exports.computeBook = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.params.year);
+  const bookCode = parseBookCode(req.params.bookCode);
+  // The month is optional — explicitly null/undefined means annual.
+  const monthRaw = req.query.month !== undefined ? req.query.month : null;
+  const month = monthRaw === null ? null : parseOptionalMonth(monthRaw);
+
+  if (!year) return res.status(400).json({ success: false, message: 'Invalid year. Year ≥ 2024.' });
+  if (!bookCode) return res.status(400).json({
+    success: false,
+    message: `Invalid book code. One of: ${bookOfAccountsService.BOOK_CODES.join(', ')}`,
+  });
+  if (monthRaw !== null && monthRaw !== '' && monthRaw !== 'annual' && month === null) {
+    return res.status(400).json({ success: false, message: 'Invalid month. 1-12 or omit for annual.' });
+  }
+
+  const data = await bookOfAccountsService.computeBook({
+    entityId: req.entityId, bookCode, year, month,
+  });
+  // Attach the BOOKS BirFilingStatus row (annual encoding) so the page can
+  // render lifecycle status + audit log.
+  const row = await BirFilingStatus.findOne({
+    entity_id: req.entityId, form_code: 'BOOKS',
+    period_year: year, period_month: null, period_quarter: null, period_payee_id: null,
+  }).lean();
+  res.json({ success: true, data: { ...data, filing_row: row || null } });
+});
+
+exports.exportBookPdf = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'EXPORT_FORM'))) return;
+  const year = parseYear(req.params.year);
+  const bookCode = parseBookCode(req.params.bookCode);
+  const monthRaw = req.query.month !== undefined ? req.query.month : null;
+  const month = monthRaw === null ? null : parseOptionalMonth(monthRaw);
+
+  if (!year) return res.status(400).json({ success: false, message: 'Invalid year. Year ≥ 2024.' });
+  if (!bookCode) return res.status(400).json({
+    success: false,
+    message: `Invalid book code. One of: ${bookOfAccountsService.BOOK_CODES.join(', ')}`,
+  });
+  if (monthRaw !== null && monthRaw !== '' && monthRaw !== 'annual' && month === null) {
+    return res.status(400).json({ success: false, message: 'Invalid month. 1-12 or omit for annual.' });
+  }
+
+  const entity = await Entity.findById(req.entityId).lean();
+  if (!entity) return res.status(404).json({ success: false, message: 'Entity not found.' });
+
+  let result;
+  try {
+    result = await bookOfAccountsService.exportBookPdf({
+      entityId: req.entityId, bookCode, year, month, entity,
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+
+  // Lazy-create the BOOKS filing-status row (annual encoding — single row
+  // per (entity, year)). Each per-book per-period export appends a fresh
+  // audit-log entry; the row's `totals_snapshot` mirrors the most recent
+  // export so dashboard tiles can show the latest figure at a glance.
+  const filter = {
+    entity_id: req.entityId, form_code: 'BOOKS',
+    period_year: year, period_month: null, period_quarter: null, period_payee_id: null,
+  };
+  let row = await BirFilingStatus.findOne(filter);
+  if (!row) {
+    row = new BirFilingStatus({
+      ...filter,
+      status: 'DRAFT',
+      totals_snapshot: { last_export: { book: bookCode, totals: result.totals } },
+    });
+  } else {
+    row.totals_snapshot = {
+      ...(row.totals_snapshot || {}),
+      last_export: { book: bookCode, totals: result.totals },
+    };
+  }
+  row.export_audit_log.push({
+    exported_at: new Date(),
+    exported_by: req.user?._id,
+    artifact_kind: 'PDF',
+    filename: result.filename,
+    content_hash: result.contentHash,
+    byte_length: result.buffer.length,
+    notes: `BOOKS ${bookCode} ${month ? `${year}-${String(month).padStart(2, '0')}` : `Annual ${year}`} (${result.rowCount} rows, ${result.page_count} pages)`,
+  });
+  await row.save();
+  birDashboardService.invalidate(req.entityId);
+
+  console.log('[BIR_EXPORT_BOOKS_PDF]', JSON.stringify({
+    user: req.user?.email, role: req.user?.role,
+    entity_id: String(req.entityId),
+    book: bookCode, year, month,
+    row_count: result.rowCount,
+    page_count: result.page_count,
+    content_hash: result.contentHash,
+    byte_length: result.buffer.length,
+    ip: req.ip, ts: new Date().toISOString(),
+  }));
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
+  res.setHeader('X-Content-Hash', result.contentHash);
+  res.send(result.buffer);
+});
+
+exports.exportBookSwornDeclarationPdf = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'EXPORT_FORM'))) return;
+  const year = parseYear(req.params.year);
+  const bookCode = parseBookCode(req.params.bookCode);
+
+  if (!year) return res.status(400).json({ success: false, message: 'Invalid year. Year ≥ 2024.' });
+  if (!bookCode) return res.status(400).json({
+    success: false,
+    message: `Invalid book code. One of: ${bookOfAccountsService.BOOK_CODES.join(', ')}`,
+  });
+
+  const entity = await Entity.findById(req.entityId).lean();
+  if (!entity) return res.status(404).json({ success: false, message: 'Entity not found.' });
+
+  let result;
+  try {
+    result = await bookOfAccountsService.exportSwornDeclaration({
+      entityId: req.entityId, bookCode, year, entity,
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+
+  // Audit-log against the same BOOKS row.
+  const filter = {
+    entity_id: req.entityId, form_code: 'BOOKS',
+    period_year: year, period_month: null, period_quarter: null, period_payee_id: null,
+  };
+  let row = await BirFilingStatus.findOne(filter);
+  if (!row) {
+    row = new BirFilingStatus({ ...filter, status: 'DRAFT', totals_snapshot: null });
+  }
+  row.export_audit_log.push({
+    exported_at: new Date(),
+    exported_by: req.user?._id,
+    artifact_kind: 'PDF',
+    filename: result.filename,
+    content_hash: result.contentHash,
+    byte_length: result.buffer.length,
+    notes: `Sworn Declaration ${bookCode} ${year}`,
+  });
+  await row.save();
+  birDashboardService.invalidate(req.entityId);
+
+  console.log('[BIR_EXPORT_BOOKS_SWORN]', JSON.stringify({
+    user: req.user?.email, role: req.user?.role,
+    entity_id: String(req.entityId),
+    book: bookCode, year,
+    content_hash: result.contentHash,
+    byte_length: result.buffer.length,
+    ip: req.ip, ts: new Date().toISOString(),
+  }));
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
+  res.setHeader('X-Content-Hash', result.contentHash);
+  res.send(result.buffer);
+});
+
+// ── Phase J6 — Inbound 2307 Reconciliation + 1702 CWT credit rollup ────
+//
+// CwtLedger is the source-of-truth for INBOUND CWT — every row is auto-
+// created on collection post when row.cwt_amount > 0 (collectionController
+// :614 → cwtService.createCwtEntry). J6 adds a reconciliation lifecycle on
+// top: PENDING_2307 (default) → RECEIVED (bookkeeper attests receipt) or
+// EXCLUDED (finance disqualifies). RECEIVED rows tagged for a year roll up
+// into the 1702 Creditable Tax Withheld credit (J7).
+//
+// VIEW_DASHBOARD gates the read endpoints (compute / list / posture /
+// 1702 rollup). RECONCILE_INBOUND_2307 gates the write endpoints
+// (mark-received / mark-pending / exclude). Both are lookup-driven via
+// BIR_ROLES (Rule #3 / Rule #19).
+
+function parseQuarterCode(v) {
+  if (!v) return null;
+  const upper = String(v).toUpperCase();
+  return ['Q1', 'Q2', 'Q3', 'Q4'].includes(upper) ? upper : null;
+}
+
+exports.compute2307Inbound = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.params.year);
+  if (!year) return res.status(400).json({ success: false, message: 'Invalid year. Year ≥ 2024.' });
+  const rawQuarter = req.params.quarter !== undefined ? req.params.quarter : null;
+  let quarter = null;
+  if (rawQuarter !== null && rawQuarter !== undefined && rawQuarter !== '') {
+    // Accept both `Q1` and `1` for the quarter URL segment.
+    quarter = parseQuarterCode(rawQuarter);
+    if (!quarter) {
+      const numeric = parseQuarter(rawQuarter);
+      if (numeric) quarter = `Q${numeric}`;
+    }
+    if (!quarter) {
+      return res.status(400).json({ success: false, message: 'Invalid quarter. Use Q1..Q4 or 1..4.' });
+    }
+  }
+  const data = await cwt2307ReconciliationService.compute2307InboundSummary({
+    entityId: req.entityId, year, quarter,
+  });
+  res.json({ success: true, data });
+});
+
+exports.list2307InboundRows = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.params.year);
+  if (!year) return res.status(400).json({ success: false, message: 'Invalid year. Year ≥ 2024.' });
+  const quarter = req.query.quarter ? (parseQuarterCode(req.query.quarter) || `Q${parseQuarter(req.query.quarter) || ''}`) : null;
+  const status = req.query.status && ['PENDING_2307', 'RECEIVED', 'EXCLUDED'].includes(req.query.status) ? req.query.status : null;
+  const hospitalId = req.query.hospital_id || null;
+  const rows = await cwt2307ReconciliationService.listInboundRows({
+    entityId: req.entityId, year,
+    quarter: quarter && quarter !== 'Q' ? quarter : null,
+    status,
+    hospitalId,
+  });
+  res.json({ success: true, data: { rows, total: rows.length } });
+});
+
+exports.markReceived2307Inbound = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'RECONCILE_INBOUND_2307'))) return;
+  const { rowId } = req.params;
+  if (!rowId) return res.status(400).json({ success: false, message: 'rowId is required.' });
+  const { cert_2307_url, cert_filename, cert_content_hash, cert_notes } = req.body || {};
+  try {
+    const row = await cwt2307ReconciliationService.markReceived(rowId, {
+      entityId: req.entityId, userId: req.user?._id,
+      cert_2307_url, cert_filename, cert_content_hash, cert_notes,
+    });
+    console.log('[BIR_2307_INBOUND_MARK_RECEIVED]', JSON.stringify({
+      user: req.user?.email, role: req.user?.role,
+      entity_id: String(req.entityId),
+      row_id: String(row._id), cr_no: row.cr_no, cwt: row.cwt_amount,
+      year: row.year, quarter: row.quarter,
+      content_hash: row.cert_content_hash, has_url: !!row.cert_2307_url,
+      ts: new Date().toISOString(),
+    }));
+    res.json({ success: true, data: row });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+    throw err;
+  }
+});
+
+exports.markPending2307Inbound = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'RECONCILE_INBOUND_2307'))) return;
+  const { rowId } = req.params;
+  if (!rowId) return res.status(400).json({ success: false, message: 'rowId is required.' });
+  try {
+    const row = await cwt2307ReconciliationService.markPending(rowId, {
+      entityId: req.entityId, userId: req.user?._id,
+    });
+    console.log('[BIR_2307_INBOUND_MARK_PENDING]', JSON.stringify({
+      user: req.user?.email, role: req.user?.role,
+      entity_id: String(req.entityId),
+      row_id: String(row._id), cr_no: row.cr_no,
+      year: row.year, quarter: row.quarter,
+      ts: new Date().toISOString(),
+    }));
+    res.json({ success: true, data: row });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+    throw err;
+  }
+});
+
+exports.exclude2307InboundRow = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'RECONCILE_INBOUND_2307'))) return;
+  const { rowId } = req.params;
+  if (!rowId) return res.status(400).json({ success: false, message: 'rowId is required.' });
+  const { reason } = req.body || {};
+  if (!reason || !String(reason).trim()) {
+    return res.status(400).json({ success: false, message: 'reason is required to exclude a 2307-IN row.' });
+  }
+  try {
+    const row = await cwt2307ReconciliationService.excludeRow(rowId, {
+      entityId: req.entityId, userId: req.user?._id, reason,
+    });
+    console.log('[BIR_2307_INBOUND_EXCLUDE]', JSON.stringify({
+      user: req.user?.email, role: req.user?.role,
+      entity_id: String(req.entityId),
+      row_id: String(row._id), cr_no: row.cr_no,
+      year: row.year, quarter: row.quarter,
+      reason: row.excluded_reason,
+      ts: new Date().toISOString(),
+    }));
+    res.json({ success: true, data: row });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ success: false, message: err.message });
+    throw err;
+  }
+});
+
+exports.getInboundCwtPosture = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.query.year) || new Date().getFullYear();
+  const posture = await cwt2307ReconciliationService.buildInboundPosture(req.entityId, year);
+  res.json({ success: true, data: { year, ...posture } });
+});
+
+exports.compute1702CwtRollup = catchAsync(async (req, res) => {
+  if (!requireEntity(req, res)) return;
+  if (!(await ensureRole(req, res, 'VIEW_DASHBOARD'))) return;
+  const year = parseYear(req.params.year);
+  if (!year) return res.status(400).json({ success: false, message: 'Invalid year. Year ≥ 2024.' });
+  const rollup = await cwt2307ReconciliationService.compute1702CwtRollup({
+    entityId: req.entityId, year,
+  });
+  res.json({ success: true, data: rollup });
 });
 
 // ── Withholding Posture (read-only summary for the dashboard) ──────────

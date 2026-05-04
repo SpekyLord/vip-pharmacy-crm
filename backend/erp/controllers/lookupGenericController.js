@@ -3175,7 +3175,49 @@ const SEED_DEFAULTS = {
     { code: 'MARK_CONFIRMED',    label: 'Mark form CONFIRMED (manual override)',           insert_only_metadata: true, metadata: { roles: ['admin', 'finance'],                            sort_order: 5, description: 'Manual confirmation when the email-parser bridge cannot match (e.g., subject-line variance).' } },
     { code: 'RUN_DATA_AUDIT',    label: 'Trigger Data Quality scan on demand',             insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president', 'bookkeeper'], sort_order: 6, description: 'Run the TIN + address completeness sweep ad-hoc. Nightly cron always runs regardless.' } },
     { code: 'MANAGE_TAX_CONFIG', label: 'Edit per-entity tax config (TIN, RDO, tax_type)', insert_only_metadata: true, metadata: { roles: ['admin', 'president'],                          sort_order: 7, description: 'Senior gate — wrong TIN/RDO breaks every export and every alphalist row.' } },
+    // Phase VIP-1.J / J6 (May 2026) — Inbound 2307 reconciliation. Bookkeeper
+    // does the data entry (receives the certificate, types the URL/filename),
+    // finance excludes duplicates / void rows. President sees but doesn't act
+    // here — receipt is data entry, not sign-off. Same lookup-driven posture
+    // as the rest of BIR_ROLES so subscribers tune via Control Center.
+    { code: 'RECONCILE_INBOUND_2307', label: 'Reconcile inbound 2307 certificates (Phase J6)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'bookkeeper'],          sort_order: 8, description: 'Mark hospital 2307 cert RECEIVED, revert to PENDING, or EXCLUDE (duplicate/void). Drives 1702 Creditable Tax Withheld credit roll-up.' } },
   ],
+
+  // BIR_BOA_BOOK_CATALOG — Phase J5 (May 2026). Per-entity classification
+  // rules for the six Books of Accounts. Each row defines source_module
+  // membership for the specialised journals + cash_side ('DR' for cash
+  // receipts, 'CR' for disbursements, null for non-cash books) + priority
+  // for tie-breaks. The default rules in bookOfAccountsService.js
+  // DEFAULT_BOOK_RULES are used when a row is absent — subscribers add a
+  // row only when they need to override (e.g., a pharmacy subscriber that
+  // routes 'PETTY_CASH' to CASH_DISBURSEMENTS instead of GENERAL_JOURNAL).
+  // insert_only_metadata: true → admin overrides survive future re-seeds.
+  BIR_BOA_BOOK_CATALOG: [
+    { code: 'SALES_JOURNAL',      label: 'Sales Journal',              insert_only_metadata: true, metadata: { sort_order: 10, priority: 1, source_modules: ['SALES'],                              cash_side: null, bir_section: 'Sales Journal — RR 9-2009 §3(a)',           description: 'POSTED journal entries originating from Sales (CSI). Records gross sales, output VAT, AR, and CWT receivable.' } },
+    { code: 'PURCHASE_JOURNAL',   label: 'Purchase Journal',           insert_only_metadata: true, metadata: { sort_order: 20, priority: 2, source_modules: ['SUPPLIER_INVOICE', 'AP'],              cash_side: null, bir_section: 'Purchase Journal — RR 9-2009 §3(b)',        description: 'POSTED journal entries from supplier invoices + accounts payable. Records inventory cost, input VAT, and AP.' } },
+    { code: 'CASH_RECEIPTS',      label: 'Cash Receipts Journal',      insert_only_metadata: true, metadata: { sort_order: 30, priority: 3, source_modules: ['COLLECTION', 'BANKING'],               cash_side: 'DR', bir_section: 'Cash Receipts Journal — RR 9-2009 §3(c)',   description: 'POSTED journal entries with at least one DEBIT on a cash account (collections, deposits, owner contributions).' } },
+    { code: 'CASH_DISBURSEMENTS', label: 'Cash Disbursements Journal', insert_only_metadata: true, metadata: { sort_order: 40, priority: 4, source_modules: ['EXPENSE', 'PAYROLL', 'PETTY_CASH', 'AP'], cash_side: 'CR', bir_section: 'Cash Disbursements Journal — RR 9-2009 §3(d)', description: 'POSTED journal entries with at least one CREDIT on a cash account (expenses paid in cash, payroll cash, AP payments).' } },
+    { code: 'GENERAL_JOURNAL',    label: 'General Journal',            insert_only_metadata: true, metadata: { sort_order: 50, priority: 5, source_modules: [],                                       cash_side: null, bir_section: 'General Journal — RR 9-2009 §3(e)',          description: 'POSTED journal entries not captured by the specialised journals (manual, depreciation, interest, owner draws, IC transfers, inventory adjustments).' } },
+    { code: 'GENERAL_LEDGER',     label: 'General Ledger',             insert_only_metadata: true, metadata: { sort_order: 60, priority: 6, source_modules: [],                                       cash_side: null, bir_section: 'General Ledger — RR 9-2009 §3(f)',           description: 'Per-account roll-up of every POSTED journal entry line. Subsidiary record-of-record for trial balance.' } },
+  ],
+
+  // BIR_BOA_CASH_ACCOUNTS — Phase J5 (May 2026). Per-entity list of Chart-
+  // of-Accounts codes considered "cash" for cash-receipts / cash-disbursements
+  // classification. When this category is empty for an entity, the service
+  // falls back to ChartOfAccounts derivation: ASSET-typed accounts whose
+  // account_code matches /^10[01][0-9]$/ (the PRD §11.1 Cash & Bank range).
+  // Subscribers add rows only when their CoA uses non-PRD codes (rare).
+  // Each row's `code` is the 4-digit account code. metadata is descriptive
+  // only — the service uses `code` exclusively.
+  BIR_BOA_CASH_ACCOUNTS: [],
+
+  // BIR_BOA_RESPONSIBLE_OFFICER — Phase J5 (May 2026). Single-row lookup
+  // (typically code='OFFICER'); metadata carries name, title, tin, ctc_no,
+  // ctc_place, ctc_date for the BIR Sworn Declaration (RR 9-2009 §4) on
+  // every annual loose-leaf book binding. When the row is absent, the
+  // service emits placeholder underscores so the subscriber can pen-fill
+  // before notarisation. Per Rule #3 — no hardcoded officer in code.
+  BIR_BOA_RESPONSIBLE_OFFICER: [],
 
   // EXECUTIVE_COCKPIT_ROLES — Phase EC-1 (Apr 2026). Lookup-driven access
   // gates for the C-suite Executive Cockpit at /erp/cockpit. Mirrors the

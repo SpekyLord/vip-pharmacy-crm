@@ -38,6 +38,11 @@ const DEFAULT_MARK_FILED        = [ROLES.ADMIN, ROLES.FINANCE, ROLES.BOOKKEEPER]
 const DEFAULT_MARK_CONFIRMED    = [ROLES.ADMIN, ROLES.FINANCE];
 const DEFAULT_RUN_DATA_AUDIT    = [ROLES.ADMIN, ROLES.FINANCE, ROLES.PRESIDENT, ROLES.BOOKKEEPER];
 const DEFAULT_MANAGE_TAX_CONFIG = [ROLES.ADMIN, ROLES.PRESIDENT];
+// Phase VIP-1.J / J6 — Inbound 2307 reconciliation gate. Bookkeeper does the
+// data entry (receives the certificate, types the URL/filename), finance
+// excludes duplicate / void rows. President sees but doesn't act here —
+// receipt is data entry, not sign-off.
+const DEFAULT_RECONCILE_INBOUND_2307 = [ROLES.ADMIN, ROLES.FINANCE, ROLES.BOOKKEEPER];
 
 const TTL_MS = 60_000;
 const _cache = new Map();
@@ -70,6 +75,7 @@ const getMarkFiledRoles        = (entityId) => getRolesFor(entityId, 'MARK_FILED
 const getMarkConfirmedRoles    = (entityId) => getRolesFor(entityId, 'MARK_CONFIRMED',    DEFAULT_MARK_CONFIRMED);
 const getRunDataAuditRoles     = (entityId) => getRolesFor(entityId, 'RUN_DATA_AUDIT',    DEFAULT_RUN_DATA_AUDIT);
 const getManageTaxConfigRoles  = (entityId) => getRolesFor(entityId, 'MANAGE_TAX_CONFIG', DEFAULT_MANAGE_TAX_CONFIG);
+const getReconcileInbound2307Roles = (entityId) => getRolesFor(entityId, 'RECONCILE_INBOUND_2307', DEFAULT_RECONCILE_INBOUND_2307);
 
 /**
  * Helper for express middleware — returns true if the requesting user holds
@@ -89,6 +95,7 @@ async function userHasBirRole(req, code) {
     case 'MARK_CONFIRMED':    roles = await getMarkConfirmedRoles(req.entityId); break;
     case 'RUN_DATA_AUDIT':    roles = await getRunDataAuditRoles(req.entityId); break;
     case 'MANAGE_TAX_CONFIG': roles = await getManageTaxConfigRoles(req.entityId); break;
+    case 'RECONCILE_INBOUND_2307': roles = await getReconcileInbound2307Roles(req.entityId); break;
     default:                  return false;
   }
   return Array.isArray(roles) && roles.includes(userRole);
@@ -139,6 +146,7 @@ module.exports = {
   getMarkConfirmedRoles,
   getRunDataAuditRoles,
   getManageTaxConfigRoles,
+  getReconcileInbound2307Roles,
   userHasBirRole,
   requireBirRole,
   invalidate,
@@ -149,4 +157,5 @@ module.exports = {
   DEFAULT_MARK_CONFIRMED,
   DEFAULT_RUN_DATA_AUDIT,
   DEFAULT_MANAGE_TAX_CONFIG,
+  DEFAULT_RECONCILE_INBOUND_2307,
 };

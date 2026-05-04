@@ -218,6 +218,42 @@ const PAGE_GUIDES = {
     ],
     tip: 'QAP and SAWT are siblings — both quarterly alphalists, both BIR Alphalist Data Entry v7.x format, both per-(payee × ATC). The difference is direction: QAP reports OUTBOUND withholding (you withholding tax for payees), SAWT reports INBOUND (your customers withholding tax from you for the SAWT credit you claim against income tax). They share the D1/T1 shape so the BIR importer accepts both via the same record contract.',
   },
+  'bir-2307-inbound': {
+    title: 'BIR 2307 Inbound — Hospital CWT Reconciliation',
+    steps: [
+      'Pre-flight: every collection-driven CWT row is auto-created in PENDING_2307 status when a collection posts with cwt_amount > 0 (collectionController → cwtService.createCwtEntry). This page does NOT create rows — it reconciles them.',
+      'Workflow: Hospital pays VIP → Collection POSTED → CwtLedger row created PENDING_2307 → Hospital eventually mails / emails BIR Form 2307 paper or PDF → bookkeeper opens THIS page → finds the matching CR row → clicks "Mark Received" → types where they saved the file (Drive link / S3 URI / shared folder path) + filename + optional SHA-256 hash → row flips to RECEIVED → credit rolls into 1702 (Phase J7).',
+      'Use the period selector (Annual or per-quarter) to scope the view. Status tabs split the table by Pending / Received / Excluded / All. Search filters by CR number, hospital name, or TIN.',
+      'The totals card surfaces "1702 credit at risk" — the ₱ amount of CWT credit you LOSE if pending 2307s never arrive before the 1702 income tax deadline. Use the per-hospital breakdown to find the worst-offending hospitals to chase.',
+      'IMPORTANT: we do NOT store the PDF file bytes. The bookkeeper hosts the PDF wherever convenient (Drive folder, S3 bucket, shared filesystem) and types the URL/path in the modal. The audit trail is the URL + filename + optional SHA-256 hash + the `received_at` / `received_by` timestamp on the CwtLedger row. BIR auditors examining the trail can fetch the PDF themselves.',
+      'Subscription-readiness: role gates are lookup-driven via BIR_ROLES (RECONCILE_INBOUND_2307 — defaults admin/finance/bookkeeper for write actions; VIEW_DASHBOARD for reads). Subscribers reconfigure per entity via Control Center → Lookup Tables without code changes (Rule #3 / Rule #19).',
+      'EXCLUDE is finance\'s manual override: row is disqualified from the 1702 credit (e.g., duplicate hospital re-issued certificate, void collection). Reason is required and audited. EXCLUDED rows can be restored (RESTORE flips back to PENDING_2307).',
+    ],
+    next: [
+      { label: 'BIR Compliance Dashboard', path: '/erp/bir' },
+      { label: 'Collections (where CWT rows originate)', path: '/erp/collections' },
+      { label: 'Sales Hub', path: '/erp/sales' },
+    ],
+    tip: 'The 1702 credit-at-risk number IS your collection chasing priority. Sort the per-hospital breakdown by Pending CWT descending — that\'s the list of phone calls / emails the bookkeeper makes to get certificates in the door before April 15. Phase J7 will read RECEIVED rows tagged_for_1702_year=YEAR as the "Less: Creditable Tax Withheld" line on the 1702 form. Pending rows are visible to J7 as exposure but do NOT count toward the credit until received.',
+  },
+  'bir-boa-books': {
+    title: 'BIR Books of Accounts — Loose-Leaf PDFs',
+    steps: [
+      'Pre-flight: every book is a PURE READ of POSTED JournalEntry rows. Specialised journals (Sales / Purchase / Cash Receipts / Cash Disbursements / General Journal) classify each JE into exactly ONE book by deterministic priority — so summing the five specialised books equals "all POSTED JEs" with no double-count. The General Ledger is the same set of rows projected by account_code.',
+      'Six books per BIR RR 9-2009 §3: (a) Sales Journal, (b) Purchase Journal, (c) Cash Receipts Journal, (d) Cash Disbursements Journal, (e) General Journal, (f) General Ledger. Specialised journals classify each JournalEntry into exactly one bucket (priority 1=Sales, 2=Purchase, 3=Cash-DR, 4=Cash-CR, 5=GJ catch-all). Cash classification reads any DR / CR line on a "cash" account — Cash & Bank account codes 1000-1019 by PRD §11.1, or override via BIR_BOA_CASH_ACCOUNTS lookup.',
+      'Two export modes per book: per-month (one PDF per calendar month) and annual binding (12 monthly sections + a year-summary section in a single PDF). The annual binding is what gets bound, sworn-declared, and filed loose-leaf with your RDO within 15 days of year-end. Monthly exports are for management review during the year.',
+      'Sworn declaration PDF per book per year — the BIR-required cover page signed by the responsible officer (RR 9-2009 §4). Officer name / title / TIN / CTC come from the BIR_BOA_RESPONSIBLE_OFFICER lookup if seeded, otherwise underscores so you pen-fill before notarisation. The notary block is always pen-filled by the notary public.',
+      'Every PDF carries a BIR-compliant header on every page: Registered Name, TIN, RDO, Business Style, Address, Period Covered, Page X of Y. The footer logs generation timestamp + content hash. Re-exports with different content produce different hashes, so the audit log can detect tampering.',
+      'Subscription-readiness: book classification (BIR_BOA_BOOK_CATALOG), cash account list (BIR_BOA_CASH_ACCOUNTS), and responsible officer (BIR_BOA_RESPONSIBLE_OFFICER) are all per-entity Lookup categories — subscribers reconfigure via Control Center → Lookup Tables without code deployment (Rule #3 / Rule #19). Default rules in bookOfAccountsService.js fire when a lookup row is absent.',
+      'Lifecycle: Compute book per period → Export PDF → Mark Reviewed (president sign-off) → Mark Filed (bookkeeper, after binding + notarisation + RDO submission with stamp) → CONFIRMED. Annual binding due January 30 of following year per BIR RR 9-2009 (15-day grace period). Period locks (PeriodLock module=BIR_FILING) gate retroactive JE edits once a year is CONFIRMED.',
+    ],
+    next: [
+      { label: 'BIR Compliance Dashboard', path: '/erp/bir' },
+      { label: 'Journal Entry (source ledger)', path: '/erp/journal' },
+      { label: 'Sales Hub', path: '/erp/sales' },
+    ],
+    tip: 'Trial-balance check: every annual binding\'s grand totals MUST satisfy Total Debits = Total Credits within ₱0.01. The PDF flags an INVARIANT WARNING if they diverge — investigate immediately because every JE is balanced individually so a sum mismatch indicates corrupted aggregation. The cash-account derivation falls back to ChartOfAccounts (account_type=ASSET, code 1000-1019) when the BIR_BOA_CASH_ACCOUNTS lookup is unseeded — works for VIP but subscribers using non-PRD CoA codes must seed the lookup explicitly. Without cash accounts, CASH_RECEIPTS and CASH_DISBURSEMENTS books will be empty (correct — there is no cash account to match against).',
+  },
   'bir-vat-return': {
     title: 'BIR 2550M / 2550Q VAT Return',
     steps: [

@@ -268,6 +268,95 @@ export async function exportQAPDat(year, quarter) {
   return downloadBlob(`${BASE}/forms/QAP/${year}/${quarter}/export.dat`, `QAP_${year}_Q${quarter}.dat`);
 }
 
+// ── Phase J5 — Books of Accounts (Loose-Leaf PDFs) ────────────────────
+// Six books: SALES_JOURNAL, PURCHASE_JOURNAL, CASH_RECEIPTS,
+// CASH_DISBURSEMENTS, GENERAL_JOURNAL, GENERAL_LEDGER. Annual binding
+// (no month) OR monthly (?month=N). Sworn declaration per book per year.
+
+export async function getBooksCatalog(year) {
+  const { data } = await api.get(`${BASE}/forms/BOOKS/${year}/catalog`);
+  return data?.data || null;
+}
+
+export async function computeBook(year, bookCode, month) {
+  const params = {};
+  if (month) params.month = month;
+  const { data } = await api.get(`${BASE}/forms/BOOKS/${year}/${bookCode}/compute`, { params });
+  return data?.data || null;
+}
+
+export async function exportBookPdf(year, bookCode, month) {
+  const params = month ? `?month=${month}` : '';
+  const monthSeg = month ? `${year}-${String(month).padStart(2, '0')}` : String(year);
+  return downloadBlob(
+    `${BASE}/forms/BOOKS/${year}/${bookCode}/export.pdf${params}`,
+    `${bookCode}_${monthSeg}.pdf`,
+  );
+}
+
+export async function exportBookSwornDeclaration(year, bookCode) {
+  return downloadBlob(
+    `${BASE}/forms/BOOKS/${year}/${bookCode}/sworn-declaration.pdf`,
+    `SwornDeclaration_${bookCode}_${year}.pdf`,
+  );
+}
+
+// ── Phase J6 — Inbound 2307 Reconciliation + 1702 CWT credit rollup ───
+// Read endpoints use VIEW_DASHBOARD; write endpoints (mark-received /
+// mark-pending / exclude) use RECONCILE_INBOUND_2307.
+
+export async function compute2307Inbound(year, quarter) {
+  const path = quarter
+    ? `${BASE}/forms/2307-IN/${year}/${quarter}/compute`
+    : `${BASE}/forms/2307-IN/${year}/compute`;
+  const { data } = await api.get(path);
+  return data?.data || null;
+}
+
+export async function list2307InboundRows(year, { quarter, status, hospitalId } = {}) {
+  const params = {};
+  if (quarter) params.quarter = quarter;
+  if (status) params.status = status;
+  if (hospitalId) params.hospital_id = hospitalId;
+  const { data } = await api.get(`${BASE}/forms/2307-IN/${year}/list`, { params });
+  return data?.data || { rows: [], total: 0 };
+}
+
+export async function markReceived2307Inbound(year, rowId, payload = {}) {
+  const { data } = await api.post(
+    `${BASE}/forms/2307-IN/${year}/rows/${rowId}/mark-received`,
+    payload,
+  );
+  return data?.data || null;
+}
+
+export async function markPending2307Inbound(year, rowId) {
+  const { data } = await api.post(
+    `${BASE}/forms/2307-IN/${year}/rows/${rowId}/mark-pending`,
+    {},
+  );
+  return data?.data || null;
+}
+
+export async function exclude2307InboundRow(year, rowId, reason) {
+  const { data } = await api.post(
+    `${BASE}/forms/2307-IN/${year}/rows/${rowId}/exclude`,
+    { reason },
+  );
+  return data?.data || null;
+}
+
+export async function getInboundCwtPosture(year) {
+  const params = year ? { year } : {};
+  const { data } = await api.get(`${BASE}/withholding/inbound-posture`, { params });
+  return data?.data || null;
+}
+
+export async function compute1702CwtRollup(year) {
+  const { data } = await api.get(`${BASE}/forms/1702/${year}/cwt-rollup`);
+  return data?.data || null;
+}
+
 export default {
   getDashboard,
   getEntityConfig,
@@ -303,4 +392,17 @@ export default {
   export1604EDat,
   computeQAP,
   exportQAPDat,
+  // Phase J5
+  getBooksCatalog,
+  computeBook,
+  exportBookPdf,
+  exportBookSwornDeclaration,
+  // Phase J6
+  compute2307Inbound,
+  list2307InboundRows,
+  markReceived2307Inbound,
+  markPending2307Inbound,
+  exclude2307InboundRow,
+  getInboundCwtPosture,
+  compute1702CwtRollup,
 };

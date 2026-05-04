@@ -75,7 +75,35 @@ router.get('/forms/1604-E/:year/export.dat', ctrl.export1604EDat);
 router.get('/forms/QAP/:year/:quarter/compute', ctrl.computeQAP);
 router.get('/forms/QAP/:year/:quarter/export.dat', ctrl.exportQAPDat);
 
-// J1 catch-all CSV export (lower priority — must come AFTER J2/J3/J4 specific routes).
+// ── Phase J5 — Books of Accounts (Loose-Leaf PDFs) (May 2026) ──────────
+// MUST come BEFORE the catch-all `/forms/:formCode/:year/:period/export.csv`
+// and the per-id `/forms/:id` GET below. The book code lives in :bookCode
+// (one of SALES_JOURNAL / PURCHASE_JOURNAL / CASH_RECEIPTS /
+// CASH_DISBURSEMENTS / GENERAL_JOURNAL / GENERAL_LEDGER). Annual binding
+// = no ?month query; monthly = ?month=1..12.
+router.get('/forms/BOOKS/:year/catalog', ctrl.getBooksCatalog);
+router.get('/forms/BOOKS/:year/:bookCode/compute', ctrl.computeBook);
+router.get('/forms/BOOKS/:year/:bookCode/export.pdf', ctrl.exportBookPdf);
+router.get('/forms/BOOKS/:year/:bookCode/sworn-declaration.pdf', ctrl.exportBookSwornDeclarationPdf);
+
+// ── Phase J6 — Inbound 2307 Reconciliation (May 2026) ──────────────────
+// Annual variant uses /forms/2307-IN/:year (year-only — must beat the J1
+// catch-all). Quarterly variant uses /forms/2307-IN/:year/:quarter (the
+// :quarter segment is `Q1`..`Q4` OR `1`..`4`). Mark / exclude actions are
+// POSTs against per-row IDs and gated by RECONCILE_INBOUND_2307.
+//
+// 1702 credit roll-up endpoint sits under /forms/1702/:year/cwt-rollup —
+// Phase J7 will build the full 1702 page on top of this read.
+router.get('/forms/2307-IN/:year/compute', ctrl.compute2307Inbound);
+router.get('/forms/2307-IN/:year/:quarter/compute', ctrl.compute2307Inbound);
+router.get('/forms/2307-IN/:year/list', ctrl.list2307InboundRows);
+router.post('/forms/2307-IN/:year/rows/:rowId/mark-received', ctrl.markReceived2307Inbound);
+router.post('/forms/2307-IN/:year/rows/:rowId/mark-pending', ctrl.markPending2307Inbound);
+router.post('/forms/2307-IN/:year/rows/:rowId/exclude', ctrl.exclude2307InboundRow);
+router.get('/withholding/inbound-posture', ctrl.getInboundCwtPosture);
+router.get('/forms/1702/:year/cwt-rollup', ctrl.compute1702CwtRollup);
+
+// J1 catch-all CSV export (lower priority — must come AFTER J2/J3/J4/J5/J6 specific routes).
 router.get('/forms/:formCode/:year/:period/export.csv', ctrl.exportVatReturnCsv);
 
 router.get('/forms/:id', ctrl.getFiling);

@@ -306,6 +306,60 @@ export default function BIRCompliancePage() {
                 )}
               </div>
 
+              {/* Phase VIP-1.J / J6 — Inbound 2307 Posture card.
+                  Always renders. Surfaces YTD pending vs received CWT,
+                  with top-N hospitals to chase. Click "Reconcile" to drill
+                  into the per-row reconciliation page. */}
+              <div className="bir-card">
+                <div className="bir-h2">
+                  <FileText size={16} /> Inbound 2307 Posture (Hospital CWT credit for 1702)
+                  <span className="bir-pill" style={{ background: dashboard.inbound_2307_posture?.pending_count > 0 ? '#fef9c3' : '#dcfce7', color: dashboard.inbound_2307_posture?.pending_count > 0 ? '#854d0e' : '#15803d', marginLeft: 'auto' }}>
+                    {dashboard.inbound_2307_posture?.received_pct ?? 0}% received
+                  </span>
+                  <button className="bir-btn bir-btn-secondary" onClick={() => navigate(`/erp/bir/2307-IN/${year}`)}>
+                    Reconcile →
+                  </button>
+                </div>
+                <p style={{ fontSize: '0.82rem', color: '#6b7280', marginBottom: '0.5rem' }}>{dashboard.inbound_2307_posture?.note}</p>
+                <div className="bir-row" style={{ gap: '1.5rem', fontSize: '0.85rem' }}>
+                  <span>Pending: <strong>{dashboard.inbound_2307_posture?.pending_count ?? 0}</strong> certs / <strong style={{ color: '#854d0e' }}>₱{(dashboard.inbound_2307_posture?.pending_cwt || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</strong></span>
+                  <span>Received: <strong>{dashboard.inbound_2307_posture?.received_count ?? 0}</strong> / <strong style={{ color: '#15803d' }}>₱{(dashboard.inbound_2307_posture?.received_cwt || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</strong></span>
+                  <span>Excluded: <strong>{dashboard.inbound_2307_posture?.excluded_count ?? 0}</strong></span>
+                  <span>1702 credit YTD: <strong style={{ color: '#15803d' }}>₱{(dashboard.inbound_2307_posture?.cwt_credit_for_1702 || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}</strong></span>
+                </div>
+                {dashboard.inbound_2307_posture?.top_pending_hospitals?.length > 0 && (
+                  <details style={{ marginTop: '0.6rem' }}>
+                    <summary style={{ fontSize: '0.85rem', cursor: 'pointer', color: '#374151' }}>
+                      Top {dashboard.inbound_2307_posture.top_pending_hospitals.length} hospital(s) to chase
+                    </summary>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.82rem', marginTop: '0.4rem' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid #e5e7eb', color: '#6b7280' }}>
+                          <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem' }}>Hospital</th>
+                          <th style={{ textAlign: 'left', padding: '0.3rem 0.5rem' }}>TIN</th>
+                          <th style={{ textAlign: 'right', padding: '0.3rem 0.5rem' }}>Pending</th>
+                          <th style={{ textAlign: 'right', padding: '0.3rem 0.5rem' }}>Received</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {dashboard.inbound_2307_posture.top_pending_hospitals.map((h, i) => (
+                          <tr key={i} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                            <td style={{ padding: '0.3rem 0.5rem' }}>{h.hospital_name}</td>
+                            <td style={{ padding: '0.3rem 0.5rem' }}>{h.hospital_tin || '—'}</td>
+                            <td style={{ padding: '0.3rem 0.5rem', textAlign: 'right', color: '#854d0e' }}>
+                              {h.pending_count} / ₱{(h.pending_cwt || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: '0.3rem 0.5rem', textAlign: 'right', color: '#15803d' }}>
+                              {h.received_count} / ₱{(h.received_cwt || 0).toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </details>
+                )}
+              </div>
+
               {/* Upcoming deadlines */}
               <div className="bir-card">
                 <div className="bir-h2"><Calendar size={16} /> Upcoming deadlines (next 30 days)</div>
@@ -363,19 +417,30 @@ export default function BIRCompliancePage() {
                         // added (quarterly). 1604-E uses /erp/bir/1604-E/:year
                         // (year-only path, same shape as 1604-CF). QAP uses
                         // /erp/bir/QAP/:year/:quarter (same shape as 1601-EQ).
+                        // Phase J5 (May 2026) — BOOKS added (annual, year-only path:
+                        // /erp/bir/BOOKS/:year). The page is a per-book × per-month
+                        // matrix internally — no :period segment on the URL.
                         const monthlyOrQuarterlyForms = ['2550M', '2550Q', '1601-EQ', '1606', '1601-C', 'QAP'];
-                        const annualForms = ['1604-CF', '1604-E'];
+                        const annualForms = ['1604-CF', '1604-E', 'BOOKS'];
                         const isAnnualForm = annualForms.includes(f.form_code);
+                        // Phase J6 (May 2026) — 2307-IN drills into the
+                        // inbound reconciliation page. The catalog row is
+                        // PER_PAYOR-frequency, so cells render as a single
+                        // per-payee tile; clicking opens the annual view.
+                        const isInbound2307 = f.form_code === '2307-IN';
                         const isClickable =
                           (period && (monthlyOrQuarterlyForms.includes(f.form_code) || f.form_code === 'SAWT'))
-                          || isAnnualForm;
+                          || isAnnualForm
+                          || isInbound2307;
                         // SAWT redirects to the 1601-EQ page (same quarter) — its
                         // .dat export is a button on that page.
                         const targetForm = f.form_code === 'SAWT' ? '1601-EQ' : f.form_code;
                         const target = isClickable
-                          ? (isAnnualForm
-                              ? `/erp/bir/${targetForm}/${year}`
-                              : `/erp/bir/${targetForm}/${year}/${period}`)
+                          ? (isInbound2307
+                              ? `/erp/bir/2307-IN/${year}`
+                              : isAnnualForm
+                                ? `/erp/bir/${targetForm}/${year}`
+                                : `/erp/bir/${targetForm}/${year}/${period}`)
                           : null;
                         const cellTitle = `${c.period_label} — ${meta.label}${c.due_date ? `\nDue ${new Date(c.due_date).toLocaleDateString()}` : ''}${isClickable ? '\n(Click to open form detail)' : ''}`;
                         return (
