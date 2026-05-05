@@ -313,6 +313,8 @@ const PAGE_GUIDES = {
       'Search and filter VIP Clients by region, specialization, client type, or status',
       'Click a VIP Client to view or edit their full profile',
       'Use the Add button to create new VIP Client records — set Client Type (MD, Pharmacist, etc.) and link Hospital affiliations',
+      'Promote a Regular client with "Upgrade to VIP" — admin then picks the visit dates inline (or skips and schedules later)',
+      'Use the Schedule / Reschedule action on any VIP row to set or move upcoming visit dates — pick a calendar date, the system maps it to the right week and day for the BDM',
       'Export VIP Clients to Excel using the Call Plan Template format',
       'Use Clean Names to fix ALL CAPS or inconsistent name formatting — preview changes before applying',
     ],
@@ -320,7 +322,7 @@ const PAGE_GUIDES = {
       { label: 'BDM Management', path: '/admin/employees' },
       { label: 'Reports', path: '/admin/reports' },
     ],
-    tip: 'Client Type distinguishes MDs from other stakeholders (pharmacist, purchaser, administrator). Names are auto-cleaned on new entries and Excel imports. Use Clean Names for existing records.',
+    tip: 'Rows tagged "Needs scheduling" have no upcoming planned visits — click Schedule to set them. The CPT Excel import is still the bulk-load path; this inline scheduling is for one-offs (newly added or upgraded VIPs). 2x/mo VIPs must alternate weeks (W1+W3 or W2+W4); the modal enforces the rule before calling the API.',
   },
   'employees-page': {
     title: 'BDM Management',
@@ -341,12 +343,14 @@ const PAGE_GUIDES = {
     steps: [
       'Select a BDM and date range to generate the visit report',
       'Review the Call Plan Template grid showing visit compliance',
+      'Click Reschedule on any VIP row to move that VIP\'s upcoming planned visits — the modal shows what\'s currently scheduled and accepts a new date',
       'Export to Excel or CSV for sharing with management',
     ],
     next: [
       { label: 'BDM Management', path: '/admin/employees' },
       { label: 'VIP Clients', path: '/admin/doctors' },
     ],
+    tip: 'Rescheduling here only affects the planned/carried Schedule entries — already-logged visits stay put (those need a separate Visit edit, currently admin-only and disabled). 2x/mo alternating-week rule is enforced before the API call.',
   },
   'my-visits': {
     title: 'My Visits',

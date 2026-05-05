@@ -927,6 +927,45 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
     });
   }
 
+  // ── BIR Compliance (admin-like only) ──────────────────────────────────────
+  // Proprietary — VIP's own BIR filings; subscribers run their own books.
+  // Relocated here from CRM admin sidebar 2026-05-05 per SaaS scope decision
+  // Apr 29 2026. Backend layers lookup-driven BIR_ROLES per scope; route guard
+  // is BIR_FILING set so the bookkeeper persona keeps access too.
+  if (isAdmin) {
+    const birItems = [
+      { path: '/erp/bir', label: 'BIR Compliance', icon: ShieldCheck },
+      { path: '/erp/scpwd-sales-book', label: 'SC/PWD Sales Book', icon: ShieldCheck },
+    ];
+    sections.push({
+      title: 'BIR Compliance',
+      collapsible: true,
+      defaultOpen: false,
+      items: birItems,
+    });
+  }
+
+  // ── Rebates & Commissions (admin-like only) ───────────────────────────────
+  // Proprietary moat — must NOT ship to Year-2 Pharmacy SaaS subscribers.
+  // Relocated here from CRM admin sidebar 2026-05-05 per SaaS scope decision
+  // Apr 29 2026. Backend layers lookup-driven REBATE_ROLES / COMMISSION_ROLES
+  // per endpoint; admin-like is the broad gate.
+  if (isAdmin) {
+    const rebateItems = [
+      { path: '/erp/rebate-matrix', label: 'MD Rebate Matrix', icon: Target },
+      { path: '/erp/non-md-rebate-matrix', label: 'Non-MD Rebate', icon: Target },
+      { path: '/erp/capitation-rules', label: 'Capitation', icon: Target },
+      { path: '/erp/commission-matrix', label: 'Commission Matrix', icon: Trophy },
+      { path: '/erp/payout-ledger', label: 'Payout Ledger', icon: Wallet },
+    ];
+    sections.push({
+      title: 'Rebates & Commissions',
+      collapsible: true,
+      defaultOpen: false,
+      items: rebateItems,
+    });
+  }
+
   // ── Tools (admin-like only) ───────────────────────────────────────────────
   if (isAdmin) {
     const toolItems = [
@@ -1119,26 +1158,11 @@ const getCrmMenuConfig = (role, unreadCount = 0) => {
               { path: '/admin/message-templates', label: 'Msg Templates', icon: MessageSquare },
               { path: '/admin/clm-sessions', label: 'CLM Sessions', icon: Presentation },
               { path: '/admin/clm-branding', label: 'CLM Branding', icon: Presentation },
-              // Relocated /admin/* → /erp/* per SaaS scope decision Apr 29
-              // 2026 (rebate stack is proprietary; must not ship to Year-2
-              // Pharmacy SaaS subscribers). Old /admin/* paths are retained
-              // as redirect shims in App.jsx for 30 days post-relocation.
-              // Phase VIP-1.H — SC/PWD Sales Book (RA 9994 + BIR RR 7-2010).
-              { path: '/erp/scpwd-sales-book', label: 'SC/PWD Sales Book', icon: ShieldCheck },
-              // Phase VIP-1.J — BIR Compliance Dashboard (the accountant
-              // dashboard). Tracks every BIR obligation × entity × period;
-              // copy-paste UX into eBIR Forms; .dat for Alphalist Data Entry;
-              // PDF for loose-leaf books. Route guard is BIR_FILING set;
-              // backend layers lookup-driven BIR_ROLES per gate.
-              { path: '/erp/bir', label: 'BIR Compliance', icon: ShieldCheck },
-              // Phase VIP-1.B Phase 4 — Rebate + Commission matrix admin + Payout ledger.
-              // Route guard admin-only; backend layers lookup-driven
-              // REBATE_ROLES / COMMISSION_ROLES per endpoint.
-              { path: '/erp/rebate-matrix', label: 'MD Rebate Matrix', icon: Target },
-              { path: '/erp/non-md-rebate-matrix', label: 'Non-MD Rebate', icon: Target },
-              { path: '/erp/capitation-rules', label: 'Capitation', icon: Target },
-              { path: '/erp/commission-matrix', label: 'Commission Matrix', icon: Trophy },
-              { path: '/erp/payout-ledger', label: 'Payout Ledger', icon: Wallet },
+              // BIR Compliance, SC/PWD Sales Book, Rebate/Capitation/Commission/Payout
+              // matrices were RELOCATED to the ERP sidebar (`getErpSection`) on
+              // 2026-05-05 per SaaS scope decision Apr 29 2026 — the rebate engine
+              // and VIP's own BIR filings are proprietary and must not appear in
+              // the CRM SaaS subscriber bundle. Routes still live at /erp/*.
               { path: '/admin/settings', label: 'Programs', icon: Settings },
             ],
           },

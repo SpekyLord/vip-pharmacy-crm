@@ -9,7 +9,7 @@
  */
 
 import { useState, useEffect, useRef, useMemo, memo } from 'react';
-import { Plus, Edit2, Trash2, ArrowUpCircle, AlertTriangle, X, ChevronDown, Building2, MessageSquare } from 'lucide-react';
+import { Plus, Edit2, Trash2, ArrowUpCircle, AlertTriangle, X, ChevronDown, Building2, MessageSquare, CalendarDays } from 'lucide-react';
 import ConversationDrawer from '../common/ConversationDrawer';
 import doctorService from '../../services/doctorService';
 import userService from '../../services/userService';
@@ -1327,6 +1327,8 @@ const DoctorManagement = ({
   onDelete,
   onMassDeleteByUser,
   onUpgradeToVIP,
+  onScheduleClick,            // Phase A.6 — opens ScheduleVisitsModal (parent owns it)
+  schedStatusByDoctor = {},   // Phase A.6 — { [doctorId]: 'has_upcoming' | 'none' }
   onFilterChange,
   onPageChange,
   onSearchChange,
@@ -1778,6 +1780,20 @@ const DoctorManagement = ({
                         <span className={`client-type-badge ${doctor._clientType === 'regular' ? 'regular' : 'vip'}`}>
                           {doctor._clientType === 'regular' ? 'Regular' : 'VIP'}
                         </span>
+                        {/* Phase A.6 — Needs-scheduling marker (lazy-loaded, won't flicker on first render) */}
+                        {doctor._clientType !== 'regular' && schedStatusByDoctor[doctor._id] === 'none' && (
+                          <span
+                            title="No upcoming visits scheduled — click the Schedule action."
+                            style={{
+                              display: 'inline-block', marginLeft: 6, fontSize: 10, fontWeight: 600,
+                              padding: '2px 6px', borderRadius: 999,
+                              background: '#fef3c7', color: '#92400e', whiteSpace: 'nowrap',
+                            }}
+                            data-testid={`needs-scheduling-${doctor._id}`}
+                          >
+                            Needs scheduling
+                          </span>
+                        )}
                       </td>
                       <td>
                         {doctor.clientType ? (
@@ -1824,6 +1840,15 @@ const DoctorManagement = ({
                                 title="Open conversation"
                               >
                                 <MessageSquare size={14} />
+                              </button>
+                              <button
+                                onClick={() => onScheduleClick?.(doctor)}
+                                className="action-btn schedule"
+                                title={schedStatusByDoctor[doctor._id] === 'none' ? 'No upcoming visits — schedule now' : 'Reschedule upcoming visits'}
+                                data-testid={`schedule-btn-${doctor._id}`}
+                              >
+                                <CalendarDays size={14} />
+                                {schedStatusByDoctor[doctor._id] === 'none' ? 'Schedule' : 'Reschedule'}
                               </button>
                               <button
                                 onClick={() => handleEdit(doctor)}
@@ -1910,6 +1935,9 @@ const DoctorManagement = ({
                       <>
                         <button onClick={() => setConversationDoctor(doctor)} className="action-btn message">
                           <MessageSquare size={16} /> Message
+                        </button>
+                        <button onClick={() => onScheduleClick?.(doctor)} className="action-btn schedule">
+                          <CalendarDays size={16} /> {schedStatusByDoctor[doctor._id] === 'none' ? 'Schedule' : 'Reschedule'}
                         </button>
                         <button onClick={() => handleEdit(doctor)} className="action-btn edit">
                           <Edit2 size={16} /> Edit

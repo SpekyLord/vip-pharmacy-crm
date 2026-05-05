@@ -1548,3 +1548,54 @@ Category `CLM_PERFORMANCE_THRESHOLDS`, code `DEFAULT`:
 - Optional: drill-down "click a slide" → list of sessions where that slide was the drop-off point. Backend already has the data; would be ~1 hr.
 - Year-2 SaaS: per-tenant CLM Performance widget — generalizes cleanly because everything is already lookup-driven + entity-scoped.
 
+
+## Phase A.6 — Admin-Driven One-Off Scheduling (May 5, 2026, SHIPPED)
+
+### Why
+The CPT Excel re-import (Phase C) is the bulk-load mechanism for refreshing a BDM's 4-week schedule, but it's overkill for one-off changes — admin promoting a single Regular client to VIP, adding a single new VIP, or moving one upcoming visit because the doctor's clinic schedule changed. Admin needed an inline mechanism that thinks in calendar dates (not W#D# coordinates).
+
+### What shipped
+- Add VIP / Upgrade-to-VIP modal step that sets the visit date(s) atomically with the Doctor create (one round-trip, transactional).
+- Per-row Schedule / Reschedule action on every VIP row (DoctorManagement table) — opens the same modal in either 'schedule' (no upcoming entries yet) or 'reschedule' (1+ existing) mode.
+- Per-row Reschedule action on EmployeeVisitReport rows (admin's daily call-plan view).
+- 'Needs scheduling' badge on VIPs with 0 upcoming entries — bulk-fetched in one  aggregation per page render.
+
+### Files (3 new + 8 modified)
+**New:**
+- backend/utils/scheduleSlotMapper.js — date↔slot math + alt-week + past-cycle validators.
+- frontend/src/components/admin/ScheduleVisitsModal.jsx — three-mode shared modal.
+- backend/scripts/healthcheckAdminScheduling.js — 36-check static contract verifier.
+
+**Modified:**
+- backend/controllers/scheduleController.js — adminReschedule, adminGetUpcoming, adminGetUpcomingCounts; adminCreate now accepts {date}.
+- backend/controllers/doctorController.js — createDoctor accepts initialSchedule with txn + compensating-delete fallback.
+- backend/routes/scheduleRoutes.js — PATCH /admin/:id, GET /admin/upcoming, GET /admin/upcoming-counts (mount order matters — /admin/upcoming before /admin/:id).
+- frontend/src/services/scheduleService.js — adminReschedule, adminGetUpcoming, adminGetUpcomingCounts.
+- frontend/src/pages/admin/DoctorsPage.jsx — modal state, handleScheduleClick, bulk-fetch effect, generateDefaultDatesClient mirror.
+- frontend/src/components/admin/DoctorManagement.jsx — Schedule action + Needs-scheduling badge + new props.
+- frontend/src/components/admin/EmployeeVisitReport.jsx — onReschedule prop + Actions column.
+- frontend/src/pages/admin/ReportsPage.jsx — modal state + handleEvrReschedule.
+- frontend/src/components/common/PageGuide.jsx — doctors-page + reports-page banners updated.
+- CLAUDE.md — gotcha 12c.
+
+### Lookup-driven (Rule #3)
+- Role gating: `adminOnly` middleware today; documented migration path to `SCHEDULE_LIFECYCLE_ROLES` lookup category (codes RESCHEDULE, INITIAL_SCHEDULE_ON_CREATE) when subscribers need delegation. Mirrors MD_PARTNER_ROLES / PROXY_ENTRY_ROLES pattern.
+- Smart-default day (Tuesday) and 2x/mo pattern (W1+W3) are inline constants in scheduleSlotMapper.generateDefaultDates — easy lift to SCHEDULE_DEFAULTS lookup if subscribers want different presets.
+
+### Subscription-readiness posture (Rule #0d)
+- Schedule rows already carry user (BDM) — no entity_id leak risk in the new code paths.
+- All math (cycle/week/day) goes through scheduleCycleUtils which is Manila-time-correct.
+- generateDefaultDatesClient mirrors backend exactly — single source of truth for cycle anchor (Jan 5, 2026); change here also requires backend update.
+- Visit-date editing for *logged* visits is explicitly OUT of scope. Reason: BDMs editing their own logged visit dates would bypass weekly-limit enforcement.
+
+### Verification (Rule 0b)
+- Healthcheck: **36/36 PASS** — `node backend/scripts/healthcheckAdminScheduling.js`
+- Backend syntax: PASS — `node -c` on all touched backend files
+- Vite build: PASS — `npx vite build` (no errors, no warnings, 10.16s)
+- API + UI smoke: see end of session
+
+### Open items
+- Visit-date edit (admin-only, with audit + period-lock) is a separate phase if/when needed. Currently visitController.js:455 still rejects visitDate updates.
+- The lookup migration to SCHEDULE_LIFECYCLE_ROLES is not blocking — admin gate is correct for VIP today; subscribers will need it when SaaS spins out.
+- Year-2 SaaS: every Schedule mutation already filters by user; tenant isolation will fall out naturally when Phase S6 generalizes user.entity_id.
+

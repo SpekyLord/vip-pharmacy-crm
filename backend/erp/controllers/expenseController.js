@@ -3312,12 +3312,18 @@ const getSmerCrmMdCounts = catchAsync(async (req, res) => {
   // Phase G1.5 — resolve per-entity × per-role per-diem config BEFORE querying
   // the CRM bridge, so we can pass skip_flagged + source into the aggregation.
   // Phase G1.6 — dispatch source (visit/logbook/manual/none) per subscriber config.
+  // May 05 2026 — pipe include_extra_calls through so subscribers can opt out
+  // of the yes-equal-weight policy via Control Center → PERDIEM_RATES metadata.
   const perdiemConfig = await resolvePerdiemConfig({ entityId: req.entityId, role: 'BDM' });
   const dailyCounts = await getDailyMdCounts(
     bdmUserId,
     dateKeyFor(startDay),
     dateKeyFor(endDay),
-    { skipFlagged: perdiemConfig.skip_flagged, source: perdiemConfig.eligibility_source }
+    {
+      skipFlagged: perdiemConfig.skip_flagged,
+      source: perdiemConfig.eligibility_source,
+      includeExtraCalls: perdiemConfig.include_extra_calls,
+    }
   );
 
   const settings = await Settings.getSettings();
@@ -3367,6 +3373,7 @@ const getSmerCrmMdCounts = catchAsync(async (req, res) => {
       // non-zero flagged_excluded total tells the BDM why their pull undercounts.
       eligibility_source: perdiemConfig.eligibility_source,
       skip_flagged: !!perdiemConfig.skip_flagged,
+      include_extra_calls: !!perdiemConfig.include_extra_calls,
       daily_entries: entries,
       total_md_visits: entries.reduce((s, e) => s + e.md_count, 0),
       total_perdiem: entries.reduce((s, e) => s + e.perdiem_amount, 0),
@@ -3399,8 +3406,12 @@ const getSmerCrmVisitDetail = catchAsync(async (req, res) => {
   // Phase G1.6 — resolve source so drill-down reads from the correct backing store
   // (CRM Visit for pharma; CarLogbook for non-pharma). No fallback: if the lookup
   // row is missing the resolver throws, matching Rule #21 (no silent zero).
+  // May 05 2026 — pipe include_extra_calls so drill-down matches the count.
   const drillConfig = await resolvePerdiemConfig({ entityId: req.entityId, role: 'BDM' });
-  const visits = await getDailyVisitDetails(bdmUserId, date, { source: drillConfig.eligibility_source });
+  const visits = await getDailyVisitDetails(bdmUserId, date, {
+    source: drillConfig.eligibility_source,
+    includeExtraCalls: drillConfig.include_extra_calls,
+  });
 
   res.json({
     success: true,

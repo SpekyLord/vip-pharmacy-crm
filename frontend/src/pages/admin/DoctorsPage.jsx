@@ -14,10 +14,68 @@ import { Stethoscope, RefreshCw, Sparkles, CheckSquare, Square, AlertTriangle, X
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import DoctorManagement from '../../components/admin/DoctorManagement';
+import ScheduleVisitsModal from '../../components/admin/ScheduleVisitsModal';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import doctorService from '../../services/doctorService';
 import clientService from '../../services/clientService';
+import scheduleService from '../../services/scheduleService';
 import PageGuide from '../../components/common/PageGuide';
+
+/**
+ * Phase A.6 — client-side mirror of backend's generateDefaultDates.
+ * Returns N {date, week, day} prefill rows for a doctor under a target cycle.
+ *
+ * Strategy mirrors backend exactly:
+ *   - 4x/mo: W1..W4 at the preferred day (Tuesday by default).
+ *   - 2x/mo: W1+W3 at the preferred day.
+ *
+ * Past-date guard: if any computed date is before today, bump it forward by
+ * one cycle (28 days) so the modal always presents future dates the admin
+ * can submit. The CYCLE_ANCHOR mirrors backend; do not change without
+ * touching backend/utils/scheduleCycleUtils.js too.
+ */
+const CYCLE_ANCHOR_ISO = '2026-01-05';
+const generateDefaultDatesClient = (visitFrequency = 4) => {
+  const preferredDay = 2; // Tuesday
+  const weeks = visitFrequency === 2 ? [1, 3] : [1, 2, 3, 4];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const [ay, am, ad] = CYCLE_ANCHOR_ISO.split('-').map(Number);
+  const anchor = new Date(ay, am - 1, ad);
+  const diffDays = Math.floor((today - anchor) / 86400000);
+  let cycle = Math.floor(diffDays / 28);
+
+  const cycleStart = (n) => {
+    const d = new Date(anchor);
+    d.setDate(d.getDate() + n * 28);
+    return d;
+  };
+
+  const buildDates = (cycleN) =>
+    weeks.map((week) => {
+      const start = cycleStart(cycleN);
+      const dt = new Date(start);
+      dt.setDate(dt.getDate() + (week - 1) * 7 + (preferredDay - 1));
+      return { date: dt, week, day: preferredDay };
+    });
+
+  let candidates = buildDates(cycle);
+  if (candidates.every((c) => c.date < today)) {
+    cycle += 1;
+    candidates = buildDates(cycle);
+  } else {
+    candidates = candidates.map((c) =>
+      c.date < today ? { ...c, date: (() => { const d = new Date(c.date); d.setDate(d.getDate() + 28); return d; })() } : c
+    );
+  }
+  return candidates.map(({ date, week, day }) => {
+    const yyyy = date.getFullYear();
+    const mm = String(date.getMonth() + 1).padStart(2, '0');
+    const dd = String(date.getDate()).padStart(2, '0');
+    return { date: `${yyyy}-${mm}-${dd}`, week, day };
+  });
+};
 
 const doctorsPageStyles = `
   .doctors-layout {
@@ -483,6 +541,20 @@ const DoctorsPage = () => {
   const fetchDoctorsControllerRef = useRef(null);
   const fetchClientsControllerRef = useRef(null);
 
+  // Phase A.6 — Schedule modal state
+  // schedStatusByDoctor[doctorId] = 'has_upcoming' | 'none' | undefined (not loaded)
+  const [schedStatusByDoctor, setSchedStatusByDoctor] = useState({});
+  const [schedModalState, setSchedModalState] = useState({
+    open: false,
+    mode: 'create',          // 'create' | 'schedule' | 'reschedule'
+    doctor: null,
+    assignedTo: null,
+    existingEntries: [],
+    defaultDates: [],
+    busy: false,
+    pendingUpgradePayload: null, // when mode='create' from upgrade flow
+  });
+
   const [doctors, setDoctors] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -648,6 +720,37 @@ const DoctorsPage = () => {
     if (refreshAfterCleanup > 0) fetchDoctors();
   }, [refreshAfterCleanup]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Phase A.6 — Bulk-fetch "upcoming entry count" for the displayed VIPs so the
+  // Needs Scheduling badge can render at-rest. One round-trip per page render.
+  // Skips Regular clients (no Schedule row mapping) and skips when the list is
+  // empty/loading. Caps at 100 IDs (already enforced server-side) — page size
+  // is 20 by default so this never trips in practice.
+  useEffect(() => {
+    if (!doctors || doctors.length === 0) return;
+    const vipIds = doctors
+      .filter((d) => d._clientType !== 'regular' && d._id)
+      .map((d) => d._id);
+    if (vipIds.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await scheduleService.adminGetUpcomingCounts(vipIds);
+        if (cancelled) return;
+        const counts = res?.data?.counts || {};
+        setSchedStatusByDoctor((prev) => {
+          const next = { ...prev };
+          Object.keys(counts).forEach((id) => {
+            next[id] = counts[id] > 0 ? 'has_upcoming' : 'none';
+          });
+          return next;
+        });
+      } catch {
+        // Non-fatal — badge just won't render. The action button is unaffected.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [doctors]);
+
   const fetchRegularClients = useCallback(async () => {
     fetchClientsControllerRef.current?.abort();
     fetchClientsControllerRef.current = new AbortController();
@@ -747,48 +850,149 @@ const DoctorsPage = () => {
     }
   };
 
+  // Phase A.6 — Build the upgrade payload from a Regular client. Extracted so
+  // the schedule modal can reuse it after admin picks dates (or skips).
+  const buildUpgradePayload = (regularClient) => {
+    const doctorData = {
+      firstName: regularClient.firstName,
+      lastName: regularClient.lastName,
+      visitFrequency: regularClient.visitFrequency || 4,
+    };
+    if (regularClient.specialization) doctorData.specialization = regularClient.specialization;
+    if (regularClient.clientType) doctorData.clientType = regularClient.clientType;
+    if (regularClient.clinicOfficeAddress) doctorData.clinicOfficeAddress = regularClient.clinicOfficeAddress;
+    if (regularClient.locality) doctorData.locality = regularClient.locality;
+    if (regularClient.province) doctorData.province = regularClient.province;
+    if (regularClient.phone) doctorData.phone = regularClient.phone;
+    if (regularClient.email) doctorData.email = regularClient.email;
+    if (regularClient.notes) doctorData.notes = regularClient.notes;
+    if (regularClient.weekSchedule) doctorData.weekSchedule = regularClient.weekSchedule;
+    if (regularClient.outletIndicator) doctorData.outletIndicator = regularClient.outletIndicator;
+    if (regularClient.programsToImplement?.length) doctorData.programsToImplement = regularClient.programsToImplement;
+    if (regularClient.supportDuringCoverage?.length) doctorData.supportDuringCoverage = regularClient.supportDuringCoverage;
+    if (regularClient.levelOfEngagement) doctorData.levelOfEngagement = regularClient.levelOfEngagement;
+    if (regularClient.secretaryName) doctorData.secretaryName = regularClient.secretaryName;
+    if (regularClient.secretaryPhone) doctorData.secretaryPhone = regularClient.secretaryPhone;
+    if (regularClient.birthday) doctorData.birthday = regularClient.birthday;
+    if (regularClient.anniversary) doctorData.anniversary = regularClient.anniversary;
+    if (regularClient.otherDetails) doctorData.otherDetails = regularClient.otherDetails;
+    if (regularClient.createdBy?._id) doctorData.assignedTo = regularClient.createdBy._id;
+    return doctorData;
+  };
+
+  const performUpgrade = async (regularClient, doctorPayload) => {
+    await doctorService.create(doctorPayload);
+    await clientService.delete(regularClient._id);
+    toast.success(`${regularClient.firstName} ${regularClient.lastName} upgraded to VIP Client`);
+    fetchDoctors();
+    fetchRegularClients();
+  };
+
+  // Phase A.6 — Upgrade flow now opens the schedule modal FIRST. Admin can pick
+  // dates (creates the VIP with initialSchedule) or Skip — schedule later (creates
+  // the VIP with no schedule, badge shows "Needs scheduling" on the row).
   const handleUpgradeToVIP = async (regularClient) => {
-    if (!confirm(`Upgrade "${regularClient.firstName} ${regularClient.lastName}" to a VIP Client? This will create a new VIP Client record with the same info.`)) {
+    const payload = buildUpgradePayload(regularClient);
+    if (!payload.assignedTo) {
+      // Without a BDM owner the schedule has no user to attach to — fall back
+      // to the legacy confirm + create-without-schedule path.
+      if (!confirm(`Upgrade "${regularClient.firstName} ${regularClient.lastName}" to a VIP Client? (No BDM is recorded as the creator, so visits cannot be scheduled at this time.)`)) {
+        return;
+      }
+      try {
+        await performUpgrade(regularClient, payload);
+      } catch (err) {
+        toast.error(err.response?.data?.message || 'Failed to upgrade to VIP');
+      }
       return;
     }
+    setSchedModalState({
+      open: true,
+      mode: 'create',
+      doctor: { firstName: regularClient.firstName, lastName: regularClient.lastName, visitFrequency: payload.visitFrequency },
+      assignedTo: payload.assignedTo,
+      existingEntries: [],
+      defaultDates: generateDefaultDatesClient(payload.visitFrequency),
+      busy: false,
+      pendingUpgradePayload: { regularClient, payload },
+    });
+  };
 
+  // Phase A.6 — "Schedule" / "Reschedule" action on a VIP row.
+  // Decides the mode based on whether the VIP has any upcoming entries.
+  const handleScheduleClick = async (doctor) => {
+    if (!doctor?.assignedTo?._id && !doctor?.assignedTo) {
+      toast.error('This VIP Client has no BDM assigned. Assign one before scheduling visits.');
+      return;
+    }
+    const assignedTo = doctor.assignedTo?._id || doctor.assignedTo;
     try {
-      const doctorData = {
-        firstName: regularClient.firstName,
-        lastName: regularClient.lastName,
-        visitFrequency: regularClient.visitFrequency || 4,
-      };
-      if (regularClient.specialization) doctorData.specialization = regularClient.specialization;
-      if (regularClient.clientType) doctorData.clientType = regularClient.clientType;
-      if (regularClient.clinicOfficeAddress) doctorData.clinicOfficeAddress = regularClient.clinicOfficeAddress;
-      // Phase G1.5 — carry structured address + client categorization through
-      // the Client → VIP promotion so SMER per-diem notes and Doctor filters
-      // render correctly on the new VIP Client from day one.
-      if (regularClient.locality) doctorData.locality = regularClient.locality;
-      if (regularClient.province) doctorData.province = regularClient.province;
-      if (regularClient.phone) doctorData.phone = regularClient.phone;
-      if (regularClient.email) doctorData.email = regularClient.email;
-      if (regularClient.notes) doctorData.notes = regularClient.notes;
-      if (regularClient.weekSchedule) doctorData.weekSchedule = regularClient.weekSchedule;
-      if (regularClient.outletIndicator) doctorData.outletIndicator = regularClient.outletIndicator;
-      if (regularClient.programsToImplement?.length) doctorData.programsToImplement = regularClient.programsToImplement;
-      if (regularClient.supportDuringCoverage?.length) doctorData.supportDuringCoverage = regularClient.supportDuringCoverage;
-      if (regularClient.levelOfEngagement) doctorData.levelOfEngagement = regularClient.levelOfEngagement;
-      if (regularClient.secretaryName) doctorData.secretaryName = regularClient.secretaryName;
-      if (regularClient.secretaryPhone) doctorData.secretaryPhone = regularClient.secretaryPhone;
-      if (regularClient.birthday) doctorData.birthday = regularClient.birthday;
-      if (regularClient.anniversary) doctorData.anniversary = regularClient.anniversary;
-      if (regularClient.otherDetails) doctorData.otherDetails = regularClient.otherDetails;
-      if (regularClient.createdBy?._id) doctorData.assignedTo = regularClient.createdBy._id;
-
-      await doctorService.create(doctorData);
-      await clientService.delete(regularClient._id);
-
-      toast.success(`${regularClient.firstName} ${regularClient.lastName} upgraded to VIP Client`);
-      fetchDoctors();
-      fetchRegularClients();
+      const res = await scheduleService.adminGetUpcoming(doctor._id, assignedTo);
+      const entries = res?.data?.entries || [];
+      const mode = entries.length === 0 ? 'schedule' : 'reschedule';
+      setSchedModalState({
+        open: true,
+        mode,
+        doctor,
+        assignedTo,
+        existingEntries: entries,
+        defaultDates: mode === 'schedule' ? generateDefaultDatesClient(doctor.visitFrequency) : [],
+        busy: false,
+        pendingUpgradePayload: null,
+      });
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to upgrade to VIP');
+      toast.error(err.response?.data?.message || 'Failed to load schedule');
+    }
+  };
+
+  const closeScheduleModal = () => {
+    if (schedModalState.busy) return;
+    // If the modal was opened from an upgrade flow and admin clicks Cancel,
+    // we treat that as "skip — schedule later" only if mode='create'. Other
+    // modes just close.
+    if (schedModalState.mode === 'create' && schedModalState.pendingUpgradePayload) {
+      const { regularClient, payload } = schedModalState.pendingUpgradePayload;
+      setSchedModalState({ open: false, mode: 'create', doctor: null, assignedTo: null, existingEntries: [], defaultDates: [], busy: false, pendingUpgradePayload: null });
+      // Skip = create the VIP without initialSchedule
+      (async () => {
+        try {
+          await performUpgrade(regularClient, payload);
+          toast('Upgraded — schedule it later from the row', { icon: 'ℹ️' });
+        } catch (err) {
+          toast.error(err.response?.data?.message || 'Failed to upgrade to VIP');
+        }
+      })();
+      return;
+    }
+    setSchedModalState((s) => ({ ...s, open: false }));
+  };
+
+  const handleScheduleConfirm = async ({ mode, dates, changes }) => {
+    setSchedModalState((s) => ({ ...s, busy: true }));
+    try {
+      if (mode === 'create' && schedModalState.pendingUpgradePayload) {
+        const { regularClient, payload } = schedModalState.pendingUpgradePayload;
+        const fullPayload = { ...payload, initialSchedule: dates };
+        await performUpgrade(regularClient, fullPayload);
+        toast.success(`${regularClient.firstName} ${regularClient.lastName} upgraded with ${dates.length} scheduled visit${dates.length === 1 ? '' : 's'}`);
+      } else if (mode === 'schedule') {
+        // VIP exists but had no upcoming entries — bulk-create
+        const entries = dates.map((d) => ({ doctor: schedModalState.doctor._id, user: schedModalState.assignedTo, date: d.date }));
+        await scheduleService.adminCreate({ entries });
+        toast.success(`Scheduled ${dates.length} visit${dates.length === 1 ? '' : 's'}`);
+        setSchedStatusByDoctor((prev) => ({ ...prev, [schedModalState.doctor._id]: 'has_upcoming' }));
+      } else if (mode === 'reschedule') {
+        // PATCH each changed row sequentially to surface the first error clearly.
+        for (const c of changes) {
+          await scheduleService.adminReschedule(c.id, c.date);
+        }
+        toast.success(`Updated ${changes.length} visit${changes.length === 1 ? '' : 's'}`);
+      }
+      setSchedModalState({ open: false, mode: 'create', doctor: null, assignedTo: null, existingEntries: [], defaultDates: [], busy: false, pendingUpgradePayload: null });
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || 'Failed to save schedule';
+      toast.error(msg);
+      setSchedModalState((s) => ({ ...s, busy: false }));
     }
   };
 
@@ -861,9 +1065,22 @@ const DoctorsPage = () => {
             onDelete={handleDeleteDoctor}
             onMassDeleteByUser={handleMassDeleteByUser}
             onUpgradeToVIP={handleUpgradeToVIP}
+            onScheduleClick={handleScheduleClick}
+            schedStatusByDoctor={schedStatusByDoctor}
             onFilterChange={handleFilterChange}
             onPageChange={filters.clientType === 'regular' ? handleRegularPageChange : handlePageChange}
             onSearchChange={setSearchInput}
+          />
+
+          <ScheduleVisitsModal
+            open={schedModalState.open}
+            doctor={schedModalState.doctor}
+            mode={schedModalState.mode}
+            existingEntries={schedModalState.existingEntries}
+            defaultDates={schedModalState.defaultDates}
+            busy={schedModalState.busy}
+            onConfirm={handleScheduleConfirm}
+            onClose={closeScheduleModal}
           />
         </main>
       </div>

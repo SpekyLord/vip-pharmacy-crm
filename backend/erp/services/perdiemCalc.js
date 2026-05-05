@@ -320,6 +320,12 @@ async function resolvePerdiemConfig({ entityId, role = 'BDM' } = {}) {
     eligibility_source: m.eligibility_source || 'visit',
     skip_flagged: m.skip_flagged !== false,   // default true (pharma posture)
     allow_weekend: m.allow_weekend === true,  // default false (pharma posture)
+    // May 05 2026 — yes-equal-weight: VIP visits + EXTRA calls both count
+    // toward the per-diem MD threshold. Default true so existing PERDIEM_RATES
+    // rows (which don't carry this key) inherit the corrected behavior. A
+    // subscriber that wants strict VIP-only can flip this to false in
+    // Control Center → Lookup Tables → PERDIEM_RATES.<role>.metadata.
+    include_extra_calls: m.include_extra_calls !== false,
     full_tier_threshold: (m.full_tier_threshold != null) ? Number(m.full_tier_threshold) : null,
     half_tier_threshold: (m.half_tier_threshold != null) ? Number(m.half_tier_threshold) : null,
   };

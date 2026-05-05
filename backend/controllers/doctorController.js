@@ -24,6 +24,7 @@ const {
   getManagePartnershipRoles,
   getSetAgreementDateRoles,
 } = require('../utils/mdPartnerAccess');
+const { dateToSlot, validateAlternatingWeek, rejectPastCycle } = require('../utils/scheduleSlotMapper');
 
 // Phase VIP-1.A — Mirrors Doctor.js schema enum. If you change the schema, change this list.
 // Health check asserts the two stay in sync.
@@ -220,6 +221,14 @@ const getDoctorById = catchAsync(async (req, res) => {
  * @desc    Create new doctor
  * @route   POST /api/doctors
  * @access  Admin, Employee
+ *
+ * Phase A.6 (May 05 2026): optionally accepts initialSchedule on the body —
+ *   initialSchedule: [{ date: 'YYYY-MM-DD' }, ...]
+ * When present, validates each slot, then atomically inserts the Doctor +
+ * Schedule entries. If the Schedule insert fails (e.g. duplicate slot for
+ * this BDM/doctor pair), the Doctor create is rolled back so the row never
+ * appears half-created. Atlas transaction is used when available; standalone
+ * Mongo (test fixtures) falls back to compensating delete.
  */
 const createDoctor = catchAsync(async (req, res) => {
   const {
@@ -249,9 +258,94 @@ const createDoctor = catchAsync(async (req, res) => {
     isVipAssociated,
     clientType,
     hospitals,
+    initialSchedule,
   } = req.body;
 
-  const doctor = await Doctor.create({
+  // ── Pre-validate initialSchedule before touching the DB. We do not want a
+  // half-failed transaction surfacing as a confusing 207 multi-status. If any
+  // slot is malformed, reject the whole request with a single 400.
+  let validatedSlots = [];
+  if (Array.isArray(initialSchedule) && initialSchedule.length > 0) {
+    if (!assignedTo) {
+      return res.status(400).json({
+        success: false,
+        message: 'initialSchedule requires assignedTo (BDM owner) so the Schedule rows can be wired to the right BDM.',
+      });
+    }
+    const effectiveFrequency = visitFrequency || 4;
+    const seenSlotKeys = new Set();
+    const seenWeekDates = new Map(); // weekKey → date string, for alt-week + duplicate-week detection
+    const errors = [];
+    initialSchedule.forEach((slot, idx) => {
+      if (!slot || !slot.date) {
+        errors.push({ index: idx, message: 'each slot needs a `date` (YYYY-MM-DD)' });
+        return;
+      }
+      let derived;
+      try {
+        derived = dateToSlot(slot.date);
+      } catch (err) {
+        errors.push({ index: idx, message: err.message });
+        return;
+      }
+      const past = rejectPastCycle(derived.cycleNumber);
+      if (!past.ok) {
+        errors.push({ index: idx, message: past.reason });
+        return;
+      }
+      const slotKey = `${derived.cycleNumber}-${derived.scheduledWeek}-${derived.scheduledDay}`;
+      if (seenSlotKeys.has(slotKey)) {
+        errors.push({ index: idx, message: `Duplicate slot ${derived.scheduledLabel} in cycle ${derived.cycleNumber}` });
+        return;
+      }
+      seenSlotKeys.add(slotKey);
+
+      // Per-cycle alternating-week + per-week-uniqueness for 2x/mo VIPs.
+      // For 4x/mo we expect at most one slot per week per cycle (the existing
+      // unique index enforces this anyway via the {scheduledWeek, scheduledDay}
+      // tuple, but a same-week two-day-different slot is a planning error).
+      const weekKey = `${derived.cycleNumber}-${derived.scheduledWeek}`;
+      if (seenWeekDates.has(weekKey)) {
+        errors.push({
+          index: idx,
+          message: `Two visits scheduled in the same week (${derived.scheduledLabel}). One visit per week is the cap.`,
+        });
+        return;
+      }
+      seenWeekDates.set(weekKey, slot.date);
+
+      validatedSlots.push({ ...derived, sourceDate: slot.date });
+    });
+
+    // Alternating-week rule for 2x/mo, computed across the whole proposed set
+    if (effectiveFrequency === 2 && validatedSlots.length > 0) {
+      const byCycle = validatedSlots.reduce((acc, s) => {
+        (acc[s.cycleNumber] = acc[s.cycleNumber] || []).push(s);
+        return acc;
+      }, {});
+      for (const cycle of Object.keys(byCycle)) {
+        const slots = byCycle[cycle];
+        for (const candidate of slots) {
+          const others = slots.filter((s) => s !== candidate);
+          const altCheck = validateAlternatingWeek({ visitFrequency: 2 }, candidate.scheduledWeek, others);
+          if (!altCheck.ok) {
+            errors.push({ index: -1, message: altCheck.reason });
+            break;
+          }
+        }
+      }
+    }
+
+    if (errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'initialSchedule has invalid slot(s)',
+        errors,
+      });
+    }
+  }
+
+  const doctorPayload = {
     firstName,
     lastName,
     specialization,
@@ -281,7 +375,79 @@ const createDoctor = catchAsync(async (req, res) => {
     isVipAssociated,
     clientType,
     hospitals,
-  });
+  };
+
+  let doctor;
+  if (validatedSlots.length === 0) {
+    doctor = await Doctor.create(doctorPayload);
+  } else {
+    // Try transactional path first; fall back to compensating delete on standalone Mongo.
+    const session = await mongoose.startSession();
+    let txnFailed = false;
+    try {
+      await session.withTransaction(async () => {
+        const created = await Doctor.create([doctorPayload], { session });
+        doctor = created[0];
+        const scheduleRows = validatedSlots.map((s) => ({
+          doctor: doctor._id,
+          user: assignedTo,
+          cycleStart: s.cycleStart,
+          cycleNumber: s.cycleNumber,
+          scheduledWeek: s.scheduledWeek,
+          scheduledDay: s.scheduledDay,
+          scheduledLabel: s.scheduledLabel,
+          status: 'planned',
+        }));
+        await Schedule.insertMany(scheduleRows, { session, ordered: true });
+      });
+    } catch (txnErr) {
+      txnFailed = true;
+      // Standalone Mongo (no replica set) throws "Transaction numbers are only allowed on a replica set member or mongos".
+      // Detect and fall back to non-transactional create + compensating delete.
+      const isReplicaSetMissing = /replica set|mongos|Transaction numbers/.test(txnErr.message || '');
+      if (!isReplicaSetMissing) {
+        await session.endSession().catch(() => {});
+        if (txnErr.code === 11000) {
+          return res.status(409).json({
+            success: false,
+            message: 'One of the proposed schedule slots is already taken for this BDM/VIP combination. Adjust the dates and retry.',
+          });
+        }
+        throw txnErr;
+      }
+      // Fallback path
+      doctor = await Doctor.create(doctorPayload);
+      try {
+        const scheduleRows = validatedSlots.map((s) => ({
+          doctor: doctor._id,
+          user: assignedTo,
+          cycleStart: s.cycleStart,
+          cycleNumber: s.cycleNumber,
+          scheduledWeek: s.scheduledWeek,
+          scheduledDay: s.scheduledDay,
+          scheduledLabel: s.scheduledLabel,
+          status: 'planned',
+        }));
+        await Schedule.insertMany(scheduleRows, { ordered: true });
+      } catch (schedErr) {
+        // Compensating delete so we don't leave an orphan Doctor.
+        await Doctor.deleteOne({ _id: doctor._id }).catch(() => {});
+        if (schedErr.code === 11000) {
+          return res.status(409).json({
+            success: false,
+            message: 'One of the proposed schedule slots is already taken for this BDM/VIP combination. Adjust the dates and retry.',
+          });
+        }
+        throw schedErr;
+      }
+    } finally {
+      await session.endSession().catch(() => {});
+    }
+    if (txnFailed && !doctor) {
+      // Belt-and-suspenders — should be unreachable.
+      throw new Error('Doctor create failed during transaction fallback');
+    }
+  }
 
   if (doctor.assignedTo) {
     await doctor.populate('assignedTo', 'name email');
@@ -289,8 +455,11 @@ const createDoctor = catchAsync(async (req, res) => {
 
   res.status(201).json({
     success: true,
-    message: 'Doctor created successfully',
+    message: validatedSlots.length > 0
+      ? `Doctor created with ${validatedSlots.length} scheduled visit${validatedSlots.length === 1 ? '' : 's'}`
+      : 'Doctor created successfully',
     data: doctor,
+    scheduledCount: validatedSlots.length,
   });
 });
 

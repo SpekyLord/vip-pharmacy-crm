@@ -745,7 +745,10 @@ export default function TransferOrders() {
           <div className="modal-overlay" onClick={() => setShowCreateReassign(false)}>
             <div className="modal-content" onClick={e => e.stopPropagation()}>
               <h2>Internal Stock Reassignment</h2>
-              <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 16px' }}>Transfer stock between custodians within the same entity. Requires finance approval.</p>
+              <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 16px' }}>
+                Transfer stock between custodians within the same entity. Requires finance approval.
+                Pick the same custodian on both sides to rebalance your own stock between two warehouses (skips the GRN step).
+              </p>
               <div className="form-row">
                 <div className="form-group">
                   <label>Source Custodian</label>
@@ -774,7 +777,7 @@ export default function TransferOrders() {
                   <label>Target Custodian</label>
                   <SelectField value={reassignForm.target_bdm_id} onChange={e => setReassignForm({ ...reassignForm, target_bdm_id: e.target.value })}>
                     <option value="">Select...</option>
-                    {entityBdms.filter(u => u._id !== reassignForm.source_bdm_id).map(u => <option key={u._id} value={u._id}>{formatBdmLabel(u)}</option>)}
+                    {entityBdms.map(u => <option key={u._id} value={u._id}>{formatBdmLabel(u)}{u._id === reassignForm.source_bdm_id ? ' — same as source (warehouse rebalance)' : ''}</option>)}
                   </SelectField>
                 </div>
               </div>
