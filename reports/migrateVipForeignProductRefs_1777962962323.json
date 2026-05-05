@@ -1,0 +1,23 @@
+[
+  {
+    "item_key": "Viprazole|40mg",
+    "model": "InventoryLedger",
+    "count": 8,
+    "from": "69cea0659f33132dd40cb56b",
+    "to": "69cdfa497d949500267e8e1c"
+  },
+  {
+    "item_key": "Viprazole|40mg",
+    "model": "ProductMaster.reactivate",
+    "count": 1,
+    "from": "69cdfa497d949500267e8e1c",
+    "to": "69cdfa497d949500267e8e1c"
+  },
+  {
+    "item_key": "Nupira|10mg/10mL",
+    "model": "ProductMaster.reactivate",
+    "count": 1,
+    "from": "69cdfa2f7d949500267e8cb4",
+    "to": "69cdfa2f7d949500267e8cb4"
+  }
+]

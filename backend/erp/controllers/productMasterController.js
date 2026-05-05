@@ -55,8 +55,16 @@ const getAll = catchAsync(async (req, res) => {
   const filter = {};
   const isCatalog = req.query.catalog === 'true';
 
-  // Entity scoping — for catalog mode, resolve parent entity inheritance
-  const baseEntityId = req.query.entity_id || req.tenantFilter?.entity_id;
+  // Entity scoping — for catalog mode, resolve parent entity inheritance.
+  // Phase G7.A.0 fix (May 05 2026): also fall back to req.entityId for president
+  // and other privileged users who get `req.tenantFilter = {}` from the
+  // tenant-filter middleware. Without this fallback, the catalog drops ALL
+  // entity scoping for president, letting MG-and-CO products leak into VIP's
+  // dropdown. req.entityId is set from the X-Entity-Id header for president,
+  // so it correctly reflects the working entity selected in the UI dropdown.
+  // Order: explicit query param → tenantFilter (admin/finance/BDM) → working
+  // entity (president). Last fallback is the load-bearing one for president.
+  const baseEntityId = req.query.entity_id || req.tenantFilter?.entity_id || req.entityId;
   if (baseEntityId && isCatalog) {
     const entityIds = await resolveProductEntityIds(baseEntityId);
     if (entityIds.length > 1) {

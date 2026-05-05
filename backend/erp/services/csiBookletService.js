@@ -17,6 +17,12 @@
  */
 const mongoose = require('mongoose');
 const CsiBooklet = require('../models/CsiBooklet');
+const User = require('../../models/User');
+// Phase G4.5gg (May 5 2026) — defense-in-depth role guard for assignees.
+// Mirrors VALID_OWNER_ROLES.CSI_BOOKLETS (lookup-driven, lazy-cached). Without
+// this, a direct API call could assign a number range to admin/finance/president,
+// orphaning the per-BDM availability roster (no /my-csi tab for non-BDMs).
+const { getValidOwnerRolesForModule } = require('../utils/resolveOwnerScope');
 
 /**
  * Create a new CSI booklet.
@@ -80,6 +86,37 @@ async function allocate(entityId, bookletId, allocation) {
       new Error(`Range ${rangeStart}-${rangeEnd} outside booklet series ${booklet.series_start}-${booklet.series_end}`),
       { statusCode: 400 }
     );
+  }
+
+  // Phase G4.5gg (May 5 2026) — assignee must be a valid CSI owner role.
+  // Validates against VALID_OWNER_ROLES.CSI_BOOKLETS (default ['staff']).
+  // Same-entity check defends against cross-entity assignment (Rule #21):
+  // a back-office BDM proxying for VIP shouldn't assign numbers to a MG&CO BDM.
+  if (allocation.assigned_to) {
+    const assignee = await User.findById(allocation.assigned_to)
+      .select('name role entity_id entity_ids isActive')
+      .lean();
+    if (!assignee) {
+      throw Object.assign(new Error('Assignee user not found'), { statusCode: 400 });
+    }
+    if (assignee.isActive === false) {
+      throw Object.assign(new Error(`Assignee '${assignee.name}' is deactivated`), { statusCode: 400 });
+    }
+    const validRoles = await getValidOwnerRolesForModule(entityId, 'inventory', 'CSI_BOOKLETS');
+    if (!validRoles.includes(assignee.role)) {
+      throw Object.assign(
+        new Error(`Assignee role '${assignee.role}' not in VALID_OWNER_ROLES.CSI_BOOKLETS (${validRoles.join(', ')}). Pick a BDM.`),
+        { statusCode: 400 }
+      );
+    }
+    const inEntity = String(assignee.entity_id) === String(entityId)
+      || (Array.isArray(assignee.entity_ids) && assignee.entity_ids.some((e) => String(e) === String(entityId)));
+    if (!inEntity) {
+      throw Object.assign(
+        new Error(`Assignee '${assignee.name}' does not belong to this entity. Cross-entity allocation is not allowed.`),
+        { statusCode: 400 }
+      );
+    }
   }
 
   for (const existing of booklet.allocations) {

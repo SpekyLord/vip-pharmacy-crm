@@ -52,8 +52,16 @@ const getIncomeProjection = catchAsync(async (req, res) => {
   if (!period || !cycle) {
     return res.status(400).json({ success: false, message: 'period and cycle are required' });
   }
+  // Phase G4.5aa parity — projection must accept ?bdm_id from proxy callers, not
+  // just admin/finance/president. Without this, a staff proxy who picks a target
+  // BDM in OwnerPicker silently falls through to req.bdmId (their own id) and
+  // sees their own projection. Mirrors the gate in getIncomeList / getIncomeBreakdown.
+  // Rule #21: privileged callers and proxy callers must pass bdm_id explicitly —
+  // no silent self-fill on req.bdmId (which for admin/finance/president points at
+  // their own _id, not a real BDM, and would either 404 or render empty data).
   const canViewOther = req.isAdmin || req.isFinance || req.isPresident;
-  const bdmId = canViewOther ? (req.query.bdm_id || null) : req.bdmId;
+  const { canProxy: canProxyIncome } = await canProxyEntry(req, 'payroll', INCOME_PROXY_OPTS);
+  const bdmId = (canViewOther || canProxyIncome) ? (req.query.bdm_id || null) : req.bdmId;
   if (!bdmId) {
     return res.status(400).json({ success: false, message: 'bdm_id is required' });
   }

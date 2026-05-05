@@ -10838,3 +10838,58 @@ Approval History tab in `/erp/approvals` reads `ApprovalRequest` only. Module-na
 ### Subscription posture
 
 No new lookup. No schema change. `ApprovalRequest.metadata` is already `Mixed` so `metadata.action_label` slots in cleanly. Decision values (`APPROVED`/`REJECTED`/`CANCELLED`) are wire-level enum, not policy. Rule #3 / Rule #19 aligned.
+
+---
+
+## Phase G7.A — Product Globalization (May 05 2026, IN FLIGHT — G7.A.0 SHIPPED)
+
+> ⚠️ **Naming disambiguation**: this is **NOT** a sub-phase of the April-2026 "Phase G7 — President's Copilot, Spend Caps, Daily Briefing, Cmd+K." That older Phase G7 has no sub-letter and is fully shipped. This phase reuses the "G7" letter sequence by accident; future renames (Phase MD-2?) acceptable. Treat as standalone.
+>
+> **Status**: G7.A.0 schema foundation SHIPPED + ratified May 05 2026 evening. G7.A.1 dedupe queued for next session. Plan: [`~/.claude/plans/phase-g7a-product-globalization.md`](../../../.claude/plans/phase-g7a-product-globalization.md).
+> **Why**: align ProductMaster with the canonical-key + per-entity-binding pattern already shipped for `Hospital` (always global), `Customer` (Phase G5, Apr 24), and `Doctor` (Phase A.5, Apr 24 → May 05). ProductMaster is the only large master left that's per-entity scoped; this cost the user a real GRN bug today (May 05).
+
+### G7.A — Sub-phase road map
+
+| Sub-phase | Scope | Status |
+|---|---|---|
+| **G7.A.0** | Schema foundation: `product_key_clean` canonical key on ProductMaster (non-unique today), `EntityProductCarry` collection, `ProductMergeAudit` collection, `resolveProductLifecycleRole` helper, `PRODUCT_LIFECYCLE_ROLES` lookup seed, backfill script (dry-run-by-default), healthcheck | ✅ SHIPPED May 05 2026 |
+| **G7.A.1** | Dedupe migration — `productMergeService.js` mirrors `doctorMergeService.js`. Cascades 20+ FK paths (InventoryLedger, SalesLine, GrnEntry.line_items, PurchaseOrder.line_items, etc.). 30-day rollback grace via `ProductMergeAudit`. Bulk-merge tool for the 2 existing cross-entity duplicates (Viprazole, Nupira). | PLANNED |
+| **G7.A.2** | Validator flip — six controllers (inventoryController GRN, interCompanyController, salesController, hospitalPoController, hospitalContractPriceController, consignmentController) replace `entity_id: req.entityId` filter on ProductMaster with `find on EntityProductCarry where entity_id=req.entityId AND is_active=true`. Centralized via `assertProductsCarried(req, productIds)` helper. | PLANNED |
+| **G7.A.3** | Drop `ProductMaster.entity_id`, `selling_price`, `purchase_price`, reorder fields, and `PRODUCT_CATALOG_ACCESS` lookup category. Pre-req: G7.A.2 stable on dev for ≥1 week, Atlas backup taken. | PLANNED |
+| **G7.A.4** | Carry-list admin UI (`/erp/carry-list`) — admin grants/revokes carry per (entity, product), edits per-entity selling/purchase price. PageGuide banner. Sidebar link gated by `master.cross_entity_write`. | PLANNED |
+
+### G7.A.0 deliverables (this session)
+
+- **Pre-G7 surgical migration shipped first** (May 05 2026): [migrateVipForeignProductRefs.js](../backend/erp/scripts/migrateVipForeignProductRefs.js) repointed 8 InventoryLedger rows in VIP (Viprazole) from MG-and-CO's product_id → VIP's product_id, reactivated 2 inactive VIP rows (Viprazole + Nupira). Cascade manifest mirrors `doctorMergeService.js` shape. Audit at `reports/migrateVipForeignProductRefs_<ts>.json`. Unblocks today's GRN bug.
+- **Schema additions**: ProductMaster gains `product_key_clean` (canonical, indexed non-unique today; G7.A.1 flips to partial-unique after dedupe), `mergedInto` ref, `mergedAt`. `buildProductKeyClean()` helper computes `cleanName(brand)|cleanName(generic)|cleanName(dosage)|normalizeUnit(unit)`. Pre-validate + pre-findOneAndUpdate hooks maintain it on insert/update. Backwards-compatible with existing `entity_id+item_key` unique index.
+- **EntityProductCarry collection** ([backend/erp/models/EntityProductCarry.js](../backend/erp/models/EntityProductCarry.js)): per-entity carry list with `selling_price`, `purchase_price`, reorder fields, `vat_override` (Lock 3 escape hatch), `effective_from`/`approved_by`/`change_reason` audit shape mirroring `HospitalContractPrice`, `STATUS` enum `[ACTIVE, SUSPENDED, EXPIRED, SUPERSEDED]`. Indexes: `(entity_id, is_active)`, `(product_id, is_active)`, partial-unique on `(entity_id, product_id, territory_id, is_active=true)`, **G7.B forward-compat partial-unique on `(product_id, territory_id, is_active=true) WHERE territory_id is ObjectId`** (channel exclusivity, populated/enforced in G7.B without re-flip).
+- **ProductMergeAudit** ([backend/erp/models/ProductMergeAudit.js](../backend/erp/models/ProductMergeAudit.js)): forward-compat for G7.A.1. Mirror of `DoctorMergeAudit`. Cascade entry shape with `repointed_ids`, `collision_ids` (with `original_value`), `deactivated_ids`. 30-day TTL on `createdAt` matches the merge service's grace window.
+- **resolveProductLifecycleRole helper** ([backend/utils/resolveProductLifecycleRole.js](../backend/utils/resolveProductLifecycleRole.js)): mirrors `resolveVipClientLifecycleRole.js` exactly. 7 codes — VIEW_MERGE_TOOL, EXECUTE_MERGE, ROLLBACK_MERGE, HARD_DELETE_MERGED (G7.A.1) + CARRY_GRANT, CARRY_REVOKE, PRICE_CHANGE (G7.A.4 forward-compat). 60s TTL cache, lazy-seed-from-defaults, president bypass, `invalidate()` hook.
+- **PRODUCT_LIFECYCLE_ROLES seed** added to `lookupGenericController.SEED_DEFAULTS`. 7 entries with `insert_only_metadata: true` so admin-customized roles survive future re-seeds (Rule #19 hot-config posture).
+- **Backfill script** ([backend/erp/scripts/backfillProductCanonicalAndCarry.js](../backend/erp/scripts/backfillProductCanonicalAndCarry.js)): dry-run-by-default. Step 1 populates `product_key_clean` on every existing ProductMaster row. Step 2 creates one EntityProductCarry row per `(entity_id, product_id)` pair, copying selling/purchase price + reorder fields. Inactive ProductMaster rows backfill as SUSPENDED carry rows (preserves intent). Idempotent — re-runs skip already-populated rows.
+- **Healthcheck** ([backend/scripts/healthcheckProductGlobalization.js](../backend/scripts/healthcheckProductGlobalization.js)): 8-section static contract verifier — ProductMaster schema additions, EntityProductCarry schema + indexes, ProductMergeAudit shape + 30-day TTL, role helper exports + president bypass, lookup seed completeness, backfill script shape, surgical-migration shape, docs registration. Exit 0 = clean.
+
+### Subscription / scalability posture (Rule #19)
+
+- Per-entity `entity_id` scoping retained on `EntityProductCarry` — multi-tenant generalizes to `tenant_id` without rewrites in Year 2 SaaS spin-out.
+- All lifecycle decisions are lookup-driven (Rule #3) — subscribers loosen merge / carry / pricing roles via Control Center → Lookup Tables, no code deploys.
+- Channel-exclusivity index pre-baked for G7.B; territory_id stays nullable in G7.A.0 so today's data is consistent and G7.B is a pure population step.
+- Catalog API in G7.A.2 will read EntityProductCarry directly, deprecating the `PRODUCT_CATALOG_ACCESS` lookup category (which was a band-aid for the per-entity ProductMaster shape).
+
+### Why G7.A.0 is non-breaking
+
+Existing controllers continue to read `ProductMaster.entity_id`. Existing pricing reads `ProductMaster.selling_price`. Existing catalog API still resolves via `PRODUCT_CATALOG_ACCESS`. EntityProductCarry rows are populated but unused. ProductMergeAudit is empty — no merges yet. The whole schema foundation is dead-letter-safe; a rollback at this stage is "drop EntityProductCarry collection + drop product_key_clean field," no data loss.
+
+### Risk profile
+
+- **G7.A.0 (THIS SESSION)**: green. Non-breaking, dry-run backfill, healthcheck PASS.
+- **G7.A.1**: highest risk — 20 FK paths cascaded per merge. Mitigation: per-merge audit + 30-day rollback + bulk-merge dry-run + Atlas backup before bulk run.
+- **G7.A.2**: medium — six controllers, each with smoke after commit.
+- **G7.A.3**: irreversible — gated on G7.A.2 stability + Atlas backup.
+- **G7.A.4**: low — UI-only.
+
+### Smoke ratification (G7.A.0)
+
+- Healthcheck: 56/56 PASS (after seed-block regex fix for nested arrays).
+- Backfill dry-run: see `reports/backfillProductCanonicalAndCarry_dryrun_<ts>.txt` (logged below).
+- GRN page Playwright smoke: VIP working entity + Viprazole 40mg now visible in dropdown (was hidden before surgical migration), Save & Validate path tested. Logged in handoff memory.

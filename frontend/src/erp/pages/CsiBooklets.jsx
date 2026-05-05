@@ -277,11 +277,25 @@ export default function CsiBooklets() {
 
   const loadBdms = useCallback(async () => {
     try {
-      // Fetch people who can receive CSI allocations — any active person with a login.
-      const res = await people.getPeopleList({ status: 'ACTIVE', has_login: true });
+      // Phase G4.5gg (May 5 2026) — switched from /erp/people (people module gate)
+      // to /erp/proxy-roster/CSI_BOOKLETS (canProxyEntry-gated). Two reasons:
+      //   1. Proxy POV: a back-office BDM granted inventory.csi_booklets but not
+      //      `people` module hits 403 on /erp/people → empty dropdown. The proxy-
+      //      roster endpoint is sub-perm-gated, so the same actor populates fine.
+      //   2. Server-side filter to VALID_OWNER_ROLES.CSI_BOOKLETS (['staff'] by
+      //      default) — pre-G4.5gg the dropdown showed admin/finance/president
+      //      as valid assignees, which would orphan the per-BDM /my-csi tab and
+      //      the auto-mark-used-on-sale join. Now subscribers configure the
+      //      role allowlist via Control Center → Lookup Tables (Rule #3).
+      // The roster returns User docs directly (shape: {_id,name,role,entity_id})
+      // so the dropdown uses _id as the option value (was: people.user_id deref).
+      const res = await people.getProxyRoster('CSI_BOOKLETS', {
+        subKey: 'csi_booklets',
+        moduleKey: 'inventory',
+      });
       setBdms(res?.data || []);
     } catch (err) {
-      console.warn('[CsiBooklets] BDM list load failed:', err.message);
+      console.warn('[CsiBooklets] BDM proxy roster load failed:', err.message);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -786,8 +800,12 @@ export default function CsiBooklets() {
                                       <label>Assign to BDM</label>
                                       <select value={allocForm.assigned_to} onChange={e => setAllocForm(f => ({ ...f, assigned_to: e.target.value }))}>
                                         <option value="">— Select BDM —</option>
-                                        {bdms.filter(p => p.user_id).map(p => (
-                                          <option key={p._id} value={typeof p.user_id === 'object' ? p.user_id._id : p.user_id}>{p.full_name || p.name}</option>
+                                        {/* Phase G4.5gg — bdms now sourced from /erp/proxy-roster
+                                            (User docs: {_id,name,role,entity_id}) so _id IS the
+                                            user id; no .user_id deref needed. Server pre-filters
+                                            to VALID_OWNER_ROLES.CSI_BOOKLETS. */}
+                                        {bdms.map(p => (
+                                          <option key={String(p._id)} value={String(p._id)}>{p.name}</option>
                                         ))}
                                       </select>
                                     </div>
@@ -881,8 +899,13 @@ export default function CsiBooklets() {
                                 <label>Assign to BDM</label>
                                 <select value={allocForm.assigned_to} onChange={e => setAllocForm(f => ({ ...f, assigned_to: e.target.value }))}>
                                   <option value="">— Select BDM —</option>
+                                  {/* Phase G4.5gg — same proxy-roster source as desktop. Pre-G4.5gg
+                                      this mobile branch had a latent bug: it used p._id (people-doc
+                                      id) as the value where the server expects a User _id, so
+                                      submitting from mobile would 400. Roster returns User docs so
+                                      _id IS the User id — desktop + mobile now consistent. */}
                                   {bdms.map(p => (
-                                    <option key={p._id} value={p._id}>{p.full_name || p.name}</option>
+                                    <option key={String(p._id)} value={String(p._id)}>{p.name}</option>
                                   ))}
                                 </select>
                               </div>

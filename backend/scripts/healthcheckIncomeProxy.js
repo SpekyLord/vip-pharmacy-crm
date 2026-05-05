@@ -98,6 +98,25 @@ check(
   incomeCtrl && /getIncomeBreakdown[\s\S]{0,1600}canProxyEntry\(req,\s*'payroll',\s*INCOME_PROXY_OPTS\)/.test(incomeCtrl),
   'getIncomeBreakdown must consult canProxyEntry before 403-ing on cross-BDM read.'
 );
+check(
+  'incomeController.getIncomeProjection honors ?bdm_id for proxy callers',
+  // Without this, a staff proxy who picks a target BDM in OwnerPicker silently
+  // falls through to req.bdmId (their own id) and the projection card renders
+  // the proxy's own data — exactly the bug the user filed May 5 2026.
+  incomeCtrl && /getIncomeProjection\s*=[\s\S]{0,2000}canProxyEntry\(req,\s*'payroll',\s*INCOME_PROXY_OPTS\)/.test(incomeCtrl),
+  'getIncomeProjection must consult canProxyEntry so non-privileged proxies can view target BDM projection.'
+);
+
+// ── Backend: incomeCalc service ──
+const incomeCalc = readFile('backend/erp/services/incomeCalc.js');
+check(
+  'projectIncome filters schedules by target_cycle (parity with generateIncomeReport)',
+  // Without this, a one-time deduction created with target_cycle=C2 leaks into
+  // the C1 projection of the same period — the BDM sees the deduction in BOTH
+  // cycles even though generation correctly skips the wrong cycle.
+  incomeCalc && /async function projectIncome[\s\S]{0,8000}status:\s*'ACTIVE',[\s\S]{0,800}target_cycle:\s*cycle[\s\S]{0,300}target_cycle:\s*\{\s*\$exists:\s*false\s*\}/.test(incomeCalc),
+  'projectIncome schedule query must $or [{ target_cycle: cycle }, { target_cycle: { $exists: false } }] so non-installments do not appear in the wrong cycle projection.'
+);
 
 // ── Backend: deductionScheduleController ──
 const dedCtrl = readFile('backend/erp/controllers/deductionScheduleController.js');
