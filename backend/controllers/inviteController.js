@@ -72,8 +72,9 @@ async function loadTarget(req, doctorId, clientId) {
     const doctor = await Doctor.findById(doctorId);
     if (!doctor) throw new NotFoundError('VIP Client not found.');
     if (!isAdminLike(req.user.role)) {
-      const assignedTo = doctor.assignedTo?._id || doctor.assignedTo;
-      if (!assignedTo || assignedTo.toString() !== req.user._id.toString()) {
+      // Phase A.5.4 — shape-agnostic assignee check (assignedTo is an array).
+      const { isAssignedTo } = require('../utils/assigneeAccess');
+      if (!isAssignedTo(doctor, req.user._id)) {
         throw new ForbiddenError('This VIP Client is not assigned to you.');
       }
     }

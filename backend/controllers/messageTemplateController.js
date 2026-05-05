@@ -302,10 +302,11 @@ const sendFromTemplate = catchAsync(async (req, res) => {
     targetDoc = await Doctor.findById(doctorId).lean();
     if (!targetDoc) return res.status(404).json({ success: false, message: 'VIP Client not found.' });
 
-    // Admin can contact any VIP Client; BDM only their own
+    // Admin can contact any VIP Client; BDM only their own.
+    // Phase A.5.4 — assignedTo is an array; shape-agnostic helper.
     if (!isAdminLike(req.user.role)) {
-      const assignedTo = targetDoc.assignedTo?._id || targetDoc.assignedTo;
-      if (!assignedTo || assignedTo.toString() !== req.user._id.toString()) {
+      const { isAssignedTo } = require('../utils/assigneeAccess');
+      if (!isAssignedTo(targetDoc, req.user._id)) {
         return res.status(403).json({ success: false, message: 'This VIP Client is not assigned to you.' });
       }
     }

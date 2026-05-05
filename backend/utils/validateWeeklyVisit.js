@@ -130,10 +130,10 @@ const canAccessDoctor = (user, doctor) => {
     return true;
   }
 
-  // BDMs can only access doctors assigned to them
-  const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
-  if (!assignedToId) return false;
-  return assignedToId.toString() === (user._id || user).toString();
+  // BDMs can only access doctors assigned to them.
+  // Phase A.5.4 — assignedTo is an array; isAssignedTo handles all shapes.
+  const { isAssignedTo } = require('./assigneeAccess');
+  return isAssignedTo(doctor, user._id || user);
 };
 
 /**

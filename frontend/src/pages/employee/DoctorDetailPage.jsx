@@ -24,6 +24,8 @@ import visitService from '../../services/visitService';
 import productService from '../../services/productService';
 import PageGuide from '../../components/common/PageGuide';
 import api from '../../services/api';
+// Phase A.5.4 — Doctor.assignedTo is an array; show the canonical owner.
+import { getPrimaryAssigneeName } from '../../utils/assigneeDisplay';
 
 const ENGAGEMENT_LABELS = {
   1: 'Visited 4x',
@@ -838,7 +840,7 @@ const DoctorDetailPage = () => {
   const visitReason = canVisit
     ? ''
     : (visitEligibility?.reason || VISIT_STATUS_UNAVAILABLE_REASON);
-  const assignedToName = doctor.assignedTo?.name || '';
+  const assignedToName = getPrimaryAssigneeName(doctor) || '';
   const schedule = doctor.clinicSchedule || {};
   const targetProducts = doctor.targetProducts || [];
   const programs = doctor.programsToImplement || [];

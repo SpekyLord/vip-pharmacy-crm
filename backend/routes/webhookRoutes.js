@@ -22,6 +22,9 @@ const { tryAutoReply } = require('../utils/autoReply');
 const { fetchSenderInfo, matchSenderToDoctor } = require('../utils/aiMatcher');
 const { handleInboundOptOut } = require('../utils/optOut');
 const { markClmSessionConverted } = require('../controllers/clmController');
+// Phase A.5.4 — Doctor.assignedTo is an array; webhooks need ONE BDM to attribute
+// inbound messages to. Use getPrimaryAssigneeId for the canonical owner.
+const { getPrimaryAssigneeId } = require('../utils/assigneeAccess');
 
 /**
  * Phase M1 — Bind an external messaging ID to a Doctor/Client via invite referral.
@@ -237,10 +240,10 @@ router.post('/whatsapp', rawJson, verifyMetaSignature, async (req, res) => {
               $or: [{ whatsappNumber: from }, { phone: from }],
             }).lean();
 
-            if (doctor && doctor.assignedTo) {
+            if (doctor && getPrimaryAssigneeId(doctor)) {
               await CommunicationLog.create({
                 doctor: doctor._id,
-                user: doctor.assignedTo,
+                user: getPrimaryAssigneeId(doctor),
                 channel: 'WHATSAPP',
                 direction: 'inbound',
                 source: 'api',
@@ -249,7 +252,7 @@ router.post('/whatsapp', rawJson, verifyMetaSignature, async (req, res) => {
                 deliveryStatus: 'delivered',
                 contactedAt: new Date(),
               });
-              await tryAutoReply({ channel: 'WHATSAPP', contactId: from, doctorId: doctor._id, userId: doctor.assignedTo });
+              await tryAutoReply({ channel: 'WHATSAPP', contactId: from, doctorId: doctor._id, userId: getPrimaryAssigneeId(doctor) });
             } else {
               // Unknown sender — try AI matching
               const senderInfo = await fetchSenderInfo('WHATSAPP', from);
@@ -265,7 +268,7 @@ router.post('/whatsapp', rawJson, verifyMetaSignature, async (req, res) => {
                 if (matched) {
                   await CommunicationLog.create({
                     doctor: matched._id,
-                    user: matched.assignedTo,
+                    user: getPrimaryAssigneeId(matched),
                     channel: 'WHATSAPP',
                     direction: 'inbound',
                     source: 'api',
@@ -278,7 +281,7 @@ router.post('/whatsapp', rawJson, verifyMetaSignature, async (req, res) => {
                     senderProfilePic: senderInfo?.profilePic || null,
                     aiMatchStatus: 'auto_assigned',
                   });
-                  await tryAutoReply({ channel: 'WHATSAPP', contactId: from, doctorId: matched._id, userId: matched.assignedTo });
+                  await tryAutoReply({ channel: 'WHATSAPP', contactId: from, doctorId: matched._id, userId: getPrimaryAssigneeId(matched) });
                 }
               } else {
                 await CommunicationLog.create({
@@ -431,10 +434,10 @@ router.post('/messenger', rawJson, verifyMetaSignature, async (req, res) => {
 
             const Doctor = require('../models/Doctor');
             const doctor = await Doctor.findOne({ messengerId: senderId }).lean();
-            if (doctor && doctor.assignedTo) {
+            if (doctor && getPrimaryAssigneeId(doctor)) {
               await CommunicationLog.create({
                 doctor: doctor._id,
-                user: doctor.assignedTo,
+                user: getPrimaryAssigneeId(doctor),
                 channel: 'MESSENGER',
                 direction: 'inbound',
                 source: 'api',
@@ -443,7 +446,7 @@ router.post('/messenger', rawJson, verifyMetaSignature, async (req, res) => {
                 deliveryStatus: 'delivered',
                 contactedAt: new Date(),
               });
-              await tryAutoReply({ channel: 'MESSENGER', contactId: senderId, doctorId: doctor._id, userId: doctor.assignedTo });
+              await tryAutoReply({ channel: 'MESSENGER', contactId: senderId, doctorId: doctor._id, userId: getPrimaryAssigneeId(doctor) });
             } else {
               // Unknown sender — try AI matching
               const senderInfo = await fetchSenderInfo('MESSENGER', senderId);
@@ -459,7 +462,7 @@ router.post('/messenger', rawJson, verifyMetaSignature, async (req, res) => {
                 if (matched) {
                   await CommunicationLog.create({
                     doctor: matched._id,
-                    user: matched.assignedTo,
+                    user: getPrimaryAssigneeId(matched),
                     channel: 'MESSENGER',
                     direction: 'inbound',
                     source: 'api',
@@ -472,7 +475,7 @@ router.post('/messenger', rawJson, verifyMetaSignature, async (req, res) => {
                     senderProfilePic: senderInfo?.profilePic || null,
                     aiMatchStatus: 'auto_assigned',
                   });
-                  await tryAutoReply({ channel: 'MESSENGER', contactId: senderId, doctorId: matched._id, userId: matched.assignedTo });
+                  await tryAutoReply({ channel: 'MESSENGER', contactId: senderId, doctorId: matched._id, userId: getPrimaryAssigneeId(matched) });
                 }
               } else {
                 await CommunicationLog.create({
@@ -631,10 +634,10 @@ router.post('/viber', rawJson, verifyViberSignature, async (req, res) => {
 
         const Doctor = require('../models/Doctor');
         const doctor = await Doctor.findOne({ viberId: senderId }).lean();
-        if (doctor && doctor.assignedTo) {
+        if (doctor && getPrimaryAssigneeId(doctor)) {
           await CommunicationLog.create({
             doctor: doctor._id,
-            user: doctor.assignedTo,
+            user: getPrimaryAssigneeId(doctor),
             channel: 'VIBER',
             direction: 'inbound',
             source: 'api',
@@ -643,7 +646,7 @@ router.post('/viber', rawJson, verifyViberSignature, async (req, res) => {
             deliveryStatus: 'delivered',
             contactedAt: new Date(),
           });
-          await tryAutoReply({ channel: 'VIBER', contactId: senderId, doctorId: doctor._id, userId: doctor.assignedTo });
+          await tryAutoReply({ channel: 'VIBER', contactId: senderId, doctorId: doctor._id, userId: getPrimaryAssigneeId(doctor) });
         } else {
           // Unknown sender — try AI matching using Viber sender name from body
           const senderName = body.sender.name || senderId;
@@ -659,7 +662,7 @@ router.post('/viber', rawJson, verifyViberSignature, async (req, res) => {
             if (matched) {
               await CommunicationLog.create({
                 doctor: matched._id,
-                user: matched.assignedTo,
+                user: getPrimaryAssigneeId(matched),
                 channel: 'VIBER',
                 direction: 'inbound',
                 source: 'api',
@@ -672,7 +675,7 @@ router.post('/viber', rawJson, verifyViberSignature, async (req, res) => {
                 senderProfilePic,
                 aiMatchStatus: 'auto_assigned',
               });
-              await tryAutoReply({ channel: 'VIBER', contactId: senderId, doctorId: matched._id, userId: matched.assignedTo });
+              await tryAutoReply({ channel: 'VIBER', contactId: senderId, doctorId: matched._id, userId: getPrimaryAssigneeId(matched) });
             }
           } else {
             await CommunicationLog.create({
