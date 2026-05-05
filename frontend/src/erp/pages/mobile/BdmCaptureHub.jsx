@@ -500,16 +500,6 @@ export default function BdmCaptureHub() {
     }
   }, [createCapture, loadData]);
 
-  const STATUS_COLORS = {
-    PENDING_PROXY: 'bg-amber-100 text-amber-700',
-    IN_PROGRESS: 'bg-blue-100 text-blue-700',
-    PROCESSED: 'bg-green-100 text-green-700',
-    AWAITING_BDM_REVIEW: 'bg-purple-100 text-purple-700',
-    ACKNOWLEDGED: 'bg-gray-100 text-gray-600',
-    DISPUTED: 'bg-red-100 text-red-700',
-    CANCELLED: 'bg-gray-100 text-gray-400',
-    AUTO_ACKNOWLEDGED: 'bg-gray-100 text-gray-500',
-  };
 
   // Group active workflows by section for the rendered list
   const grouped = SECTIONS.map(s => ({
