@@ -104,6 +104,16 @@ scripts/sync-prod-to-dev.sh
 # Local screenshots stay on disk for inspection but never get staged.
 /*.png
 
+# Migration / merge audit logs — accumulated during apply runs.
+# Precedent: A.5.2 bulk-merge CSVs + G7.A.0 migration JSON shipped accidentally.
+/reports/
+
+# Playwright MCP YAML snapshots that occasionally land at repo root.
+# Real .playwright-mcp/ dir already covered above; these are leakage.
+/grn-*.yml
+/grn-*.yaml
+/cc-*.yml
+
 # Third-party Agent Skills (coreyhaines31/marketingskills, etc.).
 # Restore on a fresh clone with: npx skills experimental_install
 # skills-lock.json IS committed so the install is reproducible.
