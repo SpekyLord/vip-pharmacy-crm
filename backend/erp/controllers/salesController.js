@@ -585,6 +585,13 @@ const getSales = catchAsync(async (req, res) => {
     if (req.query.csi_date_from) filter.csi_date.$gte = new Date(req.query.csi_date_from);
     if (req.query.csi_date_to) filter.csi_date.$lte = new Date(req.query.csi_date_to);
   }
+  if (req.query.csi_search) {
+    const safe = String(req.query.csi_search).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (safe) {
+      const rx = new RegExp(safe, 'i');
+      filter.$or = [{ doc_ref: rx }, { invoice_number: rx }];
+    }
+  }
 
   // Phase 6 — hide reversed rows by default; opt-in via ?include_reversed=true.
   // Reversed rows stay POSTED for audit, but pollute working lists if shown.

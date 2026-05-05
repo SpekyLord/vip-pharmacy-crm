@@ -2850,6 +2850,16 @@ const SEED_DEFAULTS = {
     // FIFO-consumed stock from source) remains admin/finance/president regardless
     // of this row — preserves two-person rule on stock-ownership changes.
     { code: 'INTERNAL_TRANSFER', label: 'Internal Stock Reassignment (cross-BDM warehouse-to-warehouse)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 14 } },
+    // Phase G4.5gg (May 5 2026) — CSI Booklet allocation roster. The Iloilo HQ
+    // booklet management page picks an assignee BDM for each number range. Pre-
+    // G4.5gg the dropdown sourced /erp/people, which 403s for any BDM without
+    // `people` module access — defeating the proxy POV when admin grants the
+    // back-office BDM (e.g. Judy Mae / Jay Ann) `inventory.csi_booklets` so they
+    // can manage allocations on HQ's behalf. The picker now hits /erp/proxy-roster
+    // which is gated only by canProxyEntry (this row + the sub-perm), so adding
+    // 'staff' here surfaces a working dropdown without widening people-module
+    // access. Pairs with VALID_OWNER_ROLES.CSI_BOOKLETS (assignees stay BDM-shaped).
+    { code: 'CSI_BOOKLETS', label: 'CSI Booklet allocation (assign number range to a BDM)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 15 } },
   ],
   // Phase G4.5a follow-up — which roles are valid OWNERS of a proxied record
   // per module. Defaults to BDM-shaped roles (['staff']); admin/
@@ -2892,6 +2902,13 @@ const SEED_DEFAULTS = {
     // commission attribution, and Approval Hub hydration. Used by
     // interCompanyController.createReassignment defense-in-depth gate.
     { code: 'INTERNAL_TRANSFER', label: 'Valid proxy targets — Internal Stock Reassignment', insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 12 } },
+    // Phase G4.5gg (May 5 2026) — CSI Booklet assignees stay BDM-shaped. An
+    // allocation row is owned by `assigned_to`; that BDM sees the numbers on
+    // their /erp/csi-booklets#numbers self-service tab and the auto-mark-used
+    // flow (csiBookletService.markUsedOnSale) keys on it. Letting an admin /
+    // finance / president be the assignee orphans the per-BDM availability
+    // roster (no /my-csi tab for non-BDMs) and breaks the auto-mark-used join.
+    { code: 'CSI_BOOKLETS', label: 'Valid proxy targets — CSI Booklet allocation (assignees)', insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 13 } },
   ],
   // Phase G4.5bb (Apr 29, 2026) — per-clerk Payslip deduction-write roster.
   //
@@ -2974,6 +2991,21 @@ const SEED_DEFAULTS = {
     { code: 'REASSIGN_PRIMARY',      label: 'Reassign primaryAssignee on a merged-survivor MD', insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 5, description: 'Forward-compat for A.5.4 (assignedTo scalar→array flip). Inert until A.5.4 ships.' } },
     { code: 'JOIN_COVERAGE_AUTO',    label: 'Auto-join an MD into a BDM\'s coverage list',     insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 6, description: 'Forward-compat for A.5.4. Inert until A.5.4 ships.' } },
     { code: 'JOIN_COVERAGE_APPROVAL',label: 'Approve a join-coverage request from a BDM',      insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 7, description: 'Forward-compat for A.5.4. Inert until A.5.4 ships.' } },
+  ],
+  // ── Phase G7.A.0 (May 2026) — Product Lifecycle Role gates ──
+  // resolveProductLifecycleRole.js reads metadata.roles for each code with 60s
+  // TTL cache. Codes 1-4 are G7.A.1 (merge tool — forward-compat in G7.A.0).
+  // Codes 5-7 are G7.A.4 (carry-list management — forward-compat in G7.A.0).
+  // Defaults match the inline DEFAULT_* constants in resolveProductLifecycleRole.js.
+  // Subscribers loosen via Control Center → Lookup Tables → PRODUCT_LIFECYCLE_ROLES.
+  PRODUCT_LIFECYCLE_ROLES: [
+    { code: 'VIEW_MERGE_TOOL',    label: 'View Product Merge Tool + history',                       insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 1, description: 'Lists duplicate canonical-key product groups + rollback queue. Read-only.' } },
+    { code: 'EXECUTE_MERGE',      label: 'Execute Product merge (cascade winner ← loser)',          insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 2, description: 'Re-points 20+ FK references across ERP collections (InventoryLedger, SalesLine, GRN, PO, etc.). Soft-deletes loser; rollback available 30 days.' } },
+    { code: 'ROLLBACK_MERGE',     label: 'Rollback an APPLIED product merge within 30-day grace',   insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 3, description: 'Restores loser + re-points cascaded FKs back. Audit-logged with rollback reason.' } },
+    { code: 'HARD_DELETE_MERGED', label: 'Hard-delete merged products (bypass 30-day grace)',       insert_only_metadata: true, metadata: { roles: ['president'], sort_order: 4, description: 'Manual override of the daily cron purge. President-only by default — destroys rollback option immediately.' } },
+    { code: 'CARRY_GRANT',        label: 'Grant entity carry on a product',                          insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 5, description: 'Authorizes an entity to transact a product (G7.A.4 carry-list manager). Forward-compat in G7.A.0.' } },
+    { code: 'CARRY_REVOKE',       label: 'Revoke entity carry on a product',                         insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 6, description: 'Suspends an entity\'s carry — historical inventory remains; new transactions blocked. Forward-compat in G7.A.0.' } },
+    { code: 'PRICE_CHANGE',       label: 'Change selling/purchase price on entity carry row',        insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 7, description: 'Per-entity pricing override. Wider than CARRY_* (admin + finance) — finance owns pricing governance.' } },
   ],
   // ── Phase VIP-1.H (Apr 2026) — SC/PWD Sales Book + BIR Sales Book exports ──
   // scpwdAccess.js reads metadata.roles for each code with 60s TTL cache.

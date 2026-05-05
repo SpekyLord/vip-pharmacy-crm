@@ -22,6 +22,14 @@ const erpAuditLogSchema = new mongoose.Schema({
     // CSI traces, batch uploads, masterdata CREATE/UPDATE/DELETE and backfill runs
     // all surface properly. AUTO_JOURNAL_FAILURE reserved for the upcoming Phase 36
     // focused auto-journal alert channel.
+    // May 05 2026: added PROXY_CREATE / PROXY_UPDATE (Phase G4.5a proxy-entry
+    // audit trail — emitted by sales/expense/inventory/collection/hospitalPo
+    // controllers when editor != row owner) and PRICE_CREATE / PRICE_CANCEL /
+    // PO_CANCEL (Hospital Contract Pricing + Hospital PO). Same silent-swallow
+    // class — most callers wrap the .logChange in .catch(), but salesController
+    // updateSale's PROXY_UPDATE call is unwrapped, which made every proxy edit
+    // 400 after sale.save() had already committed (audit error bubbled up via
+    // catchAsync), leaving the DB updated and the UI saying "save failed."
     enum: [
       'SALES_EDIT', 'PRICE_CHANGE', 'ITEM_CHANGE', 'DELETION', 'REOPEN',
       'STATUS_CHANGE', 'PRESIDENT_REVERSAL',
@@ -29,6 +37,8 @@ const erpAuditLogSchema = new mongoose.Schema({
       'LEDGER_ERROR', 'AUTO_JOURNAL_FAILURE',
       'CSI_TRACE', 'BATCH_UPLOAD_ON_BEHALF',
       'CREATE', 'UPDATE', 'DELETE', 'BACKFILL',
+      'PROXY_CREATE', 'PROXY_UPDATE',
+      'PRICE_CREATE', 'PRICE_CANCEL', 'PO_CANCEL',
     ],
     required: true
   },

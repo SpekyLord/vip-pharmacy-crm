@@ -1,0 +1,29 @@
+- generic [ref=e1370]:
+  - button "Toggle theme" [ref=e1371] [cursor=pointer]:
+    - img [ref=e1372]
+  - generic [ref=e1374]:
+    - generic [ref=e1375]:
+      - img "CIP" [ref=e1377]
+      - heading "Welcome!" [level=1] [ref=e1378]
+      - generic [ref=e1379]: Sign in to continue to VIP
+    - generic [ref=e1380]:
+      - generic [ref=e1381]:
+        - generic [ref=e1382]: Email
+        - textbox "Email" [ref=e1383]:
+          - /placeholder: Enter your email
+          - text: yourpartner@viosintegrated.net
+      - generic [ref=e1384]:
+        - generic [ref=e1385]: Password
+        - generic [ref=e1386]:
+          - textbox "Password" [ref=e1387]:
+            - /placeholder: Enter your password
+            - text: DevPass123!@#
+          - button "Show password" [ref=e1388] [cursor=pointer]:
+            - img [ref=e1389]
+      - generic [ref=e1392]:
+        - generic [ref=e1393]:
+          - checkbox "Remember me" [ref=e1394]
+          - generic [ref=e1395]: Remember me
+        - link "Forgot password?" [ref=e1396] [cursor=pointer]:
+          - /url: /forgot-password
+      - button "Log In" [ref=e1397] [cursor=pointer]

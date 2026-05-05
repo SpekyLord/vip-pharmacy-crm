@@ -4,6 +4,7 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import Pagination from '../../components/common/Pagination';
 import { useAuth } from '../../hooks/useAuth';
+import { useDebounce } from '../../hooks/useDebounce';
 import { ROLES, ROLE_SETS } from '../../constants/roles';
 import useSales from '../hooks/useSales';
 import useEntities from '../hooks/useEntities';
@@ -96,7 +97,7 @@ const pageStyles = `
 
   .filter-bar {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 10px;
     margin-bottom: 0;
     align-items: center;
@@ -231,6 +232,8 @@ export default function SalesList() {
   const [data, setData] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, pages: 0 });
   const [filters, setFilters] = useState({ status: '', csi_date_from: '', csi_date_to: '', source: '' });
+  const [csiSearch, setCsiSearch] = useState('');
+  const debouncedCsiSearch = useDebounce(csiSearch, 300);
   const [selectedSale, setSelectedSale] = useState(null);
   const [loading, setLoading] = useState(false);
   const [reverseTarget, setReverseTarget] = useState(null);
@@ -251,12 +254,13 @@ export default function SalesList() {
       if (filters.csi_date_from) params.csi_date_from = filters.csi_date_from;
       if (filters.csi_date_to) params.csi_date_to = filters.csi_date_to;
       if (filters.source) params.source = filters.source;
+      if (debouncedCsiSearch.trim()) params.csi_search = debouncedCsiSearch.trim();
 
       const res = await sales.getSales(params);
       if (res?.data) setData(res.data);
       if (res?.pagination) setPagination(res.pagination);
     } catch (err) { showError(err, 'Could not load sales'); } finally { setLoading(false); }
-  }, [filters]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filters, debouncedCsiSearch]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadSales(); }, [loadSales]);
 
@@ -479,6 +483,13 @@ export default function SalesList() {
                 </SelectField>
                 <input type="date" value={filters.csi_date_from} onChange={e => handleFilterChange('csi_date_from', e.target.value)} placeholder="From" />
                 <input type="date" value={filters.csi_date_to} onChange={e => handleFilterChange('csi_date_to', e.target.value)} placeholder="To" />
+                <input
+                  type="search"
+                  value={csiSearch}
+                  onChange={e => setCsiSearch(e.target.value)}
+                  placeholder="Search CSI #..."
+                  aria-label="Search by CSI number"
+                />
               </div>
             </div>
 

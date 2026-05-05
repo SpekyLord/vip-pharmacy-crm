@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
+import useWorkingEntity from '../../hooks/useWorkingEntity';
 import { ROLES, ROLE_SETS } from '../../constants/roles';
 import useExpenses from '../hooks/useExpenses';
 import useSettings from '../hooks/useSettings';
@@ -135,6 +136,12 @@ function displayDate(isoDate) {
 
 export default function Smer() {
   const { user } = useAuth();
+  // Working entity from the navbar entity switcher (X-Entity-Id header). The
+  // BDM dropdown and SMER list must refetch when this changes — otherwise a
+  // privileged/proxy caller who switches to MG-and-CO still sees only the
+  // BDMs from their primary entity, blocking proxy file-on-behalf for the
+  // target entity (May 5 2026 follow-up to G4.5f / G4.5ff).
+  const { workingEntityId } = useWorkingEntity();
   const isPrivileged = ROLE_SETS.MANAGEMENT.includes(user?.role); // president/admin/finance
   const isBdm = user?.role === ROLES.CONTRACTOR;
   const { getBdmsByEntity } = useTransfers();
@@ -263,15 +270,20 @@ export default function Smer() {
       const res = await getSmerList(params);
       setSmers(res?.data || []);
     } catch (err) { console.error('[SMER]', err.message); showError(err, 'Could not load SMER list'); }
-  }, [period, cycle, selectedBdmId, isPrivileged]); // eslint-disable-line react-hooks/exhaustive-deps
+    // workingEntityId in the dep set so the list refetches when the navbar
+    // entity switcher fires; backend scopes by req.entityId from X-Entity-Id.
+  }, [period, cycle, selectedBdmId, isPrivileged, workingEntityId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadSmers(); }, [loadSmers]);
 
   // Phase G4.5f — load BDM options for privileged viewers AND proxy-eligible
   // eBDMs. Plain BDMs without proxy still self-scope and skip this fetch.
+  // Source the entity from the navbar entity switcher (workingEntityId) so a
+  // proxy caller who switches to MG-and-CO sees MG-and-CO BDMs in the picker.
+  // Falls back to user's primary entity for callers that haven't switched yet.
   useEffect(() => {
     if (!isPrivileged && !canProxySmer) return;
-    const eid = user?.entity_id || user?.entity_ids?.[0];
+    const eid = workingEntityId || user?.entity_id || user?.entity_ids?.[0];
     if (!eid) return;
     (async () => {
       try {
@@ -279,7 +291,14 @@ export default function Smer() {
         setBdmOptions(r?.data || []);
       } catch (err) { console.error('[SMER] load BDMs:', err.message); }
     })();
-  }, [isPrivileged, canProxySmer, user?.entity_id, user?.entity_ids]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isPrivileged, canProxySmer, workingEntityId, user?.entity_id, user?.entity_ids]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reset the BDM picker when the working entity changes — the previous
+  // selection is for a different entity and won't appear in the new BDM list.
+  // BDMs default back to self; privileged users to empty (must pick again).
+  useEffect(() => {
+    setSelectedBdmId(isBdm ? (user?._id || '') : '');
+  }, [workingEntityId, isBdm, user?._id]);
 
   // Phase G4.5f — clear the cycle-level instruction tag whenever the proxy
   // target changes. Avoids carrying the tag from one BDM's submit into another

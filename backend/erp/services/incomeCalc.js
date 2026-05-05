@@ -424,11 +424,20 @@ async function projectIncome(entityId, bdmId, period, cycle) {
   ]);
   const personalGas = Math.round((gasAgg[0]?.total_personal_gas || 0) * 100) / 100;
 
-  // 6. Pending deduction schedules
+  // 6. Pending deduction schedules — must mirror generateIncomeReport's target_cycle
+  // gate (line 162-172). Without this, a one-time deduction created with
+  // target_cycle=C2 leaks into the C1 projection of the same period (the BDM
+  // sees the deduction in BOTH cycles even though generation correctly skips
+  // the wrong cycle). Installment plans with no target_cycle (legacy) keep their
+  // current behavior — appear in every cycle of the scheduled period.
   const schedules = await DeductionSchedule.find({
     entity_id: new mongoose.Types.ObjectId(entityId),
     bdm_id: new mongoose.Types.ObjectId(bdmId),
     status: 'ACTIVE',
+    $or: [
+      { target_cycle: cycle },
+      { target_cycle: { $exists: false } }
+    ],
     installments: { $elemMatch: { period, status: { $in: ['PENDING', 'INJECTED'] } } }
   }).lean();
   let scheduleAmount = 0, scheduleCount = 0;
