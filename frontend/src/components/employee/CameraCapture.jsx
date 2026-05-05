@@ -345,9 +345,40 @@ const dataUrlToBlob = (dataUrl) => {
  *        and the `photoRef` is added to each emitted entry. Required for
  *        the SW's multipart-replay path. Online callers (NewVisitPage)
  *        omit this prop and continue using the existing data-URL contract.
+ * @param {Array} [props.initialPhotos] - Phase O: when VisitLogger restores
+ *        an offline draft, it hydrates {data, photoRef, source} entries
+ *        from offlineStore. Without seeding CameraCapture's internal photos
+ *        state, the thumbnail grid shows empty even though the parent
+ *        knows photos exist — so Submit was attempting to re-capture every
+ *        time. Passing initialPhotos lets the child show the restored
+ *        thumbnails immediately and lets the BDM remove individual photos
+ *        from a draft. Used only on first mount; subsequent prop changes
+ *        are ignored to avoid clobbering user-captured photos.
  */
-const CameraCapture = ({ onCapture, maxPhotos = 5, draftId }) => {
-  const [photos, setPhotos] = useState([]);
+const CameraCapture = ({ onCapture, maxPhotos = 5, draftId, initialPhotos }) => {
+  // Lazy initializer covers the synchronous case (online flow seeds initialPhotos
+  // before mount). The useEffect below covers the async case (offline draft
+  // restore — VisitLogger fetches drafts in a useEffect after mount, so
+  // initialPhotos transitions [] → [restored...] one tick later).
+  const [photos, setPhotos] = useState(() => (
+    Array.isArray(initialPhotos) && initialPhotos.length > 0 ? initialPhotos : []
+  ));
+  // Phase O — seed from late-arriving initialPhotos exactly once. Guarded
+  // by photos.length === 0 so user-captured photos can't be clobbered when
+  // the parent's restoration callback fires after the BDM already started
+  // taking new photos. Tracked by a ref so the seed is one-shot per mount.
+  const initialSeededRef = useRef(false);
+  useEffect(() => {
+    if (initialSeededRef.current) return;
+    if (photos.length > 0) {
+      initialSeededRef.current = true; // user already captured — never re-seed
+      return;
+    }
+    if (Array.isArray(initialPhotos) && initialPhotos.length > 0) {
+      setPhotos(initialPhotos);
+      initialSeededRef.current = true;
+    }
+  }, [initialPhotos, photos.length]);
   const [isCapturing, setIsCapturing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);

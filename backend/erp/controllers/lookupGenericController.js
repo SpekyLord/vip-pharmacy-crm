@@ -1053,7 +1053,13 @@ const SEED_DEFAULTS = {
   ENTITY_STATUS: ['ACTIVE', 'INACTIVE'],
   VISIT_TYPE: ['regular', 'follow-up', 'emergency'],
   PHOTO_SOURCE: ['camera', 'gallery', 'clipboard'],
-  PHOTO_FLAG: ['date_mismatch', 'duplicate_photo'],
+  // Phase O (May 2026) — extended PHOTO_FLAG codes:
+  //   date_mismatch        — photo's capturedAt is on a different calendar day than visitDate
+  //   duplicate_photo      — same photo hash already used in another visit (cross-BDM cross-doctor)
+  //   no_exif_timestamp    — server-side EXIF parse found no DateTimeOriginal (Phase O)
+  //   gps_in_photo         — positive signal: EXIF GPS present (Phase O)
+  //   late_log_cross_week  — EXIF date is from a previous ISO week (Phase O)
+  PHOTO_FLAG: ['date_mismatch', 'duplicate_photo', 'no_exif_timestamp', 'gps_in_photo', 'late_log_cross_week'],
   // Phase G4.5f (Apr 23, 2026) — added 'PERDIEM_SUMMARY' (proxy-posted SMER receipt)
   // and 'PERDIEM_OVERRIDE_DECISION' (Hub decision receipt for proxied per-diem
   // overrides). Both fire as best-effort, must_acknowledge=false courtesy
@@ -2508,6 +2514,35 @@ const SEED_DEFAULTS = {
   //     2-session BDM whose averages are just noise).
   CLM_PERFORMANCE_THRESHOLDS: [
     { code: 'DEFAULT', label: 'CLM Pitch Performance — dwell + conversion thresholds', insert_only_metadata: true, metadata: { min_avg_dwell_seconds_per_slide: 10, target_avg_session_minutes: 8, target_conversion_rate_pct: 30, min_slides_viewed: 4, flag_below_total_sessions: 5 } },
+  ],
+
+  // Phase O (May 2026) — Visit photo trust posture. Powers the server-side
+  // EXIF + screenshot guard in middleware/upload.js processVisitPhotos and
+  // the late-log policy in visitController.createVisit. Subscribers tune
+  // per-entity via Control Center → Lookup Tables → VISIT_PHOTO_VALIDATION_RULES
+  // — no code deploy needed when a pharmacy decides to relax/tighten its
+  // fraud posture (Rule #3 + Rule #19).
+  // insert_only_metadata: true → admin tweaks survive future re-seeds.
+  //
+  //   - late_log_max_days_old: 14 — photos with EXIF DateTimeOriginal older
+  //     than this are hard-blocked (the visit week + a recovery grace).
+  //     Set lower (e.g. 7) for stricter posture; admins handle older
+  //     entries via manual backfill.
+  //   - cross_week_soft_flag: true — flag visits whose photos came from
+  //     last week without blocking; admin reviewer sees the signal.
+  //   - screenshot_block_enabled: true — master switch for the 422
+  //     screenshot redirect. Set false during initial rollout to keep the
+  //     audit signal but not the redirect.
+  //   - screenshot_redirect_path: '/bdm/comm-log' — where the 422 sends
+  //     the BDM. Lookup-driven so subscribers with a relocated CommLog
+  //     route don't need a code change.
+  //   - require_exif_for_camera_source: false — when true, photos
+  //     uploaded with source='camera' MUST have EXIF (otherwise 400).
+  //     Default off because some Android camera apps strip EXIF for
+  //     privacy and the BDM hasn't done anything wrong; the 'no_exif_timestamp'
+  //     soft flag still surfaces the signal for admin.
+  VISIT_PHOTO_VALIDATION_RULES: [
+    { code: 'DEFAULT', label: 'Visit Photo Validation — EXIF trust + late-log + screenshot block', insert_only_metadata: true, metadata: { late_log_max_days_old: 14, cross_week_soft_flag: true, screenshot_block_enabled: true, screenshot_redirect_path: '/bdm/comm-log', require_exif_for_camera_source: false } },
   ],
 
   // Phase R2 — Sales Discount config. Lookup-driven so admin can cap how

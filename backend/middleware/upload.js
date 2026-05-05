@@ -14,6 +14,11 @@ const path = require('path');
 const crypto = require('crypto');
 const sharp = require('sharp');
 const { uploadVisitPhoto, uploadCommScreenshot, uploadProductImage, uploadAvatar } = require('../config/s3');
+// Phase O — server-side EXIF + screenshot detection so the visit fraud
+// surface no longer trusts client-supplied capturedAt. processVisitPhotos
+// extracts metadata BEFORE compression so EXIF survives sharp's re-encode.
+const { extractMetadata } = require('../utils/photoMetadata');
+const visitPhotoValidation = require('../utils/visitPhotoValidation');
 
 /**
  * Compress an image buffer using sharp.
@@ -153,6 +158,22 @@ const handleUploadError = (err, req, res, next) => {
  * Middleware to upload visit photos to S3
  * Use after uploadMultiple('photos')
  * Computes MD5 hash of each photo for duplicate detection
+ *
+ * Phase O (May 2026) — EXIF Trust + Screenshot Block
+ * --------------------------------------------------
+ * Before S3 upload, extract EXIF + dimensions from the ORIGINAL buffer
+ * (sharp's re-encode strips EXIF, so we must read first). Two outcomes:
+ *
+ *   1. Screenshot detected (no EXIF date/GPS + phone-screen-like dims)
+ *      → 422 with redirect payload pointing at /bdm/comm-log. Lookup-driven
+ *      via VISIT_PHOTO_VALIDATION_RULES.screenshot_block_enabled — admin
+ *      can disable per-entity during BDM rollout.
+ *
+ *   2. Otherwise, attach the trusted server-side capturedAt + GPS + dims
+ *      to req.uploadedPhotos[]. The controller uses these to derive
+ *      Visit.visitDate (auto-anchored to the earliest photo) and run the
+ *      late-log policy. Client-supplied photoMetadata.capturedAt is ignored
+ *      when serverMetadata.capturedAt is present.
  */
 const processVisitPhotos = async (req, res, next) => {
   try {
@@ -163,10 +184,37 @@ const processVisitPhotos = async (req, res, next) => {
       });
     }
 
+    // Phase O — Lookup-driven thresholds, scoped to current entity if known.
+    // Falls back to inline DEFAULTS if Lookup row is missing or DB is offline,
+    // so the upload never hard-fails on a config outage.
+    const entityId = req.entity_id || req.user?.entity_id || null;
+    const photoRules = await visitPhotoValidation.getThresholds(entityId);
+
     const uploadedPhotos = [];
-    const now = new Date();
 
     for (const file of req.files) {
+      // Phase O — Extract EXIF + dimensions from the ORIGINAL buffer first.
+      // Sharp's JPEG re-encode strips EXIF, so this MUST happen before any
+      // compress step. Failure is non-fatal: the helper returns null fields,
+      // controller treats them as "no EXIF".
+      const serverMeta = await extractMetadata(file.buffer);
+
+      // Phase O — Screenshot hard-block. Returns 422 with a redirect payload
+      // so VisitLogger can jump the BDM to /bdm/comm-log without losing the
+      // doctor selection. The 422 covers ALL photos in the upload: if even
+      // ONE is a screenshot, the whole submit is rejected (mixed-screenshot
+      // visits would be unsafe to partial-accept — admin can't reason about
+      // them later).
+      if (photoRules.screenshot_block_enabled && serverMeta.isLikelyScreenshot) {
+        return res.status(422).json({
+          success: false,
+          code: 'SCREENSHOT_DETECTED',
+          message: 'This looks like a screenshot, not a visit photo. Use Comm Log to record Messenger / Viber / chat interactions instead.',
+          redirect: photoRules.screenshot_redirect_path,
+          rejectedFile: file.originalname,
+        });
+      }
+
       // Only compress if file exceeds 500 KB — avoids CPU burn on small photos
       let compressed, compressedMime;
       if (file.size > 500 * 1024) {
@@ -188,16 +236,35 @@ const processVisitPhotos = async (req, res, next) => {
       uploadedPhotos.push({
         url: result.url,
         key: result.key,
-        capturedAt: now,
+        // Phase O — Trust server-side EXIF over client claims. Falls through
+        // to upload time if EXIF is absent (handled in controller's
+        // resolveAggregateVisitDate). The capturedAt field below is
+        // INTENTIONALLY null when EXIF is missing so the controller can
+        // distinguish "trust this date" from "no signal, fall back".
+        capturedAt: serverMeta.capturedAt, // null when no EXIF; controller decides
         originalName: file.originalname,
         size: compressed.length,
         mimetype: compressedMime,
         hash,
+        // Phase O — Forward serverMeta to the controller so it can stamp
+        // photo-level flags (no_exif_timestamp, gps_present_in_photo, etc).
+        // Kept under a separate key so existing readers of req.uploadedPhotos
+        // that only care about {url, hash, capturedAt} don't see the extra data.
+        serverMeta: {
+          exifPresent: serverMeta.exifPresent,
+          exifGpsPresent: serverMeta.exifGpsPresent,
+          gps: serverMeta.gps,
+          dimensions: serverMeta.dimensions,
+          isLikelyScreenshot: serverMeta.isLikelyScreenshot, // false here (we'd have 422'd above)
+        },
       });
     }
 
     // Attach uploaded photos to request for controller
     req.uploadedPhotos = uploadedPhotos;
+    // Phase O — Forward thresholds so the controller can make late-log
+    // policy decisions without re-fetching the lookup.
+    req.photoValidationRules = photoRules;
     next();
   } catch (error) {
     console.error('S3 upload error:', error);

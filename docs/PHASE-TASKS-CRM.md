@@ -1601,6 +1601,60 @@ The CPT Excel re-import (Phase C) is the bulk-load mechanism for refreshing a BD
 
 ---
 
+## Phase O — Visit Photo Trust + Screenshot Block + Late-Log Cutoff (May 05, 2026, SHIPPED)
+
+### Status: SHIPPED + smoke-ratified. See [CLAUDE.md note 13d](../CLAUDE.md) for the full contract.
+
+### Why
+
+The Jake Montero May 4 case (one Messenger screenshot, two different VIP Clients on the same minute, identical timestamp) proved the visit-photo fraud surface was open in two ways: (1) BDMs could back-date by setting `meta.capturedAt` to whatever they wanted (server trusted it blindly), and (2) Messenger screenshots were treated the same as in-person selfies. The 17-CHANGE_LOG had no item for this — it surfaced through real per-diem audit work, not pre-shipped requirements.
+
+### What shipped
+
+| File | Change |
+|---|---|
+| [backend/utils/photoMetadata.js](../backend/utils/photoMetadata.js) (NEW) | Server-side EXIF extraction via `exifr` (^7.1.3, new dep) + sharp dimensions; screenshot detection via no-EXIF + no-GPS + aspect-ratio + phone-resolution trifecta; `resolveAggregateVisitDate` picks earliest EXIF DateTimeOriginal across the upload set. |
+| [backend/utils/visitPhotoValidation.js](../backend/utils/visitPhotoValidation.js) (NEW) | `getThresholds(entityId)` reads `VISIT_PHOTO_VALIDATION_RULES` Lookup with 60s TTL cache; falls back to inline DEFAULTS on miss; `invalidate()` hook for admin Lookup edits. Mirrors `clmPerformanceThresholds.js`. |
+| [backend/middleware/upload.js](../backend/middleware/upload.js) | `processVisitPhotos` extracts EXIF from `file.buffer` BEFORE sharp re-encode; returns 422 `{ code: 'SCREENSHOT_DETECTED', redirect: ... }` when screenshot detected; attaches `serverMeta` + `photoValidationRules` to `req` for the controller. |
+| [backend/controllers/visitController.js](../backend/controllers/visitController.js) | `createVisit` derives `visitDate` from earliest server-extracted EXIF (NOT from BDM-supplied body); enforces 14-day late-log cutoff; rejects future-dated photos (clock skew); emits 3 new signal flags (`no_exif_timestamp`, `gps_in_photo`, `late_log_cross_week`). |
+| [backend/erp/controllers/lookupGenericController.js](../backend/erp/controllers/lookupGenericController.js) | Extended `PHOTO_FLAG` seed with 3 new codes; added `VISIT_PHOTO_VALIDATION_RULES` category with 5 metadata keys (`insert_only_metadata: true`). |
+| [backend/erp/services/smerCrmBridge.js](../backend/erp/services/smerCrmBridge.js) | **Regression fix**: replaced `$size === 0` photoFlags filter with `$setIntersection` against constant `PERDIEM_DISQUALIFYING_FLAGS = ['date_mismatch', 'duplicate_photo']`. Phase O signal flags no longer kill per-diem. Future-Phase work: lift constant to a Lookup category. |
+| [frontend/src/components/employee/CameraCapture.jsx](../frontend/src/components/employee/CameraCapture.jsx) | Accepts `initialPhotos` prop; useEffect seeds it on mount with `initialSeededRef` guard so user-captured photos can't be clobbered when parent's async restoration callback fires after capture started. Closes the offline-draft restoration UI gap (CLAUDE.md note 13b follow-up b). |
+| [frontend/src/components/employee/VisitLogger.jsx](../frontend/src/components/employee/VisitLogger.jsx) | Passes `initialPhotos={photos}` to CameraCapture; handles 422 `SCREENSHOT_DETECTED` → navigate to `/bdm/comm-log?doctorId=<X>` with doctor pre-selected; handles 400 `VISIT_PHOTO_TOO_OLD` / `VISIT_PHOTO_FUTURE_DATED` / `CAMERA_PHOTO_MISSING_EXIF` with actionable toasts. |
+| [frontend/src/components/common/PageGuide.jsx](../frontend/src/components/common/PageGuide.jsx) | Updated `'new-visit'` entry per Rule #1 — mentions GPS Map Camera, EXIF-derived visitDate, 14-day cutoff, screenshot-to-Comm-Log redirect. |
+| [backend/scripts/healthcheckPhaseOPhotoTrust.js](../backend/scripts/healthcheckPhaseOPhotoTrust.js) (NEW) | 10-section static contract verifier (9 Phase O sections + 1 SMER bridge regression guard). |
+| [backend/package.json](../backend/package.json) | Added `exifr@^7.1.3`. |
+
+### Verification artefacts
+
+- **Healthcheck**: `node backend/scripts/healthcheckPhaseOPhotoTrust.js` → **10/10 PASS**.
+- **Vite build**: ✓ 14.17s, no warnings.
+- **Backend syntax check**: `node -c` clean on all 5 modified backend files.
+- **Helper unit smoke** (one-off temp script, deleted after run): 7/7 assertions pass — EXIF extraction from synthetic JPEG, screenshot detection on 1080×2400 PNG, NOT-screenshot on 1920×1080 16:9, `resolveAggregateVisitDate` earliest-wins + fallback, `daysBetween` arithmetic.
+- **Live API smoke as Mae Navarro on dev cluster** (browser_evaluate from Playwright session):
+  - Screenshot 422: `POST /api/visits` with 1080×2400 PNG → HTTP 422, `{ code: 'SCREENSHOT_DETECTED', redirect: '/bdm/comm-log', message: 'This looks like a screenshot...' }`
+  - Camera 201: `POST /api/visits` with 1920×1080 JPEG → HTTP 201, `photoFlags: ['no_exif_timestamp']` (correct: canvas-output JPEGs have no EXIF), visitDate auto-derived from upload time (fallback because no EXIF)
+  - SMER bridge regression check: `GET /api/erp/expenses/smer/crm-md-counts?period=2026-05&cycle=C1` → May 5 entry shows `md_count: 1, flagged_excluded: 0` confirming `no_exif_timestamp` does NOT kill per-diem post-fix
+- **Live UI smoke**: PageGuide banner on `/bdm/visit/new` renders the Phase O text (verified via `browser_evaluate` after hard reload — Vite HMR needed a manual refresh to pick up the PageGuide.jsx edit). Screenshot saved to `phase-o-new-visit-banner.png` at repo root.
+
+### Common gotchas
+
+- **`exifr` is a NEW backend dependency** (^7.1.3, ~100KB pure JS, no native bindings). Survives prod deploy via `npm install` on AWS Lightsail; no extra build steps.
+- **EXIF stripped → fallback to upload time, NOT rejection** — by default. Subscribers who want stricter posture flip `VISIT_PHOTO_VALIDATION_RULES.require_exif_for_camera_source: true` via Control Center → Lookup Tables (no code deploy).
+- **Canvas-output photos have no EXIF**. The in-app `CameraCapture` uses canvas drawImage from getUserMedia → toDataURL — EXIF doesn't exist for those bytes. Every in-app camera capture post-Phase-O carries the `no_exif_timestamp` signal flag. The SMER bridge whitelist is what keeps these countable for per-diem.
+- **Screenshot detection is conservative** — three signals must all fire (no EXIF date AND no EXIF GPS AND aspect ratio ≥1.85 AND width-or-height matches a known phone resolution). 16:9 photos (1920×1080, 1280×720) below the 1.85 floor pass through. Real-world fraudsters paste Messenger screenshots which check all three boxes.
+- **The Vite HMR did not auto-pick up the PageGuide.jsx edit** during the live smoke — required a hard reload via `window.location.reload(true)` to surface the new banner copy. Production builds (where Vite output is static) are unaffected.
+- **Test residue on dev**: one smoke visit row remains (`69f9d7ed0498a87019eb239d` — Mae→Amador Aguirre, 2026-05-05). Cancel route is admin-gated (`DELETE /api/visits/:id`); the row is otherwise legitimate test data and exercises the `no_exif_timestamp` flag end-to-end. Drop via admin login or Mongo shell if it pollutes weekly-cap testing later.
+
+### Open items
+
+- Promote `PERDIEM_DISQUALIFYING_FLAGS` constant to a Lookup category (subscribers tune which photo flags disqualify per-diem without a code deploy).
+- OCR fallback for burned-in pixel metadata (GPS Map Camera overlay) — only when EXIF is suspicious or missing. Uses existing `tesseract.js` backend dep. Phase O.1 candidate.
+- Mandate GPS Map Camera (or equivalent) as the BDM-onboarding camera app via a `BDM_REQUIRED_CAMERA_APP` lookup + onboarding banner. Policy + UI nudge, no code change. Phase O.2 candidate.
+- Admin-only Visit-date edit + audit-log + period-lock — currently `visitController.js:455` rejects all `visitDate` updates. Phase O.3 candidate if admins ever need post-hoc backfill of pre-Phase-O visits whose timestamp drifted from intent.
+
+---
+
 ## Phase PRG — Program & Support Type Resource Allocation (planned, NOT scoped for current sprint)
 
 ### Status: DEFERRED. Foundation ratified May 05 2026 (CLAUDE.md note 15). Build only when admin signals they want true ROI per program.

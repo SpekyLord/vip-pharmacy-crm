@@ -648,6 +648,56 @@ const VisitLogger = ({ doctor, onSuccess }) => {
     } catch (err) {
       console.error('Failed to log visit:', err);
       console.error('Error response:', err.response?.data);
+
+      // Phase O — Screenshot detected (422 SCREENSHOT_DETECTED). Redirect
+      // BDM to Comm Log so they can record the Messenger / chat interaction
+      // there instead. Doctor selection is preserved via query params so
+      // the BDM doesn't lose their work. Lookup-driven redirect path comes
+      // from the server response (default '/bdm/comm-log').
+      if (err.response?.status === 422 && err.response?.data?.code === 'SCREENSHOT_DETECTED') {
+        const redirectPath = err.response.data.redirect || '/bdm/comm-log';
+        toast.error(
+          err.response.data.message || 'Looks like a screenshot. Use Comm Log for chat / Messenger interactions.',
+          { duration: 8000 }
+        );
+        // Pre-select the doctor on the Comm Log form so the BDM doesn't have
+        // to re-pick. CommLogForm supports preselectedDoctor (already wired).
+        setTimeout(() => {
+          navigate(`${redirectPath}?doctorId=${doctor._id}`);
+        }, 1200); // brief delay so BDM reads the toast
+        return;
+      }
+
+      // Phase O — Photo too old (back-dating fraud guard or genuine late entry
+      // beyond cutoff). Distinct from weekly-cap so the BDM gets actionable copy.
+      if (err.response?.data?.code === 'VISIT_PHOTO_TOO_OLD') {
+        toast.error(
+          err.response.data.message || 'Photo is too old to log as a visit. Contact admin for a manual backfill.',
+          { duration: 8000 }
+        );
+        return;
+      }
+
+      // Phase O — Future-dated photo (camera clock skew). Tells BDM exactly
+      // what to fix on their device.
+      if (err.response?.data?.code === 'VISIT_PHOTO_FUTURE_DATED') {
+        toast.error(
+          err.response.data.message || 'Photo timestamp is in the future. Check your phone\'s date/time settings.',
+          { duration: 8000 }
+        );
+        return;
+      }
+
+      // Phase O — Strict-EXIF posture (only fires when the entity has
+      // VISIT_PHOTO_VALIDATION_RULES.require_exif_for_camera_source: true).
+      if (err.response?.data?.code === 'CAMERA_PHOTO_MISSING_EXIF') {
+        toast.error(
+          err.response.data.message || 'Camera photo missing EXIF. Re-take using GPS Map Camera.',
+          { duration: 8000 }
+        );
+        return;
+      }
+
       // Show detailed validation errors if available
       if (err.response?.data?.errors?.length > 0) {
         const errorMessages = err.response.data.errors.map(e => `${e.field}: ${e.message}`).join(', ');
@@ -791,6 +841,7 @@ const VisitLogger = ({ doctor, onSuccess }) => {
           onCapture={handlePhotosChange}
           maxPhotos={5}
           draftId={draftIdRef.current}
+          initialPhotos={photos}
         />
       </div>
       {/* Visit Details */}

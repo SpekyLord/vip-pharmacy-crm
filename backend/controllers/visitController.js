@@ -17,6 +17,10 @@ const CLMSession = require('../models/CLMSession');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
 const { canVisitDoctor, canVisitDoctorsBatch, getComplianceReport, getMonthYear, getScheduleMatchForVisit } = require('../utils/validateWeeklyVisit');
 const { MANILA_OFFSET_MS, getWeekOfMonth, getCycleNumber, getCycleStartDate, getCycleEndDate } = require('../utils/scheduleCycleUtils');
+// Phase O — server-side EXIF aggregation so visitDate anchors to the
+// earliest photo's DateTimeOriginal, not the BDM's claim. daysBetween is
+// used by the late-log cutoff guard.
+const { resolveAggregateVisitDate, daysBetween } = require('../utils/photoMetadata');
 const { normalizeEngagementTypesQuery } = require('../utils/engagementTypes');
 const { signVisitPhotos } = require('../config/s3');
 const { ROLES, isAdminLike } = require('../constants/roles');
@@ -95,24 +99,9 @@ const createVisit = catchAsync(async (req, res) => {
     });
   }
 
-  const visitDateObj = visitDate ? new Date(visitDate) : new Date();
-
-  // Check if user can visit this doctor (region access, weekly and monthly limits)
-  const visitCheck = await canVisitDoctor(doctorId, req.user, visitDateObj);
-
-  if (!visitCheck.canVisit) {
-    return res.status(400).json({
-      success: false,
-      message: visitCheck.reason,
-      data: {
-        weeklyCount: visitCheck.weeklyCount,
-        monthlyCount: visitCheck.monthlyCount,
-        monthlyLimit: visitCheck.monthlyLimit,
-      },
-    });
-  }
-
-  // Check if photos are uploaded (from middleware)
+  // Check if photos are uploaded (from middleware) — moved BEFORE the
+  // visitDate resolution because Phase O makes visitDate a function of the
+  // photos' EXIF data, not the BDM's claim.
   if (!req.uploadedPhotos || req.uploadedPhotos.length === 0) {
     return res.status(400).json({
       success: false,
@@ -130,12 +119,101 @@ const createVisit = catchAsync(async (req, res) => {
     }
   }
 
+  // Phase O — Resolve canonical visitDate from EXIF.
+  // Priority order:
+  //   1. Earliest serverMeta.capturedAt — server-side EXIF extraction.
+  //      MOST trustworthy (server-parsed from buffer, can't be spoofed).
+  //      In practice this is rarely populated because the frontend
+  //      compressImage (CameraCapture.jsx) canvas-encodes before upload,
+  //      which strips EXIF. Server still tries — covers the case where
+  //      BDMs upload original-buffer photos (e.g. via a future "raw upload"
+  //      path or when frontend compression is bypassed for small files).
+  //   2. Earliest parsedPhotoMeta[i].capturedAt — frontend-claimed EXIF
+  //      (read by exifr in CameraCapture.getExifMetadata before compression
+  //      strips it). Less trustworthy (client-supplied JSON), but it's
+  //      still EXIF anchored to the photo file. Late-log + future-dated
+  //      guards apply identically so the fraud surface is bounded.
+  //   3. BDM-supplied visitDate body field — pre-Phase-O behavior; still
+  //      honored as a fallback when both EXIF sources are missing.
+  //   4. Upload time (now).
+  // This makes Visit.visitDate anchored to the actual photo file, defeating
+  // the back-dating fraud where a BDM logs Wed but uploads Fri.
+  const claimedDate = visitDate ? new Date(visitDate) : new Date();
+  const mergedMetas = req.uploadedPhotos.map((p, i) => ({
+    capturedAt:
+      p.capturedAt
+      || (parsedPhotoMeta[i]?.capturedAt ? new Date(parsedPhotoMeta[i].capturedAt) : null),
+  }));
+  const { visitDate: derivedDate, source: dateSource } = resolveAggregateVisitDate(
+    mergedMetas,
+    claimedDate
+  );
+  const visitDateObj = derivedDate;
+  // Per-photo provenance breakdown — used by the late-log soft flag below
+  // to surface which photos relied on client-claimed EXIF (admin can
+  // double-click to inspect raw photo bytes if a fraud signal accumulates).
+  const dateSourcePerPhoto = req.uploadedPhotos.map((p, i) => {
+    if (p.capturedAt) return 'server-exif';
+    if (parsedPhotoMeta[i]?.capturedAt) return 'frontend-exif';
+    return 'fallback';
+  });
+
+  // Phase O — Late-log policy. Photos older than the lookup-driven cutoff
+  // are hard-blocked (default 14 days). Subscribers tune via Control Center
+  // → VISIT_PHOTO_VALIDATION_RULES.late_log_max_days_old.
+  // Only enforced when the date came from EXIF (not when we fell back to
+  // BDM-supplied or now() — those have no fraud risk re: back-dating).
+  const photoRules = req.photoValidationRules || { late_log_max_days_old: 14, cross_week_soft_flag: true };
+  if (dateSource === 'exif') {
+    const ageDays = daysBetween(visitDateObj, new Date());
+    if (ageDays > photoRules.late_log_max_days_old) {
+      return res.status(400).json({
+        success: false,
+        code: 'VISIT_PHOTO_TOO_OLD',
+        message: `Photo was taken ${Math.round(ageDays)} days ago. Visits must be logged within ${photoRules.late_log_max_days_old} days of the photo. Contact admin to request a manual backfill.`,
+        data: { photoAgeDays: Math.round(ageDays), maxDays: photoRules.late_log_max_days_old },
+      });
+    }
+    // Future-dated photos (camera clock skew) — allow up to 1 day forward.
+    if (ageDays < -1) {
+      return res.status(400).json({
+        success: false,
+        code: 'VISIT_PHOTO_FUTURE_DATED',
+        message: `Photo timestamp is in the future (${Math.abs(Math.round(ageDays))} days ahead). Check your phone's date/time settings.`,
+        data: { photoAgeDays: Math.round(ageDays) },
+      });
+    }
+  }
+
+  // Check if user can visit this doctor (region access, weekly and monthly limits)
+  // Run AFTER visitDateObj is resolved from EXIF so weekly cap reflects the actual
+  // visit week, not the upload week (matters when BDM logs a Friday visit on Monday).
+  const visitCheck = await canVisitDoctor(doctorId, req.user, visitDateObj);
+
+  if (!visitCheck.canVisit) {
+    return res.status(400).json({
+      success: false,
+      message: visitCheck.reason,
+      data: {
+        weeklyCount: visitCheck.weeklyCount,
+        monthlyCount: visitCheck.monthlyCount,
+        monthlyLimit: visitCheck.monthlyLimit,
+      },
+    });
+  }
+
   // Prepare photos array — merge S3 upload result with frontend EXIF metadata
+  // Phase O: server-extracted serverMeta.capturedAt takes precedence over
+  // client-supplied meta.capturedAt; client claim is preserved as a hint
+  // only when EXIF stripping prevented server extraction.
   const photos = req.uploadedPhotos.map((photo, index) => {
     const meta = parsedPhotoMeta[index] || {};
+    const trustedCapturedAt = photo.capturedAt
+      || (meta.capturedAt ? new Date(meta.capturedAt) : null)
+      || new Date();
     return {
       url: photo.url,
-      capturedAt: meta.capturedAt ? new Date(meta.capturedAt) : (photo.capturedAt || new Date()),
+      capturedAt: trustedCapturedAt,
       source: meta.source || 'camera',
       hash: photo.hash,
     };
@@ -161,6 +239,84 @@ const createVisit = catchAsync(async (req, res) => {
           flag: 'date_mismatch',
           photoIndex: index,
           detail: `Photo taken on ${photoDate.toISOString().split('T')[0]}, visit logged for ${visitDateObj.toISOString().split('T')[0]}`,
+        });
+      }
+    }
+  });
+
+  // Phase O — Per-photo flags from server-side EXIF inspection.
+  // 'no_exif_timestamp' = camera/screenshot with no DateTimeOriginal — admin
+  // reviewer should glance at it but the visit still saves (BDM might
+  // legitimately have a privacy-stripping camera app).
+  // 'late_log_cross_week' = EXIF date is from before the current ISO week
+  // but within late_log_max_days_old (which already passed the hard cutoff
+  // above). Surface for admin curiosity, doesn't block.
+  // 'gps_in_photo' = positive signal — EXIF GPS confirms location even when
+  // device GPS at upload time was off. Stored so admin can prefer these
+  // visits in disputes.
+  const enableCrossWeekFlag = photoRules.cross_week_soft_flag !== false;
+  const requireExifForCamera = photoRules.require_exif_for_camera_source === true;
+
+  // Strict-posture early reject — separate pass so we can return cleanly.
+  // forEach callbacks can't short-circuit the parent function.
+  if (requireExifForCamera) {
+    for (let i = 0; i < req.uploadedPhotos.length; i += 1) {
+      const sm = req.uploadedPhotos[i].serverMeta || {};
+      const claimedSource = (parsedPhotoMeta[i]?.source) || 'camera';
+      if (!sm.exifPresent && claimedSource === 'camera') {
+        return res.status(400).json({
+          success: false,
+          code: 'CAMERA_PHOTO_MISSING_EXIF',
+          message: 'A photo claimed to be taken with the camera has no EXIF metadata. Re-take using the in-app camera or GPS Map Camera.',
+          data: { photoIndex: i },
+        });
+      }
+    }
+  }
+
+  req.uploadedPhotos.forEach((upload, index) => {
+    const sm = upload.serverMeta || {};
+    const claimedSource = (parsedPhotoMeta[index]?.source) || 'camera';
+
+    // Phase O.1 — flag only when BOTH server-side AND frontend-claimed EXIF
+    // are missing. Server EXIF is almost always missing post-frontend-
+    // canvas-compression, so checking server-only would flag every visit
+    // (noise). The signal we actually want: "no EXIF date *anywhere* in
+    // the upload pipeline" — which strongly suggests a screenshot or a
+    // hand-crafted image that never had a camera origin.
+    const hasFrontendExif = !!parsedPhotoMeta[index]?.capturedAt;
+    if (!sm.exifPresent && !hasFrontendExif) {
+      if (!photoFlags.includes('no_exif_timestamp')) photoFlags.push('no_exif_timestamp');
+      photoFlagDetails.push({
+        flag: 'no_exif_timestamp',
+        photoIndex: index,
+        detail: `Photo has no EXIF DateTimeOriginal (server-side or client-side; source claimed: ${claimedSource})`,
+      });
+    }
+
+    if (sm.exifGpsPresent && sm.gps) {
+      if (!photoFlags.includes('gps_in_photo')) photoFlags.push('gps_in_photo');
+      photoFlagDetails.push({
+        flag: 'gps_in_photo',
+        photoIndex: index,
+        detail: `EXIF GPS: ${sm.gps.latitude.toFixed(5)}, ${sm.gps.longitude.toFixed(5)}`,
+      });
+    }
+
+    if (enableCrossWeekFlag && dateSource === 'exif' && upload.capturedAt) {
+      const photoTime = new Date(upload.capturedAt).getTime();
+      const ageDays = (Date.now() - photoTime) / 86_400_000;
+      // Photos older than 7 days = at least one full ISO week ago. The hard
+      // cutoff (late_log_max_days_old) already enforced N≤14; cross-week
+      // sits between [7, late_log_max_days_old] inclusive.
+      if (ageDays > 7) {
+        if (!photoFlags.includes('late_log_cross_week')) {
+          photoFlags.push('late_log_cross_week');
+        }
+        photoFlagDetails.push({
+          flag: 'late_log_cross_week',
+          photoIndex: index,
+          detail: `Photo is ${Math.round(ageDays)} days old (logged after the visit week ended)`,
         });
       }
     }
