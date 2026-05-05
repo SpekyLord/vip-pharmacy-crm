@@ -36,8 +36,9 @@ const createLog = catchAsync(async (req, res) => {
       if (!doc) {
         return res.status(404).json({ success: false, message: 'VIP Client not found.' });
       }
-      const assignedTo = doc.assignedTo?._id || doc.assignedTo;
-      if (!assignedTo || assignedTo.toString() !== req.user._id.toString()) {
+      // Phase A.5.4 — assignedTo is an array; shape-agnostic helper.
+      const { isAssignedTo } = require('../utils/assigneeAccess');
+      if (!isAssignedTo(doc, req.user._id)) {
         return res.status(403).json({
           success: false,
           message: 'Access denied. This VIP Client is not assigned to you.',
@@ -357,8 +358,9 @@ const sendMessage = catchAsync(async (req, res) => {
     }
     // BDM access check
     if (!isAdminLike(req.user.role)) {
-      const assignedTo = targetDoc.assignedTo?._id || targetDoc.assignedTo;
-      if (!assignedTo || assignedTo.toString() !== req.user._id.toString()) {
+      // Phase A.5.4 — assignedTo is an array; shape-agnostic helper.
+      const { isAssignedTo } = require('../utils/assigneeAccess');
+      if (!isAssignedTo(targetDoc, req.user._id)) {
         return res.status(403).json({ success: false, message: 'This VIP Client is not assigned to you.' });
       }
     }
@@ -454,7 +456,10 @@ const assignLog = catchAsync(async (req, res) => {
   }
 
   log.doctor = doctorId;
-  log.user = doctor.assignedTo || req.user._id;
+  // Phase A.5.4 — assignedTo is an array; route the log to the primary BDM
+  // (or first if primary is unset) so admin gets a single attribution row.
+  const { getPrimaryAssigneeId } = require('../utils/assigneeAccess');
+  log.user = getPrimaryAssigneeId(doctor) || req.user._id;
   log.pendingAssignment = false;
   log.aiMatchStatus = 'accepted';
   await log.save();

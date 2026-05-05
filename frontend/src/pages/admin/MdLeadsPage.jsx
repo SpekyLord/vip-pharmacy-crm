@@ -33,6 +33,8 @@ import Sidebar from '../../components/common/Sidebar';
 import PageGuide from '../../components/common/PageGuide';
 import doctorService from '../../services/doctorService';
 import { useLookupOptions } from '../../erp/hooks/useLookups';
+// Phase A.5.4 — Doctor.assignedTo is an array; show the canonical owner.
+import { getPrimaryAssigneeName } from '../../utils/assigneeDisplay';
 
 const STATUSES = ['LEAD', 'CONTACTED', 'VISITED', 'PARTNER', 'INACTIVE'];
 
@@ -337,7 +339,7 @@ export default function MdLeadsPage() {
                           </td>
                           <td>{d.lead_source ? (LEAD_SOURCE_LABELS[d.lead_source] || d.lead_source) : '—'}</td>
                           <td>{formatDate(d.createdAt)}</td>
-                          <td>{d.assignedTo?.name || '—'}</td>
+                          <td>{getPrimaryAssigneeName(d) || '—'}</td>
                           <td>{formatDate(d.partner_agreement_date)}</td>
                           <td>
                             <div className="ml-actions-cell">

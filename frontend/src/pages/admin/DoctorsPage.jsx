@@ -20,6 +20,8 @@ import doctorService from '../../services/doctorService';
 import clientService from '../../services/clientService';
 import scheduleService from '../../services/scheduleService';
 import PageGuide from '../../components/common/PageGuide';
+// Phase A.5.4 — Doctor.assignedTo is now an array; pull the canonical owner.
+import { getPrimaryAssigneeId } from '../../utils/assigneeDisplay';
 
 /**
  * Phase A.6 — client-side mirror of backend's generateDefaultDates.
@@ -921,11 +923,12 @@ const DoctorsPage = () => {
   // Phase A.6 — "Schedule" / "Reschedule" action on a VIP row.
   // Decides the mode based on whether the VIP has any upcoming entries.
   const handleScheduleClick = async (doctor) => {
-    if (!doctor?.assignedTo?._id && !doctor?.assignedTo) {
+    // Phase A.5.4 — assignedTo is an array; resolve the canonical owner.
+    const assignedTo = getPrimaryAssigneeId(doctor);
+    if (!assignedTo) {
       toast.error('This VIP Client has no BDM assigned. Assign one before scheduling visits.');
       return;
     }
-    const assignedTo = doctor.assignedTo?._id || doctor.assignedTo;
     try {
       const res = await scheduleService.adminGetUpcoming(doctor._id, assignedTo);
       const entries = res?.data?.entries || [];
