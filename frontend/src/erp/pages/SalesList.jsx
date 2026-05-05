@@ -14,6 +14,17 @@ import PresidentReverseModal from '../components/PresidentReverseModal';
 import RejectionBanner from '../components/RejectionBanner';
 import ScanCSIModal from '../components/ScanCSIModal';
 import ConfirmModal from '../components/ConfirmModal';
+// Phase P1.2 Slice 7-extension Round 2A (May 2026) — per-row picker that
+// pulls a BDM-captured signed/pink/duplicate CSI photo straight into the
+// existing 📷 Attach CSI flow without the proxy re-uploading from gallery.
+// The picker is filtered to the row's own bdm_id so the proxy only sees
+// captures from the BDM who owns the sale, narrowing noise and matching
+// the four-eyes proxy semantics already enforced by getProxyQueue server-
+// side. workflowTypes accept SALES (BDM declared "this is for a sale") and
+// UNCATEGORIZED (Quick Capture path — BDM snapped without classifying;
+// office decides at attach-time). maxSelect=1 because each sale row owns
+// exactly one received-CSI slot — multi-pick would overwrite.
+import PendingCapturesPicker from '../components/PendingCapturesPicker';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -242,6 +253,13 @@ export default function SalesList() {
   // OCR, just upload → returns { csi_photo_url, csi_attachment_id } which we
   // route into PUT /sales/:id/received-csi as the received-CSI proof.
   const [attachReceivedTarget, setAttachReceivedTarget] = useState(null);
+  // Phase P1.2 Slice 7-extension Round 2A — File handed to ScanCSIModal by
+  // the per-row PendingCapturesPicker. When set, the modal opens in
+  // photoOnly mode AND auto-runs handleFile on the File so the proxy doesn't
+  // re-pick the photo from gallery. Cleared on modal close so re-opening
+  // the modal manually returns to the normal Take-Photo / Gallery capture
+  // step.
+  const [attachInitialFile, setAttachInitialFile] = useState(null);
   // Lifecycle confirm state (Submit/Validate/Reopen/Request-Delete/Approve-Delete).
   // Replaces window.confirm() with the styled ERP ConfirmModal. See ConfirmModal.jsx.
   const [confirm, setConfirm] = useState(null);
@@ -606,14 +624,49 @@ export default function SalesList() {
                     {sale.source !== 'OPENING_AR'
                       && !sale.deletion_event_id
                       && ['DRAFT', 'VALID', 'ERROR', 'POSTED'].includes(sale.status) && (
-                      <button
-                        className="btn btn-sm"
-                        style={{ background: sale.csi_received_photo_url ? '#64748b' : '#2563eb', color: '#fff' }}
-                        title={sale.csi_received_photo_url ? 'Replace the signed CSI photo' : 'Attach the signed CSI photo (dunning proof)'}
-                        onClick={() => setAttachReceivedTarget(sale._id)}
-                      >
-                        📷 {sale.csi_received_photo_url ? 'Replace CSI' : 'Attach CSI'}
-                      </button>
+                      <>
+                        <button
+                          className="btn btn-sm"
+                          style={{ background: sale.csi_received_photo_url ? '#64748b' : '#2563eb', color: '#fff' }}
+                          title={sale.csi_received_photo_url ? 'Replace the signed CSI photo' : 'Attach the signed CSI photo (dunning proof)'}
+                          onClick={() => setAttachReceivedTarget(sale._id)}
+                        >
+                          📷 {sale.csi_received_photo_url ? 'Replace CSI' : 'Attach CSI'}
+                        </button>
+                        {/* Phase P1.2 Slice 7-extension Round 2A — per-row
+                            picker for the signed/pink/duplicate CSI returned
+                            by the hospital. Narrows to the row's own BDM so
+                            the proxy only sees captures from the BDM who
+                            owns the sale. Server still gates via
+                            CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE. */}
+                        <PendingCapturesPicker
+                          workflowTypes={['SALES', 'UNCATEGORIZED']}
+                          bdmId={sale.bdm_id?._id || sale.bdm_id || undefined}
+                          maxSelect={1}
+                          buttonLabel="From Captures"
+                          buttonStyle={{
+                            padding: '4px 10px',
+                            borderRadius: 8,
+                            background: '#0ea5e9',
+                            color: '#fff',
+                            border: 'none',
+                            cursor: 'pointer',
+                            fontWeight: 600,
+                            fontSize: 11,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            minHeight: 38,
+                            minWidth: 86,
+                          }}
+                          onPick={(files) => {
+                            const file = files?.[0];
+                            if (!file) return;
+                            setAttachInitialFile(file);
+                            setAttachReceivedTarget(sale._id);
+                          }}
+                        />
+                      </>
                     )}
                     {sale.status === 'VALID' && (
                       <button className="btn btn-sm" style={{ background: '#16a34a', color: '#fff' }} onClick={() => handleSubmit(sale._id)}>
@@ -664,13 +717,17 @@ export default function SalesList() {
             )}
             </div>
 
-          {/* Attach Received CSI Modal — photo-only (no OCR). */}
+          {/* Attach Received CSI Modal — photo-only (no OCR). Phase P1.2
+              Slice 7-extension Round 2A wires initialFile so the per-row
+              PendingCapturesPicker can hand a BDM-captured signed CSI File
+              straight into the photo-only upload path. */}
           <ScanCSIModal
             open={!!attachReceivedTarget}
-            onClose={() => setAttachReceivedTarget(null)}
+            onClose={() => { setAttachReceivedTarget(null); setAttachInitialFile(null); }}
             onApply={handleAttachReceivedCsi}
             photoOnly={true}
             docType="CSI"
+            initialFile={attachInitialFile}
           />
 
           {/* President Reverse Modal */}
