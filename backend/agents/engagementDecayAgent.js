@@ -52,7 +52,7 @@ async function run() {
         decayingClients.push({
           doctor,
           lastVisitDate: null,
-          daysSinceVisit: 999,
+          daysSinceVisit: null,
           recentVisitCount: 0,
           expectedVisits: frequency * 3,
           ratio: 0,
@@ -115,11 +115,13 @@ async function run() {
   const bdmNameMap = {};
   for (const user of bdmUsers) bdmNameMap[user._id.toString()] = user.name;
 
+  const formatRecency = (days) => (days == null ? 'never visited' : `last visit ${days} days ago`);
+
   const topClients = decayingClients
     .slice(0, 15)
     .map((client) => {
       const doctor = client.doctor;
-      return `Dr. ${doctor.lastName}, ${doctor.firstName} (${doctor.visitFrequency || 4}x/mo): last visit ${client.daysSinceVisit} days ago, ${client.recentVisitCount}/${client.expectedVisits || '?'} visits in 3 months (${((client.ratio || 0) * 100).toFixed(0)}% of target)`;
+      return `Dr. ${doctor.lastName}, ${doctor.firstName} (${doctor.visitFrequency || 4}x/mo): ${formatRecency(client.daysSinceVisit)}, ${client.recentVisitCount}/${client.expectedVisits || '?'} visits in 3 months (${((client.ratio || 0) * 100).toFixed(0)}% of target)`;
     })
     .join('\n');
 
@@ -154,7 +156,10 @@ Be concise with 2-3 sentences per client recommendation.`,
       .slice(0, 10)
       .map((client) => {
         const doctor = client.doctor;
-        return `Dr. ${doctor.lastName} - ${client.daysSinceVisit} days since last visit`;
+        const recency = client.daysSinceVisit == null
+          ? 'never visited'
+          : `${client.daysSinceVisit} days since last visit`;
+        return `Dr. ${doctor.lastName} - ${recency}`;
       })
       .join('\n');
 
@@ -179,9 +184,10 @@ Be concise with 2-3 sentences per client recommendation.`,
       bdms_processed: bdmIds.length,
       alerts_generated: decayingClients.length,
       messages_sent: countSuccessfulChannels(notificationResults, 'in_app'),
-      key_findings: decayingClients.slice(0, 3).map((client) =>
-        `Dr. ${client.doctor.lastName}: ${client.daysSinceVisit} days, ${((client.ratio || 0) * 100).toFixed(0)}% target`
-      ),
+      key_findings: decayingClients.slice(0, 3).map((client) => {
+        const recency = client.daysSinceVisit == null ? 'never visited' : `${client.daysSinceVisit} days`;
+        return `Dr. ${client.doctor.lastName}: ${recency}, ${((client.ratio || 0) * 100).toFixed(0)}% target`;
+      }),
     },
     message_ids: getInAppMessageIds(notificationResults),
   };

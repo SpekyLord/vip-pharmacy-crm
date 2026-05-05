@@ -368,8 +368,8 @@ const PAGE_GUIDES = {
     title: 'Log a Visit',
     steps: [
       'Select the VIP Client you are visiting from the dropdown',
-      'Capture at least one photo as proof of visit (1-10 photos)',
-      'GPS location is captured automatically — ensure location services are on',
+      'Capture at least one photo as proof of visit (1-10 photos) — use the in-app camera OR a camera app that stamps GPS + timestamp into the photo (e.g. GPS Map Camera)',
+      'GPS location is captured automatically — ensure location services are on. If GPS fails, the visit can still log (a selfie alone is enough offline)',
       'Select products discussed and add any notes',
       'Tap "Start Presentation" (after picking products) to walk the VIP Client through the partnership deck — both the visit and the pitch are linked automatically',
       'Submit the visit — it will be validated against weekly/monthly limits',
@@ -378,7 +378,7 @@ const PAGE_GUIDES = {
       { label: 'My Visits', path: '/bdm/visits' },
       { label: 'Dashboard', path: '/bdm' },
     ],
-    tip: 'Offline-friendly: photos and form fields auto-save while you work. Submit while offline to queue the visit; it syncs automatically when you reconnect (you\'ll see a toast + an audit entry in your Inbox showing how much mobile data was used). If the VIP Client doesn\'t appear in the offline picker, open them once while online so the dashboard caches the profile. Maximum one visit per VIP Client per week.',
+    tip: 'Phase O (May 2026) — server now reads the photo\'s EXIF timestamp instead of trusting the upload time, so back-dating no longer works. Photos must be ≤14 days old (admin can tune via VISIT_PHOTO_VALIDATION_RULES). Screenshots are auto-detected and redirected to Comm Log — for Messenger/Viber/chat with VIP Clients, log there instead. Offline-friendly: photos and form fields auto-save while you work. Submit while offline to queue the visit; it syncs automatically when you reconnect (you\'ll see a toast + an audit entry in your Inbox showing how much mobile data was used). Maximum one visit per VIP Client per week.',
   },
   'call-plan': {
     title: 'Call Plan (CPT)',

@@ -38,6 +38,23 @@ const ClientVisit = require('../../models/ClientVisit');
 const Client = require('../../models/Client');
 const CarLogbookEntry = require('../models/CarLogbookEntry');
 
+// Phase O (May 2026) — only FRAUD flags should disqualify a visit from per-diem.
+// The pre-Phase-O bridge treated ANY photoFlag as disqualifying ($size === 0
+// guard at line ~230). That worked when only `date_mismatch` and `duplicate_photo`
+// existed (both unambiguous fraud signals). Phase O introduces three new
+// SIGNAL flags carried by legitimate visits:
+//   - no_exif_timestamp     ← every in-app camera capture (canvas → JPEG has no EXIF)
+//   - gps_in_photo          ← positive signal! shouldn't penalize the BDM
+//   - late_log_cross_week   ← informational; admin reviewer eyes the row, BDM keeps per-diem
+// Without this whitelist, Phase O would silently kill per-diem for every BDM
+// using the in-app camera. Future-Phase work: lift to a Lookup category
+// (PERDIEM_DISQUALIFYING_PHOTO_FLAGS) so subscribers tune per-entity without a
+// code deploy. Keeping it as a code constant for now to minimize the Phase O
+// blast radius — the Lookup row is already seeded
+// (lookupGenericController.js → PHOTO_FLAG extension) so promotion is one
+// future PR away.
+const PERDIEM_DISQUALIFYING_FLAGS = ['date_mismatch', 'duplicate_photo'];
+
 // Manila (UTC+8) — all day boundaries are anchored to Manila calendar days so a
 // 1am-Manila visit (which lands at 5pm UTC the previous day) does not drop out
 // of the query window when the server runs in UTC. Matches the inline +08:00
@@ -224,10 +241,25 @@ async function aggregateDailyByCollection(Model, fkField, userObjectId, dateRang
           $dateToString: { format: '%Y-%m-%d', date: '$visitDate', timezone: MANILA_TZ }
         },
         ids_all: { $addToSet: `$${fkField}` },
+        // Phase O — "unflagged" means "no FRAUD flags". A visit with only
+        // SIGNAL flags (no_exif_timestamp, gps_in_photo, late_log_cross_week)
+        // still counts toward per-diem. Pre-Phase-O this was a $size === 0
+        // check which would have dropped most in-app camera captures
+        // post-Phase-O (canvas-output JPEGs have no EXIF → flagged →
+        // skip_flagged dropped them). The $setIntersection check is empty-set
+        // ⇔ no overlap with the disqualifying list.
         ids_unflagged: {
           $addToSet: {
             $cond: [
-              { $eq: [{ $size: { $ifNull: ['$photoFlags', []] } }, 0] },
+              {
+                $eq: [
+                  { $size: { $setIntersection: [
+                    { $ifNull: ['$photoFlags', []] },
+                    PERDIEM_DISQUALIFYING_FLAGS
+                  ]}},
+                  0
+                ]
+              },
               `$${fkField}`,
               null
             ]

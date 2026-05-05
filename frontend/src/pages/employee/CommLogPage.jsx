@@ -9,6 +9,11 @@
  */
 
 import { useState, useEffect } from 'react';
+// Phase O — read ?doctorId= query param so the screenshot-redirect from
+// VisitLogger lands the BDM with the doctor already preselected. Without
+// this the BDM has to re-pick the doctor after Phase O kicks them out of
+// the visit upload — a UX regression we don't want.
+import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
@@ -34,9 +39,39 @@ const pageStyles = `
 `;
 
 const CommLogPage = () => {
+  const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('screenshot'); // screenshot | send
   const [showForm, setShowForm] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  // Phase O — preselected doctor sourced from ?doctorId= (screenshot redirect from VisitLogger)
+  const [preselectedDoctor, setPreselectedDoctor] = useState(null);
+
+  // Phase O — On mount, if redirected here from a screenshot-detected visit
+  // attempt, fetch the doctor + auto-open the form with the doctor pinned.
+  // Closes the "BDM lost context" UX gap on the screenshot redirect path.
+  useEffect(() => {
+    const doctorId = searchParams.get('doctorId');
+    if (!doctorId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await doctorService.getById(doctorId);
+        if (cancelled) return;
+        const doctor = res?.data;
+        if (doctor) {
+          setPreselectedDoctor(doctor);
+          setShowForm(true);
+          // Brief breadcrumb so the BDM understands why they're here. Tone:
+          // matter-of-fact, not blaming — the BDM may not have known their
+          // photo looked like a screenshot.
+          toast.success(`Logging Comm interaction with ${doctor.firstName} ${doctor.lastName}.`, { duration: 4000 });
+        }
+      } catch (err) {
+        console.error('[CommLogPage] preselectedDoctor fetch failed:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [searchParams]);
 
   // Phase N — Generate CLM deck link state
   const [showDeckGen, setShowDeckGen] = useState(false);
@@ -266,9 +301,11 @@ const CommLogPage = () => {
                   <CommLogForm
                     onSuccess={() => {
                       setGeneratedDeckSessionId(null);
+                      setPreselectedDoctor(null); // Phase O — clear after submit
                       handleSuccess();
                     }}
                     clmSessionId={generatedDeckSessionId}
+                    preselectedDoctor={preselectedDoctor}
                   />
                 </div>
               )}
