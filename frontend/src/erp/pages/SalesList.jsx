@@ -571,9 +571,19 @@ export default function SalesList() {
                   <td data-label="Actions" onClick={e => e.stopPropagation()}>
                     <div className="sales-actions">
                     {(sale.status === 'DRAFT' || sale.status === 'ERROR') && (
-                      <button className="btn btn-warning btn-sm" onClick={() => handleValidate(sale._id)}>
-                        Validate
-                      </button>
+                      <>
+                        <button
+                          className="btn btn-sm"
+                          style={{ background: '#0ea5e9', color: '#fff' }}
+                          title="Edit CSI #, date, and line items in Sales Entry"
+                          onClick={() => navigate(`/erp/sales/entry?edit=${sale._id}`)}
+                        >
+                          Edit
+                        </button>
+                        <button className="btn btn-warning btn-sm" onClick={() => handleValidate(sale._id)}>
+                          Validate
+                        </button>
+                      </>
                     )}
                     {/* Attach Received CSI — t=4 dunning proof. Available on
                         DRAFT / VALID / ERROR / POSTED (not reversed, not
@@ -679,7 +689,23 @@ export default function SalesList() {
               <div className="detail-panel" onClick={e => e.stopPropagation()}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <h2>CSI# {selectedSale.doc_ref}</h2>
-                  <button className="btn" onClick={() => setSelectedSale(null)} style={{ background: 'none', fontSize: 20, padding: 4 }}>&times;</button>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {(selectedSale.status === 'DRAFT' || selectedSale.status === 'ERROR') && (
+                      <button
+                        className="btn btn-sm"
+                        style={{ background: '#0ea5e9', color: '#fff' }}
+                        title="Edit CSI #, date, and line items in Sales Entry"
+                        onClick={() => {
+                          const id = selectedSale._id;
+                          setSelectedSale(null);
+                          navigate(`/erp/sales/entry?edit=${id}`);
+                        }}
+                      >
+                        Edit
+                      </button>
+                    )}
+                    <button className="btn" onClick={() => setSelectedSale(null)} style={{ background: 'none', fontSize: 20, padding: 4 }}>&times;</button>
+                  </div>
                 </div>
                 <p><strong>Hospital/Customer:</strong> {toTitleCase(selectedSale.hospital_id?.hospital_name) || selectedSale.customer_id?.customer_name || '-'}</p>
                 <p><strong>Date:</strong> {new Date(selectedSale.csi_date).toLocaleDateString('en-PH')}</p>

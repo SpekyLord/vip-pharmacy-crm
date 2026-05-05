@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import { useAuth } from '../../hooks/useAuth';
@@ -634,6 +634,38 @@ export default function SalesEntry() {
     // Phase 15.2 (softened) — preload my allocated CSI numbers (non-blocking monitoring hint)
     reportsHook.getAvailableCsiNumbers().then(r => setAvailableCsi(r?.data || [])).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Deep-link edit: ?edit=<saleId> hydrates that specific DRAFT/VALID/ERROR row
+  // regardless of owner — needed when SalesList → Edit hops here for a row keyed
+  // via proxy entry (Phase G4.5a) or viewed by a privileged user. OPENING_AR
+  // rows are owned by OpeningArEntry; we silently skip them here.
+  const [searchParams] = useSearchParams();
+  const editId = searchParams.get('edit');
+  useEffect(() => {
+    if (!editId) return;
+    let cancelled = false;
+    sales.getSaleById(editId)
+      .then(res => {
+        if (cancelled) return;
+        // useSales returns the axios response; the response interceptor leaves
+        // the body intact, so res.data IS the backend envelope. Some hooks have
+        // historically returned the unwrapped row, so accept both shapes.
+        const row = res?.data?.data || res?.data;
+        if (!row || !row._id) return;
+        if (row.source === 'OPENING_AR') {
+          navigate(`/erp/sales/opening-ar?edit=${editId}`, { replace: true });
+          return;
+        }
+        setRows([{ ...row, _isNew: false }]);
+      })
+      .catch(err => {
+        if (!cancelled) {
+          console.error('[SalesEntry] load edit row:', err.message);
+          showError(err, 'Could not load that sale for editing');
+        }
+      });
+    return () => { cancelled = true; };
+  }, [editId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Prefill from navigation (e.g. "Issue CSI" from Consignment Aging)
   const location = useLocation();
