@@ -337,6 +337,87 @@ assert('Expenses passes EXPENSE/FUEL_ENTRY/UNCATEGORIZED workflowTypes',
 assert('Expenses onPick merges into batchFiles[]',
   /setBatchFiles\(\(prev\)\s*=>[\s\S]{0,200}files/.test(expensesSrc));
 
+// ── 13. Phase P1.2 Slice 7-extension — Sales / Collection / GRN ──
+//
+// Three more proxy-side ERP entry pages get the From-BDM-Captures picker.
+// Each picker hands a single File to the page's existing OCR scan modal via a
+// new initialFile prop; the modal auto-runs OCR on mount via a useEffect
+// guarded by a ref so a re-render during scan doesn't re-trigger.
+// SMER (digital-only — no photo upload UI) and Bir2307InboundPage (URL-string
+// based, no File upload handler) are intentionally deferred with rationale in
+// docs/PHASETASK-ERP.md Phase P1.2 Slice 7-extension.
+section('Phase P1.2 Slice 7-extension — Sales / Collection / GRN');
+const salesEntrySrc = read('frontend/src/erp/pages/SalesEntry.jsx');
+const collSessSrc = read('frontend/src/erp/pages/CollectionSession.jsx');
+const grnEntrySrc = read('frontend/src/erp/pages/GrnEntry.jsx');
+// wgSrc was loaded earlier in Section 6 — reuse, do not redeclare.
+
+// SalesEntry
+assert('SalesEntry imports PendingCapturesPicker',            /import\s+PendingCapturesPicker/.test(salesEntrySrc));
+assert('SalesEntry passes SALES + UNCATEGORIZED workflowTypes',
+  /workflowTypes=\{\[['"]SALES['"][^]+UNCATEGORIZED/.test(salesEntrySrc));
+assert('SalesEntry passes bdmId from assignedTo',             /bdmId=\{assignedTo\s*\|\|\s*undefined\}/.test(salesEntrySrc));
+assert('SalesEntry uses maxSelect=1 (single-pick → modal)',   /<PendingCapturesPicker[\s\S]{0,500}maxSelect=\{1\}/.test(salesEntrySrc));
+assert('SalesEntry onPick sets scanInitialFile + opens modal',
+  /setScanInitialFile\(file\)[\s\S]{0,80}setScanModalOpen\(true\)/.test(salesEntrySrc));
+assert('ScanCSIModal accepts initialFile prop',               /function ScanCSIModal\([\s\S]{0,200}initialFile\b/.test(salesEntrySrc));
+assert('ScanCSIModal auto-OCRs initialFile via useEffect',    /useEffect\([\s\S]{0,400}initialFile[\s\S]{0,200}handleFile\(initialFile\)/.test(salesEntrySrc));
+assert('SalesEntry passes initialFile to ScanCSIModal',       /<ScanCSIModal[\s\S]{0,400}initialFile=\{scanInitialFile\}/.test(salesEntrySrc));
+assert('SalesEntry onClose clears scanInitialFile',           /setScanModalOpen\(false\);\s*setScanInitialFile\(null\)/.test(salesEntrySrc));
+
+// CollectionSession
+assert('CollectionSession imports PendingCapturesPicker',     /import\s+PendingCapturesPicker/.test(collSessSrc));
+assert('CollectionSession passes COLLECTION + UNCATEGORIZED workflowTypes',
+  /workflowTypes=\{\[['"]COLLECTION['"][^]+UNCATEGORIZED/.test(collSessSrc));
+assert('CollectionSession passes bdmId from assignedTo',      /bdmId=\{assignedTo\s*\|\|\s*undefined\}/.test(collSessSrc));
+assert('CollectionSession uses maxSelect=1',                  /<PendingCapturesPicker[\s\S]{0,500}maxSelect=\{1\}/.test(collSessSrc));
+assert('CollectionSession onPick opens scanCr with file',     /setScanInitialFile\(file\)[\s\S]{0,80}setScanCrOpen\(true\)/.test(collSessSrc));
+assert('ScanCRModal accepts initialFile prop',                /function ScanCRModal\([\s\S]{0,200}initialFile\b/.test(collSessSrc));
+assert('ScanCRModal auto-OCRs initialFile via useEffect',     /useEffect\([\s\S]{0,400}initialFile[\s\S]{0,200}handleFile\(initialFile\)/.test(collSessSrc));
+assert('CollectionSession passes initialFile to ScanCRModal', /<ScanCRModal[\s\S]{0,400}initialFile=\{scanInitialFile\}/.test(collSessSrc));
+assert('CollectionSession onClose clears scanInitialFile',    /setScanCrOpen\(false\);\s*setScanInitialFile\(null\)/.test(collSessSrc));
+
+// GrnEntry
+assert('GrnEntry imports PendingCapturesPicker',              /import\s+PendingCapturesPicker/.test(grnEntrySrc));
+assert('GrnEntry passes GRN + UNCATEGORIZED workflowTypes',
+  /workflowTypes=\{\[['"]GRN['"][^]+UNCATEGORIZED/.test(grnEntrySrc));
+assert('GrnEntry passes bdmId from assignedTo',               /bdmId=\{assignedTo\s*\|\|\s*undefined\}/.test(grnEntrySrc));
+assert('GrnEntry uses maxSelect=1',                           /<PendingCapturesPicker[\s\S]{0,500}maxSelect=\{1\}/.test(grnEntrySrc));
+assert('GrnEntry onPick opens scan modal with file',          /setScanInitialFile\(file\)[\s\S]{0,80}setScanOpen\(true\)/.test(grnEntrySrc));
+assert('ScanUndertakingModal accepts initialFile prop',       /function ScanUndertakingModal\([\s\S]{0,200}initialFile\b/.test(grnEntrySrc));
+assert('ScanUndertakingModal auto-OCRs initialFile via useEffect',
+  /useEffect\([\s\S]{0,400}initialFile[\s\S]{0,200}handleFile\(initialFile\)/.test(grnEntrySrc));
+assert('GrnEntry passes initialFile to ScanUndertakingModal', /<ScanUndertakingModal[\s\S]{0,400}initialFile=\{scanInitialFile\}/.test(grnEntrySrc));
+assert('GrnEntry onClose clears scanInitialFile',             /setScanOpen\(false\);\s*setScanInitialFile\(null\)/.test(grnEntrySrc));
+
+// WorkflowGuide banner updates (Rule #1 — banner reflects current behavior).
+// The 7000-char windows are sized to accommodate the long-form steps + tip
+// text on each banner; sales-entry and grn-entry are the longest two.
+assert('sales-entry banner mentions Slice 7-extension picker',
+  /sales-entry[\s\S]{0,7000}From BDM Captures/.test(wgSrc));
+assert('collection-session banner mentions Slice 7-extension picker',
+  /collection-session[\s\S]{0,7000}From BDM Captures/.test(wgSrc));
+assert('grn-entry banner mentions Slice 7-extension picker',
+  /grn-entry[\s\S]{0,7000}From BDM Captures/.test(wgSrc));
+
+// Subscription-readiness — picker reuses lookup-driven gate (Rule #3 / #19).
+// No new lookup category is added by Slice 7-extension; PROXY_PULL_CAPTURE
+// from Slice 1's CAPTURE_LIFECYCLE_ROLES still gates the upstream queue read.
+const helperSrcExt = read('backend/utils/captureLifecycleAccess.js');
+assert('PROXY_PULL_CAPTURE still in helper after Slice 7-extension',
+  /PROXY_PULL_CAPTURE/.test(helperSrcExt));
+assert('CAPTURE_LIFECYCLE_ROLES still has insert_only_metadata seed',
+  /CAPTURE_LIFECYCLE_ROLES/.test(read('backend/erp/controllers/lookupGenericController.js')));
+
+// Defer documentation guard — record the explicit decision so a future
+// session doesn't silently bolt the picker onto SMER (digital-only) or
+// Bir2307InboundPage (URL-string handler) without re-litigating the trade.
+const phaseTaskErpSrc = read('docs/PHASETASK-ERP.md');
+assert('PHASETASK-ERP.md documents SMER defer rationale',
+  /Slice 7-extension[\s\S]{0,3000}SMER/i.test(phaseTaskErpSrc));
+assert('PHASETASK-ERP.md documents Bir2307Inbound defer rationale',
+  /Slice 7-extension[\s\S]{0,3000}(2307|CWT_INBOUND|Bir2307Inbound)/i.test(phaseTaskErpSrc));
+
 // ── Summary ───────────────────────────────────────────────────
 const total = pass + fail;
 process.stdout.write(`\n${'═'.repeat(60)}\n`);

@@ -17,6 +17,13 @@ import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
 import OwnerPicker from '../components/OwnerPicker';
 import { showError } from '../utils/errorToast';
+// Phase P1.2 Slice 7-extension (May 2026) — pull a BDM-captured COLLECTION /
+// UNCATEGORIZED photo into the existing Scan CR flow without re-uploading.
+// Picker hands a File to ScanCRModal via the initialFile prop and the modal
+// auto-runs OCR on mount, exactly as if the proxy clicked the in-modal Gallery
+// button. Multi-pick is constrained to 1 because a single CR auto-fills the
+// whole form; multi-pick would race the form-population state.
+import PendingCapturesPicker from '../components/PendingCapturesPicker';
 
 const pageStyles = `
   .coll-session { background: var(--erp-bg, #f4f7fb); min-height: 100vh; }
@@ -85,7 +92,7 @@ const pageStyles = `
 `;
 
 // ── ScanCRModal — OCR scan → auto-fill hospital, CR details, CSI matches ──
-function ScanCRModal({ open, onClose, onApply, hospitals }) {
+function ScanCRModal({ open, onClose, onApply, hospitals, initialFile }) {
   const [step, setStep] = useState('capture');
   const [preview, setPreview] = useState(null);
   const [ocrData, setOcrData] = useState(null);
@@ -94,6 +101,9 @@ function ScanCRModal({ open, onClose, onApply, hospitals }) {
   const [reviewConfirmed, setReviewConfirmed] = useState(false);
   const cameraRef = useRef(null);
   const galleryRef = useRef(null);
+  // Phase P1.2 Slice 7-extension — guard so a transient render during OCR
+  // doesn't re-trigger handleFile on the same File handed in by picker.
+  const initialFileProcessedRef = useRef(null);
 
   const reset = () => { setStep('capture'); setPreview(null); setOcrData(null); setErrorMsg(''); setMatchedHosp(null); setReviewConfirmed(false); };
   const handleClose = () => { reset(); onClose(); };
@@ -117,6 +127,20 @@ function ScanCRModal({ open, onClose, onApply, hospitals }) {
       setStep('error');
     }
   };
+
+  // Phase P1.2 Slice 7-extension — auto-OCR a File handed in by
+  // PendingCapturesPicker. Only fires once per File reference.
+  useEffect(() => {
+    if (!open) {
+      initialFileProcessedRef.current = null;
+      return;
+    }
+    if (initialFile && initialFileProcessedRef.current !== initialFile) {
+      initialFileProcessedRef.current = initialFile;
+      handleFile(initialFile);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialFile]);
 
   const handleApply = () => {
     const e = ocrData?.extracted;
@@ -363,6 +387,10 @@ export default function CollectionSession() {
 
   // OCR scan state
   const [scanCrOpen, setScanCrOpen] = useState(false);
+  // Phase P1.2 Slice 7-extension — File handed to ScanCRModal by
+  // PendingCapturesPicker. Cleared on modal close so re-opening returns
+  // to the normal Take-Photo / Gallery capture step.
+  const [scanInitialFile, setScanInitialFile] = useState(null);
   const [ocrFilledFields, setOcrFilledFields] = useState(new Set());
   const pendingCsiMatch = useRef(null);
 
@@ -810,6 +838,20 @@ export default function CollectionSession() {
             <h1>New Collection Receipt</h1>
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn btn-primary" onClick={() => setScanCrOpen(true)}>Scan CR to Auto-Fill</button>
+              {/* Phase P1.2 Slice 7-extension — pull a BDM-captured CR photo
+                  into the same OCR flow without re-uploading from gallery. */}
+              <PendingCapturesPicker
+                workflowTypes={['COLLECTION', 'UNCATEGORIZED']}
+                bdmId={assignedTo || undefined}
+                maxSelect={1}
+                buttonLabel="From BDM Captures"
+                onPick={(files) => {
+                  const file = files?.[0];
+                  if (!file) return;
+                  setScanInitialFile(file);
+                  setScanCrOpen(true);
+                }}
+              />
               <button className="btn btn-outline" onClick={() => navigate('/erp/collections')}>Back to List</button>
             </div>
           </div>
@@ -1154,9 +1196,10 @@ export default function CollectionSession() {
           {/* ScanCRModal */}
           <ScanCRModal
             open={scanCrOpen}
-            onClose={() => setScanCrOpen(false)}
+            onClose={() => { setScanCrOpen(false); setScanInitialFile(null); }}
             onApply={handleCrScanApply}
             hospitals={hospitals}
+            initialFile={scanInitialFile}
           />
         </main>
       </div>

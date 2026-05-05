@@ -13,6 +13,12 @@ import useErpSubAccess from '../hooks/useErpSubAccess';
 import { processDocument, extractExifDateTime } from '../services/ocrService';
 import WarehousePicker from '../components/WarehousePicker';
 import OwnerPicker from '../components/OwnerPicker';
+// Phase P1.2 Slice 7-extension (May 2026) — pull a BDM-captured SALES /
+// UNCATEGORIZED photo into the existing Scan CSI flow without re-uploading
+// from gallery. Picker hands a File to ScanCSIModal via the new initialFile
+// prop and the modal auto-runs OCR on mount, exactly as if the proxy had
+// clicked the Gallery button inside the modal with the same photo.
+import PendingCapturesPicker from '../components/PendingCapturesPicker';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -259,7 +265,7 @@ function formatReviewReason(reason) {
 }
 
 // --- ScanCSIModal inline component ---
-function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions }) {
+function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions, initialFile }) {
   const [step, setStep] = useState('capture'); // capture | scanning | results | error
   const [, setPhoto] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -270,6 +276,10 @@ function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions }) {
   const [reviewConfirmed, setReviewConfirmed] = useState(false);
   const cameraRef = useRef(null);
   const galleryRef = useRef(null);
+  // Phase P1.2 Slice 7-extension — when the modal opens with a File handed
+  // down by PendingCapturesPicker, run OCR on it immediately. Guarded by a
+  // ref so re-renders during scan don't re-trigger.
+  const initialFileProcessedRef = useRef(null);
 
   const reset = () => {
     if (preview) URL.revokeObjectURL(preview);
@@ -327,6 +337,21 @@ function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions }) {
       setStep('error');
     }
   };
+
+  // Phase P1.2 Slice 7-extension — auto-OCR the file handed in by
+  // PendingCapturesPicker. Guarded so a transient state change during the
+  // scan doesn't re-trigger handleFile on the same File object.
+  useEffect(() => {
+    if (!open) {
+      initialFileProcessedRef.current = null;
+      return;
+    }
+    if (initialFile && initialFileProcessedRef.current !== initialFile) {
+      initialFileProcessedRef.current = initialFile;
+      handleFile(initialFile);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialFile]);
 
   const handleApply = () => {
     const extracted = ocrData?.extracted;
@@ -589,6 +614,10 @@ export default function SalesEntry() {
   const [stockProducts, setStockProducts] = useState([]);
   const [actionLoading, setActionLoading] = useState('');
   const [scanModalOpen, setScanModalOpen] = useState(false);
+  // Phase P1.2 Slice 7-extension — File handed to ScanCSIModal by
+  // PendingCapturesPicker. Cleared on modal close so re-opening the modal
+  // returns to the normal Take-Photo / Gallery capture step.
+  const [scanInitialFile, setScanInitialFile] = useState(null);
   // Rejection-fallback flow: re-upload a CSI photo to a previously-rejected row
   // without re-keying line items. null = inactive; number = target row index;
   // 'NEW' = attach-photo-only to a fresh row (no OCR parsing, proof-only path).
@@ -1056,6 +1085,33 @@ export default function SalesEntry() {
                 <div className="sales-actions">
                   <div className="sales-actions-group">
                     <button className="btn btn-primary" onClick={() => setScanModalOpen(true)} style={{ background: '#7c3aed' }} title="Scan a CSI photo with OCR — auto-fills hospital, CSI#, and line items">📷 Scan CSI</button>
+                    {/* Phase P1.2 Slice 7-extension — pull a BDM-captured CSI
+                        photo into the same OCR flow without re-uploading. */}
+                    <PendingCapturesPicker
+                      workflowTypes={['SALES', 'UNCATEGORIZED']}
+                      bdmId={assignedTo || undefined}
+                      maxSelect={1}
+                      buttonLabel="From BDM Captures"
+                      buttonStyle={{
+                        padding: '8px 16px',
+                        borderRadius: 6,
+                        background: '#0ea5e9',
+                        color: '#fff',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                        fontSize: 13,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                      onPick={(files) => {
+                        const file = files?.[0];
+                        if (!file) return;
+                        setScanInitialFile(file);
+                        setScanModalOpen(true);
+                      }}
+                    />
                     <button className="btn btn-outline" onClick={() => setPhotoOnlyRowIdx('NEW')} title="Upload a CSI photo as proof only — no OCR; you type the row details manually">📎 Upload CSI</button>
                     <button className="btn btn-outline" onClick={addRow}>+ Add Row</button>
                   </div>
@@ -1634,10 +1690,11 @@ export default function SalesEntry() {
       {/* Scan CSI Modal — primary scan flow (full OCR + line-item matching) */}
       <ScanCSIModal
         open={scanModalOpen}
-        onClose={() => setScanModalOpen(false)}
+        onClose={() => { setScanModalOpen(false); setScanInitialFile(null); }}
         onApply={handleScanApply}
         hospitals={hospitals}
         productOptions={productOptions}
+        initialFile={scanInitialFile}
       />
       {/* Photo-only modal — 'NEW' → toolbar "Upload CSI" creates a fresh row
           with photo attached (no OCR). Re-attaching the signed CSI to an

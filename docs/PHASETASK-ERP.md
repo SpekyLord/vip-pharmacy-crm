@@ -7949,6 +7949,63 @@ docs/PHASETASK-ERP.md                                            # this entry
 
 ---
 
+## Phase P1.2 Slice 7-extension — PendingCapturesPicker on Sales / Collection / GRN entry (May 06, 2026) ✅ SHIPPED
+
+### Why
+Slice 7 proper landed the `PendingCapturesPicker` drawer pattern on `/erp/expenses` (commit `b9ee5f5` on `dev`). This extension takes the proven pattern to three more proxy-side ERP entry pages so the office reconciliation loop closes for BDM-captured CSIs (Sales), CRs (Collection), and Undertaking papers (GRN) without forcing the proxy to re-upload from gallery. SMER + Bir2307InboundPage are intentionally deferred — see "Defer rationale" below.
+
+### What shipped
+- **SalesEntry.jsx** — picker mounted between "Scan CSI" and "Upload CSI" buttons. `workflowTypes={['SALES','UNCATEGORIZED']}`, `bdmId={assignedTo || undefined}`, `maxSelect={1}`. `onPick` sets a new page-level `scanInitialFile` state and opens `ScanCSIModal`. The modal accepts a new `initialFile` prop and auto-runs `handleFile(initialFile)` on mount via a `useEffect` guarded by `initialFileProcessedRef` so transient renders during scan don't re-trigger OCR. Modal `onClose` clears `scanInitialFile` so re-opening the modal returns to the normal Take-Photo / Gallery capture step.
+- **CollectionSession.jsx** — picker mounted between "Scan CR to Auto-Fill" and "Back to List" buttons. `workflowTypes={['COLLECTION','UNCATEGORIZED']}`. Same `initialFile` pattern threaded into `ScanCRModal`. `bdmId` is the page's `assignedTo` (OwnerPicker target), so a proxy choosing "Record on behalf of" first narrows the picker to that BDM's CR captures.
+- **GrnEntry.jsx** — picker mounted between "Scan Undertaking Paper" and "Open Undertakings →" buttons. `workflowTypes={['GRN','UNCATEGORIZED']}`. Same `initialFile` pattern threaded into `ScanUndertakingModal`.
+- **WorkflowGuide.jsx** — three banner tips updated (`sales-entry`, `collection-session`, `grn-entry`) to call out the new "From BDM Captures" button + the `CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE` lookup gate + the recipe to narrow the picker via "Record on behalf of" (Rule #1).
+- **healthcheckCaptureHub.js Section 13** — 35+ new assertions across the 3 pages (import + workflowTypes + bdmId + maxSelect + onPick + initialFile prop + useEffect + onClose-clear) + 3 banner-mention guards + 2 helper-still-intact regression guards + 2 defer-rationale documentation guards.
+
+### Picker-modal contract
+The pattern is identical across all three pages:
+1. Picker `onPick(files)` sets `scanInitialFile = files[0]` and opens the page's existing scan modal.
+2. Modal accepts `initialFile` prop. Modal-internal `useEffect` watches `[open, initialFile]` and calls `handleFile(initialFile)` exactly once per File reference (guarded by `initialFileProcessedRef`).
+3. Modal's `onClose` clears the page-level `scanInitialFile` so re-opening the modal returns to capture step.
+4. `bdmId` defaults to the page's `assignedTo` so the proxy POV (Phase G4.5a..G4.5ff) reads naturally — pick the BDM in OwnerPicker, then pull from their captures.
+5. `maxSelect={1}` because each scan modal auto-fills exactly one document; multi-pick would race the form-population state.
+
+### Defer rationale (SMER + CWT-Inbound)
+The original Slice 7-extension scope listed five pages (Sales/Collection/GRN/SMER/CWT-inbound). Two were deferred after surveying the page architecture:
+
+- **SMER** (`Smer.jsx`) — SMER is digital-only. `captureSubmissionController.js:50-52` defines `DIGITAL_ONLY = workflow_type === 'SMER' || (workflow_type === 'COLLECTION' && sub_type === 'PAID_CSI')`, and `physical_required` defaults to `false` for SMER captures. The page itself has no photo-upload UI to mount a picker next to (no `<input type="file">`, no `FormData`, no `cameraRef`/`galleryRef`). Adding a picker would require building a new ODO-photo upload schema + UI on the SMER page, which is its own slice. **Status**: deferred to "Slice 7-extension Round 2" if subscribers want it. Estimated 4h of work (one new state + one new upload handler + one PageGuide entry).
+- **Bir2307InboundPage.jsx** — the inbound 2307 receive flow stores `cert_2307_url` as a typed string in the receive modal (operator types the URL/filename/hash, no actual file upload). The page has no `handleFile` / `handleUpload` handler to feed picker output through. Wiring the picker would require a new file-upload route that returns an S3 URL the page populates into `cert_2307_url`. **Status**: deferred. Estimated 4h.
+
+Both pages remain healthy without the picker — the current cell-typed URL flow on Bir2307 and the digital-only stamp flow on SMER are unchanged. The defer is documented at the top of `healthcheckCaptureHub.js` Section 13 so a future session doesn't silently bolt the picker onto either page without re-litigating the trade.
+
+### Files
+```
+frontend/src/erp/pages/SalesEntry.jsx                            # + picker mount, ScanCSIModal initialFile, scanInitialFile state
+frontend/src/erp/pages/CollectionSession.jsx                     # + picker mount, ScanCRModal initialFile, scanInitialFile state
+frontend/src/erp/pages/GrnEntry.jsx                              # + picker mount, ScanUndertakingModal initialFile, scanInitialFile state
+frontend/src/erp/components/WorkflowGuide.jsx                    # + Slice 7-extension tips on 3 banners
+backend/scripts/healthcheckCaptureHub.js                         # + Section 13 (Slice 7-extension parity assertions)
+CLAUDE-ERP.md                                                    # status banner lead-in
+docs/PHASETASK-ERP.md                                            # this entry
+```
+
+### Verification
+- Vite build green (10.68s).
+- Healthcheck `node backend/scripts/healthcheckCaptureHub.js` — Section 13 added; expecting all assertions PASS once final touches land.
+- No backend route / lookup seed / journal / audit changes — pure frontend wiring on top of Slice 1 + Slice 2/3/7-Expenses (commit `b9ee5f5`).
+- Backwards compatible — picker is a new sibling button next to existing scan/upload buttons; existing OCR scan flows unchanged.
+- Subscription-ready — picker reuses `CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE` lookup gate; subscribers extend by editing one row in Control Center → Lookup Tables.
+
+### Integrity check
+- ✅ ScanCSIModal / ScanCRModal / ScanUndertakingModal each accept `initialFile` as an OPTIONAL prop — pages that don't pass it (none today) continue to work via the existing camera/gallery `<input type="file">` flow.
+- ✅ `useEffect([open, initialFile])` guarded by ref so re-rendering during scan (e.g., setStep/setOcrData transitions) doesn't re-call `handleFile`.
+- ✅ Modal `reset()` is called via `onClose` which also clears the parent's `scanInitialFile` — the modal returns to the capture step on re-open if no new file was picker-handed in.
+- ✅ Modal preview / OCR result rendering paths unchanged. `handleApply` unchanged. `onApply` callback contract unchanged. Existing CSI / CR / Undertaking flows post identically whether the file came from camera, gallery, or picker.
+- ✅ Picker `bdmId={assignedTo || undefined}` — falsy assignedTo means cross-BDM picker (server-side `getProxyQueue` honors the same lookup-driven role gate either way).
+- ✅ No new MongoDB indexes, no migrations, no schema changes. The `CaptureSubmission.workflow_type` enum already had `SALES`, `COLLECTION`, `GRN`, `UNCATEGORIZED` from Slice 1.
+- ✅ Phase O screenshot detection and Phase G4.5ff proxy-roster contracts are unchanged.
+
+---
+
 ## Phase P1.1 — Capture Hub Tile Completeness + Physical Reconciliation Foundation (May 05, 2026) ✅ SHIPPED
 
 ### Why

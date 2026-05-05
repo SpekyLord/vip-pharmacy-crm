@@ -27,6 +27,11 @@ import { processDocument, extractExifDateTime } from '../services/ocrService';
 import { getGrnSettings } from '../services/undertakingService';
 import WarehousePicker from '../components/WarehousePicker';
 import OwnerPicker from '../components/OwnerPicker';
+// Phase P1.2 Slice 7-extension (May 2026) — pull a BDM-captured GRN /
+// UNCATEGORIZED photo (Undertaking paper) into the existing Scan Undertaking
+// flow without re-uploading. Picker hands a File to ScanUndertakingModal via
+// the initialFile prop and the modal auto-runs OCR on mount.
+import PendingCapturesPicker from '../components/PendingCapturesPicker';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -231,7 +236,7 @@ function toIsoDate(str) {
  * Unmatched OCR rows are surfaced so the BDM can decide whether to retake the
  * photo or fall back to manual entry.
  */
-function ScanUndertakingModal({ open, onClose, onApply, products }) {
+function ScanUndertakingModal({ open, onClose, onApply, products, initialFile }) {
   const [step, setStep] = useState('capture');
   const [preview, setPreview] = useState(null);
   const [ocrData, setOcrData] = useState(null);
@@ -239,6 +244,9 @@ function ScanUndertakingModal({ open, onClose, onApply, products }) {
   const [errorMsg, setErrorMsg] = useState('');
   const cameraRef = useRef(null);
   const galleryRef = useRef(null);
+  // Phase P1.2 Slice 7-extension — guard so a transient render during OCR
+  // doesn't re-trigger handleFile on the same File from picker.
+  const initialFileProcessedRef = useRef(null);
 
   const reset = () => {
     if (preview) URL.revokeObjectURL(preview);
@@ -274,6 +282,20 @@ function ScanUndertakingModal({ open, onClose, onApply, products }) {
       setStep('error');
     }
   };
+
+  // Phase P1.2 Slice 7-extension — auto-OCR a File handed in by
+  // PendingCapturesPicker. Only fires once per File reference.
+  useEffect(() => {
+    if (!open) {
+      initialFileProcessedRef.current = null;
+      return;
+    }
+    if (initialFile && initialFileProcessedRef.current !== initialFile) {
+      initialFileProcessedRef.current = initialFile;
+      handleFile(initialFile);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialFile]);
 
   const handleApply = () => {
     const lines = matchedItems.map(mi => ({
@@ -386,6 +408,10 @@ export default function GrnEntry() {
   const [grnList, setGrnList] = useState([]);
   const [listFilter, setListFilter] = useState('');
   const [scanOpen, setScanOpen] = useState(false);
+  // Phase P1.2 Slice 7-extension — File handed to ScanUndertakingModal by
+  // PendingCapturesPicker. Cleared on close so re-opening returns to the
+  // normal Take-Photo / Gallery capture step.
+  const [scanInitialFile, setScanInitialFile] = useState(null);
 
   // PO cross-reference state
   const [linkedPO, setLinkedPO] = useState(null);
@@ -670,6 +696,20 @@ export default function GrnEntry() {
             </div>
             <div className="grn-actions">
               <button className="btn btn-primary" onClick={() => setScanOpen(true)} style={{ background: '#7c3aed' }}>Scan Undertaking Paper</button>
+              {/* Phase P1.2 Slice 7-extension — pull a BDM-captured Undertaking
+                  photo into the same OCR flow without re-uploading. */}
+              <PendingCapturesPicker
+                workflowTypes={['GRN', 'UNCATEGORIZED']}
+                bdmId={assignedTo || undefined}
+                maxSelect={1}
+                buttonLabel="From BDM Captures"
+                onPick={(files) => {
+                  const file = files?.[0];
+                  if (!file) return;
+                  setScanInitialFile(file);
+                  setScanOpen(true);
+                }}
+              />
               <button className="btn btn-outline" onClick={() => navigate('/erp/undertaking')}>Open Undertakings →</button>
             </div>
           </div>
@@ -1103,7 +1143,7 @@ export default function GrnEntry() {
           </div>
         </main>
       </div>
-      <ScanUndertakingModal open={scanOpen} onClose={() => setScanOpen(false)} onApply={handleScanApply} products={productOptions} />
+      <ScanUndertakingModal open={scanOpen} onClose={() => { setScanOpen(false); setScanInitialFile(null); }} onApply={handleScanApply} products={productOptions} initialFile={scanInitialFile} />
     </div>
   );
 }
