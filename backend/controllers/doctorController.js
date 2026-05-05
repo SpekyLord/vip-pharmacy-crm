@@ -24,6 +24,11 @@ const {
   getManagePartnershipRoles,
   getSetAgreementDateRoles,
 } = require('../utils/mdPartnerAccess');
+// Phase A.5.4 follow-on — lookup-driven role gates for `assignedTo[]` membership
+// (JOIN_COVERAGE_AUTO) and `primaryAssignee` ownership (REASSIGN_PRIMARY). Inline
+// defaults are [admin, president]; subscribers configure per-entity via Control
+// Center → Lookup Tables → VIP_CLIENT_LIFECYCLE_ROLES (Rule #3 / #19 / D11).
+const { userCanPerformLifecycleAction } = require('../utils/resolveVipClientLifecycleRole');
 const { dateToSlot, validateAlternatingWeek, rejectPastCycle } = require('../utils/scheduleSlotMapper');
 // Phase A.5.4 — shape-agnostic assignee access. Use isAssignedTo / getAssigneeIds /
 // getPrimaryAssigneeId instead of the legacy `doctor.assignedTo?._id || doctor.assignedTo`
@@ -245,6 +250,7 @@ const createDoctor = catchAsync(async (req, res) => {
     email,
     visitFrequency,
     assignedTo: rawAssignedTo,
+    primaryAssignee: rawPrimaryAssignee,
     notes,
     clinicSchedule,
     location,
@@ -372,6 +378,10 @@ const createDoctor = catchAsync(async (req, res) => {
     email,
     visitFrequency: visitFrequency || 4,
     assignedTo,
+    // Phase A.5.4 — caller-supplied primary is honored only when it's in the
+    // assignedTo[] set; otherwise the model's pre-save invariant resets it to
+    // assignedTo[0]. We pass it through verbatim and let the hook be the gate.
+    primaryAssignee: rawPrimaryAssignee || undefined,
     notes,
     clinicSchedule,
     location,
@@ -508,6 +518,7 @@ const updateDoctor = catchAsync(async (req, res) => {
     'email',
     'visitFrequency',
     'assignedTo',
+    'primaryAssignee',
     'notes',
     'clinicSchedule',
     'location',
@@ -530,9 +541,25 @@ const updateDoctor = catchAsync(async (req, res) => {
     'whatsappNumber',
   ];
   const employeeAllowedFields = adminAllowedFields.filter(
-    (f) => !['assignedTo', 'isActive', 'isVipAssociated'].includes(f)
+    (f) => !['assignedTo', 'primaryAssignee', 'isActive', 'isVipAssociated'].includes(f)
   );
-  const allowedFields = isAdminLike(req.user.role) ? adminAllowedFields : employeeAllowedFields;
+  let allowedFields = isAdminLike(req.user.role) ? adminAllowedFields : employeeAllowedFields;
+
+  // Phase A.5.4 follow-on — Rule #3 / #19 lookup-driven role gates layered on top
+  // of the broad admin/employee split. Default [admin, president] is unchanged;
+  // subscribers narrow REASSIGN_PRIMARY (e.g. president-only) or loosen
+  // JOIN_COVERAGE_AUTO (e.g. allow staff self-join) per entity without a code
+  // deploy. Falls back to inline defaults if the Lookup is unreachable.
+  const reqEntityId = req.entityId || null;
+  const [canReassignPrimary, canJoinCoverage] = await Promise.all([
+    userCanPerformLifecycleAction(req.user, 'REASSIGN_PRIMARY', reqEntityId),
+    userCanPerformLifecycleAction(req.user, 'JOIN_COVERAGE_AUTO', reqEntityId),
+  ]);
+  allowedFields = allowedFields.filter((f) => {
+    if (f === 'primaryAssignee' && !canReassignPrimary) return false;
+    if (f === 'assignedTo' && !canJoinCoverage) return false;
+    return true;
+  });
 
   // Update only allowed fields. Phase A.5.4 — normalize assignedTo to array
   // when the caller sent a scalar (legacy clients) so Mongoose's array casting

@@ -1277,6 +1277,85 @@ const doctorManagementStyles = `
   body.dark-mode .mobile-card-actions {
     border-color: #1e293b;
   }
+
+  /* Phase A.5.4 follow-on — multi-BDM picker */
+  .dm-assignee-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 6px;
+  }
+
+  .dm-assignee-empty {
+    margin-top: 6px;
+    padding: 8px 12px;
+    border: 1px dashed #e5e7eb;
+    border-radius: 8px;
+    color: #9ca3af;
+    font-size: 13px;
+    font-style: italic;
+  }
+
+  .dm-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    border-radius: 999px;
+    font-size: 13px;
+    color: #374151;
+  }
+
+  .dm-chip.is-primary {
+    background: #fef3c7;
+    border-color: #f59e0b;
+    color: #78350f;
+  }
+
+  .dm-chip-star {
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    font-size: 14px;
+    color: #9ca3af;
+    line-height: 1;
+    padding: 0;
+  }
+
+  .dm-chip.is-primary .dm-chip-star {
+    color: #f59e0b;
+  }
+
+  .dm-chip-star:hover {
+    color: #f59e0b;
+  }
+
+  .dm-chip-x {
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    color: #6b7280;
+    font-size: 16px;
+    line-height: 1;
+    padding: 0 0 0 2px;
+  }
+
+  .dm-chip-x:hover {
+    color: #ef4444;
+  }
+
+  .dm-add-assignee {
+    margin-top: 8px;
+    max-width: 320px;
+  }
+
+  .dm-assignee-help {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #6b7280;
+  }
 `;
 
 function FilterDropdown({ value, onChange, options }) {
@@ -1387,7 +1466,10 @@ const DoctorManagement = ({
     whatsappNumber: '',
     visitFrequency: 4,
     notes: '',
-    assignedTo: '',
+    // Phase A.5.4 follow-on — multi-BDM coverage. assignedTo is an array of
+    // user _ids; primaryAssignee is the starred owner (must be in assignedTo).
+    assignedTo: [],
+    primaryAssignee: '',
   });
   const [saving, setSaving] = useState(false);
   const [specializations, setSpecializations] = useState([]);
@@ -1448,7 +1530,8 @@ const DoctorManagement = ({
       birthday: '',
       anniversary: '',
       otherDetails: '',
-      assignedTo: '',
+      assignedTo: [],
+      primaryAssignee: '',
       clientType: '',
       hospitals: [],
     });
@@ -1481,7 +1564,12 @@ const DoctorManagement = ({
       birthday: doctor.birthday ? doctor.birthday.split('T')[0] : '',
       anniversary: doctor.anniversary ? doctor.anniversary.split('T')[0] : '',
       otherDetails: doctor.otherDetails || '',
-      assignedTo: getPrimaryAssigneeId(doctor) || '',
+      // Phase A.5.4 follow-on — load every assignee into the array; primary is
+      // either the explicit primaryAssignee or, falling back, the first id.
+      assignedTo: Array.isArray(doctor.assignedTo)
+        ? doctor.assignedTo.map((u) => (u && typeof u === 'object' ? u._id : u)).filter(Boolean)
+        : (doctor.assignedTo ? [typeof doctor.assignedTo === 'object' ? doctor.assignedTo._id : doctor.assignedTo].filter(Boolean) : []),
+      primaryAssignee: getPrimaryAssigneeId(doctor) || '',
       clientType: doctor.clientType || '',
       hospitals: (doctor.hospitals || []).map(h => ({
         hospital_id: h.hospital_id?._id || h.hospital_id,
@@ -1619,11 +1707,18 @@ const DoctorManagement = ({
       doctorData.hospitals = [];
     }
 
-    // Assign BDM (or explicitly unassign)
-    if (formData.assignedTo) {
-      doctorData.assignedTo = formData.assignedTo;
+    // Phase A.5.4 follow-on — multi-BDM coverage. Always send the array (empty
+    // means "unassign all"). primaryAssignee is sent only when there's at least
+    // one assignee; the model's pre-save invariant resets a stale primary to
+    // assignedTo[0], so we don't have to pre-validate membership here.
+    const assigneeIds = Array.isArray(formData.assignedTo) ? formData.assignedTo.filter(Boolean) : [];
+    doctorData.assignedTo = assigneeIds;
+    if (assigneeIds.length > 0) {
+      doctorData.primaryAssignee = formData.primaryAssignee && assigneeIds.includes(formData.primaryAssignee)
+        ? formData.primaryAssignee
+        : assigneeIds[0];
     } else {
-      doctorData.assignedTo = null;
+      doctorData.primaryAssignee = null;
     }
 
     if (selectedDoctor) {
@@ -2310,18 +2405,80 @@ const DoctorManagement = ({
               </div>
 
               <div className="form-group full-width">
-                <label htmlFor="assignedTo">Assigned BDM</label>
-                <SelectField
-                  id="assignedTo"
-                  name="assignedTo"
-                  value={formData.assignedTo}
-                  onChange={handleFormChange}
-                >
-                  <option value="">-- No BDM Assigned --</option>
-                  {employees.map((emp) => (
-                    <option key={emp._id} value={emp._id}>{emp.name}</option>
-                  ))}
-                </SelectField>
+                <label>Assigned BDMs</label>
+                {(formData.assignedTo || []).length === 0 ? (
+                  <div className="dm-assignee-empty">No BDM assigned — pick one below to start coverage.</div>
+                ) : (
+                  <div className="dm-assignee-chips">
+                    {(formData.assignedTo || []).map((id) => {
+                      const emp = employees.find((e) => e._id === id);
+                      const isPrimary = formData.primaryAssignee === id;
+                      const onlyOne = formData.assignedTo.length === 1;
+                      return (
+                        <div className={`dm-chip${isPrimary ? ' is-primary' : ''}`} key={id}>
+                          <button
+                            type="button"
+                            className="dm-chip-star"
+                            title={isPrimary ? 'Primary BDM (default owner)' : 'Set as primary BDM'}
+                            onClick={() => setFormData((prev) => ({ ...prev, primaryAssignee: id }))}
+                          >
+                            {isPrimary ? '★' : '☆'}
+                          </button>
+                          <span>{emp?.name || '(unknown BDM)'}</span>
+                          <button
+                            type="button"
+                            className="dm-chip-x"
+                            title={onlyOne ? 'Remove (this VIP will be unassigned)' : 'Remove from coverage'}
+                            aria-label="Remove BDM"
+                            onClick={() => {
+                              setFormData((prev) => {
+                                const next = (prev.assignedTo || []).filter((x) => x !== id);
+                                let nextPrimary = prev.primaryAssignee;
+                                if (nextPrimary === id) {
+                                  nextPrimary = next[0] || '';
+                                }
+                                return { ...prev, assignedTo: next, primaryAssignee: nextPrimary };
+                              });
+                            }}
+                          >
+                            {'×'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="dm-add-assignee">
+                  <SelectField
+                    value=""
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      if (!id) return;
+                      setFormData((prev) => {
+                        const current = prev.assignedTo || [];
+                        if (current.includes(id)) return prev;
+                        const next = [...current, id];
+                        return {
+                          ...prev,
+                          assignedTo: next,
+                          primaryAssignee: prev.primaryAssignee || id,
+                        };
+                      });
+                    }}
+                  >
+                    <option value="">+ Add BDM…</option>
+                    {employees
+                      .filter((emp) => !(formData.assignedTo || []).includes(emp._id))
+                      .map((emp) => (
+                        <option key={emp._id} value={emp._id}>{emp.name}</option>
+                      ))}
+                  </SelectField>
+                </div>
+
+                <div className="dm-assignee-help">
+                  Two or more BDMs can share coverage of the same VIP Client (e.g. overlapping territories). The starred BDM is the primary owner — used as the default for ownership-style operations and single-name displays.
+                </div>
               </div>
 
               <div className="form-group full-width">

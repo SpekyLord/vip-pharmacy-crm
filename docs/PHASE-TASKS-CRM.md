@@ -1549,6 +1549,38 @@ Category `CLM_PERFORMANCE_THRESHOLDS`, code `DEFAULT`:
 - Year-2 SaaS: per-tenant CLM Performance widget — generalizes cleanly because everything is already lookup-driven + entity-scoped.
 
 
+## Phase A.5.4 — Doctor.assignedTo scalar→array + Multi-BDM Admin Picker (May 5, 2026, SHIPPED on `feat/phase-a5-4-assigned-to-array` worktree)
+
+### Why
+Two BDMs covering the same territory (Iloilo: Jake Montero + Romela Shen) genuinely visit the same MDs. Pre-A.5.4, `Doctor.assignedTo` was a single ObjectId — there was no legal way to share one MD across two BDMs, so the data ended up as duplicate Doctor records that the A.5.5 merge tool then had to clean up. A.5.4 closes the loop: schema flip + reader sweep + admin UI to actually add a 2nd BDM.
+
+### What shipped
+1. **Data model** ([backend/models/Doctor.js](backend/models/Doctor.js)): `assignedTo` flipped scalar → `[ObjectId]`. New scalar `primaryAssignee` records the canonical owner. Pre-save hook keeps the invariant `primaryAssignee ∈ assignedTo[]` (resets to `assignedTo[0]` if stale or unset).
+2. **Reader sweep** (10 backend + 4 frontend sites): every legacy `doctor.assignedTo?._id || doctor.assignedTo` ternary replaced with shape-agnostic helpers in [backend/utils/assigneeAccess.js](backend/utils/assigneeAccess.js) (`isAssignedTo`, `getAssigneeIds`, `getPrimaryAssigneeId`) and [frontend/src/utils/assigneeDisplay.js](frontend/src/utils/assigneeDisplay.js) (`getPrimaryAssigneeName`, `getAllAssigneeNames`).
+3. **Migration script** ([backend/scripts/migrateAssignedToArray.js](backend/scripts/migrateAssignedToArray.js)): idempotent dry-run-by-default; `--apply` normalizes scalar → `[scalar]` + re-syncs `primaryAssignee = assignedTo[0]` where missing/stale. Run after deploy.
+4. **Admin multi-BDM picker** (this commit, follow-on): [DoctorManagement.jsx](frontend/src/components/admin/DoctorManagement.jsx) edit modal replaces the single-BDM `<SelectField>` with chips (one per assignee) + a `+ Add BDM…` picker that filters out already-assigned BDMs. ★/☆ button on each chip toggles the primary owner. Removing the primary chip transfers the star to the next remaining assignee.
+5. **Backend write path** ([backend/controllers/doctorController.js](backend/controllers/doctorController.js)): `createDoctor` and `updateDoctor` accept `primaryAssignee` from body; `assignedTo` normalizes scalar/array → array. Model's pre-save hook is the ultimate gate — a `primaryAssignee` not in `assignedTo[]` is silently corrected to `assignedTo[0]`.
+6. **Lookup-driven role gates** (Rule #3 + #19, Plan D11): two new gate codes consumed by the controller — `REASSIGN_PRIMARY` (gates the ★ primary toggle) and `JOIN_COVERAGE_AUTO` (gates the `+ Add BDM…` picker). Default `[admin, president]`, configurable per-entity in `VIP_CLIENT_LIFECYCLE_ROLES` lookup category. Helper at [backend/utils/resolveVipClientLifecycleRole.js](backend/utils/resolveVipClientLifecycleRole.js) — 60s cache, lazy-seed inline DEFAULTS on Lookup outage. Subscribers loosen `JOIN_COVERAGE_AUTO` to include `staff` to enable BDM self-join, or narrow `REASSIGN_PRIMARY` to `president` only.
+7. **Banner update** (Rule #1): `doctors-page` PageGuide steps + tip describe the multi-BDM picker, the per-BDM weekly cap that still applies (the `{doctor, user, yearWeekKey}` Visit unique index remains intact — each BDM has their own cap), and the primary-owner role.
+
+### Verification (May 5, 2026 — this session)
+- **Static healthcheck**: [backend/scripts/healthcheckAssigneeAccess.js](backend/scripts/healthcheckAssigneeAccess.js) — **47/47 PASS** (was 31/31 pre-follow-on; +9 picker contract + +7 lookup-gate contract).
+- **Jest helper unit suite**: [backend/tests/unit/assigneeAccess.test.js](backend/tests/unit/assigneeAccess.test.js) — **22/22 PASS**.
+- **Vite build**: green in 23.82s, no warnings.
+- **Live UI smoke** (parallel worktree stack on :5001 + :5174 against dev cluster, as president): logged in → /admin/doctors → Edit Fel Abejar (single Mae assignee) → chip ★ Mae renders → opened Add BDM picker (showed 11 options, Mae filtered out) → added Jake Montero → 2 chips render (★ Mae amber + ☆ Jake gray) → reopened picker (showed 10 options, both filtered) → toggled Jake to primary → submitted → API GET round-trip showed `assignedTo=[Mae,Jake]` + `primaryAssignee=Jake` ✓ → reopened modal → both chips loaded with star on Jake (state preserved) → removed Jake's chip → star auto-transferred back to Mae → submitted → final state `assignedTo=[Mae]` + `primary=Mae` ✓.
+- **API smoke for lookup gate**: PUT /:id as Mae (staff role) with `assignedTo=[Mae,Jake]` + `primaryAssignee=Jake` + `notes='BDM-attempted...'` → `notes` persisted (allowed field) but `assignedTo`/`primaryAssignee` silently dropped by the gate (lookup says staff cannot REASSIGN_PRIMARY or JOIN_COVERAGE_AUTO under inline defaults) ✓.
+
+### Subscription-readiness posture (Rule #0d / Rule #19)
+- **Tenant isolation**: the Lookup category is keyed by `entity_id`, so each future SaaS tenant can have its own role split. The cache key is `${entity_id || '__GLOBAL__'}::${code}` — single-tenant VIP today shares the global namespace; multi-tenant Year-2 SaaS will pass `req.entityId` and get per-tenant scoping for free.
+- **No new hardcoded role arrays**: every role list flows through the helper. Rule #3 satisfied. The Apr-2026 plan D11 codes are now consumed end-to-end.
+- **`primaryAssignee` is the rebate-routing scalar**: the rebate engine (VIP-1.B) reads `primaryAssignee` (not `assignedTo[0]`) so admin can intentionally set primary=Jake even when the array is `[Mae, Jake]`. This is why `REASSIGN_PRIMARY` is a separate gate from `JOIN_COVERAGE_AUTO` — narrowing it to president-only is a real subscription lever for compliance-sensitive tenants.
+
+### Known follow-ups
+- A.5.5 hard-delete cron for merged-loser doctors after 30d grace — defer until first 30-day audit row ages (tracked in CLAUDE.md note 12b).
+- A.5.x BDM self-service "Join coverage" request flow — `JOIN_COVERAGE_APPROVAL` lookup row exists, no consumer yet. Build when admin signals BDMs need self-join without admin gating.
+
+---
+
 ## Phase A.6 — Admin-Driven One-Off Scheduling (May 5, 2026, SHIPPED)
 
 ### Why

@@ -139,6 +139,48 @@ assert(/getAssigneeIds/.test(test) && /isAssignedTo/.test(test) &&
   /getPrimaryAssigneeId/.test(test),
   'covers getAssigneeIds, isAssignedTo, getPrimaryAssigneeId');
 
+// --- 9. Multi-BDM admin UI follow-on (chip picker + primary star) ---
+console.log('\n[9] Multi-BDM admin picker UI (DoctorManagement + controller):');
+const dmCode = readFile(path.join(FE, 'components', 'admin', 'DoctorManagement.jsx'));
+assert(dmCode && /assignedTo:\s*\[\]/.test(dmCode),
+  'DoctorManagement form state initializes assignedTo as []');
+assert(dmCode && /primaryAssignee:\s*''/.test(dmCode),
+  'DoctorManagement form state initializes primaryAssignee scalar');
+assert(dmCode && /dm-assignee-chips/.test(dmCode),
+  'DoctorManagement renders chip picker for assigned BDMs');
+assert(dmCode && /\+ Add BDM…/.test(dmCode),
+  'DoctorManagement has "+ Add BDM…" picker for additional assignees');
+assert(dmCode && /Set as primary BDM/.test(dmCode),
+  'DoctorManagement chips have a "Set as primary" star control');
+assert(dmCode && /doctorData\.primaryAssignee/.test(dmCode),
+  'DoctorManagement submit handler sends primaryAssignee');
+const dctlrCode = readFile(path.join(BE, 'controllers', 'doctorController.js'));
+assert(dctlrCode && /primaryAssignee:\s*rawPrimaryAssignee/.test(dctlrCode),
+  'createDoctor destructures primaryAssignee from req.body');
+assert(dctlrCode && /'primaryAssignee',/.test(dctlrCode),
+  'updateDoctor adminAllowedFields includes primaryAssignee');
+assert(dctlrCode && /'assignedTo', 'primaryAssignee', 'isActive', 'isVipAssociated'/.test(dctlrCode),
+  'updateDoctor employeeAllowedFields excludes primaryAssignee (BDMs cannot reassign primary)');
+
+// --- 10. Lookup-driven role gates (Rule #3 + #19, Plan D11) ---
+console.log('\n[10] Lookup-driven gates (VIP_CLIENT_LIFECYCLE_ROLES):');
+const lcCode = readFile(path.join(BE, 'utils', 'resolveVipClientLifecycleRole.js'));
+assert(lcCode && /getReassignPrimaryRoles/.test(lcCode) && /getJoinCoverageAutoRoles/.test(lcCode),
+  'resolveVipClientLifecycleRole exports REASSIGN_PRIMARY + JOIN_COVERAGE_AUTO getters');
+assert(dctlrCode && /userCanPerformLifecycleAction/.test(dctlrCode),
+  'doctorController imports userCanPerformLifecycleAction');
+assert(dctlrCode && /'REASSIGN_PRIMARY'/.test(dctlrCode) && /'JOIN_COVERAGE_AUTO'/.test(dctlrCode),
+  'updateDoctor checks REASSIGN_PRIMARY + JOIN_COVERAGE_AUTO before passing fields through');
+const seedCode = readFile(path.join(BE, 'erp', 'controllers', 'lookupGenericController.js'));
+assert(seedCode && /VIP_CLIENT_LIFECYCLE_ROLES:/.test(seedCode),
+  'lookupGenericController seeds VIP_CLIENT_LIFECYCLE_ROLES category');
+assert(seedCode && /code: 'REASSIGN_PRIMARY'[\s\S]{0,400}insert_only_metadata: true/.test(seedCode),
+  'REASSIGN_PRIMARY seed row uses insert_only_metadata (admin edits survive re-seed)');
+assert(seedCode && /code: 'JOIN_COVERAGE_AUTO'[\s\S]{0,400}insert_only_metadata: true/.test(seedCode),
+  'JOIN_COVERAGE_AUTO seed row uses insert_only_metadata');
+assert(seedCode && /Wired by A\.5\.4 follow-on/.test(seedCode),
+  'seed labels reflect that A.5.4 follow-on is live (not "Inert until A.5.4 ships")');
+
 // --- Summary ---
 console.log('\n========================================================');
 console.log(`Result: ${pass} passed, ${fail} failed`);
