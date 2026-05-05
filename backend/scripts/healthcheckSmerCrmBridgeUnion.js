@@ -175,10 +175,36 @@ check(
   /v\.doctor\?\.clinicOfficeAddress/.test(uas)
 );
 
+// ── 11. Phase G1.7.1 — date-column lockstep + Pull-from-CRM defense ──────────
+// Without these, a user who changes period/cycle AFTER opening the form sees
+// the row dates stay on the original period. Pull-from-CRM then matches by
+// entry_date, finds no overlap, and silently leaves md_count at 0. Codifying
+// the fix wiring so a future refactor can't silently un-wire it.
+const smerPage = read('frontend/src/erp/pages/Smer.jsx');
+check(
+  'Smer.jsx auto-regenerates dailyEntries when period/cycle change while creating new (G1.7.1)',
+  /useEffect\(\s*\(\)\s*=>\s*\{\s*if\s*\(\s*!showForm\s*\|\|\s*editingSmer\s*\)\s*return;\s*setDailyEntries\(\s*generateDays\(\)\s*\);[\s\S]{0,400}\}\s*,\s*\[\s*period\s*,\s*cycle\s*\]\s*\)/.test(smerPage)
+);
+check(
+  'Smer.jsx handlePullFromCrm has the no-overlap fallback that rebuilds rows from backend (G1.7.1 defense in depth)',
+  /const\s+prevKeys\s*=\s*new\s+Set\(\s*prev\.map\(/.test(smerPage)
+  && /const\s+overlap\s*=\s*crmEntries\.filter\(/.test(smerPage)
+  && /prevKeys\.has\(\s*e\.entry_date\s*\)/.test(smerPage)
+  && /if\s*\(\s*overlap\s*===\s*0\s*&&\s*prev\.length\s*>\s*0\s*\)/.test(smerPage)
+);
+check(
+  'Smer.jsx fallback returns rows carrying md_count + perdiem_tier + perdiem_amount + locations from the CRM response',
+  /md_count:\s*crm\.md_count[\s\S]{0,400}perdiem_tier:\s*crm\.perdiem_tier[\s\S]{0,400}perdiem_amount:\s*crm\.perdiem_amount[\s\S]{0,400}notes:\s*crm\.locations/.test(smerPage)
+);
+check(
+  'WorkflowGuide SMER tip mentions Phase G1.7.1 date-column lockstep (Rule #1 banner)',
+  /G1\.7\.1[\s\S]{0,200}date-column lockstep/i.test(wf)
+);
+
 // ── Report ────────────────────────────────────────────────────────────────────
 const total = checks.length;
 const passed = total - failed;
-console.log('Phase G1.7 SMER ↔ CRM Bridge Union (yes-equal-weight) healthcheck');
+console.log('Phase G1.7 SMER ↔ CRM Bridge Union (yes-equal-weight + date lockstep) healthcheck');
 console.log('===================================================================');
 checks.forEach((c, i) => {
   const idx = String(i + 1).padStart(2);
