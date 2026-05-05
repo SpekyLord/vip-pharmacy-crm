@@ -14,6 +14,15 @@ export default function usePeople() {
 
   const getPeopleList = useCallback((params) => get('/people', { params }), [get]);
   const getAsUsers = useCallback((params) => get('/people/as-users', { params }), [get]);
+  // Phase G4.5ff (May 5 2026) — narrow proxy-target roster for OwnerPicker.
+  // Hits /erp/proxy-roster/<MODULE_LOOKUP_CODE> which doesn't require people-
+  // module access. Authorization is canProxyEntry() inside the controller.
+  // Subscribers grant a BDM-shaped role proxy rights via Lookup +
+  // Access Template — no code change needed.
+  const getProxyRoster = useCallback(
+    (moduleLookup, params) => get(`/proxy-roster/${moduleLookup}`, { params }),
+    [get],
+  );
   const getPersonById = useCallback((id) => get(`/people/${id}`), [get]);
   const createPerson = useCallback((data) => post('/people', data), [post]);
   const createPersonUnified = useCallback((data) => post('/people/create-with-login', data), [post]);
@@ -41,7 +50,7 @@ export default function usePeople() {
 
   return {
     ...api,
-    getPeopleList, getAsUsers,
+    getPeopleList, getAsUsers, getProxyRoster,
     getPersonById,
     createPerson,
     createPersonUnified,

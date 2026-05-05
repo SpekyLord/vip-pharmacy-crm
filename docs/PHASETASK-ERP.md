@@ -16,6 +16,55 @@
 
 ---
 
+## PHASE G4.5ff — Lookup-Driven OwnerPicker + `/erp/proxy-roster` Endpoint ✅ COMPLETE (May 5, 2026)
+
+**Goal:** Restore the "Record on behalf of" dropdown for BDM-shaped roles (ROLES.STAFF) when admin has explicitly extended `PROXY_ENTRY_ROLES.<MODULE>` to include them AND ticked the `<module>.proxy_entry` sub-permission. Honor the lookup-driven configuration end-to-end (Rule #3) — the picker is no longer hidden by a defensive role-shape check that ignored the lookup.
+
+**Trigger:** Live UI smoke as Jay Ann Protacio (s3 BDM) on `/erp/sales/entry`: dropdown labeled "Record on behalf of (proxy)" rendered with only "Self — Jay Ann Protacio (staff)" and no other BDM candidates. Refused to expand even though admin had already extended `PROXY_ENTRY_ROLES.SALES.metadata.roles = ['admin','finance','president','staff']` and `VALID_OWNER_ROLES.SALES.metadata.roles = ['staff']`. Three layered bugs surfaced under investigation: (a) `OwnerPicker.jsx` render gate was too defensive, (b) the picker fetched from `/erp/people` which requires module-level `people` access (BDMs lack it by design), (c) frontend / backend disagreed on whether `proxy_entry` keys inherit from module FULL.
+
+### G4.5ff.1 — Backend narrow proxy-roster endpoint ✅
+- [x] [backend/erp/controllers/proxyRosterController.js](../backend/erp/controllers/proxyRosterController.js) — NEW. `getProxyRoster` controller. Calls `canProxyEntry(req, module, { subKey, lookupCode })` from resolveOwnerScope.js (same gate the write path uses). Filters User by `role ∈ VALID_OWNER_ROLES.<MODULE>.metadata.roles` and entity-scope (`entity_id` OR multi-entity `entity_ids`). Excludes the caller. Returns minimal PII only — `{_id, name, role, entity_id}` plus `validOwnerRoles` for client-side defensive filtering.
+- [x] [backend/erp/routes/proxyRosterRoutes.js](../backend/erp/routes/proxyRosterRoutes.js) — NEW. Mounts `GET /:moduleLookup`. No middleware here — `protect + tenantFilter` apply at the parent ERP router; authorization is per-(module × subKey) inside the controller.
+- [x] [backend/erp/routes/index.js](../backend/erp/routes/index.js) — mounts `/proxy-roster` BEFORE `/people` so it sits OUTSIDE `erpAccessCheck('people')` (mirrors the `/people/as-users` precedent at the same line).
+
+### G4.5ff.2 — Frontend OwnerPicker + hook ✅
+- [x] [frontend/src/erp/components/OwnerPicker.jsx](../frontend/src/erp/components/OwnerPicker.jsx) — render gate dropped from `showPicker = canProxy && !callerIsValidOwner` → `showPicker = canProxy`. The lookup-driven `canProxy` (role ∈ PROXY_ENTRY_ROLES + sub-perm ticked) is now the only gate. Switched fetch source from `getPeopleList({active:true, limit:500})` → `getProxyRoster(lookupCode, { subKey })`. Backend already filters to valid-owner roles and entity scope, so the option-rendering loop is a defensive client-side `validOwnerRoles.includes(p.role)` filter only.
+- [x] [frontend/src/erp/hooks/usePeople.js](../frontend/src/erp/hooks/usePeople.js) — adds `getProxyRoster(moduleLookup, params)` callback hitting `/proxy-roster/<MODULE_LOOKUP_CODE>`.
+
+### G4.5ff.3 — Frontend / backend proxy sub-perm contract alignment ✅
+- [x] [frontend/src/erp/hooks/useErpSubAccess.js](../frontend/src/erp/hooks/useErpSubAccess.js) — adds `isProxySubKey(subKey)` regex helper (matches `proxy_entry` + every `_proxy` / `_proxy_entry` suffix variant). Proxy sub-keys now never inherit from module FULL — explicit grant required, matching backend `resolveOwnerScope.hasProxySubPermission`. Without this, Mae (sales=FULL, no `sales.proxy_entry` grant) would see the picker render but every proxy submit would 403 — confusing dropdown that always failed.
+
+### G4.5ff.4 — Banner + healthcheck + docs ✅
+- [x] [frontend/src/erp/components/WorkflowGuide.jsx](../frontend/src/erp/components/WorkflowGuide.jsx) — `sales-entry.tip` extended with the G4.5ff paragraph: lookup-driven extension recipe, the new `/erp/proxy-roster` endpoint, the `staff` extension path, and the Rule #21 cross-entity guard.
+- [x] [backend/scripts/healthcheckProxyRoster.js](../backend/scripts/healthcheckProxyRoster.js) — NEW. 35-check static contract verifier covering controller exports + route mount order + helper exports + frontend hook + OwnerPicker gate + isProxySubKey regex variants (10 known proxy keys all match, non-proxy keys all reject) + WorkflowGuide banner copy.
+- [x] CLAUDE-ERP.md Status block prepended with G4.5ff paragraph (this entry's mirror).
+
+### Subscriber recipe
+1. Control Center → Lookup Tables → `PROXY_ENTRY_ROLES.<MODULE>` → append `staff` to `metadata.roles`.
+2. Access Manager → BDM's template → tick `<module>.proxy_entry` (or the per-module variant — `opening_ar_proxy`, `grn_proxy_entry`, etc.).
+3. Done — no code deploy. Cross-entity proxy stays blocked at the write layer (Rule #21).
+
+### Smoke evidence (Playwright, May 5 2026)
+- President `yourpartner@viosintegrated.net` → picker renders with **11 BDM candidates**, `GET /api/erp/proxy-roster/SALES` returns 200 with `validOwnerRoles: ['staff']`.
+- Mae `s3.vippharmacy@gmail.com` (staff, no explicit `sales.proxy_entry` grant) → picker correctly does NOT render, `GET /api/erp/proxy-roster/SALES` returns 403 with the friendly "Ask admin to grant the sub-permission via Access Template, or extend PROXY_ENTRY_ROLES.SALES to your role" message.
+- Healthcheck: 35/35 PASS. Vite build green (14.27s). Backend syntax check OK on all touched files.
+
+### Files touched (10)
+- 2 backend NEW: `proxyRosterController.js`, `proxyRosterRoutes.js`
+- 1 backend edit: `routes/index.js` (mount line)
+- 3 frontend: `OwnerPicker.jsx`, `usePeople.js`, `useErpSubAccess.js`
+- 1 frontend banner: `WorkflowGuide.jsx`
+- 1 healthcheck NEW: `healthcheckProxyRoster.js`
+- 2 docs: this file + `CLAUDE-ERP.md`
+
+### Regression safety
+- No backend resolver / write-path / journal / audit changes — pure read-path widening for the picker dropdown.
+- `resolveOwnerForWrite` Rule #21 cross-entity guard untouched.
+- All existing OwnerPicker callers (Sales, Collections, Expenses, GRN, MyIncome, OpeningAR, PrfCalf, Income, DeductionSchedule, Internal Transfer, Undertaking) consume the same lookup-driven roster pipeline now.
+- Frontend FULL-fallback gating change is more restrictive — users who previously got broken UX (picker rendered but every submit 403'd) now correctly see no picker. No functionality lost.
+
+---
+
 ## PHASE G4.5ee — Activity-Aware Per-Diem Tier Rule ✅ COMPLETE (Apr 30, 2026 evening)
 
 **Goal:** Eliminate the data-pollution gap where office staff padded `MD: 10` on every OFFICE day to clear the 8-MD FULL threshold. Make activity_type the per-diem semantic — OFFICE = AUTO_FULL, FIELD = MD threshold (legacy), NO_WORK = ZERO. Lookup-driven per Rule #3 so subscribers configure activity semantics per entity without a code deploy.
@@ -10746,3 +10795,46 @@ Already lookup-driven by virtue of using the existing Phase G6 helper. Per-entit
 ### Why this entry exists
 
 Commit `b4c8973`'s title only mentions the smoke YAMLs; `git log --grep updateCollection` returns nothing. This entry + the CLAUDE-ERP.md mirror surface the architectural decision so future archaeology finds it. Equivalent of N.3 in the smoke handoff.
+
+---
+
+## Phase G4.7 — Unified Approval History (audit-trail mirror) (May 05 2026)
+
+### What
+
+Approval History tab in `/erp/approvals` reads `ApprovalRequest` only. Module-native decisions (income-report transitions, finance-auto-created deduction schedules, schedule cancellations) mutated the source doc directly without ever closing or creating an `ApprovalRequest`, so they vanished from the unified history. **Audit-trail gap, not a bug** — schedule/report carries `approved_by` + `approved_at`, but admin/finance lose the cross-module audit log.
+
+### Tasks
+
+- [x] New shared helper `mirrorApprovalDecision` in [backend/erp/services/approvalService.js](../backend/erp/services/approvalService.js) — close-existing-PENDING OR create-closed audit row, idempotent on `actionLabel` within 30s, non-fatal on DB error.
+- [x] Wired into `transitionIncomeStatus` (incomeCalc.js) — every review/return/confirm/credit transition writes a closed audit row with `actionLabel` per action.
+- [x] Wired into `universalApprovalController.income_report` Hub-reject path — bypasses the central transition (Hub allows reject from any status), so mirrors REJECTED directly.
+- [x] Wired into `deductionScheduleService.createSchedule` when `isFinance=true` — finance auto-create gets an APPROVED audit row.
+- [x] Wired into `deductionScheduleService.cancelSchedule` — admin/finance CANCEL writes a CANCELLED audit row.
+- [x] Refactored `closeApprovalRequest` (deductionScheduleService.js) to delegate to the shared helper. Backwards-compat — added optional 5th `schedule` arg to skip the entity_id roundtrip on hot paths.
+- [x] Healthcheck [backend/scripts/healthcheckUnifiedApprovalHistory.js](../backend/scripts/healthcheckUnifiedApprovalHistory.js) — 41 assertions, **41/41 PASS**.
+- [x] Sibling regressions — petty_cash + journal + banking + ic_transfer + purchasing + sales_goal_plan + incentive_payout + incomeProxy + G6.7-PC4..PC7 all PASS (276 total).
+- [x] WorkflowGuide [approval-manager](../frontend/src/erp/components/WorkflowGuide.jsx) banner updated (Rule #1) to mention G4.7 module-native mirror behavior.
+- [x] CLAUDE-ERP.md + this PHASETASK-ERP.md entry.
+- [ ] Live HTTP smoke (POST `/api/erp/income/:id/review` → check Approval History returns the row) — pending dev backend boot in this session.
+- [ ] Live Playwright UI smoke at `/erp/approvals` — pending MCP browser availability.
+
+### Why it matters
+
+- Rule #4 (bulletproof bar) — unified audit log is the only way admin can answer "who approved what, when" without grepping 7 different module collections.
+- Rule #19 — every audit row carries `entity_id`; multi-tenant clean for the SaaS spin-out.
+- Rule #20 — closes the loop on `gateApproval()` for the FOUR module workflows (income_report, deduction_schedule auto-approve, deduction_schedule cancel, income Hub reject) that previously stamped the source doc and left the `ApprovalRequest` PENDING (or never created one).
+
+### Files touched (uncommitted on `dev`)
+
+- modified: [backend/erp/services/approvalService.js](../backend/erp/services/approvalService.js) — new `mirrorApprovalDecision` + export.
+- modified: [backend/erp/services/deductionScheduleService.js](../backend/erp/services/deductionScheduleService.js) — `closeApprovalRequest` delegates; `createSchedule` (isFinance) + `cancelSchedule` mirror.
+- modified: [backend/erp/services/incomeCalc.js](../backend/erp/services/incomeCalc.js) — `transitionIncomeStatus` mirrors all 4 actions.
+- modified: [backend/erp/controllers/universalApprovalController.js](../backend/erp/controllers/universalApprovalController.js) — `income_report` Hub-reject path mirrors REJECTED.
+- modified: [frontend/src/erp/components/WorkflowGuide.jsx](../frontend/src/erp/components/WorkflowGuide.jsx) — `approval-manager` banner.
+- new: [backend/scripts/healthcheckUnifiedApprovalHistory.js](../backend/scripts/healthcheckUnifiedApprovalHistory.js) — 41-assertion contract verifier.
+- modified: CLAUDE-ERP.md, docs/PHASETASK-ERP.md.
+
+### Subscription posture
+
+No new lookup. No schema change. `ApprovalRequest.metadata` is already `Mixed` so `metadata.action_label` slots in cleanly. Decision values (`APPROVED`/`REJECTED`/`CANCELLED`) are wire-level enum, not policy. Rule #3 / Rule #19 aligned.

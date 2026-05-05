@@ -40,7 +40,7 @@ export default function OwnerPicker({
   const { hasSubPermission } = useErpSubAccess();
   const { options: proxyRolesOpts, loading: rolesLoading } = useLookupOptions('PROXY_ENTRY_ROLES');
   const { options: validOwnerOpts, loading: validOwnerLoading } = useLookupOptions('VALID_OWNER_ROLES');
-  const { getPeopleList } = usePeople();
+  const { getProxyRoster } = usePeople();
   const [people, setPeople] = useState([]);
   const [peopleLoading, setPeopleLoading] = useState(false);
 
@@ -72,14 +72,15 @@ export default function OwnerPicker({
   // Self option so the dropdown forces a BDM selection — matches the backend
   // Rule #21 guard in resolveOwnerScope.js.
   const callerIsValidOwner = validOwnerRoles.includes(role);
-  // A valid owner (BDM-shaped role) IS the owner of per-BDM records and never
-  // needs a "record on behalf of" dropdown — they file under themselves. Only
-  // non-owner privileged roles (admin/finance/president/back-office contractor)
-  // need the picker. Without this gate, a misconfigured lookup that adds 'staff'
-  // to PROXY_ENTRY_ROLES.<MODULE> would cause every BDM to fire /erp/people on
-  // mount and 403 (BDMs lack people read access) — needless console noise on
-  // every Sales / Opening AR / Expenses / Income / PettyCash page mount.
-  const showPicker = canProxy && !callerIsValidOwner;
+  // Phase G4.5ff (May 5 2026) — gate is now lookup-driven only (Rule #3).
+  // Earlier code added `&& !callerIsValidOwner` here to suppress a /erp/people
+  // 403 storm. That gate over-filtered: even when admin had explicitly extended
+  // PROXY_ENTRY_ROLES.<MODULE> to include 'staff' AND granted the sub-permission,
+  // BDMs could not see the picker. Fix: (1) keep the picker visible for any
+  // canProxy caller, (2) source the roster from /erp/proxy-roster — a narrow
+  // endpoint that doesn't require people-module access — so the original 403
+  // worry no longer applies.
+  const showPicker = canProxy;
 
   useEffect(() => {
     let alive = true;
@@ -87,17 +88,17 @@ export default function OwnerPicker({
     (async () => {
       setPeopleLoading(true);
       try {
-        const res = await getPeopleList({ active: true, limit: 500 });
+        const res = await getProxyRoster(lookupCode, { subKey });
         if (!alive) return;
         setPeople(res?.data || []);
       } catch (err) {
-        console.warn('[OwnerPicker] getPeopleList failed:', err?.message);
+        console.warn('[OwnerPicker] getProxyRoster failed:', err?.message);
       } finally {
         if (alive) setPeopleLoading(false);
       }
     })();
     return () => { alive = false; };
-  }, [showPicker, getPeopleList]);
+  }, [showPicker, getProxyRoster, lookupCode, subKey]);
 
   if (rolesLoading || validOwnerLoading) return null;
   if (!showPicker) return null;
@@ -132,28 +133,17 @@ export default function OwnerPicker({
       >
         <option value="">{selfLabel}</option>
         {people
-          // Only show BDM-shaped roles as valid proxy targets. admin/finance/
-          // president/ceo are NOT owners of per-BDM transactional records, so
-          // assigning a sale to them would create orphaned data.
-          //
-          // Phase S2 (Apr 2026): filter is now lookup-driven via validOwnerRoles
-          // (was hardcoded ['contractor', 'employee']). Subscribers can add a
-          // branch-manager or senior role to VALID_OWNER_ROLES metadata.roles
-          // without a frontend code change — Rule #3 alignment.
-          .filter(p => {
-            const r = p.user_id?.role;
-            return p.user_id && validOwnerRoles.includes(r);
-          })
-          .map(p => {
-            const uid = p.user_id?._id || p.user_id;
-            const full = p.full_name || p.user_id?.name || String(uid);
-            const pt = p.person_type ? ` — ${p.person_type}` : '';
-            return (
-              <option key={String(uid)} value={String(uid)}>
-                {full}{pt}
-              </option>
-            );
-          })}
+          // Phase G4.5ff (May 5 2026) — backend /erp/proxy-roster already
+          // filters by VALID_OWNER_ROLES.<MODULE>.metadata.roles + entity scope
+          // and excludes the caller. Defensive client-side filter retained so a
+          // stale/cached lookup row can't surface admin/finance/president as
+          // valid owners (would orphan per-BDM KPIs).
+          .filter((p) => validOwnerRoles.includes(p.role))
+          .map((p) => (
+            <option key={String(p._id)} value={String(p._id)}>
+              {p.name || String(p._id)}
+            </option>
+          ))}
       </select>
     </div>
   );

@@ -28,6 +28,17 @@ import { ROLES } from '../../constants/roles';
 // gov-rate delete, and product hard-delete. See backend file for the full mapping.
 // Phase G6.1 (Apr 26 2026): +2 keys for People Master entity lifecycle (transfer
 // home / grant span). See backend dangerSubPermissions.js for matching entries.
+// Phase G4.5ff (May 5 2026) — match the backend resolveOwnerScope.js
+// hasProxySubPermission contract: proxy keys require explicit grant, never
+// inherited from module FULL. Catches every variant currently in use without
+// a hardcoded list (proxy_entry, opening_ar_proxy, grn_proxy_entry, smer_proxy,
+// car_logbook_proxy, prf_calf_proxy, deduction_schedule_proxy, batch_metadata_proxy,
+// physical_count_proxy, internal_transfer_proxy).
+function isProxySubKey(subKey) {
+  if (!subKey) return false;
+  return subKey === 'proxy_entry' || /(?:^|_)proxy(?:_entry)?$/.test(subKey);
+}
+
 const BASELINE_DANGER_SUB_PERMS = new Set([
   'accounting.reverse_posted',
   'accounting.period_force_unlock',
@@ -66,6 +77,13 @@ export default function useErpSubAccess() {
       if (moduleLevel !== 'FULL') return false;
       // Danger sub-perms require explicit grant — module FULL does not inherit them
       if (BASELINE_DANGER_SUB_PERMS.has(`${module}.${subKey}`)) return false;
+      // Phase G4.5ff (May 5 2026) — proxy-entry keys also require explicit grant.
+      // Proxy entry is privileged (records under another BDM's name affecting their
+      // KPIs and commissions). Backend `hasProxySubPermission` in resolveOwnerScope.js
+      // does NOT do the FULL fallback. The previous frontend FULL fallback would
+      // render the OwnerPicker but every proxy submit would 403, creating a confusing
+      // dropdown that always failed.
+      if (isProxySubKey(subKey)) return false;
       return true;
     }
 
