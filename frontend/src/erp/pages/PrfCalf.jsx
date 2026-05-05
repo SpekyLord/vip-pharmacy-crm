@@ -607,7 +607,11 @@ export default function PrfCalf() {
                                       <th style={{ textAlign: 'left', padding: 4 }}>Doc Ref</th>
                                       <th style={{ textAlign: 'left', padding: 4 }}>Date</th>
                                       <th style={{ textAlign: 'left', padding: 4 }}>Period/Cycle</th>
+                                      <th style={{ textAlign: 'left', padding: 4 }}>Category</th>
                                       <th style={{ textAlign: 'left', padding: 4 }}>Description</th>
+                                      <th style={{ textAlign: 'center', padding: 4 }}>BIR</th>
+                                      <th style={{ textAlign: 'right', padding: 4 }}>Net</th>
+                                      <th style={{ textAlign: 'right', padding: 4 }}>VAT</th>
                                       <th style={{ textAlign: 'right', padding: 4 }}>Amount</th>
                                       <th style={{ textAlign: 'center', padding: 4 }}>Status</th>
                                     </tr>
@@ -619,7 +623,11 @@ export default function PrfCalf() {
                                         <td style={{ padding: 4 }}>{r.doc_ref}</td>
                                         <td style={{ padding: 4 }}>{r.date ? new Date(r.date).toLocaleDateString() : '—'}</td>
                                         <td style={{ padding: 4 }}>{r.period} {r.cycle}</td>
+                                        <td style={{ padding: 4, textTransform: 'capitalize' }}>{r.expense_category || '—'}</td>
                                         <td style={{ padding: 4 }}>{r.description}</td>
+                                        <td style={{ padding: 4, textAlign: 'center' }}>{r.bir_flag ? <span style={{ padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, background: r.bir_flag === 'BIR' ? '#dbeafe' : r.bir_flag === 'INTERNAL' ? '#e5e7eb' : '#fef3c7', color: r.bir_flag === 'BIR' ? '#1e40af' : r.bir_flag === 'INTERNAL' ? '#374151' : '#854d0e' }}>{r.bir_flag}</span> : <span style={{ color: '#94a3b8' }}>—</span>}</td>
+                                        <td style={{ padding: 4, textAlign: 'right' }}>{(r.net_of_vat || 0) ? `₱${(r.net_of_vat).toLocaleString()}` : '—'}</td>
+                                        <td style={{ padding: 4, textAlign: 'right', color: '#64748b' }}>{(r.vat_amount || 0) ? `₱${(r.vat_amount).toLocaleString()}` : '—'}</td>
                                         <td style={{ padding: 4, textAlign: 'right', fontWeight: 600 }}>₱{(r.amount || 0).toLocaleString()}</td>
                                         <td style={{ padding: 4, textAlign: 'center' }}>{r.approval_status || r.cycle_status || '—'}</td>
                                       </tr>

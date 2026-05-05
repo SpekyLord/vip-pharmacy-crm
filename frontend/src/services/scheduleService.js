@@ -48,6 +48,32 @@ const scheduleService = {
     return response.data;
   },
 
+  // Phase A.6 — Reschedule a single planned/carried entry by passing a date.
+  adminReschedule: async (id, date) => {
+    const response = await api.patch(`/schedules/admin/${id}`, { date });
+    return response.data;
+  },
+
+  // Phase A.6 — List upcoming planned/carried entries for one VIP under one BDM.
+  // Used by the Reschedule modal so admin sees what's currently planned.
+  adminGetUpcoming: async (doctorId, userId) => {
+    const response = await api.get('/schedules/admin/upcoming', {
+      params: { doctorId, userId },
+    });
+    return response.data;
+  },
+
+  // Phase A.6 — Bulk count of upcoming planned/carried entries for many VIPs.
+  // Powers the "Needs scheduling" badge on the doctor list.
+  adminGetUpcomingCounts: async (doctorIds) => {
+    const ids = (doctorIds || []).join(',');
+    if (!ids) return { success: true, data: { counts: {} } };
+    const response = await api.get('/schedules/admin/upcoming-counts', {
+      params: { doctorIds: ids },
+    });
+    return response.data;
+  },
+
   getCPTGrid: async (cycleNumber, userId) => {
     const params = {};
     if (cycleNumber != null) params.cycleNumber = cycleNumber;

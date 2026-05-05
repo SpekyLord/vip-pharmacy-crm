@@ -15,6 +15,11 @@ const Visit = require('../models/Visit');
 const ClientVisit = require('../models/ClientVisit');
 const { catchAsync, NotFoundError } = require('../middleware/errorHandler');
 const { getCycleNumber, getDisplayCycleNumber, getCycleStartDate, getCycleEndDate, getWeekOfMonth, getDayOfWeek, isWorkDay, MANILA_OFFSET_MS } = require('../utils/scheduleCycleUtils');
+const {
+  dateToSlot,
+  validateAlternatingWeek,
+  rejectPastCycle,
+} = require('../utils/scheduleSlotMapper');
 const { ROLES, isAdminLike: isCrmAdminLike } = require('../constants/roles');
 const { getThresholds: getTeamActivityThresholds } = require('../utils/teamActivityThresholds');
 
@@ -464,10 +469,22 @@ const adminGetCycle = catchAsync(async (req, res) => {
  * @desc    Manually create schedule entries (Admin)
  * @route   POST /api/schedules/admin/create
  * @access  Private (Admin)
- * @body    { entries: [{ doctor, user, scheduledWeek, scheduledDay }], cycleNumber? }
+ * @body    {
+ *   entries: [
+ *     // Either of these two shapes is accepted per entry:
+ *     { doctor, user, date: 'YYYY-MM-DD' }
+ *     | { doctor, user, scheduledWeek, scheduledDay, cycleNumber? }
+ *   ],
+ *   cycleNumber?  // body-level fallback when entry omits its own
+ * }
+ *
+ * Phase A.6 (May 05 2026): the {date} shape lets the admin Add VIP / Upgrade
+ * to VIP / Reschedule modals send calendar dates. Backend derives
+ * cycleNumber/scheduledWeek/scheduledDay from the date so admin doesn't
+ * have to think in W#D# coordinates.
  */
 const adminCreate = catchAsync(async (req, res) => {
-  const { entries: rawEntries, cycleNumber } = req.body;
+  const { entries: rawEntries, cycleNumber: bodyCycle } = req.body;
 
   if (!rawEntries || !Array.isArray(rawEntries) || rawEntries.length === 0) {
     return res.status(400).json({
@@ -476,19 +493,52 @@ const adminCreate = catchAsync(async (req, res) => {
     });
   }
 
-  const targetCycle = cycleNumber != null ? cycleNumber : getCycleNumber(new Date());
-  const cycleStart = getCycleStartDate(targetCycle);
+  // Normalise each entry to a slot tuple. Reject the first invalid entry with
+  // a clear message — partial inserts on validation failure produce confusing
+  // half-shipped state for the admin.
+  const normalisedErrors = [];
+  const entries = rawEntries.map((e, idx) => {
+    try {
+      let slot;
+      if (e.date) {
+        slot = dateToSlot(e.date);
+      } else if (e.scheduledWeek != null && e.scheduledDay != null) {
+        const targetCycle = e.cycleNumber != null
+          ? e.cycleNumber
+          : (bodyCycle != null ? bodyCycle : getCycleNumber(new Date()));
+        slot = {
+          cycleNumber: targetCycle,
+          scheduledWeek: e.scheduledWeek,
+          scheduledDay: e.scheduledDay,
+          scheduledLabel: `W${e.scheduledWeek}D${e.scheduledDay}`,
+          cycleStart: getCycleStartDate(targetCycle),
+        };
+      } else {
+        throw new Error('entry must include either { date } or { scheduledWeek, scheduledDay }');
+      }
+      return {
+        doctor: e.doctor,
+        user: e.user,
+        cycleStart: slot.cycleStart,
+        cycleNumber: slot.cycleNumber,
+        scheduledWeek: slot.scheduledWeek,
+        scheduledDay: slot.scheduledDay,
+        scheduledLabel: slot.scheduledLabel,
+        status: 'planned',
+      };
+    } catch (err) {
+      normalisedErrors.push({ index: idx, message: err.message });
+      return null;
+    }
+  });
 
-  const entries = rawEntries.map((e) => ({
-    doctor: e.doctor,
-    user: e.user,
-    cycleStart,
-    cycleNumber: targetCycle,
-    scheduledWeek: e.scheduledWeek,
-    scheduledDay: e.scheduledDay,
-    scheduledLabel: `W${e.scheduledWeek}D${e.scheduledDay}`,
-    status: 'planned',
-  }));
+  if (normalisedErrors.length > 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'One or more entries are invalid',
+      errors: normalisedErrors,
+    });
+  }
 
   try {
     const created = await Schedule.insertMany(entries, { ordered: false });
@@ -509,6 +559,201 @@ const adminCreate = catchAsync(async (req, res) => {
     }
     throw err;
   }
+});
+
+/**
+ * @desc    Reschedule a single planned/carried Schedule entry to a new date
+ * @route   PATCH /api/schedules/admin/:id
+ * @access  Private (Admin)
+ * @body    { date: 'YYYY-MM-DD' }
+ *
+ * Phase A.6 (May 05 2026). Reschedule rules:
+ *   - Status must be 'planned' or 'carried'. 'completed' visits are immutable
+ *     here — that's a Visit.visitDate edit problem (out of scope).
+ *   - 'missed' entries are also rejected — the cycle has already ended.
+ *   - Date must be Mon-Fri (Manila time).
+ *   - Target cycle must be >= current cycle (no rescheduling into the past).
+ *   - 2x/mo VIPs must keep the W1+W3 or W2+W4 alternating-week rule against
+ *     OTHER existing entries for the same doctor in the target cycle.
+ *   - Unique-index collision against another entry returns 409.
+ *   - scheduledLabel is re-derived. status is preserved (planned/carried).
+ *   - If the slot is unchanged (same week+day+cycle), the operation is a no-op
+ *     and returns 200 with { unchanged: true }.
+ */
+const adminReschedule = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { date } = req.body;
+
+  if (!date) {
+    return res.status(400).json({ success: false, message: 'date is required (YYYY-MM-DD)' });
+  }
+
+  const entry = await Schedule.findById(id);
+  if (!entry) {
+    throw new NotFoundError('Schedule entry not found');
+  }
+
+  if (entry.status === 'completed') {
+    return res.status(409).json({
+      success: false,
+      message: 'This visit was already logged. Editing the visit date itself is not yet supported — void and re-log if needed.',
+    });
+  }
+  if (entry.status === 'missed') {
+    return res.status(409).json({
+      success: false,
+      message: 'This entry is past the cycle end (missed) and cannot be rescheduled. Create a new entry in the next cycle.',
+    });
+  }
+
+  let slot;
+  try {
+    slot = dateToSlot(date);
+  } catch (err) {
+    return res.status(400).json({ success: false, message: err.message });
+  }
+
+  // No-op short circuit
+  if (
+    slot.cycleNumber === entry.cycleNumber &&
+    slot.scheduledWeek === entry.scheduledWeek &&
+    slot.scheduledDay === entry.scheduledDay
+  ) {
+    return res.json({
+      success: true,
+      message: 'Schedule unchanged',
+      data: entry,
+      unchanged: true,
+    });
+  }
+
+  // Past-cycle guard
+  const pastCheck = rejectPastCycle(slot.cycleNumber);
+  if (!pastCheck.ok) {
+    return res.status(400).json({ success: false, message: pastCheck.reason });
+  }
+
+  // Alternating-week guard for 2x/mo VIPs
+  const doctor = await Doctor.findById(entry.doctor).select('visitFrequency').lean();
+  if (doctor?.visitFrequency === 2) {
+    const siblings = await Schedule.find({
+      doctor: entry.doctor,
+      user: entry.user,
+      cycleNumber: slot.cycleNumber,
+      _id: { $ne: entry._id },
+    }).select('scheduledWeek').lean();
+    const altCheck = validateAlternatingWeek(doctor, slot.scheduledWeek, siblings);
+    if (!altCheck.ok) {
+      return res.status(400).json({ success: false, message: altCheck.reason });
+    }
+  }
+
+  // Apply
+  entry.cycleNumber = slot.cycleNumber;
+  entry.cycleStart = slot.cycleStart;
+  entry.scheduledWeek = slot.scheduledWeek;
+  entry.scheduledDay = slot.scheduledDay;
+  entry.scheduledLabel = slot.scheduledLabel;
+  // Preserve carriedToWeek only if the entry was carried AND we're staying in
+  // the same cycle (otherwise the carry semantic doesn't apply).
+  if (entry.status === 'carried' && entry.carriedToWeek != null && entry.cycleNumber !== slot.cycleNumber) {
+    entry.carriedToWeek = null;
+  }
+
+  try {
+    await entry.save();
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: 'That slot is already taken by another scheduled visit for this VIP Client. Pick a different date.',
+      });
+    }
+    throw err;
+  }
+
+  res.json({
+    success: true,
+    message: 'Schedule rescheduled',
+    data: entry,
+  });
+});
+
+/**
+ * @desc    Bulk count of upcoming planned/carried entries for many doctors
+ * @route   GET /api/schedules/admin/upcoming-counts
+ * @access  Private (Admin)
+ * @query   doctorIds (CSV, required) — limit 100
+ *
+ * Phase A.6 — Powers the "Needs scheduling" badge on DoctorsPage. Single
+ * aggregation across the requested doctor IDs returns a {doctorId: count}
+ * map for the current cycle and forward. Capped at 100 doctorIds per call
+ * to keep the round-trip small; the page paginates at 20 anyway.
+ */
+const adminGetUpcomingCounts = catchAsync(async (req, res) => {
+  const { doctorIds } = req.query;
+  if (!doctorIds) {
+    return res.status(400).json({ success: false, message: 'doctorIds query parameter is required (CSV)' });
+  }
+  const ids = String(doctorIds).split(',').map((s) => s.trim()).filter(Boolean).slice(0, 100);
+  if (ids.length === 0) {
+    return res.json({ success: true, data: { counts: {} } });
+  }
+  const mongooseLib = require('mongoose');
+  const objectIds = ids
+    .filter((id) => mongooseLib.isValidObjectId(id))
+    .map((id) => new mongooseLib.Types.ObjectId(id));
+  const currentCycle = getCycleNumber(new Date());
+  const grouped = await Schedule.aggregate([
+    {
+      $match: {
+        doctor: { $in: objectIds },
+        cycleNumber: { $gte: currentCycle },
+        status: { $in: ['planned', 'carried'] },
+      },
+    },
+    { $group: { _id: '$doctor', count: { $sum: 1 } } },
+  ]);
+  const counts = {};
+  ids.forEach((id) => { counts[id] = 0; });
+  grouped.forEach((g) => { counts[g._id.toString()] = g.count; });
+  res.json({ success: true, data: { currentCycle, counts } });
+});
+
+/**
+ * @desc    Get upcoming planned/carried entries for a single VIP Client
+ * @route   GET /api/schedules/admin/upcoming
+ * @access  Private (Admin)
+ * @query   doctorId (required), userId (required, the BDM whose schedule to look at)
+ *
+ * Used by the Reschedule modal to show "what's currently planned for this
+ * doctor under this BDM" so admin can pick which entry to move.
+ */
+const adminGetUpcoming = catchAsync(async (req, res) => {
+  const { doctorId, userId } = req.query;
+  if (!doctorId || !userId) {
+    return res.status(400).json({
+      success: false,
+      message: 'doctorId and userId query parameters are required',
+    });
+  }
+  const currentCycle = getCycleNumber(new Date());
+  const entries = await Schedule.find({
+    doctor: doctorId,
+    user: userId,
+    cycleNumber: { $gte: currentCycle },
+    status: { $in: ['planned', 'carried'] },
+  })
+    .sort({ cycleNumber: 1, scheduledWeek: 1, scheduledDay: 1 })
+    .lean();
+
+  res.json({
+    success: true,
+    data: {
+      currentCycle,
+      entries,
+    },
+  });
 });
 
 /**
@@ -1179,6 +1424,9 @@ module.exports = {
   adminGetCycle,
   adminCreate,
   adminClearCycle,
+  adminReschedule,
+  adminGetUpcoming,
+  adminGetUpcomingCounts,
   getCPTGrid,
   getCPTGridSummary,
   getCrossBdmHeatmap,

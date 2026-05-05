@@ -536,8 +536,19 @@ const createReassignment = catchAsync(async (req, res) => {
   if (!source_bdm_id || !target_bdm_id) {
     return res.status(400).json({ success: false, message: 'Source and target custodians are required' });
   }
-  if (source_bdm_id === target_bdm_id) {
-    return res.status(400).json({ success: false, message: 'Source and target must be different' });
+  // Phase G4.5dd-r2 — same-custodian, two-warehouse rebalance is allowed.
+  // BDMs commonly hold stock at multiple warehouses (e.g. ACC + BAC) and need
+  // to shift quantity between them without changing ownership. When source ===
+  // target, warehouses MUST differ — else there is no operation. Cross-BDM
+  // (different source/target) keeps the existing two-person flow.
+  const sameCustodian = String(source_bdm_id) === String(target_bdm_id);
+  if (sameCustodian) {
+    if (!source_warehouse_id || !target_warehouse_id) {
+      return res.status(400).json({ success: false, message: 'Same-custodian rebalance requires both source and target warehouses' });
+    }
+    if (String(source_warehouse_id) === String(target_warehouse_id)) {
+      return res.status(400).json({ success: false, message: 'Same-custodian rebalance requires different source and target warehouses' });
+    }
   }
   if (!line_items?.length) {
     return res.status(400).json({ success: false, message: 'At least one line item is required' });
@@ -555,8 +566,14 @@ const createReassignment = catchAsync(async (req, res) => {
   // INTERNAL_TRANSFER. Without this gate, any user with `inventory.transfers`
   // (the route-level sub-perm — broadly granted for IC visibility) could
   // create cross-BDM reassignments.
+  //
+  // Phase G4.5dd-r2 — self-source same-custodian rebalance bypasses the proxy
+  // gate. A BDM moving their OWN stock between their OWN warehouses isn't
+  // acting on behalf of anyone, so the proxy check is moot. Cross-BDM (or
+  // same-custodian acting on someone else's stock) still requires the proxy.
   const privileged = req.isAdmin || req.isFinance || req.isPresident;
-  if (!privileged) {
+  const isSelfMove = sameCustodian && String(source_bdm_id) === String(req.user._id);
+  if (!privileged && !isSelfMove) {
     const { canProxy } = await canProxyEntry(req, 'inventory', INTERNAL_TRANSFER_PROXY_OPTS);
     if (!canProxy) {
       return res.status(403).json({
@@ -701,7 +718,18 @@ const approveReassignment = catchAsync(async (req, res) => {
     return res.json({ success: true, message: 'Reassignment rejected', data: reassignment });
   }
 
-  // APPROVED — atomic transaction: TRANSFER_OUT only (source deduction)
+  // APPROVED — atomic transaction.
+  //
+  // Cross-BDM (default): TRANSFER_OUT from source only; status AWAITING_GRN —
+  // the receiving custodian creates a GRN at the target warehouse to complete.
+  //
+  // Phase G4.5dd-r2 — Same-custodian rebalance: the same person owns both
+  // sides, so the GRN-wait step is meaningless (nobody else needs to sign for
+  // receipt). Write TRANSFER_OUT (source warehouse) AND TRANSFER_IN (target
+  // warehouse) atomically and close the doc → COMPLETED. Ownership doesn't
+  // shift; only warehouse_id moves. FIFO stays consistent because the IN row
+  // immediately re-creates the same batch at the target warehouse.
+  const isSameCustodian = String(reassignment.source_bdm_id) === String(reassignment.target_bdm_id);
   const session = await mongoose.startSession();
   try {
     await session.withTransaction(async () => {
@@ -715,6 +743,9 @@ const approveReassignment = catchAsync(async (req, res) => {
         payload: {
           source_bdm_id: reassignment.source_bdm_id,
           target_bdm_id: reassignment.target_bdm_id,
+          source_warehouse_id: reassignment.source_warehouse_id,
+          target_warehouse_id: reassignment.target_warehouse_id,
+          same_custodian: isSameCustodian,
           line_items: reassignment.line_items
         },
         created_by: req.user._id
@@ -722,9 +753,9 @@ const approveReassignment = catchAsync(async (req, res) => {
 
       // Phase 17: warehouse context for FIFO and ledger entries
       const srcWhId = reassignment.source_warehouse_id;
+      const tgtWhId = reassignment.target_warehouse_id;
       const fifoOpts = srcWhId ? { warehouseId: srcWhId.toString() } : undefined;
 
-      // TRANSFER_OUT only — receiving side handled via GRN workflow
       for (const item of reassignment.line_items) {
         // Validate stock available via FIFO
         await consumeSpecificBatch(
@@ -732,7 +763,7 @@ const approveReassignment = catchAsync(async (req, res) => {
           item.product_id, item.batch_lot_no, item.qty, fifoOpts
         );
 
-        // TRANSFER_OUT from source
+        // TRANSFER_OUT from source (always)
         await InventoryLedger.create([{
           entity_id: reassignment.entity_id,
           bdm_id: reassignment.source_bdm_id,
@@ -746,16 +777,36 @@ const approveReassignment = catchAsync(async (req, res) => {
           event_id: event._id,
           recorded_by: req.user._id
         }], { session });
+
+        // Same-custodian: also write TRANSFER_IN to target warehouse so FIFO
+        // tracks the batch at its new location. Cross-BDM skips this — the
+        // receiving GRN will write the IN row at the target warehouse.
+        if (isSameCustodian) {
+          await InventoryLedger.create([{
+            entity_id: reassignment.entity_id,
+            bdm_id: reassignment.target_bdm_id,
+            warehouse_id: tgtWhId || undefined,
+            product_id: item.product_id,
+            batch_lot_no: item.batch_lot_no,
+            expiry_date: item.expiry_date,
+            transaction_type: 'TRANSFER_IN',
+            qty_in: item.qty,
+            qty_out: 0,
+            event_id: event._id,
+            recorded_by: req.user._id
+          }], { session });
+        }
       }
 
-      // Status → AWAITING_GRN (receiving contractor must create GRN)
-      reassignment.status = 'AWAITING_GRN';
+      // Same-custodian closes immediately; cross-BDM waits on receiver GRN.
+      reassignment.status = isSameCustodian ? 'COMPLETED' : 'AWAITING_GRN';
       reassignment.reviewed_by = req.user._id;
       reassignment.reviewed_at = new Date();
       reassignment.event_id = event._id;
       await reassignment.save({ session });
     });
 
+    const newStatus = isSameCustodian ? 'COMPLETED' : 'AWAITING_GRN';
     await ErpAuditLog.logChange({
       entity_id: reassignment.entity_id,
       log_type: 'STATUS_CHANGE',
@@ -763,12 +814,20 @@ const approveReassignment = catchAsync(async (req, res) => {
       target_model: 'StockReassignment',
       field_changed: 'status',
       old_value: 'PENDING',
-      new_value: 'AWAITING_GRN',
+      new_value: newStatus,
       changed_by: req.user._id,
-      note: `Reassignment approved: ${reassignment.line_items.length} item(s) deducted from source — awaiting GRN from receiver`
+      note: isSameCustodian
+        ? `Same-custodian rebalance approved: ${reassignment.line_items.length} item(s) moved between warehouses — closed`
+        : `Reassignment approved: ${reassignment.line_items.length} item(s) deducted from source — awaiting GRN from receiver`
     });
 
-    res.json({ success: true, message: 'Reassignment approved — awaiting GRN from receiving contractor', data: reassignment });
+    res.json({
+      success: true,
+      message: isSameCustodian
+        ? 'Same-custodian rebalance approved and completed'
+        : 'Reassignment approved — awaiting GRN from receiving contractor',
+      data: reassignment
+    });
   } finally {
     await session.endSession();
   }

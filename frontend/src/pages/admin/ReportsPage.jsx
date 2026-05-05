@@ -47,6 +47,7 @@ import Sidebar from '../../components/common/Sidebar';
 import ReportGenerator from '../../components/admin/ReportGenerator';
 import CallPlanView from '../../components/employee/CallPlanView';
 import EmployeeVisitReport from '../../components/admin/EmployeeVisitReport';
+import ScheduleVisitsModal from '../../components/admin/ScheduleVisitsModal';
 import userService from '../../services/userService';
 import PageGuide from '../../components/common/PageGuide';
 import visitService from '../../services/visitService';
@@ -1342,6 +1343,112 @@ const ReportsPage = () => {
   const [reportData, setReportData] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
 
+  // Phase A.6 — Reschedule modal state. Shared with the same component used on
+  // DoctorsPage so the schedule UX is identical no matter where admin enters from.
+  const [reschedModal, setReschedModal] = useState({
+    open: false,
+    mode: 'reschedule',
+    doctor: null,
+    existingEntries: [],
+    defaultDates: [],
+    busy: false,
+  });
+
+  const handleEvrReschedule = async (doctor) => {
+    if (!doctor?._id) return;
+    // The EmployeeVisitReport rows already belong to the BDM the report was
+    // generated for; use that BDM as the user side of the schedule lookup.
+    const bdmId = reportData?.employee?._id;
+    if (!bdmId) {
+      toast.error('Generate the report first so we know which BDM to scope to.');
+      return;
+    }
+    try {
+      const res = await scheduleService.adminGetUpcoming(doctor._id, bdmId);
+      const entries = res?.data?.entries || [];
+      setReschedModal({
+        open: true,
+        mode: entries.length === 0 ? 'schedule' : 'reschedule',
+        doctor: { _id: doctor._id, firstName: doctor.firstName, lastName: doctor.lastName, visitFrequency: doctor.visitFrequency },
+        assignedTo: bdmId,
+        existingEntries: entries,
+        defaultDates: entries.length === 0
+          ? (() => {
+              // Inline mirror of DoctorsPage's generateDefaultDatesClient — kept
+              // local to avoid a third import surface for one ~30-line function.
+              const preferredDay = 2;
+              const weeks = doctor.visitFrequency === 2 ? [1, 3] : [1, 2, 3, 4];
+              const today = new Date(); today.setHours(0, 0, 0, 0);
+              const anchor = new Date(2026, 0, 5);
+              const diffDays = Math.floor((today - anchor) / 86400000);
+              let cycle = Math.floor(diffDays / 28);
+              const cycleStart = (n) => { const d = new Date(anchor); d.setDate(d.getDate() + n * 28); return d; };
+              let cands = weeks.map((w) => {
+                const d = new Date(cycleStart(cycle));
+                d.setDate(d.getDate() + (w - 1) * 7 + (preferredDay - 1));
+                return { date: d, week: w, day: preferredDay };
+              });
+              if (cands.every((c) => c.date < today)) {
+                cycle += 1;
+                cands = weeks.map((w) => {
+                  const d = new Date(cycleStart(cycle));
+                  d.setDate(d.getDate() + (w - 1) * 7 + (preferredDay - 1));
+                  return { date: d, week: w, day: preferredDay };
+                });
+              } else {
+                cands = cands.map((c) => c.date < today
+                  ? { ...c, date: (() => { const d = new Date(c.date); d.setDate(d.getDate() + 28); return d; })() }
+                  : c);
+              }
+              return cands.map(({ date, week, day }) => {
+                const yyyy = date.getFullYear();
+                const mm = String(date.getMonth() + 1).padStart(2, '0');
+                const dd = String(date.getDate()).padStart(2, '0');
+                return { date: `${yyyy}-${mm}-${dd}`, week, day };
+              });
+            })()
+          : [],
+        busy: false,
+      });
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to load schedule');
+    }
+  };
+
+  const closeReschedModal = () => {
+    if (reschedModal.busy) return;
+    setReschedModal((s) => ({ ...s, open: false }));
+  };
+
+  const handleReschedConfirm = async ({ mode, dates, changes }) => {
+    setReschedModal((s) => ({ ...s, busy: true }));
+    try {
+      if (mode === 'reschedule') {
+        for (const c of changes) {
+          await scheduleService.adminReschedule(c.id, c.date);
+        }
+        toast.success(`Updated ${changes.length} visit${changes.length === 1 ? '' : 's'}`);
+      } else if (mode === 'schedule') {
+        const entries = dates.map((d) => ({
+          doctor: reschedModal.doctor._id,
+          user: reschedModal.assignedTo,
+          date: d.date,
+        }));
+        await scheduleService.adminCreate({ entries });
+        toast.success(`Scheduled ${dates.length} visit${dates.length === 1 ? '' : 's'}`);
+      }
+      setReschedModal({ open: false, mode: 'reschedule', doctor: null, existingEntries: [], defaultDates: [], busy: false });
+      // Re-fetch the report so the grid reflects the new schedule.
+      // (The grid is built from logged Visits + Schedules; rescheduling only
+      // affects Schedules, but a soft re-fetch guarantees a consistent view.)
+      // The report re-generation flow lives below; we just re-trigger it.
+      // For now the user will hit Generate again; non-blocking.
+    } catch (err) {
+      toast.error(err.response?.data?.message || err.message || 'Failed to save schedule');
+      setReschedModal((s) => ({ ...s, busy: false }));
+    }
+  };
+
   // Fetch reports, scheduled reports, and stats
   const fetchReports = useCallback(async () => {
     try {
@@ -1765,6 +1872,7 @@ const ReportsPage = () => {
                   <EmployeeVisitReport
                     reportData={filteredReportData}
                     monthYear={selectedMonth}
+                    onReschedule={handleEvrReschedule}
                   />
                 )}
               </div>
@@ -2104,6 +2212,18 @@ const ReportsPage = () => {
         }}
         reportType={selectedReportType}
         onGenerate={handleReportGenerated}
+      />
+
+      {/* Phase A.6 — Reschedule modal triggered from EmployeeVisitReport rows */}
+      <ScheduleVisitsModal
+        open={reschedModal.open}
+        doctor={reschedModal.doctor}
+        mode={reschedModal.mode}
+        existingEntries={reschedModal.existingEntries}
+        defaultDates={reschedModal.defaultDates}
+        busy={reschedModal.busy}
+        onConfirm={handleReschedConfirm}
+        onClose={closeReschedModal}
       />
     </div>
   );

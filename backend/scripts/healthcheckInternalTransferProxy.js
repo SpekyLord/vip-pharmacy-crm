@@ -71,7 +71,7 @@ check(
 );
 check(
   'createReassignment calls canProxyEntry with INTERNAL_TRANSFER_PROXY_OPTS',
-  icCtrl && /createReassignment[\s\S]{0,1500}canProxyEntry\(req,\s*'inventory',\s*INTERNAL_TRANSFER_PROXY_OPTS\)/.test(icCtrl),
+  icCtrl && /createReassignment[\s\S]{0,3000}canProxyEntry\(req,\s*'inventory',\s*INTERNAL_TRANSFER_PROXY_OPTS\)/.test(icCtrl),
   "createReassignment must call canProxyEntry(req, 'inventory', INTERNAL_TRANSFER_PROXY_OPTS) for non-privileged callers."
 );
 check(
@@ -178,6 +178,52 @@ check(
   'TransferOrders modal explains auto-assigned IST ref to the user',
   transferPage && /IST-/.test(transferPage) && /auto-assigned on submit/i.test(transferPage),
   "Add a small helper note under the Date/Notes row explaining the auto-assigned IST-{...} ref scheme."
+);
+
+// ── Phase G4.5dd-r2 same-custodian rebalance ──
+check(
+  'createReassignment allows same-custodian when warehouses differ',
+  icCtrl
+    && /sameCustodian\s*=\s*String\(source_bdm_id\)\s*===\s*String\(target_bdm_id\)/.test(icCtrl)
+    && !/source_bdm_id\s*===\s*target_bdm_id[\s\S]{0,200}must be different/.test(icCtrl),
+  "createReassignment must compute sameCustodian and DROP the old strict 'Source and target must be different' block. Same-custodian is allowed when warehouses differ."
+);
+check(
+  'createReassignment requires distinct warehouses on same-custodian rebalance',
+  icCtrl && /sameCustodian[\s\S]{0,500}requires different source and target warehouses/.test(icCtrl),
+  "createReassignment must 400 when sameCustodian && source_warehouse_id === target_warehouse_id."
+);
+check(
+  'createReassignment self-source bypasses proxy gate (isSelfMove)',
+  icCtrl
+    && /isSelfMove\s*=\s*sameCustodian\s*&&\s*String\(source_bdm_id\)\s*===\s*String\(req\.user\._id\)/.test(icCtrl)
+    && /!privileged\s*&&\s*!isSelfMove/.test(icCtrl),
+  "createReassignment must compute isSelfMove and skip the canProxyEntry call when (sameCustodian && source_bdm_id === req.user._id)."
+);
+check(
+  'approveReassignment writes TRANSFER_IN to target warehouse on same-custodian',
+  icCtrl
+    && /isSameCustodian\s*=\s*String\(reassignment\.source_bdm_id\)\s*===\s*String\(reassignment\.target_bdm_id\)/.test(icCtrl)
+    && /if\s*\(\s*isSameCustodian\s*\)[\s\S]{0,800}transaction_type:\s*'TRANSFER_IN'/.test(icCtrl),
+  "approveReassignment must compute isSameCustodian and, when true, write a TRANSFER_IN ledger row to the target warehouse alongside TRANSFER_OUT from source."
+);
+check(
+  'approveReassignment closes same-custodian doc directly to COMPLETED (skips AWAITING_GRN)',
+  icCtrl && /reassignment\.status\s*=\s*isSameCustodian\s*\?\s*'COMPLETED'\s*:\s*'AWAITING_GRN'/.test(icCtrl),
+  "approveReassignment must transition same-custodian reassignments straight to COMPLETED (skipping the AWAITING_GRN waiting state — same person on both sides)."
+);
+
+// ── Frontend: same-custodian UX ──
+check(
+  "TransferOrders modal target dropdown allows the source custodian (no .filter exclusion)",
+  transferPage
+    && !/entityBdms\.filter\(u\s*=>\s*u\._id\s*!==\s*reassignForm\.source_bdm_id\)/.test(transferPage),
+  "Drop the entityBdms.filter(u => u._id !== reassignForm.source_bdm_id) on the Target Custodian <SelectField> — same-custodian rebalance is now legal."
+);
+check(
+  'TransferOrders modal explains the same-custodian rebalance path',
+  transferPage && /same custodian on both sides[\s\S]{0,200}rebalance/i.test(transferPage),
+  "Add a one-liner under the modal title explaining that picking the same custodian on both sides triggers a warehouse-rebalance flow that skips the GRN step."
 );
 
 // ── Frontend: WorkflowGuide banner mentions the proxy ──

@@ -302,7 +302,10 @@ const reportStyles = `
 
 const dayNames = ['mon', 'tue', 'wed', 'thu', 'fri'];
 
-const EmployeeVisitReport = ({ reportData, monthYear }) => {
+const EmployeeVisitReport = ({ reportData, monthYear, onReschedule }) => {
+  // Phase A.6 — onReschedule(doctor) opens the parent's ScheduleVisitsModal.
+  // Optional: when omitted, the Reschedule column is hidden so the legacy
+  // print/export grid stays untouched.
   // Format month/year for display
   const formatMonthYear = (my) => {
     if (!my) return '';
@@ -428,6 +431,11 @@ const EmployeeVisitReport = ({ reportData, monthYear }) => {
               <th rowSpan={2} className="col-product">TARGET PRODUCT 1</th>
               <th rowSpan={2} className="col-product">TARGET PRODUCT 2</th>
               <th rowSpan={2} className="col-product">TARGET PRODUCT 3</th>
+              {onReschedule && (
+                <th rowSpan={2} className="col-action" data-testid="reschedule-col-header">
+                  ACTIONS
+                </th>
+              )}
             </tr>
             {/* Day name header row */}
             <tr>
@@ -449,7 +457,7 @@ const EmployeeVisitReport = ({ reportData, monthYear }) => {
           <tbody>
             {sortedDoctors.length === 0 ? (
               <tr>
-                <td colSpan={30} style={{ padding: '24px', textAlign: 'center', color: '#6b7280' }}>
+                <td colSpan={onReschedule ? 31 : 30} style={{ padding: '24px', textAlign: 'center', color: '#6b7280' }}>
                   {sortedRegularClients.length > 0
                     ? 'No VIP Clients — see Regular Clients below.'
                     : 'No VIP Clients found for this BDM.'}
@@ -493,6 +501,22 @@ const EmployeeVisitReport = ({ reportData, monthYear }) => {
                     <td className="text-left product-cell" title={doctor.assignedProducts[2]?.name}>
                       {doctor.assignedProducts[2]?.name || '-'}
                     </td>
+                    {onReschedule && (
+                      <td>
+                        <button
+                          type="button"
+                          onClick={() => onReschedule(doctor)}
+                          style={{
+                            padding: '4px 10px', fontSize: 12, fontWeight: 500,
+                            background: '#ede9fe', color: '#6d28d9', border: '1px solid #c4b5fd',
+                            borderRadius: 6, cursor: 'pointer',
+                          }}
+                          data-testid={`evr-reschedule-${doctor._id}`}
+                        >
+                          Reschedule
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 ))}
                 {/* END row */}
@@ -512,6 +536,7 @@ const EmployeeVisitReport = ({ reportData, monthYear }) => {
                   <td>END</td>
                   <td>END</td>
                   <td>END</td>
+                  {onReschedule && <td>END</td>}
                 </tr>
               </>
             )}

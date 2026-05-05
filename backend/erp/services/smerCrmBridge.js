@@ -1,26 +1,41 @@
 /**
  * SMER ↔ CRM Bridge — Pulls MD visit counts from CRM visit logs
  *
- * CRM Visit model tracks every BDM visit to a Doctor (VIP Client / MD):
- *   Visit.user     = BDM who visited
- *   Visit.doctor   = MD/VIP Client visited
- *   Visit.visitDate = date of visit
- *   Visit.status   = 'completed'
+ * Counts both halves of CRM activity (yes-equal-weight, locked May 05 2026):
+ *   Visit       — VIP visits to Doctor (the curated VIP client list)
+ *   ClientVisit — EXTRA calls to Client (regular non-VIP MDs)
  *
- * This bridge counts completed visits per day per BDM to auto-populate
- * the SMER md_count field, which drives per diem tier calculation:
+ * Both share the same lifecycle contract:
+ *   {Visit|ClientVisit}.user      = BDM who visited
+ *   {Visit|ClientVisit}.{doctor|client} = MD visited
+ *   {Visit|ClientVisit}.visitDate = date of visit
+ *   {Visit|ClientVisit}.status    = 'completed'
+ *   {Visit|ClientVisit}.photoFlags = audit flags (skipped if skipFlagged)
+ *
+ * The CRM list view (MyVisits, EmployeeVisitReport) merges both streams; this
+ * bridge mirrors that contract so the SMER pull-from-CRM reconciles with what
+ * the BDM and admin see in the CRM list. Pre-May-05 the bridge only counted
+ * the VIP half, silently undercounting per-diem on days BDMs logged extra calls.
+ *
+ * Counts feed SMER md_count, which drives per diem tier calculation:
  *   ≥ 8 MDs → FULL (100% per diem)
  *   ≥ 3 MDs → HALF (50% per diem)
  *   < 3 MDs → ZERO (0% per diem)
  *
- * Benefits over manual entry:
- * - Exact count from system (BDM can't miscount)
- * - Audit trail (each count traceable to actual visit records with GPS + photos)
- * - Auto-populated when generating SMER daily entries
+ * The fix is forward-only: already-POSTED SMERs stay frozen at their pre-fix
+ * amounts (period-lock + reopen-safety per Rule #20). Only future pulls and
+ * still-DRAFT SMERs see the corrected count.
  */
 
 const Visit = require('../../models/Visit');
 const Doctor = require('../../models/Doctor');
+// EXTRA-call counterparts of Visit/Doctor — pulled into the per-diem MD count
+// alongside VIP visits per the yes-equal-weight policy (May 05 2026). The CRM
+// list (MyVisits / EmployeeVisitReport) has always merged both streams; this
+// bridge previously only counted the VIP half, silently undercounting per-diem
+// on days BDMs logged extra calls.
+const ClientVisit = require('../../models/ClientVisit');
+const Client = require('../../models/Client');
 const CarLogbookEntry = require('../models/CarLogbookEntry');
 
 // Manila (UTC+8) — all day boundaries are anchored to Manila calendar days so a
@@ -48,17 +63,23 @@ function manilaDayEnd(dateKey) {
  * @param {Date|String} date - The date to count visits for (Manila calendar day)
  * @returns {Promise<Number>} Count of DISTINCT MDs visited that day (per-person)
  */
-async function getDailyMdCount(bdmUserId, date) {
+async function getDailyMdCount(bdmUserId, date, opts = {}) {
+  const { includeExtraCalls = true } = opts;
   const dateKey = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date)
     ? date.slice(0, 10)
     : toManilaDateKey(date);
 
-  const distinct = await Visit.distinct('doctor', {
-    user: bdmUserId,
-    visitDate: { $gte: manilaDayStart(dateKey), $lte: manilaDayEnd(dateKey) },
-    status: 'completed'
-  });
-  return distinct.length;
+  const window = { $gte: manilaDayStart(dateKey), $lte: manilaDayEnd(dateKey) };
+  const promises = [
+    Visit.distinct('doctor', { user: bdmUserId, visitDate: window, status: 'completed' })
+  ];
+  if (includeExtraCalls) {
+    promises.push(
+      ClientVisit.distinct('client', { user: bdmUserId, visitDate: window, status: 'completed' })
+    );
+  }
+  const results = await Promise.all(promises);
+  return results.reduce((sum, ids) => sum + ids.length, 0);
 }
 
 /**
@@ -82,11 +103,15 @@ async function getDailyMdCount(bdmUserId, date) {
  * @returns {Promise<Object>} { "2026-04-01": { md_count, unique_doctors, locations }, ... }
  */
 async function getDailyMdCounts(bdmUserId, startDate, endDate, opts = {}) {
-  const { skipFlagged = false, source = 'visit' } = opts;
+  // includeExtraCalls (May 05 2026, lookup-driven via PERDIEM_RATES.<role>.metadata.include_extra_calls):
+  //   true  = sum VIP Visit + EXTRA ClientVisit (yes-equal-weight policy, default)
+  //   false = strict VIP-only (legacy / opt-out for subscribers that gate per-diem on the curated VIP list)
+  const { skipFlagged = false, source = 'visit', includeExtraCalls = true } = opts;
 
-  // Phase G1.6 — dispatch by eligibility source. 'visit' = pharma CRM Visit model
-  // (default); 'logbook' = CarLogbook (non-pharma worked-day credit); 'manual'/'none'
-  // return empty so expenseController falls back to md_count=0 for every day.
+  // Phase G1.6 — dispatch by eligibility source. 'visit' = pharma CRM Visit (+ ClientVisit
+  // when includeExtraCalls is true, default); 'logbook' = CarLogbook (non-pharma
+  // worked-day credit); 'manual'/'none' return empty so expenseController falls back to
+  // md_count=0 for every day.
   if (source === 'logbook') return getDailyLogbookCounts(bdmUserId, startDate, endDate);
   if (source === 'manual' || source === 'none') return {};
 
@@ -98,91 +123,79 @@ async function getDailyMdCounts(bdmUserId, startDate, endDate, opts = {}) {
     ? endDate.slice(0, 10)
     : toManilaDateKey(endDate);
 
-  const baseMatch = {
-    user: typeof bdmUserId === 'string'
-      ? require('mongoose').Types.ObjectId.createFromHexString(bdmUserId)
-      : bdmUserId,
-    visitDate: { $gte: manilaDayStart(startKey), $lte: manilaDayEnd(endKey) },
-    status: 'completed'
-  };
+  const userObjectId = typeof bdmUserId === 'string'
+    ? require('mongoose').Types.ObjectId.createFromHexString(bdmUserId)
+    : bdmUserId;
+  const dateRange = { $gte: manilaDayStart(startKey), $lte: manilaDayEnd(endKey) };
 
-  // Phase G1.5 follow-up — match ALL completed visits (no flag pre-filter) and
-  // split into flagged vs unflagged inside $group. This lets us return both the
-  // counted md_count AND the flagged_excluded count for UI transparency
-  // ("X flagged not counted today"). The previous $match-time pre-filter hid
-  // flagged drops and made the bridge silently disagree with CRM list view.
-  const pipeline = [
-    { $match: baseMatch },
-    {
-      // Group by Manila calendar day (YYYY-MM-DD), de-dup doctors per day.
-      // doctors_unflagged uses $cond → null for flagged rows; null is filtered
-      // in JS below. Non-flagged visits either omit photoFlags (sparse) or have
-      // [] — $size with $ifNull normalizes both shapes.
-      $group: {
-        _id: {
-          $dateToString: { format: '%Y-%m-%d', date: '$visitDate', timezone: MANILA_TZ }
-        },
-        doctors_all: { $addToSet: '$doctor' },
-        doctors_unflagged: {
-          $addToSet: {
-            $cond: [
-              { $eq: [{ $size: { $ifNull: ['$photoFlags', []] } }, 0] },
-              '$doctor',
-              null
-            ]
-          }
-        }
-      }
-    },
-    {
-      $sort: { _id: 1 }
-    }
-  ];
+  // Run the same per-day "all vs unflagged" aggregation against both Visit (VIP,
+  // FK = doctor) and ClientVisit (EXTRA, FK = client). Both schemas share user /
+  // visitDate / status / photoFlags, so the only thing that varies is the FK
+  // field name. Results are merged in JS keyed by Manila calendar day. When
+  // includeExtraCalls=false we short-circuit the EXTRA stream to an empty
+  // result so the merge code stays single-shape.
+  const [vipResults, extraResults] = await Promise.all([
+    aggregateDailyByCollection(Visit, 'doctor', userObjectId, dateRange),
+    includeExtraCalls
+      ? aggregateDailyByCollection(ClientVisit, 'client', userObjectId, dateRange)
+      : Promise.resolve([])
+  ]);
 
-  const results = await Visit.aggregate(pipeline);
+  // Batch-fetch master records to resolve location labels. Doctor and Client
+  // share the locality/province/clinicOfficeAddress contract (Phase G1.5).
+  const doctorIds = collectIds(vipResults);
+  const clientIds = collectIds(extraResults);
+  const [doctors, clients] = await Promise.all([
+    doctorIds.size
+      ? Doctor.find({ _id: { $in: [...doctorIds] } })
+          .select('firstName lastName clinicOfficeAddress locality province').lean()
+      : [],
+    clientIds.size
+      ? Client.find({ _id: { $in: [...clientIds] } })
+          .select('firstName lastName clinicOfficeAddress locality province').lean()
+      : []
+  ]);
+  const masterMap = new Map();
+  for (const d of doctors) masterMap.set(d._id.toString(), d);
+  for (const c of clients) masterMap.set(c._id.toString(), c);
 
-  // Collect all unique doctor IDs across all days to batch-fetch addresses.
-  // Use the union of both sets so locations resolve regardless of skipFlagged.
-  const allDoctorIds = new Set();
-  for (const r of results) {
-    for (const docId of r.doctors_all) allDoctorIds.add(docId.toString());
-  }
-  const doctorMap = new Map();
-  if (allDoctorIds.size > 0) {
-    const doctors = await Doctor.find({ _id: { $in: [...allDoctorIds] } })
-      .select('firstName lastName clinicOfficeAddress locality province').lean();
-    for (const d of doctors) doctorMap.set(d._id.toString(), d);
-  }
-
+  // Merge per-day buckets across the two streams. EXTRA and VIP IDs live in
+  // different collections so they cannot collide; we just union them. If the
+  // same physical MD appears in both Doctor and Client master data (legacy
+  // dirty-data case the merge tool is designed to clean), each visit log
+  // counts separately — this mirrors how the CRM list view renders them.
+  const allDayKeys = new Set([...vipResults.map(r => r._id), ...extraResults.map(r => r._id)]);
   const counts = {};
-  for (const r of results) {
-    const unflagged = (r.doctors_unflagged || []).filter(d => d !== null);
-    const flaggedCount = r.doctors_all.length - unflagged.length;
-    // When skipFlagged is on, md_count + locations come from unflagged set only;
-    // otherwise everything counts (and flagged_excluded is reported as 0 since
-    // nothing was actually excluded).
-    const countedDoctors = skipFlagged ? unflagged : r.doctors_all;
+  for (const dayKey of [...allDayKeys].sort()) {
+    const vip = vipResults.find(r => r._id === dayKey);
+    const extra = extraResults.find(r => r._id === dayKey);
 
-    // Phase G1.5 — build location summary from structured locality+province.
-    // Format: "Iloilo City, Iloilo" or "Digos City, Davao del Sur".
-    // Fallback to clinicOfficeAddress for pre-backfill legacy doctors.
-    const locationLabels = countedDoctors
+    const idsAll = [
+      ...((vip && vip.ids_all) || []),
+      ...((extra && extra.ids_all) || [])
+    ];
+    const idsUnflagged = [
+      ...((vip && (vip.ids_unflagged || []).filter(x => x !== null)) || []),
+      ...((extra && (extra.ids_unflagged || []).filter(x => x !== null)) || [])
+    ];
+
+    const flaggedCount = idsAll.length - idsUnflagged.length;
+    const countedIds = skipFlagged ? idsUnflagged : idsAll;
+
+    const locationLabels = countedIds
       .map(id => {
-        const d = doctorMap.get(id.toString());
-        if (!d) return null;
-        if (d.locality && d.province) return `${d.locality}, ${d.province}`;
-        if (d.locality) return d.locality;
-        if (d.clinicOfficeAddress) return d.clinicOfficeAddress;
+        const m = masterMap.get(id.toString());
+        if (!m) return null;
+        if (m.locality && m.province) return `${m.locality}, ${m.province}`;
+        if (m.locality) return m.locality;
+        if (m.clinicOfficeAddress) return m.clinicOfficeAddress;
         return null;
       })
       .filter(Boolean);
     const uniqueLocations = [...new Set(locationLabels)];
 
-    // md_count is "per-person" — count DISTINCT MDs visited that day, not raw
-    // visit rows. The weekly-unique index makes these equal today, but naming
-    // them identically removes ambiguity if that constraint ever loosens.
-    const uniqueMdCount = countedDoctors.length;
-    counts[r._id] = {
+    const uniqueMdCount = countedIds.length;
+    counts[dayKey] = {
       md_count: uniqueMdCount,
       unique_doctors: uniqueMdCount,
       flagged_excluded: skipFlagged ? flaggedCount : 0,
@@ -190,6 +203,48 @@ async function getDailyMdCounts(bdmUserId, startDate, endDate, opts = {}) {
     };
   }
   return counts;
+}
+
+/**
+ * Per-collection daily aggregation used by getDailyMdCounts. Returns
+ * [{ _id: 'YYYY-MM-DD', ids_all: [...], ids_unflagged: [...] }] where
+ * `fkField` is 'doctor' (Visit) or 'client' (ClientVisit).
+ *
+ * The "match all completed, split flagged inside $group" pattern (Phase G1.5)
+ * is preserved: pulling all rows lets the caller surface flagged_excluded
+ * truthfully when skipFlagged is on, instead of silently dropping rows at
+ * $match time and making the bridge disagree with the CRM list.
+ */
+async function aggregateDailyByCollection(Model, fkField, userObjectId, dateRange) {
+  return Model.aggregate([
+    { $match: { user: userObjectId, visitDate: dateRange, status: 'completed' } },
+    {
+      $group: {
+        _id: {
+          $dateToString: { format: '%Y-%m-%d', date: '$visitDate', timezone: MANILA_TZ }
+        },
+        ids_all: { $addToSet: `$${fkField}` },
+        ids_unflagged: {
+          $addToSet: {
+            $cond: [
+              { $eq: [{ $size: { $ifNull: ['$photoFlags', []] } }, 0] },
+              `$${fkField}`,
+              null
+            ]
+          }
+        }
+      }
+    },
+    { $sort: { _id: 1 } }
+  ]);
+}
+
+function collectIds(results) {
+  const ids = new Set();
+  for (const r of results) {
+    for (const id of (r.ids_all || [])) ids.add(id.toString());
+  }
+  return ids;
 }
 
 /**
@@ -261,7 +316,7 @@ async function getDailyLogbookCounts(bdmUserId, startDate, endDate) {
  * @returns {Promise<Array>} Visits (or logbook-adapted rows) for the day.
  */
 async function getDailyVisitDetails(bdmUserId, date, opts = {}) {
-  const { source = 'visit' } = opts;
+  const { source = 'visit', includeExtraCalls = true } = opts;
   const dateKey = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}/.test(date)
     ? date.slice(0, 10)
     : toManilaDateKey(date);
@@ -295,15 +350,40 @@ async function getDailyVisitDetails(bdmUserId, date, opts = {}) {
 
   if (source === 'manual' || source === 'none') return [];
 
-  return Visit.find({
-    user: bdmUserId,
-    visitDate: { $gte: manilaDayStart(dateKey), $lte: manilaDayEnd(dateKey) },
-    status: 'completed'
-  })
-    .populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province')
-    .select('doctor visitDate visitType engagementTypes weekLabel')
-    .sort({ visitDate: 1 })
-    .lean();
+  // Pull both VIP visits (Visit→Doctor) and EXTRA calls (ClientVisit→Client) so
+  // drill-down matches the SMER count (yes-equal-weight policy). EXTRA rows are
+  // adapted to expose their client under the `doctor` key, matching the contract
+  // universalApprovalService relies on (`v.doctor?.clinicOfficeAddress`).
+  // includeExtraCalls=false short-circuits the EXTRA stream so the drill-down
+  // matches strict VIP-only mode.
+  const window = { $gte: manilaDayStart(dateKey), $lte: manilaDayEnd(dateKey) };
+  const [vipVisits, extraVisits] = await Promise.all([
+    Visit.find({ user: bdmUserId, visitDate: window, status: 'completed' })
+      .populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province')
+      .select('doctor visitDate visitType engagementTypes weekLabel')
+      .sort({ visitDate: 1 })
+      .lean(),
+    includeExtraCalls
+      ? ClientVisit.find({ user: bdmUserId, visitDate: window, status: 'completed' })
+          .populate('client', 'firstName lastName specialization clinicOfficeAddress locality province')
+          .select('client visitDate visitType engagementTypes weekLabel')
+          .sort({ visitDate: 1 })
+          .lean()
+      : Promise.resolve([])
+  ]);
+
+  const adaptedExtras = extraVisits.map(v => ({
+    _id: v._id,
+    doctor: v.client,
+    visitDate: v.visitDate,
+    visitType: v.visitType || 'EXTRA',
+    engagementTypes: v.engagementTypes || [],
+    weekLabel: v.weekLabel
+  }));
+
+  return [...vipVisits, ...adaptedExtras].sort(
+    (a, b) => new Date(a.visitDate) - new Date(b.visitDate)
+  );
 }
 
 module.exports = {

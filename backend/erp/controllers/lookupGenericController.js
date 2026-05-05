@@ -2589,18 +2589,21 @@ const SEED_DEFAULTS = {
   //   none    = per-diem disabled for this role
   // skip_flagged:    true = visits flagged by admin (duplicate photo, bad GPS) do NOT earn per-diem
   // allow_weekend:   false = weekend visits do NOT earn per-diem (pharma default); true = count Sat/Sun
+  // include_extra_calls (May 05 2026, yes-equal-weight policy):
+  //   true  = VIP Visits + EXTRA ClientVisits both count toward MD threshold (default)
+  //   false = strict VIP-only (legacy behavior — for subscribers that gate per-diem on VIP list only)
   // full_tier_threshold / half_tier_threshold:
   //   null   = defer to CompProfile → Settings chain (backward compat)
   //   number = per-role override. Precedence: CompProfile > PERDIEM_RATES > Settings.
   //            Example: delivery driver with full_tier_threshold=1 → any worked day
   //            (any POSTED CarLogbookEntry with official_km>0) triggers FULL per-diem.
   PERDIEM_RATES: [
-    { code: 'BDM', label: 'BDM (pharma field rep) — visit-driven per-diem', insert_only_metadata: true, metadata: { rate_php: 800, eligibility_source: 'visit', skip_flagged: true, allow_weekend: false, full_tier_threshold: null, half_tier_threshold: null } },
-    { code: 'ECOMMERCE_BDM', label: 'E-commerce BDM — visit-driven per-diem', insert_only_metadata: true, metadata: { rate_php: 800, eligibility_source: 'visit', skip_flagged: true, allow_weekend: false, full_tier_threshold: null, half_tier_threshold: null } },
+    { code: 'BDM', label: 'BDM (pharma field rep) — visit-driven per-diem', insert_only_metadata: true, metadata: { rate_php: 800, eligibility_source: 'visit', skip_flagged: true, allow_weekend: false, include_extra_calls: true, full_tier_threshold: null, half_tier_threshold: null } },
+    { code: 'ECOMMERCE_BDM', label: 'E-commerce BDM — visit-driven per-diem', insert_only_metadata: true, metadata: { rate_php: 800, eligibility_source: 'visit', skip_flagged: true, allow_weekend: false, include_extra_calls: true, full_tier_threshold: null, half_tier_threshold: null } },
     // Phase G1.6 — non-pharma example template. Delivery driver: any POSTED logbook
     // day with official_km > 0 triggers full per-diem (threshold=1). Weekends allowed.
-    // Admin copies this row and adjusts rate/thresholds per subsidiary.
-    { code: 'DELIVERY_DRIVER', label: 'Delivery driver — logbook-driven per-diem (example template)', insert_only_metadata: true, metadata: { rate_php: 500, eligibility_source: 'logbook', skip_flagged: false, allow_weekend: true, full_tier_threshold: 1, half_tier_threshold: 1 } },
+    // include_extra_calls is irrelevant for logbook source (no EXTRA-call concept).
+    { code: 'DELIVERY_DRIVER', label: 'Delivery driver — logbook-driven per-diem (example template)', insert_only_metadata: true, metadata: { rate_php: 500, eligibility_source: 'logbook', skip_flagged: false, allow_weekend: true, include_extra_calls: false, full_tier_threshold: 1, half_tier_threshold: 1 } },
   ],
 
   // Phase G4.5ee (Apr 30 2026) — Activity-aware per-diem tier rule.

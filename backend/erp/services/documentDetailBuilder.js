@@ -656,6 +656,10 @@ function buildExpensesDetails(item) {
 
 function buildPrfCalfDetails(item) {
   return {
+    // _id passes through so the CALF detail panel can lazy-fetch the linked
+    // expense breakdown from /erp/expenses/prf-calf/:id/linked-expenses
+    // without needing a separate item.id lookup.
+    _id: item._id,
     doc_type: item.doc_type,
     prf_number: item.prf_number || null,
     calf_number: item.calf_number || null,

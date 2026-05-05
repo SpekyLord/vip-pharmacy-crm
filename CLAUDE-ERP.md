@@ -252,6 +252,75 @@ When the consultant delivers the gap list, the concrete work gets its own Phase 
 
 ---
 
+## Phase G1.7 — SMER ↔ CRM Bridge Yes-Equal-Weight Pull (May 05, 2026)
+
+Closes a silent under-counting bug in the SMER `Pull from CRM` button surfaced during a 1:1 reconciliation of Mae Navarro's CRM list view vs the SMER MD count. The CRM list (MyVisits / EmployeeVisitReport) merges TWO collections — `Visit` (VIP doctor visits) + `ClientVisit` (EXTRA non-VIP regular-client calls) — but the bridge at `backend/erp/services/smerCrmBridge.js` only queried `Visit`. On days where a BDM logged extras alongside VIP visits, `md_count` came back undercounted, dropping daily tier from FULL ₱800 → HALF ₱400 (₱400/day silent loss).
+
+### The bug
+
+User screenshot showed 4 VIP + 5 EXTRA = 9 distinct MDs visited on 2026-04-17, but SMER's Pull-from-CRM returned MDs=4. Pre-fix bridge:
+- `Visit.distinct('doctor', { user, visitDate, status: 'completed' })` → 4
+- `ClientVisit.distinct('client', ...)` → not queried → 0 (ignored)
+- `md_count = 4` → HALF ₱400 instead of FULL ₱800
+
+The bridge JSDoc comment said "every BDM visit to a Doctor (VIP Client / MD)" — a contract that omitted the EXTRA-call half by design (or oversight). Whichever, the CRM list view always merged both, so the SMER pull silently disagreed with what the BDM and admin saw on screen.
+
+### Architecture
+
+- **`backend/erp/services/smerCrmBridge.js`** — three functions now UNION `Visit` (VIP, FK = `doctor`) + `ClientVisit` (EXTRA, FK = `client`):
+  - `getDailyMdCount(bdmUserId, date, opts)` — sums `Visit.distinct('doctor')` + `ClientVisit.distinct('client')` for a single date.
+  - `getDailyMdCounts(bdmUserId, start, end, opts)` — refactored to call new helper `aggregateDailyByCollection(Model, fkField, ...)` once for each collection, then merges per-day buckets in JS keyed by Manila calendar day. `flagged_excluded` reflects total flagged across both streams.
+  - `getDailyVisitDetails(bdmUserId, date, opts)` — drill-down returns Visit rows + ClientVisit rows; EXTRA rows get the populated `client` exposed under the `doctor` key so the existing `universalApprovalService` caller (`v.doctor?.clinicOfficeAddress`) keeps working.
+- **`backend/erp/services/perdiemCalc.js`** — `resolvePerdiemConfig` returns new `include_extra_calls` flag (default `true` via `m.include_extra_calls !== false` so existing seeded rows without the key inherit yes-equal-weight).
+- **`backend/erp/controllers/lookupGenericController.js`** — `PERDIEM_RATES.BDM` and `.ECOMMERCE_BDM` seed defaults add `include_extra_calls: true`. `DELIVERY_DRIVER` example sets it `false` (irrelevant for logbook source). Seed rows use `insert_only_metadata: true` so admin tweaks survive future re-seeds.
+- **`backend/erp/controllers/expenseController.js`** — `getSmerCrmMdCounts` and `getSmerCrmVisitDetail` pipe `perdiemConfig.include_extra_calls` through to the bridge. The HTTP response now surfaces `include_extra_calls` so the SMER UI can label the active mode.
+- **`frontend/src/erp/components/WorkflowGuide.jsx`** — SMER tip extended with the Phase G1.7 paragraph (Rule #1 banner kept current).
+
+### Lookup-driven contract (Rule #3 + Rule #19)
+
+`PERDIEM_RATES.<role>.metadata.include_extra_calls`:
+- `true` (default) — yes-equal-weight: VIP `Visit` + EXTRA `ClientVisit` both count toward the per-diem MD threshold. Reconciles 1:1 with CRM list view.
+- `false` — strict VIP-only (legacy). For subscribers that gate per-diem on the curated VIP list only.
+
+Subscribers flip via Control Center → Lookup Tables → PERDIEM_RATES → BDM → metadata. Per-entity × per-role precedence. No code deploy needed.
+
+### Forward-only by design (Rule #20)
+
+The fix only affects new pulls. Already-POSTED SMERs stay frozen at their pre-fix amounts (period-lock + reopen-safety). Only future Pull-from-CRM clicks and still-DRAFT SMERs see the corrected count. No migration needed.
+
+### Files touched
+
+- `backend/erp/services/smerCrmBridge.js` (3 functions + helper + JSDoc rewrite)
+- `backend/erp/services/perdiemCalc.js` (resolver returns include_extra_calls)
+- `backend/erp/controllers/lookupGenericController.js` (PERDIEM_RATES seed)
+- `backend/erp/controllers/expenseController.js` (pipe through + response surface)
+- `frontend/src/erp/components/WorkflowGuide.jsx` (SMER tip)
+- `backend/scripts/healthcheckSmerCrmBridgeUnion.js` (NEW — 28-section static contract verifier, 28/28 PASS)
+- `CLAUDE-ERP.md` (this section)
+- `docs/PHASETASK-ERP.md` (G1.7 phase entry)
+
+### Smoke
+
+- **Static healthcheck**: `node backend/scripts/healthcheckSmerCrmBridgeUnion.js` → 28/28 PASS.
+- **Frontend Vite build**: ✓ built in 9.59s, no warnings.
+- **Live API smoke (s3 / Mae as BDM, dev cluster, 2026-04 C1)**:
+  - `include_extra_calls: true` → 04/01 `md_count=9` (FULL ₱800), 04/06=8, 04/07=8, 04/08=7, 04/09=2. Total = 34. Pre-fix would have been 27 (lost ₱400 on 04/01 alone, day flipped HALF→FULL).
+  - `include_extra_calls: false` (toggled via Lookup, then restored) → 04/01 `md_count=4` (HALF ₱400). Confirms toggle works end-to-end.
+  - Drill-down on 2026-04-08 returned 9 rows: 8 VIP `[regular]` rows + 1 `[EXTRA]` row (Jill AU, IM Nephro). Drill-down adapter maps `client` → `doctor` correctly.
+- **Playwright UI smoke (Mae logged in via 5173, /erp/smer)**: banner now contains "Phase G1.7", "yes-equal-weight", "include_extra_calls", "May 05 2026" (4/4 keywords matched). Browser-context fetch to `/api/erp/expenses/smer/crm-md-counts?period=2026-04&cycle=C1` returned the same payload as the curl smoke (200 OK, include_extra_calls=true, 04/01 md_count=9). Screenshot: `smer-page-g17-banner-mae.png`.
+
+### Why the bridge was wrong
+
+The CRM split between `Visit`/`Doctor` (VIP curated list) and `ClientVisit`/`Client` (EXTRA freeform calls) is a Phase A.5+ data-modeling decision — `Client` is a "pre-VIP" record that promotes to `Doctor` on upgrade. From a BDM-effort + per-diem standpoint both visits are identical (same proof requirements: GPS + photo, same weekly-unique constraint). The bridge predates the split or simply never got the second-collection treatment when EXTRA was added. Pre-G1.7 the silent disagreement only surfaced when admins compared SMER vs CRM list; routine ops accepted the lower count.
+
+### Subscription readiness (Rule #19 / Year-2 SaaS)
+
+- Per-entity × per-role flag — no hardcoded posture.
+- Yes-equal-weight default matches pharma intent + handles dirty data (same physical MD in both Doctor and Client master) without double-pay risk: the unique-week constraint is per-collection, so cross-collection dup of the SAME person logged via both VIP + EXTRA in the same week is rare and counts as 2 (matches CRM list rendering).
+- Future tenant cut-over: a subscriber that never enables EXTRA calls (`Client` collection empty) sees identical behavior pre/post fix.
+
+---
+
 ## Phase G4.5ee — Activity-Aware Per-Diem Tier Rule (Apr 30, 2026 evening)
 
 Closes a Rule #3 gap surfaced during a live SMER review of Judy Mae Patrocinio's 2026-04-C2 cycle: every OFFICE day carried `MD: 10` to clear the 8-MD FULL threshold, even though OFFICE activity has zero verifiable MD encounters. The honor-system padding produced a clean ₱7,150 reimbursable but polluted DCR Call Rate dashboards with 110 phantom MD visits and exposed the system to a "show me the 110 visit photos" audit failure.
@@ -7865,3 +7934,65 @@ New shared helper [backend/erp/services/approvalService.js#mirrorApprovalDecisio
 - **G7.A.2**: medium. Six controllers, smoke after each.
 - **G7.A.3**: irreversible. Gated on G7.A.2 stability + Atlas backup.
 - **G7.A.4**: low. UI-only.
+
+## Phase CALF-Breakdown — Approval-Hub line-level visibility on CALFs (May 05 2026 evening)
+
+### Why
+
+The Approval Hub renders CALFs (Cash Advance & Liquidation Forms) auto-generated by [autoCalfForSource](backend/erp/controllers/expenseController.js) from BDM expense entries. Reviewers (admin, finance, president) saw only `Auto-CALF: ACCESS expenses (company-funded)` — a generic auto-purpose label — with no breakdown of what was actually spent. To answer "is this OK to post?" they had to navigate to the Expense module, find the linked entry, and read its lines. Friction-tax that grows with every BDM × cycle.
+
+### What ships (single in-flight phase, frontend + backend)
+
+1. **Backend enrichment** ([backend/erp/controllers/expenseController.js — getLinkedExpenses](backend/erp/controllers/expenseController.js)): the expense-line and fuel-line branches now surface `expense_category`, `coa_code`, `vat_amount`, `net_of_vat`, `bir_flag` on each linked record. Existing fields (date, source, description, amount, payment_mode) untouched. The endpoint shape is additive, no breaking change for the existing PrfCalf page (`/erp/prf-calf`) caller (`useExpenses.getLinkedExpenses`).
+2. **Detail-builder pass-through** ([backend/erp/services/documentDetailBuilder.js — buildPrfCalfDetails](backend/erp/services/documentDetailBuilder.js)): adds `_id: item._id` so the frontend panel has the dependency for its lazy-fetch. Single-line addition.
+3. **Frontend lazy-fetch + render** ([frontend/src/erp/components/DocumentDetailPanel.jsx](frontend/src/erp/components/DocumentDetailPanel.jsx)): new `<CalfLinkedLines calfId={…} />` component fetches `/api/erp/expenses/prf-calf/:id/linked-expenses` on mount, renders an inline 8-column table (Date / Source / Category / Vendor-Description / BIR / Net / VAT / Amount) with a `<BirFlagChip />` for the BIR filing flag (Internal / BIR / Both), a Total-linked footer, and a Variance-vs-CALF-advance row in red when the absolute variance ≥ ₱0.01. Mounts ONLY for `d.doc_type === 'CALF'` — PRFs are payment instructions, not advance-liquidation trackers, so the panel stays unchanged for them. AbortController cancels the fetch on unmount so rapid open/close doesn't leak setState.
+4. **WORKFLOW_GUIDES banner update** ([frontend/src/erp/components/WorkflowGuide.jsx](frontend/src/erp/components/WorkflowGuide.jsx)): the `approvals` guide gains a new step explaining the inline breakdown. Rule #1 — banners must reflect current behavior.
+5. **Healthcheck extension** ([backend/erp/scripts/healthcheckCalfPrfTypeLeak.js](backend/erp/scripts/healthcheckCalfPrfTypeLeak.js)): five new checks (9–13) lock the contract — backend enrichment fields are present, fuel branch carries the same shape, builder passes _id, panel mounts CalfLinkedLines only for CALFs, AbortController cleanup is wired. **13/13 PASS** locally.
+
+### Wiring contract (Rule #2 — verify end-to-end)
+
+- Backend: `expenseController.getLinkedExpenses` route `GET /erp/expenses/prf-calf/:id/linked-expenses` (mounted in `expenseRoutes.js:114`) → reads ExpenseEntry + CarLogbookEntry → enriched response.
+- Detail builder: `buildPrfCalfDetails` (called by universalApprovalController + presidentReversalsController via the module-key map at line 1218 of `documentDetailBuilder.js`) now includes `_id`.
+- Frontend: ApprovalManager + PresidentReversalsPage both pass `details=` and `item=` to `<DocumentDetailPanel/>`. The panel reads `d._id || item?._id` and mounts `<CalfLinkedLines/>` for CALF docs. The component uses `api.get('/erp/expenses/prf-calf/:id/linked-expenses')` — note the `/erp` prefix because `api` is the unprefixed axios instance from `services/api.js` (NOT `useErpApi` which auto-prefixes).
+
+### Tenant / proxy posture (Rule #19, Rule #21)
+
+- The `getLinkedExpenses` route already runs `widenFilterForProxy(req, 'expenses', PRF_CALF_PROXY_OPTS)` per Phase G4.5e, so eBDM proxies see the breakdown for CALFs they keyed on behalf of the owner — same scope as the existing CALF detail / list / submit routes. No new tenant gate needed.
+- President / admin / finance see every entity's CALF breakdown by default (Rule #21 — privileged callers get cross-entity unless `?entity_id=` narrows). Non-privileged callers stay pinned to their working entity via `req.entityId`.
+
+### Lookup-driven (Rule #3)
+
+- BIR flag values come from the existing `BIR_FLAG` lookup category (`INTERNAL` / `BIR` / `BOTH`). The `BirFlagChip` component palette is local to DocumentDetailPanel — three known values plus a graceful fallback for any future lookup row.
+- No hardcoded business values introduced. Category strings come from `ExpenseEntry.line.expense_category` (free-text in the model, often `utilities`, `internet`, `supplies`, `parking`, `toll`, `hotel`, `food` per the model comment).
+- Subscription readiness: when SaaS spin-out (Year 2 per CLAUDE.md 0d) generalizes `entity_id` to `tenant_id`, no code change needed in this phase — the existing entity scoping inherits the rename.
+
+### Files touched (CALF-Breakdown)
+
+- modified: [backend/erp/controllers/expenseController.js](backend/erp/controllers/expenseController.js) — `getLinkedExpenses` enrichment (≈12 lines added across the two branches).
+- modified: [backend/erp/services/documentDetailBuilder.js](backend/erp/services/documentDetailBuilder.js) — `buildPrfCalfDetails` adds `_id`.
+- modified: [frontend/src/erp/components/DocumentDetailPanel.jsx](frontend/src/erp/components/DocumentDetailPanel.jsx) — imports + `<BirFlagChip/>` + `<CalfLinkedLines/>` component (≈100 lines added at file head) + mount inside the CALF branch.
+- modified: [frontend/src/erp/components/WorkflowGuide.jsx](frontend/src/erp/components/WorkflowGuide.jsx) — new approvals-banner step.
+- modified: [backend/erp/scripts/healthcheckCalfPrfTypeLeak.js](backend/erp/scripts/healthcheckCalfPrfTypeLeak.js) — checks 9–13.
+- modified: CLAUDE-ERP.md, docs/PHASETASK-ERP.md.
+
+### Risk profile
+
+- **Green.** Additive only — backend response gains fields, frontend gains a component, no existing read paths altered. The existing PrfCalf.jsx page calls `getLinkedExpenses` and treats the response as a generic shape; the added fields are ignored there and don't break any rendering. President Reversal Console reuses DocumentDetailPanel; the new component mounts there too which is fine because the linked-expenses endpoint serves both Approval-Hub and Reversal-Console contexts identically.
+
+### Phase CALF-Breakdown.B — PrfCalf.jsx UI parity + fuel VAT derivation (same evening, May 05 2026)
+
+The .A slice deliberately left `PrfCalf.jsx` untouched on the rationale that "the existing page ignores the new fields and continues rendering normally." That's true but creates inconsistency: the same `getLinkedExpenses` payload renders different breakdown columns depending on which page surfaces it. .B closes the gap and also fixes a numerical bug — fuel rows showing Net=0 / VAT=0:
+
+1. **PrfCalf.jsx breakdown table** ([frontend/src/erp/pages/PrfCalf.jsx](frontend/src/erp/pages/PrfCalf.jsx)) — inline drill-down at "View Links" gains four columns: **Category** (text), **BIR** (chip — INTERNAL / BIR / BOTH with palette mirroring DocumentDetailPanel.BirFlagChip), **Net** (₱), **VAT** (₱). Existing columns preserved. Header summary above the table (Fuel count / Expense count / Drawn-vs-CALF / Variance) covers totals — no footer row needed.
+2. **Fuel VAT/Net derivation** ([backend/erp/controllers/expenseController.js — getLinkedExpenses](backend/erp/controllers/expenseController.js)) — `CarLogbookEntry.fuel_entries` does not persist `net_of_vat` / `vat_amount` / `bir_flag` / `coa_code` (unlike `ExpenseEntry.lines`, which has them via the pre-save hook). Pre-fix, fuel rows displayed Net=0 / VAT=0 / BIR=null. Fix: `Settings.getVatRate()` is resolved once before the fuel loop (lookup-driven, Rule #3) and used to split `total_amount` into Net (`amount × 1/(1+rate)`) and VAT (`amount × rate/(1+rate)`); `bir_flag` defaults to `'BOTH'` (matching `ExpenseEntry.lines` schema default). The JE engine resolves the same rate at post time, so the displayed split matches what books.
+3. **prf-calf WorkflowGuide tip** ([frontend/src/erp/components/WorkflowGuide.jsx](frontend/src/erp/components/WorkflowGuide.jsx)) — appended a sentence describing the inline View-Links breakdown columns and noting fuel VAT derivation source. Mirrors the `approvals`-guide step from .A.
+4. **Healthcheck extension** ([backend/erp/scripts/healthcheckCalfPrfTypeLeak.js](backend/erp/scripts/healthcheckCalfPrfTypeLeak.js)) — three additional checks (14–16) lock the contract: PrfCalf.jsx renders the four new headers, fuel branch resolves VAT via `Settings.getVatRate()` (no hardcoded constant), prf-calf WorkflowGuide tip mentions the breakdown.
+
+**Files touched (.B)**:
+- modified: [backend/erp/controllers/expenseController.js](backend/erp/controllers/expenseController.js) — fuel VAT/Net derivation (≈12 net lines).
+- modified: [frontend/src/erp/pages/PrfCalf.jsx](frontend/src/erp/pages/PrfCalf.jsx) — 4 new columns + chip rendering (≈14 net lines).
+- modified: [frontend/src/erp/components/WorkflowGuide.jsx](frontend/src/erp/components/WorkflowGuide.jsx) — prf-calf tip extension.
+- modified: [backend/erp/scripts/healthcheckCalfPrfTypeLeak.js](backend/erp/scripts/healthcheckCalfPrfTypeLeak.js) — checks 14–16.
+
+**Risk**: green. Both consumers now show consistent shape; fuel rows show meaningful Net/VAT instead of zeros. No new lookups, no new schemas, no migrations. Existing callers unaffected.
+- Failure modes thought through: 404 (no linked lines yet) → renders nothing rather than an empty table. 500 / network error → renders inline error message, doesn't break the rest of the panel. CALF without `_id` (legacy serialization gap) → mount guard short-circuits.
