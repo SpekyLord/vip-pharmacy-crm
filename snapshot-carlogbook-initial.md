@@ -1,0 +1,993 @@
+- generic [ref=e7]:
+  - navigation [ref=e8]:
+    - generic [ref=e9]:
+      - img "VIP" [ref=e11]
+      - generic "Platform switch" [ref=e12]:
+        - link "CRM" [ref=e13] [cursor=pointer]:
+          - /url: /admin
+          - img [ref=e15]
+          - text: CRM
+        - link "ERP" [ref=e20] [cursor=pointer]:
+          - /url: /erp
+          - img [ref=e22]
+          - text: ERP
+    - generic [ref=e25]:
+      - img [ref=e27]
+      - generic "ERP tabs" [ref=e32]:
+        - link "Dashboard" [ref=e33] [cursor=pointer]:
+          - /url: /erp
+          - img [ref=e35]
+          - generic [ref=e40]: Dashboard
+        - link "Sales" [ref=e41] [cursor=pointer]:
+          - /url: /erp/sales
+          - img [ref=e43]
+          - generic [ref=e47]: Sales
+        - link "Inventory" [ref=e48] [cursor=pointer]:
+          - /url: /erp/my-stock
+          - img [ref=e50]
+          - generic [ref=e54]: Inventory
+        - link "Transfers" [ref=e55] [cursor=pointer]:
+          - /url: /erp/transfers
+          - img [ref=e57]
+          - generic [ref=e62]: Transfers
+        - link "Collections" [ref=e63] [cursor=pointer]:
+          - /url: /erp/collections
+          - img [ref=e65]
+          - generic [ref=e68]: Collections
+        - link "Expenses" [ref=e69] [cursor=pointer]:
+          - /url: /erp/expenses
+          - img [ref=e71]
+          - generic [ref=e74]: Expenses
+        - link "Reports" [ref=e75] [cursor=pointer]:
+          - /url: /erp/reports
+          - img [ref=e77]
+          - generic [ref=e79]: Reports
+    - generic [ref=e80]:
+      - combobox "Working entity" [ref=e81] [cursor=pointer]:
+        - option "VIP" [selected]
+        - option "Balai Lawaan"
+        - option "MG and CO."
+      - button "Toggle dark mode" [ref=e82] [cursor=pointer]:
+        - img [ref=e83]
+      - link "Inbox — 19 unread" [ref=e86] [cursor=pointer]:
+        - /url: /inbox
+        - img [ref=e87]
+        - generic: "19"
+      - generic [ref=e91]:
+        - generic [ref=e92]: GL
+        - generic [ref=e93]:
+          - generic [ref=e94]: Gregg Louie Vios
+          - generic [ref=e95]: president
+      - button "Logout" [ref=e96] [cursor=pointer]:
+        - img [ref=e97]
+        - generic [ref=e100]: Logout
+  - generic [ref=e101]:
+    - complementary [ref=e102]:
+      - button [ref=e103] [cursor=pointer]:
+        - img [ref=e104]
+      - navigation [ref=e106]:
+        - generic [ref=e108]:
+          - link "Executive Cockpit" [ref=e109] [cursor=pointer]:
+            - /url: /erp/cockpit
+            - img [ref=e111]
+            - generic [ref=e113]: Executive Cockpit
+          - link "ERP Home" [ref=e114] [cursor=pointer]:
+            - /url: /erp
+            - img [ref=e116]
+            - generic [ref=e119]: ERP Home
+        - button "Administration" [ref=e121] [cursor=pointer]:
+          - generic [ref=e122]: Administration
+          - img [ref=e123]
+        - generic [ref=e125]:
+          - button "Sales" [ref=e126] [cursor=pointer]:
+            - generic [ref=e127]: Sales
+            - img [ref=e128]
+          - generic [ref=e130]:
+            - link "Sales" [ref=e131] [cursor=pointer]:
+              - /url: /erp/sales/entry
+              - img [ref=e133]
+              - generic [ref=e136]: Sales
+            - link "Sales Transactions" [ref=e137] [cursor=pointer]:
+              - /url: /erp/sales
+              - img [ref=e139]
+              - generic [ref=e142]: Sales Transactions
+            - link "Opening AR" [ref=e143] [cursor=pointer]:
+              - /url: /erp/sales/opening-ar
+              - img [ref=e145]
+              - generic [ref=e149]: Opening AR
+            - link "Opening AR Transactions" [ref=e150] [cursor=pointer]:
+              - /url: /erp/sales/opening-ar/list
+              - img [ref=e152]
+              - generic [ref=e155]: Opening AR Transactions
+            - link "Returns / CN" [ref=e156] [cursor=pointer]:
+              - /url: /erp/credit-notes
+              - img [ref=e158]
+              - generic [ref=e161]: Returns / CN
+            - link "Hospital PO Backlog" [ref=e162] [cursor=pointer]:
+              - /url: /erp/hospital-pos/backlog
+              - img [ref=e164]
+              - generic [ref=e167]: Hospital PO Backlog
+            - link "New Hospital PO" [ref=e168] [cursor=pointer]:
+              - /url: /erp/hospital-pos/entry
+              - img [ref=e170]
+              - generic [ref=e174]: New Hospital PO
+            - link "Hospital Contract Prices" [ref=e175] [cursor=pointer]:
+              - /url: /erp/hospital-contract-prices
+              - img [ref=e177]
+              - generic [ref=e180]: Hospital Contract Prices
+        - generic [ref=e181]:
+          - button "Inventory" [ref=e182] [cursor=pointer]:
+            - generic [ref=e183]: Inventory
+            - img [ref=e184]
+          - generic [ref=e186]:
+            - link "Batch Trace" [ref=e187] [cursor=pointer]:
+              - /url: /erp/batch-trace
+              - img [ref=e189]
+              - generic [ref=e192]: Batch Trace
+            - link "Collaterals" [ref=e193] [cursor=pointer]:
+              - /url: /erp/collaterals
+              - img [ref=e195]
+              - generic [ref=e199]: Collaterals
+            - link "CSI Booklets" [ref=e200] [cursor=pointer]:
+              - /url: /erp/csi-booklets
+              - img [ref=e202]
+              - generic [ref=e204]: CSI Booklets
+            - link "DR / Consignment" [ref=e205] [cursor=pointer]:
+              - /url: /erp/dr
+              - img [ref=e207]
+              - generic [ref=e212]: DR / Consignment
+            - link "Expiry Mgmt" [ref=e213] [cursor=pointer]:
+              - /url: /erp/expiry-dashboard
+              - img [ref=e215]
+              - generic [ref=e217]: Expiry Mgmt
+            - link "GRN Entry" [ref=e218] [cursor=pointer]:
+              - /url: /erp/grn
+              - img [ref=e220]
+              - generic [ref=e224]: GRN Entry
+            - link "Inventory" [ref=e225] [cursor=pointer]:
+              - /url: /erp/my-stock
+              - img [ref=e227]
+              - generic [ref=e231]: Inventory
+            - link "Office Supplies" [ref=e232] [cursor=pointer]:
+              - /url: /erp/office-supplies
+              - img [ref=e234]
+              - generic [ref=e238]: Office Supplies
+            - link "Transfers" [ref=e239] [cursor=pointer]:
+              - /url: /erp/transfers
+              - img [ref=e241]
+              - generic [ref=e244]: Transfers
+            - link "Undertaking (Receipt)" [ref=e245] [cursor=pointer]:
+              - /url: /erp/undertaking
+              - img [ref=e247]
+              - generic [ref=e251]: Undertaking (Receipt)
+            - link "Warehouses" [ref=e252] [cursor=pointer]:
+              - /url: /erp/warehouses
+              - img [ref=e254]
+              - generic [ref=e258]: Warehouses
+        - generic [ref=e259]:
+          - button "Collections" [ref=e260] [cursor=pointer]:
+            - generic [ref=e261]: Collections
+            - img [ref=e262]
+          - generic [ref=e264]:
+            - link "AR Aging" [ref=e265] [cursor=pointer]:
+              - /url: /erp/collections/ar
+              - img [ref=e267]
+              - generic [ref=e269]: AR Aging
+            - link "Collections" [ref=e270] [cursor=pointer]:
+              - /url: /erp/collections
+              - img [ref=e272]
+              - generic [ref=e275]: Collections
+            - link "IC Settlements" [ref=e276] [cursor=pointer]:
+              - /url: /erp/ic-settlements
+              - img [ref=e278]
+              - generic [ref=e283]: IC Settlements
+        - generic [ref=e284]:
+          - button "Expenses" [ref=e285] [cursor=pointer]:
+            - generic [ref=e286]: Expenses
+            - img [ref=e287]
+          - generic [ref=e289]:
+            - link "Credit Cards" [ref=e290] [cursor=pointer]:
+              - /url: /erp/credit-cards
+              - img [ref=e292]
+              - generic [ref=e294]: Credit Cards
+            - link "Expenses" [ref=e295] [cursor=pointer]:
+              - /url: /erp/expenses
+              - img [ref=e297]
+              - generic [ref=e299]: Expenses
+        - button "Capture Hub" [ref=e301] [cursor=pointer]:
+          - generic [ref=e302]: Capture Hub
+          - img [ref=e303]
+        - button "Reports" [ref=e306] [cursor=pointer]:
+          - generic [ref=e307]: Reports
+          - img [ref=e308]
+        - button "Sales Goals" [ref=e311] [cursor=pointer]:
+          - generic [ref=e312]: Sales Goals
+          - img [ref=e313]
+        - generic [ref=e315]:
+          - button "People & HR" [ref=e316] [cursor=pointer]:
+            - generic [ref=e317]: People & HR
+            - img [ref=e318]
+          - generic [ref=e320]:
+            - link "Contractor Income" [ref=e321] [cursor=pointer]:
+              - /url: /erp/income
+              - img [ref=e323]
+              - generic [ref=e325]: Contractor Income
+            - link "Org Chart" [ref=e326] [cursor=pointer]:
+              - /url: /erp/org-chart
+              - img [ref=e328]
+              - generic [ref=e333]: Org Chart
+            - link "Payroll" [ref=e334] [cursor=pointer]:
+              - /url: /erp/payroll
+              - img [ref=e336]
+              - generic [ref=e338]: Payroll
+            - link "People" [ref=e339] [cursor=pointer]:
+              - /url: /erp/people
+              - img [ref=e341]
+              - generic [ref=e345]: People
+        - generic [ref=e346]:
+          - button "Accounting" [ref=e347] [cursor=pointer]:
+            - generic [ref=e348]: Accounting
+            - img [ref=e349]
+          - generic [ref=e351]:
+            - link "Bank Accounts" [ref=e352] [cursor=pointer]:
+              - /url: /erp/bank-accounts
+              - img [ref=e354]
+              - generic [ref=e356]: Bank Accounts
+            - link "Bank Reconciliation" [ref=e357] [cursor=pointer]:
+              - /url: /erp/bank-recon
+              - img [ref=e359]
+              - generic [ref=e363]: Bank Reconciliation
+            - link "Cashflow" [ref=e364] [cursor=pointer]:
+              - /url: /erp/cashflow
+              - img [ref=e366]
+              - generic [ref=e368]: Cashflow
+            - link "CC Ledger" [ref=e369] [cursor=pointer]:
+              - /url: /erp/credit-card-ledger
+              - img [ref=e371]
+              - generic [ref=e373]: CC Ledger
+            - link "Chart of Accounts" [ref=e374] [cursor=pointer]:
+              - /url: /erp/coa
+              - img [ref=e376]
+              - generic [ref=e378]: Chart of Accounts
+            - link "Cost Centers" [ref=e379] [cursor=pointer]:
+              - /url: /erp/cost-centers
+              - img [ref=e381]
+              - generic [ref=e385]: Cost Centers
+            - link "Fixed Assets" [ref=e386] [cursor=pointer]:
+              - /url: /erp/fixed-assets
+              - img [ref=e388]
+              - generic [ref=e390]: Fixed Assets
+            - link "Journal Entries" [ref=e391] [cursor=pointer]:
+              - /url: /erp/journals
+              - img [ref=e393]
+              - generic [ref=e395]: Journal Entries
+            - link "Loans" [ref=e396] [cursor=pointer]:
+              - /url: /erp/loans
+              - img [ref=e398]
+              - generic [ref=e400]: Loans
+            - link "Owner Equity" [ref=e401] [cursor=pointer]:
+              - /url: /erp/owner-equity
+              - img [ref=e403]
+              - generic [ref=e405]: Owner Equity
+            - link "P&L Statement" [ref=e406] [cursor=pointer]:
+              - /url: /erp/profit-loss
+              - img [ref=e408]
+              - generic [ref=e410]: P&L Statement
+            - link "Petty Cash" [ref=e411] [cursor=pointer]:
+              - /url: /erp/petty-cash
+              - img [ref=e413]
+              - generic [ref=e416]: Petty Cash
+            - link "Recurring Journals" [ref=e417] [cursor=pointer]:
+              - /url: /erp/recurring-journals
+              - img [ref=e419]
+              - generic [ref=e421]: Recurring Journals
+            - link "Trial Balance" [ref=e422] [cursor=pointer]:
+              - /url: /erp/trial-balance
+              - img [ref=e424]
+              - generic [ref=e426]: Trial Balance
+            - link "VAT & CWT" [ref=e427] [cursor=pointer]:
+              - /url: /erp/vat-compliance
+              - img [ref=e429]
+              - generic [ref=e431]: VAT & CWT
+        - generic [ref=e432]:
+          - button "Tools" [ref=e433] [cursor=pointer]:
+            - generic [ref=e434]: Tools
+            - img [ref=e435]
+          - generic [ref=e437]:
+            - link "BIR Calculator" [ref=e438] [cursor=pointer]:
+              - /url: /erp/bir-calculator
+              - img [ref=e440]
+              - generic [ref=e442]: BIR Calculator
+            - link "Data Archive" [ref=e443] [cursor=pointer]:
+              - /url: /erp/data-archive
+              - img [ref=e445]
+              - generic [ref=e448]: Data Archive
+            - link "Gov. Rates" [ref=e449] [cursor=pointer]:
+              - /url: /erp/government-rates
+              - img [ref=e451]
+              - generic [ref=e453]: Gov. Rates
+            - link "Month-End Close" [ref=e454] [cursor=pointer]:
+              - /url: /erp/month-end-close
+              - img [ref=e456]
+              - generic [ref=e458]: Month-End Close
+            - link "Payment Modes" [ref=e459] [cursor=pointer]:
+              - /url: /erp/payment-modes
+              - img [ref=e461]
+              - generic [ref=e463]: Payment Modes
+            - link "Period Locks" [ref=e464] [cursor=pointer]:
+              - /url: /erp/period-locks
+              - img [ref=e466]
+              - generic [ref=e468]: Period Locks
+        - generic [ref=e469]:
+          - button "Purchasing" [ref=e470] [cursor=pointer]:
+            - generic [ref=e471]: Purchasing
+            - img [ref=e472]
+          - generic [ref=e474]:
+            - link "Accounts Payable" [ref=e475] [cursor=pointer]:
+              - /url: /erp/accounts-payable
+              - img [ref=e477]
+              - generic [ref=e480]: Accounts Payable
+            - link "Batch Trace" [ref=e481] [cursor=pointer]:
+              - /url: /erp/batch-trace
+              - img [ref=e483]
+              - generic [ref=e486]: Batch Trace
+            - link "GRN Entry" [ref=e487] [cursor=pointer]:
+              - /url: /erp/grn
+              - img [ref=e489]
+              - generic [ref=e493]: GRN Entry
+            - link "Product Master" [ref=e494] [cursor=pointer]:
+              - /url: /erp/products
+              - img [ref=e496]
+              - generic [ref=e500]: Product Master
+            - link "Purchase Orders" [ref=e501] [cursor=pointer]:
+              - /url: /erp/purchase-orders
+              - img [ref=e503]
+              - generic [ref=e507]: Purchase Orders
+            - link "Supplier Invoices" [ref=e508] [cursor=pointer]:
+              - /url: /erp/supplier-invoices
+              - img [ref=e510]
+              - generic [ref=e514]: Supplier Invoices
+            - link "Transfers" [ref=e515] [cursor=pointer]:
+              - /url: /erp/transfers
+              - img [ref=e517]
+              - generic [ref=e520]: Transfers
+            - link "Vendors" [ref=e521] [cursor=pointer]:
+              - /url: /erp/vendors
+              - img [ref=e523]
+              - generic [ref=e528]: Vendors
+    - generic [ref=e529]:
+      - button [ref=e531] [cursor=pointer]:
+        - img [ref=e532]
+      - generic "Platform switch" [ref=e535]:
+        - link "CRM" [ref=e536] [cursor=pointer]:
+          - /url: /admin
+        - link "ERP" [ref=e537] [cursor=pointer]:
+          - /url: /erp
+      - navigation [ref=e538]:
+        - generic [ref=e540]:
+          - button "Executive Cockpit" [ref=e541] [cursor=pointer]:
+            - img [ref=e543]
+            - generic [ref=e545]: Executive Cockpit
+          - button "ERP Home" [ref=e546] [cursor=pointer]:
+            - img [ref=e548]
+            - generic [ref=e551]: ERP Home
+        - button "Administration" [ref=e553] [cursor=pointer]:
+          - generic [ref=e554]: Administration
+          - img [ref=e555]
+        - generic [ref=e557]:
+          - button "Sales" [ref=e558] [cursor=pointer]:
+            - generic [ref=e559]: Sales
+            - img [ref=e560]
+          - generic [ref=e562]:
+            - button "Sales" [ref=e563] [cursor=pointer]:
+              - img [ref=e565]
+              - generic [ref=e568]: Sales
+            - button "Sales Transactions" [ref=e569] [cursor=pointer]:
+              - img [ref=e571]
+              - generic [ref=e574]: Sales Transactions
+            - button "Opening AR" [ref=e575] [cursor=pointer]:
+              - img [ref=e577]
+              - generic [ref=e581]: Opening AR
+            - button "Opening AR Transactions" [ref=e582] [cursor=pointer]:
+              - img [ref=e584]
+              - generic [ref=e587]: Opening AR Transactions
+            - button "Returns / CN" [ref=e588] [cursor=pointer]:
+              - img [ref=e590]
+              - generic [ref=e593]: Returns / CN
+            - button "Hospital PO Backlog" [ref=e594] [cursor=pointer]:
+              - img [ref=e596]
+              - generic [ref=e599]: Hospital PO Backlog
+            - button "New Hospital PO" [ref=e600] [cursor=pointer]:
+              - img [ref=e602]
+              - generic [ref=e606]: New Hospital PO
+            - button "Hospital Contract Prices" [ref=e607] [cursor=pointer]:
+              - img [ref=e609]
+              - generic [ref=e612]: Hospital Contract Prices
+        - generic [ref=e613]:
+          - button "Inventory" [ref=e614] [cursor=pointer]:
+            - generic [ref=e615]: Inventory
+            - img [ref=e616]
+          - generic [ref=e618]:
+            - button "Batch Trace" [ref=e619] [cursor=pointer]:
+              - img [ref=e621]
+              - generic [ref=e624]: Batch Trace
+            - button "Collaterals" [ref=e625] [cursor=pointer]:
+              - img [ref=e627]
+              - generic [ref=e631]: Collaterals
+            - button "CSI Booklets" [ref=e632] [cursor=pointer]:
+              - img [ref=e634]
+              - generic [ref=e636]: CSI Booklets
+            - button "DR / Consignment" [ref=e637] [cursor=pointer]:
+              - img [ref=e639]
+              - generic [ref=e644]: DR / Consignment
+            - button "Expiry Mgmt" [ref=e645] [cursor=pointer]:
+              - img [ref=e647]
+              - generic [ref=e649]: Expiry Mgmt
+            - button "GRN Entry" [ref=e650] [cursor=pointer]:
+              - img [ref=e652]
+              - generic [ref=e656]: GRN Entry
+            - button "Inventory" [ref=e657] [cursor=pointer]:
+              - img [ref=e659]
+              - generic [ref=e663]: Inventory
+            - button "Office Supplies" [ref=e664] [cursor=pointer]:
+              - img [ref=e666]
+              - generic [ref=e670]: Office Supplies
+            - button "Transfers" [ref=e671] [cursor=pointer]:
+              - img [ref=e673]
+              - generic [ref=e676]: Transfers
+            - button "Undertaking (Receipt)" [ref=e677] [cursor=pointer]:
+              - img [ref=e679]
+              - generic [ref=e683]: Undertaking (Receipt)
+            - button "Warehouses" [ref=e684] [cursor=pointer]:
+              - img [ref=e686]
+              - generic [ref=e690]: Warehouses
+        - generic [ref=e691]:
+          - button "Collections" [ref=e692] [cursor=pointer]:
+            - generic [ref=e693]: Collections
+            - img [ref=e694]
+          - generic [ref=e696]:
+            - button "AR Aging" [ref=e697] [cursor=pointer]:
+              - img [ref=e699]
+              - generic [ref=e701]: AR Aging
+            - button "Collections" [ref=e702] [cursor=pointer]:
+              - img [ref=e704]
+              - generic [ref=e707]: Collections
+            - button "IC Settlements" [ref=e708] [cursor=pointer]:
+              - img [ref=e710]
+              - generic [ref=e715]: IC Settlements
+        - generic [ref=e716]:
+          - button "Expenses" [ref=e717] [cursor=pointer]:
+            - generic [ref=e718]: Expenses
+            - img [ref=e719]
+          - generic [ref=e721]:
+            - button "Credit Cards" [ref=e722] [cursor=pointer]:
+              - img [ref=e724]
+              - generic [ref=e726]: Credit Cards
+            - button "Expenses" [ref=e727] [cursor=pointer]:
+              - img [ref=e729]
+              - generic [ref=e731]: Expenses
+        - button "Capture Hub" [ref=e733] [cursor=pointer]:
+          - generic [ref=e734]: Capture Hub
+          - img [ref=e735]
+        - button "Reports" [ref=e738] [cursor=pointer]:
+          - generic [ref=e739]: Reports
+          - img [ref=e740]
+        - button "Sales Goals" [ref=e743] [cursor=pointer]:
+          - generic [ref=e744]: Sales Goals
+          - img [ref=e745]
+        - generic [ref=e747]:
+          - button "People & HR" [ref=e748] [cursor=pointer]:
+            - generic [ref=e749]: People & HR
+            - img [ref=e750]
+          - generic [ref=e752]:
+            - button "Contractor Income" [ref=e753] [cursor=pointer]:
+              - img [ref=e755]
+              - generic [ref=e757]: Contractor Income
+            - button "Org Chart" [ref=e758] [cursor=pointer]:
+              - img [ref=e760]
+              - generic [ref=e765]: Org Chart
+            - button "Payroll" [ref=e766] [cursor=pointer]:
+              - img [ref=e768]
+              - generic [ref=e770]: Payroll
+            - button "People" [ref=e771] [cursor=pointer]:
+              - img [ref=e773]
+              - generic [ref=e777]: People
+        - generic [ref=e778]:
+          - button "Accounting" [ref=e779] [cursor=pointer]:
+            - generic [ref=e780]: Accounting
+            - img [ref=e781]
+          - generic [ref=e783]:
+            - button "Bank Accounts" [ref=e784] [cursor=pointer]:
+              - img [ref=e786]
+              - generic [ref=e788]: Bank Accounts
+            - button "Bank Reconciliation" [ref=e789] [cursor=pointer]:
+              - img [ref=e791]
+              - generic [ref=e795]: Bank Reconciliation
+            - button "Cashflow" [ref=e796] [cursor=pointer]:
+              - img [ref=e798]
+              - generic [ref=e800]: Cashflow
+            - button "CC Ledger" [ref=e801] [cursor=pointer]:
+              - img [ref=e803]
+              - generic [ref=e805]: CC Ledger
+            - button "Chart of Accounts" [ref=e806] [cursor=pointer]:
+              - img [ref=e808]
+              - generic [ref=e810]: Chart of Accounts
+            - button "Cost Centers" [ref=e811] [cursor=pointer]:
+              - img [ref=e813]
+              - generic [ref=e817]: Cost Centers
+            - button "Fixed Assets" [ref=e818] [cursor=pointer]:
+              - img [ref=e820]
+              - generic [ref=e822]: Fixed Assets
+            - button "Journal Entries" [ref=e823] [cursor=pointer]:
+              - img [ref=e825]
+              - generic [ref=e827]: Journal Entries
+            - button "Loans" [ref=e828] [cursor=pointer]:
+              - img [ref=e830]
+              - generic [ref=e832]: Loans
+            - button "Owner Equity" [ref=e833] [cursor=pointer]:
+              - img [ref=e835]
+              - generic [ref=e837]: Owner Equity
+            - button "P&L Statement" [ref=e838] [cursor=pointer]:
+              - img [ref=e840]
+              - generic [ref=e842]: P&L Statement
+            - button "Petty Cash" [ref=e843] [cursor=pointer]:
+              - img [ref=e845]
+              - generic [ref=e848]: Petty Cash
+            - button "Recurring Journals" [ref=e849] [cursor=pointer]:
+              - img [ref=e851]
+              - generic [ref=e853]: Recurring Journals
+            - button "Trial Balance" [ref=e854] [cursor=pointer]:
+              - img [ref=e856]
+              - generic [ref=e858]: Trial Balance
+            - button "VAT & CWT" [ref=e859] [cursor=pointer]:
+              - img [ref=e861]
+              - generic [ref=e863]: VAT & CWT
+        - generic [ref=e864]:
+          - button "Tools" [ref=e865] [cursor=pointer]:
+            - generic [ref=e866]: Tools
+            - img [ref=e867]
+          - generic [ref=e869]:
+            - button "BIR Calculator" [ref=e870] [cursor=pointer]:
+              - img [ref=e872]
+              - generic [ref=e874]: BIR Calculator
+            - button "Data Archive" [ref=e875] [cursor=pointer]:
+              - img [ref=e877]
+              - generic [ref=e880]: Data Archive
+            - button "Gov. Rates" [ref=e881] [cursor=pointer]:
+              - img [ref=e883]
+              - generic [ref=e885]: Gov. Rates
+            - button "Month-End Close" [ref=e886] [cursor=pointer]:
+              - img [ref=e888]
+              - generic [ref=e890]: Month-End Close
+            - button "Payment Modes" [ref=e891] [cursor=pointer]:
+              - img [ref=e893]
+              - generic [ref=e895]: Payment Modes
+            - button "Period Locks" [ref=e896] [cursor=pointer]:
+              - img [ref=e898]
+              - generic [ref=e900]: Period Locks
+        - generic [ref=e901]:
+          - button "Purchasing" [ref=e902] [cursor=pointer]:
+            - generic [ref=e903]: Purchasing
+            - img [ref=e904]
+          - generic [ref=e906]:
+            - button "Accounts Payable" [ref=e907] [cursor=pointer]:
+              - img [ref=e909]
+              - generic [ref=e912]: Accounts Payable
+            - button "Batch Trace" [ref=e913] [cursor=pointer]:
+              - img [ref=e915]
+              - generic [ref=e918]: Batch Trace
+            - button "GRN Entry" [ref=e919] [cursor=pointer]:
+              - img [ref=e921]
+              - generic [ref=e925]: GRN Entry
+            - button "Product Master" [ref=e926] [cursor=pointer]:
+              - img [ref=e928]
+              - generic [ref=e932]: Product Master
+            - button "Purchase Orders" [ref=e933] [cursor=pointer]:
+              - img [ref=e935]
+              - generic [ref=e939]: Purchase Orders
+            - button "Supplier Invoices" [ref=e940] [cursor=pointer]:
+              - img [ref=e942]
+              - generic [ref=e946]: Supplier Invoices
+            - button "Transfers" [ref=e947] [cursor=pointer]:
+              - img [ref=e949]
+              - generic [ref=e952]: Transfers
+            - button "Vendors" [ref=e953] [cursor=pointer]:
+              - img [ref=e955]
+              - generic [ref=e960]: Vendors
+    - main [ref=e961]:
+      - generic [ref=e962]:
+        - button "×" [ref=e963] [cursor=pointer]
+        - generic [ref=e964]:
+          - img [ref=e965]
+          - text: Car Logbook
+        - generic [ref=e967]:
+          - generic [ref=e968]:
+            - generic [ref=e969]: "1"
+            - generic [ref=e970]: Select period and cycle (C1 = days 1–15, C2 = days 16–end, MONTHLY = full month) — all days including weekends are shown
+          - generic [ref=e971]:
+            - generic [ref=e972]: "2"
+            - generic [ref=e973]: Fill in Start KM and End KM for each day — tap [S]/[E] to OCR-scan odometer photos; Personal KM is deducted from Official KM
+          - generic [ref=e974]:
+            - generic [ref=e975]: "3"
+            - generic [ref=e976]: Destination auto-fills from your SMER entry for that date; edit manually if needed
+          - generic [ref=e977]:
+            - generic [ref=e978]: "4"
+            - generic [ref=e979]: Click the Fuel cell to expand, add fuel entries (station, liters, ₱/L, payment mode) — or tap "Scan Receipt" to OCR a gas receipt
+          - generic [ref=e980]:
+            - generic [ref=e981]: "5"
+            - generic [ref=e982]: "Non-CASH fuel: either link it to a POSTED CALF (recommended), or click \"Submit Fuel\" to route it as its own FUEL_ENTRY through the Approval Hub (per-fuel approval, Phase 33)"
+          - generic [ref=e983]:
+            - generic [ref=e984]: "6"
+            - generic [ref=e985]: Click "Save Car Logbook" to persist all dirty rows; an * indicator shows unsaved days
+          - generic [ref=e986]:
+            - generic [ref=e987]: "7"
+            - generic [ref=e988]: "Click \"Validate\" to check the period+cycle, then \"Submit\" — the backend wraps the cycle into ONE CarLogbookCycle doc and posts ONE entry to the Approval Hub as LOGBOOK-{period}-{cycle}"
+          - generic [ref=e989]:
+            - generic [ref=e990]: "8"
+            - generic [ref=e991]: President posts the cycle → ONE journal entry covers the whole cycle; all per-day docs + the wrapper flip to POSTED atomically
+        - generic [ref=e992]:
+          - generic [ref=e993]: "Next steps:"
+          - button "Record SMER →" [ref=e994] [cursor=pointer]
+          - button "Record Expenses →" [ref=e995] [cursor=pointer]
+          - button "PRF / CALF →" [ref=e996] [cursor=pointer]
+          - button "Fuel Efficiency →" [ref=e997] [cursor=pointer]
+          - button "Approval Hub →" [ref=e998] [cursor=pointer]
+        - generic [ref=e999]: "💡 Phase 33 cycle-wrapper: submit/post/reverse now run at the cycle level (CarLogbookCycle), not per day. Per-day CarLogbookEntry docs remain the source of truth for odometer/fuel/efficiency — the wrapper only carries cycle-level approval/posting state and aggregated totals. Before Submit, the cycle pre-post gate requires each non-CASH fuel to be either (a) linked to a POSTED CALF or (b) have approval_status=APPROVED via the per-fuel Submit Fuel flow. Rejected fuel entries stay editable; fix the value and Resubmit. Reversing the cycle cascades to all per-day docs in one atomic transaction. COA code for fuel is admin-configurable in Settings (lookup-driven). Privileged viewers (president/admin/finance) use the BDM picker to audit someone else's cycle — the page is read-only until they pick themselves (Rule #21 — no silent self-fallback; backend requires an explicit bdm_id to create/validate/submit). **Proxy Entry (Phase G4.5e, Apr 2026)** — admin/finance/president (or an office-based eBDM contractor with `expenses.car_logbook_proxy` ticked on their Access Template) can now WRITE to a selected BDM's logbook via the BDM picker. The create payload carries `assigned_to` = target BDM so the backend stamps `bdm_id` = target and records `recorded_on_behalf_of` = the proxy. Any cycle containing a proxy-created day force-routes through the Approval Hub on Submit (Rule #20 four-eyes). Per-fuel Submit Fuel also force-routes when the parent day was proxied. Lookup-driven: PROXY_ENTRY_ROLES.CAR_LOGBOOK (eligible proxy roles) + VALID_OWNER_ROLES.CAR_LOGBOOK (valid owner roles) — subscribers extend both via Control Center → Lookup Tables."
+        - generic [ref=e1000]: ⚠ If an approver rejects this document, a red banner with the reason will appear on this page. Click Fix & Resubmit to edit and re-send for approval — your data is preserved.
+      - generic [ref=e1001]:
+        - heading "Car Logbook" [level=1] [ref=e1002]
+        - link "← Back to Expenses" [ref=e1003] [cursor=pointer]:
+          - /url: /erp/expenses
+      - generic [ref=e1004]:
+        - textbox [ref=e1005]: 2026-05
+        - combobox [ref=e1006]:
+          - option "Cycle 1" [selected]
+          - option "Cycle 2"
+          - option "Monthly"
+        - combobox "Choose whose logbook to file on behalf of — required" [ref=e1007]:
+          - option "Select a BDM to file on behalf…" [selected]
+          - option "Gregg Louie Vios"
+          - option "Cristina Salila"
+          - option "Edcel Mae Arespacochaga"
+          - option "Jay Ann Protacio"
+          - option "Jenny Rose Jacosalem"
+          - option "Judy Mae Patrocinio"
+          - option "Mae Navarro"
+          - option "Menivie Daniela"
+          - option "Roman Mabanag"
+          - option "Romela Shen Herrera"
+          - option "TEST ACCOUNT BDM"
+        - button "Save Car Logbook" [disabled] [ref=e1008]
+        - button "Validate" [disabled] [ref=e1009]
+        - button "Submit" [disabled] [ref=e1010]
+        - link "PRF / CALF" [ref=e1011] [cursor=pointer]:
+          - /url: /erp/prf-calf
+      - generic [ref=e1012]: Select a BDM above to view their car logbook. Car Logbook is a per-person daily grid; pick whose logbook to inspect.
+      - generic [ref=e1013]:
+        - button "Working (15)" [ref=e1014] [cursor=pointer]
+        - button "Posted" [ref=e1015] [cursor=pointer]
+      - table [ref=e1017]:
+        - rowgroup [ref=e1018]:
+          - row "Date DOW Destination Start KM End KM Pers Official Fuel ₱ Status" [ref=e1019]:
+            - columnheader "Date" [ref=e1020]
+            - columnheader "DOW" [ref=e1021]
+            - columnheader "Destination" [ref=e1022]
+            - columnheader "Start KM" [ref=e1023]
+            - columnheader [ref=e1024]
+            - columnheader "End KM" [ref=e1025]
+            - columnheader [ref=e1026]
+            - columnheader "Pers" [ref=e1027]
+            - columnheader "Official" [ref=e1028]
+            - columnheader "Fuel" [ref=e1029]
+            - columnheader "₱" [ref=e1030]
+            - columnheader "Status" [ref=e1031]
+        - rowgroup [ref=e1032]:
+          - row "05/01 FRI S E 0 +Fuel" [ref=e1033]:
+            - cell "05/01" [ref=e1034]
+            - cell "FRI" [ref=e1035]
+            - cell [ref=e1036]:
+              - textbox "Details..." [ref=e1037]
+            - cell [ref=e1038]:
+              - spinbutton [ref=e1039]
+            - cell "S" [ref=e1040]:
+              - button "S" [ref=e1041] [cursor=pointer]
+            - cell [ref=e1042]:
+              - spinbutton [ref=e1043]
+            - cell "E" [ref=e1044]:
+              - button "E" [ref=e1045] [cursor=pointer]
+            - cell [ref=e1046]:
+              - spinbutton [ref=e1047]
+            - cell "0" [ref=e1048]
+            - cell "+Fuel" [ref=e1049]:
+              - button "+Fuel" [ref=e1050] [cursor=pointer]
+            - cell [ref=e1051]
+            - cell [ref=e1052]
+          - row "05/02 SAT S E 0 +Fuel" [ref=e1053]:
+            - cell "05/02" [ref=e1054]
+            - cell "SAT" [ref=e1055]
+            - cell [ref=e1056]:
+              - textbox "Details..." [ref=e1057]
+            - cell [ref=e1058]:
+              - spinbutton [ref=e1059]
+            - cell "S" [ref=e1060]:
+              - button "S" [ref=e1061] [cursor=pointer]
+            - cell [ref=e1062]:
+              - spinbutton [ref=e1063]
+            - cell "E" [ref=e1064]:
+              - button "E" [ref=e1065] [cursor=pointer]
+            - cell [ref=e1066]:
+              - spinbutton [ref=e1067]
+            - cell "0" [ref=e1068]
+            - cell "+Fuel" [ref=e1069]:
+              - button "+Fuel" [ref=e1070] [cursor=pointer]
+            - cell [ref=e1071]
+            - cell [ref=e1072]
+          - row "05/03 SUN S E 0 +Fuel" [ref=e1073]:
+            - cell "05/03" [ref=e1074]
+            - cell "SUN" [ref=e1075]
+            - cell [ref=e1076]:
+              - textbox "Details..." [ref=e1077]
+            - cell [ref=e1078]:
+              - spinbutton [ref=e1079]
+            - cell "S" [ref=e1080]:
+              - button "S" [ref=e1081] [cursor=pointer]
+            - cell [ref=e1082]:
+              - spinbutton [ref=e1083]
+            - cell "E" [ref=e1084]:
+              - button "E" [ref=e1085] [cursor=pointer]
+            - cell [ref=e1086]:
+              - spinbutton [ref=e1087]
+            - cell "0" [ref=e1088]
+            - cell "+Fuel" [ref=e1089]:
+              - button "+Fuel" [ref=e1090] [cursor=pointer]
+            - cell [ref=e1091]
+            - cell [ref=e1092]
+          - row "05/04 MON S E 0 +Fuel" [ref=e1093]:
+            - cell "05/04" [ref=e1094]
+            - cell "MON" [ref=e1095]
+            - cell [ref=e1096]:
+              - textbox "Details..." [ref=e1097]
+            - cell [ref=e1098]:
+              - spinbutton [ref=e1099]
+            - cell "S" [ref=e1100]:
+              - button "S" [ref=e1101] [cursor=pointer]
+            - cell [ref=e1102]:
+              - spinbutton [ref=e1103]
+            - cell "E" [ref=e1104]:
+              - button "E" [ref=e1105] [cursor=pointer]
+            - cell [ref=e1106]:
+              - spinbutton [ref=e1107]
+            - cell "0" [ref=e1108]
+            - cell "+Fuel" [ref=e1109]:
+              - button "+Fuel" [ref=e1110] [cursor=pointer]
+            - cell [ref=e1111]
+            - cell [ref=e1112]
+          - row "05/05 TUE S E 0 +Fuel" [ref=e1113]:
+            - cell "05/05" [ref=e1114]
+            - cell "TUE" [ref=e1115]
+            - cell [ref=e1116]:
+              - textbox "Details..." [ref=e1117]
+            - cell [ref=e1118]:
+              - spinbutton [ref=e1119]
+            - cell "S" [ref=e1120]:
+              - button "S" [ref=e1121] [cursor=pointer]
+            - cell [ref=e1122]:
+              - spinbutton [ref=e1123]
+            - cell "E" [ref=e1124]:
+              - button "E" [ref=e1125] [cursor=pointer]
+            - cell [ref=e1126]:
+              - spinbutton [ref=e1127]
+            - cell "0" [ref=e1128]
+            - cell "+Fuel" [ref=e1129]:
+              - button "+Fuel" [ref=e1130] [cursor=pointer]
+            - cell [ref=e1131]
+            - cell [ref=e1132]
+          - row "05/06 WED S E 0 +Fuel" [ref=e1133]:
+            - cell "05/06" [ref=e1134]
+            - cell "WED" [ref=e1135]
+            - cell [ref=e1136]:
+              - textbox "Details..." [ref=e1137]
+            - cell [ref=e1138]:
+              - spinbutton [ref=e1139]
+            - cell "S" [ref=e1140]:
+              - button "S" [ref=e1141] [cursor=pointer]
+            - cell [ref=e1142]:
+              - spinbutton [ref=e1143]
+            - cell "E" [ref=e1144]:
+              - button "E" [ref=e1145] [cursor=pointer]
+            - cell [ref=e1146]:
+              - spinbutton [ref=e1147]
+            - cell "0" [ref=e1148]
+            - cell "+Fuel" [ref=e1149]:
+              - button "+Fuel" [ref=e1150] [cursor=pointer]
+            - cell [ref=e1151]
+            - cell [ref=e1152]
+          - row "05/07 THU S E 0 +Fuel" [ref=e1153]:
+            - cell "05/07" [ref=e1154]
+            - cell "THU" [ref=e1155]
+            - cell [ref=e1156]:
+              - textbox "Details..." [ref=e1157]
+            - cell [ref=e1158]:
+              - spinbutton [ref=e1159]
+            - cell "S" [ref=e1160]:
+              - button "S" [ref=e1161] [cursor=pointer]
+            - cell [ref=e1162]:
+              - spinbutton [ref=e1163]
+            - cell "E" [ref=e1164]:
+              - button "E" [ref=e1165] [cursor=pointer]
+            - cell [ref=e1166]:
+              - spinbutton [ref=e1167]
+            - cell "0" [ref=e1168]
+            - cell "+Fuel" [ref=e1169]:
+              - button "+Fuel" [ref=e1170] [cursor=pointer]
+            - cell [ref=e1171]
+            - cell [ref=e1172]
+          - row "05/08 FRI S E 0 +Fuel" [ref=e1173]:
+            - cell "05/08" [ref=e1174]
+            - cell "FRI" [ref=e1175]
+            - cell [ref=e1176]:
+              - textbox "Details..." [ref=e1177]
+            - cell [ref=e1178]:
+              - spinbutton [ref=e1179]
+            - cell "S" [ref=e1180]:
+              - button "S" [ref=e1181] [cursor=pointer]
+            - cell [ref=e1182]:
+              - spinbutton [ref=e1183]
+            - cell "E" [ref=e1184]:
+              - button "E" [ref=e1185] [cursor=pointer]
+            - cell [ref=e1186]:
+              - spinbutton [ref=e1187]
+            - cell "0" [ref=e1188]
+            - cell "+Fuel" [ref=e1189]:
+              - button "+Fuel" [ref=e1190] [cursor=pointer]
+            - cell [ref=e1191]
+            - cell [ref=e1192]
+          - row "05/09 SAT S E 0 +Fuel" [ref=e1193]:
+            - cell "05/09" [ref=e1194]
+            - cell "SAT" [ref=e1195]
+            - cell [ref=e1196]:
+              - textbox "Details..." [ref=e1197]
+            - cell [ref=e1198]:
+              - spinbutton [ref=e1199]
+            - cell "S" [ref=e1200]:
+              - button "S" [ref=e1201] [cursor=pointer]
+            - cell [ref=e1202]:
+              - spinbutton [ref=e1203]
+            - cell "E" [ref=e1204]:
+              - button "E" [ref=e1205] [cursor=pointer]
+            - cell [ref=e1206]:
+              - spinbutton [ref=e1207]
+            - cell "0" [ref=e1208]
+            - cell "+Fuel" [ref=e1209]:
+              - button "+Fuel" [ref=e1210] [cursor=pointer]
+            - cell [ref=e1211]
+            - cell [ref=e1212]
+          - row "05/10 SUN S E 0 +Fuel" [ref=e1213]:
+            - cell "05/10" [ref=e1214]
+            - cell "SUN" [ref=e1215]
+            - cell [ref=e1216]:
+              - textbox "Details..." [ref=e1217]
+            - cell [ref=e1218]:
+              - spinbutton [ref=e1219]
+            - cell "S" [ref=e1220]:
+              - button "S" [ref=e1221] [cursor=pointer]
+            - cell [ref=e1222]:
+              - spinbutton [ref=e1223]
+            - cell "E" [ref=e1224]:
+              - button "E" [ref=e1225] [cursor=pointer]
+            - cell [ref=e1226]:
+              - spinbutton [ref=e1227]
+            - cell "0" [ref=e1228]
+            - cell "+Fuel" [ref=e1229]:
+              - button "+Fuel" [ref=e1230] [cursor=pointer]
+            - cell [ref=e1231]
+            - cell [ref=e1232]
+          - row "05/11 MON S E 0 +Fuel" [ref=e1233]:
+            - cell "05/11" [ref=e1234]
+            - cell "MON" [ref=e1235]
+            - cell [ref=e1236]:
+              - textbox "Details..." [ref=e1237]
+            - cell [ref=e1238]:
+              - spinbutton [ref=e1239]
+            - cell "S" [ref=e1240]:
+              - button "S" [ref=e1241] [cursor=pointer]
+            - cell [ref=e1242]:
+              - spinbutton [ref=e1243]
+            - cell "E" [ref=e1244]:
+              - button "E" [ref=e1245] [cursor=pointer]
+            - cell [ref=e1246]:
+              - spinbutton [ref=e1247]
+            - cell "0" [ref=e1248]
+            - cell "+Fuel" [ref=e1249]:
+              - button "+Fuel" [ref=e1250] [cursor=pointer]
+            - cell [ref=e1251]
+            - cell [ref=e1252]
+          - row "05/12 TUE S E 0 +Fuel" [ref=e1253]:
+            - cell "05/12" [ref=e1254]
+            - cell "TUE" [ref=e1255]
+            - cell [ref=e1256]:
+              - textbox "Details..." [ref=e1257]
+            - cell [ref=e1258]:
+              - spinbutton [ref=e1259]
+            - cell "S" [ref=e1260]:
+              - button "S" [ref=e1261] [cursor=pointer]
+            - cell [ref=e1262]:
+              - spinbutton [ref=e1263]
+            - cell "E" [ref=e1264]:
+              - button "E" [ref=e1265] [cursor=pointer]
+            - cell [ref=e1266]:
+              - spinbutton [ref=e1267]
+            - cell "0" [ref=e1268]
+            - cell "+Fuel" [ref=e1269]:
+              - button "+Fuel" [ref=e1270] [cursor=pointer]
+            - cell [ref=e1271]
+            - cell [ref=e1272]
+          - row "05/13 WED S E 0 +Fuel" [ref=e1273]:
+            - cell "05/13" [ref=e1274]
+            - cell "WED" [ref=e1275]
+            - cell [ref=e1276]:
+              - textbox "Details..." [ref=e1277]
+            - cell [ref=e1278]:
+              - spinbutton [ref=e1279]
+            - cell "S" [ref=e1280]:
+              - button "S" [ref=e1281] [cursor=pointer]
+            - cell [ref=e1282]:
+              - spinbutton [ref=e1283]
+            - cell "E" [ref=e1284]:
+              - button "E" [ref=e1285] [cursor=pointer]
+            - cell [ref=e1286]:
+              - spinbutton [ref=e1287]
+            - cell "0" [ref=e1288]
+            - cell "+Fuel" [ref=e1289]:
+              - button "+Fuel" [ref=e1290] [cursor=pointer]
+            - cell [ref=e1291]
+            - cell [ref=e1292]
+          - row "05/14 THU S E 0 +Fuel" [ref=e1293]:
+            - cell "05/14" [ref=e1294]
+            - cell "THU" [ref=e1295]
+            - cell [ref=e1296]:
+              - textbox "Details..." [ref=e1297]
+            - cell [ref=e1298]:
+              - spinbutton [ref=e1299]
+            - cell "S" [ref=e1300]:
+              - button "S" [ref=e1301] [cursor=pointer]
+            - cell [ref=e1302]:
+              - spinbutton [ref=e1303]
+            - cell "E" [ref=e1304]:
+              - button "E" [ref=e1305] [cursor=pointer]
+            - cell [ref=e1306]:
+              - spinbutton [ref=e1307]
+            - cell "0" [ref=e1308]
+            - cell "+Fuel" [ref=e1309]:
+              - button "+Fuel" [ref=e1310] [cursor=pointer]
+            - cell [ref=e1311]
+            - cell [ref=e1312]
+          - row "05/15 FRI S E 0 +Fuel" [ref=e1313]:
+            - cell "05/15" [ref=e1314]
+            - cell "FRI" [ref=e1315]
+            - cell [ref=e1316]:
+              - textbox "Details..." [ref=e1317]
+            - cell [ref=e1318]:
+              - spinbutton [ref=e1319]
+            - cell "S" [ref=e1320]:
+              - button "S" [ref=e1321] [cursor=pointer]
+            - cell [ref=e1322]:
+              - spinbutton [ref=e1323]
+            - cell "E" [ref=e1324]:
+              - button "E" [ref=e1325] [cursor=pointer]
+            - cell [ref=e1326]:
+              - spinbutton [ref=e1327]
+            - cell "0" [ref=e1328]
+            - cell "+Fuel" [ref=e1329]:
+              - button "+Fuel" [ref=e1330] [cursor=pointer]
+            - cell [ref=e1331]
+            - cell [ref=e1332]
+        - rowgroup [ref=e1333]:
+          - 'row "Totals: 0 km 0.0L ₱0" [ref=e1334]':
+            - cell "Totals:" [ref=e1335]
+            - cell [ref=e1336]
+            - cell [ref=e1337]
+            - cell "0 km" [ref=e1338]
+            - cell "0.0L" [ref=e1339]
+            - cell "₱0" [ref=e1340]
+            - cell [ref=e1341]
