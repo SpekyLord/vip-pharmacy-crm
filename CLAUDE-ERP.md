@@ -5966,6 +5966,92 @@ docs/PHASETASK-ERP.md                                      # Phase P1 status upd
 
 ---
 
+## Phase P1.1 — Capture Hub Tile Completeness + Physical Reconciliation Foundation (May 05, 2026)
+
+### Why
+Phase P1 shipped 6 tiles covering EXPENSE / SMER / SALES / GRN / FUEL_ENTRY / PETTY_CASH. Field BDMs surfaced the actual capture universe: **ODO daily, OR of expenses, pink/yellow/duplicate CSI copies, deposit slips, CWT (BIR 2307), CSI being paid, fuel receipts, waybill / batch on incoming product**. The original "Scan Unreceived CSI" tile was ambiguous (one label for three different lifecycle moments) and three documents had no capture path at all (CR, deposit slip, CWT). The proxy team is now actively recording on behalf of BDMs because BDMs opted not to use the OCR/parser self-serve flow — so Capture Hub must be the **complete digital manifest** of physical paperwork the office should expect each cycle.
+
+### What shipped
+
+**Backend model** (`backend/erp/models/CaptureSubmission.js`)
+- New artifact `kind` values: `paid_csi_scan`, `cr_scan`, `deposit_slip`, `cwt_scan` (existing 5 retained).
+- New `workflow_type`: `CWT_INBOUND` (bridges to CwtLedger / J6 inbound 2307 reconciliation).
+- New `sub_type` field — `CR | DEPOSIT | PAID_CSI | null` — used only by `COLLECTION` to route the same workflow_type to different physical-paper expectations and downstream ERP shapes.
+- New `physical_required: Boolean` (default true) + `physical_status: PENDING | RECEIVED | MISSING | N_A` (indexed) + `physical_received_at` + `physical_received_by` (ref User) — Slice 3 reconciliation foundation.
+- New compound index `{ bdm_id: 1, physical_status: 1, created_at: 1 }` for cycle reconciliation sweeps.
+- `linked_doc_kind` enum gains `CwtLedgerEntry`.
+
+**Backend controller** (`backend/erp/controllers/captureSubmissionController.js`)
+- `VALID_TYPES` adds `CWT_INBOUND`.
+- New `VALID_SUB_TYPES = ['CR', 'DEPOSIT', 'PAID_CSI']` validation — rejects sub_type for any workflow_type except COLLECTION (HTTP 400).
+- New `DIGITAL_ONLY(workflow_type, sub_type)` helper — returns true for SMER and COLLECTION/PAID_CSI. Drives `physical_required` and `physical_status` derivation at create time.
+- `REVIEW_WORKFLOWS` extended with `COLLECTION` + `CWT_INBOUND` (money/tax reconciliation needs BDM confirmation).
+
+**Frontend Capture Hub** (`frontend/src/erp/pages/mobile/BdmCaptureHub.jsx`)
+- 9 tiles total (5 retained, 1 renamed, 4 added, **PETTY_CASH removed May 05 2026 evening**). Order tuned by frequency-of-use in the field. Backend `PETTY_CASH` enum value retained for legacy rows; tile dropped because petty cash request is not a field-capture flow.
+- **Sectioned layout (May 05 2026 evening polish)** — 5 logical sections grouping the 9 tiles by document origin: **Vehicle** (ODO), **Cash Out** (OR/Receipt + Fuel), **Customer Delivery** (CSI Delivery Copy), **Collection** (CSI Being Paid + CR + CWT + Deposit Slip), **Inventory** (GRN). Each section header carries a small slate-icon + UPPERCASE label + caption + tile count badge. Each tile carries a colored 4px border-left matching its workflow color, an icon box with tinted background, label + description, and a chevron. Digital-only tiles render an inline cyan "Digital only" pill so the BDM sees the no-paper-expected status without opening the modal. Header gains a subtitle showing the tile count and a pending badge in the top-right.
+- Renamed `SALES` tile: "Scan Unreceived CSI" → "Scan CSI (Delivery Copy)" — pink/yellow/duplicate as proof of delivery.
+- New `COLLECTION/PAID_CSI` tile "Scan CSI Being Paid" — `digitalOnly: true`, `kind: paid_csi_scan`.
+- New `COLLECTION/CR` tile "Scan Collection Receipt (CR)" — captures amount + customer.
+- New `COLLECTION/DEPOSIT` tile "Scan Deposit Slip" — captures amount.
+- New `CWT_INBOUND` tile "Scan CWT (BIR 2307)" — captures amount + customer.
+- Modal payload now forwards `sub_type` when defined on the workflow.
+- `access_for` label is contextual ("Customer / Hospital" for non-EXPENSE tiles, "Who is this for? (ACCESS)" for EXPENSE).
+- `digitalOnly` tiles render an inline cyan banner: "No paper expected for this capture."
+- Map `key` is now composite `${w.key}_${w.sub_type || 'main'}` to support 3 COLLECTION variants in one list without React-key collisions.
+
+**Scoped CSS file** (`frontend/src/styles/capture-hub.css`, NEW) — 480 lines of real CSS namespaced as `.ch-*` (Capture Hub) and `.rq-*` (Review Queue) so they don't collide with the project's existing semantic classes. Imported at the top of both pages. Contains layout (flex / grid), tile + section styling, modal backdrop + body, recent-capture status pills, review-card actions, and the `@keyframes spin` rule used for in-flight loaders. **Why this file exists**: the broader project uses className strings that LOOK like Tailwind utilities (`flex items-center gap-4`, `text-slate-700`, `bg-slate-100`, etc.) but the project does NOT actually use Tailwind — the codebase has no `tailwind.config.js`, no `@tailwind` directives, and no Tailwind dependency in `package.json`. Those Tailwind-style classNames are decorative and don't apply any CSS. Layout works only via inline `style={{ }}` attributes, native browser defaults, and the few semantic classes defined in `index.css` / `tablet-optimized.css`. Phase P1.1's section grouping needed real CSS to land cleanly, hence this scoped file.
+
+**Frontend Review Queue** (`frontend/src/erp/pages/mobile/BdmReviewQueue.jsx`)
+- New `WORKFLOW_LABELS` map — friendly display strings instead of raw enums (e.g., `COLLECTION_PAID_CSI` → "CSI Being Paid").
+- New `resolveKey(item)` helper — composite lookup `COLLECTION_<sub_type>` for icon/color/label resolution; falls back to plain `workflow_type` for non-COLLECTION rows.
+- Icons + colors map both the parent workflow_type and each composite COLLECTION_X variant so existing rows render unchanged and new rows get distinct visual identity.
+- Empty-state ("All caught up!") gains a blue explainer card: how the proxy → review chain works + 72h auto-acknowledge note. Closes the "looks broken" perception that fired this phase.
+
+**WorkflowGuide banners** (`frontend/src/erp/components/WorkflowGuide.jsx`)
+- `bdm-capture-hub` — subtitle reframed ("every BDM-facing document"). Tips now mention: ODO is daily, CSI Being Paid is digital-only, all other captures expect paper within 8–10 days, cycle definition (C1 = 1–15, C2 = 16–end), next-cycle block consequence ("C1 May missing → C1 June blocked").
+- `bdm-review-queue` — tips now mention empty-queue normalcy + SMER personal-vs-official gas split.
+
+**Healthcheck** (`backend/scripts/healthcheckCaptureHub.js`, NEW)
+- 65 static contract assertions across 6 sections: Model / Controller / Capture Hub / Review Queue / WorkflowGuide / Routes+Sidebar wiring. **65/65 PASS** at ship.
+
+### Governing principles
+- **Rule #3 (no hardcoded business values)**: Per Q10 user decision, tile visibility stays inline (not lookup-driven) because the SaaS target is exclusively pharmacy operators with the same document set. Schema enums (workflow_type, sub_type, physical_status, artifact kind) are validation gates per the lookup-vs-enum split. Subscriber tile-disable can be added later as `Settings.CAPTURE_HUB_DISABLED_TILES` lookup if the need arises.
+- **Rule #19 (subscription readiness)**: every new field on CaptureSubmission inherits `entity_id` scoping from the existing schema. No cross-tenant leakage.
+- **Rule #20 (Option B preserved)**: REVIEW_WORKFLOWS extension keeps the new types under BDM confirmation before ERP doc reaches its terminal status — proxy still enters, never approves.
+- **Rule #21 (no silent self-id fallback)**: BDM-side endpoints already use `req.bdmId || req.user._id` which is correct for self-scope. Proxy-side uses entity_id only. Pattern unchanged.
+- **Rule #1 (helper banners)**: both pages updated with cycle, paper-expectation, and consequence copy.
+
+### Slice plan
+- **Slice 1 — SHIPPED May 05 2026** (this entry).
+- **Slice 2 — Inverted Pull on existing ERP entry pages** (deferred): proxy picks a pending capture from a BDM's "locker" instead of OCR-autofilling. Per user direction, OCR is OFF the menu — proxies are humans, captures need to be well-organized (BDM × workflow × cycle grouping), gallery upload stays as fallback, retroactive CaptureSubmission created on gallery upload to keep audit count honest.
+- **Slice 3 — Physical reconciliation + next-cycle block** (deferred): proxy who entered the ERP doc clicks "Paper received" on the capture row → flips `physical_status` to RECEIVED. C1 May with PENDING items at C1 June payslip cutoff → C1 June commission/per-diem BLOCKED until reconciled. Same pattern for C2. Same-cycle commission/per-diem still pays out (contract-bound).
+- **Slice 4 — DROPPED**: OCR autofill on the proxy side. Original Phase P1 plan but user judgment is correct: humans can read receipts, the ROI was never there. Existing OCR investments (Phase O EXIF/screenshot detection, Phase CSI-X2 hospital PO paste-parser, BIR 2307 ledger) keep their separate justifications.
+
+### Files
+```
+backend/erp/models/CaptureSubmission.js                    # + new fields + new enums
+backend/erp/controllers/captureSubmissionController.js     # + CWT_INBOUND + sub_type validation + DIGITAL_ONLY
+backend/scripts/healthcheckCaptureHub.js                   # NEW — 88-check contract verifier (was 65 pre-redesign)
+frontend/src/erp/pages/mobile/BdmCaptureHub.jsx            # + 4 tiles + sub_type + digital-only hint + sectioned layout
+frontend/src/erp/pages/mobile/BdmReviewQueue.jsx           # + composite icons/colors/labels + empty-state explainer + .rq-card styling
+frontend/src/erp/components/WorkflowGuide.jsx              # banner refresh on both pages
+frontend/src/styles/capture-hub.css                        # NEW — 480 lines scoped CSS (.ch-* / .rq-*)
+CLAUDE-ERP.md                                              # this section
+docs/PHASETASK-ERP.md                                      # Phase P1.1 status
+```
+
+### Verification
+- `node -c` on edited backend files — clean
+- `node backend/scripts/healthcheckCaptureHub.js` — **88/88 PASS** (12 new assertions for sectioned layout + 11 for the scoped CSS file)
+- `npx vite build` — clean in 37.80s, zero errors, zero warnings
+- Live API smoke: 4 happy paths (CWT_INBOUND, COLLECTION/PAID_CSI N_A, COLLECTION/CR PENDING, COLLECTION/DEPOSIT PENDING) + 3 negative paths all 400 with friendly messages
+- End-to-end UI smoke at 390×900 (mobile): Mae Navarro logged in → Capture Hub renders 9 tiles in 5 sections with correct flex layout (verified `display: flex` on `.ch-tile`, `.ch-section-header`, `.ch-tile-pill`) → Review Queue renders `.rq-card` with 4px sky-blue border-left + .rq-action confirm/dispute buttons → ACKNOWLEDGED lifecycle confirmed end-to-end → screenshots saved (`capture-hub-redesigned-mobile.png`, `review-queue-redesigned-mobile.png`)
+- No new npm dependencies (all icons already in lucide-react)
+- Backward compatible: existing CaptureSubmission rows have `sub_type=null`, `physical_required=true`, `physical_status='PENDING'`. No migration required for empty queues; deployed clusters will pre-mark legacy rows as PENDING which is the correct posture (paper expected unless explicitly flagged digital-only at create).
+
+---
+
 ## Phase G4.5e — Car Logbook + PRF/CALF + Undertaking Proxy Ports (April 23, 2026)
 
 ### Why

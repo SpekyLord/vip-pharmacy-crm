@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   CheckCircle2, AlertTriangle,
   Receipt, Camera, FileText, Truck, Fuel, Wallet,
+  ReceiptText, Landmark, HandCoins, FileBadge,
   RefreshCw, MessageSquare, ThumbsUp,
   ThumbsDown, X,
 } from 'lucide-react';
@@ -18,7 +19,10 @@ import toast from 'react-hot-toast';
 import useCaptureSubmissions from '../../hooks/useCaptureSubmissions';
 import { useAuth } from '../../../hooks/useAuth';
 import WorkflowGuide from '../../components/WorkflowGuide';
+import '../../../styles/capture-hub.css';
 
+// Icon + color per (workflow_type, sub_type) — must match BdmCaptureHub.WORKFLOWS
+// so the BDM sees the same visual identity at capture time and review time.
 const WORKFLOW_ICONS = {
   EXPENSE: Receipt,
   SMER: Camera,
@@ -27,7 +31,11 @@ const WORKFLOW_ICONS = {
   FUEL_ENTRY: Fuel,
   PETTY_CASH: Wallet,
   OPENING_AR: FileText,
-  COLLECTION: Receipt,
+  COLLECTION: ReceiptText,            // generic CR-style — overridden by sub_type below
+  COLLECTION_CR: ReceiptText,
+  COLLECTION_DEPOSIT: Landmark,
+  COLLECTION_PAID_CSI: HandCoins,
+  CWT_INBOUND: FileBadge,
 };
 
 const WORKFLOW_COLORS = {
@@ -39,7 +47,36 @@ const WORKFLOW_COLORS = {
   PETTY_CASH: '#ca8a04',
   OPENING_AR: '#6366f1',
   COLLECTION: '#0891b2',
+  COLLECTION_CR: '#0891b2',
+  COLLECTION_DEPOSIT: '#0d9488',
+  COLLECTION_PAID_CSI: '#0ea5e9',
+  CWT_INBOUND: '#6366f1',
 };
+
+// Friendly display label per (workflow_type, sub_type) — matches the BDM's
+// mental model from Capture Hub instead of leaking the raw enum.
+const WORKFLOW_LABELS = {
+  EXPENSE: 'Expense / OR',
+  SMER: 'ODO Reading',
+  SALES: 'CSI Delivery Copy',
+  GRN: 'GRN Item',
+  FUEL_ENTRY: 'Fuel Receipt',
+  PETTY_CASH: 'Petty Cash Request',
+  OPENING_AR: 'Opening AR',
+  COLLECTION: 'Collection',
+  COLLECTION_CR: 'Collection Receipt (CR)',
+  COLLECTION_DEPOSIT: 'Deposit Slip',
+  COLLECTION_PAID_CSI: 'CSI Being Paid',
+  CWT_INBOUND: 'CWT (BIR 2307)',
+};
+
+// Resolve composite key from item (workflow_type[_sub_type])
+function resolveKey(item) {
+  if (item?.workflow_type === 'COLLECTION' && item?.sub_type) {
+    return `COLLECTION_${item.sub_type}`;
+  }
+  return item?.workflow_type || 'UNKNOWN';
+}
 
 // ── Dispute Modal ──
 function DisputeModal({ item, onSubmit, onClose, loading }) {
@@ -103,76 +140,71 @@ function DisputeModal({ item, onSubmit, onClose, loading }) {
 
 // ── Review Card ──
 function ReviewCard({ item, onAcknowledge, onDispute, loading }) {
-  const Icon = WORKFLOW_ICONS[item.workflow_type] || Receipt;
-  const color = WORKFLOW_COLORS[item.workflow_type] || '#64748b';
+  const composite = resolveKey(item);
+  const Icon = WORKFLOW_ICONS[composite] || WORKFLOW_ICONS[item.workflow_type] || Receipt;
+  const color = WORKFLOW_COLORS[composite] || WORKFLOW_COLORS[item.workflow_type] || '#64748b';
+  const label = WORKFLOW_LABELS[composite] || WORKFLOW_LABELS[item.workflow_type] || (item.workflow_type || '').replace(/_/g, ' ');
   const proxyName = item.proxy_id?.name || 'Office team';
   const age = item.proxy_completed_at
     ? Math.round((Date.now() - new Date(item.proxy_completed_at).getTime()) / (1000 * 60 * 60))
     : null;
 
   return (
-    <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+    <div className="rq-card" style={{ borderLeft: `4px solid ${color}` }}>
       {/* Header */}
-      <div className="flex items-center gap-3 p-4 border-b">
-        <div
-          className="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0"
-          style={{ backgroundColor: `${color}15`, color }}
-        >
+      <div className="rq-card-header">
+        <div className="rq-card-icon" style={{ backgroundColor: `${color}15`, color }}>
           <Icon size={20} />
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="font-semibold text-gray-900">
-            {item.workflow_type.replace(/_/g, ' ')}
-          </div>
-          <div className="text-sm text-gray-500 truncate">
+        <div className="rq-card-meta">
+          <div className="rq-card-label">{label}</div>
+          <div className="rq-card-sub">
             Processed by {proxyName}
             {age != null && ` • ${age}h ago`}
           </div>
         </div>
         {item.amount_declared != null && (
-          <div className="text-right flex-shrink-0">
-            <div className="font-bold text-lg">₱{Number(item.amount_declared).toLocaleString()}</div>
-          </div>
+          <div className="rq-card-amt">₱{Number(item.amount_declared).toLocaleString()}</div>
         )}
       </div>
 
       {/* Details */}
-      <div className="p-4 space-y-2">
-        {item.bdm_notes && (
-          <div className="flex items-start gap-2 text-sm">
-            <MessageSquare size={14} className="text-gray-400 mt-0.5 flex-shrink-0" />
-            <span className="text-gray-600">{item.bdm_notes}</span>
-          </div>
-        )}
-        {item.proxy_notes && (
-          <div className="flex items-start gap-2 text-sm">
-            <MessageSquare size={14} className="text-blue-400 mt-0.5 flex-shrink-0" />
-            <span className="text-blue-600">Proxy: {item.proxy_notes}</span>
-          </div>
-        )}
-        {item.access_for && (
-          <div className="text-sm text-gray-500">For: {item.access_for}</div>
-        )}
-        {item.payment_mode && (
-          <div className="text-sm text-gray-500 capitalize">Payment: {item.payment_mode}</div>
-        )}
-      </div>
+      {(item.bdm_notes || item.proxy_notes || item.access_for || item.payment_mode) && (
+        <div className="rq-card-body">
+          {item.bdm_notes && (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 13, color: '#475569' }}>
+              <MessageSquare size={14} style={{ color: '#94a3b8', flexShrink: 0, marginTop: 2 }} />
+              <span>{item.bdm_notes}</span>
+            </div>
+          )}
+          {item.proxy_notes && (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 13, color: '#1d4ed8' }}>
+              <MessageSquare size={14} style={{ color: '#60a5fa', flexShrink: 0, marginTop: 2 }} />
+              <span>Proxy: {item.proxy_notes}</span>
+            </div>
+          )}
+          {item.access_for && (
+            <div style={{ fontSize: 13, color: '#64748b' }}>For: {item.access_for}</div>
+          )}
+          {item.payment_mode && (
+            <div style={{ fontSize: 13, color: '#64748b', textTransform: 'capitalize' }}>Payment: {item.payment_mode}</div>
+          )}
+        </div>
+      )}
 
       {/* Actions */}
-      <div className="flex gap-2 p-4 pt-0">
+      <div className="rq-card-actions">
         <button
           onClick={() => onAcknowledge(item._id)}
           disabled={loading}
-          className="flex-1 py-3 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
-          style={{ minHeight: '48px' }}
+          className="rq-action confirm"
         >
           <ThumbsUp size={18} /> Confirm
         </button>
         <button
           onClick={() => onDispute(item)}
           disabled={loading}
-          className="flex-1 py-3 rounded-xl font-bold text-red-700 bg-red-50 border border-red-200 hover:bg-red-100 disabled:opacity-50 flex items-center justify-center gap-2 active:scale-[0.98] transition-all"
-          style={{ minHeight: '48px' }}
+          className="rq-action dispute"
         >
           <ThumbsDown size={18} /> Dispute
         </button>
@@ -233,32 +265,46 @@ export default function BdmReviewQueue() {
   });
 
   return (
-    <div className="max-w-lg mx-auto px-4 py-6 min-h-screen bg-gray-50">
+    <div className="rq-page">
       <WorkflowGuide pageKey="bdm-review-queue" />
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Review Queue</h1>
-          <p className="text-gray-500">Confirm or dispute proxied entries</p>
+          <h1 style={{ fontSize: 24, fontWeight: 700, color: '#0f172a', margin: 0 }}>Review Queue</h1>
+          <p style={{ color: '#64748b', fontSize: 13, marginTop: 2 }}>Confirm or dispute proxied entries</p>
         </div>
         <button
           onClick={loadQueue}
           disabled={loading}
-          className="p-2 hover:bg-white rounded-lg border"
+          style={{
+            padding: 8,
+            border: '1px solid #e2e8f0',
+            background: '#ffffff',
+            borderRadius: 8,
+            cursor: 'pointer',
+            color: '#475569',
+          }}
+          aria-label="Refresh"
         >
-          <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
+          <RefreshCw size={18} style={{ animation: loading ? 'spin 1s linear infinite' : undefined }} />
         </button>
       </div>
 
       {/* Proxy summary banner */}
       {Object.keys(proxyStats).length > 0 && (
-        <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 mb-4">
-          <div className="flex items-center gap-2 mb-1">
-            <AlertTriangle size={16} className="text-purple-600" />
-            <span className="font-semibold text-purple-800">Review needed</span>
+        <div style={{
+          background: '#faf5ff',
+          border: '1px solid #e9d5ff',
+          borderRadius: 12,
+          padding: 14,
+          marginBottom: 14,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <AlertTriangle size={16} style={{ color: '#9333ea' }} />
+            <span style={{ fontWeight: 600, color: '#6b21a8', fontSize: 14 }}>Review needed</span>
           </div>
-          <div className="text-sm text-purple-700">
+          <div style={{ fontSize: 13, color: '#7c3aed', lineHeight: 1.5 }}>
             {Object.entries(proxyStats).map(([name, count], i) => (
               <span key={name}>
                 {i > 0 && ', '}
@@ -272,13 +318,30 @@ export default function BdmReviewQueue() {
 
       {/* Review cards */}
       {items.length === 0 ? (
-        <div className="text-center py-16">
-          <CheckCircle2 size={48} className="mx-auto text-green-300 mb-3" />
-          <div className="text-gray-500 font-medium">All caught up!</div>
-          <div className="text-sm text-gray-400 mt-1">No entries waiting for your review</div>
+        <div style={{ textAlign: 'center', padding: '64px 16px' }}>
+          <CheckCircle2 size={48} style={{ display: 'block', margin: '0 auto 12px', color: '#86efac' }} />
+          <div style={{ color: '#64748b', fontWeight: 500 }}>All caught up!</div>
+          <div style={{ color: '#94a3b8', fontSize: 13, marginTop: 4 }}>No entries waiting for your review</div>
+          <div style={{
+            margin: '16px auto 0',
+            maxWidth: 360,
+            background: '#eff6ff',
+            border: '1px solid #bfdbfe',
+            borderRadius: 10,
+            padding: 12,
+            fontSize: 12,
+            color: '#1d4ed8',
+            textAlign: 'left',
+            lineHeight: 1.5,
+          }}>
+            <strong>How this works:</strong> When the office team enters expenses,
+            sales, collections, or other ERP records on your behalf using your
+            captures, the entries appear here for you to confirm or dispute.
+            Entries auto-acknowledge after 72 hours.
+          </div>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {items.map(item => (
             <ReviewCard
               key={item._id}
@@ -293,7 +356,7 @@ export default function BdmReviewQueue() {
 
       {/* Total count */}
       {total > 0 && (
-        <div className="text-center text-sm text-gray-400 mt-6">
+        <div style={{ textAlign: 'center', fontSize: 13, color: '#94a3b8', marginTop: 24 }}>
           {total} item{total > 1 ? 's' : ''} to review
         </div>
       )}

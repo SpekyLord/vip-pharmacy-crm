@@ -1870,27 +1870,31 @@ const WORKFLOW_GUIDES = {
   },
 
   // ═══ Phase P1 — BDM Mobile Capture + Office Proxy Queue ═══
+  // Phase P1.1 (May 05 2026) added 4 tiles + sub_type for COLLECTION:
+  //   CSI Being Paid (digital-only), Collection Receipt (CR),
+  //   Deposit Slip, CWT (BIR 2307). 10 tiles total.
   'bdm-capture-hub': {
     title: 'BDM Capture Hub',
-    subtitle: 'One-tap field capture — scan receipts, ODO, CSI, and more from your phone.',
+    subtitle: 'One-tap field capture — every BDM-facing document the office needs.',
     steps: [
-      'Tap a workflow card to open the capture modal',
-      'Take a photo or select from gallery',
-      'Add amount, payment mode, and notes as needed',
-      'Submit — the office team will process your capture',
-      'Check the Review Queue to confirm proxied entries',
+      'Tap a tile that matches the physical document in your hand',
+      'Take a photo or pick from gallery — GPS is captured automatically',
+      'Fill the amount + customer/hospital field if shown',
+      'Submit — the office team enters the ERP record on your behalf',
+      'Confirm or dispute the entry from the Review Queue when notified',
     ],
     tips: [
-      'GPS is captured automatically — make sure location services are enabled',
-      'You can always enter expenses directly from the Expenses page (this is optional)',
-      'Pending captures appear in the office Proxy Queue within seconds',
-      'If the office team makes a mistake, use the Review Queue to dispute',
+      'ODO is a daily capture — start of day + end of day, every working day',
+      'CSI Being Paid is digital-only — no paper expected at the office',
+      'All other captures expect physical paper to follow within 8–10 days',
+      'Cycle: C1 = day 1–15, C2 = day 16–end of month — pace your captures accordingly',
+      'If physical paper is missing, the SAME cycle next month may be blocked (e.g., C1 May missing → C1 June blocked)',
     ],
     next: [
       { label: 'Review Queue', path: '/erp/review-queue' },
       { label: 'Expenses', path: '/erp/expenses' },
     ],
-    tip: 'The Capture Hub is additive — you can always skip it and enter records directly.',
+    tip: 'The Capture Hub is additive — you can always skip it and enter records directly. But proxies use captures to know what paper to expect.',
   },
   'proxy-queue': {
     title: 'Office Proxy Queue',
@@ -1924,6 +1928,8 @@ const WORKFLOW_GUIDES = {
       'Disputes are filed as IncentiveDispute records for finance to investigate',
     ],
     tips: [
+      'Empty queue is normal — entries appear only after office processes a capture for you',
+      'For SMER/ODO entries, check the personal-vs-official gas split before confirming',
       'Entries auto-acknowledge after 72 hours if you don\'t review them',
       'Disputed entries can be reversed via the President\'s Reversal Console',
       'Check this queue regularly — it\'s your accountability checkpoint',

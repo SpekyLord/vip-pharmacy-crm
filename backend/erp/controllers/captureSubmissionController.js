@@ -41,9 +41,17 @@ function canTransition(from, to) {
  * POST /capture-submissions
  * BDM creates a capture submission from the mobile capture hub.
  */
+// Captures with NO paper expected. Slice 3 reconciliation skips these.
+//   SMER:                   ODO photos are device-clock evidence, no paper
+//   COLLECTION/PAID_CSI:    photo of CSI marked paid; the original CSI copy
+//                           travels with collection paperwork separately
+const DIGITAL_ONLY = (workflow_type, sub_type) =>
+  workflow_type === 'SMER' ||
+  (workflow_type === 'COLLECTION' && sub_type === 'PAID_CSI');
+
 const createCapture = catchAsync(async (req, res) => {
   const {
-    workflow_type, captured_artifacts, bdm_notes,
+    workflow_type, sub_type, captured_artifacts, bdm_notes,
     amount_declared, payment_mode, access_for,
   } = req.body;
 
@@ -54,26 +62,38 @@ const createCapture = catchAsync(async (req, res) => {
   const VALID_TYPES = [
     'SMER', 'EXPENSE', 'SALES', 'OPENING_AR',
     'COLLECTION', 'GRN', 'PETTY_CASH', 'FUEL_ENTRY',
+    'CWT_INBOUND',
   ];
   if (!VALID_TYPES.includes(workflow_type)) {
     return res.status(400).json({ success: false, message: `Invalid workflow_type. Must be one of: ${VALID_TYPES.join(', ')}` });
+  }
+
+  // sub_type only valid for COLLECTION
+  const VALID_SUB_TYPES = ['CR', 'DEPOSIT', 'PAID_CSI'];
+  if (sub_type && (workflow_type !== 'COLLECTION' || !VALID_SUB_TYPES.includes(sub_type))) {
+    return res.status(400).json({ success: false, message: `sub_type '${sub_type}' is invalid for workflow_type '${workflow_type}'` });
   }
 
   if (!captured_artifacts || !Array.isArray(captured_artifacts) || captured_artifacts.length === 0) {
     return res.status(400).json({ success: false, message: 'At least one captured artifact is required' });
   }
 
+  const isDigitalOnly = DIGITAL_ONLY(workflow_type, sub_type);
+
   const doc = await CaptureSubmission.create({
     bdm_id: req.bdmId || req.user._id,
     entity_id: req.entityId,
     created_by: req.user._id,
     workflow_type,
+    sub_type: sub_type || null,
     status: 'PENDING_PROXY',
     captured_artifacts,
     bdm_notes,
     amount_declared,
     payment_mode,
     access_for,
+    physical_required: !isDigitalOnly,
+    physical_status: isDigitalOnly ? 'N_A' : 'PENDING',
   });
 
   res.status(201).json({ success: true, data: doc });
@@ -417,8 +437,13 @@ const completeCapture = catchAsync(async (req, res) => {
   if (linked_doc_kind) doc.linked_doc_kind = linked_doc_kind;
   if (linked_doc_id) doc.linked_doc_id = linked_doc_id;
 
-  // Workflows that need BDM review before final acknowledgment
-  const REVIEW_WORKFLOWS = ['EXPENSE', 'SALES', 'FUEL_ENTRY', 'SMER'];
+  // Workflows that need BDM review before final acknowledgment.
+  // SMER review = personal-vs-official gas split (per business rule).
+  // COLLECTION + CWT_INBOUND review = money/tax reconciliation.
+  const REVIEW_WORKFLOWS = [
+    'EXPENSE', 'SALES', 'FUEL_ENTRY', 'SMER',
+    'COLLECTION', 'CWT_INBOUND',
+  ];
   if (!skip_review && REVIEW_WORKFLOWS.includes(doc.workflow_type)) {
     doc.status = 'AWAITING_BDM_REVIEW';
   } else {
