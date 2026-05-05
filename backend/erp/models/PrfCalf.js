@@ -54,7 +54,12 @@ const prfCalfSchema = new mongoose.Schema({
   // PRF fields — payment instruction for Finance
   // ═══════════════════════════════════════════
   prf_number: { type: String, trim: true },
-  prf_type: { type: String, default: 'PARTNER_REBATE' }, // Lookup: PRF_TYPE
+  // PRF-only field. Left undefined on CALF docs — CALFs have no prf_type
+  // (the previous default leaked PARTNER_REBATE onto every auto-CALF, making
+  // utilities/bills look like rebate payments in the Approval Hub).
+  // Callers that create PRFs MUST set this explicitly (autoPrfRouting +
+  // POST /prf-calf manual creates).
+  prf_type: { type: String }, // Lookup: PRF_TYPE
   // PARTNER_REBATE: pay partner (MD/Non-MD) their rebate — requires partner bank details
   // PERSONAL_REIMBURSEMENT: reimburse BDM/employee who paid with own money — requires OR photo, payee = self
   purpose: { type: String, trim: true },                       // e.g., "Partner rebate — CSI #004719" or "Personal reimbursement — hotel, parking"

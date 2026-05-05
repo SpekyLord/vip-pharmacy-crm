@@ -976,7 +976,7 @@ export default function DocumentDetailPanel(props) {
             ['Linked Expense', d.linked_expense_id, d.linked_expense_line_count ? `${d.linked_expense_line_count} line(s)` : null],
           ]} />
           <div style={{ marginBottom: 6 }}>
-            <strong>Type:</strong> {d.doc_type} {d.prf_type ? `(${d.prf_type})` : ''}
+            <strong>Type:</strong> {d.doc_type} {d.doc_type === 'PRF' && d.prf_type ? `(${d.prf_type})` : ''}
             {(d.prf_number || d.calf_number) && <> · <strong>{d.doc_type}#:</strong> {d.prf_number || d.calf_number}</>}
             <StatusChip status={d.status} />
           </div>
