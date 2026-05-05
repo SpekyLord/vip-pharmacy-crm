@@ -22,6 +22,8 @@ import { showError } from '../utils/errorToast';
 import PresidentReverseModal from '../components/PresidentReverseModal';
 // Phase G4.5c.1 — proxy entry for single-entry Expenses.
 import OwnerPicker from '../components/OwnerPicker';
+// Phase P1.2 Slice 1 — pull BDM-captured photos into the batch OR upload.
+import PendingCapturesPicker from '../components/PendingCapturesPicker';
 
 // ── ScanORModal — camera → OR parser → pre-fill expense line ──
  
@@ -853,6 +855,20 @@ export default function Expenses() {
                       Select OR Images
                     </button>
                     <input ref={batchFileRef} type="file" multiple accept="image/*" style={{ display: 'none' }} onChange={handleBatchFileChange} />
+                    {/* Phase P1.2 Slice 1 — pull BDM-captured EXPENSE / FUEL_ENTRY /
+                        UNCATEGORIZED photos into the same batchFiles[] state so the
+                        existing OCR pipeline runs unchanged. */}
+                    <PendingCapturesPicker
+                      workflowTypes={['EXPENSE', 'FUEL_ENTRY', 'UNCATEGORIZED']}
+                      bdmId={batchAssignedTo || undefined}
+                      onPick={(files) => {
+                        setBatchFiles((prev) => {
+                          const merged = [...prev, ...files].slice(0, 20);
+                          return merged;
+                        });
+                      }}
+                      buttonLabel="From BDM Captures"
+                    />
                     <span style={{ fontSize: 13, color: '#6d28d9', fontWeight: 600 }}>
                       {batchFiles.length > 0 ? `${batchFiles.length} of 20 ORs selected` : 'No files selected'}
                     </span>

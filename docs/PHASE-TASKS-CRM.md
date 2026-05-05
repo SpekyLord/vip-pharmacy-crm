@@ -23,7 +23,7 @@ Documentation uses business terms (BDM, VIP Client). Code uses Doctor/Employee. 
 
 ### Task 1.2: AWS S3 Bucket Configuration ✅
 **Files**: `backend/config/s3.js`
-- S3 bucket `vip-pharmacy-crm-devs` in ap-southeast-1
+- S3 bucket `vip-pharmacy-crm-prod` in ap-southeast-1 (shared by dev + prod per [DEVELOPMENT_WORKFLOW.md](DEVELOPMENT_WORKFLOW.md))
 - Signed URL expiry: 1 hour
 - Folder structure: visits/, products/, avatars/
 

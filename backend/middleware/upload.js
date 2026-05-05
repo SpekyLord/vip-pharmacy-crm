@@ -13,7 +13,7 @@ const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
 const sharp = require('sharp');
-const { uploadVisitPhoto, uploadCommScreenshot, uploadProductImage, uploadAvatar } = require('../config/s3');
+const { uploadVisitPhoto, uploadCommScreenshot, uploadCaptureArtifact, uploadProductImage, uploadAvatar } = require('../config/s3');
 // Phase O — server-side EXIF + screenshot detection so the visit fraud
 // surface no longer trusts client-supplied capturedAt. processVisitPhotos
 // extracts metadata BEFORE compression so EXIF survives sharp's re-encode.
@@ -449,6 +449,117 @@ const processCommScreenshots = async (req, res, next) => {
   }
 };
 
+/**
+ * Middleware to upload Capture Hub artifacts to S3 (Phase P1.2 Slice 1, May 2026).
+ * Use after uploadMultiple('photos').
+ *
+ * Replaces the data-URL-stuffing path that was sitting at BdmCaptureHub.jsx:270
+ * since Phase P1 shipped in April 2026. With 9 BDMs × 10 captures × 3 photos
+ * per day, base64 inside the Mongo doc would hit the 16 MB doc cap within a
+ * week — this is the first piece of P1.2 because it's a production blocker
+ * before adoption goes wide.
+ *
+ * Reuses Phase O's screenshot detection: if a capture artifact is detected
+ * as a phone-screen screenshot (no EXIF, phone-resolution dimensions), the
+ * upload is rejected with HTTP 422 + a redirect payload so the BDM gets
+ * routed to /bdm/comm-log (the correct surface for chat-app screenshots).
+ *
+ * Capture artifacts ≠ visit photos in three ways:
+ *   (a) GPS lives in the form body (CaptureSubmission.captured_artifacts[].gps),
+ *       not pulled from EXIF — so screenshot blocking is the only fraud surface
+ *       to gate. Late-log cutoff is the BDM/proxy's own concern, not a hard guard.
+ *   (b) The S3 prefix is per-BDM × per-month, not just per-month, so admin can
+ *       run "purge captures for BDM X older than 18 months" without cross-tenant
+ *       collateral.
+ *   (c) Attaches output to req.uploadedCaptureArtifacts so it doesn't collide
+ *       with Visit's req.uploadedPhotos contract.
+ *
+ * Lookup-driven (Rule #3 + #19): screenshot_block_enabled comes from the
+ * VISIT_PHOTO_VALIDATION_RULES lookup category — Phase O already wired this
+ * for visit photos; we reuse the same toggle so subscribers don't need a
+ * separate lookup row to disable screenshot blocking during BDM rollout.
+ */
+const processCaptureArtifacts = async (req, res, next) => {
+  try {
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'At least one photo is required.',
+      });
+    }
+
+    const entityId = req.entityId || req.user?.entity_id || null;
+    const photoRules = await visitPhotoValidation.getThresholds(entityId);
+
+    // bdm_id resolution: explicit body wins (proxy uploading on behalf of a
+    // BDM via gallery), else tenantFilter's bdmId, else self. The cross-BDM
+    // permission gate is enforced in the controller — middleware just routes
+    // the S3 prefix correctly so the picker can find the photo later.
+    const bdmId = req.body.bdm_id || req.bdmId || req.user._id;
+
+    const uploadedArtifacts = [];
+
+    for (const file of req.files) {
+      const serverMeta = await extractMetadata(file.buffer);
+
+      if (photoRules.screenshot_block_enabled && serverMeta.isLikelyScreenshot) {
+        return res.status(422).json({
+          success: false,
+          code: 'SCREENSHOT_DETECTED',
+          message: 'This looks like a screenshot, not a photo of paperwork. Use Comm Log to record Messenger / Viber chats.',
+          redirect: photoRules.screenshot_redirect_path,
+          rejectedFile: file.originalname,
+        });
+      }
+
+      let compressed, compressedMime;
+      if (file.size > 500 * 1024) {
+        ({ buffer: compressed, mimetype: compressedMime } = await compressImage(file.buffer, file.mimetype));
+      } else {
+        compressed = file.buffer;
+        compressedMime = file.mimetype;
+      }
+
+      const hash = crypto.createHash('md5').update(compressed).digest('hex');
+
+      const result = await uploadCaptureArtifact(
+        compressed,
+        entityId,
+        bdmId,
+        file.originalname.replace(/\.\w+$/, '.jpg'),
+        compressedMime,
+      );
+
+      // Photo flags carry forward to the CaptureSubmission audit trail.
+      // no_exif_timestamp + gps_in_photo are signal-only (admin coaching),
+      // never gate ERP doc creation.
+      const photoFlags = [];
+      if (!serverMeta.exifPresent) photoFlags.push('no_exif_timestamp');
+      if (serverMeta.exifGpsPresent) photoFlags.push('gps_in_photo');
+
+      uploadedArtifacts.push({
+        url: result.url,
+        key: result.key,
+        capturedAt: serverMeta.capturedAt,
+        gps: serverMeta.gps || null,
+        dimensions: serverMeta.dimensions || null,
+        size: compressed.length,
+        mimetype: compressedMime,
+        hash,
+        photoFlags,
+      });
+    }
+
+    req.uploadedCaptureArtifacts = uploadedArtifacts;
+    next();
+  } catch (error) {
+    console.error('S3 capture artifact upload error:', error);
+    error.statusCode = 500;
+    error.message = 'Failed to upload capture artifacts. Please try again.';
+    next(error);
+  }
+};
+
 module.exports = {
   upload,
   uploadSingle,
@@ -457,6 +568,7 @@ module.exports = {
   compressImage,
   processVisitPhotos,
   processCommScreenshots,
+  processCaptureArtifacts,
   processProductImage,
   processProductImageOptional,
   processAvatar,

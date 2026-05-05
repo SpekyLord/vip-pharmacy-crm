@@ -222,6 +222,61 @@ const signVisitPhotos = async (visit) => {
 };
 
 /**
+ * Upload a Capture Hub artifact (Phase P1.2 Slice 1, May 2026).
+ *
+ * S3 prefix: capture-submissions/<entity>/<bdm>/<yyyy-mm>/<uuid>.jpg
+ *
+ * Per-BDM × per-month folders make S3 lifecycle policies trivial later
+ * (e.g. "expire any UNCATEGORIZED capture older than 18 months that was
+ * never linked to an ERP doc"). Falls back to 'unscoped' when entityId
+ * or bdmId is missing — never throw, since the upload must succeed even
+ * when tenantFilter hasn't fully populated req (defensive).
+ */
+const uploadCaptureArtifact = async (buffer, entityId, bdmId, originalName, contentType) => {
+  const now = new Date();
+  const yyyymm = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const safeEntity = entityId ? String(entityId) : 'unscoped';
+  const safeBdm = bdmId ? String(bdmId) : 'unscoped';
+  const folder = `capture-submissions/${safeEntity}/${safeBdm}/${yyyymm}`;
+  const key = generateS3Key(originalName, folder);
+  const url = await uploadToS3(buffer, key, contentType);
+  return { url, key };
+};
+
+/**
+ * Sign captured_artifacts URLs on a CaptureSubmission document.
+ *
+ * Bucket is private, so the public URL stored in Mongo 403s when the
+ * browser fetches it anonymously. Mirrors signVisitPhotos / signCommPhotos.
+ * Skips data: URLs (legacy P1.1 placeholders) and non-S3 URLs (defensive,
+ * never throws — capture queue must keep rendering even on a sign miss).
+ */
+const signCaptureArtifacts = async (submission) => {
+  if (!submission || !submission.captured_artifacts || submission.captured_artifacts.length === 0) {
+    return submission;
+  }
+  const subObj = submission.toObject ? submission.toObject() : { ...submission };
+  subObj.captured_artifacts = await Promise.all(
+    subObj.captured_artifacts.map(async (a) => {
+      if (!a || !a.url) return a;
+      if (a.url.startsWith('data:')) return a;
+      if (!a.url.includes('.amazonaws.com/')) return a;
+      try {
+        const key = extractKeyFromUrl(a.url);
+        const signedUrl = await getSignedDownloadUrl(key, 3600);
+        return { ...a, url: signedUrl };
+      } catch (err) {
+        // Sign failure shouldn't blank the queue — surface the unsigned URL,
+        // log so admin can reconcile (likely an out-of-bucket URL).
+        console.warn('[signCaptureArtifacts] sign failed:', err.message);
+        return a;
+      }
+    })
+  );
+  return subObj;
+};
+
+/**
  * Upload a communication screenshot
  * @param {Buffer} buffer - Image buffer
  * @param {string} originalName - Original filename
@@ -288,6 +343,7 @@ module.exports = {
   uploadToS3,
   uploadVisitPhoto,
   uploadCommScreenshot,
+  uploadCaptureArtifact,
   uploadProductImage,
   uploadAvatar,
   uploadClmBranding,
@@ -298,5 +354,6 @@ module.exports = {
   isConfigured,
   signVisitPhotos,
   signCommPhotos,
+  signCaptureArtifacts,
   signClmBranding,
 };

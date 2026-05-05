@@ -1,0 +1,273 @@
+/* ───────────────────────────────────────────────────────────────
+   PendingCapturesPicker — Phase P1.2 Slice 1 (May 2026).
+   All selectors prefixed `pcp-` to avoid collision with host page
+   styles. Drawer is right-side on desktop (≥768px), full-screen on
+   mobile so the proxy can use this component on tablet too.
+   ─────────────────────────────────────────────────────────────── */
+
+.pcp-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  z-index: 70;
+  display: flex;
+  align-items: stretch;
+  justify-content: flex-end;
+  animation: pcp-fade-in 0.18s ease;
+}
+
+@keyframes pcp-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.pcp-drawer {
+  width: 100%;
+  max-width: 460px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -8px 0 24px rgba(15, 23, 42, 0.18);
+  animation: pcp-slide-in 0.22s ease;
+}
+
+@keyframes pcp-slide-in {
+  from { transform: translateX(8%); }
+  to   { transform: translateX(0);   }
+}
+
+.pcp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.pcp-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.pcp-subtitle {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.pcp-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  color: #64748b;
+  border-radius: 6px;
+}
+
+.pcp-close:hover { background: #e2e8f0; }
+
+.pcp-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pcp-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.pcp-empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: #64748b;
+}
+
+.pcp-empty-title {
+  margin-top: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.pcp-empty-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.pcp-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.pcp-row:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.pcp-row.selected {
+  background: #eff6ff;
+  border-color: #3b82f6;
+}
+
+.pcp-thumb-wrap {
+  position: relative;
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.pcp-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.pcp-thumb-count {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  background: rgba(15, 23, 42, 0.85);
+  color: #fff;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.pcp-row-meta {
+  flex: 1;
+  min-width: 0;
+}
+
+.pcp-row-bdm {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pcp-row-detail {
+  font-size: 12px;
+  color: #475569;
+  margin-top: 2px;
+}
+
+.pcp-row-wf {
+  font-weight: 600;
+  color: #1e40af;
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+}
+
+.pcp-row-sub {
+  text-transform: capitalize;
+}
+
+.pcp-row-time {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.pcp-row-notes {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #64748b;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pcp-checkbox {
+  width: 22px;
+  height: 22px;
+  border: 2px solid #cbd5e1;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.pcp-checkbox.checked {
+  background: #3b82f6;
+  border-color: #3b82f6;
+}
+
+.pcp-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.pcp-footer-count {
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.pcp-confirm {
+  padding: 9px 18px;
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pcp-confirm:disabled {
+  background: #94a3b8;
+  cursor: not-allowed;
+}
+
+.pcp-confirm:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+@media (max-width: 480px) {
+  .pcp-drawer {
+    max-width: 100%;
+  }
+}

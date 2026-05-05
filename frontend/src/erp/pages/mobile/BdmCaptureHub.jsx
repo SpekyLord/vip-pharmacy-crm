@@ -233,8 +233,107 @@ function PendingBadge({ count }) {
   );
 }
 
+// ── Quick Capture button ──
+//
+// Phase P1.2 Slice 1 (May 2026) — zero-typing entry point. Tap → camera →
+// snap → upload to S3 → submit with workflow_type=UNCATEGORIZED. Three
+// physical taps, no form fields. The proxy classifies the photo later from
+// the Pending-Photos picker on the relevant ERP entry page.
+//
+// Reasoning (from the locked Path A plan): BDMs send photos via Messenger
+// today, not Capture Hub, because the existing 9-tile flow asks them to
+// pick a workflow + fill in amount + payment mode + access-for + notes
+// BEFORE they've even submitted the photo. Quick Capture inverts that —
+// the photo goes up first, classification happens on the office side
+// where the proxy is already entering the ERP doc anyway.
+//
+// Screenshot detection still fires server-side (Phase O) — a 422 redirects
+// the BDM to /bdm/comm-log with a friendly toast.
+function QuickCaptureButton({ gps, onSuccess, uploadArtifact, createCapture }) {
+  const fileRef = useRef(null);
+  const [busy, setBusy] = useState(false);
+
+  const handlePick = useCallback(async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBusy(true);
+    try {
+      const upRes = await uploadArtifact([file], { workflow_type: 'UNCATEGORIZED' });
+      const arts = (upRes?.data?.artifacts || []).map((a) => ({
+        kind: 'photo',
+        url: a.url,
+        gps: gps || a.gps || undefined,
+        timestamp: a.capturedAt || new Date().toISOString(),
+        photoFlags: a.photoFlags,
+      }));
+      if (arts.length === 0) {
+        toast.error('No artifacts returned from upload');
+        return;
+      }
+      await createCapture({
+        workflow_type: 'UNCATEGORIZED',
+        captured_artifacts: arts,
+      });
+      toast.success('Quick capture saved! Office will classify.');
+      onSuccess?.();
+    } catch (err) {
+      const code = err?.response?.data?.code;
+      if (code === 'SCREENSHOT_DETECTED') {
+        toast.error('Screenshots belong in Comm Log, not Capture. Redirecting…');
+        const redirect = err.response?.data?.redirect || '/bdm/comm-log';
+        setTimeout(() => { window.location.href = redirect; }, 700);
+        return;
+      }
+      toast.error(err?.response?.data?.message || 'Quick capture failed');
+    } finally {
+      setBusy(false);
+      // Reset the input so re-picking the same file still triggers onChange
+      if (fileRef.current) fileRef.current.value = '';
+    }
+  }, [uploadArtifact, createCapture, gps, onSuccess]);
+
+  return (
+    <>
+      <button
+        onClick={() => {
+          fileRef.current.setAttribute('capture', 'environment');
+          fileRef.current.click();
+        }}
+        disabled={busy}
+        className="ch-quick-capture"
+        data-testid="ch-quick-capture-btn"
+      >
+        {busy ? (
+          <>
+            <RefreshCw size={22} style={{ animation: 'spin 1s linear infinite' }} />
+            <span className="ch-quick-capture-label">Uploading…</span>
+          </>
+        ) : (
+          <>
+            <Camera size={22} />
+            <span className="ch-quick-capture-label">Quick Capture</span>
+            <span className="ch-quick-capture-hint">Snap a photo, classify later</span>
+          </>
+        )}
+      </button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        onChange={handlePick}
+        style={{ display: 'none' }}
+      />
+    </>
+  );
+}
+
 // ── Capture Modal ──
-function CaptureModal({ workflow, gps, onSubmit, onClose, loading }) {
+//
+// Phase P1.2 Slice 1 (May 2026) — handleSubmit now uploads files to S3 via
+// uploadArtifact (passed from parent) BEFORE calling onSubmit. The previews
+// state remains as inline data URLs purely for the in-modal thumbnails;
+// the persisted artifacts always carry S3 URLs.
+function CaptureModal({ workflow, gps, onSubmit, onUpload, onClose, loading }) {
   const fileRef = useRef(null);
   const [files, setFiles] = useState([]);
   const [previews, setPreviews] = useState([]);
@@ -242,6 +341,7 @@ function CaptureModal({ workflow, gps, onSubmit, onClose, loading }) {
   const [amount, setAmount] = useState('');
   const [paymentMode, setPaymentMode] = useState('');
   const [accessFor, setAccessFor] = useState('');
+  const [uploading, setUploading] = useState(false);
 
   const handleFileChange = useCallback((e) => {
     const selected = Array.from(e.target.files || []);
@@ -266,15 +366,40 @@ function CaptureModal({ workflow, gps, onSubmit, onClose, loading }) {
       return;
     }
 
-    // Build artifacts — for now, create object URLs as placeholders
-    // In production, these would be uploaded to S3 first
-    const artifacts = files.map((f, i) => ({
-      kind: workflow.artifactKind,
-      url: previews[i] || '',
-      gps: gps || undefined,
-      timestamp: new Date().toISOString(),
-      notes: notes || undefined,
-    }));
+    // Phase P1.2 Slice 1 — upload to S3 first, then build artifacts
+    // with the returned S3 URLs. Replaces the data-URL stuffing path.
+    let artifacts;
+    setUploading(true);
+    try {
+      const upRes = await onUpload(files, { workflow_type: workflow.key });
+      artifacts = (upRes?.data?.artifacts || []).map((a) => ({
+        kind: workflow.artifactKind,
+        url: a.url,
+        gps: gps || a.gps || undefined,
+        timestamp: a.capturedAt || new Date().toISOString(),
+        photoFlags: a.photoFlags,
+        notes: notes || undefined,
+      }));
+    } catch (err) {
+      const code = err?.response?.data?.code;
+      if (code === 'SCREENSHOT_DETECTED') {
+        toast.error('Screenshots belong in Comm Log, not Capture. Redirecting…');
+        const redirect = err.response?.data?.redirect || '/bdm/comm-log';
+        // Brief delay so the toast lands before the navigation flushes it.
+        setTimeout(() => { window.location.href = redirect; }, 700);
+        setUploading(false);
+        return;
+      }
+      toast.error(err?.response?.data?.message || 'Photo upload failed');
+      setUploading(false);
+      return;
+    }
+    setUploading(false);
+
+    if (!artifacts || artifacts.length === 0) {
+      toast.error('No artifacts returned from upload');
+      return;
+    }
 
     const payload = {
       workflow_type: workflow.key,
@@ -296,7 +421,7 @@ function CaptureModal({ workflow, gps, onSubmit, onClose, loading }) {
     }
 
     await onSubmit(payload);
-  }, [files, previews, workflow, gps, notes, amount, paymentMode, accessFor, onSubmit]);
+  }, [files, workflow, gps, notes, amount, paymentMode, accessFor, onSubmit, onUpload]);
 
   return (
     <div className="ch-modal-backdrop">
@@ -439,13 +564,17 @@ function CaptureModal({ workflow, gps, onSubmit, onClose, loading }) {
           {/* Submit */}
           <button
             onClick={handleSubmit}
-            disabled={loading || files.length === 0}
+            disabled={loading || uploading || files.length === 0}
             className="ch-submit-btn"
             style={{ backgroundColor: workflow.color }}
           >
-            {loading ? (
+            {uploading ? (
               <span className="ch-submit-btn-loading">
-                <RefreshCw size={20} style={{ animation: 'spin 1s linear infinite' }} /> Submitting...
+                <RefreshCw size={20} style={{ animation: 'spin 1s linear infinite' }} /> Uploading photos…
+              </span>
+            ) : loading ? (
+              <span className="ch-submit-btn-loading">
+                <RefreshCw size={20} style={{ animation: 'spin 1s linear infinite' }} /> Submitting…
               </span>
             ) : (
               'Submit to Office Queue'
@@ -460,7 +589,7 @@ function CaptureModal({ workflow, gps, onSubmit, onClose, loading }) {
 // ── Main Component ──
 export default function BdmCaptureHub() {
   useAuth();
-  const { createCapture, getMyCaptures, loading } = useCaptureSubmissions();
+  const { createCapture, uploadArtifact, getMyCaptures, loading } = useCaptureSubmissions();
   const { gps } = useGps();
 
   const [activeWorkflow, setActiveWorkflow] = useState(null);
@@ -526,6 +655,14 @@ export default function BdmCaptureHub() {
         </div>
       </div>
 
+      {/* Phase P1.2 Slice 1 — Quick Capture (zero-typing path) */}
+      <QuickCaptureButton
+        gps={gps}
+        uploadArtifact={uploadArtifact}
+        createCapture={createCapture}
+        onSuccess={loadData}
+      />
+
       {/* Sectioned workflow cards */}
       <div className="ch-sections">
         {grouped.map(({ section, workflows }) => (
@@ -584,6 +721,7 @@ export default function BdmCaptureHub() {
           workflow={activeWorkflow}
           gps={gps}
           onSubmit={handleSubmit}
+          onUpload={uploadArtifact}
           onClose={() => setActiveWorkflow(null)}
           loading={loading}
         />

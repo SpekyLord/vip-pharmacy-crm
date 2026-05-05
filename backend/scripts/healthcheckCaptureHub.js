@@ -173,6 +173,170 @@ const sidebarSrc = read('frontend/src/components/common/Sidebar.jsx');
 assert('Sidebar links to capture-hub', /\/erp\/capture-hub/.test(sidebarSrc));
 assert('Sidebar links to review-queue', /\/erp\/review-queue/.test(sidebarSrc));
 
+// ── 7. Phase P1.2 Slice 1 — UNCATEGORIZED workflow_type ─────────
+section('Phase P1.2 Slice 1 — UNCATEGORIZED workflow_type');
+assert('Model enum: UNCATEGORIZED', /'UNCATEGORIZED'/.test(modelSrc));
+assert('Controller VALID_TYPES: UNCATEGORIZED', /VALID_TYPES\s*=\s*\[[\s\S]+'UNCATEGORIZED'/.test(ctrlSrc));
+// Confirm UNCATEGORIZED is NOT digital-only (paper expected by default; proxy
+// reclassification later flips physical_required atomically when needed).
+assert('DIGITAL_ONLY does not match UNCATEGORIZED',
+  !/UNCATEGORIZED/.test(
+    (ctrlSrc.match(/const DIGITAL_ONLY[\s\S]+?\n;/m) ||
+     ctrlSrc.match(/const DIGITAL_ONLY[\s\S]+?paid_csi[^\n]*/i) || [''])[0]
+  )
+);
+
+// ── 8. Phase P1.2 Slice 1 — captureLifecycleAccess helper ───────
+section('Phase P1.2 Slice 1 — captureLifecycleAccess helper');
+const helperPath = 'backend/utils/captureLifecycleAccess.js';
+const helperSrc = read(helperPath);
+
+assert('helper file exists',                                    helperSrc.length > 0);
+assert('helper imports Lookup model',                           /require\(['"]\.\.\/erp\/models\/Lookup['"]\)/.test(helperSrc));
+assert('helper imports ROLES constants',                        /require\(['"]\.\.\/constants\/roles['"]\)/.test(helperSrc));
+assert('helper has 60s TTL',                                    /TTL_MS\s*=\s*60_?000/.test(helperSrc));
+assert('helper queries CAPTURE_LIFECYCLE_ROLES category',       /category:\s*'CAPTURE_LIFECYCLE_ROLES'/.test(helperSrc));
+assert('helper has DEFAULTS_BY_CODE map',                       /DEFAULTS_BY_CODE/.test(helperSrc));
+assert('helper exports invalidate fn',                          /exports[\s\S]*invalidate[\s\S]*}/.test(helperSrc) || /module\.exports\s*=[\s\S]+invalidate,/.test(helperSrc));
+assert('helper exports userCanPerformCaptureAction',            /userCanPerformCaptureAction/.test(helperSrc));
+
+// 12 default-arrays, 12 getters, 12 codes — strict count parity.
+const codes = [
+  'UPLOAD_OWN_CAPTURE', 'VIEW_OWN_ARCHIVE', 'VIEW_ALL_ARCHIVE',
+  'MARK_PAPER_RECEIVED', 'BULK_MARK_RECEIVED', 'OVERRIDE_PHYSICAL_STATUS',
+  'GENERATE_CYCLE_REPORT', 'MARK_NO_DRIVE_DAY', 'ALLOCATE_PERSONAL_OFFICIAL',
+  'OVERRIDE_ALLOCATION', 'EDIT_CAR_LOGBOOK_DESTINATION', 'PROXY_PULL_CAPTURE',
+];
+codes.forEach(code => {
+  assert(`helper DEFAULT_${code}`, new RegExp(`DEFAULT_${code}\\s*=`).test(helperSrc));
+  assert(`helper DEFAULTS_BY_CODE.${code}`, new RegExp(`${code}:\\s*DEFAULT_${code}`).test(helperSrc));
+});
+
+// Default role narrowness — sanity check critical gates didn't accidentally
+// open up. UPLOAD/VIEW_OWN/MARK_NO_DRIVE/ALLOCATE: staff. OVERRIDE_PHYSICAL_
+// STATUS: president-only (irreversible-blast-radius gate). BULK_MARK_RECEIVED:
+// admin-only. PROXY_PULL_CAPTURE: admin+finance (proxy clerks).
+assert('default UPLOAD_OWN_CAPTURE = [staff]',           /DEFAULT_UPLOAD_OWN_CAPTURE\s*=\s*\[ROLES\.STAFF\]/.test(helperSrc));
+assert('default VIEW_OWN_ARCHIVE = [staff]',             /DEFAULT_VIEW_OWN_ARCHIVE\s*=\s*\[ROLES\.STAFF\]/.test(helperSrc));
+assert('default OVERRIDE_PHYSICAL_STATUS = [president]', /DEFAULT_OVERRIDE_PHYSICAL_STATUS\s*=\s*\[ROLES\.PRESIDENT\]/.test(helperSrc));
+assert('default BULK_MARK_RECEIVED = [admin]',           /DEFAULT_BULK_MARK_RECEIVED\s*=\s*\[ROLES\.ADMIN\]/.test(helperSrc));
+assert('default PROXY_PULL_CAPTURE = [admin, finance]',  /DEFAULT_PROXY_PULL_CAPTURE\s*=\s*\[ROLES\.ADMIN,\s*ROLES\.FINANCE\]/.test(helperSrc));
+
+// ── 9. Phase P1.2 Slice 1 — Lookup SEED + invalidate wiring ─────
+section('Phase P1.2 Slice 1 — Lookup SEED + invalidate wiring');
+const lookupCtrlSrc = read('backend/erp/controllers/lookupGenericController.js');
+
+assert('SEED has CAPTURE_LIFECYCLE_ROLES', /CAPTURE_LIFECYCLE_ROLES:\s*\[/.test(lookupCtrlSrc));
+codes.forEach(code => {
+  assert(`SEED row: ${code}`, new RegExp(`code:\\s*'${code}'`).test(lookupCtrlSrc));
+});
+// Every seed row must carry insert_only_metadata: true so admin role-array
+// edits survive future re-seeds (Phase A.5 / G7.A.0 / VIP-1.A pattern).
+const captureBlock = (lookupCtrlSrc.match(/CAPTURE_LIFECYCLE_ROLES:\s*\[[\s\S]+?\n\s*\]/m) || [''])[0];
+assert('SEED block found',                                  captureBlock.length > 0);
+const insertOnlyCount = (captureBlock.match(/insert_only_metadata:\s*true/g) || []).length;
+assert(`SEED rows = 12 with insert_only_metadata`,          insertOnlyCount === 12);
+
+// Invalidate hook must fire on create + update + remove, mirroring the
+// 17 other lookup-driven role helpers (mdPartnerAccess, scpwdAccess,
+// rebateCommissionAccess, etc.). Without this, admin saves would wait
+// up to 60s before the gate honored the new row.
+assert('imports invalidateCaptureLifecycleRolesCache',     /invalidate:\s*invalidateCaptureLifecycleRolesCache/.test(lookupCtrlSrc));
+assert('CAPTURE_LIFECYCLE_ROLES_CATEGORIES set defined',   /CAPTURE_LIFECYCLE_ROLES_CATEGORIES\s*=\s*new Set\(\['CAPTURE_LIFECYCLE_ROLES'\]\)/.test(lookupCtrlSrc));
+const invalidateCalls = (lookupCtrlSrc.match(/invalidateCaptureLifecycleRolesCache\(/g) || []).length;
+assert('invalidate hook fires in create/update/remove (3)', invalidateCalls === 3);
+
+// ── 10. Phase P1.2 Slice 1 — S3 upload pipeline ─────────────────
+section('Phase P1.2 Slice 1 — S3 upload pipeline');
+const s3Src = read('backend/config/s3.js');
+const uploadMwSrc = read('backend/middleware/upload.js');
+
+assert('s3.js exports uploadCaptureArtifact',                 /uploadCaptureArtifact/.test(s3Src));
+assert('s3.js exports signCaptureArtifacts',                  /signCaptureArtifacts/.test(s3Src));
+assert('uploadCaptureArtifact uses capture-submissions/ prefix',
+  /capture-submissions\/\$\{safeEntity\}\/\$\{safeBdm\}\/\$\{yyyymm\}/.test(s3Src));
+assert('signCaptureArtifacts skips data: URLs',               /a\.url\.startsWith\(['"]data:['"]\)/.test(s3Src));
+assert('signCaptureArtifacts uses 3600s expiry',              /getSignedDownloadUrl\([^,]+,\s*3600\)/.test(s3Src));
+
+assert('upload.js imports uploadCaptureArtifact',             /uploadCaptureArtifact/.test(uploadMwSrc));
+assert('upload.js exports processCaptureArtifacts',           /processCaptureArtifacts/.test(uploadMwSrc));
+assert('processCaptureArtifacts honors screenshot_block_enabled',
+  /processCaptureArtifacts[\s\S]+screenshot_block_enabled[\s\S]+isLikelyScreenshot/.test(uploadMwSrc));
+assert('processCaptureArtifacts returns 422 SCREENSHOT_DETECTED',
+  /processCaptureArtifacts[\s\S]+422[\s\S]+SCREENSHOT_DETECTED/.test(uploadMwSrc));
+assert('processCaptureArtifacts attaches req.uploadedCaptureArtifacts',
+  /req\.uploadedCaptureArtifacts\s*=/.test(uploadMwSrc));
+assert('processCaptureArtifacts emits no_exif_timestamp flag', /no_exif_timestamp/.test(uploadMwSrc));
+assert('processCaptureArtifacts emits gps_in_photo flag',     /gps_in_photo/.test(uploadMwSrc));
+
+// ── 11. Phase P1.2 Slice 1 — uploadArtifact controller + route ─
+section('Phase P1.2 Slice 1 — uploadArtifact controller + route');
+const ctrlSrcAfter = read('backend/erp/controllers/captureSubmissionController.js');
+const routeSrcAfter = read('backend/erp/routes/captureSubmissionRoutes.js');
+
+assert('controller imports signCaptureArtifacts',             /signCaptureArtifacts/.test(ctrlSrcAfter));
+assert('controller imports userCanPerformCaptureAction',      /userCanPerformCaptureAction/.test(ctrlSrcAfter));
+assert('controller exports uploadArtifact',                   /module\.exports[\s\S]+uploadArtifact/.test(ctrlSrcAfter));
+assert('uploadArtifact gates UPLOAD_OWN_CAPTURE',             /['"]UPLOAD_OWN_CAPTURE['"]/.test(ctrlSrcAfter));
+assert('uploadArtifact gates PROXY_PULL_CAPTURE',             /['"]PROXY_PULL_CAPTURE['"]/.test(ctrlSrcAfter));
+assert('uploadArtifact handles cross-BDM body bdm_id',        /req\.body\.bdm_id/.test(ctrlSrcAfter));
+// Read paths now sign captured_artifacts URLs.
+const signCalls = (ctrlSrcAfter.match(/signCaptureArtifacts\(/g) || []).length;
+assert('signCaptureArtifacts called in 4 read paths (my, my/review, queue, :id)',
+  signCalls >= 4);
+
+assert('route /upload-artifact mounted',                      /\/upload-artifact/.test(routeSrcAfter));
+assert('route uses uploadMultiple multer',                    /uploadMultiple\(['"]photos['"]/.test(routeSrcAfter));
+assert('route uses processCaptureArtifacts middleware',       /processCaptureArtifacts/.test(routeSrcAfter));
+
+// ── 12. Phase P1.2 Slice 1 — Frontend Quick Capture + Picker ───
+section('Phase P1.2 Slice 1 — Frontend Quick Capture + Picker');
+const hookSrcP12 = read('frontend/src/erp/hooks/useCaptureSubmissions.js');
+const hubSrcP12 = read('frontend/src/erp/pages/mobile/BdmCaptureHub.jsx');
+const pickerSrc = read('frontend/src/erp/components/PendingCapturesPicker.jsx');
+const expensesSrc = read('frontend/src/erp/pages/Expenses.jsx');
+const pickerCss = read('frontend/src/styles/pending-captures-picker.css');
+const hubCssP12 = read('frontend/src/styles/capture-hub.css');
+
+// Hook
+assert('hook exposes uploadArtifact',                         /uploadArtifact/.test(hookSrcP12));
+assert('hook posts to /upload-artifact',                      /\/capture-submissions\/upload-artifact/.test(hookSrcP12));
+assert('hook builds FormData with photos field',              /fd\.append\(['"]photos['"]/.test(hookSrcP12));
+assert('hook sets multipart/form-data header',                /multipart\/form-data/.test(hookSrcP12));
+
+// BdmCaptureHub — Quick Capture button
+assert('BdmCaptureHub renders QuickCaptureButton',            /<QuickCaptureButton/.test(hubSrcP12));
+assert('QuickCaptureButton uses workflow_type=UNCATEGORIZED', /workflow_type:\s*['"]UNCATEGORIZED['"]/.test(hubSrcP12));
+assert('QuickCaptureButton uses uploadArtifact then createCapture',
+  /uploadArtifact[\s\S]+createCapture/.test(hubSrcP12));
+assert('QuickCaptureButton handles SCREENSHOT_DETECTED',      /SCREENSHOT_DETECTED/.test(hubSrcP12));
+
+// CaptureModal — replaced data-URL stuffing
+assert('CaptureModal accepts onUpload prop',                  /CaptureModal[\s\S]+onUpload/.test(hubSrcP12));
+assert('CaptureModal handleSubmit calls onUpload',            /onUpload\(files/.test(hubSrcP12));
+// Negative: the legacy "url: previews[i]" data-URL stuffing must be gone.
+assert('CaptureModal no longer uses previews[i] as artifact url',
+  !/url:\s*previews\[i\]/.test(hubSrcP12));
+
+// Scoped CSS for Quick Capture
+assert('capture-hub.css has .ch-quick-capture',               /\.ch-quick-capture\b/.test(hubCssP12));
+
+// PendingCapturesPicker
+assert('PendingCapturesPicker file exists',                   pickerSrc.length > 0);
+assert('Picker uses useCaptureSubmissions',                   /useCaptureSubmissions/.test(pickerSrc));
+assert('Picker calls getProxyQueue with workflow_type',       /getProxyQueue\([\s\S]+workflow_type/.test(pickerSrc));
+assert('Picker fetches signed URL → File',                    /new File\(\[blob\]/.test(pickerSrc));
+assert('Picker exposes onPick(files, meta) contract',         /onPick\(files,\s*\{[^}]*capture_ids/.test(pickerSrc));
+assert('Picker scoped CSS file exists',                       pickerCss.length > 0);
+assert('pcp- prefix used (no host-page collision)',           /\.pcp-/.test(pickerCss));
+
+// Expenses page integration
+assert('Expenses imports PendingCapturesPicker',              /PendingCapturesPicker/.test(expensesSrc));
+assert('Expenses passes EXPENSE/FUEL_ENTRY/UNCATEGORIZED workflowTypes',
+  /workflowTypes=\{\[['"]EXPENSE['"][^]+FUEL_ENTRY[^]+UNCATEGORIZED/.test(expensesSrc));
+assert('Expenses onPick merges into batchFiles[]',
+  /setBatchFiles\(\(prev\)\s*=>[\s\S]{0,200}files/.test(expensesSrc));
+
 // ── Summary ───────────────────────────────────────────────────
 const total = pass + fail;
 process.stdout.write(`\n${'═'.repeat(60)}\n`);
@@ -182,5 +346,5 @@ if (fail > 0) {
   failures.forEach(f => process.stdout.write(`  - ${f}\n`));
   process.exit(1);
 }
-process.stdout.write(`\n✓ Capture Hub Phase P1.1 contract is intact.\n`);
+process.stdout.write(`\n✓ Capture Hub Phase P1.1 + P1.2 Slice 1 contract is intact.\n`);
 process.exit(0);

@@ -67,6 +67,65 @@
   flex-shrink: 0;
 }
 
+/* ── Phase P1.2 Slice 1 — Quick Capture button ─────────────── */
+.ch-quick-capture {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  margin: 0 0 20px;
+  padding: 18px 20px;
+  background: linear-gradient(135deg, #1e40af 0%, #2563eb 100%);
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+  transition: transform 0.1s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+  min-height: 64px; /* ≥44px touch target + padding */
+}
+
+.ch-quick-capture:hover:not(:disabled) {
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.35);
+}
+
+.ch-quick-capture:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.ch-quick-capture:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.ch-quick-capture-label {
+  flex: 1;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.ch-quick-capture-hint {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.9;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.18);
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+
+@media (max-width: 380px) {
+  /* Tight phones — drop the hint pill, keep the label readable */
+  .ch-quick-capture-hint {
+    display: none;
+  }
+}
+
 /* ── Sections ─────────────────────────────────────────────── */
 .ch-sections {
   display: flex;

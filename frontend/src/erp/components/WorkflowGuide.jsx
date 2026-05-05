@@ -377,7 +377,7 @@ const WORKFLOW_GUIDES = {
       { label: 'PRF / CALF', path: '/erp/prf-calf' },
       { label: 'COA Settings', path: '/erp/settings' },
     ],
-    tip: 'Expenses with COA 6900 (Misc) are BLOCKED from posting — map to correct account first. ACCESS expenses with non-cash payment auto-create a CALF — SUBMIT THE CALF (not the expense) to trigger the one-acknowledge cascade that posts both docs. COA codes are configurable in Settings → COA Mapping. OCR scanning is optional — if it fails or is disabled, the photo still uploads as proof and you fill the form manually. President Delete — for the President (or anyone granted accounting.reverse_posted in Access Templates): one-click delete of bad expense rows. POSTED/DELETION_REQUESTED → SAP Storno (reverses expense + CALF-link clear + journal entries; original kept for audit). DRAFT/VALID/ERROR → hard delete. Blocked if a POSTED CALF still references the row; reverse the CALF first. All actions logged. Proxy Entry (Phase G4.5c.1) — admin/finance (or back-office contractor with expenses.proxy_entry sub-perm ticked) can key an expense on behalf of another BDM; pick the owner in the "Record on behalf of" dropdown. Rows keyed on behalf route through the Approval Hub on submit (Rule #20 four-eyes). CALF requirement is still enforced for proxy-keyed expenses — only the President can bypass CALF, via the batch-upload path.',
+    tip: 'Expenses with COA 6900 (Misc) are BLOCKED from posting — map to correct account first. ACCESS expenses with non-cash payment auto-create a CALF — SUBMIT THE CALF (not the expense) to trigger the one-acknowledge cascade that posts both docs. COA codes are configurable in Settings → COA Mapping. OCR scanning is optional — if it fails or is disabled, the photo still uploads as proof and you fill the form manually. President Delete — for the President (or anyone granted accounting.reverse_posted in Access Templates): one-click delete of bad expense rows. POSTED/DELETION_REQUESTED → SAP Storno (reverses expense + CALF-link clear + journal entries; original kept for audit). DRAFT/VALID/ERROR → hard delete. Blocked if a POSTED CALF still references the row; reverse the CALF first. All actions logged. Proxy Entry (Phase G4.5c.1) — admin/finance (or back-office contractor with expenses.proxy_entry sub-perm ticked) can key an expense on behalf of another BDM; pick the owner in the "Record on behalf of" dropdown. Rows keyed on behalf route through the Approval Hub on submit (Rule #20 four-eyes). CALF requirement is still enforced for proxy-keyed expenses — only the President can bypass CALF, via the batch-upload path. **Phase P1.2 Slice 1 (May 06 2026) — From BDM Captures picker** in the Batch OR Upload section pulls EXPENSE / FUEL_ENTRY / UNCATEGORIZED photos already snapped by the BDM via Capture Hub. One click attaches the S3-stored images into the existing batch OCR pipeline — same downstream code path as gallery upload, no schema change. Picker filters to the selected `Assign To` BDM when set; cross-BDM otherwise. Gated by the lookup-driven `PROXY_PULL_CAPTURE` sub-perm (CAPTURE_LIFECYCLE_ROLES). Subscribers loosen to specific staff users by editing the lookup row in Control Center → Lookup Tables, no code deploy.',
   },
   'smer': {
     title: 'SMER (Sales/Marketing Expense Report)',
@@ -1877,9 +1877,9 @@ const WORKFLOW_GUIDES = {
     title: 'BDM Capture Hub',
     subtitle: 'One-tap field capture — every BDM-facing document the office needs.',
     steps: [
-      'Tap a tile that matches the physical document in your hand',
+      'Tap **Quick Capture** to snap any photo with zero typing — office classifies it later',
+      'Or tap a specific tile that matches the document if you want to fill amount/customer',
       'Take a photo or pick from gallery — GPS is captured automatically',
-      'Fill the amount + customer/hospital field if shown',
       'Submit — the office team enters the ERP record on your behalf',
       'Confirm or dispute the entry from the Review Queue when notified',
     ],
@@ -1889,12 +1889,16 @@ const WORKFLOW_GUIDES = {
       'All other captures expect physical paper to follow within 8–10 days',
       'Cycle: C1 = day 1–15, C2 = day 16–end of month — pace your captures accordingly',
       'If physical paper is missing, the SAME cycle next month may be blocked (e.g., C1 May missing → C1 June blocked)',
+      '**Phase P1.2 Slice 1 (May 06 2026):** Photos now upload directly to S3 — captures no longer carry base64 data inside the doc, so storage scales with field volume.',
+      '**Quick Capture (zero-typing):** Use this when the proxy will classify the photo later. Submits as workflow_type=UNCATEGORIZED; the proxy reroutes from the Pending-Photos picker on the relevant ERP entry page.',
+      'Screenshots get rejected at the server (no EXIF + phone-resolution dimensions) and the page redirects you to Comm Log — that is the right surface for Messenger/Viber chats.',
+      'Sub-permissions are lookup-driven via CAPTURE_LIFECYCLE_ROLES (Control Center → Lookup Tables) so admin can promote a designated proxy `staff` user to MARK_PAPER_RECEIVED or VIEW_ALL_ARCHIVE without a code deploy.',
     ],
     next: [
       { label: 'Review Queue', path: '/erp/review-queue' },
       { label: 'Expenses', path: '/erp/expenses' },
     ],
-    tip: 'The Capture Hub is additive — you can always skip it and enter records directly. But proxies use captures to know what paper to expect.',
+    tip: 'The Capture Hub is additive — you can always skip it and enter records directly. Quick Capture is the fastest path: snap a photo, the proxy reuses it from the entry-page picker.',
   },
   'proxy-queue': {
     title: 'Office Proxy Queue',

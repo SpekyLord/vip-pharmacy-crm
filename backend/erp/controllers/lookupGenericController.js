@@ -108,6 +108,17 @@ const SALES_DISCOUNT_CONFIG_CATEGORIES = new Set(['SALES_DISCOUNT_CONFIG']);
 const { invalidateActivityPerdiemRuleCache } = require('../services/perdiemCalc');
 const ACTIVITY_PERDIEM_RULES_CATEGORIES = new Set(['ACTIVITY_PERDIEM_RULES']);
 
+// Phase P1.2 Slice 1 (May 06 2026) — Capture Lifecycle access gates. When
+// admin edits CAPTURE_LIFECYCLE_ROLES (e.g. adds a designated proxy `staff`
+// user to MARK_PAPER_RECEIVED), bust the 60s in-process role cache in
+// captureLifecycleAccess.js so subsequent capture-hub / proxy-queue / archive
+// requests honor the new roster on the very next call. Without this hook the
+// admin's add would wait up to 60s per running instance — slow enough to make
+// the admin think their save didn't take. Same TTL invariant as the other 11
+// lookup-driven role helpers.
+const { invalidate: invalidateCaptureLifecycleRolesCache } = require('../../utils/captureLifecycleAccess');
+const CAPTURE_LIFECYCLE_ROLES_CATEGORIES = new Set(['CAPTURE_LIFECYCLE_ROLES']);
+
 // Phase G6.10/G7 — categories whose seeded rows must default is_active: false so
 // subscribers explicitly opt in (Anthropic-billable features, spend caps that
 // could surprise-block in-flight calls). Without this, the first AgentSettings
@@ -3415,6 +3426,35 @@ const SEED_DEFAULTS = {
     { code: 'VERBAL',         label: 'Verbal',            insert_only_metadata: true, metadata: { sort_order: 4, description: 'Phone call or in-person — entered from BDM dictation.' } },
     { code: 'OTHER',          label: 'Other',             insert_only_metadata: true, metadata: { sort_order: 5, description: 'Source not specified.' } },
   ],
+  // ── Phase P1.2 Slice 1 (May 06 2026) — Capture Lifecycle Role gates ──
+  // captureLifecycleAccess.js reads metadata.roles for each code with 60s TTL
+  // cache. Defaults match the inline DEFAULT_* constants in that file so a
+  // Lookup outage falls back cleanly. Subscribers re-route per-entity via
+  // Control Center → Lookup Tables → CAPTURE_LIFECYCLE_ROLES (Rule #3 + #19,
+  // subscription-readiness). All 12 rows use insert_only_metadata: true so
+  // admin overrides to metadata.roles survive future re-seeds.
+  //
+  // Layered grid (BDM upload + allocate; proxy attest paper + reuse photos;
+  // admin/finance reconcile + report; president holds irreversible levers).
+  // OVERRIDE_PHYSICAL_STATUS narrows to president because it can release a
+  // held commission by flipping MISSING → RECEIVED retroactively. BULK_MARK_
+  // RECEIVED narrows to admin because a misclick on multi-select would attest
+  // dozens of papers without inspection. Subscribers loosen via Lookup row
+  // when their internal control posture allows.
+  CAPTURE_LIFECYCLE_ROLES: [
+    { code: 'UPLOAD_OWN_CAPTURE',           label: 'BDM uploads photos to own capture queue',                 insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 1, description: 'BDM-side hub camera + auto-submit. Cross-BDM uploads still allowed when caller has PROXY_PULL_CAPTURE (set bdm_id explicitly in body).' } },
+    { code: 'VIEW_OWN_ARCHIVE',             label: 'BDM browses own Capture Archive',                          insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 2, description: 'Self-scoped archive view at /erp/capture-archive. Server filters by bdm_id = req.user._id when caller has only this gate.' } },
+    { code: 'VIEW_ALL_ARCHIVE',             label: 'View Capture Archive across all BDMs',                     insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 3, description: 'Cross-BDM archive view with BDM picker. Inherits VIEW_OWN scope plus the picker. Add trusted manager-tier staff here when delegated.' } },
+    { code: 'MARK_PAPER_RECEIVED',          label: 'Attest paper has arrived at office',                       insert_only_metadata: true, metadata: { roles: ['admin', 'finance'], sort_order: 4, description: 'Inline checkbox on Mark Complete + per-row action on Capture Archive. Add staff here to delegate to a designated proxy clerk.' } },
+    { code: 'BULK_MARK_RECEIVED',           label: 'Bulk-mark received via multi-select',                      insert_only_metadata: true, metadata: { roles: ['admin'], sort_order: 5, description: 'Multi-select on archive page → mark dozens received in one action. Narrow on purpose — a misclick attests papers without inspection.' } },
+    { code: 'OVERRIDE_PHYSICAL_STATUS',     label: 'Flip RECEIVED ↔ MISSING after attestation',                 insert_only_metadata: true, metadata: { roles: ['president'], sort_order: 6, description: 'Correct a mistaken paper-status attestation. President-only because RECEIVED → MISSING can release a held commission and MISSING → RECEIVED can hide an absent paper.' } },
+    { code: 'GENERATE_CYCLE_REPORT',        label: 'Generate cycle audit PDF/CSV',                              insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 7, description: 'One-click cycle audit summarizing paper receipt + per-BDM compliance. Add bookkeeper / external accountant role when needed.' } },
+    { code: 'MARK_NO_DRIVE_DAY',            label: 'BDM clears vacation / sick day from allocation gate',      insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 8, description: 'One-tap "did not drive yesterday" escape valve. Records Pers=0/Official=0/Fuel=0 with a no_drive tag.' } },
+    { code: 'ALLOCATE_PERSONAL_OFFICIAL',   label: 'BDM allocates personal vs official kms',                    insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 9, description: 'Tomorrow-drive allocation slider. Default = Pers=Total/Official=0; BDM must reallocate to earn per-diem (anti-fraud nudge).' } },
+    { code: 'OVERRIDE_ALLOCATION',          label: 'Correct mistaken Pers/Official allocation post-submission', insert_only_metadata: true, metadata: { roles: ['admin', 'president'], sort_order: 10, description: 'Audit-logged override on a saved allocation row. Add finance here when finance owns mileage policy.' } },
+    { code: 'EDIT_CAR_LOGBOOK_DESTINATION', label: 'Edit auto-pulled Destination cell on Car Logbook',         insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 11, description: 'Proxy fixes a CRM-pull miss (BDM stopped at lab/post office not in Visit log). Add staff if you want BDMs self-correcting.' } },
+    { code: 'PROXY_PULL_CAPTURE',           label: 'Use Pending-Photos picker on ERP entry pages',             insert_only_metadata: true, metadata: { roles: ['admin', 'finance'], sort_order: 12, description: 'Drawer on /erp/expenses, /erp/sales/entry, /erp/collection, /erp/grn that shows BDM-captured pending photos and auto-attaches them to the form. Add designated proxy staff here.' } },
+  ],
 };
 
 // List all distinct categories for current entity
@@ -3574,6 +3614,7 @@ exports.create = catchAsync(async (req, res) => {
   if (PRICE_RESOLVER_CATEGORIES.has(cat)) invalidatePriceCache(req.entityId);
   if (SALES_DISCOUNT_CONFIG_CATEGORIES.has(cat)) invalidateSalesDiscountCache(req.entityId);
   if (ACTIVITY_PERDIEM_RULES_CATEGORIES.has(cat)) invalidateActivityPerdiemRuleCache(req.entityId);
+  if (CAPTURE_LIFECYCLE_ROLES_CATEGORIES.has(cat)) invalidateCaptureLifecycleRolesCache(req.entityId);
   res.status(201).json({ success: true, data: item });
 });
 
@@ -3610,6 +3651,7 @@ exports.update = catchAsync(async (req, res) => {
   if (PRICE_RESOLVER_CATEGORIES.has(item.category)) invalidatePriceCache(item.entity_id);
   if (SALES_DISCOUNT_CONFIG_CATEGORIES.has(item.category)) invalidateSalesDiscountCache(item.entity_id);
   if (ACTIVITY_PERDIEM_RULES_CATEGORIES.has(item.category)) invalidateActivityPerdiemRuleCache(item.entity_id);
+  if (CAPTURE_LIFECYCLE_ROLES_CATEGORIES.has(item.category)) invalidateCaptureLifecycleRolesCache(item.entity_id);
   res.json({ success: true, data: item });
 });
 
@@ -3638,6 +3680,7 @@ exports.remove = catchAsync(async (req, res) => {
   if (PRICE_RESOLVER_CATEGORIES.has(item.category)) invalidatePriceCache(item.entity_id);
   if (SALES_DISCOUNT_CONFIG_CATEGORIES.has(item.category)) invalidateSalesDiscountCache(item.entity_id);
   if (ACTIVITY_PERDIEM_RULES_CATEGORIES.has(item.category)) invalidateActivityPerdiemRuleCache(item.entity_id);
+  if (CAPTURE_LIFECYCLE_ROLES_CATEGORIES.has(item.category)) invalidateCaptureLifecycleRolesCache(item.entity_id);
   res.json({ success: true, data: item, message: 'Item deactivated' });
 });
 
