@@ -261,6 +261,8 @@ export default function CarLogbook() {
             _id: doc._id,
             starting_km: doc.starting_km || 0,
             ending_km: doc.ending_km || 0,
+            starting_km_photo_url: doc.starting_km_photo_url || '',
+            ending_km_photo_url: doc.ending_km_photo_url || '',
             personal_km: doc.personal_km || 0,
             fuel_entries: doc.fuel_entries || [],
             destination: doc.destination || '',
@@ -389,6 +391,8 @@ export default function CarLogbook() {
       entry_date: row.entry_date,
       starting_km: row.starting_km,
       ending_km: row.ending_km,
+      starting_km_photo_url: row.starting_km_photo_url || '',
+      ending_km_photo_url: row.ending_km_photo_url || '',
       personal_km: row.personal_km,
       fuel_entries: row.fuel_entries,
       destination: row.destination,
@@ -446,10 +450,22 @@ export default function CarLogbook() {
     if (!scanOdoTarget) return;
     const val = (f) => (f && typeof f === 'object' && 'value' in f) ? f.value : (f || '');
     const reading = parseInt(val(ocrData.extracted?.reading)) || 0;
-    if (reading > 0) {
-      const field = scanOdoTarget.field === 'starting' ? 'starting_km' : 'ending_km';
-      handleRowChange(scanOdoTarget.rowIdx, field, reading);
-    }
+    const photoUrl = ocrData?.s3_url || '';
+    const { rowIdx, field } = scanOdoTarget;
+    const kmField = field === 'starting' ? 'starting_km' : 'ending_km';
+    const photoField = field === 'starting' ? 'starting_km_photo_url' : 'ending_km_photo_url';
+    setRows(prev => {
+      const updated = [...prev];
+      const row = { ...updated[rowIdx], dirty: true };
+      if (reading > 0) {
+        row[kmField] = reading;
+        row.total_km = Math.max(0, (row.ending_km || 0) - (row.starting_km || 0));
+        row.official_km = Math.max(0, row.total_km - (row.personal_km || 0));
+      }
+      if (photoUrl) row[photoField] = photoUrl;
+      updated[rowIdx] = row;
+      return updated;
+    });
   };
 
   const handleScanGas = (rowIdx) => {
@@ -735,6 +751,9 @@ export default function CarLogbook() {
                           ) : (
                             <span style={{ fontSize: 11 }}>{row.starting_km ? row.starting_km.toLocaleString() : '—'}</span>
                           )}
+                          {row.starting_km_photo_url && (
+                            <a href={row.starting_km_photo_url} target="_blank" rel="noopener noreferrer" title="Starting odometer photo (OCR-scanned)" style={{ marginLeft: 3, fontSize: 10, textDecoration: 'none' }}>📷</a>
+                          )}
                         </td>
                         <td style={{ padding: '1px 0', textAlign: 'center' }}>
                           {editable && <button onClick={() => handleScanOdometer(idx, 'starting')} style={scanBtn} title="Scan start odometer">S</button>}
@@ -744,6 +763,9 @@ export default function CarLogbook() {
                             <input type="number" value={row.ending_km || ''} onChange={e => handleRowChange(idx, 'ending_km', Number(e.target.value))} style={{ ...inp, width: 70, textAlign: 'right' }} />
                           ) : (
                             <span style={{ fontSize: 11 }}>{row.ending_km ? row.ending_km.toLocaleString() : '—'}</span>
+                          )}
+                          {row.ending_km_photo_url && (
+                            <a href={row.ending_km_photo_url} target="_blank" rel="noopener noreferrer" title="Ending odometer photo (OCR-scanned)" style={{ marginLeft: 3, fontSize: 10, textDecoration: 'none' }}>📷</a>
                           )}
                         </td>
                         <td style={{ padding: '1px 0', textAlign: 'center' }}>
@@ -910,8 +932,9 @@ export default function CarLogbook() {
                         <span style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
                           <input type="number" value={row.starting_km || ''} onChange={e => handleRowChange(idx, 'starting_km', Number(e.target.value))} style={{ width: 65, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--erp-border)', fontSize: 12 }} />
                           <button onClick={() => handleScanOdometer(idx, 'starting')} style={{ ...scanBtn, fontSize: 10, padding: '2px 4px' }}>S</button>
+                          {row.starting_km_photo_url && <a href={row.starting_km_photo_url} target="_blank" rel="noopener noreferrer" title="Starting odometer photo" style={{ fontSize: 11, textDecoration: 'none' }}>📷</a>}
                         </span>
-                      ) : <span className="cl-card-value">{row.starting_km ? row.starting_km.toLocaleString() : '—'}</span>}
+                      ) : <span className="cl-card-value">{row.starting_km ? row.starting_km.toLocaleString() : '—'}{row.starting_km_photo_url && <a href={row.starting_km_photo_url} target="_blank" rel="noopener noreferrer" title="Starting odometer photo" style={{ marginLeft: 4, fontSize: 11, textDecoration: 'none' }}>📷</a>}</span>}
                     </div>
                     <div>
                       <span className="cl-card-label">End KM</span><br/>
@@ -919,8 +942,9 @@ export default function CarLogbook() {
                         <span style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
                           <input type="number" value={row.ending_km || ''} onChange={e => handleRowChange(idx, 'ending_km', Number(e.target.value))} style={{ width: 65, padding: '2px 4px', borderRadius: 4, border: '1px solid var(--erp-border)', fontSize: 12 }} />
                           <button onClick={() => handleScanOdometer(idx, 'ending')} style={{ ...scanBtn, fontSize: 10, padding: '2px 4px' }}>E</button>
+                          {row.ending_km_photo_url && <a href={row.ending_km_photo_url} target="_blank" rel="noopener noreferrer" title="Ending odometer photo" style={{ fontSize: 11, textDecoration: 'none' }}>📷</a>}
                         </span>
-                      ) : <span className="cl-card-value">{row.ending_km ? row.ending_km.toLocaleString() : '—'}</span>}
+                      ) : <span className="cl-card-value">{row.ending_km ? row.ending_km.toLocaleString() : '—'}{row.ending_km_photo_url && <a href={row.ending_km_photo_url} target="_blank" rel="noopener noreferrer" title="Ending odometer photo" style={{ marginLeft: 4, fontSize: 11, textDecoration: 'none' }}>📷</a>}</span>}
                     </div>
                     <div>
                       <span className="cl-card-label">Personal</span><br/>

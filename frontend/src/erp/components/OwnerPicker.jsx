@@ -88,7 +88,15 @@ export default function OwnerPicker({
     (async () => {
       setPeopleLoading(true);
       try {
-        const res = await getProxyRoster(lookupCode, { subKey });
+        // Phase G4.5ff hotfix (May 5 2026) — pass moduleKey explicitly. The
+        // backend defaults moduleKey to lookupCode.toLowerCase(), which is
+        // wrong for any module whose sub-permission namespace differs from its
+        // lookup code (GRN→inventory, OPENING_AR→sales, INCOME→payroll,
+        // DEDUCTION_SCHEDULE→payroll, PRF_CALF→expenses). Without this, the
+        // server's hasProxySubPermission(user, moduleKey, subKey) check looks
+        // up the wrong namespace and 403s — picker then renders only the Self
+        // option since the roster fetch swallowed the error.
+        const res = await getProxyRoster(lookupCode, { subKey, moduleKey: module });
         if (!alive) return;
         setPeople(res?.data || []);
       } catch (err) {
@@ -98,7 +106,7 @@ export default function OwnerPicker({
       }
     })();
     return () => { alive = false; };
-  }, [showPicker, getProxyRoster, lookupCode, subKey]);
+  }, [showPicker, getProxyRoster, lookupCode, subKey, module]);
 
   if (rolesLoading || validOwnerLoading) return null;
   if (!showPicker) return null;
