@@ -252,6 +252,60 @@ When the consultant delivers the gap list, the concrete work gets its own Phase 
 
 ---
 
+## Phase G1.7.1 — SMER Form Date-Column Lockstep + Pull Defense (May 05, 2026 evening)
+
+Closes a second alignment failure surfaced by the same user reconciliation that triggered Phase G1.7. After the Visit + ClientVisit union shipped earlier the same day, the user opened a fresh SMER, picked April 2026 Cycle 2 in the dropdowns, clicked Pull from CRM, and still saw `md_count = 0` on every row. The bridge was now correct; the problem had moved into the React form state.
+
+### The bug
+
+The page's `period` and `cycle` are top-level state on the SMER controls bar. `dailyEntries` (the per-day rows) is generated only when the user clicks `+ New SMER` — at which point `generateDays()` reads the current `period`/`cycle` and pushes one row per work day. After that, period/cycle dropdown changes update the heading and the value the backend will receive, but **the row dates in the table do not regenerate**. Pull from CRM then fetches the correct period/cycle from the backend, returns `daily_entries` keyed `2026-04-16…2026-04-30`, and merges into `dailyEntries` by `entry_date`. If the form rows were generated for a different period (e.g. the default May 2026 C1 they originated with), the merge finds zero overlap and silently leaves every md_count at 0.
+
+The user's screenshot was the smoking gun: dropdown reading "April 2026 / Cycle 2 (16th-end)" while the row dates read 05/01 FRI through 05/15 FRI. Reproduced live with Playwright + Mae's account on the dev cluster:
+- Dropdowns flipped to April + C2 → header switched to "New SMER — 2026-04 C2" but the rendered rows stayed on `05/01..05/15`.
+- Pull from CRM → backend returned the correct April C2 daily_entries (all md_count=0 for Mae since she logged nothing in that window — but the merge would have failed anyway), frontend's `crmMap` keys `2026-04-16..2026-04-30` had zero intersection with the form's `2026-05-01..2026-05-15` keys, no row updated.
+
+### Architecture (the fix)
+
+Two surgical changes to `frontend/src/erp/pages/Smer.jsx`:
+
+1. **Auto-regenerate on period/cycle change while creating new.** New `useEffect` watches `[period, cycle]`. When the form is open and we're not editing an existing SMER, regenerate `dailyEntries` so the row date column is always the canonical projection of the active period+cycle. Editing an existing SMER short-circuits — period/cycle on a saved SMER are immutable.
+
+2. **Defense-in-depth fallback inside `handlePullFromCrm`.** Compute the intersection between the form's row keys and the CRM response keys before merging. If overlap = 0 and the form has rows, rebuild the rows wholesale from the backend response (md_count + tier + perdiem_amount + locations from the bridge, transpo/ORE/notes/activity reset). This catches any race where the user clicks Pull faster than React applies the regenerate effect, and any future state drift introduced elsewhere.
+
+### Why two layers, not one
+
+The auto-regenerate is the correct fix in the steady state. The Pull-handler fallback exists because silent zero-fill is the worst possible failure mode for a per-diem screen — BDMs lose money quietly, admin reconciliation finds nothing wrong because every screen says "0 visits, ₱0 owed". A Pull from CRM should never leave counts on the floor; if the form's rows can't be merged, they get replaced by the bridge's authoritative response. Defence-in-depth aligns with Rule #4 (bulletproof bar) and Rule #20 (workflow safety — never produce silent partial state).
+
+### Lookup-driven / subscription readiness
+
+This fix is pure UI state-machine — no business values are introduced, no roles gated, no thresholds hardcoded. The existing lookup-driven contracts (`PERDIEM_RATES.<role>.metadata.include_extra_calls`, `MODULE_DEFAULT_ROLES.SMER`, `PROXY_ENTRY_ROLES.SMER`, `ACTIVITY_PERDIEM_RULES`) are untouched and continue to drive behavior. Year-2 SaaS subscribers who already opted out of `include_extra_calls` keep that posture; the form-state fix is universal because the bug was universal.
+
+### Files touched
+
+- `frontend/src/erp/pages/Smer.jsx` — auto-regenerate `useEffect` + Pull-handler fallback
+- `frontend/src/erp/components/WorkflowGuide.jsx` — SMER tip extended with Phase G1.7.1 paragraph (Rule #1)
+- `backend/scripts/healthcheckSmerCrmBridgeUnion.js` — 4 new checks (#29-#32) asserting the form-state wiring + banner
+- `CLAUDE-ERP.md` (this section)
+- `docs/PHASETASK-ERP.md` (G1.7.1 phase entry)
+
+### Smoke
+
+- **Static healthcheck**: `node backend/scripts/healthcheckSmerCrmBridgeUnion.js` → 32/32 PASS (was 28/28 pre-G1.7.1).
+- **Frontend Vite build**: ✓ built in 10.53s, no warnings.
+- **Live API smoke (Mae as BDM, dev cluster)**:
+  - `/api/erp/expenses/smer/crm-md-counts?period=2026-04&cycle=C1` → `total_md_visits: 34`, daily breakdown 9/0/0/8/8/7/2/0/0/0/0, `total_perdiem: ₱2,800` (FULL ₱800 × 3 + HALF ₱400 × 1 = ₱2,800). `eligibility_source: visit`, `skip_flagged: true`, `include_extra_calls: true`.
+  - `/api/erp/expenses/smer/crm-md-counts?period=2026-04&cycle=C2` → `total_md_visits: 0` (correct — Mae logged no visits Apr 16-30).
+- **Live Playwright UI smoke (Mae logged in via 5173, /erp/smer)**:
+  - **Pre-fix repro**: clicked `+ New SMER` (default May 2026 C1, rows 05/01..05/15), changed period to 2026-04 + cycle to C2. Header read "New SMER — 2026-04 C2" but rows stayed on 05/01..05/15 (matches user screenshot). Click Pull from CRM → no MD counts updated. ([smer-prefix-bug-2026-04-C2-shows-may-rows.png](smer-prefix-bug-2026-04-C2-shows-may-rows.png)).
+  - **Post-fix verification (same browser session, after Vite rebuild)**: clicked `+ New SMER` (default May 2026 C1). Changed period to 2026-04 → rows immediately regenerated to 04/01..04/15. Flipped cycle to C2 → rows regenerated to 04/16..04/30. Flipped cycle back to C1 → rows back to 04/01..04/15. Clicked Pull from CRM → 04/01 WED MDs=9 FULL ₱800 (notes "Himamaylan; Nord Hub; Binalbagan Infirmary; SBGH; Binalbagan…"; "1 flagged"), 04/06=8 FULL, 04/07=8 FULL, 04/08=7 HALF, 04/09=2 ZERO, idle days = 0 ZERO. Per Diem total ₱2,800 = matches API response 1:1. ([smer-postfix-2026-04-C1-pull-from-crm.png](smer-postfix-2026-04-C1-pull-from-crm.png)).
+  - 0 console errors throughout the run.
+
+### Forward-only by design
+
+Same posture as Phase G1.7. Already-POSTED SMERs remain frozen at their saved daily_entries and amounts (period-lock + reopen safety per Rule #20). Only future Pull-from-CRM clicks and still-DRAFT SMERs benefit. No migration needed.
+
+---
+
 ## Phase G1.7 — SMER ↔ CRM Bridge Yes-Equal-Weight Pull (May 05, 2026)
 
 Closes a silent under-counting bug in the SMER `Pull from CRM` button surfaced during a 1:1 reconciliation of Mae Navarro's CRM list view vs the SMER MD count. The CRM list (MyVisits / EmployeeVisitReport) merges TWO collections — `Visit` (VIP doctor visits) + `ClientVisit` (EXTRA non-VIP regular-client calls) — but the bridge at `backend/erp/services/smerCrmBridge.js` only queried `Visit`. On days where a BDM logged extras alongside VIP visits, `md_count` came back undercounted, dropping daily tier from FULL ₱800 → HALF ₱400 (₱400/day silent loss).

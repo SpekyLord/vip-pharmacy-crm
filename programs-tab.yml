@@ -1,0 +1,271 @@
+- generic [ref=e7]:
+  - navigation [ref=e8]:
+    - generic [ref=e9]:
+      - img "VIP" [ref=e11]
+      - generic "Platform switch" [ref=e12]:
+        - link "CRM" [ref=e13] [cursor=pointer]:
+          - /url: /admin
+          - img [ref=e15]
+          - text: CRM
+        - link "ERP" [ref=e20] [cursor=pointer]:
+          - /url: /erp
+          - img [ref=e22]
+          - text: ERP
+    - generic [ref=e25]:
+      - img [ref=e27]
+      - generic "CRM tabs" [ref=e32]:
+        - link "Dashboard" [ref=e33] [cursor=pointer]:
+          - /url: /admin
+          - generic [ref=e34]: Dashboard
+        - link "Activity" [ref=e35] [cursor=pointer]:
+          - /url: /admin/activity
+          - generic [ref=e36]: Activity
+        - link "Clients" [ref=e37] [cursor=pointer]:
+          - /url: /admin/doctors
+          - generic [ref=e38]: Clients
+        - link "Reports" [ref=e39] [cursor=pointer]:
+          - /url: /admin/reports
+          - generic [ref=e40]: Reports
+    - generic [ref=e41]:
+      - combobox "Working entity" [ref=e42] [cursor=pointer]:
+        - option "VIP" [selected]
+        - option "Balai Lawaan"
+        - option "MG and CO."
+      - button "Toggle dark mode" [ref=e43] [cursor=pointer]:
+        - img [ref=e44]
+      - link "Inbox — 25 unread" [ref=e47] [cursor=pointer]:
+        - /url: /inbox
+        - img [ref=e48]
+        - generic: "25"
+      - generic [ref=e52]:
+        - generic [ref=e53]: GL
+        - generic [ref=e54]:
+          - generic [ref=e55]: Gregg Louie Vios
+          - generic [ref=e56]: president
+      - button "Logout" [ref=e57] [cursor=pointer]:
+        - img [ref=e58]
+        - generic [ref=e61]: Logout
+  - generic [ref=e62]:
+    - complementary [ref=e63]:
+      - button [ref=e64] [cursor=pointer]:
+        - img [ref=e65]
+      - navigation [ref=e67]:
+        - generic [ref=e68]:
+          - generic [ref=e69]: Main
+          - generic [ref=e70]:
+            - link "Dashboard" [ref=e71] [cursor=pointer]:
+              - /url: /admin
+              - img [ref=e73]
+              - generic [ref=e78]: Dashboard
+            - link "Activity" [ref=e79] [cursor=pointer]:
+              - /url: /admin/activity
+              - img [ref=e81]
+              - generic [ref=e83]: Activity
+            - link "Inbox 25" [ref=e84] [cursor=pointer]:
+              - /url: /inbox
+              - img [ref=e86]
+              - generic [ref=e89]: Inbox
+              - generic [ref=e90]: "25"
+        - generic [ref=e91]:
+          - button "Management" [ref=e92] [cursor=pointer]:
+            - generic [ref=e93]: Management
+            - img [ref=e94]
+          - generic [ref=e96]:
+            - link "VIP Clients" [ref=e97] [cursor=pointer]:
+              - /url: /admin/doctors
+              - img [ref=e99]
+              - generic [ref=e103]: VIP Clients
+            - link "MD Leads" [ref=e104] [cursor=pointer]:
+              - /url: /admin/md-leads
+              - img [ref=e106]
+              - generic [ref=e111]: MD Leads
+            - link "MD Merge Tool" [ref=e112] [cursor=pointer]:
+              - /url: /admin/md-merge
+              - img [ref=e114]
+              - generic [ref=e117]: MD Merge Tool
+            - link "BDMs" [ref=e118] [cursor=pointer]:
+              - /url: /admin/employees
+              - img [ref=e120]
+              - generic [ref=e125]: BDMs
+            - link "Products" [ref=e126] [cursor=pointer]:
+              - /url: /admin/products
+              - img [ref=e128]
+              - generic [ref=e132]: Products
+        - generic [ref=e133]:
+          - button "Operations" [ref=e134] [cursor=pointer]:
+            - generic [ref=e135]: Operations
+            - img [ref=e136]
+          - generic [ref=e138]:
+            - link "Import / Export" [ref=e139] [cursor=pointer]:
+              - /url: /admin/approvals
+              - img [ref=e141]
+              - generic [ref=e144]: Import / Export
+            - link "Statistics" [ref=e145] [cursor=pointer]:
+              - /url: /admin/statistics
+              - img [ref=e147]
+              - generic [ref=e149]: Statistics
+            - link "Reports" [ref=e150] [cursor=pointer]:
+              - /url: /admin/reports
+              - img [ref=e152]
+              - generic [ref=e155]: Reports
+            - link "Photo Audit" [ref=e156] [cursor=pointer]:
+              - /url: /admin/photo-audit
+              - img [ref=e158]
+              - generic [ref=e161]: Photo Audit
+            - link "Comm Logs" [ref=e162] [cursor=pointer]:
+              - /url: /admin/comm-logs
+              - img [ref=e164]
+              - generic [ref=e166]: Comm Logs
+            - link "Invite Triage" [ref=e167] [cursor=pointer]:
+              - /url: /admin/invites
+              - img [ref=e169]
+              - generic [ref=e171]: Invite Triage
+            - link "Msg Templates" [ref=e172] [cursor=pointer]:
+              - /url: /admin/message-templates
+              - img [ref=e174]
+              - generic [ref=e176]: Msg Templates
+            - link "CLM Sessions" [ref=e177] [cursor=pointer]:
+              - /url: /admin/clm-sessions
+              - img [ref=e179]
+              - generic [ref=e182]: CLM Sessions
+            - link "CLM Branding" [ref=e183] [cursor=pointer]:
+              - /url: /admin/clm-branding
+              - img [ref=e185]
+              - generic [ref=e188]: CLM Branding
+            - link "Programs" [ref=e189] [cursor=pointer]:
+              - /url: /admin/settings
+              - img [ref=e191]
+              - generic [ref=e194]: Programs
+    - generic [ref=e195]:
+      - button [ref=e197] [cursor=pointer]:
+        - img [ref=e198]
+      - generic "Platform switch" [ref=e201]:
+        - link "CRM" [ref=e202] [cursor=pointer]:
+          - /url: /admin
+        - link "ERP" [ref=e203] [cursor=pointer]:
+          - /url: /erp
+      - navigation [ref=e204]:
+        - generic [ref=e205]:
+          - generic [ref=e206]: Main
+          - generic [ref=e207]:
+            - button "Dashboard" [ref=e208] [cursor=pointer]:
+              - img [ref=e210]
+              - generic [ref=e215]: Dashboard
+            - button "Activity" [ref=e216] [cursor=pointer]:
+              - img [ref=e218]
+              - generic [ref=e220]: Activity
+            - button "Inbox 25" [ref=e221] [cursor=pointer]:
+              - img [ref=e223]
+              - generic [ref=e226]: Inbox
+              - generic [ref=e227]: "25"
+        - generic [ref=e228]:
+          - button "Management" [ref=e229] [cursor=pointer]:
+            - generic [ref=e230]: Management
+            - img [ref=e231]
+          - generic [ref=e233]:
+            - button "VIP Clients" [ref=e234] [cursor=pointer]:
+              - img [ref=e236]
+              - generic [ref=e240]: VIP Clients
+            - button "MD Leads" [ref=e241] [cursor=pointer]:
+              - img [ref=e243]
+              - generic [ref=e248]: MD Leads
+            - button "MD Merge Tool" [ref=e249] [cursor=pointer]:
+              - img [ref=e251]
+              - generic [ref=e254]: MD Merge Tool
+            - button "BDMs" [ref=e255] [cursor=pointer]:
+              - img [ref=e257]
+              - generic [ref=e262]: BDMs
+            - button "Products" [ref=e263] [cursor=pointer]:
+              - img [ref=e265]
+              - generic [ref=e269]: Products
+        - generic [ref=e270]:
+          - button "Operations" [ref=e271] [cursor=pointer]:
+            - generic [ref=e272]: Operations
+            - img [ref=e273]
+          - generic [ref=e275]:
+            - button "Import / Export" [ref=e276] [cursor=pointer]:
+              - img [ref=e278]
+              - generic [ref=e281]: Import / Export
+            - button "Statistics" [ref=e282] [cursor=pointer]:
+              - img [ref=e284]
+              - generic [ref=e286]: Statistics
+            - button "Reports" [ref=e287] [cursor=pointer]:
+              - img [ref=e289]
+              - generic [ref=e292]: Reports
+            - button "Photo Audit" [ref=e293] [cursor=pointer]:
+              - img [ref=e295]
+              - generic [ref=e298]: Photo Audit
+            - button "Comm Logs" [ref=e299] [cursor=pointer]:
+              - img [ref=e301]
+              - generic [ref=e303]: Comm Logs
+            - button "Invite Triage" [ref=e304] [cursor=pointer]:
+              - img [ref=e306]
+              - generic [ref=e308]: Invite Triage
+            - button "Msg Templates" [ref=e309] [cursor=pointer]:
+              - img [ref=e311]
+              - generic [ref=e313]: Msg Templates
+            - button "CLM Sessions" [ref=e314] [cursor=pointer]:
+              - img [ref=e316]
+              - generic [ref=e319]: CLM Sessions
+            - button "CLM Branding" [ref=e320] [cursor=pointer]:
+              - img [ref=e322]
+              - generic [ref=e325]: CLM Branding
+            - button "Programs" [ref=e326] [cursor=pointer]:
+              - img [ref=e328]
+              - generic [ref=e331]: Programs
+    - main [ref=e332]:
+      - generic [ref=e333]:
+        - button "×" [ref=e334] [cursor=pointer]
+        - generic [ref=e335]:
+          - img [ref=e336]
+          - text: System Settings
+        - generic [ref=e338]:
+          - generic [ref=e339]:
+            - generic [ref=e340]: "1"
+            - generic [ref=e341]: Configure system-wide settings for programs, specializations, and support types
+          - generic [ref=e342]:
+            - generic [ref=e343]: "2"
+            - generic [ref=e344]: Use the tabs to switch between different setting categories
+          - generic [ref=e345]:
+            - generic [ref=e346]: "3"
+            - generic [ref=e347]: Changes take effect immediately for all users
+        - generic [ref=e348]:
+          - generic [ref=e349]: "Next steps:"
+          - button "Dashboard →" [ref=e350] [cursor=pointer]
+      - generic [ref=e351]:
+        - heading "Programs & Support Types" [level=1] [ref=e352]
+        - paragraph [ref=e353]: Manage configurable programs and support types for VIP Client profiles
+      - generic [ref=e354]:
+        - button "Programs" [ref=e355] [cursor=pointer]
+        - button "Support Types" [ref=e356] [cursor=pointer]
+      - generic [ref=e357]:
+        - generic [ref=e358]:
+          - textbox "New program name..." [ref=e359]
+          - button "Add" [disabled] [ref=e360]
+          - button "Seed from Existing" [ref=e361] [cursor=pointer]
+        - generic [ref=e362]: 4 active, 0 inactive
+        - generic [ref=e363]:
+          - generic [ref=e364]:
+            - generic [ref=e365]: CME GRANT
+            - generic [ref=e366]: Active
+            - generic [ref=e367]:
+              - button "Rename" [ref=e368] [cursor=pointer]
+              - button "Deactivate" [ref=e369] [cursor=pointer]
+          - generic [ref=e370]:
+            - generic [ref=e371]: MED SOCIETY PARTICIPATION
+            - generic [ref=e372]: Active
+            - generic [ref=e373]:
+              - button "Rename" [ref=e374] [cursor=pointer]
+              - button "Deactivate" [ref=e375] [cursor=pointer]
+          - generic [ref=e376]:
+            - generic [ref=e377]: REBATES / MONEY
+            - generic [ref=e378]: Active
+            - generic [ref=e379]:
+              - button "Rename" [ref=e380] [cursor=pointer]
+              - button "Deactivate" [ref=e381] [cursor=pointer]
+          - generic [ref=e382]:
+            - generic [ref=e383]: REST AND RECREATION
+            - generic [ref=e384]: Active
+            - generic [ref=e385]:
+              - button "Rename" [ref=e386] [cursor=pointer]
+              - button "Deactivate" [ref=e387] [cursor=pointer]

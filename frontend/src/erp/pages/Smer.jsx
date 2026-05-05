@@ -361,6 +361,24 @@ export default function Smer() {
     return { tier: 'ZERO', amount: 0 };
   };
 
+  // Phase G1.7.1 (May 5 2026) — keep the form's date column in lockstep with
+  // the period/cycle dropdowns while creating a new SMER. Without this, a user
+  // can click "+ New SMER" for May, change the dropdowns to April C2, and the
+  // row dates stay on May while the heading/dropdowns say April. Pull from CRM
+  // then reconciles by entry_date, finds no overlap with the May rows, and
+  // silently leaves every md_count at 0 — even though the BDM has visits in
+  // April. Auto-regenerate makes the date column the canonical projection of
+  // period + cycle. Editing an existing SMER short-circuits — period/cycle on
+  // a saved SMER are immutable.
+  useEffect(() => {
+    if (!showForm || editingSmer) return;
+    setDailyEntries(generateDays());
+    // generateDays + showForm/editingSmer intentionally omitted: this effect
+    // tracks period/cycle changes only. The body re-reads the latest closure
+    // each render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period, cycle]);
+
   const handleNewSmer = async () => {
     setEditingSmer(null);
     setDailyEntries(generateDays());
@@ -504,6 +522,34 @@ export default function Smer() {
       const crmMap = Object.fromEntries(crmEntries.map(e => [e.entry_date, e]));
 
       setDailyEntries(prev => {
+        // Phase G1.7.1 (May 5 2026) — defense in depth. If NONE of the CRM
+        // response keys match an existing form row, the form's dates are out
+        // of sync with the requested period/cycle. (The auto-regenerate effect
+        // normally prevents this, but a stale state can still slip through if
+        // the user races the dropdown change with the Pull click.) Rebuild the
+        // rows from the backend response so md_count + tier + locations land
+        // on the correct dates instead of being silently dropped on the floor.
+        const prevKeys = new Set(prev.map(e => (e.entry_date || '').split('T')[0]));
+        const overlap = crmEntries.filter(e => prevKeys.has(e.entry_date)).length;
+        if (overlap === 0 && prev.length > 0) {
+          return crmEntries.map(crm => ({
+            day: crm.day,
+            entry_date: crm.entry_date,
+            day_of_week: crm.day_of_week,
+            activity_type: '',
+            hospital_covered: '',
+            hospital_ids: [],
+            md_count: crm.md_count,
+            unique_doctors: crm.unique_doctors,
+            _flaggedExcluded: crm.flagged_excluded || 0,
+            perdiem_tier: crm.perdiem_tier,
+            perdiem_amount: crm.perdiem_amount,
+            transpo_p2p: 0,
+            transpo_special: 0,
+            ore_amount: 0,
+            notes: crm.locations || ''
+          }));
+        }
         return prev.map(entry => {
           // Skip "No Work" entries — CRM data should not overwrite them
           if (entry.activity_type === 'NO_WORK') return entry;

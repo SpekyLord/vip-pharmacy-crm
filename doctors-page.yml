@@ -1,0 +1,546 @@
+- generic [ref=e7]:
+  - navigation [ref=e8]:
+    - generic [ref=e9]:
+      - img "VIP" [ref=e11]
+      - generic "Platform switch" [ref=e12]:
+        - link "CRM" [ref=e13] [cursor=pointer]:
+          - /url: /admin
+          - img [ref=e15]
+          - text: CRM
+        - link "ERP" [ref=e20] [cursor=pointer]:
+          - /url: /erp
+          - img [ref=e22]
+          - text: ERP
+    - generic [ref=e25]:
+      - img [ref=e27]
+      - generic "CRM tabs" [ref=e32]:
+        - link "Dashboard" [ref=e33] [cursor=pointer]:
+          - /url: /admin
+          - generic [ref=e34]: Dashboard
+        - link "Activity" [ref=e35] [cursor=pointer]:
+          - /url: /admin/activity
+          - generic [ref=e36]: Activity
+        - link "Clients" [ref=e37] [cursor=pointer]:
+          - /url: /admin/doctors
+          - generic [ref=e38]: Clients
+        - link "Reports" [ref=e39] [cursor=pointer]:
+          - /url: /admin/reports
+          - generic [ref=e40]: Reports
+    - generic [ref=e41]:
+      - combobox "Working entity" [ref=e42] [cursor=pointer]:
+        - option "VIP" [selected]
+        - option "Balai Lawaan"
+        - option "MG and CO."
+      - button "Toggle dark mode" [ref=e43] [cursor=pointer]:
+        - img [ref=e44]
+      - link "Inbox — 19 unread" [ref=e47] [cursor=pointer]:
+        - /url: /inbox
+        - img [ref=e48]
+        - generic: "19"
+      - generic [ref=e52]:
+        - generic [ref=e53]: GL
+        - generic [ref=e54]:
+          - generic [ref=e55]: Gregg Louie Vios
+          - generic [ref=e56]: president
+      - button "Logout" [ref=e57] [cursor=pointer]:
+        - img [ref=e58]
+        - generic [ref=e61]: Logout
+  - generic [ref=e62]:
+    - complementary [ref=e63]:
+      - button [ref=e64] [cursor=pointer]:
+        - img [ref=e65]
+      - navigation [ref=e67]:
+        - generic [ref=e68]:
+          - generic [ref=e69]: Main
+          - generic [ref=e70]:
+            - link "Dashboard" [ref=e71] [cursor=pointer]:
+              - /url: /admin
+              - img [ref=e73]
+              - generic [ref=e78]: Dashboard
+            - link "Activity" [ref=e79] [cursor=pointer]:
+              - /url: /admin/activity
+              - img [ref=e81]
+              - generic [ref=e83]: Activity
+            - link "Inbox 19" [ref=e84] [cursor=pointer]:
+              - /url: /inbox
+              - img [ref=e86]
+              - generic [ref=e89]: Inbox
+              - generic [ref=e90]: "19"
+        - generic [ref=e91]:
+          - button "Management" [ref=e92] [cursor=pointer]:
+            - generic [ref=e93]: Management
+            - img [ref=e94]
+          - generic [ref=e96]:
+            - link "VIP Clients" [ref=e97] [cursor=pointer]:
+              - /url: /admin/doctors
+              - img [ref=e99]
+              - generic [ref=e103]: VIP Clients
+            - link "MD Leads" [ref=e104] [cursor=pointer]:
+              - /url: /admin/md-leads
+              - img [ref=e106]
+              - generic [ref=e111]: MD Leads
+            - link "MD Merge Tool" [ref=e112] [cursor=pointer]:
+              - /url: /admin/md-merge
+              - img [ref=e114]
+              - generic [ref=e117]: MD Merge Tool
+            - link "BDMs" [ref=e118] [cursor=pointer]:
+              - /url: /admin/employees
+              - img [ref=e120]
+              - generic [ref=e125]: BDMs
+            - link "Products" [ref=e126] [cursor=pointer]:
+              - /url: /admin/products
+              - img [ref=e128]
+              - generic [ref=e132]: Products
+        - button "Operations" [ref=e134] [cursor=pointer]:
+          - generic [ref=e135]: Operations
+          - img [ref=e136]
+    - generic [ref=e138]:
+      - button [ref=e140] [cursor=pointer]:
+        - img [ref=e141]
+      - generic "Platform switch" [ref=e144]:
+        - link "CRM" [ref=e145] [cursor=pointer]:
+          - /url: /admin
+        - link "ERP" [ref=e146] [cursor=pointer]:
+          - /url: /erp
+      - navigation [ref=e147]:
+        - generic [ref=e148]:
+          - generic [ref=e149]: Main
+          - generic [ref=e150]:
+            - button "Dashboard" [ref=e151] [cursor=pointer]:
+              - img [ref=e153]
+              - generic [ref=e158]: Dashboard
+            - button "Activity" [ref=e159] [cursor=pointer]:
+              - img [ref=e161]
+              - generic [ref=e163]: Activity
+            - button "Inbox 19" [ref=e164] [cursor=pointer]:
+              - img [ref=e166]
+              - generic [ref=e169]: Inbox
+              - generic [ref=e170]: "19"
+        - generic [ref=e171]:
+          - button "Management" [ref=e172] [cursor=pointer]:
+            - generic [ref=e173]: Management
+            - img [ref=e174]
+          - generic [ref=e176]:
+            - button "VIP Clients" [ref=e177] [cursor=pointer]:
+              - img [ref=e179]
+              - generic [ref=e183]: VIP Clients
+            - button "MD Leads" [ref=e184] [cursor=pointer]:
+              - img [ref=e186]
+              - generic [ref=e191]: MD Leads
+            - button "MD Merge Tool" [ref=e192] [cursor=pointer]:
+              - img [ref=e194]
+              - generic [ref=e197]: MD Merge Tool
+            - button "BDMs" [ref=e198] [cursor=pointer]:
+              - img [ref=e200]
+              - generic [ref=e205]: BDMs
+            - button "Products" [ref=e206] [cursor=pointer]:
+              - img [ref=e208]
+              - generic [ref=e212]: Products
+        - button "Operations" [ref=e214] [cursor=pointer]:
+          - generic [ref=e215]: Operations
+          - img [ref=e216]
+    - main [ref=e218]:
+      - generic [ref=e219]:
+        - button "×" [ref=e220] [cursor=pointer]
+        - generic [ref=e221]:
+          - img [ref=e222]
+          - text: VIP Client Management
+        - generic [ref=e224]:
+          - generic [ref=e225]:
+            - generic [ref=e226]: "1"
+            - generic [ref=e227]: Search and filter VIP Clients by region, specialization, client type, or status
+          - generic [ref=e228]:
+            - generic [ref=e229]: "2"
+            - generic [ref=e230]: Click a VIP Client to view or edit their full profile
+          - generic [ref=e231]:
+            - generic [ref=e232]: "3"
+            - generic [ref=e233]: Use the Add button to create new VIP Client records — set Client Type (MD, Pharmacist, etc.) and link Hospital affiliations
+          - generic [ref=e234]:
+            - generic [ref=e235]: "4"
+            - generic [ref=e236]: Promote a Regular client with "Upgrade to VIP" — admin then picks the visit dates inline (or skips and schedules later)
+          - generic [ref=e237]:
+            - generic [ref=e238]: "5"
+            - generic [ref=e239]: Use the Schedule / Reschedule action on any VIP row to set or move upcoming visit dates — pick a calendar date, the system maps it to the right week and day for the BDM
+          - generic [ref=e240]:
+            - generic [ref=e241]: "6"
+            - generic [ref=e242]: Export VIP Clients to Excel using the Call Plan Template format
+          - generic [ref=e243]:
+            - generic [ref=e244]: "7"
+            - generic [ref=e245]: Use Clean Names to fix ALL CAPS or inconsistent name formatting — preview changes before applying
+        - generic [ref=e246]:
+          - generic [ref=e247]: "Next steps:"
+          - button "BDM Management →" [ref=e248] [cursor=pointer]
+          - button "Reports →" [ref=e249] [cursor=pointer]
+        - generic [ref=e250]: Rows tagged "Needs scheduling" have no upcoming planned visits — click Schedule to set them. The CPT Excel import is still the bulk-load path; this inline scheduling is for one-offs (newly added or upgraded VIPs). 2x/mo VIPs must alternate weeks (W1+W3 or W2+W4); the modal enforces the rule before calling the API.
+      - generic [ref=e251]:
+        - generic [ref=e252]:
+          - img [ref=e254]
+          - heading "VIP Client Management" [level=1] [ref=e258]
+        - generic [ref=e259]:
+          - button "Clean Names" [ref=e260] [cursor=pointer]:
+            - img [ref=e261]
+            - text: Clean Names
+          - button "Refresh" [ref=e264] [cursor=pointer]:
+            - img [ref=e265]
+            - text: Refresh
+      - generic [ref=e270]:
+        - generic [ref=e271]:
+          - generic [ref=e272]:
+            - generic [ref=e273]:
+              - img
+              - textbox "Search by name or address..." [ref=e274]
+            - generic [ref=e275]:
+              - button "Mass Deactivate" [ref=e276] [cursor=pointer]:
+                - img [ref=e277]
+                - text: Mass Deactivate
+              - button "Add VIP Client" [ref=e279] [cursor=pointer]:
+                - img [ref=e280]
+                - text: Add VIP Client
+          - generic [ref=e281]:
+            - button "VIP Clients Only" [ref=e283] [cursor=pointer]:
+              - generic [ref=e284]: VIP Clients Only
+              - img [ref=e285]
+            - button "All Client Types" [ref=e288] [cursor=pointer]:
+              - generic [ref=e289]: All Client Types
+              - img [ref=e290]
+            - button "All Frequencies" [ref=e293] [cursor=pointer]:
+              - generic [ref=e294]: All Frequencies
+              - img [ref=e295]
+            - button "All Support Types" [ref=e298] [cursor=pointer]:
+              - generic [ref=e299]: All Support Types
+              - img [ref=e300]
+            - button "All Programs" [ref=e303] [cursor=pointer]:
+              - generic [ref=e304]: All Programs
+              - img [ref=e305]
+            - button "All BDMs" [ref=e308] [cursor=pointer]:
+              - generic [ref=e309]: All BDMs
+              - img [ref=e310]
+            - button "All Locations" [ref=e313] [cursor=pointer]:
+              - generic [ref=e314]: All Locations
+              - img [ref=e315]
+        - table [ref=e319]:
+          - rowgroup [ref=e320]:
+            - row "# Name Type Client Type Specialization Hospital / Address Location Assigned BDM Visit Freq Engagement Actions" [ref=e321]:
+              - columnheader "#" [ref=e322]
+              - columnheader "Name" [ref=e323]
+              - columnheader "Type" [ref=e324]
+              - columnheader "Client Type" [ref=e325]
+              - columnheader "Specialization" [ref=e326]
+              - columnheader "Hospital / Address" [ref=e327]
+              - columnheader "Location" [ref=e328]
+              - columnheader "Assigned BDM" [ref=e329]
+              - columnheader "Visit Freq" [ref=e330]
+              - columnheader "Engagement" [ref=e331]
+              - columnheader "Actions" [ref=e332]
+          - rowgroup [ref=e333]:
+            - row "1 Fel Abejar VIP Needs scheduling Medical Doctor IM Medical Plaza Needs Cleanup Mae Navarro 4x/mo — Schedule Edit Delete" [ref=e334]:
+              - cell "1" [ref=e335]
+              - cell "Fel Abejar" [ref=e336]
+              - cell "VIP Needs scheduling" [ref=e337]:
+                - generic [ref=e338]: VIP
+                - generic "No upcoming visits scheduled — click the Schedule action." [ref=e339]: Needs scheduling
+              - cell "Medical Doctor" [ref=e340]:
+                - generic [ref=e341]: Medical Doctor
+              - cell "IM" [ref=e342]
+              - cell "Medical Plaza" [ref=e343]
+              - cell "Needs Cleanup" [ref=e344]
+              - cell "Mae Navarro" [ref=e345]
+              - cell "4x/mo" [ref=e346]:
+                - generic [ref=e347]: 4x/mo
+              - cell "—" [ref=e348]
+              - cell "Schedule Edit Delete" [ref=e349]:
+                - generic [ref=e350]
+            - row "2 Gifford Abejo VIP — Surg Kidapawan Doctors, Kidapawan City Needs Cleanup Menivie Daniela 4x/mo 3 Reschedule Edit Delete" [ref=e364]:
+              - cell "2" [ref=e365]
+              - cell "Gifford Abejo" [ref=e366]
+              - cell "VIP" [ref=e367]:
+                - generic [ref=e368]: VIP
+              - cell "—" [ref=e369]
+              - cell "Surg" [ref=e370]
+              - cell "Kidapawan Doctors, Kidapawan City" [ref=e371]
+              - cell "Needs Cleanup" [ref=e372]
+              - cell "Menivie Daniela" [ref=e373]
+              - cell "4x/mo" [ref=e374]:
+                - generic [ref=e375]: 4x/mo
+              - cell "3" [ref=e376]
+              - cell "Reschedule Edit Delete" [ref=e377]:
+                - generic [ref=e378]
+            - row "3 Joel Abella VIP — Im Sunga Hosp., Digos City Needs Cleanup Menivie Daniela 4x/mo 1 Reschedule Edit Delete" [ref=e392]:
+              - cell "3" [ref=e393]
+              - cell "Joel Abella" [ref=e394]
+              - cell "VIP" [ref=e395]:
+                - generic [ref=e396]: VIP
+              - cell "—" [ref=e397]
+              - cell "Im" [ref=e398]
+              - cell "Sunga Hosp., Digos City" [ref=e399]
+              - cell "Needs Cleanup" [ref=e400]
+              - cell "Menivie Daniela" [ref=e401]
+              - cell "4x/mo" [ref=e402]:
+                - generic [ref=e403]: 4x/mo
+              - cell "1" [ref=e404]
+              - cell "Reschedule Edit Delete" [ref=e405]:
+                - generic [ref=e406]
+            - row "4 Jeanette Abucayon VIP — IM ADVENTIST MEDICAL CENTER Needs Cleanup Roman Mabanag 4x/mo 1 Reschedule Edit Delete" [ref=e420]:
+              - cell "4" [ref=e421]
+              - cell "Jeanette Abucayon" [ref=e422]
+              - cell "VIP" [ref=e423]:
+                - generic [ref=e424]: VIP
+              - cell "—" [ref=e425]
+              - cell "IM" [ref=e426]
+              - cell "ADVENTIST MEDICAL CENTER" [ref=e427]
+              - cell "Needs Cleanup" [ref=e428]
+              - cell "Roman Mabanag" [ref=e429]
+              - cell "4x/mo" [ref=e430]:
+                - generic [ref=e431]: 4x/mo
+              - cell "1" [ref=e432]
+              - cell "Reschedule Edit Delete" [ref=e433]:
+                - generic [ref=e434]
+            - row "5 Michael Abutazil VIP — IM-NEPHRO ACE MEDICAL DIPOLOG Needs Cleanup Roman Mabanag 2x/mo — Reschedule Edit Delete" [ref=e448]:
+              - cell "5" [ref=e449]
+              - cell "Michael Abutazil" [ref=e450]
+              - cell "VIP" [ref=e451]:
+                - generic [ref=e452]: VIP
+              - cell "—" [ref=e453]
+              - cell "IM-NEPHRO" [ref=e454]
+              - cell "ACE MEDICAL DIPOLOG" [ref=e455]
+              - cell "Needs Cleanup" [ref=e456]
+              - cell "Roman Mabanag" [ref=e457]
+              - cell "2x/mo" [ref=e458]:
+                - generic [ref=e459]: 2x/mo
+              - cell "—" [ref=e460]
+              - cell "Reschedule Edit Delete" [ref=e461]:
+                - generic [ref=e462]
+            - row "6 Lance Adlaon VIP — Ortho — Needs Cleanup Edcel Mae Arespacochaga 4x/mo — Reschedule Edit Delete" [ref=e476]:
+              - cell "6" [ref=e477]
+              - cell "Lance Adlaon" [ref=e478]
+              - cell "VIP" [ref=e479]:
+                - generic [ref=e480]: VIP
+              - cell "—" [ref=e481]
+              - cell "Ortho" [ref=e482]
+              - cell "—" [ref=e483]
+              - cell "Needs Cleanup" [ref=e484]
+              - cell "Edcel Mae Arespacochaga" [ref=e485]
+              - cell "4x/mo" [ref=e486]:
+                - generic [ref=e487]: 4x/mo
+              - cell "—" [ref=e488]
+              - cell "Reschedule Edit Delete" [ref=e489]:
+                - generic [ref=e490]
+            - row "7 Leslie Adlaon VIP — IM Cardio — Needs Cleanup Edcel Mae Arespacochaga 4x/mo — Reschedule Edit Delete" [ref=e504]:
+              - cell "7" [ref=e505]
+              - cell "Leslie Adlaon" [ref=e506]
+              - cell "VIP" [ref=e507]:
+                - generic [ref=e508]: VIP
+              - cell "—" [ref=e509]
+              - cell "IM Cardio" [ref=e510]
+              - cell "—" [ref=e511]
+              - cell "Needs Cleanup" [ref=e512]
+              - cell "Edcel Mae Arespacochaga" [ref=e513]
+              - cell "4x/mo" [ref=e514]:
+                - generic [ref=e515]: 4x/mo
+              - cell "—" [ref=e516]
+              - cell "Reschedule Edit Delete" [ref=e517]:
+                - generic [ref=e518]
+            - row "8 Amador Aguirre VIP Medical Doctor IM-Neuro BAMC Needs Cleanup Mae Navarro 4x/mo 1 Reschedule Edit Delete" [ref=e532]:
+              - cell "8" [ref=e533]
+              - cell "Amador Aguirre" [ref=e534]
+              - cell "VIP" [ref=e535]:
+                - generic [ref=e536]: VIP
+              - cell "Medical Doctor" [ref=e537]:
+                - generic [ref=e538]: Medical Doctor
+              - cell "IM-Neuro" [ref=e539]
+              - cell "BAMC" [ref=e540]
+              - cell "Needs Cleanup" [ref=e541]
+              - cell "Mae Navarro" [ref=e542]
+              - cell "4x/mo" [ref=e543]:
+                - generic [ref=e544]: 4x/mo
+              - cell "1" [ref=e545]
+              - cell "Reschedule Edit Delete" [ref=e546]:
+                - generic [ref=e547]
+            - row "9 Liza Grace T. Alabado VIP — GS MMC Needs Cleanup Jake Montero 4x/mo 5 Reschedule Edit Delete" [ref=e561]:
+              - cell "9" [ref=e562]
+              - cell "Liza Grace T. Alabado" [ref=e563]
+              - cell "VIP" [ref=e564]:
+                - generic [ref=e565]: VIP
+              - cell "—" [ref=e566]
+              - cell "GS" [ref=e567]
+              - cell "MMC" [ref=e568]
+              - cell "Needs Cleanup" [ref=e569]
+              - cell "Jake Montero" [ref=e570]
+              - cell "4x/mo" [ref=e571]:
+                - generic [ref=e572]: 4x/mo
+              - cell "5" [ref=e573]
+              - cell "Reschedule Edit Delete" [ref=e574]:
+                - generic [ref=e575]
+            - row "10 Lilluck F. Alacapa VIP — IM Diab ANTIQUE Needs Cleanup Jake Montero 4x/mo 3 Reschedule Edit Delete" [ref=e589]:
+              - cell "10" [ref=e590]
+              - cell "Lilluck F. Alacapa" [ref=e591]
+              - cell "VIP" [ref=e592]:
+                - generic [ref=e593]: VIP
+              - cell "—" [ref=e594]
+              - cell "IM Diab" [ref=e595]
+              - cell "ANTIQUE" [ref=e596]
+              - cell "Needs Cleanup" [ref=e597]
+              - cell "Jake Montero" [ref=e598]
+              - cell "4x/mo" [ref=e599]:
+                - generic [ref=e600]: 4x/mo
+              - cell "3" [ref=e601]
+              - cell "Reschedule Edit Delete" [ref=e602]:
+                - generic [ref=e603]
+            - row "11 Leonor Alava VIP — Pedia IMH Needs Cleanup Romela Shen Herrera 4x/mo 2 Reschedule Edit Delete" [ref=e617]:
+              - cell "11" [ref=e618]
+              - cell "Leonor Alava" [ref=e619]
+              - cell "VIP" [ref=e620]:
+                - generic [ref=e621]: VIP
+              - cell "—" [ref=e622]
+              - cell "Pedia" [ref=e623]
+              - cell "IMH" [ref=e624]
+              - cell "Needs Cleanup" [ref=e625]
+              - cell "Romela Shen Herrera" [ref=e626]
+              - cell "4x/mo" [ref=e627]:
+                - generic [ref=e628]: 4x/mo
+              - cell "2" [ref=e629]
+              - cell "Reschedule Edit Delete" [ref=e630]:
+                - generic [ref=e631]
+            - row "12 Ryndell Alava VIP — IM Neuro IMH Needs Cleanup Romela Shen Herrera 4x/mo 2 Reschedule Edit Delete" [ref=e645]:
+              - cell "12" [ref=e646]
+              - cell "Ryndell Alava" [ref=e647]
+              - cell "VIP" [ref=e648]:
+                - generic [ref=e649]: VIP
+              - cell "—" [ref=e650]
+              - cell "IM Neuro" [ref=e651]
+              - cell "IMH" [ref=e652]
+              - cell "Needs Cleanup" [ref=e653]
+              - cell "Romela Shen Herrera" [ref=e654]
+              - cell "4x/mo" [ref=e655]:
+                - generic [ref=e656]: 4x/mo
+              - cell "2" [ref=e657]
+              - cell "Reschedule Edit Delete" [ref=e658]:
+                - generic [ref=e659]
+            - row "13 Gemma Alba VIP Medical Doctor IM Medical Plaza Needs Cleanup Mae Navarro 4x/mo — Reschedule Edit Delete" [ref=e673]:
+              - cell "13" [ref=e674]
+              - cell "Gemma Alba" [ref=e675]
+              - cell "VIP" [ref=e676]:
+                - generic [ref=e677]: VIP
+              - cell "Medical Doctor" [ref=e678]:
+                - generic [ref=e679]: Medical Doctor
+              - cell "IM" [ref=e680]
+              - cell "Medical Plaza" [ref=e681]
+              - cell "Needs Cleanup" [ref=e682]
+              - cell "Mae Navarro" [ref=e683]
+              - cell "4x/mo" [ref=e684]:
+                - generic [ref=e685]: 4x/mo
+              - cell "—" [ref=e686]
+              - cell "Reschedule Edit Delete" [ref=e687]:
+                - generic [ref=e688]
+            - row "14 Julius Alba VIP Needs scheduling — TDh TDH Needs Cleanup Mae Navarro 4x/mo — Schedule Edit Delete" [ref=e702]:
+              - cell "14" [ref=e703]
+              - cell "Julius Alba" [ref=e704]
+              - cell "VIP Needs scheduling" [ref=e705]:
+                - generic [ref=e706]: VIP
+                - generic "No upcoming visits scheduled — click the Schedule action." [ref=e707]: Needs scheduling
+              - cell "—" [ref=e708]
+              - cell "TDh" [ref=e709]
+              - cell "TDH" [ref=e710]
+              - cell "Needs Cleanup" [ref=e711]
+              - cell "Mae Navarro" [ref=e712]
+              - cell "4x/mo" [ref=e713]:
+                - generic [ref=e714]: 4x/mo
+              - cell "—" [ref=e715]
+              - cell "Schedule Edit Delete" [ref=e716]:
+                - generic [ref=e717]
+            - row "15 Edna Alcantara VIP — IM-Endo — Needs Cleanup Edcel Mae Arespacochaga 4x/mo — Reschedule Edit Delete" [ref=e731]:
+              - cell "15" [ref=e732]
+              - cell "Edna Alcantara" [ref=e733]
+              - cell "VIP" [ref=e734]:
+                - generic [ref=e735]: VIP
+              - cell "—" [ref=e736]
+              - cell "IM-Endo" [ref=e737]
+              - cell "—" [ref=e738]
+              - cell "Needs Cleanup" [ref=e739]
+              - cell "Edcel Mae Arespacochaga" [ref=e740]
+              - cell "4x/mo" [ref=e741]:
+                - generic [ref=e742]: 4x/mo
+              - cell "—" [ref=e743]
+              - cell "Reschedule Edit Delete" [ref=e744]:
+                - generic [ref=e745]
+            - row "16 Florentino Alerta VIP — FM IMH Needs Cleanup Jake Montero 4x/mo 2 Reschedule Edit Delete" [ref=e759]:
+              - cell "16" [ref=e760]
+              - cell "Florentino Alerta" [ref=e761]
+              - cell "VIP" [ref=e762]:
+                - generic [ref=e763]: VIP
+              - cell "—" [ref=e764]
+              - cell "FM" [ref=e765]
+              - cell "IMH" [ref=e766]
+              - cell "Needs Cleanup" [ref=e767]
+              - cell "Jake Montero" [ref=e768]
+              - cell "4x/mo" [ref=e769]:
+                - generic [ref=e770]: 4x/mo
+              - cell "2" [ref=e771]
+              - cell "Reschedule Edit Delete" [ref=e772]:
+                - generic [ref=e773]
+            - row "17 Ma. Ester Alfaro VIP — Pedia APMC, KALIBO Needs Cleanup Jake Montero 4x/mo 2 Reschedule Edit Delete" [ref=e787]:
+              - cell "17" [ref=e788]
+              - cell "Ma. Ester Alfaro" [ref=e789]
+              - cell "VIP" [ref=e790]:
+                - generic [ref=e791]: VIP
+              - cell "—" [ref=e792]
+              - cell "Pedia" [ref=e793]
+              - cell "APMC, KALIBO" [ref=e794]
+              - cell "Needs Cleanup" [ref=e795]
+              - cell "Jake Montero" [ref=e796]
+              - cell "4x/mo" [ref=e797]:
+                - generic [ref=e798]: 4x/mo
+              - cell "2" [ref=e799]
+              - cell "Reschedule Edit Delete" [ref=e800]:
+                - generic [ref=e801]
+            - row "18 Joesalim III Alfeche VIP — Surgery — Needs Cleanup Edcel Mae Arespacochaga 4x/mo — Reschedule Edit Delete" [ref=e815]:
+              - cell "18" [ref=e816]
+              - cell "Joesalim III Alfeche" [ref=e817]
+              - cell "VIP" [ref=e818]:
+                - generic [ref=e819]: VIP
+              - cell "—" [ref=e820]
+              - cell "Surgery" [ref=e821]
+              - cell "—" [ref=e822]
+              - cell "Needs Cleanup" [ref=e823]
+              - cell "Edcel Mae Arespacochaga" [ref=e824]
+              - cell "4x/mo" [ref=e825]:
+                - generic [ref=e826]: 4x/mo
+              - cell "—" [ref=e827]
+              - cell "Reschedule Edit Delete" [ref=e828]:
+                - generic [ref=e829]
+            - row "19 Victor Alinas VIP — GP CHO Needs Cleanup Roman Mabanag 4x/mo 1 Reschedule Edit Delete" [ref=e843]:
+              - cell "19" [ref=e844]
+              - cell "Victor Alinas" [ref=e845]
+              - cell "VIP" [ref=e846]:
+                - generic [ref=e847]: VIP
+              - cell "—" [ref=e848]
+              - cell "GP" [ref=e849]
+              - cell "CHO" [ref=e850]
+              - cell "Needs Cleanup" [ref=e851]
+              - cell "Roman Mabanag" [ref=e852]
+              - cell "4x/mo" [ref=e853]:
+                - generic [ref=e854]: 4x/mo
+              - cell "1" [ref=e855]
+              - cell "Reschedule Edit Delete" [ref=e856]:
+                - generic [ref=e857]
+            - row "20 Rosalie Almira VIP — IM Nephro ANTIQUE Needs Cleanup Jake Montero 4x/mo 3 Reschedule Edit Delete" [ref=e871]:
+              - cell "20" [ref=e872]
+              - cell "Rosalie Almira" [ref=e873]
+              - cell "VIP" [ref=e874]:
+                - generic [ref=e875]: VIP
+              - cell "—" [ref=e876]
+              - cell "IM Nephro" [ref=e877]
+              - cell "ANTIQUE" [ref=e878]
+              - cell "Needs Cleanup" [ref=e879]
+              - cell "Jake Montero" [ref=e880]
+              - cell "4x/mo" [ref=e881]:
+                - generic [ref=e882]: 4x/mo
+              - cell "3" [ref=e883]
+              - cell "Reschedule Edit Delete" [ref=e884]:
+                - generic [ref=e885]
+        - generic [ref=e899]:
+          - generic [ref=e900]: Showing 1 to 20 of 603 VIP Clients
+          - generic [ref=e901]:
+            - button "Previous" [disabled] [ref=e902]
+            - generic [ref=e903]: Page 1 of 31
+            - button "Next" [ref=e904] [cursor=pointer]

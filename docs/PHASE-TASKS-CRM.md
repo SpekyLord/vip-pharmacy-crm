@@ -1599,3 +1599,64 @@ The CPT Excel re-import (Phase C) is the bulk-load mechanism for refreshing a BD
 - The lookup migration to SCHEDULE_LIFECYCLE_ROLES is not blocking — admin gate is correct for VIP today; subscribers will need it when SaaS spins out.
 - Year-2 SaaS: every Schedule mutation already filters by user; tenant isolation will fall out naturally when Phase S6 generalizes user.entity_id.
 
+---
+
+## Phase PRG — Program & Support Type Resource Allocation (planned, NOT scoped for current sprint)
+
+### Status: DEFERRED. Foundation ratified May 05 2026 (CLAUDE.md note 15). Build only when admin signals they want true ROI per program.
+
+### Why
+Programs (CME GRANT, MED SOCIETY PARTICIPATION, REBATES / MONEY, REST AND RECREATION) and Support Types (AIR FRESHENER, FULL DOSE, PATIENT DISCOUNT, PROMATS, STARTER DOSES) today are **labels** on doctors, not **cost objects**. The Statistics → Programs tab shows enrollment count + visited count + coverage% per cycle, which is useful for "is anyone visiting these MDs?" but cannot answer "are we getting return on what we spend?" The rebate engine flows MD spend through PRF/CALF correctly (Apr 29 2026 lock — all Tier-A → PRF/CALF, no IncentivePayout PAID_DIRECT path), but PRF / Expense / MdProductRebate rows have no `program_id` / `support_type_id` foreign key, so spend-per-program-per-MD is unmeasurable. Goal of this phase: turn Programs/Support Types into cost objects so admin can decide which MDs / programs to renew, cut, or upgrade.
+
+### Phase PRG-1 — Tag spend with program/support type (foundation, ~1 day, schema-only)
+
+**Schema additions** (all sparse — zero risk to the existing rebate engine):
+- `backend/erp/models/PrfCalf.js` — add `program_id` (ref Program, sparse) + `support_type_id` (ref SupportType, sparse). Most CME / society / R&R cash spend lands here.
+- `backend/erp/models/Expense.js` — same two fields, sparse. For direct disbursements outside PRF.
+- `backend/erp/models/MdProductRebate.js` — add `program_id` (sparse). Defaults to "REBATES / MONEY" program if not set so the existing matrix flows continue working unchanged.
+
+**UI additions**:
+- PRF / Expense create modals: when `partner_id` resolves to a Doctor, the `program_id` dropdown is filtered to that doctor's `programsToImplement[]`. Hint to enroll the MD first if empty. Same pattern for `support_type_id` on sample-disbursement workflows.
+
+**Migration**:
+- `backend/scripts/backfillPrfCalfProgramId.js` — one-time idempotent backfill: any historical PRF/CALF row with a rebate context but no `program_id` defaults to the "REBATES / MONEY" program. Audit-rowed (`backend/erp/models/AuditLog.js`) per change.
+
+**Acceptance**:
+- Healthcheck script asserts every PrfCalf rebate context (ie. `linked_collection_id != null`) has `program_id` set.
+- API smoke: create PRF for a doctor enrolled in CME GRANT → `program_id` persists; query PRFs by `program_id=<CME_GRANT_ID>` returns the new doc.
+
+### Phase PRG-2 — Programs Statistics overhaul (~1 day, builds on PRG-1)
+
+Rebuild the existing Programs tab into a resource-allocation cockpit, modeled on the [CLM Performance tab](frontend/src/pages/admin/StatisticsPage.jsx) shipped May 04 (Phase D.4c) and the [Team Activity Cockpit](frontend/src/pages/admin/StatisticsPage.jsx) shipped Apr 29 2026.
+
+**Panels**:
+- **Panel 1 — Program ROI table**: one row per program × period (default 90d). Columns: enrolled MDs, total spend (PRF + Expense + rebates joined via PRG-1 fields), total attributed sales (sum of `Collection.settled_csis[].md_rebate_lines[].rebate_amount` for enrolled MDs), spend ÷ sales %, status pill.
+- **Panel 2 — Support Type distribution**: rows per support type. Count of MDs assigned, distribution events / period, average per-MD recurrence (proxy: how often that support type appears on PRFs for the MD).
+- **Panel 3 — Outliers**: top 10 highest-spend MDs with low coverage rate (visited% from existing `coverageRate`) — the candidates for admin review.
+
+**Lookup-driven thresholds** (Rule #3): new lookup category `PROGRAM_PERFORMANCE_THRESHOLDS` (codes `max_spend_per_md_pct_of_sales`, `min_coverage_rate_pct`, `flag_below_visits_per_cycle`). Inline DEFAULTS in `backend/utils/programPerformanceThresholds.js`, lazy-cache 60s, `insert_only_metadata: true` — same pattern as `CLM_PERFORMANCE_THRESHOLDS` and `TEAM_ACTIVITY_THRESHOLDS`.
+
+**Tab badge**: red badge counts programs flagged below `target_conversion_rate_pct` OR above `max_spend_per_md_pct_of_sales`.
+
+### Phase PRG-3 — Per-MD allocation drill-down (~half-day)
+
+Click any MD row on the Programs cockpit OR from `/admin/md-leads` → modal/page showing: enrolled programs, support types, all PRF/Expense/rebate spend timeline, visit count, rebate sales attributed, last engagement. The decision surface for *renew / cut / upgrade*.
+
+Reuses [DoctorDetailModal](frontend/src/components/admin/DoctorManagement.jsx) with a new Programs/ROI tab.
+
+### Phase PRG-4 — Auto-join Rx attribution (deferred until VIP-1.D ships)
+
+When `PatientMdAttribution` ([backend/erp/models/PatientMdAttribution.js](backend/erp/models/PatientMdAttribution.js)) starts capturing Rx counts (sub-phase referenced in CLAUDE.md notes 12b / 13), join `attributed patients × avg patient LTV` into the ROI denominator. No new code beyond the join — ROI just becomes more honest once the data flows.
+
+### Subscription-readiness posture (Rule #0d / Rule #19)
+
+PRG-1 schema additions are entity-neutral (program_id is per-tenant lookup ref). Stats endpoints will need entity-scope guards added during PRG-2 — current `getProgramStats` and `getSupportTypeStats` query `Doctor` + `Visit` globally without `req.entityId`. This is a pre-existing leak that is fine for VIP single-tenant today (CLAUDE.md note 15) but MUST be closed before SaaS spin-out. Closing this leak in PRG-2 is preferred; otherwise it falls into the broader Phase S6 sweep.
+
+### What NOT to build (rejected during May 05 2026 design)
+
+- **No "Program Budget" model with forecast vs actuals.** VIP is a 5-program shop, not a Fortune-500 brand-team. Track actuals, eyeball trends. Adding budgets adds approval workflows that PRF/CALF already enforces (Rule #20).
+- **Don't gate program enrollment with approvals.** Authority sits on the *spend* (PRF post → gateApproval), not on the *tag*. Tagging Dr. Smith with CME GRANT costs nothing until you cut a PRF.
+- **Don't build sample-inventory tracking for AIR FRESHENER / PROMATS.** Those are inventory items already; tag the disbursement to a Support Type via PRF, don't build a parallel ledger.
+
+### Trigger to un-defer
+Build PRG-1 + PRG-2 only when admin asks "how much did we spend on Dr. X under CME GRANT this quarter?" or "show me which program is wasting money." Until then, the existing coverage% signal is sufficient and any added complexity is premature.
