@@ -11062,3 +11062,16 @@ Green. Additive only. The existing `useExpenses.getLinkedExpenses` consumer (`/e
 **Lookup posture**: VAT rate is `Settings.getVatRate()` — already lookup-driven and used by the JE engine + ExpenseEntry pre-save hook. Subscribers configure `Settings.VAT_RATE` per entity via Control Center; no code changes needed when onboarding new entities.
 
 **Subscription readiness**: when SaaS spin-out generalizes `entity_id` to `tenant_id` (Year 2 per CLAUDE.md 0d), no work in this phase. The Settings-per-entity scoping inherits the eventual rename automatically.
+
+---
+
+### Phase R1.1 — NonMd lookup-values 404 hotfix (Apr 30 2026)
+
+Apr 29 Playwright UI smoke surfaced two 404s on every `/erp/non-md-rebate-matrix` page load — `GET /api/erp/lookup-values?category=NONMD_REBATE_CALC_MODE`. The bespoke fetch in [NonMdRebateMatrixPage.jsx:93](frontend/src/erp/pages/NonMdRebateMatrixPage.jsx#L93) used query-string style, but the route is mounted as `/lookup-values/:category` (path segment). Inline `CALC_MODE_FALLBACK` masked the bug at the UI layer (page rendered correctly), but broke the "page never goes dark on Lookup outage" design promise.
+
+**Fix** (1 file): swapped the bespoke fetch for the canonical [`useLookupOptions('NONMD_REBATE_CALC_MODE')`](frontend/src/erp/hooks/useLookups.js) hook. Adds 5-min entity-aware cache with auto-bust on entity switch (multi-tenant safe — Rule #0d). Aligns with the pattern used by 6 other lookup-driven pages.
+
+- ✅ Verification: healthcheck 109/109 PASS, vite build green 35.84s. Backend probe of `/erp/lookup-values/NONMD_REBATE_CALC_MODE?active_only=true` returns 200.
+- Playwright re-smoke deferred (MCP browser locked by user's open PR-review Chrome instance at fix time). Mechanical fix, not blocking.
+
+**Files touched (1)**: [frontend/src/erp/pages/NonMdRebateMatrixPage.jsx](frontend/src/erp/pages/NonMdRebateMatrixPage.jsx).

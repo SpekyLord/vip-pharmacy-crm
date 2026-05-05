@@ -8137,3 +8137,28 @@ The .A slice deliberately left `PrfCalf.jsx` untouched on the rationale that "th
 
 **Risk**: green. Both consumers now show consistent shape; fuel rows show meaningful Net/VAT instead of zeros. No new lookups, no new schemas, no migrations. Existing callers unaffected.
 - Failure modes thought through: 404 (no linked lines yet) → renders nothing rather than an empty table. 500 / network error → renders inline error message, doesn't break the rest of the panel. CALF without `_id` (legacy serialization gap) → mount guard short-circuits.
+
+---
+
+### Phase R1.1 — NonMdRebate lookup-values 404 hotfix (Apr 30 2026)
+
+**Symptom**: Apr 30 Playwright UI smoke surfaced two 404s on every `/erp/non-md-rebate-matrix` page load — `GET /api/erp/lookup-values?category=NONMD_REBATE_CALC_MODE`. The page rendered correctly because of the inline `CALC_MODE_FALLBACK`, but the noise broke the "page never goes dark on Lookup outage" design promise that other Phase R1 lookups hit cleanly.
+
+**Root cause**: `NonMdRebateMatrixPage.jsx:93` used the bespoke pattern `api.get('/erp/lookup-values', { params: { category } })` (query-string). The route is mounted at `/lookup-values/:category` ([backend/erp/routes/lookupGenericRoutes.js:20](backend/erp/routes/lookupGenericRoutes.js#L20)) — Express's `:category` segment matched the empty string, so the request fell through to the catch-all 404. Every other lookup-driven page (RebateMatrixPage, DoctorManagement, ClientAddModal, AgentSettings, InboxRetentionSettings, LookupManager) uses the canonical path-segment pattern.
+
+**Fix** (1 file): swapped the bespoke fetch for the canonical [`useLookupOptions('NONMD_REBATE_CALC_MODE')`](frontend/src/erp/hooks/useLookups.js) hook ([NonMdRebateMatrixPage.jsx:62](frontend/src/erp/pages/NonMdRebateMatrixPage.jsx#L62)). Same data shape (`{ code, label, value, metadata }`) so all downstream consumers (`labelForCalcMode`, `calcModeChoices` fallback, modal radio) work unchanged.
+
+**Why the hook over a literal path-string fix**:
+- Same path-segment URL under the hood (route now matches → 404 gone).
+- Adds 5-min entity-aware cache → fewer DB hits when admin opens/closes the matrix repeatedly.
+- Cache auto-busts on entity switch — multi-tenant safe (Rule #0d, SaaS-tenant isolation).
+- Aligns with the canonical pattern used by 6 other lookup-driven pages → one less bespoke fetch path to audit during the SaaS spin-out.
+- Inline `CALC_MODE_FALLBACK` retained as defense-in-depth — page still works even if backend lookup is empty.
+
+**Verification**:
+- `node backend/scripts/healthcheckRebateCommissionWiring.js` → **109/109 PASS** (no assertions broken)
+- `npx vite build` → **green in 35.84s** (new import + hook compile clean, no chunk regression)
+- Direct backend probe: `GET /api/erp/lookup-values/NONMD_REBATE_CALC_MODE?active_only=true` returns 200 (the path-segment route exists in both main-repo and worktree backends)
+- Live Playwright re-smoke **DEFERRED** — MCP browser session was locked by another Chrome instance (PR-review window) when the fix landed. The fix is mechanical (drop-in hook swap), so the smoke is recommended but not blocking.
+
+**Files touched (1)**: [frontend/src/erp/pages/NonMdRebateMatrixPage.jsx](frontend/src/erp/pages/NonMdRebateMatrixPage.jsx) — added `useLookupOptions` import; replaced `useState([])` for `calcModes` with the hook call; removed the broken bespoke fetch from useEffect.
