@@ -252,6 +252,75 @@ When the consultant delivers the gap list, the concrete work gets its own Phase 
 
 ---
 
+## Phase G1.7 — SMER ↔ CRM Bridge Yes-Equal-Weight Pull (May 05, 2026)
+
+Closes a silent under-counting bug in the SMER `Pull from CRM` button surfaced during a 1:1 reconciliation of Mae Navarro's CRM list view vs the SMER MD count. The CRM list (MyVisits / EmployeeVisitReport) merges TWO collections — `Visit` (VIP doctor visits) + `ClientVisit` (EXTRA non-VIP regular-client calls) — but the bridge at `backend/erp/services/smerCrmBridge.js` only queried `Visit`. On days where a BDM logged extras alongside VIP visits, `md_count` came back undercounted, dropping daily tier from FULL ₱800 → HALF ₱400 (₱400/day silent loss).
+
+### The bug
+
+User screenshot showed 4 VIP + 5 EXTRA = 9 distinct MDs visited on 2026-04-17, but SMER's Pull-from-CRM returned MDs=4. Pre-fix bridge:
+- `Visit.distinct('doctor', { user, visitDate, status: 'completed' })` → 4
+- `ClientVisit.distinct('client', ...)` → not queried → 0 (ignored)
+- `md_count = 4` → HALF ₱400 instead of FULL ₱800
+
+The bridge JSDoc comment said "every BDM visit to a Doctor (VIP Client / MD)" — a contract that omitted the EXTRA-call half by design (or oversight). Whichever, the CRM list view always merged both, so the SMER pull silently disagreed with what the BDM and admin saw on screen.
+
+### Architecture
+
+- **`backend/erp/services/smerCrmBridge.js`** — three functions now UNION `Visit` (VIP, FK = `doctor`) + `ClientVisit` (EXTRA, FK = `client`):
+  - `getDailyMdCount(bdmUserId, date, opts)` — sums `Visit.distinct('doctor')` + `ClientVisit.distinct('client')` for a single date.
+  - `getDailyMdCounts(bdmUserId, start, end, opts)` — refactored to call new helper `aggregateDailyByCollection(Model, fkField, ...)` once for each collection, then merges per-day buckets in JS keyed by Manila calendar day. `flagged_excluded` reflects total flagged across both streams.
+  - `getDailyVisitDetails(bdmUserId, date, opts)` — drill-down returns Visit rows + ClientVisit rows; EXTRA rows get the populated `client` exposed under the `doctor` key so the existing `universalApprovalService` caller (`v.doctor?.clinicOfficeAddress`) keeps working.
+- **`backend/erp/services/perdiemCalc.js`** — `resolvePerdiemConfig` returns new `include_extra_calls` flag (default `true` via `m.include_extra_calls !== false` so existing seeded rows without the key inherit yes-equal-weight).
+- **`backend/erp/controllers/lookupGenericController.js`** — `PERDIEM_RATES.BDM` and `.ECOMMERCE_BDM` seed defaults add `include_extra_calls: true`. `DELIVERY_DRIVER` example sets it `false` (irrelevant for logbook source). Seed rows use `insert_only_metadata: true` so admin tweaks survive future re-seeds.
+- **`backend/erp/controllers/expenseController.js`** — `getSmerCrmMdCounts` and `getSmerCrmVisitDetail` pipe `perdiemConfig.include_extra_calls` through to the bridge. The HTTP response now surfaces `include_extra_calls` so the SMER UI can label the active mode.
+- **`frontend/src/erp/components/WorkflowGuide.jsx`** — SMER tip extended with the Phase G1.7 paragraph (Rule #1 banner kept current).
+
+### Lookup-driven contract (Rule #3 + Rule #19)
+
+`PERDIEM_RATES.<role>.metadata.include_extra_calls`:
+- `true` (default) — yes-equal-weight: VIP `Visit` + EXTRA `ClientVisit` both count toward the per-diem MD threshold. Reconciles 1:1 with CRM list view.
+- `false` — strict VIP-only (legacy). For subscribers that gate per-diem on the curated VIP list only.
+
+Subscribers flip via Control Center → Lookup Tables → PERDIEM_RATES → BDM → metadata. Per-entity × per-role precedence. No code deploy needed.
+
+### Forward-only by design (Rule #20)
+
+The fix only affects new pulls. Already-POSTED SMERs stay frozen at their pre-fix amounts (period-lock + reopen-safety). Only future Pull-from-CRM clicks and still-DRAFT SMERs see the corrected count. No migration needed.
+
+### Files touched
+
+- `backend/erp/services/smerCrmBridge.js` (3 functions + helper + JSDoc rewrite)
+- `backend/erp/services/perdiemCalc.js` (resolver returns include_extra_calls)
+- `backend/erp/controllers/lookupGenericController.js` (PERDIEM_RATES seed)
+- `backend/erp/controllers/expenseController.js` (pipe through + response surface)
+- `frontend/src/erp/components/WorkflowGuide.jsx` (SMER tip)
+- `backend/scripts/healthcheckSmerCrmBridgeUnion.js` (NEW — 28-section static contract verifier, 28/28 PASS)
+- `CLAUDE-ERP.md` (this section)
+- `docs/PHASETASK-ERP.md` (G1.7 phase entry)
+
+### Smoke
+
+- **Static healthcheck**: `node backend/scripts/healthcheckSmerCrmBridgeUnion.js` → 28/28 PASS.
+- **Frontend Vite build**: ✓ built in 9.59s, no warnings.
+- **Live API smoke (s3 / Mae as BDM, dev cluster, 2026-04 C1)**:
+  - `include_extra_calls: true` → 04/01 `md_count=9` (FULL ₱800), 04/06=8, 04/07=8, 04/08=7, 04/09=2. Total = 34. Pre-fix would have been 27 (lost ₱400 on 04/01 alone, day flipped HALF→FULL).
+  - `include_extra_calls: false` (toggled via Lookup, then restored) → 04/01 `md_count=4` (HALF ₱400). Confirms toggle works end-to-end.
+  - Drill-down on 2026-04-08 returned 9 rows: 8 VIP `[regular]` rows + 1 `[EXTRA]` row (Jill AU, IM Nephro). Drill-down adapter maps `client` → `doctor` correctly.
+- **Playwright UI smoke (Mae logged in via 5173, /erp/smer)**: banner now contains "Phase G1.7", "yes-equal-weight", "include_extra_calls", "May 05 2026" (4/4 keywords matched). Browser-context fetch to `/api/erp/expenses/smer/crm-md-counts?period=2026-04&cycle=C1` returned the same payload as the curl smoke (200 OK, include_extra_calls=true, 04/01 md_count=9). Screenshot: `smer-page-g17-banner-mae.png`.
+
+### Why the bridge was wrong
+
+The CRM split between `Visit`/`Doctor` (VIP curated list) and `ClientVisit`/`Client` (EXTRA freeform calls) is a Phase A.5+ data-modeling decision — `Client` is a "pre-VIP" record that promotes to `Doctor` on upgrade. From a BDM-effort + per-diem standpoint both visits are identical (same proof requirements: GPS + photo, same weekly-unique constraint). The bridge predates the split or simply never got the second-collection treatment when EXTRA was added. Pre-G1.7 the silent disagreement only surfaced when admins compared SMER vs CRM list; routine ops accepted the lower count.
+
+### Subscription readiness (Rule #19 / Year-2 SaaS)
+
+- Per-entity × per-role flag — no hardcoded posture.
+- Yes-equal-weight default matches pharma intent + handles dirty data (same physical MD in both Doctor and Client master) without double-pay risk: the unique-week constraint is per-collection, so cross-collection dup of the SAME person logged via both VIP + EXTRA in the same week is rare and counts as 2 (matches CRM list rendering).
+- Future tenant cut-over: a subscriber that never enables EXTRA calls (`Client` collection empty) sees identical behavior pre/post fix.
+
+---
+
 ## Phase G4.5ee — Activity-Aware Per-Diem Tier Rule (Apr 30, 2026 evening)
 
 Closes a Rule #3 gap surfaced during a live SMER review of Judy Mae Patrocinio's 2026-04-C2 cycle: every OFFICE day carried `MD: 10` to clear the 8-MD FULL threshold, even though OFFICE activity has zero verifiable MD encounters. The honor-system padding produced a clean ₱7,150 reimbursable but polluted DCR Call Rate dashboards with 110 phantom MD visits and exposed the system to a "show me the 110 visit photos" audit failure.

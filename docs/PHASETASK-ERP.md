@@ -16,6 +16,40 @@
 
 ---
 
+## PHASE G1.7 — SMER ↔ CRM Bridge Yes-Equal-Weight Pull ✅ COMPLETE (May 5, 2026)
+
+**Goal:** Reconcile the SMER `Pull from CRM` button with the CRM list view (MyVisits / EmployeeVisitReport). Pre-fix the bridge counted only `Visit` (VIP doctor visits) and silently ignored `ClientVisit` (EXTRA non-VIP regular-client calls), even though the CRM list always merged both. On overlap days BDMs lost ₱400/day per-diem (FULL → HALF).
+
+**Trigger:** User reconciliation of Mae Navarro's screenshots: 9 visits visible in CRM list on 2026-04-17 (4 VIP + 5 EXTRA), but SMER's Pull-from-CRM returned `MDs=4`. Root cause: `backend/erp/services/smerCrmBridge.js` only queried the `Visit` collection.
+
+**Decision (locked May 5, 2026):**
+- **Yes-equal-weight** — VIP and EXTRA both count 1:1 toward per-diem MD threshold. Same proof bar (GPS + photo), same weekly-unique constraint per collection.
+- **Forward-only** — already-POSTED SMERs stay frozen at pre-fix amounts (period-lock per Rule #20). Only future Pull-from-CRM clicks and still-DRAFT SMERs see corrected counts.
+- **Lookup-driven opt-out** — new `PERDIEM_RATES.<role>.metadata.include_extra_calls` flag (default `true`). Subscribers that want strict VIP-only flip to `false` via Control Center → Lookup Tables. No code deploy.
+
+**Files touched:**
+
+| File | Change |
+|---|---|
+| `backend/erp/services/smerCrmBridge.js` | 3 functions UNION `Visit` + `ClientVisit`; new helper `aggregateDailyByCollection(Model, fkField, ...)`; JSDoc rewritten; toggle wired |
+| `backend/erp/services/perdiemCalc.js` | `resolvePerdiemConfig` returns `include_extra_calls` (default true) |
+| `backend/erp/controllers/lookupGenericController.js` | `PERDIEM_RATES.BDM` + `.ECOMMERCE_BDM` seed defaults add `include_extra_calls: true`; `DELIVERY_DRIVER` sets `false` (logbook source) |
+| `backend/erp/controllers/expenseController.js` | `getSmerCrmMdCounts` + `getSmerCrmVisitDetail` pipe toggle to bridge; response surfaces `include_extra_calls` |
+| `frontend/src/erp/components/WorkflowGuide.jsx` | SMER tip extends with G1.7 paragraph (Rule #1) |
+| `backend/scripts/healthcheckSmerCrmBridgeUnion.js` | NEW — 28-section static contract verifier |
+| `CLAUDE-ERP.md` | Phase G1.7 section |
+
+**Smoke evidence:**
+- Static healthcheck: 28/28 PASS.
+- Frontend Vite build: ✓ 9.59s.
+- Live API smoke (Mae, dev cluster, 2026-04 C1): `include_extra_calls=true` → 04/01 `md_count=9` (FULL ₱800), 04/06=8, 04/07=8, 04/08=7, 04/09=2. Total 34. Toggled to `false` via lookup → 04/01 dropped to 4 (HALF ₱400). Restored.
+- Drill-down on 2026-04-08 returned 9 rows (8 VIP + 1 EXTRA tagged `[EXTRA]`).
+- Playwright UI smoke: SMER banner contains all 4 keywords (Phase G1.7, yes-equal-weight, include_extra_calls, May 05 2026); browser-context fetch returned same payload as curl.
+
+**Why this matters for SaaS spin-out:** Year-2 multi-tenant subscribers with EXTRA-call discipline get yes-equal-weight by default; subscribers with strict VIP-only policy flip the flag without code intervention (Rule #19 subscription readiness).
+
+---
+
 ## PHASE G4.5ff — Lookup-Driven OwnerPicker + `/erp/proxy-roster` Endpoint ✅ COMPLETE (May 5, 2026)
 
 **Goal:** Restore the "Record on behalf of" dropdown for BDM-shaped roles (ROLES.STAFF) when admin has explicitly extended `PROXY_ENTRY_ROLES.<MODULE>` to include them AND ticked the `<module>.proxy_entry` sub-permission. Honor the lookup-driven configuration end-to-end (Rule #3) — the picker is no longer hidden by a defensive role-shape check that ignored the lookup.
