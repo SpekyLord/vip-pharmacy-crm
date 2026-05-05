@@ -77,6 +77,13 @@ const captureSubmissionSchema = new mongoose.Schema({
       'PETTY_CASH',     // #7 — mobile request
       'FUEL_ENTRY',     // #8 — fuel pump receipt
       'CWT_INBOUND',    // #9 — BIR 2307 received from customer (bridges to CwtLedger)
+      // Phase P1.2 Slice 1 (May 06 2026) — zero-typing capture path. BDM
+      // taps "Quick Capture" → camera → snap → submit; proxy classifies
+      // later from /erp/capture-archive or the Pending-Photos picker on
+      // ERP entry pages. Defaults physical_required=true (paper expected
+      // until proxy reclassifies); the proxy's reclassification flips
+      // physical_required + physical_status atomically.
+      'UNCATEGORIZED',
     ],
     required: true,
     index: true,

@@ -480,7 +480,7 @@ Every visit MUST include:
 |-----------|------------|-------|
 | Application | AWS Lightsail | $10/month (2GB RAM) |
 | Database | MongoDB Atlas | Free tier (M0) |
-| File Storage | AWS S3 | vip-pharmacy-crm-devs (ap-southeast-1) |
+| File Storage | AWS S3 | vip-pharmacy-crm-prod (ap-southeast-1) — shared dev + prod |
 | SSL | Let's Encrypt | Auto-renewal |
 
 ### 8.2 Key Dependencies

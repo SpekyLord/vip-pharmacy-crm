@@ -50,8 +50,13 @@ function ensureStyles() {
  *   photoOnly (default false): when true, skips OCR review/line-item flow and applies just the photo URL+attachment ID.
  *     Used by the rejection-fallback flow where contractor only needs to attach a clearer CSI photo.
  *   docType (default 'CSI'): document type passed to processDocument()
+ *   initialFile (Phase P1.2 Slice 7-extension Round 2A, May 2026): when set, the modal auto-runs
+ *     handleFile() on open. Used by SalesList per-row PendingCapturesPicker so the picker can hand
+ *     the BDM-captured pink/duplicate signed CSI File directly into the photo-only attach pipeline
+ *     without the proxy clicking Take Photo / Gallery again. Guarded by a ref so re-renders during
+ *     the upload don't re-trigger handleFile on the same File reference.
  */
-export default function ScanCSIModal({ open, onClose, onApply, hospitals = [], productOptions = [], photoOnly = false, docType = 'CSI' }) {
+export default function ScanCSIModal({ open, onClose, onApply, hospitals = [], productOptions = [], photoOnly = false, docType = 'CSI', initialFile }) {
   const [step, setStep] = useState('capture'); // capture | scanning | results | error
   const [, setPhoto] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -62,6 +67,10 @@ export default function ScanCSIModal({ open, onClose, onApply, hospitals = [], p
   const [reviewConfirmed, setReviewConfirmed] = useState(false);
   const cameraRef = useRef(null);
   const galleryRef = useRef(null);
+  // Phase P1.2 Slice 7-extension Round 2A — guard so a transient render
+  // during the photo-only upload doesn't re-trigger handleFile on the same
+  // File reference handed in by PendingCapturesPicker.
+  const initialFileProcessedRef = useRef(null);
 
   useEffect(() => { ensureStyles(); }, []);
 
@@ -129,6 +138,21 @@ export default function ScanCSIModal({ open, onClose, onApply, hospitals = [], p
       setStep('error');
     }
   };
+
+  // Phase P1.2 Slice 7-extension Round 2A — auto-OCR (or skipOcr-upload in
+  // photoOnly mode) the File handed in by PendingCapturesPicker. Only fires
+  // once per File reference to survive transient renders during the upload.
+  useEffect(() => {
+    if (!open) {
+      initialFileProcessedRef.current = null;
+      return;
+    }
+    if (initialFile && initialFileProcessedRef.current !== initialFile) {
+      initialFileProcessedRef.current = initialFile;
+      handleFile(initialFile);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, initialFile]);
 
   const handleApply = () => {
     const extracted = ocrData?.extracted || {};

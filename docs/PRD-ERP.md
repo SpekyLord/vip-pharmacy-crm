@@ -413,7 +413,7 @@ router.post('/api/erp/ocr/process', auth, upload.single('photo'), async (req, re
 
 ### S3 Document Storage Structure (replaces Google Drive)
 ```
-s3://vip-pharmacy-crm-devs/
+s3://vip-pharmacy-crm-prod/
   └── erp-documents/
       └── {bdm_full_name}/
           └── {YYYY-MM}/

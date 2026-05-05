@@ -16,6 +16,72 @@
 
 ---
 
+## PHASE P1.2 SLICE 1 — Capture Hub S3 Upload Pipeline + Quick Capture + PendingCapturesPicker ✅ COMPLETE (May 6, 2026)
+
+**Goal:** Close the production-day blocker that has been sitting at `BdmCaptureHub.jsx:270` since Phase P1 shipped — photos were stored as base64 data URLs inside the CaptureSubmission Mongo doc with the comment "In production, these would be uploaded to S3 first." With 9 BDMs × ~30 photos/day, the 16 MB doc cap would reject writes within a week. Plus deliver the locked Path A scope (May 5, 2026 evening user direction): the `Quick Capture` zero-typing button on `/erp/capture-hub` and the `PendingCapturesPicker` drawer on `/erp/expenses` so proxies can reuse BDM-snapped photos without re-uploading from gallery.
+
+**Trigger:** Reality check from Gregg, May 5 evening — BDMs were NOT using Capture Hub; they were sending photos via Messenger because the existing 9-tile flow asked them to fill amount + payment_mode + access_for + notes BEFORE submitting. The locked decision was Path A: keep dominance with Capture Hub but add a 3-tap zero-typing entry point + reuse-on-the-proxy-side picker.
+
+**Decision (locked May 5–6, 2026):**
+- **S3 first, persistence second.** New `POST /api/erp/capture-submissions/upload-artifact` accepts multipart photos, runs Phase O EXIF + screenshot detection, uploads to `s3://<bucket>/capture-submissions/<entity>/<bdm>/<yyyy-mm>/<uuid>.jpg`, and returns `{ artifacts: [{ url, key, gps, capturedAt, photoFlags }] }` so the caller embeds S3 URLs into the createCapture body.
+- **Per-BDM × per-month S3 prefix** so admin can run `aws s3 rm --recursive` for one BDM × one cycle without cross-tenant collateral. Year-2 SaaS subscribers inherit the layout.
+- **Lookup-driven sub-perm gates** via new `CAPTURE_LIFECYCLE_ROLES` category (12 codes; defaults: BDMs upload + allocate; proxies attest paper + reuse photos; admin/finance reconcile; president holds the irreversible levers). `insert_only_metadata: true` so admin overrides survive future re-seeds. Helper `backend/utils/captureLifecycleAccess.js` (60s cache, 12 getters + `userCanPerformCaptureAction(user, code, entityId)` + `invalidate(entityId)` hook fired by `lookupGenericController.create/update/remove`).
+- **Quick Capture is zero-typing** — `<Camera + Upload>` taps direct-to-camera, snap, auto-uploads to S3 and submits a CaptureSubmission with `workflow_type=UNCATEGORIZED`. Proxy classifies later from the Pending-Photos picker on the relevant ERP entry page. Three taps total. No amount field, no payment mode, no access-for, no notes.
+- **PendingCapturesPicker is a reusable drawer** — `pcp-` prefixed scoped CSS, fetches `getProxyQueue` filtered by `workflow_type[]` + optional `bdm_id`, downloads the signed URLs into Blobs → File objects, and hands them to the host page's `onPick(files, { capture_ids })` handler. The host page's existing FormData / batchFiles / scanCSI code path runs unchanged. No backend schema changes downstream — captures stay PENDING_PROXY in the queue until the host page calls `pickupCapture` + `completeCapture(linked_doc_kind, linked_doc_id)` on doc submit.
+- **Read paths sign URLs.** Bucket is private; raw URLs 403 on browser fetch. New `signCaptureArtifacts(submission)` mirrors `signVisitPhotos` / `signCommPhotos` (1h expiry). Wired into 4 endpoints: `getMyCaptures`, `getMyReviewQueue`, `getProxyQueue`, `getCaptureById`. Skips `data:` URLs (legacy P1.1 placeholders) and non-S3 URLs (defensive — never throws).
+- **Subscription-readiness verified.** Per-entity `entity_id` filter via `req.entityId`; lookup helper accepts entityId for per-entity overrides; sub-perm cache namespaced by `entity_id::code`. Year-2 SaaS spin-out semantics (Rule #0d) intact — `s3://capture-submissions/<entity>/...` already partitions by tenant.
+- **Pure additive.** Existing `createCapture` contract unchanged; `CaptureModal` swap is internal (`previews[i]` data URLs no longer plumbed into artifacts). The Capture Hub's 9 tile UI stays as a secondary path for BDMs who want to fill amount; Quick Capture is the new top-of-page primary path.
+
+**Files touched:**
+
+| File | Change |
+|---|---|
+| `backend/config/s3.js` | + `uploadCaptureArtifact(buffer, entityId, bdmId, originalName, contentType)` per-BDM × per-month prefix; + `signCaptureArtifacts(submission)` mirrors `signVisitPhotos` |
+| `backend/middleware/upload.js` | + `processCaptureArtifacts` middleware — clones `processVisitPhotos` minus the GPS-required gate (capture has GPS in form body, not EXIF), reuses Phase O screenshot detection, attaches `req.uploadedCaptureArtifacts[]`, emits `no_exif_timestamp` + `gps_in_photo` photoFlags |
+| `backend/erp/controllers/captureSubmissionController.js` | + `uploadArtifact` controller (UPLOAD_OWN_CAPTURE + cross-BDM PROXY_PULL_CAPTURE gates); + `signCaptureArtifacts` calls in 4 read paths; + `userCanPerformCaptureAction` import |
+| `backend/erp/routes/captureSubmissionRoutes.js` | + `POST /upload-artifact` mounted with `uploadMultiple('photos', 10)` + `handleUploadError` + `processCaptureArtifacts` + `ctrl.uploadArtifact` |
+| `backend/utils/captureLifecycleAccess.js` (carried from prior session) | NEW — 12 codes + 60s cache + DEFAULTS_BY_CODE map + `userCanPerformCaptureAction` + `invalidate` |
+| `backend/erp/controllers/lookupGenericController.js` (carried from prior session) | + `CAPTURE_LIFECYCLE_ROLES` SEED_DEFAULTS (12 rows, `insert_only_metadata: true`); + `invalidateCaptureLifecycleRolesCache` hooks on `create` / `update` / `remove` |
+| `backend/erp/models/CaptureSubmission.js` (carried from prior session) | + `'UNCATEGORIZED'` to workflow_type enum |
+| `backend/scripts/healthcheckCaptureHub.js` | + Sections 10/11/12: S3 pipeline contract + uploadArtifact controller + frontend Quick Capture + PendingCapturesPicker. **190/190 PASS**. |
+| `frontend/src/erp/hooks/useCaptureSubmissions.js` | + `uploadArtifact(files, opts)` builds multipart FormData, posts to `/upload-artifact` with `Content-Type: multipart/form-data` |
+| `frontend/src/erp/pages/mobile/BdmCaptureHub.jsx` | + `QuickCaptureButton` component (3-tap zero-typing → S3 upload → `createCapture` with `workflow_type=UNCATEGORIZED` + screenshot redirect handling); CaptureModal `handleSubmit` rewritten to upload to S3 first, store S3 URL in artifacts (replaces `previews[i]` data-URL stuffing); modal `onUpload` prop threaded from parent |
+| `frontend/src/styles/capture-hub.css` | + `.ch-quick-capture` rule (gradient blue button, 64px+ touch target, hint pill, 380px responsive collapse) |
+| `frontend/src/erp/components/PendingCapturesPicker.jsx` | NEW — reusable drawer; `workflowTypes[]` + `bdmId?` + `onPick(files, meta)` + `maxSelect=20`; fetch signed URLs → Blob → File; legacy data: URLs flagged with `<ImageOff>` icon |
+| `frontend/src/styles/pending-captures-picker.css` | NEW — scoped `pcp-` prefix, right-side drawer on desktop, full-screen on mobile, 1080×2400 friendly |
+| `frontend/src/erp/pages/Expenses.jsx` | + `PendingCapturesPicker` mounted next to "Select OR Images" in Batch OR Upload section; `workflowTypes={['EXPENSE','FUEL_ENTRY','UNCATEGORIZED']}`, `bdmId={batchAssignedTo}`; onPick merges into `batchFiles[]` capped at 20 |
+| `frontend/src/erp/components/WorkflowGuide.jsx` | `bdm-capture-hub` banner step 1 + tips updated (Quick Capture + S3 upload + screenshot redirect + lookup-driven sub-perms); `expenses` tip extended with From-BDM-Captures picker recipe |
+| `CLAUDE-ERP.md` | + Phase P1.2 Slice 1 lead in status banner (top of file) |
+| `docs/PHASETASK-ERP.md` | + this section |
+
+**Verified:**
+- ✅ `node backend/scripts/healthcheckCaptureHub.js` → **190/190 PASS** (12 sections; new sections 10/11/12 cover the entire S3 + Quick Capture + Picker contract)
+- ✅ `cd frontend && npx vite build` → **green in 10.92s** (Expenses bundle 54kB, PendingCapturesPicker lazy-loaded inside Expenses, no warnings)
+- ✅ Backend syntax: `node -c` clean on `s3.js` + `upload.js` + `captureSubmissionController.js` + `captureSubmissionRoutes.js`
+
+**Smoke (queued for next session, blocked by dev backend startup):**
+- API: login as Mae (s3.vippharmacy@gmail.com) → POST `/api/erp/capture-submissions/upload-artifact` with one camera photo → expect 201 + S3 URL; POST same endpoint with a 1080×2400 PNG screenshot → expect 422 + `code: SCREENSHOT_DETECTED` + `redirect: /bdm/comm-log`
+- API: login as president → cross-BDM upload with explicit `bdm_id` → expect 201 (PROXY_PULL_CAPTURE bypass)
+- API: login as Mae (no PROXY_PULL_CAPTURE) → cross-BDM upload with foreign `bdm_id` → expect 403
+- UI: `/erp/capture-hub` as Mae → Quick Capture button visible above tile sections, gradient blue, 64px+ tall; click → camera input fires; image upload → toast "Quick capture saved! Office will classify."
+- UI: `/erp/expenses` as president (Batch OR Upload section) → "From BDM Captures" picker button visible next to "Select OR Images"; click → drawer opens with EXPENSE+FUEL_ENTRY+UNCATEGORIZED captures; pick → toast "Attached N photos from BDM captures" → `batchFiles[]` count updates
+- Round-trip: BDM Quick Capture → admin picks via picker → batch OCR runs → expense lines created → BDM review queue shows ACKNOWLEDGED row
+
+**Out of scope (deferred to next slices, queued in handoff):**
+- Tomorrow-drive allocation slider (per-day Pers/Official kms with anti-fraud default Pers=Total)
+- "Did not drive yesterday" escape valve + missing-EndODO auto-fill
+- SMER tile lock when prior days unallocated
+- Car Logbook auto-populate from CRM Visit + ODO + Fuel captures
+- Capture Archive page (`/erp/capture-archive`) — browseable by BDM × cycle × workflow folder
+- Inline Mark-Paper-Received checkbox on Mark Complete + override controls
+- Extending PendingCapturesPicker to Sales / Collection / GRN / SMER / CWT-inbound entry pages
+
+**Plan:** `~/.claude/projects/.../memory/handoff_phase_p1_2_capture_photo_pipeline_may05_2026.md`. Full 5-day roadmap is documented there.
+
+erp-remote no-push policy in effect — commit cleanly to `dev` only.
+
+---
+
 ## PHASE G1.7.1 — SMER Form Date-Column Lockstep + Pull Defense ✅ COMPLETE (May 5, 2026 evening)
 
 **Goal:** Close the alignment failure that survived Phase G1.7. After the Visit + ClientVisit union shipped, a fresh user reconciliation showed Pull from CRM still returned `md_count = 0` on every row. The bridge was correct; the bug was now in the React form state — `dailyEntries` was generated only by `+ New SMER` and never re-synced when the user changed the period or cycle dropdowns. The merge then matched by `entry_date`, found zero overlap with the stale form rows, and silently dropped every count on the floor.
@@ -7830,6 +7896,178 @@ docs/PHASETASK-ERP.md                                            # this entry
 
 ### Status
 - [x] ✅ **SHIPPED April 23, 2026.** Foundation + Expenses pilot workflow. All 8 workflow types supported in model/UI framework. Online-first (IndexedDB offline layer deferred to real-device testing). 8 new files, 10 modified files. Health check 7/7 green. Frontend build clean. Backend syntax clean.
+
+---
+
+## Phase P1.2 Slice 1 — Capture Lifecycle Sub-Permissions + UNCATEGORIZED workflow_type (May 06, 2026) ✅ SHIPPED
+
+### Why
+Phase P1.2 (the full Capture Photo Pipeline locked May 05 evening) carves the BDM Capture Hub + Proxy Queue + Capture Archive lifecycle into 12 sub-permission gates so subscribers re-route any of them per-entity via Control Center → Lookup Tables, no code deploy. Slice 1 is the foundation: helper, SEED, cache invalidation, and the `UNCATEGORIZED` workflow_type that unblocks Slice 3's zero-typing capture path.
+
+### What shipped
+- **Helper file (NEW)** — `backend/utils/captureLifecycleAccess.js` with 12 getters + `userCanPerformCaptureAction(user, code, entityId)` convenience + president bypass + 60s TTL cache + DEFAULTS fallback. Mirrors `mdPartnerAccess.js` / `resolveVipClientLifecycleRole.js` exactly.
+- **12 codes**: `UPLOAD_OWN_CAPTURE`, `VIEW_OWN_ARCHIVE`, `VIEW_ALL_ARCHIVE`, `MARK_PAPER_RECEIVED`, `BULK_MARK_RECEIVED`, `OVERRIDE_PHYSICAL_STATUS`, `GENERATE_CYCLE_REPORT`, `MARK_NO_DRIVE_DAY`, `ALLOCATE_PERSONAL_OFFICIAL`, `OVERRIDE_ALLOCATION`, `EDIT_CAR_LOGBOOK_DESTINATION`, `PROXY_PULL_CAPTURE`. Defaults narrow on irreversible-blast-radius gates: `OVERRIDE_PHYSICAL_STATUS = [president]` (can release held commission), `BULK_MARK_RECEIVED = [admin]` (multi-attest blast), `PROXY_PULL_CAPTURE = [admin, finance]`.
+- **Lookup SEED + invalidate hook** — `lookupGenericController.js` gains `CAPTURE_LIFECYCLE_ROLES` block (12 rows, all with `insert_only_metadata: true`) + `CAPTURE_LIFECYCLE_ROLES_CATEGORIES` set + invalidate hook wired into `create` / `update` / `remove` so admin saves bust the helper's cache instantly.
+- **`UNCATEGORIZED` workflow_type** — added to `CaptureSubmission` model enum + `VALID_TYPES` controller list. NOT matched by `DIGITAL_ONLY` so defaults `physical_required: true` (paper expected until proxy reclassifies).
+- **Healthcheck** — `backend/scripts/healthcheckCaptureHub.js` extended from 88 → **146 assertions** (3 sections: UNCATEGORIZED, helper, SEED + invalidate wiring). 146/146 PASS.
+
+### What's next (Slices 2-9)
+Slice 1 ships nothing user-visible by itself — it's the access foundation that Slices 2-9 hang off:
+
+- **Slice 2** — `POST /api/erp/capture-submissions/upload-artifact` S3 pipeline (gate: `UPLOAD_OWN_CAPTURE`)
+- **Slice 3** — Gut the capture modal (zero-typing camera-direct flow)
+- **Slice 4** — Tomorrow's-drive allocation slider + "did not drive" escape valve (gates: `ALLOCATE_PERSONAL_OFFICIAL`, `MARK_NO_DRIVE_DAY`)
+- **Slice 5** — Lock SMER tile when prior days unallocated
+- **Slice 6** — Car Logbook auto-populate from CRM Visit destinations + capture rows (gate: `EDIT_CAR_LOGBOOK_DESTINATION`)
+- **Slice 7** — Pending-Photos picker on `/erp/expenses` (gate: `PROXY_PULL_CAPTURE`)
+- **Slice 8** — `/erp/capture-archive` page (gates: `VIEW_*_ARCHIVE` / `BULK_MARK_RECEIVED` / `GENERATE_CYCLE_REPORT`)
+- **Slice 9** — Mark-Complete inline checkbox + override controls (gates: `MARK_PAPER_RECEIVED` / `OVERRIDE_PHYSICAL_STATUS` / `OVERRIDE_ALLOCATION`)
+
+See `memory/handoff_phase_p1_2_slice_1_shipped_may06_2026.md` for the Slice 2-9 build order.
+
+### Files
+```
+backend/utils/captureLifecycleAccess.js                          # NEW
+backend/erp/controllers/lookupGenericController.js               # + SEED + invalidate hook
+backend/erp/models/CaptureSubmission.js                          # + UNCATEGORIZED enum
+backend/erp/controllers/captureSubmissionController.js           # + UNCATEGORIZED in VALID_TYPES
+backend/scripts/healthcheckCaptureHub.js                         # 88 → 146 assertions
+CLAUDE-ERP.md                                                    # Phase P1.2 Slice 1 section
+docs/PHASETASK-ERP.md                                            # this entry
+```
+
+### Verification
+- `node -c` on all 4 modified backend files — clean
+- `node backend/scripts/healthcheckCaptureHub.js` — **146/146 PASS**
+- Runtime require + export check — 15/15 expected exports present (12 getters + `userCanPerformCaptureAction` + `invalidate` + `DEFAULTS_BY_CODE`)
+- `invalidate()` smoke — no crash with `undefined` and with valid entity id
+- Backward compatible — no existing surface consumes the helper yet (consumers in Slices 2-9). UI continues unchanged. No DB migration required (lazy-seed on first read).
+
+### Subscription readiness
+- All 12 gates are lookup-driven per-entity (Rule #3 + Rule #19). Subscribers carve different role grids by editing one Lookup row. Example: a subsidiary that wants BDMs self-attesting paper receipt adds `staff` to `MARK_PAPER_RECEIVED.metadata.roles`; cache busts on save and the next request honors the new posture without any code deploy.
+- `entity_id` scopes both lookup query AND cache namespace, so when the same code runs inside Year-2 Pharmacy SaaS spin-out the gates isolate per-tenant cleanly. Rule 0d alignment.
+
+---
+
+## Phase P1.2 Slice 7-extension Round 2A — SalesList per-row 📷 Attach CSI picker (May 06, 2026) ✅ SHIPPED
+
+### Why
+Round 1 landed the picker on **entry-time** OCR scan flows (the BLANK CSI photo before delivery → auto-fills doc_ref/date/hospital/line items). Round 2A closes the **real BDM-photo flow** the user flagged in the Round 1 banner: the **signed/pink/duplicate CSI** that the hospital returns AFTER delivery. That artifact is what Finance dunns on; today it uploads via the per-row **📷 Attach CSI** button on **Sales Transactions** (the list, `/erp/sales`), and Round 1 explicitly noted "today that flow is gallery-only." Round 2A unblocks proxies — the BDM snaps the signed copy via Quick Capture (zero-typing, `workflow_type=UNCATEGORIZED`), the office finds the matching CSI # in the list, clicks **From Captures**, picks the photo, and the modal auto-uploads it as the dunning proof. No re-typing, no re-uploading from gallery.
+
+This is the highest-value Round 2A because **(a)** it's the photo BDMs already snap most often (every signed CSI returned per visit, vs. blank CSI scans which are mostly back-office), and **(b)** dunning-readiness is a tier-4 governance signal (`📷` column on the list shows ✓ vs ⚠️) — a faster path to ✓ directly accelerates AR collection cycle time.
+
+### What shipped
+- **`frontend/src/erp/pages/SalesList.jsx`** — per-row `PendingCapturesPicker` mounted as a sibling to the existing **📷 Attach CSI** button. Same status guard as the existing button (`sale.source !== 'OPENING_AR' && !sale.deletion_event_id && ['DRAFT','VALID','ERROR','POSTED'].includes(sale.status)`) so Opening AR rows (which carry their signed CSI on `csi_photo_url` at entry time) and reversed/deletion-requested rows are skipped. Picker props:
+  - `workflowTypes={['SALES', 'UNCATEGORIZED']}` — surfaces SALES-classified captures AND Quick Capture's UNCATEGORIZED so the office sees photos the BDM snapped without classifying.
+  - `bdmId={sale.bdm_id?._id || sale.bdm_id || undefined}` — narrows the picker to the row's own BDM. Defensive `|| sale.bdm_id` handles unpopulated ObjectId fallback (older list responses with lean projection); `|| undefined` falls back to cross-BDM picker if the row has no BDM.
+  - `maxSelect={1}` — each sale row has exactly one `csi_received_photo_url` slot; multi-pick would overwrite.
+  - `buttonStyle` compact (`padding: 4px 10px, fontSize: 11`) so the per-row action bar isn't clobbered. Action bar's mobile media query (line 196-203 of SalesList.jsx) uses 2-col grid; the picker button fits each cell at the same `min-width: 86px / min-height: 38px` as the existing 📷 Attach CSI button.
+  - `onPick(files)` sets new page-level `attachInitialFile = files[0]` AND `attachReceivedTarget = sale._id`, which triggers the existing `<ScanCSIModal>` to open in `photoOnly={true}` mode.
+- **Shared `frontend/src/erp/components/ScanCSIModal.jsx`** (used by SalesList photoOnly + OpeningArEntry — the inline modal in SalesEntry is a separate component left untouched) gains an optional `initialFile` prop and a `useEffect([open, initialFile])` that calls `handleFile(initialFile)` exactly once per File reference, guarded by `initialFileProcessedRef` to survive transient renders during the photo-only S3 upload. In `photoOnly={true}` mode `handleFile` skips OCR (`processDocument(file, 'CSI', null, { skipOcr: true })`), uploads to S3, returns `{ s3_url, attachment_id }`, and the existing `handleApply` → `onApply` → page-level `handleAttachReceivedCsi` → `sales.attachReceivedCsi(saleId, ...)` → `PUT /api/erp/sales/:id/received-csi` write path is **unchanged**.
+- **`frontend/src/erp/components/WorkflowGuide.jsx`** — `sales-list` step 8 + tip mention the new "From Captures" button; `sales-entry` tip rewrites the "future Round 2 may mount sibling picker" sentence to "Round 2A shipped" with the BDM snap → office click → auto-upload narrative (Rule #1).
+- **`backend/scripts/healthcheckCaptureHub.js` Section 14** — 22 new assertions: SalesList wiring (import + state + workflowTypes + bdmId + maxSelect + onPick + initialFile prop + onClose-clear + status guard), shared modal contract (initialFile prop + useEffect + processed-ref guard), WorkflowGuide banner (Round 2A + From Captures + sales-entry cross-reference), backend write-path contracts (route mounted + controller exported + body required + status set + reversed-row block + period-lock + audit row).
+
+### Backend write path (unchanged — re-asserted)
+- Route: `PUT /api/erp/sales/:id/received-csi` → `salesController.attachReceivedCsi`.
+- Body: `{ csi_received_photo_url, csi_received_attachment_id }`. The first field is required; missing → HTTP 400.
+- Status gate: row must be in `[DRAFT, VALID, ERROR, POSTED]` (matches the per-row button visibility). Reversed rows (`deletion_event_id` set) → HTTP 400.
+- Period-lock: `checkPeriodOpen(sale.entity_id, dateToPeriod(sale.csi_date), { source: sale.source })`. `OPENING_AR` rows bypass by convention (same as submit), but the picker doesn't surface for OPENING_AR anyway.
+- Audit: `ErpAuditLog.logChange` writes `field_changed: 'csi_received_photo_url'` with old/new URL and `note: previousUrl ? 'Received CSI photo replaced' : 'Received CSI photo attached (dunning proof)'`.
+- Tenancy: `req.tenantFilter` scopes the lookup; cross-entity row IDs return 404, never silent fallback (Rule #21).
+
+### Subscription-readiness
+- No new lookup category. The picker reuses Slice 1's `CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE` server-side gate (read of `getProxyQueue`); the picker's button renders unconditionally, so the only failure mode for a non-eligible role is a clean 403 on the queue read.
+- `bdm_id` filter is per-row and entity-scoped via the upstream Sale's own `bdm_id` field — for the Year-2 multi-tenant SaaS spin-out this generalizes cleanly because the picker's `getProxyQueue` already partitions on `req.entityId`, and `s3://capture-submissions/<entity>/<bdm>/<yyyy-mm>/<uuid>.jpg` already separates artifacts per tenant (Rule #0d).
+- Subscribers loosen the picker eligibility by editing the `CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE` lookup row in Control Center → Lookup Tables — no code deploy.
+
+### Files
+```
+frontend/src/erp/pages/SalesList.jsx                             # + per-row picker, attachInitialFile state, ScanCSIModal initialFile thread, onClose-clear
+frontend/src/erp/components/ScanCSIModal.jsx                     # + initialFile prop, useEffect auto-handleFile, initialFileProcessedRef guard
+frontend/src/erp/components/WorkflowGuide.jsx                    # + Round 2A tip on sales-list step 8 + tip; sales-entry tip rewritten
+backend/scripts/healthcheckCaptureHub.js                         # + Section 14 (22 Round 2A asserts)
+CLAUDE-ERP.md                                                    # status banner lead-in (Round 2A)
+docs/PHASETASK-ERP.md                                            # this entry
+```
+
+### Verification
+- Healthcheck `node backend/scripts/healthcheckCaptureHub.js` PASSES **246/246** (88 P1.1 + 58 P1.2 Slice 1 + 44 P1.2 Slice 2/3/7 + 34 Slice 7-ext + 22 Round 2A).
+- Vite build green (no new dependencies — picker is fully reused from Slice 7).
+- No backend route / controller / lookup seed / journal / audit / index / schema changes — pure frontend wiring on top of Slice 7-extension Round 1 (uncommitted on `dev`).
+- Backwards compatible — picker is a new sibling button next to existing 📷 Attach CSI; existing photo-only upload flow unchanged for callers who don't use the picker.
+- Subscription-ready — same `CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE` lookup gate Slice 1 introduced.
+
+### Integrity check (no severed wiring)
+- ✅ Shared `ScanCSIModal` `initialFile` is OPTIONAL — the OpeningArEntry caller (which doesn't pass it) continues to work via the existing camera/gallery `<input type="file">` flow.
+- ✅ `useEffect([open, initialFile])` guarded by `initialFileProcessedRef` — re-rendering during the photo-only S3 upload (e.g., setStep/setOcrData transitions inside `handleFile`) does not re-trigger `handleFile` on the same File.
+- ✅ Modal `onClose` runs `reset()` AND parent clears `attachInitialFile` — re-opening the modal manually (without picker) returns to the capture step.
+- ✅ Per-row picker visibility shares the existing OPENING_AR / deletion / status guard — no new visibility surface to maintain.
+- ✅ Per-row picker `bdmId={sale.bdm_id?._id || sale.bdm_id}` handles BOTH populated `{_id, name}` and lean `ObjectId` shapes — no crash if a future projection drops `name`.
+- ✅ `attachReceivedTarget` and `attachInitialFile` are independent state slots; setting one without the other is harmless (modal opens with `initialFile = null` → normal capture step).
+- ✅ Phase G4.5a/G4.5ff proxy-roster + Phase O screenshot-detection + Phase P1.2 Slice 1 lookup gates all unchanged.
+- ✅ Sales lifecycle (DRAFT → VALID → POSTED → reopen → SAP Storno) is unchanged — Round 2A only touches the `csi_received_photo_url` t=4 dunning slot, not the per-row write/post pipeline.
+- ✅ MongoDB schema unchanged — `csi_received_photo_url`, `csi_received_attachment_id`, `csi_received_at` already existed; this commit just adds another path to populate them.
+- ✅ AR aging report (`arEngine.getArAging`) and the list's `📷` column dunning_ready logic both read `csi_received_photo_url` — they correctly reflect picker-attached photos with no extra wiring.
+
+### Smoke residue expectation
+- Each picker test will create one `csi_received_photo_url` per sale row touched (overwrites the previous if any). The audit log captures the old URL via `field_changed: 'csi_received_photo_url'` row so test residue can be traced and reverted by admin.
+
+---
+
+## Phase P1.2 Slice 7-extension — PendingCapturesPicker on Sales / Collection / GRN entry (May 06, 2026) ✅ SHIPPED
+
+### Why
+Slice 7 proper landed the `PendingCapturesPicker` drawer pattern on `/erp/expenses` (commit `b9ee5f5` on `dev`). This extension takes the proven pattern to three more proxy-side ERP entry pages so the office reconciliation loop closes for BDM-captured CSIs (Sales), CRs (Collection), and Undertaking papers (GRN) without forcing the proxy to re-upload from gallery. SMER + Bir2307InboundPage are intentionally deferred — see "Defer rationale" below.
+
+### What shipped
+- **SalesEntry.jsx** — picker mounted between "Scan CSI" and "Upload CSI" buttons. `workflowTypes={['SALES','UNCATEGORIZED']}`, `bdmId={assignedTo || undefined}`, `maxSelect={1}`. `onPick` sets a new page-level `scanInitialFile` state and opens `ScanCSIModal`. The modal accepts a new `initialFile` prop and auto-runs `handleFile(initialFile)` on mount via a `useEffect` guarded by `initialFileProcessedRef` so transient renders during scan don't re-trigger OCR. Modal `onClose` clears `scanInitialFile` so re-opening the modal returns to the normal Take-Photo / Gallery capture step.
+- **CollectionSession.jsx** — picker mounted between "Scan CR to Auto-Fill" and "Back to List" buttons. `workflowTypes={['COLLECTION','UNCATEGORIZED']}`. Same `initialFile` pattern threaded into `ScanCRModal`. `bdmId` is the page's `assignedTo` (OwnerPicker target), so a proxy choosing "Record on behalf of" first narrows the picker to that BDM's CR captures.
+- **GrnEntry.jsx** — picker mounted between "Scan Undertaking Paper" and "Open Undertakings →" buttons. `workflowTypes={['GRN','UNCATEGORIZED']}`. Same `initialFile` pattern threaded into `ScanUndertakingModal`.
+- **WorkflowGuide.jsx** — three banner tips updated (`sales-entry`, `collection-session`, `grn-entry`) to call out the new "From BDM Captures" button + the `CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE` lookup gate + the recipe to narrow the picker via "Record on behalf of" (Rule #1).
+- **healthcheckCaptureHub.js Section 13** — 35+ new assertions across the 3 pages (import + workflowTypes + bdmId + maxSelect + onPick + initialFile prop + useEffect + onClose-clear) + 3 banner-mention guards + 2 helper-still-intact regression guards + 2 defer-rationale documentation guards.
+
+### Picker-modal contract
+The pattern is identical across all three pages:
+1. Picker `onPick(files)` sets `scanInitialFile = files[0]` and opens the page's existing scan modal.
+2. Modal accepts `initialFile` prop. Modal-internal `useEffect` watches `[open, initialFile]` and calls `handleFile(initialFile)` exactly once per File reference (guarded by `initialFileProcessedRef`).
+3. Modal's `onClose` clears the page-level `scanInitialFile` so re-opening the modal returns to capture step.
+4. `bdmId` defaults to the page's `assignedTo` so the proxy POV (Phase G4.5a..G4.5ff) reads naturally — pick the BDM in OwnerPicker, then pull from their captures.
+5. `maxSelect={1}` because each scan modal auto-fills exactly one document; multi-pick would race the form-population state.
+
+### Defer rationale (SMER + CWT-Inbound)
+The original Slice 7-extension scope listed five pages (Sales/Collection/GRN/SMER/CWT-inbound). Two were deferred after surveying the page architecture:
+
+- **SMER** (`Smer.jsx`) — SMER is digital-only. `captureSubmissionController.js:50-52` defines `DIGITAL_ONLY = workflow_type === 'SMER' || (workflow_type === 'COLLECTION' && sub_type === 'PAID_CSI')`, and `physical_required` defaults to `false` for SMER captures. The page itself has no photo-upload UI to mount a picker next to (no `<input type="file">`, no `FormData`, no `cameraRef`/`galleryRef`). Adding a picker would require building a new ODO-photo upload schema + UI on the SMER page, which is its own slice. **Status**: deferred to "Slice 7-extension Round 2" if subscribers want it. Estimated 4h of work (one new state + one new upload handler + one PageGuide entry).
+- **Bir2307InboundPage.jsx** — the inbound 2307 receive flow stores `cert_2307_url` as a typed string in the receive modal (operator types the URL/filename/hash, no actual file upload). The page has no `handleFile` / `handleUpload` handler to feed picker output through. Wiring the picker would require a new file-upload route that returns an S3 URL the page populates into `cert_2307_url`. **Status**: deferred. Estimated 4h.
+
+Both pages remain healthy without the picker — the current cell-typed URL flow on Bir2307 and the digital-only stamp flow on SMER are unchanged. The defer is documented at the top of `healthcheckCaptureHub.js` Section 13 so a future session doesn't silently bolt the picker onto either page without re-litigating the trade.
+
+### Files
+```
+frontend/src/erp/pages/SalesEntry.jsx                            # + picker mount, ScanCSIModal initialFile, scanInitialFile state
+frontend/src/erp/pages/CollectionSession.jsx                     # + picker mount, ScanCRModal initialFile, scanInitialFile state
+frontend/src/erp/pages/GrnEntry.jsx                              # + picker mount, ScanUndertakingModal initialFile, scanInitialFile state
+frontend/src/erp/components/WorkflowGuide.jsx                    # + Slice 7-extension tips on 3 banners
+backend/scripts/healthcheckCaptureHub.js                         # + Section 13 (Slice 7-extension parity assertions)
+CLAUDE-ERP.md                                                    # status banner lead-in
+docs/PHASETASK-ERP.md                                            # this entry
+```
+
+### Verification
+- Vite build green (10.68s).
+- Healthcheck `node backend/scripts/healthcheckCaptureHub.js` — Section 13 added; expecting all assertions PASS once final touches land.
+- No backend route / lookup seed / journal / audit changes — pure frontend wiring on top of Slice 1 + Slice 2/3/7-Expenses (commit `b9ee5f5`).
+- Backwards compatible — picker is a new sibling button next to existing scan/upload buttons; existing OCR scan flows unchanged.
+- Subscription-ready — picker reuses `CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE` lookup gate; subscribers extend by editing one row in Control Center → Lookup Tables.
+
+### Integrity check
+- ✅ ScanCSIModal / ScanCRModal / ScanUndertakingModal each accept `initialFile` as an OPTIONAL prop — pages that don't pass it (none today) continue to work via the existing camera/gallery `<input type="file">` flow.
+- ✅ `useEffect([open, initialFile])` guarded by ref so re-rendering during scan (e.g., setStep/setOcrData transitions) doesn't re-call `handleFile`.
+- ✅ Modal `reset()` is called via `onClose` which also clears the parent's `scanInitialFile` — the modal returns to the capture step on re-open if no new file was picker-handed in.
+- ✅ Modal preview / OCR result rendering paths unchanged. `handleApply` unchanged. `onApply` callback contract unchanged. Existing CSI / CR / Undertaking flows post identically whether the file came from camera, gallery, or picker.
+- ✅ Picker `bdmId={assignedTo || undefined}` — falsy assignedTo means cross-BDM picker (server-side `getProxyQueue` honors the same lookup-driven role gate either way).
+- ✅ No new MongoDB indexes, no migrations, no schema changes. The `CaptureSubmission.workflow_type` enum already had `SALES`, `COLLECTION`, `GRN`, `UNCATEGORIZED` from Slice 1.
+- ✅ Phase O screenshot detection and Phase G4.5ff proxy-roster contracts are unchanged.
 
 ---
 

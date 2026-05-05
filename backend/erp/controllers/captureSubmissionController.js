@@ -15,6 +15,8 @@ const { catchAsync } = require('../../middleware/errorHandler');
 const { canProxyEntry } = require('../utils/resolveOwnerScope');
 const { dispatchMultiChannel } = require('../services/erpNotificationService');
 const User = require('../../models/User');
+const { signCaptureArtifacts } = require('../../config/s3');
+const { userCanPerformCaptureAction } = require('../../utils/captureLifecycleAccess');
 
 // ── Allowed status transitions ──
 const TRANSITIONS = {
@@ -63,6 +65,7 @@ const createCapture = catchAsync(async (req, res) => {
     'SMER', 'EXPENSE', 'SALES', 'OPENING_AR',
     'COLLECTION', 'GRN', 'PETTY_CASH', 'FUEL_ENTRY',
     'CWT_INBOUND',
+    'UNCATEGORIZED',  // P1.2 Slice 1 — zero-typing capture; proxy classifies later
   ];
   if (!VALID_TYPES.includes(workflow_type)) {
     return res.status(400).json({ success: false, message: `Invalid workflow_type. Must be one of: ${VALID_TYPES.join(', ')}` });
@@ -100,6 +103,82 @@ const createCapture = catchAsync(async (req, res) => {
 });
 
 /**
+ * POST /capture-submissions/upload-artifact
+ *
+ * Phase P1.2 Slice 1 (May 2026) — multipart photo upload that returns S3
+ * URLs the caller then embeds into a subsequent createCapture() POST.
+ *
+ * Replaces the data-URL-stuffing path that lived at BdmCaptureHub.jsx:270
+ * since Phase P1 shipped. With volume going wide (9 BDMs × ~30 photos/day)
+ * base64 inside the Mongo doc would hit the 16 MB cap within a week.
+ *
+ * Returns: { artifacts: [{ url, key, gps, capturedAt, photoFlags, hash }] }
+ *
+ * The caller (BdmCaptureHub Quick Capture / classic modal) takes that array
+ * and POSTs it as captured_artifacts in the createCapture body.
+ *
+ * Sub-permission gates (Rule #3 lookup-driven via CAPTURE_LIFECYCLE_ROLES):
+ *   - Self-upload: caller must have UPLOAD_OWN_CAPTURE
+ *   - Cross-BDM upload (req.body.bdm_id ≠ caller): also requires PROXY_PULL_CAPTURE
+ *
+ * Defaults: UPLOAD_OWN_CAPTURE = [staff], PROXY_PULL_CAPTURE = [admin, finance].
+ * President bypasses (global Rule #20).
+ */
+const uploadArtifact = catchAsync(async (req, res) => {
+  const canUploadOwn = await userCanPerformCaptureAction(
+    req.user, 'UPLOAD_OWN_CAPTURE', req.entityId,
+  );
+  const canProxyUpload = await userCanPerformCaptureAction(
+    req.user, 'PROXY_PULL_CAPTURE', req.entityId,
+  );
+
+  if (!canUploadOwn && !canProxyUpload) {
+    return res.status(403).json({
+      success: false,
+      message: 'Capture upload requires UPLOAD_OWN_CAPTURE or PROXY_PULL_CAPTURE permission.',
+    });
+  }
+
+  // Cross-BDM gate: if body specifies a different bdm_id than the caller,
+  // require PROXY_PULL_CAPTURE. President short-circuits (handled inside
+  // userCanPerformCaptureAction by always returning true).
+  const bodyBdmId = req.body.bdm_id;
+  if (bodyBdmId && String(bodyBdmId) !== String(req.user._id) && !canProxyUpload) {
+    return res.status(403).json({
+      success: false,
+      message: 'Cross-BDM upload requires PROXY_PULL_CAPTURE permission.',
+    });
+  }
+
+  const artifacts = req.uploadedCaptureArtifacts || [];
+  if (artifacts.length === 0) {
+    // Defensive — middleware should have 400'd already, but if it didn't
+    // attach the array (transient error path), fail explicitly here.
+    return res.status(400).json({
+      success: false,
+      message: 'No artifacts were uploaded.',
+    });
+  }
+
+  res.status(201).json({
+    success: true,
+    data: {
+      artifacts: artifacts.map(a => ({
+        url: a.url,
+        key: a.key,
+        capturedAt: a.capturedAt,
+        gps: a.gps,
+        dimensions: a.dimensions,
+        photoFlags: a.photoFlags,
+        hash: a.hash,
+        size: a.size,
+        mimetype: a.mimetype,
+      })),
+    },
+  });
+});
+
+/**
  * GET /capture-submissions/my
  * BDM's own submissions — mobile review queue.
  */
@@ -122,7 +201,11 @@ const getMyCaptures = catchAsync(async (req, res) => {
     CaptureSubmission.countDocuments(filter),
   ]);
 
-  res.json({ success: true, data, total });
+  // Phase P1.2 Slice 1 — sign S3 URLs in captured_artifacts so the BDM's
+  // mobile review can render thumbnails on a private bucket.
+  const signed = await Promise.all(data.map(d => signCaptureArtifacts(d)));
+
+  res.json({ success: true, data: signed, total });
 });
 
 /**
@@ -151,7 +234,11 @@ const getMyReviewQueue = catchAsync(async (req, res) => {
     CaptureSubmission.countDocuments(filter),
   ]);
 
-  res.json({ success: true, data, total });
+  // Phase P1.2 Slice 1 — sign S3 URLs so review-queue thumbnails load
+  // on a private bucket.
+  const signed = await Promise.all(data.map(d => signCaptureArtifacts(d)));
+
+  res.json({ success: true, data: signed, total });
 });
 
 /**
@@ -317,11 +404,16 @@ const getProxyQueue = catchAsync(async (req, res) => {
     CaptureSubmission.countDocuments(filter),
   ]);
 
-  // Compute SLA age for each item
+  // Compute SLA age for each item, then sign S3 URLs so the proxy queue
+  // (and the upcoming PendingCapturesPicker drawer on ERP entry pages) can
+  // render thumbnails on a private bucket.
   const now = Date.now();
-  const enriched = data.map(d => ({
-    ...d,
-    age_hours: Math.round((now - new Date(d.created_at).getTime()) / (1000 * 60 * 60) * 10) / 10,
+  const enriched = await Promise.all(data.map(async d => {
+    const signed = await signCaptureArtifacts(d);
+    return {
+      ...signed,
+      age_hours: Math.round((now - new Date(d.created_at).getTime()) / (1000 * 60 * 60) * 10) / 10,
+    };
   }));
 
   res.json({ success: true, data: enriched, total });
@@ -357,7 +449,10 @@ const getCaptureById = catchAsync(async (req, res) => {
     return res.status(404).json({ success: false, message: 'Capture submission not found' });
   }
 
-  res.json({ success: true, data: doc });
+  // Phase P1.2 Slice 1 — sign S3 URLs for the detail render path.
+  const signed = await signCaptureArtifacts(doc);
+
+  res.json({ success: true, data: signed });
 });
 
 /**
@@ -552,6 +647,7 @@ const getQueueStats = catchAsync(async (req, res) => {
 module.exports = {
   // BDM
   createCapture,
+  uploadArtifact,
   getMyCaptures,
   getMyReviewQueue,
   acknowledgeCapture,

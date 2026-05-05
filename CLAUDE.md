@@ -109,7 +109,7 @@ These decisions are final. Do not suggest alternatives.
 | **Frontend** | React + Vite | SPA with React Router |
 | **Database** | MongoDB Atlas | Cloud-hosted (cluster0.wv27nfk.mongodb.net) |
 | **Hosting** | AWS Lightsail | NOT a VPS provider |
-| **Image Storage** | AWS S3 | NOT Cloudinary. Bucket: `vip-pharmacy-crm-devs` |
+| **Image Storage** | AWS S3 | NOT Cloudinary. Bucket: `vip-pharmacy-crm-prod` (shared by dev + prod — see [docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md)). |
 | **Authentication** | JWT | httpOnly cookies (NOT localStorage). Access (15min) + Refresh (7d) |
 
 ### AWS Configuration
@@ -569,7 +569,7 @@ JWT_REFRESH_EXPIRE=7d
 AWS_ACCESS_KEY_ID=
 AWS_SECRET_ACCESS_KEY=
 AWS_REGION=ap-southeast-1
-S3_BUCKET_NAME=vip-pharmacy-crm-devs
+S3_BUCKET_NAME=vip-pharmacy-crm-prod
 
 # CORS (required in production)
 CORS_ORIGINS=https://app.vipcrm.com
@@ -673,7 +673,7 @@ App.jsx
 
 #### Infrastructure
 - [x] MongoDB Atlas - Connected (cluster0.wv27nfk.mongodb.net)
-- [x] AWS S3 - Bucket `vip-pharmacy-crm-devs` configured (ap-southeast-1)
+- [x] AWS S3 - Bucket `vip-pharmacy-crm-prod` configured (ap-southeast-1) — shared by dev + prod per [DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md). Future option: separate dev bucket if isolation becomes a regulator-facing requirement.
 - [ ] AWS Lightsail - Instance not provisioned
 
 #### Config Files
@@ -819,7 +819,7 @@ App.jsx
 |---------|--------|-------|
 | Backend Code | ✅ WORKING | All APIs tested |
 | MongoDB Atlas | ✅ CONNECTED | cluster0.wv27nfk.mongodb.net |
-| AWS S3 | ✅ CONFIGURED | vip-pharmacy-crm-devs (ap-southeast-1) |
+| AWS S3 | ✅ CONFIGURED | vip-pharmacy-crm-prod (ap-southeast-1) — shared by dev + prod |
 | AWS Lightsail | NOT PROVISIONED | Need to set up instance |
 | Frontend Auth | ✅ WORKING | httpOnly cookie-based login/logout/refresh |
 | BDM Dashboard | ✅ WORKING | Real API data, VIP Client list |

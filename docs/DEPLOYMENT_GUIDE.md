@@ -42,7 +42,7 @@ All steps completed. This section is kept for reference if re-deploying or setti
 
 1. ✅ **AWS Account** - Active
 2. ✅ **IAM User with S3 access** - Created with access keys
-3. ✅ **S3 Bucket** - `vip-pharmacy-crm-devs` configured with CORS
+3. ✅ **S3 Bucket** - `vip-pharmacy-crm-prod` configured with CORS (shared by dev + prod)
 4. ✅ **Email Service** - Using Resend API (replaced AWS SES)
 5. ✅ **MongoDB Atlas** - Cluster connected and working (`cluster0.wv27nfk.mongodb.net`)
 6. ✅ **AWS Lightsail Instance** - Provisioned with static IP
@@ -812,7 +812,7 @@ AWS_SECRET_ACCESS_KEY=your_secret_access_key
 AWS_REGION=ap-southeast-1
 
 # AWS S3 (Image Storage)
-S3_BUCKET_NAME=vip-pharmacy-crm-devs
+S3_BUCKET_NAME=vip-pharmacy-crm-prod
 
 # AWS SES (Email Notifications)
 SES_FROM_EMAIL=sales@vippharmacy.online
@@ -1181,7 +1181,7 @@ For detailed security documentation, see `docs/SECURITY_CHECKLIST.md`.
 - [x] Access keys saved securely
 
 ### S3 Setup
-- [x] S3 bucket created (`vip-pharmacy-crm-devs`)
+- [x] S3 bucket created (`vip-pharmacy-crm-prod` — shared by dev + prod)
 - [x] CORS configured for production domain
 - [x] Folder structure created (visits/, products/, avatars/)
 
