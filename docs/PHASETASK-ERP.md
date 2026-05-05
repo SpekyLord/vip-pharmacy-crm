@@ -10893,3 +10893,56 @@ Existing controllers continue to read `ProductMaster.entity_id`. Existing pricin
 - Healthcheck: 56/56 PASS (after seed-block regex fix for nested arrays).
 - Backfill dry-run: see `reports/backfillProductCanonicalAndCarry_dryrun_<ts>.txt` (logged below).
 - GRN page Playwright smoke: VIP working entity + Viprazole 40mg now visible in dropdown (was hidden before surgical migration), Save & Validate path tested. Logged in handoff memory.
+
+
+## Phase CALF-Breakdown — Approval-Hub line-level visibility on CALFs (May 05 2026 evening)
+
+**Status:** SHIPPED LOCALLY (uncommitted at the time of writing — see handoff_calf_breakdown_may05_2026.md). Healthcheck 13/13 PASS.
+
+### Goal
+
+Auto-CALFs in the Approval Hub showed only `Auto-CALF: ACCESS expenses (company-funded)` — reviewers had to navigate to the Expense module to see what was actually purchased. Goal: render the underlying expense / fuel lines inline so the reviewer can decide POST/REJECT without leaving the Hub.
+
+### Tasks
+
+- [x] Backend: enrich `getLinkedExpenses` so each line carries `expense_category`, `coa_code`, `vat_amount`, `net_of_vat`, `bir_flag`. Apply uniformly to both EXPENSE and FUEL branches.
+- [x] Backend: `buildPrfCalfDetails` returns `_id` so the frontend lazy-fetch has the dependency.
+- [x] Frontend: new `<CalfLinkedLines/>` component — lazy-fetches on mount, renders 8-column breakdown table + Total-linked footer + Variance row. AbortController unmount-cancel.
+- [x] Frontend: `<BirFlagChip/>` palette for INTERNAL / BIR / BOTH (graceful fallback for unknown values).
+- [x] Frontend: mount only for `d.doc_type === 'CALF'` (PRFs unaffected).
+- [x] Banner: WORKFLOW_GUIDES `approvals` guide gains a new step explaining the breakdown.
+- [x] Healthcheck: 5 new checks (9–13) lock backend enrichment, fuel parity, builder _id pass-through, panel mount guard, AbortController cleanup. **13/13 PASS.**
+- [x] Docs: this entry + CLAUDE-ERP.md "Phase CALF-Breakdown" section.
+- [ ] UI smoke: Playwright `/erp/president/reversals` — expand POSTED CALF, confirm breakdown table renders with category, BIR chip, VAT, totals.
+- [ ] API smoke: `GET /api/erp/expenses/prf-calf/:id/linked-expenses` — confirm enriched fields present.
+- [ ] Commit + push origin/dev.
+- [ ] Prod deploy (frontend rebuild required for the panel to render the breakdown — backend enrichment is purely additive so it's safe to ship-then-frontend-deploy or vice versa).
+
+### Wiring map (Rule #2)
+
+- `expenseController.getLinkedExpenses` → `expenseRoutes.js:114` → `/api/erp/expenses/prf-calf/:id/linked-expenses`
+- `documentDetailBuilder.buildPrfCalfDetails` → consumed by `universalApprovalController` (Approval Hub) + `presidentReversalsController` (Reversal Console)
+- `DocumentDetailPanel` (CalfLinkedLines mount) → ApprovalManager + PresidentReversalsPage
+- WORKFLOW_GUIDES `approvals` → `/erp/approvals` page banner
+
+### Risk
+
+Green. Additive only. The existing `useExpenses.getLinkedExpenses` consumer (`/erp/prf-calf` page) ignores the new fields and continues rendering normally.
+
+### Phase CALF-Breakdown.B — PrfCalf.jsx parity + fuel VAT derivation (same evening, May 05 2026)
+
+**Why a B slice:** the .A slice explicitly left PrfCalf.jsx untouched ("ignored there and don't break any rendering"), which leaves inconsistent column sets between the Approval-Hub view and the PrfCalf-page view. .B closes that and also fixes the fuel rows showing Net=0 / VAT=0.
+
+**Tasks**:
+
+- [x] PrfCalf.jsx breakdown table gains Category + BIR (chip) + Net + VAT columns. Existing header summary (Fuel count / Expense count / Drawn / Variance) preserved.
+- [x] Fuel branch of `getLinkedExpenses` resolves `Settings.getVatRate()` once, splits Net/VAT from `total_amount`, defaults `bir_flag = 'BOTH'`. No hardcoded VAT constant (Rule #3).
+- [x] WorkflowGuide `prf-calf` tip appended with the breakdown description (mirrors .A's `approvals`-guide step).
+- [x] Healthcheck checks 14–16 added: PrfCalf.jsx headers (Category / BIR / Net / VAT), `Settings.getVatRate` reference in the fuel branch, prf-calf banner mentions breakdown.
+- [ ] API smoke: confirm fuel rows return non-zero Net/VAT.
+- [ ] UI smoke: open `/erp/prf-calf`, expand View Links on a CALF with both EXPENSE and FUEL sources, confirm BIR chip renders + fuel rows show real Net/VAT.
+- [ ] Commit + push origin/dev (with .A bundle if it isn't yet committed).
+
+**Lookup posture**: VAT rate is `Settings.getVatRate()` — already lookup-driven and used by the JE engine + ExpenseEntry pre-save hook. Subscribers configure `Settings.VAT_RATE` per entity via Control Center; no code changes needed when onboarding new entities.
+
+**Subscription readiness**: when SaaS spin-out generalizes `entity_id` to `tenant_id` (Year 2 per CLAUDE.md 0d), no work in this phase. The Settings-per-entity scoping inherits the eventual rename automatically.

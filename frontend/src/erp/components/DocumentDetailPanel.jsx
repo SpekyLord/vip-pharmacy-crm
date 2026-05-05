@@ -16,7 +16,111 @@
  * object; this component knows how to render each module's shape.
  */
 
+import { useState, useEffect } from 'react';
+import api from '../../services/api';
+
 const fmt = (n) => '₱' + (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// BIR-flag chip used in the CALF expense-line breakdown so reviewers can see
+// at a glance whether each line is reportable on a BIR return. Values come
+// from the BIR_FLAG lookup; we degrade gracefully on any unknown value.
+const BIR_FLAG_PALETTE = {
+  INTERNAL: { bg: '#e0e7ff', fg: '#3730a3', label: 'Internal' },
+  BIR:      { bg: '#dcfce7', fg: '#166534', label: 'BIR' },
+  BOTH:     { bg: '#fef3c7', fg: '#854d0e', label: 'Both' },
+};
+function BirFlagChip({ flag }) {
+  if (!flag) return <span style={{ color: 'var(--erp-muted)' }}>—</span>;
+  const p = BIR_FLAG_PALETTE[flag] || { bg: '#e5e7eb', fg: '#374151', label: flag };
+  return <span style={{ background: p.bg, color: p.fg, padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 700, letterSpacing: '0.02em' }} title={`BIR filing flag: ${flag}`}>{p.label}</span>;
+}
+
+// Lazy-fetch the linked expense / fuel lines for a CALF and render an inline
+// breakdown table. Mounts only when the CALF panel renders, dismisses cleanly
+// on unmount via AbortController. Tenant scoping is enforced server-side via
+// widenFilterForProxy on the linked-expenses endpoint, so this component can
+// stay dumb about entity_id.
+function CalfLinkedLines({ calfId }) {
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!calfId) return undefined;
+    const ac = new AbortController();
+    setLoading(true);
+    setErr(null);
+    api.get(`/erp/expenses/prf-calf/${calfId}/linked-expenses`, { signal: ac.signal })
+      .then((res) => { if (!ac.signal.aborted) setData(res?.data?.data || res?.data || null); })
+      .catch((e) => {
+        if (ac.signal.aborted) return;
+        // Quietly treat 404 as "no breakdown available" — the panel still
+        // renders the rest of the CALF without the table.
+        if (e?.response?.status === 404) setData({ linked: [], total_linked: 0, variance: 0 });
+        else setErr(e?.response?.data?.message || e?.message || 'Failed to load breakdown');
+      })
+      .finally(() => { if (!ac.signal.aborted) setLoading(false); });
+    return () => ac.abort();
+  }, [calfId]);
+
+  if (!calfId) return null;
+  if (loading) {
+    return <div style={{ marginTop: 12, fontSize: 11, color: 'var(--erp-muted)' }}>Loading expense breakdown…</div>;
+  }
+  if (err) {
+    return <div style={{ marginTop: 12, fontSize: 11, color: '#b91c1c' }}>Could not load expense breakdown — {err}</div>;
+  }
+  const lines = data?.linked || [];
+  if (!lines.length) return null; // CALF with no linked lines yet — render nothing rather than an empty table
+
+  return (
+    <div style={{ marginTop: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--erp-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 6 }}>
+        Expense Breakdown ({lines.length} line{lines.length === 1 ? '' : 's'})
+      </div>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+        <thead>
+          <tr style={{ background: 'var(--erp-bg-subtle, #f9fafb)', textAlign: 'left' }}>
+            <th style={{ padding: '4px 8px', fontWeight: 600 }}>Date</th>
+            <th style={{ padding: '4px 8px', fontWeight: 600 }}>Source</th>
+            <th style={{ padding: '4px 8px', fontWeight: 600 }}>Category</th>
+            <th style={{ padding: '4px 8px', fontWeight: 600 }}>Vendor / Description</th>
+            <th style={{ padding: '4px 8px', fontWeight: 600 }}>BIR</th>
+            <th style={{ padding: '4px 8px', fontWeight: 600, textAlign: 'right' }}>Net</th>
+            <th style={{ padding: '4px 8px', fontWeight: 600, textAlign: 'right' }}>VAT</th>
+            <th style={{ padding: '4px 8px', fontWeight: 600, textAlign: 'right' }}>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lines.map((ln, i) => (
+            <tr key={i} style={{ borderTop: '1px solid var(--erp-border, #e5e7eb)' }}>
+              <td style={{ padding: '4px 8px' }}>{ln.date ? new Date(ln.date).toLocaleDateString() : '—'}</td>
+              <td style={{ padding: '4px 8px' }}>{ln.source || '—'}</td>
+              <td style={{ padding: '4px 8px', textTransform: 'capitalize' }}>{ln.expense_category || '—'}</td>
+              <td style={{ padding: '4px 8px' }}>{ln.description || '—'}</td>
+              <td style={{ padding: '4px 8px' }}><BirFlagChip flag={ln.bir_flag} /></td>
+              <td style={{ padding: '4px 8px', textAlign: 'right' }}>{fmt(ln.net_of_vat)}</td>
+              <td style={{ padding: '4px 8px', textAlign: 'right', color: 'var(--erp-muted)' }}>{fmt(ln.vat_amount)}</td>
+              <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 600 }}>{fmt(ln.amount)}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr style={{ borderTop: '2px solid var(--erp-border, #e5e7eb)' }}>
+            <td colSpan={7} style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 700 }}>Total linked</td>
+            <td style={{ padding: '4px 8px', textAlign: 'right', fontWeight: 700 }}>{fmt(data?.total_linked || 0)}</td>
+          </tr>
+          {Math.abs(data?.variance || 0) >= 0.01 && (
+            <tr>
+              <td colSpan={7} style={{ padding: '4px 8px', textAlign: 'right', fontSize: 10, color: '#b91c1c' }}>Variance vs CALF advance</td>
+              <td style={{ padding: '4px 8px', textAlign: 'right', fontSize: 10, color: '#b91c1c', fontWeight: 600 }}>{fmt(data.variance)}</td>
+            </tr>
+          )}
+        </tfoot>
+      </table>
+    </div>
+  );
+}
 
 // Lifecycle status palette — derived purely from the literal status string the
 // builder passes through. New status values added by future modules degrade
@@ -1010,6 +1114,14 @@ export default function DocumentDetailPanel(props) {
                 </div>
               ))}
             </div>
+          )}
+          {/* Linked expense / fuel breakdown — what the BDM actually spent.
+              Reviewers in the Approval Hub no longer need to navigate to the
+              Expense module to see line-level context (category, vendor, BIR
+              filing flag). Mounts only for CALFs (PRFs are payment instructions,
+              not advance-liquidation trackers). */}
+          {d.doc_type === 'CALF' && (d._id || item?._id) && (
+            <CalfLinkedLines calfId={d._id || item?._id} />
           )}
           <AuditFooter d={d} />
         </div>

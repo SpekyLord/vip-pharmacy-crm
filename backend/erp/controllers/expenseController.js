@@ -2846,10 +2846,25 @@ const getLinkedExpenses = catchAsync(async (req, res) => {
     'fuel_entries.calf_id': calf._id,
   }).select('period cycle entry_date bdm_id status fuel_entries cycle_id').lean();
 
+  // Resolve VAT rate once for this CALF so every fuel row in the breakdown
+  // uses the same lookup-driven rate the JE engine will apply at post time.
+  // CarLogbookEntry.fuel_entries does not persist net_of_vat / vat_amount /
+  // bir_flag (unlike ExpenseEntry.lines), so we derive them here for the
+  // detail panel; the journal-entry path resolves the same fields independently.
+  const vatRate = await Settings.getVatRate();
+  const splitFuelVat = (total) => {
+    const t = Number(total) || 0;
+    if (!t) return { vat: 0, net: 0 };
+    const vat = Math.round(t * (vatRate / (1 + vatRate)) * 100) / 100;
+    const net = Math.round((t - vat) * 100) / 100;
+    return { vat, net };
+  };
+
   const fuelLinks = [];
   for (const d of dayDocs) {
     for (const fe of (d.fuel_entries || [])) {
       if (String(fe.calf_id) !== String(calf._id)) continue;
+      const { vat: feVat, net: feNet } = splitFuelVat(fe.total_amount);
       fuelLinks.push({
         source: 'FUEL',
         doc_ref: fe.doc_ref || `FUEL-${d.period}-${d._id}`,
@@ -2857,6 +2872,15 @@ const getLinkedExpenses = catchAsync(async (req, res) => {
         period: d.period,
         cycle: d.cycle,
         description: `${fe.station_name || 'Fuel'} ${fe.liters || 0}L`,
+        // Surface the same shape as expense lines so the CALF panel can render
+        // a uniform breakdown table. Fuel entries don't persist these fields
+        // on the sub-doc, so derive Net/VAT via the lookup-driven VAT rate and
+        // default BIR flag to BOTH (matches ExpenseEntry.lines default).
+        expense_category: 'fuel',
+        coa_code: fe.coa_code || null,
+        vat_amount: feVat,
+        net_of_vat: feNet,
+        bir_flag: fe.bir_flag || 'BOTH',
         amount: fe.total_amount || 0,
         approval_status: fe.approval_status,
         payment_mode: fe.payment_mode,
@@ -2884,6 +2908,14 @@ const getLinkedExpenses = catchAsync(async (req, res) => {
         period: e.period,
         cycle: e.cycle,
         description: line.establishment || line.description || 'Expense',
+        // Phase: CALF detail breakdown — surface what was actually spent so
+        // Approval Hub reviewers don't need to navigate to the Expense module
+        // to see line-level context (category, vendor, BIR reportability).
+        expense_category: line.expense_category || null,
+        coa_code: line.coa_code || null,
+        vat_amount: line.vat_amount || 0,
+        net_of_vat: line.net_of_vat || 0,
+        bir_flag: line.bir_flag || null,
         amount: line.amount || 0,
         payment_mode: line.payment_mode,
         cycle_status: e.status,
