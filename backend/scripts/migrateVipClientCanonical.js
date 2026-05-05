@@ -217,8 +217,15 @@ async function main() {
     const set = {};
     if (d.vip_client_name_clean !== expectedKey) set.vip_client_name_clean = expectedKey;
     if (!d.primaryAssignee && d.assignedTo) {
-      // assignedTo is currently the scalar User ref (or populated User); store its _id.
-      set.primaryAssignee = d.assignedTo?._id || d.assignedTo;
+      // Phase A.5.4 — assignedTo is now an array on the schema. Pre-A.5.4 it
+      // was a scalar. Handle both shapes so this script remains re-runnable
+      // after the scalar→array flip (companion script:
+      // backend/scripts/migrateAssignedToArray.js).
+      if (Array.isArray(d.assignedTo) && d.assignedTo.length > 0) {
+        set.primaryAssignee = d.assignedTo[0]?._id || d.assignedTo[0];
+      } else if (!Array.isArray(d.assignedTo)) {
+        set.primaryAssignee = d.assignedTo?._id || d.assignedTo;
+      }
     }
     if (Object.keys(set).length === 0) continue;
 

@@ -19,6 +19,9 @@ import useLookupData from '../../hooks/useLookupData';
 import { useLookupOptions } from '../../erp/hooks/useLookups';
 import SelectField from '../common/Select';
 import api from '../../services/api';
+// Phase A.5.4 — Doctor.assignedTo is an array; helpers normalize to a single
+// owner for table rows and the edit form's BDM dropdown.
+import { getPrimaryAssigneeId, getPrimaryAssigneeName } from '../../utils/assigneeDisplay';
 
 const doctorManagementStyles = `
   .doctor-management {
@@ -1478,7 +1481,7 @@ const DoctorManagement = ({
       birthday: doctor.birthday ? doctor.birthday.split('T')[0] : '',
       anniversary: doctor.anniversary ? doctor.anniversary.split('T')[0] : '',
       otherDetails: doctor.otherDetails || '',
-      assignedTo: doctor.assignedTo?._id || doctor.assignedTo || '',
+      assignedTo: getPrimaryAssigneeId(doctor) || '',
       clientType: doctor.clientType || '',
       hospitals: (doctor.hospitals || []).map(h => ({
         hospital_id: h.hospital_id?._id || h.hospital_id,
@@ -1823,7 +1826,7 @@ const DoctorManagement = ({
                           </span>
                         )}
                       </td>
-                      <td>{doctor.assignedTo?.name || doctor._ownerName || '—'}</td>
+                      <td>{getPrimaryAssigneeName(doctor) || doctor._ownerName || '—'}</td>
                       <td>
                         <span className={`visit-freq-badge freq-${doctor.visitFrequency || 2}`}>
                           {doctor.visitFrequency || 2}x/mo
@@ -1915,10 +1918,10 @@ const DoctorManagement = ({
                         <span>{doctor.clinicOfficeAddress}</span>
                       </div>
                     )}
-                    {(doctor.assignedTo?.name || doctor._ownerName) && (
+                    {(getPrimaryAssigneeName(doctor) || doctor._ownerName) && (
                       <div className="mobile-card-row">
                         <span>BDM</span>
-                        <span>{doctor.assignedTo?.name || doctor._ownerName}</span>
+                        <span>{getPrimaryAssigneeName(doctor) || doctor._ownerName}</span>
                       </div>
                     )}
                     {doctor.levelOfEngagement && (

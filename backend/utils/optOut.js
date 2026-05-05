@@ -97,9 +97,13 @@ async function resolveSender({ channel, senderId }) {
   // Doctor takes precedence (VIP channel binding is authoritative). If both had the
   // same external ID somehow, Doctor wins because the bindFromInviteRef path writes
   // Doctor on doc_ refs first.
-  const doctor = await Doctor.findOne({ [field]: senderId }).select('_id assignedTo marketingConsent').lean();
+  // Phase A.5.4 — also project primaryAssignee so the helper can pick a single
+  // owner BDM (assignedTo is an array now).
+  const doctor = await Doctor.findOne({ [field]: senderId })
+    .select('_id assignedTo primaryAssignee marketingConsent').lean();
   if (doctor) {
-    return { kind: 'doc', id: doctor._id, userId: doctor.assignedTo || null, record: doctor };
+    const { getPrimaryAssigneeId } = require('./assigneeAccess');
+    return { kind: 'doc', id: doctor._id, userId: getPrimaryAssigneeId(doctor), record: doctor };
   }
 
   const client = await Client.findOne({ [field]: senderId }).select('_id createdBy marketingConsent').lean();

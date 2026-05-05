@@ -45,7 +45,11 @@ async function run() {
       .select('visitDate user')
       .lean();
 
-    const assignedBdmId = doctor.assignedTo || doctor.assignedEmployee || null;
+    // Phase A.5.4 — assignedTo is an array; pick the primary assignee for the
+    // single-BDM coaching alert. Falls back to the legacy assignedEmployee field
+    // if the doc was never migrated past Phase A.4.
+    const { getPrimaryAssigneeId } = require('../utils/assigneeAccess');
+    const assignedBdmId = getPrimaryAssigneeId(doctor) || doctor.assignedEmployee || null;
 
     if (!lastVisit) {
       if (assignedBdmId) {

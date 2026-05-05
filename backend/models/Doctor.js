@@ -101,18 +101,22 @@ const doctorSchema = new mongoose.Schema(
       default: 4,
       required: true,
     },
-    // Employee assigned to visit this doctor
-    // NOTE: Scalar today. A.5.4 (not yet shipped) flips this to an array so multiple BDMs
-    // can cover one VIP Client (e.g. Jake + Romela both visiting Dr. Sharon in Iloilo).
-    // `primaryAssignee` below is the forward-compatible scalar that A.5.4 migrates to.
-    assignedTo: {
+    // BDM(s) assigned to visit this doctor.
+    // Phase A.5.4 (May 2026) flipped this from scalar → array so multiple BDMs can
+    // share one VIP Client (e.g. Jake + Romela both covering Dr. Sharon in Iloilo).
+    // `primaryAssignee` below is the canonical "owner" used for ownership-style
+    // operations (single-name display, default routing). Read via the helpers in
+    // backend/utils/assigneeAccess.js (getAssigneeIds / isAssignedTo /
+    // getPrimaryAssigneeId) — never the legacy `doctor.assignedTo?._id ||
+    // doctor.assignedTo` ternary, which silently miscompares array shapes.
+    assignedTo: [{
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
-    },
-    // Phase A.5 (Apr 2026) — Primary ownership scalar. Forward-compatible with A.5.4's
-    // `assignedTo` scalar→array flip. Today it mirrors `assignedTo`; after A.5.4 it stays
-    // scalar while `assignedTo[]` holds every BDM who covers this MD. The A.5.1 migration
-    // script seeds this from the existing `assignedTo` scalar so no app-level read fails.
+    }],
+    // Phase A.5 (Apr 2026) — Primary ownership scalar. Always kept in sync with
+    // `assignedTo[]` by the pre-save hook: must be one of the assignees, defaults
+    // to the first if unset or stale. Used by surfaces that need ONE responsible
+    // BDM (auto-reply send-as user, single-name display, rebate routing).
     primaryAssignee: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -391,6 +395,35 @@ doctorSchema.virtual('fullName').get(function () {
   return `${this.firstName || ''} ${this.lastName || ''}`.trim();
 });
 
+// Phase A.5.4 — `assigneeIds` virtual returns string IDs of every assignee, in
+// canonical order (primary first if known). Use this for membership checks and
+// rendering — never iterate `assignedTo` directly with the legacy
+// `?._id || x.toString()` ternary, which silently mishandles arrays.
+doctorSchema.virtual('assigneeIds').get(function () {
+  const raw = this.assignedTo;
+  if (!Array.isArray(raw) || raw.length === 0) {
+    // Defensive: tolerate a not-yet-migrated legacy scalar so reads don't fail
+    if (raw && !Array.isArray(raw)) {
+      const single = raw._id ? raw._id.toString() : raw.toString();
+      return single ? [single] : [];
+    }
+    return [];
+  }
+  const ids = raw.map((u) => (u && u._id ? u._id.toString() : (u ? u.toString() : null))).filter(Boolean);
+  // Reorder so primaryAssignee (if known + present) is first
+  if (this.primaryAssignee) {
+    const primaryId = this.primaryAssignee._id
+      ? this.primaryAssignee._id.toString()
+      : this.primaryAssignee.toString();
+    const idx = ids.indexOf(primaryId);
+    if (idx > 0) {
+      ids.splice(idx, 1);
+      ids.unshift(primaryId);
+    }
+  }
+  return ids;
+});
+
 // Virtual: Get assigned products (populated via ProductAssignment)
 doctorSchema.virtual('assignedProducts', {
   ref: 'ProductAssignment',
@@ -399,7 +432,9 @@ doctorSchema.virtual('assignedProducts', {
   match: { status: 'active' },
 });
 
-// Static: Find doctors assigned to an employee
+// Static: Find doctors assigned to an employee.
+// Phase A.5.4 — `{ assignedTo: employeeId }` works for both array and scalar
+// shapes via Mongo's array-contains semantics, so this query is shape-agnostic.
 doctorSchema.statics.findByEmployee = function (employeeId) {
   return this.find({ assignedTo: employeeId, isActive: true });
 };
@@ -435,6 +470,27 @@ doctorSchema.pre('save', async function (next) {
   // requires admin promotion via /admin/md-leads + partner_agreement_date.
   if (this.partnership_status == null) {
     this.partnership_status = this.isNew ? 'LEAD' : 'VISITED';
+  }
+
+  // Phase A.5.4 — keep primaryAssignee in sync with assignedTo[].
+  // Invariant: primaryAssignee, when set, MUST be one of assignedTo[]. If a
+  // caller wrote a non-member into primaryAssignee (or assignedTo got reduced
+  // and no longer contains the previous primary), we fall back to the first
+  // assignee. If primaryAssignee is unset and assignedTo has at least one
+  // element, default it to the first.
+  if (Array.isArray(this.assignedTo) && this.assignedTo.length > 0) {
+    const ids = this.assignedTo
+      .map((u) => (u && u._id ? u._id.toString() : (u ? u.toString() : null)))
+      .filter(Boolean);
+    const primaryStr = this.primaryAssignee
+      ? (this.primaryAssignee._id ? this.primaryAssignee._id.toString() : this.primaryAssignee.toString())
+      : null;
+    if (!primaryStr || !ids.includes(primaryStr)) {
+      this.primaryAssignee = this.assignedTo[0]?._id || this.assignedTo[0];
+    }
+  } else if ((!this.assignedTo || (Array.isArray(this.assignedTo) && this.assignedTo.length === 0)) && this.primaryAssignee) {
+    // No assignees → primary cannot exist either.
+    this.primaryAssignee = null;
   }
 
   const nameModified = this.isModified('firstName') || this.isModified('lastName');

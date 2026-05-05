@@ -143,10 +143,11 @@ const isAssignedToDoctor = async (req, res, next) => {
       });
     }
 
-    // Check if doctor is assigned to this staff member
+    // Check if doctor is assigned to this staff member.
+    // Phase A.5.4 — assignedTo is an array; use shape-agnostic helper.
     if (req.user.role === ROLES.STAFF) {
-      const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
-      if (!assignedToId || assignedToId.toString() !== req.user._id.toString()) {
+      const { isAssignedTo } = require('../utils/assigneeAccess');
+      if (!isAssignedTo(doctor, req.user._id)) {
         return res.status(403).json({
           success: false,
           message: 'Access denied. This VIP Client is not assigned to you.',

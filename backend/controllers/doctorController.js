@@ -25,6 +25,10 @@ const {
   getSetAgreementDateRoles,
 } = require('../utils/mdPartnerAccess');
 const { dateToSlot, validateAlternatingWeek, rejectPastCycle } = require('../utils/scheduleSlotMapper');
+// Phase A.5.4 — shape-agnostic assignee access. Use isAssignedTo / getAssigneeIds /
+// getPrimaryAssigneeId instead of the legacy `doctor.assignedTo?._id || doctor.assignedTo`
+// ternary, which silently miscompares against array shapes.
+const { isAssignedTo, getAssigneeIds, getPrimaryAssigneeId } = require('../utils/assigneeAccess');
 
 // Phase VIP-1.A — Mirrors Doctor.js schema enum. If you change the schema, change this list.
 // Health check asserts the two stay in sync.
@@ -205,8 +209,7 @@ const getDoctorById = catchAsync(async (req, res) => {
 
   // Check access for non-admin users: BDMs can only see doctors assigned to them
   if (req.user.role === ROLES.CONTRACTOR) {
-    const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
-    if (!assignedToId || assignedToId.toString() !== req.user._id.toString()) {
+    if (!isAssignedTo(doctor, req.user._id)) {
       throw new ForbiddenError('You do not have access to this VIP Client');
     }
   }
@@ -241,7 +244,7 @@ const createDoctor = catchAsync(async (req, res) => {
     phone,
     email,
     visitFrequency,
-    assignedTo,
+    assignedTo: rawAssignedTo,
     notes,
     clinicSchedule,
     location,
@@ -261,12 +264,22 @@ const createDoctor = catchAsync(async (req, res) => {
     initialSchedule,
   } = req.body;
 
+  // Phase A.5.4 — assignedTo is now an array on the schema. Normalize the
+  // request body shape (scalar string from legacy clients OR array) into the
+  // canonical [<id>, ...] form. Single-BDM scalar input still creates a
+  // shared-capable record with one assignee. `firstAssigneeId` is also kept as
+  // a scalar for the Schedule rows below (Schedule.user is scalar).
+  const assignedTo = Array.isArray(rawAssignedTo)
+    ? rawAssignedTo.filter(Boolean)
+    : (rawAssignedTo ? [rawAssignedTo] : []);
+  const firstAssigneeId = assignedTo.length > 0 ? assignedTo[0] : null;
+
   // ── Pre-validate initialSchedule before touching the DB. We do not want a
   // half-failed transaction surfacing as a confusing 207 multi-status. If any
   // slot is malformed, reject the whole request with a single 400.
   let validatedSlots = [];
   if (Array.isArray(initialSchedule) && initialSchedule.length > 0) {
-    if (!assignedTo) {
+    if (!firstAssigneeId) {
       return res.status(400).json({
         success: false,
         message: 'initialSchedule requires assignedTo (BDM owner) so the Schedule rows can be wired to the right BDM.',
@@ -390,7 +403,7 @@ const createDoctor = catchAsync(async (req, res) => {
         doctor = created[0];
         const scheduleRows = validatedSlots.map((s) => ({
           doctor: doctor._id,
-          user: assignedTo,
+          user: firstAssigneeId,
           cycleStart: s.cycleStart,
           cycleNumber: s.cycleNumber,
           scheduledWeek: s.scheduledWeek,
@@ -420,7 +433,7 @@ const createDoctor = catchAsync(async (req, res) => {
       try {
         const scheduleRows = validatedSlots.map((s) => ({
           doctor: doctor._id,
-          user: assignedTo,
+          user: firstAssigneeId,
           cycleStart: s.cycleStart,
           cycleNumber: s.cycleNumber,
           scheduledWeek: s.scheduledWeek,
@@ -449,7 +462,8 @@ const createDoctor = catchAsync(async (req, res) => {
     }
   }
 
-  if (doctor.assignedTo) {
+  // Phase A.5.4 — assignedTo is an array; populate when at least one assignee.
+  if (Array.isArray(doctor.assignedTo) && doctor.assignedTo.length > 0) {
     await doctor.populate('assignedTo', 'name email');
   }
 
@@ -477,8 +491,7 @@ const updateDoctor = catchAsync(async (req, res) => {
 
   // Ownership check: BDMs can only edit their own assigned VIP Clients
   if (req.user.role === ROLES.CONTRACTOR) {
-    const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
-    if (!assignedToId || assignedToId.toString() !== req.user._id.toString()) {
+    if (!isAssignedTo(doctor, req.user._id)) {
       throw new ForbiddenError('You can only edit VIP Clients assigned to you');
     }
   }
@@ -521,15 +534,24 @@ const updateDoctor = catchAsync(async (req, res) => {
   );
   const allowedFields = isAdminLike(req.user.role) ? adminAllowedFields : employeeAllowedFields;
 
-  // Update only allowed fields
+  // Update only allowed fields. Phase A.5.4 — normalize assignedTo to array
+  // when the caller sent a scalar (legacy clients) so Mongoose's array casting
+  // doesn't trip over a bare ObjectId.
   allowedFields.forEach((field) => {
     if (req.body[field] !== undefined) {
-      doctor[field] = req.body[field];
+      let value = req.body[field];
+      if (field === 'assignedTo') {
+        if (Array.isArray(value)) value = value.filter(Boolean);
+        else if (value) value = [value];
+        else value = [];
+      }
+      doctor[field] = value;
     }
   });
 
   await doctor.save();
-  if (doctor.assignedTo) {
+  // Phase A.5.4 — assignedTo is an array; populate when at least one assignee.
+  if (Array.isArray(doctor.assignedTo) && doctor.assignedTo.length > 0) {
     await doctor.populate('assignedTo', 'name email');
   }
 
@@ -679,8 +701,7 @@ const getDoctorVisits = catchAsync(async (req, res) => {
 
   // Check access for non-admin users: BDMs can only see visits for their assigned doctors
   if (req.user.role === ROLES.CONTRACTOR) {
-    const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
-    if (!assignedToId || assignedToId.toString() !== req.user._id.toString()) {
+    if (!isAssignedTo(doctor, req.user._id)) {
       throw new ForbiddenError('You do not have access to this VIP Client');
     }
   }
@@ -763,8 +784,7 @@ const getDoctorProducts = catchAsync(async (req, res) => {
 
   // BDMs can only view products for their assigned VIP Clients
   if (req.user.role === ROLES.CONTRACTOR) {
-    const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
-    if (!assignedToId || assignedToId.toString() !== req.user._id.toString()) {
+    if (!isAssignedTo(doctor, req.user._id)) {
       throw new ForbiddenError('You do not have access to this VIP Client');
     }
   }
@@ -804,10 +824,20 @@ const assignEmployee = catchAsync(async (req, res) => {
     }
   }
 
-  doctor.assignedTo = employeeId || null;
+  // Phase A.5.4 — assignedTo is an array. assignEmployee assigns ONE BDM as the
+  // sole owner (existing API contract: previously a scalar overwrite). To add
+  // a BDM to an existing share without removing others, use the future
+  // /api/doctors/:id/assignees endpoint (A.5.4 follow-on).
+  if (employeeId) {
+    doctor.assignedTo = [employeeId];
+    doctor.primaryAssignee = employeeId;
+  } else {
+    doctor.assignedTo = [];
+    doctor.primaryAssignee = null;
+  }
   await doctor.save();
 
-  if (doctor.assignedTo) {
+  if (Array.isArray(doctor.assignedTo) && doctor.assignedTo.length > 0) {
     await doctor.populate('assignedTo', 'name email');
   }
 
@@ -831,8 +861,7 @@ const updateTargetProducts = catchAsync(async (req, res) => {
 
   // Ownership check: BDMs can only update their own assigned VIP Clients
   if (req.user.role === ROLES.CONTRACTOR) {
-    const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
-    if (!assignedToId || assignedToId.toString() !== req.user._id.toString()) {
+    if (!isAssignedTo(doctor, req.user._id)) {
       throw new ForbiddenError('You can only manage products for your assigned VIP Clients');
     }
   }
@@ -1038,10 +1067,7 @@ const setPartnershipStatus = catchAsync(async (req, res) => {
   if (!doctor) throw new NotFoundError('Doctor not found');
 
   const role = req.user.role;
-  const ownsRecord = (() => {
-    const assignedToId = doctor.assignedTo?._id || doctor.assignedTo;
-    return assignedToId && assignedToId.toString() === req.user._id.toString();
-  })();
+  const ownsRecord = isAssignedTo(doctor, req.user._id);
   const isBdm = !isAdminLike(role) && role === ROLES.STAFF;
 
   if (newStatus === 'PARTNER') {
