@@ -20,35 +20,38 @@ const { generateDocNumber } = require('./docNumbering');
 // paths behave identically so `Approval History` never diverges from the
 // `DeductionSchedule` source of truth.
 //
-// Idempotent: $set only fires when status is still PENDING, so a second call
-// (e.g. Hub approve → catch-all → direct route) is a no-op.
-async function closeApprovalRequest(docId, decisionStatus, userId, reason) {
-  if (!docId) return;
-  try {
-    // eslint-disable-next-line vip-tenant/require-entity-filter -- doc_id is the schedule's _id (entity-unique); ApprovalRequest's entity_id matches the schedule's by Phase G4.2 invariant
-    await ApprovalRequest.updateMany(
-      { doc_id: docId, module: 'DEDUCTION_SCHEDULE', status: 'PENDING' },
-      {
-        $set: {
-          status: decisionStatus,
-          decided_by: userId,
-          decided_at: new Date(),
-          decision_reason: reason || `${decisionStatus.toLowerCase()} via deduction schedule route`,
-        },
-        $push: {
-          history: {
-            status: decisionStatus,
-            by: userId,
-            reason: reason || `${decisionStatus.toLowerCase()} via deduction schedule route`,
-          },
-        },
-      }
-    );
-  } catch (err) {
-    // Non-fatal: schedule state is already persisted. Log and continue — a stuck
-    // ApprovalRequest can be repaired with the migration script below.
-    console.error(`DeductionSchedule closeApprovalRequest failed (doc_id=${docId}):`, err.message);
+// Phase G4.7 (May 05 2026) — delegates to the shared mirrorApprovalDecision
+// helper in approvalService.js so deduction-schedule audit rows use the same
+// close-or-create-closed contract that income reports and finance-auto-approved
+// schedules use. Backwards-compatible: same signature, same side effects.
+async function closeApprovalRequest(docId, decisionStatus, userId, reason, schedule = null) {
+  if (!docId || !userId) return;
+  const { mirrorApprovalDecision } = require('./approvalService');
+  let entityId = schedule?.entity_id;
+  if (!entityId) {
+    try {
+      // eslint-disable-next-line vip-tenant/require-entity-filter -- docId is the schedule's _id (entity-unique); fetched only to recover entity_id
+      const peek = await DeductionSchedule.findById(docId).select('entity_id schedule_code total_amount term_months').lean();
+      if (!peek) return;
+      entityId = peek.entity_id;
+      schedule = peek;
+    } catch (err) {
+      console.error(`DeductionSchedule closeApprovalRequest entity lookup failed (doc_id=${docId}):`, err.message);
+      return;
+    }
   }
+  await mirrorApprovalDecision({
+    entityId,
+    module: 'DEDUCTION_SCHEDULE',
+    docType: schedule?.term_months === 1 ? 'ONE_TIME' : 'INSTALLMENT',
+    docId,
+    docRef: schedule?.schedule_code,
+    amount: schedule?.total_amount,
+    decision: decisionStatus,
+    decidedBy: userId,
+    reason: reason || `${decisionStatus.toLowerCase()} via deduction schedule route`,
+    actionLabel: decisionStatus === 'CANCELLED' ? 'cancel' : (decisionStatus === 'REJECTED' ? 'reject' : 'approve'),
+  });
 }
 
 /**
@@ -116,6 +119,27 @@ async function createSchedule(entityId, ownerOrBdmId, data, userId, isFinance = 
     created_by: userId
   });
 
+  // Phase G4.7 — Finance auto-approve path skips the gateApproval flow entirely
+  // (isFinance=true means the schedule jumps straight to ACTIVE). Drop a closed
+  // APPROVED audit row so Approval History still shows the decision instead of
+  // it living only on the schedule record.
+  if (isFinance) {
+    const { mirrorApprovalDecision } = require('./approvalService');
+    await mirrorApprovalDecision({
+      entityId,
+      module: 'DEDUCTION_SCHEDULE',
+      docType: schedule.term_months === 1 ? 'ONE_TIME' : 'INSTALLMENT',
+      docId: schedule._id,
+      docRef: schedule.schedule_code,
+      amount: schedule.total_amount,
+      description: `Finance auto-create — ${schedule.deduction_label}${schedule.term_months > 1 ? ` · ₱${schedule.installment_amount}/mo × ${schedule.term_months}` : ''} · ${schedule.target_cycle}`,
+      decision: 'APPROVED',
+      decidedBy: userId,
+      reason: 'Finance auto-create (bypassed approval gate)',
+      actionLabel: 'finance_auto_create',
+    });
+  }
+
   return schedule;
 }
 
@@ -136,7 +160,7 @@ async function approveSchedule(scheduleId, userId) {
   await schedule.save();
 
   // Phase G4.2 — close the audit loop so Approval History mirrors the decision.
-  await closeApprovalRequest(schedule._id, 'APPROVED', userId);
+  await closeApprovalRequest(schedule._id, 'APPROVED', userId, null, schedule);
 
   return schedule;
 }
@@ -158,7 +182,7 @@ async function rejectSchedule(scheduleId, userId, reason) {
 
   // Phase G4.2 — close the audit loop with the provided rejection reason so the
   // Approval History row carries the same `decision_reason` surfaced on the schedule.
-  await closeApprovalRequest(schedule._id, 'REJECTED', userId, reason);
+  await closeApprovalRequest(schedule._id, 'REJECTED', userId, reason, schedule);
 
   return schedule;
 }
@@ -183,6 +207,13 @@ async function cancelSchedule(scheduleId, userId, reason) {
 
   schedule.status = 'CANCELLED';
   await schedule.save();
+
+  // Phase G4.7 — cancellation of an ACTIVE schedule is an admin/finance decision
+  // that should appear in Approval History so the audit trail covers the full
+  // lifecycle (PENDING_APPROVAL → ACTIVE → CANCELLED). The schedule's own status
+  // already records WHEN, but the unified history view needs WHO + WHY.
+  await closeApprovalRequest(schedule._id, 'CANCELLED', userId, reason || 'Schedule cancelled', schedule);
+
   return schedule;
 }
 

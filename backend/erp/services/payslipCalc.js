@@ -866,14 +866,15 @@ const VALID_TRANSITIONS = {
 };
 
 async function transitionPayslipStatus(payslipId, action, userId) {
+  const { ApiError } = require('../../middleware/errorHandler');
   const transition = VALID_TRANSITIONS[action];
-  if (!transition) throw new Error(`Invalid action: ${action}`);
+  if (!transition) throw new ApiError(400, `Invalid action: ${action}`);
 
   // eslint-disable-next-line vip-tenant/require-entity-filter -- payslipId from controller (req.params.id); entityId not threaded to this service signature, deferred to controller-side gate
   const payslip = await Payslip.findById(payslipId);
-  if (!payslip) throw new Error('Payslip not found');
+  if (!payslip) throw new ApiError(404, 'Payslip not found');
   if (!transition.from.includes(payslip.status)) {
-    throw new Error(`Cannot ${action} payslip in ${payslip.status} status`);
+    throw new ApiError(400, `Cannot ${action} payslip in ${payslip.status} status`);
   }
 
   payslip.status = transition.to;

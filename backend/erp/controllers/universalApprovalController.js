@@ -142,18 +142,28 @@ const approvalHandlers = {
       // Prefer doc_type (more specific — e.g. FUEL_ENTRY under EXPENSES) over module
       const autoPost = MODULE_AUTO_POST[req.doc_type] || MODULE_AUTO_POST[req.module];
       if (autoPost && req.doc_id && approvalHandlers[autoPost.type]) {
-        try {
-          await approvalHandlers[autoPost.type](
-            req.doc_id,
-            autoPost.action,
-            userId,
-            reason
-          );
-        } catch (err) {
-          console.error(
-            `Auto-post on orphan approval failed (module=${req.module}, doc_id=${req.doc_id}):`,
-            err.message
-          );
+        // When the submitter bundled multiple docs into a single Hub item
+        // (metadata.doc_ids), cascade the auto-post to each one. Pre-fix
+        // bundles silently dropped docs N-1 because the dispatcher only
+        // forwarded req.doc_id (the first id from submitSmer/submitExpenses).
+        // Fallback to [req.doc_id] preserves single-doc and legacy behavior.
+        const bundled = Array.isArray(req.metadata?.doc_ids) && req.metadata.doc_ids.length > 0
+          ? req.metadata.doc_ids
+          : [req.doc_id];
+        for (const docId of bundled) {
+          try {
+            await approvalHandlers[autoPost.type](
+              docId,
+              autoPost.action,
+              userId,
+              reason
+            );
+          } catch (err) {
+            console.error(
+              `Auto-post on orphan approval failed (module=${req.module}, doc_id=${docId}):`,
+              err.message
+            );
+          }
         }
       }
     }
@@ -500,13 +510,38 @@ const approvalHandlers = {
       // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: id from gated approver via entity-scoped list; see top-of-file note
       const doc = await IncomeReport.findById(id);
       if (!doc) throw new Error('Income report not found');
+      const fromStatus = doc.status;
       doc.status = 'RETURNED';
       doc.return_reason = reason;
       await doc.save();
+
+      // Hub reject bypasses transitionIncomeStatus's VALID_TRANSITIONS contract
+      // (Hub allows reject from any status, while 'return' is REVIEWED-only),
+      // so mirror the decision here directly. Non-blocking.
+      try {
+        const { mirrorApprovalDecision } = require('../services/approvalService');
+        await mirrorApprovalDecision({
+          entityId: doc.entity_id,
+          module: 'INCOME',
+          docType: 'INCOME_REPORT',
+          docId: doc._id,
+          docRef: `${doc.period || ''}-${doc.cycle || ''}`.replace(/^-|-$/g, ''),
+          amount: doc.total_earnings || doc.net_pay || 0,
+          description: `Income reject (Hub) → RETURNED for ${doc.period || 'unknown'} ${doc.cycle || ''}`.trim(),
+          decision: 'REJECTED',
+          decidedBy: userId,
+          reason,
+          actionLabel: 'hub_reject',
+          metadata: { from_status: fromStatus, to_status: 'RETURNED' },
+        });
+      } catch (err) {
+        console.error(`[income_report Hub reject] audit mirror failed (report=${doc._id}):`, err.message);
+      }
       return doc;
     }
     const { transitionIncomeStatus } = require('../services/incomeCalc');
     // action maps: review → GENERATED→REVIEWED, credit → BDM_CONFIRMED→CREDITED
+    // (mirrorApprovalDecision is wired inside transitionIncomeStatus for these actions)
     return transitionIncomeStatus(id, action, userId);
   },
 
@@ -1656,6 +1691,11 @@ const universalApprove = catchAsync(async (req, res) => {
         : (['post', 'approve', 'credit'].includes(action)) ? 'APPROVED'
         : null;
       if (decisionStatus) {
+        // Find the matched ARs FIRST (so we can read metadata.doc_ids
+        // before the update), then close them. We need the bundle siblings
+        // for the post-cascade below.
+        // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: doc_id from gated approver via entity-scoped list; see top-of-file note
+        const matchedArs = await ApprovalRequest.find({ doc_id: id, status: 'PENDING' }).lean();
         // eslint-disable-next-line vip-tenant/require-entity-filter -- approval-hub: doc_id from gated approver via entity-scoped list; see top-of-file note
         await ApprovalRequest.updateMany(
           { doc_id: id, status: 'PENDING' },
@@ -1675,6 +1715,30 @@ const universalApprove = catchAsync(async (req, res) => {
             },
           }
         );
+
+        // Bundle cascade — when the resolved AR carries metadata.doc_ids
+        // (set by submitSmer/submitExpenses for multi-doc bundles), also
+        // dispatch the same action against every sibling doc. The user's
+        // mental model after Submit is "the bundle is one approval"; the
+        // Hub dedup picks raw module cards, but a single Post click on
+        // any one of them should cascade to the rest. Failures log but
+        // don't roll back the original action (which already succeeded).
+        if (decisionStatus === 'APPROVED' && action === 'post' && approvalHandlers[type]) {
+          for (const ar of matchedArs) {
+            const docIds = Array.isArray(ar.metadata?.doc_ids) ? ar.metadata.doc_ids : [];
+            for (const sibId of docIds) {
+              if (String(sibId) === String(id)) continue; // already posted by `handler` above
+              try {
+                await approvalHandlers[type](sibId, 'post', req.user._id, reason);
+              } catch (err) {
+                console.error(
+                  `Bundle-cascade post failed (type=${type}, sibling_doc_id=${sibId}, source_doc_id=${id}):`,
+                  err.message
+                );
+              }
+            }
+          }
+        }
       }
     } catch (err) {
       console.error('Approval request resolution failed:', err.message);

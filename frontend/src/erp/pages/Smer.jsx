@@ -18,8 +18,6 @@ import { showError, showApprovalPending } from '../utils/errorToast';
 // expenses.smer_proxy ticked AND their role is in PROXY_ENTRY_ROLES.SMER,
 // they can write to the currently selected BDM's SMER via body.assigned_to
 // on save. Lookup-driven per Rule #3.
-import useErpSubAccess from '../hooks/useErpSubAccess';
-
 const STATUS_COLORS = {
   DRAFT: '#6b7280', VALID: '#22c55e', ERROR: '#ef4444', POSTED: '#2563eb', DELETION_REQUESTED: '#eab308'
 };
@@ -145,10 +143,15 @@ export default function Smer() {
   // selected BDM's SMER. President always eligible. Lookup-driven proxy-role
   // gate is evaluated on the backend; the frontend only needs the sub-perm
   // check to surface the UI.
-  const { hasSubPermission } = useErpSubAccess();
+  //
+  // Direct sub_permissions read (NOT hasSubPermission) — proxy entry is an
+  // explicit elevation that must NEVER be inherited from module=FULL. The
+  // hasSubPermission FULL-fallback path silently grants every non-danger key
+  // when sub_permissions is empty, which would render the proxy picker for
+  // plain BDMs whose Access Template never ticked smer_proxy and then 403 on
+  // the BDM-list fetch. Mirrors hasProxySubPermission in resolveOwnerScope.js.
   const canProxySmer = user?.role === ROLES.PRESIDENT
-    || (isPrivileged && hasSubPermission('expenses', 'smer_proxy'))
-    || (isBdm && hasSubPermission('expenses', 'smer_proxy'));
+    || ((isPrivileged || isBdm) && !!user?.erp_access?.sub_permissions?.expenses?.smer_proxy);
   const { getSmerList, getSmerById, createSmer, updateSmer, deleteDraftSmer, validateSmer, submitSmer, reopenSmer, revertSmer, getSmerCrmMdCounts, getRevolvingFundAmount, getPerdiemConfig, overridePerdiemDay, loading } = useExpenses();
   const { settings } = useSettings();
   const { options: activityTypeOpts } = useLookupOptions('ACTIVITY_TYPE');

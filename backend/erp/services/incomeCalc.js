@@ -577,19 +577,21 @@ const VALID_TRANSITIONS = {
 };
 
 async function transitionIncomeStatus(reportId, action, userId, data = {}) {
+  const { ApiError } = require('../../middleware/errorHandler');
   const transition = VALID_TRANSITIONS[action];
   if (!transition) {
-    throw new Error(`Invalid action: ${action}`);
+    throw new ApiError(400, `Invalid action: ${action}`);
   }
 
   // eslint-disable-next-line vip-tenant/require-entity-filter -- workflow helper called by 4 incomeController endpoints; entity_id pre-validation belongs at the controller layer (confirmIncome at L417 already does this; review/return/credit follow the same pattern). Refactor to push entityId into this signature is tracked separately.
   const report = await IncomeReport.findById(reportId);
   if (!report) {
-    throw new Error('Income report not found');
+    throw new ApiError(404, 'Income report not found');
   }
 
   if (!transition.from.includes(report.status)) {
-    throw new Error(
+    throw new ApiError(
+      400,
       `Cannot ${action} from status ${report.status}. Expected: ${transition.from.join(' or ')}`
     );
   }
@@ -629,6 +631,47 @@ async function transitionIncomeStatus(reportId, action, userId, data = {}) {
   }
 
   await report.save();
+
+  // Audit-trail mirror: every income transition (review/return/confirm/credit)
+  // surfaces in the unified Approval History tab, regardless of whether the
+  // decision was reached via the Hub (universalApprovalController.income_report)
+  // or the direct route (incomeController.review/return/confirm/creditIncome).
+  // The IncomeReport flow does NOT pre-create an ApprovalRequest at submit
+  // time, so mirrorApprovalDecision will INSERT a closed audit row in the
+  // create-mode branch. Non-blocking — a failed audit write must not roll back
+  // the income state machine.
+  try {
+    const { mirrorApprovalDecision } = require('./approvalService');
+    const ACTION_TO_DECISION = {
+      review: 'APPROVED',   // GENERATED → REVIEWED (finance signs off)
+      return: 'REJECTED',   // REVIEWED → RETURNED (finance pushes back)
+      confirm: 'APPROVED',  // REVIEWED → BDM_CONFIRMED (BDM acknowledges)
+      credit: 'APPROVED',   // BDM_CONFIRMED → CREDITED (finance pays)
+    };
+    const decision = ACTION_TO_DECISION[action];
+    if (decision) {
+      await mirrorApprovalDecision({
+        entityId: report.entity_id,
+        module: 'INCOME',
+        docType: 'INCOME_REPORT',
+        docId: report._id,
+        docRef: `${report.period || ''}-${report.cycle || ''}`.replace(/^-|-$/g, ''),
+        amount: report.total_earnings || report.net_pay || 0,
+        description: `Income ${action} → ${transition.to} for ${report.period || 'unknown'} ${report.cycle || ''}`.trim(),
+        decision,
+        decidedBy: userId,
+        reason: action === 'return' ? (data.reason || '') : undefined,
+        actionLabel: action,
+        metadata: {
+          from_status: transition.from.join('|'),
+          to_status: transition.to,
+        },
+      });
+    }
+  } catch (err) {
+    console.error(`[transitionIncomeStatus] audit mirror failed (action=${action}, report=${report._id}):`, err.message);
+  }
+
   return report;
 }
 

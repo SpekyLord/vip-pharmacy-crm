@@ -762,6 +762,10 @@ const submitSmer = catchAsync(async (req, res) => {
     requesterName: req.user.name || req.user.email,
     forceApproval: isProxySubmit,
     ownerBdmId,
+    // Bundle every SMER id so the Hub auto-post dispatcher cascades the
+    // post to ALL of them on approval. Without this, only docId (smers[0])
+    // posted and the rest stayed VALID silently — money-bug class.
+    metadata: { doc_ids: smers.map(s => s._id) },
   }, res);
   if (gated) {
     // Save the cycle-level tag stamping that happened during the proxy check
@@ -2307,7 +2311,13 @@ const validateExpenses = catchAsync(async (req, res) => {
     }
 
     entry.validation_errors = errors;
-    entry.status = errors.length > 0 ? 'ERROR' : 'VALID';
+    // WARNING-prefixed entries are soft — they're surfaced for audit-trail
+    // visibility (e.g. OR# without photo) but must NOT block submit. Only
+    // hard errors and BLOCKED-prefixed entries flip status to ERROR. The
+    // submit-side hard-gate at line ~2353 already re-checks BLOCKED COA
+    // codes as a belt-and-suspenders guard.
+    const blocking = errors.filter(e => !String(e).startsWith('WARNING:'));
+    entry.status = blocking.length > 0 ? 'ERROR' : 'VALID';
     await entry.save();
   }
 
@@ -2343,6 +2353,10 @@ const submitExpenses = catchAsync(async (req, res) => {
     requesterName: req.user.name || req.user.email,
     forceApproval: hasProxy,
     ownerBdmId: proxiedEntry?.bdm_id,
+    // Bundle every expense id so the Hub auto-post dispatcher cascades the
+    // post to ALL of them on approval. Without this, only docId (entries[0])
+    // posted and the rest stayed VALID silently — money-bug class.
+    metadata: { doc_ids: entries.map(e => e._id) },
   }, res);
   if (gated) return;
 

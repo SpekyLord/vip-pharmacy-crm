@@ -175,6 +175,11 @@ router.use('/crm-bridge', require('./crmBridgeRoutes'));
 router.use('/erp-access', require('./erpAccessRoutes'));
 // as-users is a lightweight lookup needed by tagging UIs — no module check
 router.get('/people/as-users', require('../controllers/peopleController').getAsUsers);
+// Phase G4.5ff (May 5 2026) — narrow proxy-target roster for the OwnerPicker.
+// Sits OUTSIDE erpAccessCheck('people') because BDM-shaped callers granted
+// <module>.proxy_entry don't need full /people read access. Authorization is
+// canProxyEntry()-gated inside the controller (Rule #3 lookup-driven).
+router.use('/proxy-roster', require('./proxyRosterRoutes'));
 router.use('/people', erpAccessCheck('people'), require('./peopleRoutes'));
 router.use('/role-assignments', erpAccessCheck('people'), require('./functionalRoleRoutes'));
 router.use('/self-ratings', erpAccessCheck('people'), require('./kpiSelfRatingRoutes'));
