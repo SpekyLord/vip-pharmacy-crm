@@ -5989,6 +5989,7 @@ Phase P1 shipped 6 tiles covering EXPENSE / SMER / SALES / GRN / FUEL_ENTRY / PE
 
 **Frontend Capture Hub** (`frontend/src/erp/pages/mobile/BdmCaptureHub.jsx`)
 - 9 tiles total (5 retained, 1 renamed, 4 added, **PETTY_CASH removed May 05 2026 evening**). Order tuned by frequency-of-use in the field. Backend `PETTY_CASH` enum value retained for legacy rows; tile dropped because petty cash request is not a field-capture flow.
+- **Sectioned layout (May 05 2026 evening polish)** — 5 logical sections grouping the 9 tiles by document origin: **Vehicle** (ODO), **Cash Out** (OR/Receipt + Fuel), **Customer Delivery** (CSI Delivery Copy), **Collection** (CSI Being Paid + CR + CWT + Deposit Slip), **Inventory** (GRN). Each section header carries a small slate-icon + UPPERCASE label + caption + tile count badge. Each tile carries a colored 4px border-left matching its workflow color, an icon box with tinted background, label + description, and a chevron. Digital-only tiles render an inline cyan "Digital only" pill so the BDM sees the no-paper-expected status without opening the modal. Header gains a subtitle showing the tile count and a pending badge in the top-right.
 - Renamed `SALES` tile: "Scan Unreceived CSI" → "Scan CSI (Delivery Copy)" — pink/yellow/duplicate as proof of delivery.
 - New `COLLECTION/PAID_CSI` tile "Scan CSI Being Paid" — `digitalOnly: true`, `kind: paid_csi_scan`.
 - New `COLLECTION/CR` tile "Scan Collection Receipt (CR)" — captures amount + customer.
@@ -5998,6 +5999,8 @@ Phase P1 shipped 6 tiles covering EXPENSE / SMER / SALES / GRN / FUEL_ENTRY / PE
 - `access_for` label is contextual ("Customer / Hospital" for non-EXPENSE tiles, "Who is this for? (ACCESS)" for EXPENSE).
 - `digitalOnly` tiles render an inline cyan banner: "No paper expected for this capture."
 - Map `key` is now composite `${w.key}_${w.sub_type || 'main'}` to support 3 COLLECTION variants in one list without React-key collisions.
+
+**Scoped CSS file** (`frontend/src/styles/capture-hub.css`, NEW) — 480 lines of real CSS namespaced as `.ch-*` (Capture Hub) and `.rq-*` (Review Queue) so they don't collide with the project's existing semantic classes. Imported at the top of both pages. Contains layout (flex / grid), tile + section styling, modal backdrop + body, recent-capture status pills, review-card actions, and the `@keyframes spin` rule used for in-flight loaders. **Why this file exists**: the broader project uses className strings that LOOK like Tailwind utilities (`flex items-center gap-4`, `text-slate-700`, `bg-slate-100`, etc.) but the project does NOT actually use Tailwind — the codebase has no `tailwind.config.js`, no `@tailwind` directives, and no Tailwind dependency in `package.json`. Those Tailwind-style classNames are decorative and don't apply any CSS. Layout works only via inline `style={{ }}` attributes, native browser defaults, and the few semantic classes defined in `index.css` / `tablet-optimized.css`. Phase P1.1's section grouping needed real CSS to land cleanly, hence this scoped file.
 
 **Frontend Review Queue** (`frontend/src/erp/pages/mobile/BdmReviewQueue.jsx`)
 - New `WORKFLOW_LABELS` map — friendly display strings instead of raw enums (e.g., `COLLECTION_PAID_CSI` → "CSI Being Paid").
@@ -6029,18 +6032,21 @@ Phase P1 shipped 6 tiles covering EXPENSE / SMER / SALES / GRN / FUEL_ENTRY / PE
 ```
 backend/erp/models/CaptureSubmission.js                    # + new fields + new enums
 backend/erp/controllers/captureSubmissionController.js     # + CWT_INBOUND + sub_type validation + DIGITAL_ONLY
-backend/scripts/healthcheckCaptureHub.js                   # NEW — 65-check contract verifier
-frontend/src/erp/pages/mobile/BdmCaptureHub.jsx            # + 4 tiles + sub_type + digital-only hint
-frontend/src/erp/pages/mobile/BdmReviewQueue.jsx           # + composite icons/colors/labels + empty-state explainer
+backend/scripts/healthcheckCaptureHub.js                   # NEW — 88-check contract verifier (was 65 pre-redesign)
+frontend/src/erp/pages/mobile/BdmCaptureHub.jsx            # + 4 tiles + sub_type + digital-only hint + sectioned layout
+frontend/src/erp/pages/mobile/BdmReviewQueue.jsx           # + composite icons/colors/labels + empty-state explainer + .rq-card styling
 frontend/src/erp/components/WorkflowGuide.jsx              # banner refresh on both pages
+frontend/src/styles/capture-hub.css                        # NEW — 480 lines scoped CSS (.ch-* / .rq-*)
 CLAUDE-ERP.md                                              # this section
 docs/PHASETASK-ERP.md                                      # Phase P1.1 status
 ```
 
 ### Verification
 - `node -c` on edited backend files — clean
-- `node backend/scripts/healthcheckCaptureHub.js` — **65/65 PASS**
-- `npx vite build` — clean in 33.68s, zero errors, zero warnings
+- `node backend/scripts/healthcheckCaptureHub.js` — **88/88 PASS** (12 new assertions for sectioned layout + 11 for the scoped CSS file)
+- `npx vite build` — clean in 37.80s, zero errors, zero warnings
+- Live API smoke: 4 happy paths (CWT_INBOUND, COLLECTION/PAID_CSI N_A, COLLECTION/CR PENDING, COLLECTION/DEPOSIT PENDING) + 3 negative paths all 400 with friendly messages
+- End-to-end UI smoke at 390×900 (mobile): Mae Navarro logged in → Capture Hub renders 9 tiles in 5 sections with correct flex layout (verified `display: flex` on `.ch-tile`, `.ch-section-header`, `.ch-tile-pill`) → Review Queue renders `.rq-card` with 4px sky-blue border-left + .rq-action confirm/dispute buttons → ACKNOWLEDGED lifecycle confirmed end-to-end → screenshots saved (`capture-hub-redesigned-mobile.png`, `review-queue-redesigned-mobile.png`)
 - No new npm dependencies (all icons already in lucide-react)
 - Backward compatible: existing CaptureSubmission rows have `sub_type=null`, `physical_required=true`, `physical_status='PENDING'`. No migration required for empty queues; deployed clusters will pre-mark legacy rows as PENDING which is the correct posture (paper expected unless explicitly flagged digital-only at create).
 

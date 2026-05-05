@@ -23,6 +23,7 @@ import toast from 'react-hot-toast';
 import useCaptureSubmissions from '../../hooks/useCaptureSubmissions';
 import { useAuth } from '../../../hooks/useAuth';
 import WorkflowGuide from '../../components/WorkflowGuide';
+import '../../../styles/capture-hub.css';
 
 // ── Sections + Workflow definitions ──
 // Tiles are grouped into 5 sections by the BDM's mental model of WHERE
@@ -179,27 +180,27 @@ function CaptureCard({ workflow, onCapture, disabled }) {
     <button
       onClick={() => onCapture(workflow)}
       disabled={disabled}
-      className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:border-gray-300 hover:shadow-md active:scale-[0.98] transition-all bg-white shadow-sm disabled:opacity-50"
-      style={{ minHeight: '72px', borderLeft: `4px solid ${workflow.color}` }}
+      className="ch-tile"
+      style={{ borderLeft: `4px solid ${workflow.color}` }}
     >
       <div
-        className="flex-shrink-0 w-12 h-12 rounded-lg flex items-center justify-center"
+        className="ch-tile-icon"
         style={{ backgroundColor: `${workflow.color}15`, color: workflow.color }}
       >
-        <Icon size={24} />
+        <Icon size={22} />
       </div>
-      <div className="flex-1 text-left min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="font-semibold text-gray-900 text-base truncate">{workflow.label}</div>
+      <div className="ch-tile-body">
+        <div className="ch-tile-title-row">
+          <div className="ch-tile-title">{workflow.label}</div>
           {workflow.digitalOnly && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-700 border border-cyan-200 flex-shrink-0">
+            <span className="ch-tile-pill">
               <Sparkles size={10} /> Digital only
             </span>
           )}
         </div>
-        <div className="text-sm text-gray-500 mt-0.5 line-clamp-2">{workflow.description}</div>
+        <div className="ch-tile-desc">{workflow.description}</div>
       </div>
-      <ChevronRight size={20} className="text-gray-400 flex-shrink-0" />
+      <ChevronRight size={20} className="ch-tile-chevron" />
     </button>
   );
 }
@@ -208,17 +209,26 @@ function CaptureCard({ workflow, onCapture, disabled }) {
 function SectionHeader({ section, count }) {
   const Icon = section.icon;
   return (
-    <div className="flex items-center gap-2 px-1 mb-2 mt-1">
-      <div className="w-7 h-7 rounded-md bg-slate-100 text-slate-600 flex items-center justify-center flex-shrink-0">
+    <div className="ch-section-header">
+      <div className="ch-section-icon">
         <Icon size={14} />
       </div>
-      <div className="flex-1 min-w-0">
-        <div className="text-xs font-bold uppercase tracking-wider text-slate-700">{section.label}</div>
-        <div className="text-[11px] text-slate-400 -mt-0.5">{section.caption}</div>
+      <div className="ch-section-meta">
+        <div className="ch-section-label">{section.label}</div>
+        <div className="ch-section-caption">{section.caption}</div>
       </div>
-      <span className="text-[11px] font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
-        {count}
-      </span>
+      <span className="ch-section-count">{count}</span>
+    </div>
+  );
+}
+
+// ── Pending count badge ──
+function PendingBadge({ count }) {
+  if (!count) return null;
+  return (
+    <div className="ch-pending-badge">
+      <Clock size={14} />
+      <span>{count} pending</span>
     </div>
   );
 }
@@ -289,62 +299,59 @@ function CaptureModal({ workflow, gps, onSubmit, onClose, loading }) {
   }, [files, previews, workflow, gps, notes, amount, paymentMode, accessFor, onSubmit]);
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-white w-full sm:max-w-lg sm:rounded-xl rounded-t-xl max-h-[90vh] overflow-y-auto">
+    <div className="ch-modal-backdrop">
+      <div className="ch-modal">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b sticky top-0 bg-white z-10">
-          <div className="flex items-center gap-3">
+        <div className="ch-modal-header">
+          <div className="ch-modal-header-left">
             <div
-              className="w-10 h-10 rounded-lg flex items-center justify-center"
+              className="ch-modal-icon"
               style={{ backgroundColor: `${workflow.color}15`, color: workflow.color }}
             >
               <workflow.icon size={20} />
             </div>
-            <h2 className="font-bold text-lg">{workflow.label}</h2>
+            <h2 className="ch-modal-title">{workflow.label}</h2>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg">
+          <button onClick={onClose} className="ch-modal-close" aria-label="Close">
             <X size={20} />
           </button>
         </div>
 
-        <div className="p-4 space-y-4">
+        <div className="ch-modal-body">
           {/* Camera / File input */}
-          <div>
-            <div className="flex gap-2">
-              <button
-                onClick={() => { fileRef.current.setAttribute('capture', 'environment'); fileRef.current.click(); }}
-                className="flex-1 flex items-center justify-center gap-2 p-4 rounded-xl border-2 border-dashed border-blue-300 bg-blue-50 text-blue-700 font-medium hover:bg-blue-100 active:scale-[0.98] transition-all"
-                style={{ minHeight: '56px' }}
-              >
-                <Camera size={20} /> Take Photo
-              </button>
-              <button
-                onClick={() => { fileRef.current.removeAttribute('capture'); fileRef.current.click(); }}
-                className="flex-1 flex items-center justify-center gap-2 p-4 rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 text-gray-700 font-medium hover:bg-gray-100 active:scale-[0.98] transition-all"
-                style={{ minHeight: '56px' }}
-              >
-                <Upload size={20} /> Gallery
-              </button>
-            </div>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleFileChange}
-              className="hidden"
-            />
+          <div className="ch-capture-row">
+            <button
+              onClick={() => { fileRef.current.setAttribute('capture', 'environment'); fileRef.current.click(); }}
+              className="ch-capture-btn primary"
+            >
+              <Camera size={20} /> Take Photo
+            </button>
+            <button
+              onClick={() => { fileRef.current.removeAttribute('capture'); fileRef.current.click(); }}
+              className="ch-capture-btn secondary"
+            >
+              <Upload size={20} /> Gallery
+            </button>
           </div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleFileChange}
+            style={{ display: 'none' }}
+          />
 
           {/* Previews */}
           {previews.length > 0 && (
-            <div className="flex gap-2 overflow-x-auto pb-2">
+            <div className="ch-previews">
               {previews.map((src, i) => (
-                <div key={i} className="relative flex-shrink-0 w-20 h-20 rounded-lg overflow-hidden border">
-                  <img src={src} alt={`Capture ${i + 1}`} className="w-full h-full object-cover" />
+                <div key={i} className="ch-preview">
+                  <img src={src} alt={`Capture ${i + 1}`} />
                   <button
                     onClick={() => removeFile(i)}
-                    className="absolute top-0 right-0 bg-red-500 text-white rounded-bl-lg p-0.5"
+                    className="ch-preview-remove"
+                    aria-label="Remove photo"
                   >
                     <X size={14} />
                   </button>
@@ -354,16 +361,16 @@ function CaptureModal({ workflow, gps, onSubmit, onClose, loading }) {
           )}
 
           {/* GPS indicator */}
-          <div className="flex items-center gap-2 text-sm">
-            <MapPin size={16} className={gps ? 'text-green-600' : 'text-amber-500'} />
-            <span className={gps ? 'text-green-700' : 'text-amber-600'}>
+          <div className={`ch-gps-row ${gps ? '' : 'acquiring'}`}>
+            <MapPin size={16} />
+            <span>
               {gps ? `GPS: ${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)} (±${Math.round(gps.accuracy)}m)` : 'Acquiring GPS...'}
             </span>
           </div>
 
           {/* Digital-only hint */}
           {workflow.digitalOnly && (
-            <div className="bg-cyan-50 border border-cyan-200 rounded-lg p-3 text-sm text-cyan-800">
+            <div className="ch-digital-banner">
               <strong>Digital-only:</strong> No paper expected for this capture.
               Office will process directly from the photo — no hardcopy hand-in.
             </div>
@@ -372,25 +379,25 @@ function CaptureModal({ workflow, gps, onSubmit, onClose, loading }) {
           {/* Workflow-specific fields */}
           {workflow.fields.includes('amount_declared') && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+              <label className="ch-field-label">Amount</label>
               <input
                 type="number"
                 step="0.01"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 placeholder="Enter amount"
-                className="w-full px-3 py-3 border rounded-lg text-base"
+                className="ch-field-input"
               />
             </div>
           )}
 
           {workflow.fields.includes('payment_mode') && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Payment Mode</label>
+              <label className="ch-field-label">Payment Mode</label>
               <select
                 value={paymentMode}
                 onChange={(e) => setPaymentMode(e.target.value)}
-                className="w-full px-3 py-3 border rounded-lg text-base bg-white"
+                className="ch-field-select"
               >
                 <option value="">Select...</option>
                 <option value="cash">Cash</option>
@@ -403,7 +410,7 @@ function CaptureModal({ workflow, gps, onSubmit, onClose, loading }) {
 
           {workflow.fields.includes('access_for') && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
+              <label className="ch-field-label">
                 {workflow.key === 'EXPENSE' ? 'Who is this for? (ACCESS)' : 'Customer / Hospital'}
               </label>
               <input
@@ -411,21 +418,21 @@ function CaptureModal({ workflow, gps, onSubmit, onClose, loading }) {
                 value={accessFor}
                 onChange={(e) => setAccessFor(e.target.value)}
                 placeholder="e.g., Dr. Santos, Hospital X"
-                className="w-full px-3 py-3 border rounded-lg text-base"
+                className="ch-field-input"
               />
             </div>
           )}
 
           {/* Notes */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Notes (optional)</label>
+            <label className="ch-field-label">Notes (optional)</label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Add any notes for the office team..."
               rows={2}
               maxLength={1000}
-              className="w-full px-3 py-3 border rounded-lg text-base resize-none"
+              className="ch-field-textarea"
             />
           </div>
 
@@ -433,12 +440,12 @@ function CaptureModal({ workflow, gps, onSubmit, onClose, loading }) {
           <button
             onClick={handleSubmit}
             disabled={loading || files.length === 0}
-            className="w-full py-4 rounded-xl font-bold text-white text-lg disabled:opacity-50 active:scale-[0.98] transition-all"
-            style={{ backgroundColor: workflow.color, minHeight: '56px' }}
+            className="ch-submit-btn"
+            style={{ backgroundColor: workflow.color }}
           >
             {loading ? (
-              <span className="flex items-center justify-center gap-2">
-                <RefreshCw size={20} className="animate-spin" /> Submitting...
+              <span className="ch-submit-btn-loading">
+                <RefreshCw size={20} style={{ animation: 'spin 1s linear infinite' }} /> Submitting...
               </span>
             ) : (
               'Submit to Office Queue'
@@ -446,17 +453,6 @@ function CaptureModal({ workflow, gps, onSubmit, onClose, loading }) {
           </button>
         </div>
       </div>
-    </div>
-  );
-}
-
-// ── Pending count badge ──
-function PendingBadge({ count }) {
-  if (!count) return null;
-  return (
-    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm">
-      <Clock size={14} />
-      <span>{count} pending in queue</span>
     </div>
   );
 }
@@ -524,15 +520,15 @@ export default function BdmCaptureHub() {
   const totalActiveTiles = grouped.reduce((acc, g) => acc + g.workflows.length, 0);
 
   return (
-    <div className="max-w-lg mx-auto px-4 py-6 min-h-screen bg-gradient-to-b from-slate-50 to-white">
+    <div className="ch-page">
       <WorkflowGuide pageKey="bdm-capture-hub" />
 
       {/* Header */}
-      <div className="mb-6">
-        <div className="flex items-start justify-between gap-3 mb-2">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold text-gray-900">Capture Hub</h1>
-            <p className="text-gray-500 mt-0.5 text-sm">
+      <div className="ch-header">
+        <div className="ch-header-row">
+          <div>
+            <h1 className="ch-title">Capture Hub</h1>
+            <p className="ch-subtitle">
               {totalActiveTiles} capture types — one tap, GPS + photo to office
             </p>
           </div>
@@ -541,11 +537,11 @@ export default function BdmCaptureHub() {
       </div>
 
       {/* Sectioned workflow cards */}
-      <div className="space-y-5 mb-8">
+      <div className="ch-sections">
         {grouped.map(({ section, workflows }) => (
           <div key={section.id}>
             <SectionHeader section={section} count={workflows.length} />
-            <div className="space-y-2">
+            <div className="ch-section-tiles">
               {workflows.map(w => (
                 <CaptureCard
                   key={`${w.key}_${w.sub_type || 'main'}`}
@@ -561,33 +557,33 @@ export default function BdmCaptureHub() {
 
       {/* Recent captures */}
       {recentCaptures.length > 0 && (
-        <div className="mb-6">
-          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700 px-1 mb-2">Recent Captures</h2>
-          <div className="space-y-2">
+        <>
+          <div className="ch-recent-heading">Recent Captures</div>
+          <div className="ch-recent-list">
             {recentCaptures.map(c => (
-              <div key={c._id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-200">
-                <div className="min-w-0 flex-1">
-                  <div className="font-medium text-sm text-gray-900 truncate">
+              <div key={c._id} className="ch-recent-row">
+                <div className="ch-recent-text">
+                  <div className="ch-recent-label">
                     {c.workflow_type.replace(/_/g, ' ')}
                     {c.sub_type ? ` · ${c.sub_type.replace(/_/g, ' ')}` : ''}
                   </div>
-                  <div className="text-xs text-gray-500 truncate">
+                  <div className="ch-recent-meta">
                     {new Date(c.created_at).toLocaleString()}
                     {c.amount_declared ? ` • ₱${c.amount_declared.toLocaleString()}` : ''}
                   </div>
                 </div>
-                <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full flex-shrink-0 ml-2 ${STATUS_COLORS[c.status] || 'bg-gray-100'}`}>
-                  {c.status === 'ACKNOWLEDGED' && <Check size={10} className="inline mr-1 -mt-0.5" />}
+                <span className={`ch-recent-status ${(c.status || '').toLowerCase()}`}>
+                  {c.status === 'ACKNOWLEDGED' && <Check size={10} style={{ display: 'inline', marginRight: 4, verticalAlign: 'middle' }} />}
                   {c.status.replace(/_/g, ' ')}
                 </span>
               </div>
             ))}
           </div>
-        </div>
+        </>
       )}
 
       {/* Fallback note */}
-      <div className="mt-6 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
+      <div className="ch-tip">
         <strong>Tip:</strong> You can always enter expenses, sales, and other records directly from the regular entry pages.
         The capture hub is an optional shortcut for faster field work.
       </div>

@@ -116,6 +116,19 @@ assert('Digital only pill on tile', /Digital only/.test(hubSrc));
 assert('border-left accent style', /borderLeft:\s*`4px solid \$\{workflow\.color\}`/.test(hubSrc));
 assert('header shows tile count', /\$\{totalActiveTiles\}|totalActiveTiles/.test(hubSrc));
 
+// ── 3c. capture-hub.css — scoped styles actually load ─────────
+section('Scoped CSS — frontend/src/styles/capture-hub.css');
+const cssSrc = read('frontend/src/styles/capture-hub.css');
+assert('imports capture-hub.css in CaptureHub',  /import\s+['"]\.\.\/\.\.\/\.\.\/styles\/capture-hub\.css['"]/.test(hubSrc));
+assert('.ch-page rule', /\.ch-page\s*\{/.test(cssSrc));
+assert('.ch-tile rule with display:flex', /\.ch-tile\s*\{[\s\S]*?display:\s*flex/.test(cssSrc));
+assert('.ch-section-header rule', /\.ch-section-header\s*\{/.test(cssSrc));
+assert('.ch-tile-pill rule (digital-only badge)', /\.ch-tile-pill\s*\{/.test(cssSrc));
+assert('.ch-modal-backdrop rule', /\.ch-modal-backdrop\s*\{/.test(cssSrc));
+assert('.rq-card rule', /\.rq-card\s*\{/.test(cssSrc));
+assert('.rq-action.confirm rule', /\.rq-action\.confirm\s*\{/.test(cssSrc));
+assert('@keyframes spin', /@keyframes\s+spin/.test(cssSrc));
+
 // ── 4. Frontend Review Queue ───────────────────────────────────
 section('Frontend — frontend/src/erp/pages/mobile/BdmReviewQueue.jsx');
 const rqSrc = read('frontend/src/erp/pages/mobile/BdmReviewQueue.jsx');
@@ -133,6 +146,9 @@ assert('label: CWT', /'CWT \(BIR 2307\)'/.test(rqSrc));
 assert('resolveKey helper', /function resolveKey/.test(rqSrc));
 assert('empty-state explainer card', /How this works/.test(rqSrc));
 assert('ReviewCard uses composite icon', /WORKFLOW_ICONS\[composite\]/.test(rqSrc));
+assert('imports capture-hub.css in ReviewQueue', /import\s+['"]\.\.\/\.\.\/\.\.\/styles\/capture-hub\.css['"]/.test(rqSrc));
+assert('Review uses .rq-card class', /className="rq-card"/.test(rqSrc));
+assert('Review uses .rq-action class', /className="rq-action confirm"/.test(rqSrc));
 
 // ── 5. WorkflowGuide banners (Rule #1) ─────────────────────────
 section('WorkflowGuide — frontend/src/erp/components/WorkflowGuide.jsx');
