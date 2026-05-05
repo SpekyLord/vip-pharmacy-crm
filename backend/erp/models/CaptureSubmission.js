@@ -22,7 +22,11 @@ const capturedArtifactSchema = new mongoose.Schema({
     enum: [
       'photo',            // generic photo (ODO start/end, waybill, etc.)
       'receipt_scan',     // OR / gas receipt scan
-      'csi_scan',         // unreceived CSI OCR scan
+      'csi_scan',         // CSI delivery copy (pink/yellow proof of delivery)
+      'paid_csi_scan',    // CSI being paid (digital-only, no paper expected)
+      'cr_scan',          // collection receipt (CR) issued to customer
+      'deposit_slip',     // bank deposit slip after collection
+      'cwt_scan',         // BIR Form 2307 (Certificate of Withholding Tax) inbound
       'barcode_scan',     // product barcode for GRN
       'fuel_receipt',     // fuel pump receipt
     ],
@@ -64,17 +68,41 @@ const captureSubmissionSchema = new mongoose.Schema({
   workflow_type: {
     type: String,
     enum: [
-      'SMER',           // #1 — ODO photos + km declaration
+      'SMER',           // #1 — ODO photos + km declaration (digital-only)
       'EXPENSE',        // #2 — OR-based expense
-      'SALES',          // #3 — unreceived CSI scan
+      'SALES',          // #3 — CSI delivery copy (pink/yellow proof of delivery)
       'OPENING_AR',     // #4 — opening AR (all proxy)
-      'COLLECTION',     // #5 — collection (BDM-priority, rare proxy)
+      'COLLECTION',     // #5 — collection capture; sub_type ∈ {CR, DEPOSIT, PAID_CSI}
       'GRN',            // #6 — product scan + batch/expiry
       'PETTY_CASH',     // #7 — mobile request
       'FUEL_ENTRY',     // #8 — fuel pump receipt
+      'CWT_INBOUND',    // #9 — BIR 2307 received from customer (bridges to CwtLedger)
     ],
     required: true,
     index: true,
+  },
+
+  // ── Sub-classification (used by COLLECTION) ──
+  sub_type: {
+    type: String,
+    enum: ['CR', 'DEPOSIT', 'PAID_CSI', null],
+    default: null,
+  },
+
+  // ── Physical paper expectation (Slice 3 reconciliation) ──
+  // false for digital-only captures (SMER, COLLECTION/PAID_CSI)
+  // true for everything else — physical paper must arrive at office
+  physical_required: { type: Boolean, default: true },
+  physical_status: {
+    type: String,
+    enum: ['PENDING', 'RECEIVED', 'MISSING', 'N_A'],
+    default: 'PENDING',
+    index: true,
+  },
+  physical_received_at: { type: Date },
+  physical_received_by: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
   },
 
   // ── Status lifecycle ──
@@ -119,6 +147,7 @@ const captureSubmissionSchema = new mongoose.Schema({
     enum: [
       'ExpenseEntry', 'SalesLine', 'Collection', 'GrnEntry',
       'SmerEntry', 'PettyCashTransaction', 'CarLogbookEntry',
+      'CwtLedgerEntry',
       null,
     ],
   },
@@ -150,5 +179,7 @@ captureSubmissionSchema.index({ entity_id: 1, status: 1, workflow_type: 1 });
 captureSubmissionSchema.index({ created_at: -1 });
 captureSubmissionSchema.index({ proxy_id: 1, status: 1 });
 captureSubmissionSchema.index({ status: 1, created_at: 1 });  // SLA agent scan
+// Slice-3 reconciliation: BDM × cycle × physical_status sweeps
+captureSubmissionSchema.index({ bdm_id: 1, physical_status: 1, created_at: 1 });
 
 module.exports = mongoose.model('CaptureSubmission', captureSubmissionSchema);

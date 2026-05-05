@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   CheckCircle2, AlertTriangle,
   Receipt, Camera, FileText, Truck, Fuel, Wallet,
+  ReceiptText, Landmark, HandCoins, FileBadge,
   RefreshCw, MessageSquare, ThumbsUp,
   ThumbsDown, X,
 } from 'lucide-react';
@@ -19,6 +20,8 @@ import useCaptureSubmissions from '../../hooks/useCaptureSubmissions';
 import { useAuth } from '../../../hooks/useAuth';
 import WorkflowGuide from '../../components/WorkflowGuide';
 
+// Icon + color per (workflow_type, sub_type) — must match BdmCaptureHub.WORKFLOWS
+// so the BDM sees the same visual identity at capture time and review time.
 const WORKFLOW_ICONS = {
   EXPENSE: Receipt,
   SMER: Camera,
@@ -27,7 +30,11 @@ const WORKFLOW_ICONS = {
   FUEL_ENTRY: Fuel,
   PETTY_CASH: Wallet,
   OPENING_AR: FileText,
-  COLLECTION: Receipt,
+  COLLECTION: ReceiptText,            // generic CR-style — overridden by sub_type below
+  COLLECTION_CR: ReceiptText,
+  COLLECTION_DEPOSIT: Landmark,
+  COLLECTION_PAID_CSI: HandCoins,
+  CWT_INBOUND: FileBadge,
 };
 
 const WORKFLOW_COLORS = {
@@ -39,7 +46,36 @@ const WORKFLOW_COLORS = {
   PETTY_CASH: '#ca8a04',
   OPENING_AR: '#6366f1',
   COLLECTION: '#0891b2',
+  COLLECTION_CR: '#0891b2',
+  COLLECTION_DEPOSIT: '#0d9488',
+  COLLECTION_PAID_CSI: '#0ea5e9',
+  CWT_INBOUND: '#6366f1',
 };
+
+// Friendly display label per (workflow_type, sub_type) — matches the BDM's
+// mental model from Capture Hub instead of leaking the raw enum.
+const WORKFLOW_LABELS = {
+  EXPENSE: 'Expense / OR',
+  SMER: 'ODO Reading',
+  SALES: 'CSI Delivery Copy',
+  GRN: 'GRN Item',
+  FUEL_ENTRY: 'Fuel Receipt',
+  PETTY_CASH: 'Petty Cash Request',
+  OPENING_AR: 'Opening AR',
+  COLLECTION: 'Collection',
+  COLLECTION_CR: 'Collection Receipt (CR)',
+  COLLECTION_DEPOSIT: 'Deposit Slip',
+  COLLECTION_PAID_CSI: 'CSI Being Paid',
+  CWT_INBOUND: 'CWT (BIR 2307)',
+};
+
+// Resolve composite key from item (workflow_type[_sub_type])
+function resolveKey(item) {
+  if (item?.workflow_type === 'COLLECTION' && item?.sub_type) {
+    return `COLLECTION_${item.sub_type}`;
+  }
+  return item?.workflow_type || 'UNKNOWN';
+}
 
 // ── Dispute Modal ──
 function DisputeModal({ item, onSubmit, onClose, loading }) {
@@ -103,15 +139,20 @@ function DisputeModal({ item, onSubmit, onClose, loading }) {
 
 // ── Review Card ──
 function ReviewCard({ item, onAcknowledge, onDispute, loading }) {
-  const Icon = WORKFLOW_ICONS[item.workflow_type] || Receipt;
-  const color = WORKFLOW_COLORS[item.workflow_type] || '#64748b';
+  const composite = resolveKey(item);
+  const Icon = WORKFLOW_ICONS[composite] || WORKFLOW_ICONS[item.workflow_type] || Receipt;
+  const color = WORKFLOW_COLORS[composite] || WORKFLOW_COLORS[item.workflow_type] || '#64748b';
+  const label = WORKFLOW_LABELS[composite] || WORKFLOW_LABELS[item.workflow_type] || (item.workflow_type || '').replace(/_/g, ' ');
   const proxyName = item.proxy_id?.name || 'Office team';
   const age = item.proxy_completed_at
     ? Math.round((Date.now() - new Date(item.proxy_completed_at).getTime()) / (1000 * 60 * 60))
     : null;
 
   return (
-    <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+    <div
+      className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow"
+      style={{ borderLeft: `4px solid ${color}` }}
+    >
       {/* Header */}
       <div className="flex items-center gap-3 p-4 border-b">
         <div
@@ -121,9 +162,7 @@ function ReviewCard({ item, onAcknowledge, onDispute, loading }) {
           <Icon size={20} />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="font-semibold text-gray-900">
-            {item.workflow_type.replace(/_/g, ' ')}
-          </div>
+          <div className="font-semibold text-gray-900">{label}</div>
           <div className="text-sm text-gray-500 truncate">
             Processed by {proxyName}
             {age != null && ` • ${age}h ago`}
@@ -276,6 +315,12 @@ export default function BdmReviewQueue() {
           <CheckCircle2 size={48} className="mx-auto text-green-300 mb-3" />
           <div className="text-gray-500 font-medium">All caught up!</div>
           <div className="text-sm text-gray-400 mt-1">No entries waiting for your review</div>
+          <div className="mt-4 mx-auto max-w-sm bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700 text-left">
+            <strong>How this works:</strong> When the office team enters expenses,
+            sales, collections, or other ERP records on your behalf using your
+            captures, the entries appear here for you to confirm or dispute.
+            Entries auto-acknowledge after 72 hours.
+          </div>
         </div>
       ) : (
         <div className="space-y-3">

@@ -12,49 +12,134 @@
  */
 import { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  Camera, Receipt, FileText, Truck, Fuel, Wallet,
+  Camera, Receipt, FileText, Truck, Fuel,
+  ReceiptText, Landmark, HandCoins, FileBadge,
   MapPin, Clock, Upload,
   ChevronRight, RefreshCw, X,
+  Car, Wallet as WalletOut, Handshake, Banknote, PackageOpen,
+  Sparkles, Check,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import useCaptureSubmissions from '../../hooks/useCaptureSubmissions';
 import { useAuth } from '../../../hooks/useAuth';
 import WorkflowGuide from '../../components/WorkflowGuide';
 
-// ── Workflow definitions ──
+// ── Sections + Workflow definitions ──
+// Tiles are grouped into 5 sections by the BDM's mental model of WHERE
+// the document originates (vehicle, cash-out, customer, bank, stock).
+// Order within a section is by frequency-of-use.
+//
+// `sub_type` is set for COLLECTION variants — backend uses it to route
+// the same workflow_type to different physical-paper expectations
+// (PAID_CSI is digital-only; CR + DEPOSIT both expect paper).
+//
+// `digitalOnly` tiles render a small "Digital only" pill so the BDM knows
+// no paper trail is expected before opening the modal.
+const SECTIONS = [
+  { id: 'vehicle',    label: 'Vehicle',           icon: Car,         caption: 'Daily reading' },
+  { id: 'cash_out',   label: 'Cash Out',          icon: WalletOut,   caption: 'Money you spent' },
+  { id: 'customer',   label: 'Customer Delivery', icon: Handshake,   caption: 'Sale-side documents' },
+  { id: 'collection', label: 'Collection',        icon: Banknote,    caption: 'Money coming in' },
+  { id: 'inventory',  label: 'Inventory',         icon: PackageOpen, caption: 'Stock received' },
+];
+
 const WORKFLOWS = [
   {
+    key: 'SMER',
+    section: 'vehicle',
+    label: 'Scan ODO (Start / End)',
+    icon: Camera,
+    color: '#0284c7',
+    description: 'Daily odometer reading photos — start + end of day',
+    artifactKind: 'photo',
+    fields: [],
+    digitalOnly: true,
+    active: true,
+  },
+  {
     key: 'EXPENSE',
+    section: 'cash_out',
     label: 'Scan OR / Receipt',
     icon: Receipt,
     color: '#059669',
-    description: 'Scan official receipt, enter amount + payment mode',
+    description: 'Official receipt — amount + payment mode',
     artifactKind: 'receipt_scan',
     fields: ['amount_declared', 'payment_mode', 'access_for'],
     active: true,
   },
   {
-    key: 'SMER',
-    label: 'Scan ODO (Start / End)',
-    icon: Camera,
-    color: '#0284c7',
-    description: 'Capture odometer reading photos',
-    artifactKind: 'photo',
-    fields: [],
+    key: 'FUEL_ENTRY',
+    section: 'cash_out',
+    label: 'Scan Fuel Receipt',
+    icon: Fuel,
+    color: '#ea580c',
+    description: 'Fuel pump receipt — liters + amount',
+    artifactKind: 'fuel_receipt',
+    fields: ['amount_declared'],
     active: true,
   },
   {
     key: 'SALES',
-    label: 'Scan Unreceived CSI',
+    section: 'customer',
+    label: 'Scan CSI (Delivery Copy)',
     icon: FileText,
     color: '#7c3aed',
-    description: 'OCR scan for proxy entry into ERP',
+    description: 'Pink/yellow/duplicate CSI — proof of delivery',
     artifactKind: 'csi_scan',
-    fields: [],
+    fields: ['access_for'],
+    active: true,
+  },
+  {
+    key: 'COLLECTION',
+    sub_type: 'PAID_CSI',
+    section: 'collection',
+    label: 'Scan CSI Being Paid',
+    icon: HandCoins,
+    color: '#0ea5e9',
+    description: 'CSI marked paid by customer',
+    artifactKind: 'paid_csi_scan',
+    fields: ['access_for'],
+    digitalOnly: true,
+    active: true,
+  },
+  {
+    key: 'COLLECTION',
+    sub_type: 'CR',
+    section: 'collection',
+    label: 'Scan Collection Receipt (CR)',
+    icon: ReceiptText,
+    color: '#0891b2',
+    description: 'CR issued to customer — amount + customer',
+    artifactKind: 'cr_scan',
+    fields: ['amount_declared', 'access_for'],
+    active: true,
+  },
+  {
+    key: 'CWT_INBOUND',
+    section: 'collection',
+    label: 'Scan CWT (BIR 2307)',
+    icon: FileBadge,
+    color: '#6366f1',
+    description: 'Certificate of withholding tax from customer',
+    artifactKind: 'cwt_scan',
+    fields: ['amount_declared', 'access_for'],
+    active: true,
+  },
+  {
+    key: 'COLLECTION',
+    sub_type: 'DEPOSIT',
+    section: 'collection',
+    label: 'Scan Deposit Slip',
+    icon: Landmark,
+    color: '#0d9488',
+    description: 'Bank deposit slip after collection',
+    artifactKind: 'deposit_slip',
+    fields: ['amount_declared'],
     active: true,
   },
   {
     key: 'GRN',
+    section: 'inventory',
     label: 'Scan GRN Item',
     icon: Truck,
     color: '#dc2626',
@@ -63,26 +148,8 @@ const WORKFLOWS = [
     fields: [],
     active: true,
   },
-  {
-    key: 'FUEL_ENTRY',
-    label: 'Scan Fuel Receipt',
-    icon: Fuel,
-    color: '#ea580c',
-    description: 'Fuel pump receipt OCR + liters + amount',
-    artifactKind: 'fuel_receipt',
-    fields: ['amount_declared'],
-    active: true,
-  },
-  {
-    key: 'PETTY_CASH',
-    label: 'Request Petty Cash',
-    icon: Wallet,
-    color: '#ca8a04',
-    description: 'Mobile request — amount + purpose',
-    artifactKind: 'photo',
-    fields: ['amount_declared'],
-    active: true,
-  },
+  // PETTY_CASH tile removed May 05 2026 — petty cash request flow moved
+  // off the Capture Hub. Backend enum retained for existing/legacy rows.
 ];
 
 // ── GPS helper ──
@@ -112,8 +179,8 @@ function CaptureCard({ workflow, onCapture, disabled }) {
     <button
       onClick={() => onCapture(workflow)}
       disabled={disabled}
-      className="w-full flex items-center gap-4 p-4 rounded-xl border-2 border-gray-200 hover:border-gray-300 active:scale-[0.98] transition-all bg-white shadow-sm disabled:opacity-50"
-      style={{ minHeight: '72px' }}
+      className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-200 hover:border-gray-300 hover:shadow-md active:scale-[0.98] transition-all bg-white shadow-sm disabled:opacity-50"
+      style={{ minHeight: '72px', borderLeft: `4px solid ${workflow.color}` }}
     >
       <div
         className="flex-shrink-0 w-12 h-12 rounded-lg flex items-center justify-center"
@@ -121,12 +188,38 @@ function CaptureCard({ workflow, onCapture, disabled }) {
       >
         <Icon size={24} />
       </div>
-      <div className="flex-1 text-left">
-        <div className="font-semibold text-gray-900 text-base">{workflow.label}</div>
-        <div className="text-sm text-gray-500 mt-0.5">{workflow.description}</div>
+      <div className="flex-1 text-left min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="font-semibold text-gray-900 text-base truncate">{workflow.label}</div>
+          {workflow.digitalOnly && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full bg-cyan-50 text-cyan-700 border border-cyan-200 flex-shrink-0">
+              <Sparkles size={10} /> Digital only
+            </span>
+          )}
+        </div>
+        <div className="text-sm text-gray-500 mt-0.5 line-clamp-2">{workflow.description}</div>
       </div>
       <ChevronRight size={20} className="text-gray-400 flex-shrink-0" />
     </button>
+  );
+}
+
+// ── Section Header ──
+function SectionHeader({ section, count }) {
+  const Icon = section.icon;
+  return (
+    <div className="flex items-center gap-2 px-1 mb-2 mt-1">
+      <div className="w-7 h-7 rounded-md bg-slate-100 text-slate-600 flex items-center justify-center flex-shrink-0">
+        <Icon size={14} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-xs font-bold uppercase tracking-wider text-slate-700">{section.label}</div>
+        <div className="text-[11px] text-slate-400 -mt-0.5">{section.caption}</div>
+      </div>
+      <span className="text-[11px] font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+        {count}
+      </span>
+    </div>
   );
 }
 
@@ -179,6 +272,9 @@ function CaptureModal({ workflow, gps, onSubmit, onClose, loading }) {
       bdm_notes: notes || undefined,
     };
 
+    if (workflow.sub_type) {
+      payload.sub_type = workflow.sub_type;
+    }
     if (workflow.fields.includes('amount_declared') && amount) {
       payload.amount_declared = parseFloat(amount);
     }
@@ -265,6 +361,14 @@ function CaptureModal({ workflow, gps, onSubmit, onClose, loading }) {
             </span>
           </div>
 
+          {/* Digital-only hint */}
+          {workflow.digitalOnly && (
+            <div className="bg-cyan-50 border border-cyan-200 rounded-lg p-3 text-sm text-cyan-800">
+              <strong>Digital-only:</strong> No paper expected for this capture.
+              Office will process directly from the photo — no hardcopy hand-in.
+            </div>
+          )}
+
           {/* Workflow-specific fields */}
           {workflow.fields.includes('amount_declared') && (
             <div>
@@ -299,7 +403,9 @@ function CaptureModal({ workflow, gps, onSubmit, onClose, loading }) {
 
           {workflow.fields.includes('access_for') && (
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Who is this for? (ACCESS)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {workflow.key === 'EXPENSE' ? 'Who is this for? (ACCESS)' : 'Customer / Hospital'}
+              </label>
               <input
                 type="text"
                 value={accessFor}
@@ -409,44 +515,69 @@ export default function BdmCaptureHub() {
     AUTO_ACKNOWLEDGED: 'bg-gray-100 text-gray-500',
   };
 
+  // Group active workflows by section for the rendered list
+  const grouped = SECTIONS.map(s => ({
+    section: s,
+    workflows: WORKFLOWS.filter(w => w.active && w.section === s.id),
+  })).filter(g => g.workflows.length > 0);
+
+  const totalActiveTiles = grouped.reduce((acc, g) => acc + g.workflows.length, 0);
+
   return (
-    <div className="max-w-lg mx-auto px-4 py-6 min-h-screen bg-gray-50">
+    <div className="max-w-lg mx-auto px-4 py-6 min-h-screen bg-gradient-to-b from-slate-50 to-white">
       <WorkflowGuide pageKey="bdm-capture-hub" />
 
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Capture Hub</h1>
-        <p className="text-gray-500 mt-1">One-tap capture from the field</p>
-        <PendingBadge count={pendingCount} />
+        <div className="flex items-start justify-between gap-3 mb-2">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold text-gray-900">Capture Hub</h1>
+            <p className="text-gray-500 mt-0.5 text-sm">
+              {totalActiveTiles} capture types — one tap, GPS + photo to office
+            </p>
+          </div>
+          <PendingBadge count={pendingCount} />
+        </div>
       </div>
 
-      {/* Workflow cards */}
-      <div className="space-y-3 mb-8">
-        {WORKFLOWS.filter(w => w.active).map(w => (
-          <CaptureCard
-            key={w.key}
-            workflow={w}
-            onCapture={handleCapture}
-            disabled={loading}
-          />
+      {/* Sectioned workflow cards */}
+      <div className="space-y-5 mb-8">
+        {grouped.map(({ section, workflows }) => (
+          <div key={section.id}>
+            <SectionHeader section={section} count={workflows.length} />
+            <div className="space-y-2">
+              {workflows.map(w => (
+                <CaptureCard
+                  key={`${w.key}_${w.sub_type || 'main'}`}
+                  workflow={w}
+                  onCapture={handleCapture}
+                  disabled={loading}
+                />
+              ))}
+            </div>
+          </div>
         ))}
       </div>
 
       {/* Recent captures */}
       {recentCaptures.length > 0 && (
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-3">Recent Captures</h2>
+        <div className="mb-6">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-700 px-1 mb-2">Recent Captures</h2>
           <div className="space-y-2">
             {recentCaptures.map(c => (
-              <div key={c._id} className="flex items-center justify-between p-3 bg-white rounded-lg border">
-                <div>
-                  <div className="font-medium text-sm text-gray-900">{c.workflow_type}</div>
-                  <div className="text-xs text-gray-500">
+              <div key={c._id} className="flex items-center justify-between p-3 bg-white rounded-lg border border-slate-200">
+                <div className="min-w-0 flex-1">
+                  <div className="font-medium text-sm text-gray-900 truncate">
+                    {c.workflow_type.replace(/_/g, ' ')}
+                    {c.sub_type ? ` · ${c.sub_type.replace(/_/g, ' ')}` : ''}
+                  </div>
+                  <div className="text-xs text-gray-500 truncate">
                     {new Date(c.created_at).toLocaleString()}
                     {c.amount_declared ? ` • ₱${c.amount_declared.toLocaleString()}` : ''}
                   </div>
                 </div>
-                <span className={`text-xs px-2 py-1 rounded-full font-medium ${STATUS_COLORS[c.status] || 'bg-gray-100'}`}>
+                <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded-full flex-shrink-0 ml-2 ${STATUS_COLORS[c.status] || 'bg-gray-100'}`}>
+                  {c.status === 'ACKNOWLEDGED' && <Check size={10} className="inline mr-1 -mt-0.5" />}
                   {c.status.replace(/_/g, ' ')}
                 </span>
               </div>
@@ -456,7 +587,7 @@ export default function BdmCaptureHub() {
       )}
 
       {/* Fallback note */}
-      <div className="mt-8 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
+      <div className="mt-6 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
         <strong>Tip:</strong> You can always enter expenses, sales, and other records directly from the regular entry pages.
         The capture hub is an optional shortcut for faster field work.
       </div>
