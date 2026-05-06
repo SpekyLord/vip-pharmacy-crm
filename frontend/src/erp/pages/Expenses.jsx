@@ -382,6 +382,16 @@ export default function Expenses() {
   const canPresidentReverse = hasSubPermission('accounting', 'reverse_posted');
   const lookupApi = useErpApi();
   const { options: expCatOpts } = useLookupOptions('EXPENSE_CATEGORY');
+  // Phase J4.1 — BIR ATC dropdown for EWT-eligible expense lines. Filters out
+  // HOSPITAL (inbound 2307, hospital→VIP) and EMPLOYEE_* (compensation 1601-C,
+  // payslip-only) — neither belongs on an outbound expense line. Subscribers
+  // adding new outbound EWT codes via Control Center → Lookup Tables appear
+  // automatically as long as applies_to is not in the exclusion list.
+  const { options: atcOpts } = useLookupOptions('BIR_ATC_CODES');
+  const expenseAtcOpts = atcOpts.filter(o => {
+    const a = o.metadata?.applies_to || '';
+    return a !== 'HOSPITAL' && !a.startsWith('EMPLOYEE');
+  });
   const EXPENSE_CATEGORIES = expCatOpts.map(o => o.label);
   const { options: birFlagOpts } = useLookupOptions('BIR_FLAG');
   const { options: expTypeOpts } = useLookupOptions('EXPENSE_TYPE');
@@ -569,7 +579,8 @@ export default function Expenses() {
       amount: 0,
       or_number: '',
       payment_mode: 'CASH',
-      notes: ''
+      notes: '',
+      atc_code: null  // Phase J4.1 — null = non-EWT line; engine skips withholding emit at POST.
     }]);
   };
 
@@ -1226,6 +1237,16 @@ export default function Expenses() {
                     {line.or_photo_url && <span style={{ fontSize: 10, padding: '2px 6px', borderRadius: 4, background: '#dcfce7', color: '#166534', fontWeight: 600 }}>OR Photo ✓</span>}
                     <SelectField value={line.payment_mode} onChange={e => updateLine(idx, 'payment_mode', e.target.value)} style={{ padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}>
                       {paymentModes.filter(pm => pm.is_active !== false).map(pm => <option key={pm.mode_code} value={pm.mode_code}>{pm.mode_label}{pm.coa_code ? ` (${pm.coa_code})` : ''}</option>)}
+                    </SelectField>
+                    {/* Phase J4.1 — BIR ATC for EWT-eligible expenses (rent / professional fees / TWA-agent purchases). Optional; blank = non-EWT. */}
+                    <SelectField
+                      value={line.atc_code || ''}
+                      onChange={e => updateLine(idx, 'atc_code', e.target.value || null)}
+                      title="BIR ATC — EWT withholding code. Set on rent / professional fees / TWA-agent purchases; leave blank for non-EWT expenses. Engine emits a WithholdingLedger row at POST when set."
+                      style={{ maxWidth: 200, padding: '3px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }}
+                    >
+                      <option value="">ATC...</option>
+                      {expenseAtcOpts.map(o => <option key={o.code} value={o.code}>{o.label}</option>)}
                     </SelectField>
                     {line.calf_required && (
                       line.calf_id

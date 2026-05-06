@@ -15,6 +15,8 @@ const { invalidate: invalidateRebateCommissionCache } = require('../../utils/reb
 const { invalidate: invalidateBirRolesCache } = require('../../utils/birAccess');
 const { invalidate: invalidateCockpitRolesCache } = require('../../utils/executiveCockpitAccess');
 const { invalidatePriceCache } = require('../services/priceResolver');
+// Phase A.4 — bust the JE_RETRY_ROLES cache when admin edits the role list.
+const { invalidate: invalidateJeRetryAccess } = require('../utils/jeRetryAccess');
 
 // Categories whose changes must bust the OR parser's lookup cache (couriers/payment keywords)
 const OR_PARSER_LOOKUP_CATEGORIES = new Set(['OCR_COURIER_ALIASES', 'OCR_PAYMENT_KEYWORDS']);
@@ -124,6 +126,10 @@ const CAPTURE_LIFECYCLE_ROLES_CATEGORIES = new Set(['CAPTURE_LIFECYCLE_ROLES']);
 // take effect within the same 60s cache window everything else honors.
 const { invalidateGraceCache: invalidateDriveAllocGraceCache } = require('./driveAllocationController');
 const DRIVE_ALLOCATION_CONFIG_CATEGORIES = new Set(['DRIVE_ALLOCATION_CONFIG']);
+// Phase A.4 — bust the JE-retry / AR-recompute role cache (60s TTL in
+// jeRetryAccess.js). Subscriber admin edits to the role list propagate within
+// one minute across all running instances for the entity.
+const JE_RETRY_ROLES_CATEGORIES = new Set(['JE_RETRY_ROLES']);
 
 // Phase G6.10/G7 — categories whose seeded rows must default is_active: false so
 // subscribers explicitly opt in (Anthropic-billable features, spend caps that
@@ -2491,6 +2497,22 @@ const SEED_DEFAULTS = {
     { code: 'DEFAULT', label: 'Accounting Integrity tolerances + sub-ledger strictness', insert_only_metadata: true, metadata: { tb_tolerance: 0.01, je_math_tolerance: 0.01, subledger_tolerance: 1.00, ic_tolerance: 1.00, subledger_enforce: false } },
   ],
 
+  // backend/erp/utils/jeRetryAccess.js → getRetryJeRoles / getRecomputeArRoles
+  // Phase A.4 (May 2026) — role gates for the AR/AP integrity admin surface.
+  // Subscribers tune per-entity via Control Center → Lookup Tables →
+  // JE_RETRY_ROLES. Subscription readiness (Rule #3 / #19): a pharmacy SaaS
+  // tenant whose finance person doesn't carry the `finance` auth role can add
+  // their own role string here without a code deploy.
+  //   - RETRY_JE: re-fire autoJournal for a POSTED-but-FAILED source doc.
+  //               Writes to GL — restrict to books-owning roles.
+  //   - RECOMPUTE_AR: bulk refresh outstanding_amount across the entity.
+  //                   Idempotent (read-mostly), but slow on large datasets.
+  // insert_only_metadata: true → admin role-list edits survive future re-seeds.
+  JE_RETRY_ROLES: [
+    { code: 'RETRY_JE', label: 'Roles allowed to retry a failed JournalEntry', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'] } },
+    { code: 'RECOMPUTE_AR', label: 'Roles allowed to bulk-recompute AR/AP outstanding', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'] } },
+  ],
+
   // backend/utils/teamActivityThresholds.js → getThresholds()
   // Powers the COO-facing Statistics → Team Activity tab. Subscriber-tunable
   // via Control Center → Lookup Tables → TEAM_ACTIVITY_THRESHOLDS so each
@@ -3283,6 +3305,18 @@ const SEED_DEFAULTS = {
     { code: 'EDIT_1702_MANUAL', label: 'Edit 1702/1701 manual credits (1702-Q paid, foreign credit, prior-year overpayment)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'bookkeeper'], sort_order: 9, description: 'Admin-supplied tax credits stored on BirFilingStatus.totals_snapshot. Required to close out the 1702 net payable line.' } },
   ],
 
+  // ── Phase VIP-1.J / J2.2 (May 2026) — PS-eligibility auto-flip notify roles ──
+  // backend/erp/services/psAutoFlipService.js reads metadata.roles for the
+  // RECEIVE_PS_FLIP_ALERT code with no in-process cache (read once per flip).
+  // Default audience: admin + finance + president — the audience that needs
+  // to know to flip Entity.withholding_active too (the engine requires BOTH
+  // the per-person AND per-entity master switch). Subscribers can narrow
+  // (e.g. president-only) or widen (add bookkeeper) per-entity via Control
+  // Center → Lookup Tables — no code deploy.
+  PS_AUTO_FLIP_NOTIFY_ROLES: [
+    { code: 'RECEIVE_PS_FLIP_ALERT', label: 'Receive MessageInbox alert when a BDM\'s PS eligibility flips true', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 1, description: 'When evaluateEligibility(...) lands true the FIRST time, PeopleMaster.withhold_active flips and these roles get an inbox + email + SMS alert prompting them to confirm Entity.withholding_active too.' } },
+  ],
+
   // BIR_INCOME_TAX_RATES — Phase VIP-1.J / J7 (May 2026). Per-entity income
   // tax rate configuration for the annual 1702 (CORP / OPC / PARTNERSHIP)
   // and 1701 (SOLE_PROP) returns. Rates are CREATE Act (RA 11534) defaults
@@ -3636,6 +3670,7 @@ exports.create = catchAsync(async (req, res) => {
   if (ACTIVITY_PERDIEM_RULES_CATEGORIES.has(cat)) invalidateActivityPerdiemRuleCache(req.entityId);
   if (CAPTURE_LIFECYCLE_ROLES_CATEGORIES.has(cat)) invalidateCaptureLifecycleRolesCache(req.entityId);
   if (DRIVE_ALLOCATION_CONFIG_CATEGORIES.has(cat)) invalidateDriveAllocGraceCache(req.entityId);
+  if (JE_RETRY_ROLES_CATEGORIES.has(cat)) invalidateJeRetryAccess(req.entityId);
   res.status(201).json({ success: true, data: item });
 });
 
@@ -3674,6 +3709,7 @@ exports.update = catchAsync(async (req, res) => {
   if (ACTIVITY_PERDIEM_RULES_CATEGORIES.has(item.category)) invalidateActivityPerdiemRuleCache(item.entity_id);
   if (CAPTURE_LIFECYCLE_ROLES_CATEGORIES.has(item.category)) invalidateCaptureLifecycleRolesCache(item.entity_id);
   if (DRIVE_ALLOCATION_CONFIG_CATEGORIES.has(item.category)) invalidateDriveAllocGraceCache(item.entity_id);
+  if (JE_RETRY_ROLES_CATEGORIES.has(item.category)) invalidateJeRetryAccess(item.entity_id);
   res.json({ success: true, data: item });
 });
 
@@ -3704,6 +3740,7 @@ exports.remove = catchAsync(async (req, res) => {
   if (ACTIVITY_PERDIEM_RULES_CATEGORIES.has(item.category)) invalidateActivityPerdiemRuleCache(item.entity_id);
   if (CAPTURE_LIFECYCLE_ROLES_CATEGORIES.has(item.category)) invalidateCaptureLifecycleRolesCache(item.entity_id);
   if (DRIVE_ALLOCATION_CONFIG_CATEGORIES.has(item.category)) invalidateDriveAllocGraceCache(item.entity_id);
+  if (JE_RETRY_ROLES_CATEGORIES.has(item.category)) invalidateJeRetryAccess(item.entity_id);
   res.json({ success: true, data: item, message: 'Item deactivated' });
 });
 
@@ -3734,6 +3771,7 @@ exports.seedCategory = catchAsync(async (req, res) => {
   if (PRICE_RESOLVER_CATEGORIES.has(category)) invalidatePriceCache(req.entityId);
   if (SALES_DISCOUNT_CONFIG_CATEGORIES.has(category)) invalidateSalesDiscountCache(req.entityId);
   if (ACTIVITY_PERDIEM_RULES_CATEGORIES.has(category)) invalidateActivityPerdiemRuleCache(req.entityId);
+  if (JE_RETRY_ROLES_CATEGORIES.has(category)) invalidateJeRetryAccess(req.entityId);
   const items = await Lookup.find({ entity_id: req.entityId, category }).sort({ sort_order: 1 }).lean();
   res.json({ success: true, data: items, message: `Seeded ${defaults.length} defaults for ${category}` });
 });

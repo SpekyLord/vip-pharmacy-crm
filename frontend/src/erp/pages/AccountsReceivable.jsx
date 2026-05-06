@@ -1,10 +1,14 @@
-import { Fragment, useState, useEffect } from 'react';
+import { Fragment, useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import useCollections from '../hooks/useCollections';
 import WorkflowGuide from '../components/WorkflowGuide';
-import { showError } from '../utils/errorToast';
+import { showError, showSuccess } from '../utils/errorToast';
+// Phase A.4 — manual recompute trigger. Lookup-gated server-side
+// (JE_RETRY_ROLES.RECOMPUTE_AR); the button always renders and a 403 returns
+// a friendly toast if the user's role isn't on the list.
+import { recomputeAr } from '../services/integrityService';
 
 const BUCKET_COLORS = {
   CURRENT: '#16a34a', OVERDUE_30: '#ca8a04', OVERDUE_60: '#d97706', OVERDUE_90: '#ea580c', OVERDUE_120: '#dc2626'
@@ -90,7 +94,7 @@ export default function AccountsReceivable() {
     navigate(`/erp/collections/session${params.toString() ? `?${params.toString()}` : ''}`);
   };
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     setLoading(true);
     Promise.all([
       coll.getArAging({}),
@@ -99,7 +103,25 @@ export default function AccountsReceivable() {
       setArData(ar?.data || null);
       setRateData(rate?.data || null);
     }).catch(err => console.error('[AccountsReceivable]', err.message)).finally(() => setLoading(false));
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  // Phase A.4 — manual recompute. Idempotent on the backend; safe to spam.
+  const [refreshing, setRefreshing] = useState(false);
+  const handleRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      const res = await recomputeAr();
+      showSuccess(res?.message || 'AR/AP outstanding refreshed');
+      reload();
+    } catch (err) {
+      showError(err, 'Could not recompute AR');
+    }
+    setRefreshing(false);
+  };
 
   const hospitals = arData?.hospitals || [];
   const summary = arData?.summary || {};
@@ -128,9 +150,22 @@ export default function AccountsReceivable() {
               <h1>Accounts Receivable</h1>
               <p>Track aging by hospital, review collection buckets, and open CSI detail rows for individual balances.</p>
             </div>
-            <Link to="/erp/reports" className="erp-back-btn">
-              Back to Reports
-            </Link>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={handleRefresh}
+                disabled={refreshing}
+                title="Re-aggregate Σ POSTED Collection.settled_csis per SalesLine. Idempotent."
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                data-testid="ar-recompute-button"
+              >
+                {refreshing ? 'Refreshing…' : 'Refresh AR/AP'}
+              </button>
+              <Link to="/erp/reports" className="erp-back-btn">
+                Back to Reports
+              </Link>
+            </div>
           </div>
 
           {/* Summary Cards */}

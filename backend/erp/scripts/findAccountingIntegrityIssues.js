@@ -41,7 +41,7 @@
  * Optional flags:
  *   --entity <id>        Scope to a single entity (default: all entities)
  *   --period <YYYY-MM>   Override the period scope (default: current + previous month)
- *   --check <name>       Run one of: tb, subledger, jemath, ic, periodclose, all (default: all)
+ *   --check <name>       Run one of: tb, subledger, arap, jestatus, jemath, ic, periodclose, all (default: all)
  *   --csv                Emit a CSV block to stdout
  */
 require('dotenv').config();
@@ -286,6 +286,147 @@ async function checkSubLedger(entityId, coaMap, tolerance, enforce) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Check 2b — AR / AP sub-ledger == GL control account (Phase A.4 — STRICT)
+//
+// Unlike the VAT/CWT informational findings above (which split between accrual
+// GL and cash-basis VatLedger by design), AR and AP recognition is single-
+// basis (accrual) — drift is real and ALWAYS counts as a failure. Tolerance
+// is the same `subledger_tolerance` lookup (₱1.00 default; centavo rounding).
+//
+// AR formula (per entity, cumulative):
+//   Σ POSTED SalesLine.outstanding_amount  ≡  GL AR_TRADE balance
+//
+// AP formula (per entity, cumulative):
+//   Σ POSTED SupplierInvoice.outstanding_amount  ≡  GL AP_TRADE balance
+//
+// outstanding_amount is materialized by services/arAgingService.js so the
+// sub-ledger side is one aggregation. The migration script
+// migrateSubLedgerOutstanding.js seeds the field on legacy POSTED rows.
+//
+// Drift sources to investigate when this alarms:
+//   • Hand-edited GL JE without corresponding Sale/Collection/SI document
+//   • Sale or SI POSTed before this migration ran (run the migration)
+//   • Direct DB write (.updateOne) bypassing the recompute hook
+//   • Over-collection / over-payment clamped to 0 on the sub-ledger side
+//     (legitimately drifts the GL side; investigate the clamped row)
+//   • CreditNote / write-off applied to GL AR but no SalesLine reduction
+//     (out of v1 scope — handle as drift until CN is wired)
+// ─────────────────────────────────────────────────────────────────────────────
+async function checkArApSubLedger(entityId, coaMap, tolerance) {
+  const JournalEntry = require('../models/JournalEntry');
+  const findings = [];
+
+  async function glNetForCode(code, normalBalance) {
+    const gl = await JournalEntry.aggregate([
+      { $match: { entity_id: entityId, status: 'POSTED' } },
+      { $unwind: '$lines' },
+      { $match: { 'lines.account_code': code } },
+      { $group: {
+        _id: null,
+        total_debit: { $sum: '$lines.debit' },
+        total_credit: { $sum: '$lines.credit' },
+      } },
+    ]);
+    const glRow = gl[0] || { total_debit: 0, total_credit: 0 };
+    return normalBalance === 'CREDIT'
+      ? (glRow.total_credit || 0) - (glRow.total_debit || 0)
+      : (glRow.total_debit || 0) - (glRow.total_credit || 0);
+  }
+
+  // ── AR_TRADE — normal balance DEBIT ────────────────────────────────────────
+  if (coaMap.AR_TRADE) {
+    const SalesLine = (() => { try { return require('../models/SalesLine'); } catch { return null; } })();
+    if (SalesLine) {
+      const subAgg = await SalesLine.aggregate([
+        { $match: { entity_id: entityId, status: 'POSTED' } },
+        { $group: { _id: null, total: { $sum: '$outstanding_amount' }, rows: { $sum: 1 } } },
+      ]);
+      const subTotal = subAgg[0]?.total || 0;
+      const rows = subAgg[0]?.rows || 0;
+      const glNet = await glNetForCode(coaMap.AR_TRADE, 'DEBIT');
+      const diff = Math.abs(subTotal - glNet);
+      findings.push({
+        ledger: 'AR_TRADE',
+        scope: 'cumulative',
+        sub_ledger_total: subTotal,
+        gl_net: glNet,
+        diff,
+        rows,
+        ok: diff <= tolerance,
+        coa_code: coaMap.AR_TRADE,
+      });
+    }
+  }
+
+  // ── AP_TRADE — normal balance CREDIT ───────────────────────────────────────
+  if (coaMap.AP_TRADE) {
+    const SupplierInvoice = (() => { try { return require('../models/SupplierInvoice'); } catch { return null; } })();
+    if (SupplierInvoice) {
+      const subAgg = await SupplierInvoice.aggregate([
+        { $match: { entity_id: entityId, status: 'POSTED' } },
+        { $group: { _id: null, total: { $sum: '$outstanding_amount' }, rows: { $sum: 1 } } },
+      ]);
+      const subTotal = subAgg[0]?.total || 0;
+      const rows = subAgg[0]?.rows || 0;
+      const glNet = await glNetForCode(coaMap.AP_TRADE, 'CREDIT');
+      const diff = Math.abs(subTotal - glNet);
+      findings.push({
+        ledger: 'AP_TRADE',
+        scope: 'cumulative',
+        sub_ledger_total: subTotal,
+        gl_net: glNet,
+        diff,
+        rows,
+        ok: diff <= tolerance,
+        coa_code: coaMap.AP_TRADE,
+      });
+    }
+  }
+
+  return findings;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Check 2c — JE-status FAILED rows (Phase A.4)
+//
+// Counts source-doc rows that are POSTED but whose autoJournal call threw
+// (je_status='FAILED'). These are the "silent ledger drift" class — the
+// document looks complete to the user, but the GL is missing the entry.
+// Period-close blocks if any FAILED rows exist. Admin uses Retry JE.
+// ─────────────────────────────────────────────────────────────────────────────
+async function checkJeStatusFailed(entityId) {
+  const findings = [];
+  const kinds = [
+    { kind: 'SALES_LINE', model: '../models/SalesLine', docRefField: 'doc_ref', dateField: 'csi_date' },
+    { kind: 'COLLECTION', model: '../models/Collection', docRefField: 'cr_no', dateField: 'cr_date' },
+    { kind: 'PRF_CALF', model: '../models/PrfCalf', docRefField: 'prf_number', dateField: 'created_at' },
+    { kind: 'SUPPLIER_INVOICE', model: '../models/SupplierInvoice', docRefField: 'invoice_ref', dateField: 'invoice_date' },
+  ];
+
+  for (const k of kinds) {
+    const Model = (() => { try { return require(k.model); } catch { return null; } })();
+    if (!Model) continue;
+    const select = `_id ${k.docRefField} ${k.dateField} je_status je_failure_reason je_attempts`;
+    const rows = await Model.find({
+      entity_id: entityId,
+      status: 'POSTED',
+      je_status: 'FAILED',
+    }).select(select).limit(50).lean();
+    for (const row of rows) {
+      findings.push({
+        kind: k.kind,
+        _id: String(row._id),
+        doc_ref: row[k.docRefField] || String(row._id),
+        date: row[k.dateField],
+        je_failure_reason: row.je_failure_reason,
+        je_attempts: row.je_attempts || 0,
+      });
+    }
+  }
+  return findings;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Check 3 — JE math sanity (per-row total_debit == total_credit)
 // ─────────────────────────────────────────────────────────────────────────────
 async function checkJeMath(entityId, tolerance) {
@@ -458,6 +599,31 @@ async function checkPeriodClose(entityId, period) {
     }
   }
 
+  // Phase A.4 — period-close gate on JE-FAILED rows. A POSTED doc with
+  // je_status='FAILED' means the GL is missing its entry. Closing the period
+  // would lock the broken state. Admin must Retry JE first (or void+re-post).
+  const jeFailedKinds = [
+    { key: 'sales_je_failed', modelPath: '../models/SalesLine', dateField: 'csi_date' },
+    { key: 'collections_je_failed', modelPath: '../models/Collection', dateField: 'cr_date' },
+    { key: 'prfcalf_je_failed', modelPath: '../models/PrfCalf', dateField: 'created_at' },
+    { key: 'supplier_invoice_je_failed', modelPath: '../models/SupplierInvoice', dateField: 'invoice_date' },
+  ];
+  for (const k of jeFailedKinds) {
+    const Model = (() => { try { return require(k.modelPath); } catch { return null; } })();
+    if (!Model) continue;
+    const count = await Model.countDocuments({
+      entity_id: entityId,
+      [k.dateField]: { $gte: start, $lt: end },
+      status: 'POSTED',
+      je_status: 'FAILED',
+    });
+    if (count > 0) {
+      findings.push({ module: k.key, period, draft_count: count, ok: false });
+    } else {
+      findings.push({ module: k.key, period, draft_count: 0, ok: true });
+    }
+  }
+
   return findings;
 }
 
@@ -490,6 +656,8 @@ async function scanAccountingIntegrity({ entityFilter = null, periodOverride = n
       entityName,
       tb: [],
       subLedger: [],
+      arApSubLedger: [],
+      jeStatusFailed: [],
       jeMath: [],
       periodClose: [],
       failures: 0,
@@ -504,6 +672,17 @@ async function scanAccountingIntegrity({ entityFilter = null, periodOverride = n
       // Informational findings (default: true) never count as failures even if
       // diff > tolerance. Admin enables strict recon by setting subledger_enforce.
       block.failures += block.subLedger.filter((f) => !f.ok && !f.informational).length;
+    }
+    // Phase A.4 — STRICT AR/AP recon (always counts; not gated by
+    // subledger_enforce because AR/AP is single-basis accrual).
+    if (checkFilter === 'all' || checkFilter === 'arap') {
+      block.arApSubLedger = await checkArApSubLedger(entity._id, coaMap, tolerances.subledger);
+      block.failures += block.arApSubLedger.filter((f) => !f.ok).length;
+    }
+    // Phase A.4 — JE-status FAILED rows. Each entry is a failure.
+    if (checkFilter === 'all' || checkFilter === 'jestatus') {
+      block.jeStatusFailed = await checkJeStatusFailed(entity._id);
+      block.failures += block.jeStatusFailed.length;
     }
     if (checkFilter === 'all' || checkFilter === 'jemath') {
       block.jeMath = await checkJeMath(entity._id, tolerances.jeMath);
@@ -583,6 +762,29 @@ async function main() {
       }
     }
 
+    if (ent.arApSubLedger?.length) {
+      for (const f of ent.arApSubLedger) {
+        const status = f.ok ? '✓' : '⚠';
+        console.log(`  [${f.ledger} ${f.scope}] ${status} sub-ledger=${f.sub_ledger_total.toFixed(2)} (${f.rows} rows) | GL=${f.gl_net.toFixed(2)} | diff ${f.diff.toFixed(2)} | COA ${f.coa_code}`);
+        if (EMIT_CSV && !f.ok) {
+          csvRows.push([ent.entityName, f.ledger, f.scope, f.sub_ledger_total, f.gl_net, f.diff].join(','));
+        }
+      }
+    }
+
+    if (ent.jeStatusFailed?.length) {
+      console.log(`  [JE-FAILED] ⚠ ${ent.jeStatusFailed.length} POSTED row(s) with je_status='FAILED':`);
+      for (const f of ent.jeStatusFailed.slice(0, 10)) {
+        const date = f.date ? new Date(f.date).toISOString().slice(0, 10) : '????-??-??';
+        const reason = (f.je_failure_reason || '').slice(0, 80);
+        console.log(`    ${f.kind} ${f.doc_ref} (${date}, ${f.je_attempts}× attempts) — ${reason}`);
+        if (EMIT_CSV) {
+          csvRows.push([ent.entityName, 'JE_FAILED', f.kind, f.doc_ref, f.je_attempts, reason].join(','));
+        }
+      }
+      if (ent.jeStatusFailed.length > 10) console.log(`    (${ent.jeStatusFailed.length - 10} more — admin should hit "Retry JE" on the list page)`);
+    }
+
     if (ent.jeMath.length) {
       for (const f of ent.jeMath) {
         console.log(`  [JE-MATH] ⚠ ${f.je_number} (${f.period}) DR ${f.stored_debit.toFixed(2)} ≠ CR ${f.stored_credit.toFixed(2)} | recomputed DR ${f.recomputed_debit.toFixed(2)} CR ${f.recomputed_credit.toFixed(2)}`);
@@ -629,6 +831,8 @@ async function main() {
     console.log('\nRepair path:');
     console.log('  • TB unbalanced: search ErpAuditLog for direct-DB writes; recompute totals via JE.save()');
     console.log('  • Sub-ledger drift: rerun the source events JE engine, or re-tag VatLedger/CwtLedger entries');
+    console.log('  • AR/AP drift: run `node erp/scripts/migrateSubLedgerOutstanding.js --apply` to refresh outstanding_amount');
+    console.log('  • JE-FAILED rows: hit "Retry JE" on the list page (admin/finance/president), or void+re-post the source doc');
     console.log('  • JE-math: open the offending JE, re-save (pre-save validator recomputes totals)');
     console.log('  • IC over-settled: void the excess IcSettlement, re-issue with correct settled_transfers');
     console.log('  • Period-close drafts: post (or void) every draft listed before flipping the PeriodLock');
@@ -649,6 +853,8 @@ module.exports = {
   scanAccountingIntegrity,
   checkTrialBalance,
   checkSubLedger,
+  checkArApSubLedger,
+  checkJeStatusFailed,
   checkJeMath,
   checkIcBalance,
   checkPeriodClose,

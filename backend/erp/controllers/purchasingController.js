@@ -497,6 +497,12 @@ async function postSingleSupplierInvoice(invoiceId, userId) {
     je = await createAndPostJournal(invoice.entity_id, jeData, { session: postSession });
     invoice.status = 'POSTED';
     invoice.event_id = je._id;
+    // Phase A.4 — pre-stamp je_status='POSTED' inside the txn. JE-TX rollback
+    // reverts the field if the createAndPostJournal call somehow throws after
+    // the in-flight stamp (defense-in-depth — the call already ran above).
+    invoice.je_status = 'POSTED';
+    invoice.je_attempts = (invoice.je_attempts || 0) + 1;
+    invoice.last_je_attempt_at = new Date();
     await invoice.save({ session: postSession });
   });
   postSession.endSession();

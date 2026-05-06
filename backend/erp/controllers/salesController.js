@@ -199,6 +199,14 @@ const postSaleRow = async (row, userId, opts = {}) => {
       row.posted_at = new Date();
       row.posted_by = userId;
       row.event_id = event._id;
+      // Phase A.4 — pre-stamp je_status='POSTED' inside the same txn. The
+      // JE call below is also inside this txn (Phase JE-TX); if it throws,
+      // the row + JE rollback together so je_status reverts to its prior
+      // value (null on first POST). Setting BEFORE the JE call rather than
+      // after avoids a second row.save() roundtrip.
+      row.je_status = 'POSTED';
+      row.je_attempts = (row.je_attempts || 0) + 1;
+      row.last_je_attempt_at = new Date();
       await row.save({ session });
 
       // Direct petty cash deposit for CASH_RECEIPT with CASH payment + fund routing
@@ -1144,6 +1152,10 @@ const submitSales = catchAsync(async (req, res) => {
         row.posted_at = new Date();
         row.posted_by = req.user._id;
         row.event_id = event._id;
+        // Phase A.4 — pre-stamp je_status (see line ~205 for rationale).
+        row.je_status = 'POSTED';
+        row.je_attempts = (row.je_attempts || 0) + 1;
+        row.last_je_attempt_at = new Date();
         await row.save({ session });
         }  // end of: skipInventory else-branch
 

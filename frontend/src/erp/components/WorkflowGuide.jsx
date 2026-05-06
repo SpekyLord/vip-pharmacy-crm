@@ -352,12 +352,14 @@ const WORKFLOW_GUIDES = {
       'Prioritize collection on oldest receivables first',
       'Click "Collect" on a hospital row to open the Collection form with the hospital pre-filled; click "Collect" on a specific CSI (expanded detail) to also pre-select that invoice',
       'Generate SOA for customers with high balances',
+      '**Phase A.4 — Refresh AR/AP** button (top-right) bulk-recomputes `outstanding_amount` across every POSTED SalesLine + SupplierInvoice in the entity. Idempotent — safe to spam. Only needed if the Accounting Integrity Agent flags AR drift, or after a direct DB write bypassed the Collection POST/void hook. Lookup-gated via `JE_RETRY_ROLES.RECOMPUTE_AR` (default admin/finance/president).',
     ],
     next: [
       { label: 'Collect Payment', path: '/erp/collections/session' },
       { label: 'Generate SOA', path: '/erp/collections/soa' },
+      { label: 'Agent Dashboard', path: '/erp/agent-dashboard' },
     ],
-    tip: 'High AR aging affects your collection rate and profit sharing eligibility. The "Collect" quick-action deep-links to the Collection form with the hospital (and optionally the specific invoice) pre-selected — posting logic, authority gating, and journal entries still run through the single Collections workflow so the ledger stays consistent across entities and subscribers. Role visibility: President/admin/finance see all BDMs\' CSIs across the working entity by default (use the BDM filter to scope); BDMs see only their own. Proxy-eligible contractors (role ∈ PROXY_ENTRY_ROLES.COLLECTIONS + collections.proxy_entry ticked) can also pass ?bdm_id= to view the AR aging and collection rate of the BDMs they file on behalf of (Phase G4.5b-ext).',
+    tip: 'High AR aging affects your collection rate and profit sharing eligibility. The "Collect" quick-action deep-links to the Collection form with the hospital (and optionally the specific invoice) pre-selected — posting logic, authority gating, and journal entries still run through the single Collections workflow so the ledger stays consistent across entities and subscribers. Role visibility: President/admin/finance see all BDMs\' CSIs across the working entity by default (use the BDM filter to scope); BDMs see only their own. Proxy-eligible contractors (role ∈ PROXY_ENTRY_ROLES.COLLECTIONS + collections.proxy_entry ticked) can also pass ?bdm_id= to view the AR aging and collection rate of the BDMs they file on behalf of (Phase G4.5b-ext). Phase A.4 (May 2026) — `outstanding_amount` is now materialized on `SalesLine` (and `SupplierInvoice`) so the figures here are read in O(1) instead of joining Collection per row. Maintained by `services/arAgingService.recomputeOutstandingForCollection()` on every Collection POST / reopen / president-reverse. The Accounting Integrity Agent (`/erp/agent-dashboard`) runs the strict recon `Σ POSTED SalesLine.outstanding_amount ≡ GL AR_TRADE` daily at 4 AM Manila and alerts admin/finance/president when drift > ₱1.00 (tolerance via `ACCOUNTING_INTEGRITY_THRESHOLDS.subledger_tolerance`). JE-FAILED source docs (POSTED but missing GL entry) block period close until admin hits the Retry-JE endpoint at `POST /api/erp/integrity/retry-je` — gated by `JE_RETRY_ROLES.RETRY_JE`.',
   },
   'expenses': {
     title: 'Recording Expenses (ORE / ACCESS)',
@@ -366,6 +368,7 @@ const WORKFLOW_GUIDES = {
       'For transport: use "Transport — P2P" (jeepney/bus/tricycle) or "Transport — Grab/Taxi" categories. Receipt is optional for transport.',
       'Use the OCR scanner to auto-extract receipt data, or enter manually',
       'Select category — COA code auto-resolves from vendor/keyword classification',
+      'For EWT-eligible lines (rent / professional fees / TWA-agent purchases) → set the **ATC** dropdown next to Payment Mode. Leave blank for non-EWT expenses (the engine reads `atc_code` at POST time and only emits a WithholdingLedger row when set). HOSPITAL (inbound 2307) and EMPLOYEE_* (compensation 1601-C) ATCs are filtered out — they don\'t belong on outbound expense lines.',
       'Attach receipt photo as proof (batch upload available for bulk OR processing)',
       'Verify COA code is NOT 6900 (Miscellaneous) — posting is blocked until mapped to correct account',
       'Save as DRAFT, then use the **per-row Validate + Submit buttons** in the working expenses table to move each entry through DRAFT → VALID → POSTED. There is no bulk Validate or bulk Submit — each entry has its own COA validation and OR gate; per-row flow prevents a single bad entry from blocking the rest.',
@@ -534,12 +537,14 @@ const WORKFLOW_GUIDES = {
       'View your allocated profit share based on sales performance',
       'Eligibility requires minimum products and hospitals (see ERP Settings)',
       'Consecutive months of eligibility required before payout',
+      'Phase J2.2 (May 2026): the FIRST time eligibility lands true for a BDM, the system automatically flips PeopleMaster.withhold_active=true and posts a high-priority MessageInbox alert to admin/finance/president. The alert prompts you to confirm Entity.withholding_active is also enabled — the BIR engine emits WithholdingLedger rows only when BOTH switches are true.',
     ],
     next: [
       { label: 'View P&L', path: '/erp/pnl' },
       { label: 'View Sales', path: '/erp/sales' },
+      { label: 'BIR posture', path: '/erp/bir' },
     ],
-    tip: 'BDM share and VIP share percentages are configured in ERP Settings by admin/finance.',
+    tip: 'BDM share and VIP share percentages are configured in ERP Settings by admin/finance. The auto-flip recipient list is lookup-driven via PS_AUTO_FLIP_NOTIFY_ROLES (admin + finance + president by default) — subscribers narrow or widen via Control Center → Lookup Tables, no code deploy.',
   },
 
   // ═══ Supply Chain & Procurement ═══

@@ -18,6 +18,7 @@ const TransactionEvent = require('../models/TransactionEvent');
 const ProductMaster = require('../models/ProductMaster');
 const { generateExpenseSummary } = require('./expenseSummary');
 const { evaluateEligibility } = require('./profitShareEngine');
+const { maybeAutoFlipPsEligibility } = require('./psAutoFlipService');
 const { generatePnlInternal } = require('./pnlService');
 const { createAndPostJournal } = require('./journalEngine');
 const JournalEntry = require('../models/JournalEntry');
@@ -244,6 +245,14 @@ async function generatePnlReport(entityId, bdmId, period, userId) {
   }
 
   pnlData.profit_sharing = psResult;
+
+  // Phase VIP-1.J / J2.2 — PS-eligibility auto-flip.
+  // When PS eligibility lands true the FIRST time for a BDM, flip
+  // PeopleMaster.withhold_active=true and notify admin/finance/president.
+  // Subsequent runs are no-ops (idempotent on PeopleMaster.withhold_active).
+  // Helper is fully fault-isolated: never throws; PnlReport upsert below
+  // proceeds whether or not the flip + notification succeeded.
+  await maybeAutoFlipPsEligibility({ entityId, bdmId, period, psResult });
 
   // Upsert — preserve manual fields (depreciation, loan_amortization) from existing doc
   const existing = await PnlReport.findOne({

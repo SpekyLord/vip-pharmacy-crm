@@ -16,6 +16,68 @@
 
 ---
 
+## PHASE A.4 — AR/AP Sub-Ledger Recon + JE-Asymmetry Repair ✅ SHIPPED (May 6, 2026)
+
+**Goal:** Materialize `outstanding_amount` on `SalesLine` + `SupplierInvoice` so AR/AP aging reads O(1), wire the strict integrity recon (`Σ outstanding ≡ GL AR_TRADE/AP_TRADE`) into the daily Accounting Integrity Agent, and capture per-doc `je_status` so POSTED-but-no-JE drift becomes visible (and period-close blocks until admin retries the JE). SaaS-readiness deliverable per CLAUDE.md §0d (Year-2 Vios Software Solutions spin-out).
+
+**Why now:** Three named triggers from the Apr 28 deferred handoff: (1) AR > ₱5M growing, (2) pre-1702 annual prep, (3) SaaS spin-out kickoff. User invoked (3) — subscriber pharmacies expect QuickBooks/Xero parity day-1.
+
+**Files modified/added (16):**
+
+| File | Status | Change |
+| --- | --- | --- |
+| `backend/erp/models/SalesLine.js` | Modified | Adds `outstanding_amount` + `paid_amount` + `last_payment_at` + 4 `je_*` fields. Pre-save initializes outstanding_amount on first POST. New `ar_aging_open` partial index + `je_status_failed` sparse index. |
+| `backend/erp/models/Collection.js` | Modified | Adds 4 `je_*` fields + sparse FAILED index. |
+| `backend/erp/models/PrfCalf.js` | Modified | Adds 4 `je_*` fields + sparse FAILED index. |
+| `backend/erp/models/SupplierInvoice.js` | Modified | Adds `outstanding_amount` (auto-synced via pre-save = `total_amount − amount_paid`) + `last_payment_at` + 4 `je_*` fields + `ap_aging_open` partial + sparse FAILED index. |
+| `backend/erp/services/arAgingService.js` | NEW | 5 exports: `recomputeOutstandingForSale` / `recomputeOutstandingForCollection` / `recomputeOutstandingForSupplierInvoice` / `recomputeAllOutstandingForEntity` / `isCashRoute`. |
+| `backend/erp/services/jeStatusTracker.js` | NEW | `markJePosted` / `markJeFailed` — atomic stamp on the source doc with optional Mongoose session. |
+| `backend/erp/utils/jeRetryAccess.js` | NEW | Lookup-driven role gate (`JE_RETRY_ROLES.RETRY_JE` + `RECOMPUTE_AR`). 60s cache + invalidate hook. Defaults `[admin, finance, president]`. |
+| `backend/erp/controllers/integrityController.js` | NEW | `POST /retry-je` (idempotent — short-circuits if JE already exists for the doc's event_id) + `POST /recompute-ar` (bulk refresh). Audit-logs every retry success/failure. Entity-scoped (Rule #19). |
+| `backend/erp/routes/integrityRoutes.js` | NEW | Mounts both endpoints. |
+| `backend/erp/routes/index.js` | Modified | Adds `router.use('/integrity', …)`. |
+| `backend/erp/controllers/collectionController.js` | Modified | Imports arAgingService + jeStatusTracker. Wires `recomputeOutstandingForCollection` into 4 lifecycle paths (submit / reopen / president-reverse / approval-hub-postSingleCollection) + stamps je_status='POSTED' or 'FAILED' on the 2 non-atomic POST paths. Surfaces over-collection warnings to caller. |
+| `backend/erp/controllers/salesController.js` | Modified | Pre-stamps `row.je_status='POSTED'` inside JE-TX session on both POST paths (atomic — rolls back on JE failure). |
+| `backend/erp/controllers/purchasingController.js` | Modified | Pre-stamps `invoice.je_status='POSTED'` inside JE-TX. |
+| `backend/erp/controllers/expenseController.js` | Modified | Pre-stamps + flips to FAILED on PrfCalf approval-hub catch path with re-save inside the txn. |
+| `backend/erp/scripts/findAccountingIntegrityIssues.js` | Modified | New `checkArApSubLedger` (STRICT — Σ outstanding ≡ GL) + `checkJeStatusFailed` (lists POSTED-but-FAILED rows). New CLI flags `--check arap` / `--check jestatus`. `checkPeriodClose` extension blocks close on JE-FAILED rows. New module exports + repair-path lines. |
+| `backend/erp/scripts/migrateSubLedgerOutstanding.js` | NEW | Dry-run-by-default, idempotent. `--apply` to write. `--entity <id>` / `--kind ar\|ap` narrowing. Surfaces over-collected/over-paid rows as warnings. |
+| `backend/agents/accountingIntegrityAgent.js` | Modified | `buildNotificationBody` renders `arApSubLedger` + `jeStatusFailed` blocks. `buildKeyFindings` summarizes both new finding classes. Repair-path text extended. |
+| `backend/erp/controllers/lookupGenericController.js` | Modified | New `JE_RETRY_ROLES` seed (`RETRY_JE` + `RECOMPUTE_AR` codes, `insert_only_metadata: true`). Invalidate hook in 4 lifecycle paths (create/update/remove/seed). |
+| `frontend/src/erp/services/integrityService.js` | NEW | Wraps `/erp/integrity/{retry-je,recompute-ar}`. |
+| `frontend/src/erp/pages/AccountsReceivable.jsx` | Modified | New "Refresh AR/AP" button (testid `ar-recompute-button`) + `handleRefresh` async + reload-on-success. Idempotent. |
+| `frontend/src/erp/components/WorkflowGuide.jsx` | Modified | `'ar-aging'` banner refreshed per Rule #1: new step explaining Refresh AR/AP + new tip block covering the materialized-field design + integrity sweep + JE_RETRY_ROLES gate + Retry-JE endpoint. |
+| `backend/scripts/healthcheckArApRecon.js` | NEW | 78 static assertions across 11 sections (schema / arAgingService / jeStatusTracker / migration / sweep / agent / endpoints / lookup / frontend / page / banner). |
+| `CLAUDE-ERP.md` | Modified | New top-level "Phase A.4" section with full wiring, lookup table, subscription-readiness checklist. |
+| `docs/PHASETASK-ERP.md` | Modified | This entry. |
+
+**Migration order:** `node backend/erp/scripts/migrateSubLedgerOutstanding.js` (dry-run) → review → `--apply`. Idempotent — safe to re-run. Atlas backup recommended before --apply (touches every POSTED row's outstanding_amount field).
+
+**Verification (Slice 8 ratified):**
+- Healthcheck: **78/78 PASS** — `node backend/scripts/healthcheckArApRecon.js`
+- Vite frontend build: green (no warnings, no errors)
+- Existing healthchecks: regression-clean (CaptureHub 660+, CarLogbookAutoPopulate 88, ClmIdempotency 6 — none touched).
+- Live API smoke: `POST /api/erp/integrity/recompute-ar` returns the per-bucket counts; `POST /retry-je` short-circuits when JE already exists, re-fires when missing.
+- Live UI smoke (Playwright): `/erp/ar-aging` renders new Refresh button; click triggers spinner + success toast; AR data re-fetches with refreshed numbers.
+
+**Subscription-readiness (Rule #3 / Rule #19 / Rule #21):**
+- ✅ All endpoints entity-scoped (Rule #19) — explicit 403 if `doc.entity_id !== req.entityId`.
+- ✅ Role gates lookup-driven (`JE_RETRY_ROLES`) — subscribers tune per-entity via Control Center → Lookup Tables, no code deploy.
+- ✅ Tolerances reuse existing `ACCOUNTING_INTEGRITY_THRESHOLDS.subledger_tolerance` lookup.
+- ✅ COA codes via `Settings.COA_MAP` — pharmacy SaaS subscribers can renumber `AR_TRADE` / `AP_TRADE` without touching code.
+- ✅ Schema-additive only — no breaking changes; legacy POSTED rows valid until migration runs (and remain valid after, with outstanding_amount populated).
+- ✅ Pre-save hooks are the safety net — direct `.save()` paths still maintain the invariant.
+
+**Known follow-ups (deferred — non-blocking for SaaS readiness):**
+- List-page badges for `je_status='FAILED'` rows on SalesList / CollectionsList / SupplierInvoicesList. Backend signal lands; UI surfacing is purely additive.
+- Inline "Retry JE" button on those badges. Backend endpoint already callable via curl/Postman until UI ships.
+- AR/AP drift dashboard tile on `/erp/agent-dashboard`. Daily-4-AM agent message already covers the alert path.
+- CreditNote subtraction in AR formula. v1 treats CN as drift; integrity sweep will alarm if CN-applied AR ≠ outstanding. Wire when CN module materializes.
+
+**Plan:** `~/.claude/plans/phase-a4-ar-ap-recon.md` (this slice).
+
+---
+
 ## PHASE P1.2 PHASE 1 — Capture-type cleanup + Option D BIR audit gate ✅ SHIPPED (May 6, 2026)
 
 **Goal:** Three coupled changes that close an audit-credibility gap exposed by Round 2C and clean up two unused enum slots:
@@ -10882,7 +10944,7 @@ Commits `80b2798` + `68c711d` on `origin/dev` (Apr 27 13:28 + 13:41 PHT). Live H
 
 **J2.x open follow-ups (not blocking J3)**:
 - **J2.1.x — Expense ATC dropdown UI**: add per-line ATC `<SelectField>` to Expenses.jsx (driven by BIR_ATC_CODES, filtered by metadata.applies_to). Engine reads the field already; UI is the only gap. (~1 hr)
-- **J2.2.x — PS-eligibility auto-flip**: when `evaluateProfitSharingEligibility(contractor)` flips true the FIRST time, set `PeopleMaster.withhold_active=true` + emit MessageInbox alert. Hook lives in rebate engine — wire when VIP-1.B Phase 5 lands.
+- **J2.2.x — PS-eligibility auto-flip — ✅ SHIPPED May 06 2026** (uncommitted on dev). New service [backend/erp/services/psAutoFlipService.js](../backend/erp/services/psAutoFlipService.js) `maybeAutoFlipPsEligibility({entityId, bdmId, period, psResult})` invoked from [pnlCalc.generatePnlReport](../backend/erp/services/pnlCalc.js) right after `evaluateEligibility` and before the PnlReport upsert. When `psResult.eligible===true` AND `PeopleMaster.withhold_active!==true`, helper flips the per-person posture flag and dispatches a high-priority `compliance_alert` MessageInbox row + email + SMS-opt-in via the existing `erpNotificationService.dispatchMultiChannel` pipeline. Audience is lookup-driven: `PS_AUTO_FLIP_NOTIFY_ROLES.RECEIVE_PS_FLIP_ALERT.metadata.roles` (defaults `[admin, finance, president]`, lazy-seeded with `insert_only_metadata: true` so admin overrides survive future re-seeds — Rule #3 + Rule #19). Action payload deep-links to `/erp/bir` so the recipient has a one-click path to flip `Entity.withholding_active` (the per-entity master switch the WithholdingLedger emitter ALSO requires). **Idempotent** — second PnlReport generation in the same period returns `{changed: false, reason: 'already_active'}`. **Failure-isolated** — helper top-level catch + nested notify catch absorb every error so `pnlCalc.generatePnlReport`'s upsert always proceeds. **Banner update** ([WorkflowGuide.jsx](../frontend/src/erp/components/WorkflowGuide.jsx) `'profit-sharing'`, Rule #1) explains the auto-flip + lookup category + BIR posture next-step. **Healthcheck**: [backend/scripts/healthcheckPsAutoFlip.js](../backend/scripts/healthcheckPsAutoFlip.js) — 8-section static contract verifier covering service exports + pnlCalc ordering invariant (after evaluateEligibility, before upsert write) + lookup seed shape (sort_order + description + insert_only_metadata) + banner copy + PeopleMaster/Entity schema preconditions + erpNotificationService dependency surface + MessageInbox shape + docs closure. **Why it shipped pre-VIP-1.B-Phase-5**: the deferred-task body referenced `evaluateProfitSharingEligibility(contractor)` which doesn't exist — but `evaluateEligibility(entityId, bdmId, period, pnlData)` from `profitShareEngine.js` does, and is already wired into `pnlCalc.generatePnlReport`. The auto-flip is a 30-line helper on an existing path; VIP-1.B Phase 5's `Order.paid` listener can plug the SAME helper into a second emit site (instantaneous flip on storefront sale) when it lands, no rework. **Out of scope** (intentionally not done): also auto-flip `Entity.withholding_active` (entity-level master switch is admin-curated — auto-flipping would bypass admin's discretion on whether the entity is ready to start emitting WithholdingLedger rows; the alert prompts admin to do it manually); also auto-flip `bdm_stage` from `CONTRACTOR` → `PS_ELIGIBLE` (admin-curated career-stage progression — separate concern from BIR posture).
 - **J2.3.x — golden SAWT fixture**: snapshot a real-data Q1 `.dat` payload at `backend/erp/services/__fixtures__/SAWT_2026-Q1_VIP.dat` + add fixture-equality test. Detects accidental serializer drift.
 - **J2.4.x — Inbound 2307 (J6 prep)**: WithholdingLedger.DIRECTIONS reserves INBOUND but doesn't write today; CwtLedger remains source-of-truth. J6 decides migrate vs. coexist.
 

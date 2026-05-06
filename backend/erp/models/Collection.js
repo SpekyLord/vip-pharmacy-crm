@@ -130,6 +130,18 @@ const collectionSchema = new mongoose.Schema({
   rejection_reason: { type: String },
   deletion_event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
 
+  // Phase A.4 — JE-asymmetry capture. See SalesLine.je_status comment for
+  // rationale. Tracks whether journalFromCollection (and journalFromCWT,
+  // journalFromCommission for this CR) succeeded at POST time.
+  je_status: {
+    type: String,
+    enum: ['PENDING', 'POSTED', 'FAILED', null],
+    default: null,
+  },
+  je_failure_reason: { type: String, default: null },
+  je_attempts: { type: Number, default: 0 },
+  last_je_attempt_at: { type: Date, default: null },
+
   // Audit
   created_at: { type: Date, default: Date.now, immutable: true },
   created_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
@@ -410,5 +422,11 @@ collectionSchema.index({ entity_id: 1, customer_id: 1, cr_date: -1 });
 collectionSchema.index({ petty_cash_fund_id: 1 });
 collectionSchema.index({ 'settled_csis.sales_line_id': 1 });
 collectionSchema.index({ status: 1 });
+// Phase A.4 — list-page badge filter for FAILED JE rows. Sparse so legacy rows
+// with je_status=null don't bloat the index.
+collectionSchema.index(
+  { entity_id: 1, je_status: 1, status: 1 },
+  { sparse: true, name: 'je_status_failed' }
+);
 
 module.exports = mongoose.model('Collection', collectionSchema);

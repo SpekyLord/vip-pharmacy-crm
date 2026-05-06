@@ -4366,14 +4366,32 @@ const postSinglePrfCalf = async (doc, userId) => {
       await doc.save({ session });
 
       // 2) CALF/PRF auto-journal (non-fatal — repostMissingJEs.js backfills)
+      // Phase A.4 — capture JE outcome on doc.je_status. Pre-stamp 'POSTED'
+      // before the call so it lands in the same txn-save as status='POSTED'.
+      // On catch, re-flip to 'FAILED' and re-save inside the same txn (audit
+      // log + period-close gate consume this signal).
+      doc.je_status = 'POSTED';
+      doc.je_attempts = (doc.je_attempts || 0) + 1;
+      doc.last_je_attempt_at = new Date();
       try {
         const jeData = await journalFromPrfCalf(doc, userId);
         if (jeData) {
           jeData.source_event_id = doc.event_id;
           await createAndPostJournal(doc.entity_id, jeData, { session });
         }
+        // Persist the optimistic POSTED stamp now that JE landed.
+        await doc.save({ session });
       } catch (jeErr) {
         console.error('[AUTO_JOURNAL_FAILURE] PrfCalf (approval hub)', String(doc._id), jeErr.message);
+        doc.je_status = 'FAILED';
+        const truncated = jeErr.message.length > 500
+          ? `${jeErr.message.slice(0, 497)}…` : jeErr.message;
+        doc.je_failure_reason = truncated;
+        try {
+          await doc.save({ session });
+        } catch (saveErr) {
+          console.error('[AUTO_JOURNAL_FAILURE] PrfCalf je_status save failed', String(doc._id), saveErr.message);
+        }
       }
 
       // 3) Cascade — post the linked Expense/CarLogbook in the SAME session
