@@ -113,6 +113,7 @@ const AUTOPOP_SOURCE_META = {
   DRIVE_ALLOCATION:   { label: 'Drive',    bg: '#fef3c7', fg: '#92400e', tip: 'Filled from BDM\'s DriveAllocation row (Personal/Official slider)' },
   FUEL_ENTRY_CAPTURE: { label: 'Fuel cap', bg: '#fce7f3', fg: '#9d174d', tip: 'Filled from FUEL_ENTRY capture OCR (station, liters, price)' },
   PRIOR_DAY:          { label: 'Prior',    bg: '#e0e7ff', fg: '#3730a3', tip: 'Filled from prior day\'s ending_km (no SMER ODO capture today)' },
+  CRM_VISIT_CITY:     { label: 'CRM',      bg: '#cffafe', fg: '#155e75', tip: 'Filled from CRM Visits — locality + province of every doctor/client the BDM visited that day' },
   MANUAL:             { label: 'Manual',   bg: '#fee2e2', fg: '#991b1b', tip: 'Manual override — proxy edited this field' },
 };
 

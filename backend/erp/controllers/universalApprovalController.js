@@ -553,15 +553,37 @@ const approvalHandlers = {
     if (grn.status !== 'PENDING') throw new Error(`GRN not in PENDING status`);
 
     if (action === 'approve') {
-      grn.status = 'APPROVED';
-      grn.reviewed_by = userId;
-      grn.reviewed_at = new Date();
-    } else {
-      grn.status = 'REJECTED';
-      grn.reviewed_by = userId;
-      grn.reviewed_at = new Date();
-      grn.rejection_reason = reason || 'Rejected from Approval Hub';
+      // Bug fix (2026-05-06): previously this handler just flipped status to
+      // APPROVED without invoking approveGrnCore — the GRN reached APPROVED
+      // with no TransactionEvent, no InventoryLedger rows, and no event_id.
+      // That left the GRN as a paper artifact (no actual stock effect) AND
+      // made it a landmine for later reversal: reverseInventoryFor with a
+      // null event_id cross-cuts every OPENING_BALANCE row in the DB.
+      // Two production incidents traced to this path: 2026-04-21 (242 rows
+      // wiped, 10 warehouses) and 2026-05-06 (532 rows wiped, 11 warehouses).
+      // Fix: route through approveGrnCore inside a transaction, mirroring
+      // inventoryController.approveGrn — creates the TransactionEvent,
+      // writes InventoryLedger rows, stamps event_id, rolls back on failure.
+      const mongoose = require('mongoose');
+      const { approveGrnCore } = require('./inventoryController');
+      const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
+      await checkPeriodOpen(grn.entity_id, dateToPeriod(grn.grn_date || new Date()));
+
+      const session = await mongoose.startSession();
+      let updatedGrn;
+      try {
+        await session.withTransaction(async () => {
+          updatedGrn = await approveGrnCore({ grnId: grn._id, userId, session });
+        });
+      } finally {
+        await session.endSession();
+      }
+      return updatedGrn;
     }
+    grn.status = 'REJECTED';
+    grn.reviewed_by = userId;
+    grn.reviewed_at = new Date();
+    grn.rejection_reason = reason || 'Rejected from Approval Hub';
     await grn.save();
     return grn;
   },
