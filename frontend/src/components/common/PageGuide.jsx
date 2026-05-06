@@ -319,6 +319,7 @@ const PAGE_GUIDES = {
       'Promote a Regular client with "Upgrade to VIP" — admin then picks the visit dates inline (or skips and schedules later)',
       'Use the Schedule / Reschedule action on any VIP row to set or move upcoming visit dates — pick a calendar date, the system maps it to the right week and day for the BDM',
       'In the Edit modal, assign one or more BDMs under "Assigned BDMs" — use "+ Add BDM…" to share coverage across territories, and click ☆ on any chip to set that BDM as the primary owner',
+      'If a name collision pops up (Phase A.5.3): VIP Client names are globally unique. Pick "Rename mine" to disambiguate (e.g. "Dr. Sharon Cruz — Iloilo General"), or "Join their coverage" to add yourself as an extra BDM on the existing record',
       'Export VIP Clients to Excel using the Call Plan Template format',
       'Use Clean Names to fix ALL CAPS or inconsistent name formatting — preview changes before applying',
     ],
@@ -326,7 +327,7 @@ const PAGE_GUIDES = {
       { label: 'BDM Management', path: '/admin/employees' },
       { label: 'Reports', path: '/admin/reports' },
     ],
-    tip: 'Rows tagged "Needs scheduling" have no upcoming planned visits — click Schedule to set them. Multi-BDM coverage: each BDM keeps their own weekly visit cap (the {doctor, user, week} index is per-BDM), but the VIP Client record is shared — so reports, history, and analytics roll up under one MD identity. The starred BDM is the primary owner used for single-name displays. 2x/mo VIPs must alternate weeks (W1+W3 or W2+W4); the modal enforces the rule before calling the API.',
+    tip: 'Rows tagged "Needs scheduling" have no upcoming planned visits — click Schedule to set them. Multi-BDM coverage: each BDM keeps their own weekly visit cap (the {doctor, user, week} index is per-BDM), but the VIP Client record is shared — so reports, history, and analytics roll up under one MD identity. The starred BDM is the primary owner used for single-name displays. 2x/mo VIPs must alternate weeks (W1+W3 or W2+W4); the modal enforces the rule before calling the API. Phase A.5.3 (May 06 2026): canonical names are unique cluster-wide — admin/president can join coverage instantly; subscribers can loosen this to allow BDMs to self-join or request admin approval via Control Center → Lookup Tables → VIP_CLIENT_LIFECYCLE_ROLES (codes JOIN_COVERAGE_AUTO and JOIN_COVERAGE_APPROVAL). Phase A.5.6: when admin merges duplicates, any visit logged offline against a now-merged loser is auto-redirected to the consolidated record at sync time — no orphan visits, no lost work.',
   },
   'employees-page': {
     title: 'BDM Management',

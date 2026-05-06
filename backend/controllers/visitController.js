@@ -32,7 +32,7 @@ const { ROLES, isAdminLike } = require('../constants/roles');
  */
 const createVisit = catchAsync(async (req, res) => {
   const {
-    doctor: doctorId,
+    doctor: rawDoctorId,
     visitDate,
     visitType,
     location,
@@ -50,6 +50,47 @@ const createVisit = catchAsync(async (req, res) => {
     // safely below — never trust raw FormData values.
     session_group_id,
   } = req.body;
+
+  // Phase A.5.6 — Merged-Doctor resolver. When a BDM was OFFLINE while admin
+  // merged duplicate Doctors, the BDM's cached doctorId may point at a
+  // soft-deleted "loser" (mergedInto != null). Re-point to the winner BEFORE
+  // any access check / weekly-cap check / schedule match. Walk the chain in
+  // case the winner was itself later merged into another (rare but possible
+  // during admin cleanup sweeps). Cap at MAX_MERGE_HOPS to prevent any pathological
+  // cycle from looping forever. Tracks the original ID for audit visibility.
+  //
+  // This is the offline-compat keystone of Phase A.5 — without it, an offline
+  // replay quietly creates a Visit row attributed to a soft-deleted Doctor,
+  // and the visit becomes invisible (Doctor.isActive === false hides it from
+  // every list query). With it, the visit lands on the winner where reports
+  // and stats already roll up.
+  let doctorId = rawDoctorId;
+  let doctorMergeRedirected = false;
+  let originalDoctorId = null;
+  if (doctorId) {
+    const MAX_MERGE_HOPS = 5;
+    let currentId = doctorId;
+    for (let hop = 0; hop < MAX_MERGE_HOPS; hop += 1) {
+      // .lean() is fine — we only need _id and mergedInto for the walk.
+      const node = await Doctor.findById(currentId).select('_id mergedInto isActive').lean();
+      if (!node) break;                  // Doctor not found; let downstream raise 404
+      if (!node.mergedInto) break;       // Reached an unmerged record (winner)
+      // node.mergedInto is set → this is a merged loser. Hop forward.
+      if (!doctorMergeRedirected) {
+        originalDoctorId = node._id;
+        doctorMergeRedirected = true;
+      }
+      currentId = node.mergedInto;
+    }
+    if (doctorMergeRedirected && currentId && currentId.toString() !== doctorId.toString()) {
+      doctorId = currentId;
+      // Best-effort log so admin can see the redirect chain in production logs.
+      // Not fatal if it fails (the redirect itself already happened in memory).
+      console.log(
+        `[Phase A.5.6] Visit redirected from merged-loser doctor=${originalDoctorId} → winner=${doctorId} (user=${req.user?._id})`
+      );
+    }
+  }
 
   // Parse location if it's a JSON string (from FormData)
   let locationData = location;
@@ -468,11 +509,23 @@ const createVisit = catchAsync(async (req, res) => {
   // Populate doctor info for response
   await visit.populate('doctor', 'firstName lastName specialization clinicOfficeAddress locality province');
 
-  res.status(201).json({
+  // Phase A.5.6 — surface merged-doctor redirect to the client. Frontend can
+  // show a "Logged against the consolidated VIP Client record" info toast so
+  // the BDM understands why the doctor list shifted (the loser they tapped
+  // on no longer exists in their list after sync).
+  const responsePayload = {
     success: true,
     message: 'Visit logged successfully',
     data: visit,
-  });
+  };
+  if (doctorMergeRedirected) {
+    responsePayload.merge_redirected = {
+      from: originalDoctorId,
+      to: doctorId,
+      message: 'This VIP Client record was consolidated. The visit was logged against the canonical record.',
+    };
+  }
+  res.status(201).json(responsePayload);
 });
 
 /**

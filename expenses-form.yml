@@ -1,0 +1,763 @@
+- generic [ref=e7]:
+  - navigation [ref=e8]:
+    - generic [ref=e9]:
+      - img "VIP" [ref=e11]
+      - generic "Platform switch" [ref=e12]:
+        - link "CRM" [ref=e13] [cursor=pointer]:
+          - /url: /admin
+          - img [ref=e15]
+          - text: CRM
+        - link "ERP" [ref=e20] [cursor=pointer]:
+          - /url: /erp
+          - img [ref=e22]
+          - text: ERP
+    - generic [ref=e25]:
+      - img [ref=e27]
+      - generic "ERP tabs" [ref=e32]:
+        - link "Dashboard" [ref=e33] [cursor=pointer]:
+          - /url: /erp
+          - img [ref=e35]
+          - generic [ref=e40]: Dashboard
+        - link "Sales" [ref=e41] [cursor=pointer]:
+          - /url: /erp/sales
+          - img [ref=e43]
+          - generic [ref=e47]: Sales
+        - link "Inventory" [ref=e48] [cursor=pointer]:
+          - /url: /erp/my-stock
+          - img [ref=e50]
+          - generic [ref=e54]: Inventory
+        - link "Transfers" [ref=e55] [cursor=pointer]:
+          - /url: /erp/transfers
+          - img [ref=e57]
+          - generic [ref=e62]: Transfers
+        - link "Collections" [ref=e63] [cursor=pointer]:
+          - /url: /erp/collections
+          - img [ref=e65]
+          - generic [ref=e68]: Collections
+        - link "Expenses" [ref=e69] [cursor=pointer]:
+          - /url: /erp/expenses
+          - img [ref=e71]
+          - generic [ref=e74]: Expenses
+        - link "Reports" [ref=e75] [cursor=pointer]:
+          - /url: /erp/reports
+          - img [ref=e77]
+          - generic [ref=e79]: Reports
+    - generic [ref=e80]:
+      - combobox "Working entity" [ref=e81] [cursor=pointer]:
+        - option "VIP" [selected]
+        - option "Balai Lawaan"
+        - option "MG and CO."
+      - button "Toggle dark mode" [ref=e82] [cursor=pointer]:
+        - img [ref=e83]
+      - link "Inbox — 1 action(s) required" [ref=e86] [cursor=pointer]:
+        - /url: /inbox
+        - img [ref=e87]
+        - generic: "1"
+      - generic [ref=e91]:
+        - generic [ref=e92]: GL
+        - generic [ref=e93]:
+          - generic [ref=e94]: Gregg Louie Vios
+          - generic [ref=e95]: president
+      - button "Logout" [ref=e96] [cursor=pointer]:
+        - img [ref=e97]
+        - generic [ref=e100]: Logout
+  - generic [ref=e101]:
+    - complementary [ref=e102]:
+      - button [ref=e103] [cursor=pointer]:
+        - img [ref=e104]
+      - navigation [ref=e106]:
+        - generic [ref=e108]:
+          - link "Executive Cockpit" [ref=e109] [cursor=pointer]:
+            - /url: /erp/cockpit
+            - img [ref=e111]
+            - generic [ref=e113]: Executive Cockpit
+          - link "ERP Home" [ref=e114] [cursor=pointer]:
+            - /url: /erp
+            - img [ref=e116]
+            - generic [ref=e119]: ERP Home
+        - button "Administration" [ref=e121] [cursor=pointer]:
+          - generic [ref=e122]: Administration
+          - img [ref=e123]
+        - generic [ref=e125]:
+          - button "Sales" [ref=e126] [cursor=pointer]:
+            - generic [ref=e127]: Sales
+            - img [ref=e128]
+          - generic [ref=e130]:
+            - link "Sales" [ref=e131] [cursor=pointer]:
+              - /url: /erp/sales/entry
+              - img [ref=e133]
+              - generic [ref=e136]: Sales
+            - link "Sales Transactions" [ref=e137] [cursor=pointer]:
+              - /url: /erp/sales
+              - img [ref=e139]
+              - generic [ref=e142]: Sales Transactions
+            - link "Opening AR" [ref=e143] [cursor=pointer]:
+              - /url: /erp/sales/opening-ar
+              - img [ref=e145]
+              - generic [ref=e149]: Opening AR
+            - link "Opening AR Transactions" [ref=e150] [cursor=pointer]:
+              - /url: /erp/sales/opening-ar/list
+              - img [ref=e152]
+              - generic [ref=e155]: Opening AR Transactions
+            - link "Returns / CN" [ref=e156] [cursor=pointer]:
+              - /url: /erp/credit-notes
+              - img [ref=e158]
+              - generic [ref=e161]: Returns / CN
+            - link "Hospital PO Backlog" [ref=e162] [cursor=pointer]:
+              - /url: /erp/hospital-pos/backlog
+              - img [ref=e164]
+              - generic [ref=e167]: Hospital PO Backlog
+            - link "New Hospital PO" [ref=e168] [cursor=pointer]:
+              - /url: /erp/hospital-pos/entry
+              - img [ref=e170]
+              - generic [ref=e174]: New Hospital PO
+            - link "Hospital Contract Prices" [ref=e175] [cursor=pointer]:
+              - /url: /erp/hospital-contract-prices
+              - img [ref=e177]
+              - generic [ref=e180]: Hospital Contract Prices
+        - generic [ref=e181]:
+          - button "Inventory" [ref=e182] [cursor=pointer]:
+            - generic [ref=e183]: Inventory
+            - img [ref=e184]
+          - generic [ref=e186]:
+            - link "Batch Trace" [ref=e187] [cursor=pointer]:
+              - /url: /erp/batch-trace
+              - img [ref=e189]
+              - generic [ref=e192]: Batch Trace
+            - link "Collaterals" [ref=e193] [cursor=pointer]:
+              - /url: /erp/collaterals
+              - img [ref=e195]
+              - generic [ref=e199]: Collaterals
+            - link "CSI Booklets" [ref=e200] [cursor=pointer]:
+              - /url: /erp/csi-booklets
+              - img [ref=e202]
+              - generic [ref=e204]: CSI Booklets
+            - link "DR / Consignment" [ref=e205] [cursor=pointer]:
+              - /url: /erp/dr
+              - img [ref=e207]
+              - generic [ref=e212]: DR / Consignment
+            - link "Expiry Mgmt" [ref=e213] [cursor=pointer]:
+              - /url: /erp/expiry-dashboard
+              - img [ref=e215]
+              - generic [ref=e217]: Expiry Mgmt
+            - link "GRN Entry" [ref=e218] [cursor=pointer]:
+              - /url: /erp/grn
+              - img [ref=e220]
+              - generic [ref=e224]: GRN Entry
+            - link "Inventory" [ref=e225] [cursor=pointer]:
+              - /url: /erp/my-stock
+              - img [ref=e227]
+              - generic [ref=e231]: Inventory
+            - link "Office Supplies" [ref=e232] [cursor=pointer]:
+              - /url: /erp/office-supplies
+              - img [ref=e234]
+              - generic [ref=e238]: Office Supplies
+            - link "Transfers" [ref=e239] [cursor=pointer]:
+              - /url: /erp/transfers
+              - img [ref=e241]
+              - generic [ref=e244]: Transfers
+            - link "Undertaking (Receipt)" [ref=e245] [cursor=pointer]:
+              - /url: /erp/undertaking
+              - img [ref=e247]
+              - generic [ref=e251]: Undertaking (Receipt)
+            - link "Warehouses" [ref=e252] [cursor=pointer]:
+              - /url: /erp/warehouses
+              - img [ref=e254]
+              - generic [ref=e258]: Warehouses
+        - generic [ref=e259]:
+          - button "Collections" [ref=e260] [cursor=pointer]:
+            - generic [ref=e261]: Collections
+            - img [ref=e262]
+          - generic [ref=e264]:
+            - link "AR Aging" [ref=e265] [cursor=pointer]:
+              - /url: /erp/collections/ar
+              - img [ref=e267]
+              - generic [ref=e269]: AR Aging
+            - link "Collections" [ref=e270] [cursor=pointer]:
+              - /url: /erp/collections
+              - img [ref=e272]
+              - generic [ref=e275]: Collections
+            - link "IC Settlements" [ref=e276] [cursor=pointer]:
+              - /url: /erp/ic-settlements
+              - img [ref=e278]
+              - generic [ref=e283]: IC Settlements
+        - generic [ref=e284]:
+          - button "Expenses" [ref=e285] [cursor=pointer]:
+            - generic [ref=e286]: Expenses
+            - img [ref=e287]
+          - generic [ref=e289]:
+            - link "Credit Cards" [ref=e290] [cursor=pointer]:
+              - /url: /erp/credit-cards
+              - img [ref=e292]
+              - generic [ref=e294]: Credit Cards
+            - link "Expenses" [ref=e295] [cursor=pointer]:
+              - /url: /erp/expenses
+              - img [ref=e297]
+              - generic [ref=e299]: Expenses
+        - button "Capture Hub" [ref=e301] [cursor=pointer]:
+          - generic [ref=e302]: Capture Hub
+          - img [ref=e303]
+        - button "Reports" [ref=e306] [cursor=pointer]:
+          - generic [ref=e307]: Reports
+          - img [ref=e308]
+        - button "Sales Goals" [ref=e311] [cursor=pointer]:
+          - generic [ref=e312]: Sales Goals
+          - img [ref=e313]
+        - generic [ref=e315]:
+          - button "People & HR" [ref=e316] [cursor=pointer]:
+            - generic [ref=e317]: People & HR
+            - img [ref=e318]
+          - generic [ref=e320]:
+            - link "Contractor Income" [ref=e321] [cursor=pointer]:
+              - /url: /erp/income
+              - img [ref=e323]
+              - generic [ref=e325]: Contractor Income
+            - link "Org Chart" [ref=e326] [cursor=pointer]:
+              - /url: /erp/org-chart
+              - img [ref=e328]
+              - generic [ref=e333]: Org Chart
+            - link "Payroll" [ref=e334] [cursor=pointer]:
+              - /url: /erp/payroll
+              - img [ref=e336]
+              - generic [ref=e338]: Payroll
+            - link "People" [ref=e339] [cursor=pointer]:
+              - /url: /erp/people
+              - img [ref=e341]
+              - generic [ref=e345]: People
+        - generic [ref=e346]:
+          - button "Accounting" [ref=e347] [cursor=pointer]:
+            - generic [ref=e348]: Accounting
+            - img [ref=e349]
+          - generic [ref=e351]:
+            - link "Bank Accounts" [ref=e352] [cursor=pointer]:
+              - /url: /erp/bank-accounts
+              - img [ref=e354]
+              - generic [ref=e356]: Bank Accounts
+            - link "Bank Reconciliation" [ref=e357] [cursor=pointer]:
+              - /url: /erp/bank-recon
+              - img [ref=e359]
+              - generic [ref=e363]: Bank Reconciliation
+            - link "Cashflow" [ref=e364] [cursor=pointer]:
+              - /url: /erp/cashflow
+              - img [ref=e366]
+              - generic [ref=e368]: Cashflow
+            - link "CC Ledger" [ref=e369] [cursor=pointer]:
+              - /url: /erp/credit-card-ledger
+              - img [ref=e371]
+              - generic [ref=e373]: CC Ledger
+            - link "Chart of Accounts" [ref=e374] [cursor=pointer]:
+              - /url: /erp/coa
+              - img [ref=e376]
+              - generic [ref=e378]: Chart of Accounts
+            - link "Cost Centers" [ref=e379] [cursor=pointer]:
+              - /url: /erp/cost-centers
+              - img [ref=e381]
+              - generic [ref=e385]: Cost Centers
+            - link "Fixed Assets" [ref=e386] [cursor=pointer]:
+              - /url: /erp/fixed-assets
+              - img [ref=e388]
+              - generic [ref=e390]: Fixed Assets
+            - link "Journal Entries" [ref=e391] [cursor=pointer]:
+              - /url: /erp/journals
+              - img [ref=e393]
+              - generic [ref=e395]: Journal Entries
+            - link "Loans" [ref=e396] [cursor=pointer]:
+              - /url: /erp/loans
+              - img [ref=e398]
+              - generic [ref=e400]: Loans
+            - link "Owner Equity" [ref=e401] [cursor=pointer]:
+              - /url: /erp/owner-equity
+              - img [ref=e403]
+              - generic [ref=e405]: Owner Equity
+            - link "P&L Statement" [ref=e406] [cursor=pointer]:
+              - /url: /erp/profit-loss
+              - img [ref=e408]
+              - generic [ref=e410]: P&L Statement
+            - link "Petty Cash" [ref=e411] [cursor=pointer]:
+              - /url: /erp/petty-cash
+              - img [ref=e413]
+              - generic [ref=e416]: Petty Cash
+            - link "Recurring Journals" [ref=e417] [cursor=pointer]:
+              - /url: /erp/recurring-journals
+              - img [ref=e419]
+              - generic [ref=e421]: Recurring Journals
+            - link "Trial Balance" [ref=e422] [cursor=pointer]:
+              - /url: /erp/trial-balance
+              - img [ref=e424]
+              - generic [ref=e426]: Trial Balance
+            - link "VAT & CWT" [ref=e427] [cursor=pointer]:
+              - /url: /erp/vat-compliance
+              - img [ref=e429]
+              - generic [ref=e431]: VAT & CWT
+        - button "BIR Compliance" [ref=e433] [cursor=pointer]:
+          - generic [ref=e434]: BIR Compliance
+          - img [ref=e435]
+        - button "Rebates & Commissions" [ref=e438] [cursor=pointer]:
+          - generic [ref=e439]: Rebates & Commissions
+          - img [ref=e440]
+        - generic [ref=e442]:
+          - button "Tools" [ref=e443] [cursor=pointer]:
+            - generic [ref=e444]: Tools
+            - img [ref=e445]
+          - generic [ref=e447]:
+            - link "BIR Calculator" [ref=e448] [cursor=pointer]:
+              - /url: /erp/bir-calculator
+              - img [ref=e450]
+              - generic [ref=e452]: BIR Calculator
+            - link "Data Archive" [ref=e453] [cursor=pointer]:
+              - /url: /erp/data-archive
+              - img [ref=e455]
+              - generic [ref=e458]: Data Archive
+            - link "Gov. Rates" [ref=e459] [cursor=pointer]:
+              - /url: /erp/government-rates
+              - img [ref=e461]
+              - generic [ref=e463]: Gov. Rates
+            - link "Month-End Close" [ref=e464] [cursor=pointer]:
+              - /url: /erp/month-end-close
+              - img [ref=e466]
+              - generic [ref=e468]: Month-End Close
+            - link "Payment Modes" [ref=e469] [cursor=pointer]:
+              - /url: /erp/payment-modes
+              - img [ref=e471]
+              - generic [ref=e473]: Payment Modes
+            - link "Period Locks" [ref=e474] [cursor=pointer]:
+              - /url: /erp/period-locks
+              - img [ref=e476]
+              - generic [ref=e478]: Period Locks
+        - generic [ref=e479]:
+          - button "Purchasing" [ref=e480] [cursor=pointer]:
+            - generic [ref=e481]: Purchasing
+            - img [ref=e482]
+          - generic [ref=e484]:
+            - link "Accounts Payable" [ref=e485] [cursor=pointer]:
+              - /url: /erp/accounts-payable
+              - img [ref=e487]
+              - generic [ref=e490]: Accounts Payable
+            - link "Batch Trace" [ref=e491] [cursor=pointer]:
+              - /url: /erp/batch-trace
+              - img [ref=e493]
+              - generic [ref=e496]: Batch Trace
+            - link "GRN Entry" [ref=e497] [cursor=pointer]:
+              - /url: /erp/grn
+              - img [ref=e499]
+              - generic [ref=e503]: GRN Entry
+            - link "Product Master" [ref=e504] [cursor=pointer]:
+              - /url: /erp/products
+              - img [ref=e506]
+              - generic [ref=e510]: Product Master
+            - link "Purchase Orders" [ref=e511] [cursor=pointer]:
+              - /url: /erp/purchase-orders
+              - img [ref=e513]
+              - generic [ref=e517]: Purchase Orders
+            - link "Supplier Invoices" [ref=e518] [cursor=pointer]:
+              - /url: /erp/supplier-invoices
+              - img [ref=e520]
+              - generic [ref=e524]: Supplier Invoices
+            - link "Transfers" [ref=e525] [cursor=pointer]:
+              - /url: /erp/transfers
+              - img [ref=e527]
+              - generic [ref=e530]: Transfers
+            - link "Vendors" [ref=e531] [cursor=pointer]:
+              - /url: /erp/vendors
+              - img [ref=e533]
+              - generic [ref=e538]: Vendors
+    - generic [ref=e539]:
+      - button [ref=e541] [cursor=pointer]:
+        - img [ref=e542]
+      - generic "Platform switch" [ref=e545]:
+        - link "CRM" [ref=e546] [cursor=pointer]:
+          - /url: /admin
+        - link "ERP" [ref=e547] [cursor=pointer]:
+          - /url: /erp
+      - navigation [ref=e548]:
+        - generic [ref=e550]:
+          - button "Executive Cockpit" [ref=e551] [cursor=pointer]:
+            - img [ref=e553]
+            - generic [ref=e555]: Executive Cockpit
+          - button "ERP Home" [ref=e556] [cursor=pointer]:
+            - img [ref=e558]
+            - generic [ref=e561]: ERP Home
+        - button "Administration" [ref=e563] [cursor=pointer]:
+          - generic [ref=e564]: Administration
+          - img [ref=e565]
+        - generic [ref=e567]:
+          - button "Sales" [ref=e568] [cursor=pointer]:
+            - generic [ref=e569]: Sales
+            - img [ref=e570]
+          - generic [ref=e572]:
+            - button "Sales" [ref=e573] [cursor=pointer]:
+              - img [ref=e575]
+              - generic [ref=e578]: Sales
+            - button "Sales Transactions" [ref=e579] [cursor=pointer]:
+              - img [ref=e581]
+              - generic [ref=e584]: Sales Transactions
+            - button "Opening AR" [ref=e585] [cursor=pointer]:
+              - img [ref=e587]
+              - generic [ref=e591]: Opening AR
+            - button "Opening AR Transactions" [ref=e592] [cursor=pointer]:
+              - img [ref=e594]
+              - generic [ref=e597]: Opening AR Transactions
+            - button "Returns / CN" [ref=e598] [cursor=pointer]:
+              - img [ref=e600]
+              - generic [ref=e603]: Returns / CN
+            - button "Hospital PO Backlog" [ref=e604] [cursor=pointer]:
+              - img [ref=e606]
+              - generic [ref=e609]: Hospital PO Backlog
+            - button "New Hospital PO" [ref=e610] [cursor=pointer]:
+              - img [ref=e612]
+              - generic [ref=e616]: New Hospital PO
+            - button "Hospital Contract Prices" [ref=e617] [cursor=pointer]:
+              - img [ref=e619]
+              - generic [ref=e622]: Hospital Contract Prices
+        - generic [ref=e623]:
+          - button "Inventory" [ref=e624] [cursor=pointer]:
+            - generic [ref=e625]: Inventory
+            - img [ref=e626]
+          - generic [ref=e628]:
+            - button "Batch Trace" [ref=e629] [cursor=pointer]:
+              - img [ref=e631]
+              - generic [ref=e634]: Batch Trace
+            - button "Collaterals" [ref=e635] [cursor=pointer]:
+              - img [ref=e637]
+              - generic [ref=e641]: Collaterals
+            - button "CSI Booklets" [ref=e642] [cursor=pointer]:
+              - img [ref=e644]
+              - generic [ref=e646]: CSI Booklets
+            - button "DR / Consignment" [ref=e647] [cursor=pointer]:
+              - img [ref=e649]
+              - generic [ref=e654]: DR / Consignment
+            - button "Expiry Mgmt" [ref=e655] [cursor=pointer]:
+              - img [ref=e657]
+              - generic [ref=e659]: Expiry Mgmt
+            - button "GRN Entry" [ref=e660] [cursor=pointer]:
+              - img [ref=e662]
+              - generic [ref=e666]: GRN Entry
+            - button "Inventory" [ref=e667] [cursor=pointer]:
+              - img [ref=e669]
+              - generic [ref=e673]: Inventory
+            - button "Office Supplies" [ref=e674] [cursor=pointer]:
+              - img [ref=e676]
+              - generic [ref=e680]: Office Supplies
+            - button "Transfers" [ref=e681] [cursor=pointer]:
+              - img [ref=e683]
+              - generic [ref=e686]: Transfers
+            - button "Undertaking (Receipt)" [ref=e687] [cursor=pointer]:
+              - img [ref=e689]
+              - generic [ref=e693]: Undertaking (Receipt)
+            - button "Warehouses" [ref=e694] [cursor=pointer]:
+              - img [ref=e696]
+              - generic [ref=e700]: Warehouses
+        - generic [ref=e701]:
+          - button "Collections" [ref=e702] [cursor=pointer]:
+            - generic [ref=e703]: Collections
+            - img [ref=e704]
+          - generic [ref=e706]:
+            - button "AR Aging" [ref=e707] [cursor=pointer]:
+              - img [ref=e709]
+              - generic [ref=e711]: AR Aging
+            - button "Collections" [ref=e712] [cursor=pointer]:
+              - img [ref=e714]
+              - generic [ref=e717]: Collections
+            - button "IC Settlements" [ref=e718] [cursor=pointer]:
+              - img [ref=e720]
+              - generic [ref=e725]: IC Settlements
+        - generic [ref=e726]:
+          - button "Expenses" [ref=e727] [cursor=pointer]:
+            - generic [ref=e728]: Expenses
+            - img [ref=e729]
+          - generic [ref=e731]:
+            - button "Credit Cards" [ref=e732] [cursor=pointer]:
+              - img [ref=e734]
+              - generic [ref=e736]: Credit Cards
+            - button "Expenses" [ref=e737] [cursor=pointer]:
+              - img [ref=e739]
+              - generic [ref=e741]: Expenses
+        - button "Capture Hub" [ref=e743] [cursor=pointer]:
+          - generic [ref=e744]: Capture Hub
+          - img [ref=e745]
+        - button "Reports" [ref=e748] [cursor=pointer]:
+          - generic [ref=e749]: Reports
+          - img [ref=e750]
+        - button "Sales Goals" [ref=e753] [cursor=pointer]:
+          - generic [ref=e754]: Sales Goals
+          - img [ref=e755]
+        - generic [ref=e757]:
+          - button "People & HR" [ref=e758] [cursor=pointer]:
+            - generic [ref=e759]: People & HR
+            - img [ref=e760]
+          - generic [ref=e762]:
+            - button "Contractor Income" [ref=e763] [cursor=pointer]:
+              - img [ref=e765]
+              - generic [ref=e767]: Contractor Income
+            - button "Org Chart" [ref=e768] [cursor=pointer]:
+              - img [ref=e770]
+              - generic [ref=e775]: Org Chart
+            - button "Payroll" [ref=e776] [cursor=pointer]:
+              - img [ref=e778]
+              - generic [ref=e780]: Payroll
+            - button "People" [ref=e781] [cursor=pointer]:
+              - img [ref=e783]
+              - generic [ref=e787]: People
+        - generic [ref=e788]:
+          - button "Accounting" [ref=e789] [cursor=pointer]:
+            - generic [ref=e790]: Accounting
+            - img [ref=e791]
+          - generic [ref=e793]:
+            - button "Bank Accounts" [ref=e794] [cursor=pointer]:
+              - img [ref=e796]
+              - generic [ref=e798]: Bank Accounts
+            - button "Bank Reconciliation" [ref=e799] [cursor=pointer]:
+              - img [ref=e801]
+              - generic [ref=e805]: Bank Reconciliation
+            - button "Cashflow" [ref=e806] [cursor=pointer]:
+              - img [ref=e808]
+              - generic [ref=e810]: Cashflow
+            - button "CC Ledger" [ref=e811] [cursor=pointer]:
+              - img [ref=e813]
+              - generic [ref=e815]: CC Ledger
+            - button "Chart of Accounts" [ref=e816] [cursor=pointer]:
+              - img [ref=e818]
+              - generic [ref=e820]: Chart of Accounts
+            - button "Cost Centers" [ref=e821] [cursor=pointer]:
+              - img [ref=e823]
+              - generic [ref=e827]: Cost Centers
+            - button "Fixed Assets" [ref=e828] [cursor=pointer]:
+              - img [ref=e830]
+              - generic [ref=e832]: Fixed Assets
+            - button "Journal Entries" [ref=e833] [cursor=pointer]:
+              - img [ref=e835]
+              - generic [ref=e837]: Journal Entries
+            - button "Loans" [ref=e838] [cursor=pointer]:
+              - img [ref=e840]
+              - generic [ref=e842]: Loans
+            - button "Owner Equity" [ref=e843] [cursor=pointer]:
+              - img [ref=e845]
+              - generic [ref=e847]: Owner Equity
+            - button "P&L Statement" [ref=e848] [cursor=pointer]:
+              - img [ref=e850]
+              - generic [ref=e852]: P&L Statement
+            - button "Petty Cash" [ref=e853] [cursor=pointer]:
+              - img [ref=e855]
+              - generic [ref=e858]: Petty Cash
+            - button "Recurring Journals" [ref=e859] [cursor=pointer]:
+              - img [ref=e861]
+              - generic [ref=e863]: Recurring Journals
+            - button "Trial Balance" [ref=e864] [cursor=pointer]:
+              - img [ref=e866]
+              - generic [ref=e868]: Trial Balance
+            - button "VAT & CWT" [ref=e869] [cursor=pointer]:
+              - img [ref=e871]
+              - generic [ref=e873]: VAT & CWT
+        - button "BIR Compliance" [ref=e875] [cursor=pointer]:
+          - generic [ref=e876]: BIR Compliance
+          - img [ref=e877]
+        - button "Rebates & Commissions" [ref=e880] [cursor=pointer]:
+          - generic [ref=e881]: Rebates & Commissions
+          - img [ref=e882]
+        - generic [ref=e884]:
+          - button "Tools" [ref=e885] [cursor=pointer]:
+            - generic [ref=e886]: Tools
+            - img [ref=e887]
+          - generic [ref=e889]:
+            - button "BIR Calculator" [ref=e890] [cursor=pointer]:
+              - img [ref=e892]
+              - generic [ref=e894]: BIR Calculator
+            - button "Data Archive" [ref=e895] [cursor=pointer]:
+              - img [ref=e897]
+              - generic [ref=e900]: Data Archive
+            - button "Gov. Rates" [ref=e901] [cursor=pointer]:
+              - img [ref=e903]
+              - generic [ref=e905]: Gov. Rates
+            - button "Month-End Close" [ref=e906] [cursor=pointer]:
+              - img [ref=e908]
+              - generic [ref=e910]: Month-End Close
+            - button "Payment Modes" [ref=e911] [cursor=pointer]:
+              - img [ref=e913]
+              - generic [ref=e915]: Payment Modes
+            - button "Period Locks" [ref=e916] [cursor=pointer]:
+              - img [ref=e918]
+              - generic [ref=e920]: Period Locks
+        - generic [ref=e921]:
+          - button "Purchasing" [ref=e922] [cursor=pointer]:
+            - generic [ref=e923]: Purchasing
+            - img [ref=e924]
+          - generic [ref=e926]:
+            - button "Accounts Payable" [ref=e927] [cursor=pointer]:
+              - img [ref=e929]
+              - generic [ref=e932]: Accounts Payable
+            - button "Batch Trace" [ref=e933] [cursor=pointer]:
+              - img [ref=e935]
+              - generic [ref=e938]: Batch Trace
+            - button "GRN Entry" [ref=e939] [cursor=pointer]:
+              - img [ref=e941]
+              - generic [ref=e945]: GRN Entry
+            - button "Product Master" [ref=e946] [cursor=pointer]:
+              - img [ref=e948]
+              - generic [ref=e952]: Product Master
+            - button "Purchase Orders" [ref=e953] [cursor=pointer]:
+              - img [ref=e955]
+              - generic [ref=e959]: Purchase Orders
+            - button "Supplier Invoices" [ref=e960] [cursor=pointer]:
+              - img [ref=e962]
+              - generic [ref=e966]: Supplier Invoices
+            - button "Transfers" [ref=e967] [cursor=pointer]:
+              - img [ref=e969]
+              - generic [ref=e972]: Transfers
+            - button "Vendors" [ref=e973] [cursor=pointer]:
+              - img [ref=e975]
+              - generic [ref=e980]: Vendors
+    - main [ref=e981]:
+      - generic [ref=e982]:
+        - button "×" [ref=e983] [cursor=pointer]
+        - generic [ref=e984]:
+          - img [ref=e985]
+          - text: Recording Expenses (ORE / ACCESS)
+        - generic [ref=e987]:
+          - generic [ref=e988]:
+            - generic [ref=e989]: "1"
+            - generic [ref=e990]: "Choose expense type: **ORE** (CASH, BDM paid out-of-pocket — reimbursed to BDM on the payslip, receipt required) or **ACCESS** (company-mode: credit card / GCash / bank — company paid, NOT reimbursed to BDM)"
+          - generic [ref=e991]:
+            - generic [ref=e992]: "2"
+            - generic [ref=e993]: "For transport: use \"Transport — P2P\" (jeepney/bus/tricycle) or \"Transport — Grab/Taxi\" categories. Receipt is optional for transport."
+          - generic [ref=e994]:
+            - generic [ref=e995]: "3"
+            - generic [ref=e996]: Use the OCR scanner to auto-extract receipt data, or enter manually
+          - generic [ref=e997]:
+            - generic [ref=e998]: "4"
+            - generic [ref=e999]: Select category — COA code auto-resolves from vendor/keyword classification
+          - generic [ref=e1000]:
+            - generic [ref=e1001]: "5"
+            - generic [ref=e1002]: "For EWT-eligible lines (rent / professional fees / TWA-agent purchases) → set the **ATC** dropdown next to Payment Mode. Leave blank for non-EWT expenses (the engine reads `atc_code` at POST time and only emits a WithholdingLedger row when set). HOSPITAL (inbound 2307) and EMPLOYEE_* (compensation 1601-C) ATCs are filtered out — they don't belong on outbound expense lines."
+          - generic [ref=e1003]:
+            - generic [ref=e1004]: "6"
+            - generic [ref=e1005]: Attach receipt photo as proof (batch upload available for bulk OR processing)
+          - generic [ref=e1006]:
+            - generic [ref=e1007]: "7"
+            - generic [ref=e1008]: Verify COA code is NOT 6900 (Miscellaneous) — posting is blocked until mapped to correct account
+          - generic [ref=e1009]:
+            - generic [ref=e1010]: "8"
+            - generic [ref=e1011]: Save as DRAFT, then use the **per-row Validate + Submit buttons** in the working expenses table to move each entry through DRAFT → VALID → POSTED. There is no bulk Validate or bulk Submit — each entry has its own COA validation and OR gate; per-row flow prevents a single bad entry from blocking the rest.
+          - generic [ref=e1012]:
+            - generic [ref=e1013]: "9"
+            - generic [ref=e1014]: "**ACCESS expenses (company-funded) post via the linked CALF** (Phase G4.5h one-ack cascade, matches the GRN→UT gold standard). After save, the system auto-creates a DRAFT CALF covering the ACCESS lines — go to **PRF/CALF** and submit THAT doc. The CALF acknowledge posts both the CALF AND this Expense in one MongoDB transaction. If the cascade fails re-validation, the whole acknowledge rolls back (no half-posted state). ORE-only expenses still post directly via Submit on the expense row."
+        - generic [ref=e1015]:
+          - generic [ref=e1016]: "Next steps:"
+          - button "Record SMER →" [ref=e1017] [cursor=pointer]
+          - button "Record Car Logbook →" [ref=e1018] [cursor=pointer]
+          - button "PRF / CALF →" [ref=e1019] [cursor=pointer]
+          - button "COA Settings →" [ref=e1020] [cursor=pointer]
+        - generic [ref=e1021]: "💡 Expenses with COA 6900 (Misc) are BLOCKED from posting — map to correct account first. ACCESS expenses with non-cash payment auto-create a CALF — SUBMIT THE CALF (not the expense) to trigger the one-acknowledge cascade that posts both docs. COA codes are configurable in Settings → COA Mapping. OCR scanning is optional — if it fails or is disabled, the photo still uploads as proof and you fill the form manually. President Delete — for the President (or anyone granted accounting.reverse_posted in Access Templates): one-click delete of bad expense rows. POSTED/DELETION_REQUESTED → SAP Storno (reverses expense + CALF-link clear + journal entries; original kept for audit). DRAFT/VALID/ERROR → hard delete. Blocked if a POSTED CALF still references the row; reverse the CALF first. All actions logged. Proxy Entry (Phase G4.5c.1) — admin/finance (or back-office contractor with expenses.proxy_entry sub-perm ticked) can key an expense on behalf of another BDM; pick the owner in the \"Record on behalf of\" dropdown. Rows keyed on behalf route through the Approval Hub on submit (Rule #20 four-eyes). CALF requirement is still enforced for proxy-keyed expenses — only the President can bypass CALF, via the batch-upload path. **Phase P1.2 Slice 1 (May 06 2026) — From BDM Captures picker** in the Batch OR Upload section pulls EXPENSE / FUEL_ENTRY / UNCATEGORIZED photos already snapped by the BDM via Capture Hub. One click attaches the S3-stored images into the existing batch OCR pipeline — same downstream code path as gallery upload, no schema change. Picker filters to the selected `Assign To` BDM when set; cross-BDM otherwise. Gated by the lookup-driven `PROXY_PULL_CAPTURE` sub-perm (CAPTURE_LIFECYCLE_ROLES). Subscribers loosen to specific staff users by editing the lookup row in Control Center → Lookup Tables, no code deploy."
+        - generic [ref=e1022]: ⚠ If an approver rejects this document, a red banner with the reason will appear on this page. Click Fix & Resubmit to edit and re-send for approval — your data is preserved.
+      - heading "Expenses" [level=1] [ref=e1024]
+      - generic [ref=e1025]:
+        - link "SMER Per Diem" [ref=e1026] [cursor=pointer]:
+          - /url: /erp/smer
+        - link "Car Logbook" [ref=e1027] [cursor=pointer]:
+          - /url: /erp/car-logbook
+        - generic [ref=e1028]: ORE / ACCESS
+        - link "PRF / CALF" [ref=e1029] [cursor=pointer]:
+          - /url: /erp/prf-calf
+      - generic [ref=e1030]:
+        - generic [ref=e1031]:
+          - generic [ref=e1032]: SMER
+          - generic [ref=e1033]: ₱0
+        - generic [ref=e1034]:
+          - generic [ref=e1035]: Gas (Official)
+          - generic [ref=e1036]: ₱0
+        - generic [ref=e1037]:
+          - generic [ref=e1038]: ORE
+          - generic [ref=e1039]: ₱0
+        - generic [ref=e1040]:
+          - generic [ref=e1041]: ACCESS
+          - generic [ref=e1042]: ₱0
+        - generic [ref=e1043]:
+          - generic [ref=e1044]: Partners
+          - generic [ref=e1045]: ₱0
+        - generic [ref=e1046]:
+          - generic [ref=e1047]: CORE Commission
+          - generic [ref=e1048]: ₱0
+      - generic [ref=e1049]:
+        - generic [ref=e1050]:
+          - textbox [ref=e1051]: 2026-05-01
+          - generic [ref=e1052]:
+            - log [ref=e1054]
+            - generic [ref=e1055]:
+              - generic [ref=e1056]:
+                - generic [ref=e1057]: Cycle 1
+                - combobox [ref=e1059]
+              - img [ref=e1062]
+        - button "+ New Expense" [active] [ref=e1065] [cursor=pointer]
+      - button "Batch OR Upload (OCR) ▼" [ref=e1067] [cursor=pointer]:
+        - generic [ref=e1068]: Batch OR Upload (OCR)
+        - generic [ref=e1069]: ▼
+      - generic [ref=e1154]:
+        - generic [ref=e1155]:
+          - heading "New Expense — 2026-05 C1" [level=2] [ref=e1156]
+          - button "Cancel" [ref=e1157] [cursor=pointer]
+        - generic [ref=e1159]:
+          - generic [ref=e1160]: Record on behalf of(required)
+          - combobox "Role 'president' cannot own per-expenses records. Pick the BDM who owns this transaction." [ref=e1161]:
+            - option "— Select a BDM —" [selected]
+            - option "Cristina Salila"
+            - option "Edcel Mae Arespacochaga"
+            - option "Jake Montero"
+            - option "Jay Ann Protacio"
+            - option "Jenny Rose Jacosalem"
+            - option "Judy Mae Patrocinio"
+            - option "Mae Navarro"
+            - option "Menivie Daniela"
+            - option "Roman Mabanag"
+            - option "Romela Shen Herrera"
+            - option "TEST ACCOUNT BDM"
+        - generic [ref=e1162]:
+          - generic [ref=e1163]:
+            - generic [ref=e1164]: "#1"
+            - generic [ref=e1165]:
+              - log [ref=e1167]
+              - generic [ref=e1168]:
+                - generic [ref=e1169]:
+                  - generic [ref=e1170]: ORE
+                  - combobox [ref=e1172]
+                - img [ref=e1175]
+            - textbox [ref=e1177]: 2026-05-06
+            - generic [ref=e1178]:
+              - log [ref=e1180]
+              - generic [ref=e1181]:
+                - generic [ref=e1182]:
+                  - generic [ref=e1183]: Category...
+                  - combobox [ref=e1185]
+                - img [ref=e1188]
+            - button "X" [ref=e1190] [cursor=pointer]
+          - generic [ref=e1191]:
+            - textbox "Establishment" [ref=e1192]
+            - textbox "Particulars" [ref=e1193]
+            - spinbutton [ref=e1194]
+            - textbox "OR#" [ref=e1195]
+            - button "Scan OR" [ref=e1196] [cursor=pointer]
+            - generic [ref=e1197] [cursor=pointer]: Upload OR
+            - generic [ref=e1198]:
+              - log [ref=e1200]
+              - generic [ref=e1201]:
+                - generic [ref=e1202]:
+                  - generic [ref=e1203]: Cash (1000)
+                  - combobox [ref=e1205]
+                - img [ref=e1208]
+            - generic [ref=e1210]:
+              - log [ref=e1212]
+              - generic [ref=e1213]:
+                - generic [ref=e1214]:
+                  - generic [ref=e1215]: ATC...
+                  - combobox [ref=e1217]
+                - img [ref=e1220]
+        - button "+ Add Line" [ref=e1222] [cursor=pointer]
+        - generic [ref=e1223]:
+          - generic [ref=e1224]:
+            - generic [ref=e1225]: ORE Total
+            - generic [ref=e1226]: ₱0
+          - generic [ref=e1227]:
+            - generic [ref=e1228]: ACCESS Total
+            - generic [ref=e1229]: ₱0
+          - generic [ref=e1230]:
+            - generic [ref=e1231]: Grand Total
+            - generic [ref=e1232]: ₱0
+        - button "Save as Draft" [ref=e1233] [cursor=pointer]

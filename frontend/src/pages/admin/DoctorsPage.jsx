@@ -15,6 +15,10 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import DoctorManagement from '../../components/admin/DoctorManagement';
 import ScheduleVisitsModal from '../../components/admin/ScheduleVisitsModal';
+// Phase A.5.3 — DUPLICATE_VIP_CLIENT 409 → modal that offers Rename / Join /
+// Request approval. Mounted as a sibling of DoctorManagement so it sits above
+// the add/edit modal (z-index 1100 > 1000).
+import DuplicateVipClientModal from '../../components/admin/DuplicateVipClientModal';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import doctorService from '../../services/doctorService';
 import clientService from '../../services/clientService';
@@ -633,6 +637,11 @@ const DoctorsPage = () => {
     setNcLoading(false);
   }, []);
 
+  // Phase A.5.3 — DUPLICATE_VIP_CLIENT modal state. Holds the entire 409 payload
+  // from createDoctor/updateDoctor; cleared when admin picks Rename mine
+  // (keeps the add/edit modal open) or when the join-coverage call succeeds.
+  const [duplicateVipClient, setDuplicateVipClient] = useState(null);
+
   // refreshAfterCleanup is set to true when names are applied — triggers fetchDoctors via useEffect
   const [refreshAfterCleanup, setRefreshAfterCleanup] = useState(0);
 
@@ -817,16 +826,64 @@ const DoctorsPage = () => {
       fetchDoctors();
       return true;
     } catch (err) {
-      const errors = err.response?.data?.errors;
+      // Phase A.5.3 — structured DUPLICATE_VIP_CLIENT 409 → open modal instead
+      // of toast. Returning false keeps the add/edit modal open so admin can
+      // either Rename and retry, or close it via the duplicate modal's Join
+      // / Request flow.
+      const data = err.response?.data;
+      if (err.response?.status === 409 && data?.code === 'DUPLICATE_VIP_CLIENT') {
+        setDuplicateVipClient(data);
+        return false;
+      }
+      const errors = data?.errors;
       if (errors && errors.length > 0) {
         const errorMessages = errors.map(e => `${e.field}: ${e.message}`).join(', ');
         toast.error(`Validation failed: ${errorMessages}`);
       } else {
-        toast.error(err.response?.data?.message || 'Failed to save doctor');
+        toast.error(data?.message || 'Failed to save doctor');
       }
       return false;
     }
   };
+
+  // Phase A.5.3 — modal callbacks
+  const handleDuplicateRename = useCallback(() => {
+    // Just close the duplicate modal. The add/edit modal underneath stays
+    // open so admin can edit lastName + retry. We can't focus a specific
+    // input from here without reaching into DoctorManagement; admin just
+    // adjusts and clicks Save again. Toast keeps it discoverable.
+    setDuplicateVipClient(null);
+    toast('Tip: rename your VIP Client to a unique label, then Save again.', { icon: '✏️' });
+  }, []);
+
+  const handleDuplicateJoinAuto = useCallback(async (existingId) => {
+    try {
+      const res = await doctorService.joinCoverage(existingId);
+      if (res?.already_assigned) {
+        toast(`You were already on this VIP Client's coverage.`, { icon: 'ℹ️' });
+      } else {
+        toast.success(res?.message || 'Joined coverage successfully.');
+      }
+      fetchDoctors();
+      return true;
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || 'Join coverage failed';
+      toast.error(msg);
+      return false;
+    }
+  }, [fetchDoctors]);
+
+  const handleDuplicateJoinApproval = useCallback(async (existingId, notes) => {
+    try {
+      const res = await doctorService.joinCoverage(existingId, notes);
+      toast.success(res?.message || 'Request sent to admin for approval.');
+      return true;
+    } catch (err) {
+      const msg = err.response?.data?.message || err.message || 'Request failed';
+      toast.error(msg);
+      return false;
+    }
+  }, []);
 
   const handleDeleteDoctor = async (doctorId, permanent = false) => {
     try {
@@ -882,12 +939,30 @@ const DoctorsPage = () => {
     return doctorData;
   };
 
+  // Phase A.5.3 — opens the duplicate modal on canonical-name collision so the
+  // admin can pick Rename / Join / Request approval. Returns true on full
+  // success, false on duplicate (modal handles the next step), and re-throws
+  // on any other failure (callers keep their toast.error behavior).
   const performUpgrade = async (regularClient, doctorPayload) => {
-    await doctorService.create(doctorPayload);
+    try {
+      await doctorService.create(doctorPayload);
+    } catch (err) {
+      const data = err.response?.data;
+      if (err.response?.status === 409 && data?.code === 'DUPLICATE_VIP_CLIENT') {
+        setDuplicateVipClient(data);
+        // Important: do NOT delete the regular client yet — admin may pick
+        // "Join coverage" on the existing VIP, in which case the regular
+        // record should stay in place (admin can manually clean up later)
+        // OR pick "Rename mine" which retries via DoctorManagement.
+        return false;
+      }
+      throw err;
+    }
     await clientService.delete(regularClient._id);
     toast.success(`${regularClient.firstName} ${regularClient.lastName} upgraded to VIP Client`);
     fetchDoctors();
     fetchRegularClients();
+    return true;
   };
 
   // Phase A.6 — Upgrade flow now opens the schedule modal FIRST. Admin can pick
@@ -1085,6 +1160,19 @@ const DoctorsPage = () => {
             onConfirm={handleScheduleConfirm}
             onClose={closeScheduleModal}
           />
+
+          {/* Phase A.5.3 — DUPLICATE_VIP_CLIENT 409 modal. Stacks above the
+              add/edit modal (z-index 1100 > 1000) so admin can decide
+              Rename / Join / Request approval without losing the form. */}
+          {duplicateVipClient && (
+            <DuplicateVipClientModal
+              duplicate={duplicateVipClient}
+              onRename={handleDuplicateRename}
+              onJoinAuto={handleDuplicateJoinAuto}
+              onJoinApproval={handleDuplicateJoinApproval}
+              onClose={() => setDuplicateVipClient(null)}
+            />
+          )}
         </main>
       </div>
 

@@ -108,6 +108,23 @@ const doctorService = {
     const response = await api.put(`/doctors/${id}/partnership-status`, payload);
     return response.data;
   },
+
+  // Phase A.5.3 — "Join coverage" partner of the DUPLICATE_VIP_CLIENT 409 flow.
+  // Adds the calling user to assignedTo[] (auto-mode for admin/president, or
+  // any role enabled via VIP_CLIENT_LIFECYCLE_ROLES.JOIN_COVERAGE_AUTO) OR
+  // posts a MessageInbox approval request to admin (approval-mode, gated by
+  // JOIN_COVERAGE_APPROVAL).
+  //
+  // Response shapes:
+  //   200 + { mode: 'auto', data: <updated doctor> }                       — joined
+  //   202 + { mode: 'approval_pending', data: { messageId, doctorId } }     — request sent
+  //   200 + { mode: 'auto', already_assigned: true }                        — no-op
+  //   403                                                                    — neither gate passes
+  //   409 + { code: 'DOCTOR_MERGED', mergedInto }                            — stale ref to merged loser
+  joinCoverage: async (doctorId, notes = null) => {
+    const response = await api.post(`/doctors/${doctorId}/join-coverage`, notes ? { notes } : {});
+    return response.data;
+  },
 };
 
 export default doctorService;

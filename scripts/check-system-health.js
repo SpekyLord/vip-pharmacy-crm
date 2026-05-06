@@ -1097,6 +1097,159 @@ function checkBirComplianceWiring() {
   console.log(`  Checked ${required.length + frontendFiles.length} files.`);
 }
 
+// ═══ 11. Phase A.5.3 + A.5.6 — VIP Client canonicalization wiring ═══
+//
+// Static contract verifier. Asserts the dedup story stays whole across:
+//   - Doctor model      (canonical key field + mergedInto field + indexes + hooks)
+//   - errorHandler      (E11000 → friendly 409 fallback for non-modal callers)
+//   - doctorController  (DUPLICATE_VIP_CLIENT 409 contract + joinCoverage + helpers)
+//   - doctorRoutes      (POST /:id/join-coverage mounted)
+//   - visitController   (mergedInto resolver + merge_redirected response)
+//   - role helper       (resolveVipClientLifecycleRole.js exports + cache invalidate)
+//   - frontend modal    (DuplicateVipClientModal + service helper + DoctorsPage wiring)
+//   - PageGuide banner  (doctors-page tip mentions canonical-uniqueness + lookup gate)
+//
+// Subscription-readiness (Rule #3 / #19): VIP_CLIENT_LIFECYCLE_ROLES lookup
+// drives JOIN_COVERAGE_AUTO + JOIN_COVERAGE_APPROVAL gates. Verified by inspecting
+// the helper file + the seed presence in lookupGenericController.
+function checkVipClientCanonicalization() {
+  console.log('\n11. VIP Client Canonicalization (Phase A.5.3 + A.5.6)');
+  console.log('─'.repeat(40));
+
+  const required = [
+    // Doctor model — canonical key + mergedInto + indexes + pre-save + pre-update
+    ['backend/models/Doctor.js', [
+      'vip_client_name_clean',
+      'mergedInto',
+      'mergedAt',
+      "doctorSchema.index({ vip_client_name_clean: 1 })",
+      "doctorSchema.pre('findOneAndUpdate'",
+      'this.vip_client_name_clean =',
+    ]],
+
+    // Global errorHandler 11000 fallback — friendly 409 for callers that don't
+    // intercept the structured response (defense-in-depth — the controller's
+    // try/catch should fire first).
+    ['backend/middleware/errorHandler.js', [
+      'vip_client_name_clean',
+      'A VIP Client with this name already exists',
+    ]],
+
+    // doctorController — structured 409 + joinCoverage endpoint + helpers
+    ['backend/controllers/doctorController.js', [
+      'buildDuplicateVipClient409',
+      'isVipClientNameCleanDuplicate',
+      'computeCanonicalKey',
+      "code: 'DUPLICATE_VIP_CLIENT'",
+      'can_join_auto',
+      'can_join_approval',
+      'joinCoverage',
+      "'JOIN_COVERAGE_AUTO'",
+      "'JOIN_COVERAGE_APPROVAL'",
+      "$addToSet: { assignedTo:",
+      "category: 'approval_request'",
+      "code: 'DOCTOR_MERGED'",
+      'already_assigned',
+    ]],
+
+    // doctorRoutes — join-coverage endpoint mounted
+    ['backend/routes/doctorRoutes.js', [
+      "router.post('/:id/join-coverage'",
+      'joinCoverage',
+    ]],
+
+    // visitController — mergedInto resolver + redirect response
+    ['backend/controllers/visitController.js', [
+      'doctor: rawDoctorId',
+      'doctorMergeRedirected',
+      'originalDoctorId',
+      'MAX_MERGE_HOPS',
+      'mergedInto',
+      'merge_redirected',
+      '[Phase A.5.6]',
+    ]],
+
+    // resolveVipClientLifecycleRole helper — required exports
+    ['backend/utils/resolveVipClientLifecycleRole.js', [
+      "category: 'VIP_CLIENT_LIFECYCLE_ROLES'",
+      'getJoinCoverageAutoRoles',
+      'getJoinCoverageApprovalRoles',
+      'userCanPerformLifecycleAction',
+      'invalidate',
+    ]],
+
+    // Frontend modal component
+    ['frontend/src/components/admin/DuplicateVipClientModal.jsx', [
+      'duplicate.existing',
+      'can_join_auto',
+      'can_join_approval',
+      'onJoinAuto',
+      'onJoinApproval',
+      'onRename',
+      "data-testid=\"dvc-rename\"",
+      "data-testid=\"dvc-join-auto\"",
+      "data-testid=\"dvc-join-approval\"",
+    ]],
+
+    // doctorService — joinCoverage helper
+    ['frontend/src/services/doctorService.js', [
+      'joinCoverage',
+      "/doctors/${doctorId}/join-coverage",
+    ]],
+
+    // DoctorsPage — modal wiring + 409 intercept on save + upgrade flow
+    ['frontend/src/pages/admin/DoctorsPage.jsx', [
+      'DuplicateVipClientModal',
+      'duplicateVipClient',
+      'setDuplicateVipClient',
+      "code === 'DUPLICATE_VIP_CLIENT'",
+      'handleDuplicateRename',
+      'handleDuplicateJoinAuto',
+      'handleDuplicateJoinApproval',
+    ]],
+
+    // PageGuide banner — doctors-page tip mentions the canonicalization rule + lookup
+    ['frontend/src/components/common/PageGuide.jsx', [
+      "'doctors-page'",
+      'VIP_CLIENT_LIFECYCLE_ROLES',
+      'JOIN_COVERAGE_AUTO',
+      'Phase A.5.3',
+      'Phase A.5.6',
+    ]],
+  ];
+
+  for (const [file, needles] of required) {
+    const full = path.join(ROOT, file);
+    if (!fs.existsSync(full)) {
+      warn('A.5.3+6', `MISSING file: ${file}`);
+      continue;
+    }
+    const content = fs.readFileSync(full, 'utf-8');
+    for (const needle of needles) {
+      if (!content.includes(needle)) {
+        warn('A.5.3+6', `${file} missing token "${needle}"`);
+      }
+    }
+  }
+
+  // Verify the role helper's seed defaults are present in lookupGenericController
+  // so the 6 lifecycle codes lazy-seed when a fresh entity calls the gate.
+  const lookupCtrl = path.join(ROOT, 'backend/erp/controllers/lookupGenericController.js');
+  if (fs.existsSync(lookupCtrl)) {
+    const content = fs.readFileSync(lookupCtrl, 'utf-8');
+    const lifecycleCodes = ['VIP_CLIENT_LIFECYCLE_ROLES'];
+    for (const code of lifecycleCodes) {
+      if (!content.includes(code)) {
+        warn('A.5.3+6', `lookupGenericController.js missing seed entry for "${code}" — JOIN_COVERAGE_AUTO/APPROVAL will fall back to inline defaults forever`);
+      }
+    }
+  } else {
+    warn('A.5.3+6', 'lookupGenericController.js not found — cannot verify VIP_CLIENT_LIFECYCLE_ROLES seed');
+  }
+
+  console.log(`  Checked ${required.length} files for canonicalization wiring.`);
+}
+
 // ═══ Run all checks ═══
 console.log('System Health Check');
 console.log('═'.repeat(40));
@@ -1112,6 +1265,7 @@ checkCaptureSubmissionWiring();
 checkCalfOneAckFlow();
 checkCsiDraftOverlay();
 checkBirComplianceWiring();
+checkVipClientCanonicalization();
 
 console.log('\n' + '═'.repeat(40));
 if (issues > beforeIssues) {
