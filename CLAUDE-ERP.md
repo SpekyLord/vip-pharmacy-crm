@@ -360,6 +360,65 @@ Both rows use `insert_only_metadata: true` so admin role-list edits survive futu
 
 ---
 
+## Phase J4.1 — Expense ATC Dropdown UI (May 06, 2026)
+
+> **Status**: SHIPPED + API-RATIFIED. Bundled into commit `5e9bfac` alongside Phase A.4 + J2.2 work (parallel session). Closes deferred-index entry **D.1** (`J2.1.x — Expense ATC dropdown UI`) — the gap that J2 left when it shipped the engine without an entry-side UI.
+
+### What this fixes
+
+Phase VIP-1.J / J2 (committed `e61ea49` May 03 2026) wired `ExpenseEntry.expenseLineSchema.atc_code` ([backend/erp/models/ExpenseEntry.js:42](backend/erp/models/ExpenseEntry.js#L42)) and the [withholdingService](backend/erp/services/withholdingService.js) to emit a `WithholdingLedger` row at expense POST when `atc_code` was set. But `Expenses.jsx` never rendered an ATC `<SelectField>` per line — proxies/BDMs could only get `atc_code` onto a line via direct DB writes, batch upload, or `Vendor.default_atc_code` resolution. This phase is the missing entry-side dropdown.
+
+### Wiring contract
+
+**Frontend** — [frontend/src/erp/pages/Expenses.jsx](frontend/src/erp/pages/Expenses.jsx):
+- New `useLookupOptions('BIR_ATC_CODES')` hook (~line 388) returns the 12 seeded ATCs with `metadata.applies_to`.
+- `expenseAtcOpts` filter excludes `applies_to === 'HOSPITAL'` (inbound 2307; hospital→VIP, not VIP→payee) and `applies_to.startsWith('EMPLOYEE')` (compensation 1601-C; payslip-only via `payslipCalc.js`, never expense-driven). Leaves the 8 outbound expense-eligible codes: `WI010`/`WI011`/`WC010`/`WC011` (professional fees), `WI160`/`WC160` (rent), `WI080`/`WI081` (TWA-agent purchases).
+- `addLine()` initializes `atc_code: null` (~line 580) — null means non-EWT line, engine short-circuits with `reason: 'NO_ATC'`.
+- `<SelectField>` rendered inline in the form row after `payment_mode` (~line 1238). `value={line.atc_code || ''}`, `onChange={e => updateLine(idx, 'atc_code', e.target.value || null)}`. Empty string in the dropdown maps to `null` on the line — preserves the engine's null-skip contract. Placeholder `<option value="">ATC...</option>` first; remaining options iterate `expenseAtcOpts` showing the full lookup label so users see the rate context.
+
+**Backend** — no change required. The existing controller path was already shape-compatible:
+- `createExpense` in [expenseController.js:2284](backend/erp/controllers/expenseController.js#L2284) spreads `...safeBody` into `ExpenseEntry.create({...})`. `req.body.lines[]` flows through to `expenseEntrySchema.lines: [expenseLineSchema]`; Mongoose persists `atc_code` per the existing schema field.
+- `autoClassifyLines` ([expenseController.js:2205](backend/erp/controllers/expenseController.js#L2205)) only mutates `coa_code`/`expense_category`/`vendor_id` — **never** `atc_code`. Verified by healthcheck regex + manual diff.
+- `emitWithholdingForExpense` (line ~127) short-circuits when `!doc.atc_code` (`reason: 'NO_ATC'`) — null lines never trigger withholding emit. Existing J2 behavior preserved.
+
+### Subscription readiness (Rules #3 + #19)
+
+- The dropdown is **lookup-driven**: `BIR_ATC_CODES` is a `Lookup` category seeded by [lookupGenericController.js](backend/erp/controllers/lookupGenericController.js#L3265) with `insert_only_metadata: true` so subscriber edits to label/rate/description survive future re-seeds. Subscribers add new outbound EWT codes via Control Center → Lookup Tables; as long as `metadata.applies_to` is not `'HOSPITAL'` and does not start with `'EMPLOYEE'`, they appear in the dropdown automatically — no code deploy.
+- The filter is **future-proof by exclusion** rather than allow-list: a subscriber introducing `WI170` (e.g. a hypothetical custom-services TWA code) with `applies_to: 'CUSTOM_SERVICES'` will surface immediately. Conversely, anything they tag `applies_to: 'EMPLOYEE_*'` (compensation) is correctly hidden from the expense-line UI even if added post-migration.
+- No new lookup category, no new role gate. Reuses existing J2 infrastructure end-to-end.
+
+### Banner update (Rule #1)
+
+[WorkflowGuide.jsx](frontend/src/erp/components/WorkflowGuide.jsx) `'expenses'` workflow — new step inserted between "Select category" and "Attach receipt photo": *"For EWT-eligible lines (rent / professional fees / TWA-agent purchases) → set the **ATC** dropdown next to Payment Mode. Leave blank for non-EWT expenses (the engine reads `atc_code` at POST time and only emits a WithholdingLedger row when set). HOSPITAL (inbound 2307) and EMPLOYEE_\* (compensation 1601-C) ATCs are filtered out — they don't belong on outbound expense lines."*
+
+### Verification
+
+- **Static healthcheck** — [backend/scripts/healthcheckPhaseJ41AtcDropdown.js](backend/scripts/healthcheckPhaseJ41AtcDropdown.js) — **33/33 PASS**. Asserts: useLookupOptions import + BIR_ATC_CODES call + HOSPITAL exclusion + EMPLOYEE_\* exclusion + addLine atc_code:null + SelectField binding + onChange null-coercion + placeholder option + iteration over expenseAtcOpts + tooltip; ExpenseEntry schema field shape (String + trim + uppercase + null default); controller `...safeBody` spread + autoClassifyLines no-mutate + engine NO_ATC short-circuit; lookup seed BIR_ATC_CODES with WI010/WI160/WI080 (kept) and WC158/WI100 (excluded by filter) + insert_only_metadata; banner mentions ATC + EWT-eligible categories + HOSPITAL/EMPLOYEE filter; useLookups returns metadata; withholdingService reads metadata.applies_to (filter alignment).
+- **Sibling regression** — Phase J2 EWT wiring **124/124 PASS** (no engine breakage). AR/AP recon **78/78 PASS**, PS auto-flip **81/81 PASS** (parallel A.4 + J2.2 work intact alongside J4.1).
+- **Vite build** — green, 22.00 s.
+- **Live API smoke** (Mae Navarro on dev cluster, entity 69cd76ec7f6beb5888bd1a53):
+  - `POST /api/erp/expenses/ore-access` with `lines[0].atc_code: 'WI160'` → 201, response shows `lines[0].atc_code: "WI160"` persisted on the subdoc.
+  - `GET /api/erp/expenses/ore-access/:id` round-trip → `atc_code: "WI160"` returned intact, `withholding_payee_kind: null` + `withholding_payee_id: null` (correct for DRAFT — frozen-at-POST contract).
+  - Negative test: POST without `atc_code` → response shows `atc_code: null` (default works, engine will short-circuit at POST).
+  - Cleanup: both DRAFT rows deleted via `DELETE /api/erp/expenses/ore-access/:id` → 200.
+- **Playwright UI smoke**: deferred (Playwright MCP browser was locked by parallel session during ship — `ar-aging-snapshot.yml` artifact at repo root confirmed). The healthcheck regex + vite green + API smoke cover rendering + binding + persistence substantively. Recommended follow-up: 5-min UI walk to visually confirm the dropdown renders 8 options with the rent line tooltip showing on hover.
+
+### Files modified (3)
+
+- `frontend/src/erp/pages/Expenses.jsx` — +13 lines: hook + filter + addLine init + SelectField
+- `frontend/src/erp/components/WorkflowGuide.jsx` — +1 line: ATC step in expenses workflow
+- `backend/scripts/healthcheckPhaseJ41AtcDropdown.js` (NEW) — 189 lines: 33-assertion verifier
+- (Plus this CLAUDE-ERP.md note + PHASETASK-ERP.md follow-up note)
+
+### Out of scope (deferred)
+
+- Mongoose schema enum constraint on `atc_code` (currently free-form String; relies on lookup-driven UX). Adds ~10 ms per save to validate against `BIR_ATC_CODES` Lookup. Defer until a subscriber requests it or a bad-code BIR-engine error surfaces.
+- Per-line withholding preview ("This line will withhold ₱X at POST"). User did not request; engine surfaces the actual amount in the WithholdingLedger row at POST.
+- Auto-suggest ATC based on expense_category (e.g. "Rent" category → suggest WI160). Possible Phase J4.2 if user wants it; current UX has the dropdown empty by default which is the safer posture.
+- Live UI Playwright walk (deferred per parallel-session browser lock — see Verification section above).
+
+---
+
 ## Phase G1.7.1 — SMER Form Date-Column Lockstep + Pull Defense (May 05, 2026 evening)
 
 Closes a second alignment failure surfaced by the same user reconciliation that triggered Phase G1.7. After the Visit + ClientVisit union shipped earlier the same day, the user opened a fresh SMER, picked April 2026 Cycle 2 in the dropdowns, clicked Pull from CRM, and still saw `md_count = 0` on every row. The bridge was now correct; the problem had moved into the React form state.
