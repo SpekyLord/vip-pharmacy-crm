@@ -87,6 +87,7 @@
 | Date | Snapshot used | Provision time | SSH-ready time | Health-200 time | Total RTO | Operator notes |
 |---|---|---|---|---|---|---|
 | 2026-04-25 | TBD | TBD min | TBD min | TBD min | TBD min | TBD |
+| 2026-05-06 | drill3-baseline-2026-05-05 | ~3 min | ~5 min | not reached (drill-mode-partial) | 46 min (T-0=07:32 PHT → teardown=08:18 PHT) | Drill #3-attempt-3, PARTIAL PASS. Provisioning + Running + firewall lockdown + SSH + .env-swap + PM2-reload all validated. Drill `.env` deliberately gimped (MONGO_URI not pointing at prod cluster `wv27nfk`, S3 bucket left at prod value but no inbound traffic to trigger writes), so app crash-looped (126 restarts in ~10 min) and never reached `app.listen(5000)`. Smoke walk returned `000` on both local + external curl, as expected. Firebreak verification: `grep -c "wv27nfk" /var/www/.../.env` = `0` confirmed before `pm2 reload all`. Teardown clean — drill instance `vip-erp-drill3-20260506` deleted same session, only 2 prod instances remain, no Ubuntu-1-style 36h leak. Section 3's "30-45 min" estimate is now **evidence-bounded at 46 min for the path mechanics**; full 200 measurement still pending a Drill #3-attempt-4 with throwaway Atlas M0 + seeded test admin. |
 
 ### Steps
 
@@ -299,7 +300,7 @@ DR procedures are only real if tested. Schedule:
 
 | Drill | Frequency | Last Run | Next Due |
 |---|---|---|---|
-| Lightsail snapshot restore | Quarterly | ⏸ **PAUSED on AWS quota** — Service Quotas case open Apr 27 2026 (vCPU 10 → 40 requested). Procedure pre-staged in Section 9a. | Once quota approved, then quarterly |
+| Lightsail snapshot restore | Quarterly | ⚠️ **PARTIAL PASS 2026-05-06** (Drill #3-attempt-3) — quota approved (40 vCPU), provisioning/SSH/.env-swap/firewall/PM2-reload paths validated in 46 min, but Health-200 not reached due to deliberately gimped drill `.env` (no throwaway Atlas). See Section 9a evidence row + Section 3. Next: Drill #3-attempt-4 with M0-seeded throwaway cluster for full 200 measurement. | 2026-08-06 (quarterly) — OR sooner if attempt-4 (full pass) executed |
 | Atlas PITR restore | Quarterly | ✅ **PASSED 2026-04-25** (Drill #2, Day-5) — RTO TBD-backfill in Section 4 | 2026-07-25 (Q3) |
 | S3 DR bucket sanity check (object count + fetch) | Quarterly | ✅ **PASSED 2026-04-25** (Drill #1, Day-5) — Singapore↔Sydney parity: 1,318 objects + sample JPEG byte-verified | 2026-07-25 (Q3) |
 | S3 DR bucket failover (config swap, full traffic) | Bi-annually | Not yet run | H2 2026 |
@@ -373,7 +374,8 @@ Verify that a Lightsail snapshot can be restored to a working instance **without
 
 | Date | Snapshot used | Provision time | SSH-ready time | Health-200 time | Total RTO | Operator notes |
 |---|---|---|---|---|---|---|
-| TBD | TBD | TBD min | TBD min | TBD min | TBD min | Drill #3 — first run after AWS quota approval |
+| 2026-05-06 (attempt-3) | drill3-baseline-2026-05-05 | ~3 min | ~5 min | NOT REACHED (drill-mode-partial) | 46 min | PARTIAL PASS. Path mechanics all validated; Health-200 blocked by deliberately gimped drill `.env` (MONGO_URI not pointing at any reachable cluster → 126 PM2 restarts → no `:5000` listener → curl `000`). Firebreak verified pre-reload via `grep -c "wv27nfk" .env` = `0`. Teardown clean. Re-do as attempt-4 with throwaway Atlas M0 + seeded admin to capture true Health-200 RTO. |
+| TBD (attempt-4) | TBD | TBD min | TBD min | TBD min | TBD min | Drill #3-attempt-4 — full §9a-compliant pass with throwaway Atlas. Pre-flight 4 must include: spin up M0 free cluster (~5 min), seed one test admin via `npm run seed`, paste cluster URI into `.env.drill3`. |
 
 ### Failure modes to watch for
 
@@ -493,7 +495,7 @@ Recommended cadence for planned (non-emergency) work:
 | 2026-04-25 | Founder + Claude | Day 4 — added Section 9b (Tenant Guard Violation procedure) for ENTITY_GUARD / BDM_GUARD alerts. |
 | 2026-04-25 | Founder | Day-5 DR Drills #1 (S3 parity) + #2 (Atlas PITR) — both PASSED. Drill #3 (Lightsail) paused on AWS vCPU quota. RTOs in Sections 3/4 still TBD-backfill. |
 | 2026-04-27 | Founder + Claude | Section 9 schedule synced to actual Drill #1 + #2 results. Section 9a added — Drill #3 Lightsail snapshot-restore procedure pre-staged for execution post-quota-approval. |
-| TBD | Founder | First Drill #3 run after AWS quota approval — record measured RTO + evidence in Sections 9a + 3. |
+| 2026-05-06 | Founder + Claude | Drill #3-attempt-3 executed — partial pass. Quota approval verified (40 vCPU applied), provisioning + Running + firewall lockdown + SSH + .env-swap + PM2-reload all validated. T-0=07:32 PHT → teardown=08:18 PHT (46 min). Drill `.env` deliberately gimped (no throwaway Atlas spun up under time pressure) → 126 PM2 restarts, no `app.listen(5000)`, curl `000`. Firebreak verified pre-reload via `grep -c "wv27nfk" .env` = `0`. Teardown clean — no Ubuntu-1-style 36h leak. Section 3 "30-45 min" claim now evidence-bounded at 46 min for path mechanics. Drill #3-attempt-4 needed for true Health-200 RTO with M0 throwaway + seeded admin. |
 | 2026-04-28 | Founder + Claude | Section 10 added — Accounting Integrity Agent + Orphan Ledger Audit Agent operator procedures (manual trigger, expected output, alert routing, repair paths). |
 | 2026-04-30 | Founder + Claude | Section 9b — retired MessageInbox alert channel (`backend/middleware/guardAlerter.js` deleted). Per-recipient fan-out across `ALL_ADMINS` flooded admin inboxes (>1000 rows). pm2 log line is now the sole signal; same structured JSON payload. Run `node backend/scripts/tempInboxArchiveGuards.js --apply --soft-delete` once on prod to clear historical `[GUARD]` rows. |
 
