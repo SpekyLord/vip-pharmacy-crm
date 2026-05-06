@@ -253,13 +253,6 @@ export default function SalesList() {
   // OCR, just upload → returns { csi_photo_url, csi_attachment_id } which we
   // route into PUT /sales/:id/received-csi as the received-CSI proof.
   const [attachReceivedTarget, setAttachReceivedTarget] = useState(null);
-  // Phase P1.2 Slice 7-extension Round 2A — File handed to ScanCSIModal by
-  // the per-row PendingCapturesPicker. When set, the modal opens in
-  // photoOnly mode AND auto-runs handleFile on the File so the proxy doesn't
-  // re-pick the photo from gallery. Cleared on modal close so re-opening
-  // the modal manually returns to the normal Take-Photo / Gallery capture
-  // step.
-  const [attachInitialFile, setAttachInitialFile] = useState(null);
   // Lifecycle confirm state (Submit/Validate/Reopen/Request-Delete/Approve-Delete).
   // Replaces window.confirm() with the styled ERP ConfirmModal. See ConfirmModal.jsx.
   const [confirm, setConfirm] = useState(null);
@@ -637,13 +630,24 @@ export default function SalesList() {
                             picker for the signed/pink/duplicate CSI returned
                             by the hospital. Narrows to the row's own BDM so
                             the proxy only sees captures from the BDM who
-                            owns the sale. Server still gates via
+                            owns the sale. skipFetch={true} bypasses the
+                            client-side cross-origin S3 fetch (the private
+                            bucket has no CORS allowlist for browser origins)
+                            AND the modal's re-upload step (the photo's
+                            already on S3) — onPick yields the raw capture
+                            row, we write the bare S3 URL straight into
+                            csi_received_photo_url via the existing
+                            attachReceivedCsi endpoint. Server-side read
+                            paths re-sign at consumption time via
+                            documentDetailHydrator.signUrl(). Server still
+                            gates the queue read via lookup-driven
                             CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE. */}
                         <PendingCapturesPicker
                           workflowTypes={['SALES', 'UNCATEGORIZED']}
                           bdmId={sale.bdm_id?._id || sale.bdm_id || undefined}
                           maxSelect={1}
                           buttonLabel="From Captures"
+                          skipFetch={true}
                           buttonStyle={{
                             padding: '4px 10px',
                             borderRadius: 8,
@@ -659,11 +663,27 @@ export default function SalesList() {
                             minHeight: 38,
                             minWidth: 86,
                           }}
-                          onPick={(files) => {
-                            const file = files?.[0];
-                            if (!file) return;
-                            setAttachInitialFile(file);
-                            setAttachReceivedTarget(sale._id);
+                          onPick={async (_files, meta) => {
+                            const cap = meta?.captures?.[0];
+                            const art = cap?.captured_artifacts?.[0];
+                            if (!art?.url) {
+                              showError(null, 'Picked capture has no S3 URL');
+                              return;
+                            }
+                            // Persist BARE URL (sans X-Amz-Signature query) so
+                            // the DB stays signature-free; signUrl() re-signs
+                            // at every read.
+                            const bareUrl = String(art.url).split('?')[0];
+                            try {
+                              await sales.attachReceivedCsi(sale._id, {
+                                csi_received_photo_url: bareUrl,
+                                csi_received_attachment_id: cap._id || null,
+                              });
+                              showSuccess('Signed CSI attached from BDM Capture — dunning-ready.');
+                              loadSales(pagination.page);
+                            } catch (err) {
+                              showError(err, 'Could not attach received CSI photo from BDM Capture');
+                            }
                           }}
                         />
                       </>
@@ -717,17 +737,21 @@ export default function SalesList() {
             )}
             </div>
 
-          {/* Attach Received CSI Modal — photo-only (no OCR). Phase P1.2
-              Slice 7-extension Round 2A wires initialFile so the per-row
-              PendingCapturesPicker can hand a BDM-captured signed CSI File
-              straight into the photo-only upload path. */}
+          {/* Attach Received CSI Modal — photo-only (no OCR). Path used
+              ONLY by the existing per-row 📷 Attach CSI button (Take Photo
+              / Gallery flow). Phase P1.2 Slice 7-extension Round 2A's
+              "From Captures" picker bypasses this modal entirely and writes
+              the BDM-captured S3 URL straight into csi_received_photo_url
+              via attachReceivedCsi (skipFetch path). The shared
+              ScanCSIModal still accepts an optional initialFile prop —
+              kept for OpeningArEntry's photoOnly fallback consistency
+              even though no caller currently passes it here. */}
           <ScanCSIModal
             open={!!attachReceivedTarget}
-            onClose={() => { setAttachReceivedTarget(null); setAttachInitialFile(null); }}
+            onClose={() => setAttachReceivedTarget(null)}
             onApply={handleAttachReceivedCsi}
             photoOnly={true}
             docType="CSI"
-            initialFile={attachInitialFile}
           />
 
           {/* President Reverse Modal */}

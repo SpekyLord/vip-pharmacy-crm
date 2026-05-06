@@ -46,6 +46,14 @@ export default function PendingCapturesPicker({
   buttonLabel = 'From BDM Captures',
   buttonStyle,
   maxSelect = 20,
+  // Phase P1.2 Slice 7-extension Round 2A — when true, skip the
+  // fetch(signedS3Url) → Blob → File pipeline that the OCR scan modals need
+  // and yield the raw capture rows via meta.captures instead. The caller
+  // (SalesList per-row Attach CSI) writes the artifact's S3 URL straight
+  // into the target field — no re-upload, no in-browser cross-origin fetch
+  // (which the private bucket's missing CORS allowlist would block on
+  // `localhost:5173` and any non-S3-origin caller).
+  skipFetch = false,
 }) {
   const { getProxyQueue } = useCaptureSubmissions();
   const [open, setOpen] = useState(false);
@@ -112,6 +120,24 @@ export default function PendingCapturesPicker({
     setPickingIn(true);
     try {
       const picked = items.filter((it) => selected.has(it._id));
+
+      // Phase P1.2 Slice 7-extension Round 2A — skipFetch path. Caller takes
+      // the raw capture rows (with their already-signed S3 URL inside
+      // captured_artifacts[i].url) and writes the bare URL directly into
+      // the target document field (e.g. SalesLine.csi_received_photo_url).
+      // The private bucket's missing CORS allowlist would block fetch()
+      // from a browser origin, but a server-side read path's signUrl()
+      // re-signs at consumption time, so persisting the URL string only
+      // is sufficient — no client-side fetch needed.
+      if (skipFetch) {
+        const captureIds = picked.map((it) => it._id);
+        onPick([], { capture_ids: captureIds, captures: picked });
+        toast.success(`Attached ${picked.length} capture${picked.length === 1 ? '' : 's'} from BDM queue`);
+        setOpen(false);
+        setSelected(new Set());
+        return;
+      }
+
       const files = [];
       const captureIds = [];
       for (const it of picked) {
@@ -155,7 +181,7 @@ export default function PendingCapturesPicker({
     } finally {
       setPickingIn(false);
     }
-  }, [items, selected, onPick]);
+  }, [items, selected, onPick, skipFetch]);
 
   const defaultButtonStyle = {
     padding: '8px 16px',
