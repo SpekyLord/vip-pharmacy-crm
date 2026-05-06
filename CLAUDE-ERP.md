@@ -339,14 +339,17 @@ Both rows use `insert_only_metadata: true` so admin role-list edits survive futu
 - **AccountsReceivable page** ([frontend/src/erp/pages/AccountsReceivable.jsx](frontend/src/erp/pages/AccountsReceivable.jsx)) — adds `[Refresh AR/AP]` button (testid `ar-recompute-button`) next to "Back to Reports". Server-side role-gated; renders for everyone but 403s land as a friendly toast.
 - **WorkflowGuide banner** ([frontend/src/erp/components/WorkflowGuide.jsx](frontend/src/erp/components/WorkflowGuide.jsx) `'ar-aging'`) — mentions Phase A.4 contract + RECOMPUTE_AR gate + Retry-JE endpoint per Rule #1.
 
+**Phase A.4-fix1 (May 06 2026 same-evening hotfix — SAP Storno carve-out)**: After applying the migration on prod, the integrity sweep flagged ₱36,000 AR drift in MG and CO. Diagnosis: a CSI was Phase-28 SAP-Storno reversed (`deletion_event_id` stamped on `SalesLine` + `is_reversal: true` JE crediting AR_TRADE back to zero), but the original row stayed `status='POSTED'` per the audit-trail contract. The Phase A.4 migration populated `outstanding_amount = invoice_total` for it, so Σ outstanding showed ₱36,000 while GL AR_TRADE was rightly ₱0. Fix: `recomputeOutstandingForSale` + `recomputeOutstandingForSupplierInvoice` now check `deletion_event_id` and clamp outstanding to 0 with `skipped: 'REVERSED'` — same posture as `isCashRoute`. The migration script's dry-run path mirrors the carve-out. Re-running `migrateSubLedgerOutstanding.js --apply` after the fix clears the drift. Healthcheck extended to 79 assertions (asserts the carve-out is present in the service).
+
 **Deferred follow-ups** (not blocking SaaS readiness):
+- Wire `documentReversalService.presidentReverse` (and `Collection.reopen`'s deletion path) to call `recomputeOutstandingForSale` immediately so future reversals don't depend on the next migration run to clear sub-ledger drift. Currently, the `deletion_event_id` check at recompute-time catches it; a per-event recompute would be cleaner. ~30 min change.
 - List-page badges for `je_status='FAILED'` rows on SalesList / CollectionsList / SupplierInvoicesList. Backend signal already lands; UI surfacing is purely additive when the user wants it.
 - Inline "Retry JE" button on those badges. Backend endpoint is already callable.
 - AR/AP drift dashboard tile on `/erp/agent-dashboard`. Daily-4-AM agent message already covers the alert path.
 
 ### Healthcheck
 
-[backend/scripts/healthcheckArApRecon.js](backend/scripts/healthcheckArApRecon.js) — 78 assertions across 11 sections. **78/78 PASS** as of this commit. Run before any Phase A.4 edit and after the migration is applied.
+[backend/scripts/healthcheckArApRecon.js](backend/scripts/healthcheckArApRecon.js) — 79 assertions across 11 sections. **79/79 PASS** as of this commit. Run before any Phase A.4 edit and after the migration is applied.
 
 ### Subscription-readiness checklist
 

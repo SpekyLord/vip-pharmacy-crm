@@ -67,8 +67,15 @@ async function migrateAr(entityId) {
       } else {
         // Dry-run: compute the would-be outstanding without writing.
         const sl = await SalesLine.findById(doc._id)
-          .select('_id invoice_total outstanding_amount petty_cash_fund_id payment_mode')
+          .select('_id invoice_total outstanding_amount petty_cash_fund_id payment_mode deletion_event_id')
           .lean();
+        // Phase 28 SAP Storno — reversed rows have effective outstanding of 0
+        // (the reversal JE credits AR_TRADE back). Mirror the service helper.
+        if (sl.deletion_event_id) {
+          if (sl.outstanding_amount === 0) unchanged += 1;
+          else updated += 1;
+          continue;
+        }
         if (arAgingService.isCashRoute(sl)) {
           if (sl.outstanding_amount === 0) unchanged += 1;
           else { cashRoute += 1; updated += 1; }
@@ -125,8 +132,14 @@ async function migrateAp(entityId) {
         }
       } else {
         const si = await SupplierInvoice.findById(doc._id)
-          .select('_id total_amount amount_paid outstanding_amount')
+          .select('_id total_amount amount_paid outstanding_amount deletion_event_id')
           .lean();
+        // Phase 28 SAP Storno — reversed SI rows clamp to 0.
+        if (si.deletion_event_id) {
+          if (si.outstanding_amount === 0) unchanged += 1;
+          else updated += 1;
+          continue;
+        }
         const outstanding = Math.max(
           0,
           Math.round((Number(si.total_amount || 0) - Number(si.amount_paid || 0)) * 100) / 100,

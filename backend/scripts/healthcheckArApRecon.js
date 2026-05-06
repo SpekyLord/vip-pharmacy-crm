@@ -122,6 +122,11 @@ console.log('Phase A.4 — AR/AP Sub-Ledger Recon healthcheck\n');
     'arAgingService missing required exports');
   assert(/module\.exports[\s\S]*?recomputeOutstandingForSale/.test(svc),
     'arAgingService.recomputeOutstandingForSale not exported');
+  // Phase A.4-fix1 — SAP Storno reversal carve-out. Rows with deletion_event_id
+  // set are ledger-reversed; outstanding_amount must clamp to 0 even though
+  // status='POSTED' (Phase 28 audit-trail contract).
+  assert(/deletion_event_id[\s\S]*?skipped: 'REVERSED'/.test(svc),
+    'arAgingService missing SAP-Storno deletion_event_id carve-out (REVERSED skip)');
 
   const ctrl = read('backend/erp/controllers/collectionController.js');
   assert(/require\('\.\.\/services\/arAgingService'\)/.test(ctrl),
