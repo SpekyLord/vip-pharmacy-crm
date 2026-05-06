@@ -34,16 +34,22 @@ import { useAuth } from '../../../hooks/useAuth';
 import { userHasFrontendDefault } from '../../utils/captureLifecycleFrontendGates';
 
 // ── Workflow icons mirror BdmCaptureHub / ProxyQueue ──
+// Phase P1.2 Phase 1 (May 06 2026) — CWT_INBOUND + PETTY_CASH workflow_type
+// enum slots dropped. Legacy keys retained as defensive fallbacks (any row
+// the migration script missed still resolves to a recognisable icon vs the
+// generic Package fallback). The COLLECTION row icon is correct for the new
+// CWT sub_type — workflowLabel() below renders "COLLECTION / CWT" so the
+// folder leaf label still surfaces the sub_type to the proxy.
 const WORKFLOW_ICONS = {
   EXPENSE: Receipt,
   SMER: Camera,
   SALES: FileText,
   GRN: Truck,
   FUEL_ENTRY: Fuel,
-  PETTY_CASH: Wallet,
+  PETTY_CASH: Wallet,                  // legacy fallback
   OPENING_AR: FileText,
   COLLECTION: BarChart3,
-  CWT_INBOUND: FileBadge,
+  CWT_INBOUND: FileBadge,              // legacy fallback
   UNCATEGORIZED: Package,
 };
 const WORKFLOW_COLORS = {
@@ -52,10 +58,10 @@ const WORKFLOW_COLORS = {
   SALES: '#7c3aed',
   GRN: '#dc2626',
   FUEL_ENTRY: '#ea580c',
-  PETTY_CASH: '#ca8a04',
+  PETTY_CASH: '#ca8a04',                // legacy fallback
   OPENING_AR: '#6366f1',
   COLLECTION: '#0891b2',
-  CWT_INBOUND: '#9333ea',
+  CWT_INBOUND: '#9333ea',               // legacy fallback
   UNCATEGORIZED: '#64748b',
 };
 

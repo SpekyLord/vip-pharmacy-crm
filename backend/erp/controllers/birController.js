@@ -1313,11 +1313,30 @@ exports.markReceived2307Inbound = catchAsync(async (req, res) => {
   // the capture and advance its lifecycle (PENDING_PROXY → PROCESSED) after
   // the cert is recorded. Extracted before passing the remaining fields to
   // the reconciliation service so capture_id never reaches the CwtLedger row.
-  const { cert_2307_url, cert_filename, cert_content_hash, cert_notes, capture_id } = req.body || {};
+  //
+  // Phase P1.2 Phase 1 (May 06 2026) — Option D audit gate. paper_received
+  // is the explicit attestation that the BIR-stamped paper certificate is
+  // physically in the Iloilo office archive (BIR RR No. 2-98 documentary
+  // evidence requirement for the 1702 credit). When false: cert_* fields
+  // are stamped but status stays PENDING_2307 (PHOTO_ATTACHED implicit
+  // state). When true: status flips to RECEIVED and physical_received_at
+  // is stamped. Defaults to true for backward compat with non-Phase-1 callers.
+  const {
+    cert_2307_url, cert_filename, cert_content_hash, cert_notes,
+    capture_id, paper_received,
+  } = req.body || {};
+  // Coerce: only `=== true` (boolean) or `=== 'true'` (string) attests paper.
+  // Anything else (undefined for legacy callers, false, null, 0) means
+  // "photo only" — except when totally absent, default to TRUE for backward
+  // compat with existing unit-test callers / scripts.
+  const paperReceivedFlag = paper_received === undefined
+    ? true
+    : (paper_received === true || paper_received === 'true');
   try {
     const row = await cwt2307ReconciliationService.markReceived(rowId, {
       entityId: req.entityId, userId: req.user?._id,
       cert_2307_url, cert_filename, cert_content_hash, cert_notes,
+      paper_received: paperReceivedFlag,
     });
 
     // Round 2C — best-effort: a failure here does NOT roll back the receive
@@ -1348,6 +1367,13 @@ exports.markReceived2307Inbound = catchAsync(async (req, res) => {
       year: row.year, quarter: row.quarter,
       content_hash: row.cert_content_hash, has_url: !!row.cert_2307_url,
       capture_id: capture_id ? String(capture_id) : null,
+      // Phase P1.2 Phase 1 (May 06 2026) — Option D audit gate fingerprint.
+      // grep this field to find which receive events unlocked the 1702 credit
+      // (paper_received:true) vs which only attached photo evidence
+      // (paper_received:false → row stays in PHOTO_ATTACHED).
+      paper_received: paperReceivedFlag,
+      final_status: row.status,
+      physical_received_at: row.physical_received_at || null,
       ts: new Date().toISOString(),
     }));
     res.json({ success: true, data: row });

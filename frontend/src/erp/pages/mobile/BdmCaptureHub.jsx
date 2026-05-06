@@ -17,6 +17,7 @@ import {
   MapPin, Clock, Upload,
   ChevronRight, RefreshCw, X,
   Car, Wallet as WalletOut, Handshake, Banknote, PackageOpen,
+  ScanBarcode,
   Sparkles, Check, Lock,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -116,13 +117,22 @@ const WORKFLOWS = [
     fields: ['amount_declared', 'access_for'],
     active: true,
   },
+  // Phase P1.2 Phase 1 (May 06 2026) — CWT collapsed from a top-level
+  // workflow_type='CWT_INBOUND' to a sub_type of COLLECTION. Hospitals send
+  // CR + DEPOSIT + CWT together as one collection package, so a single
+  // workflow_type covers them all. The composite tile key
+  // `${w.key}_${w.sub_type || 'main'}` now resolves to 'COLLECTION_CWT'
+  // (vs the legacy 'CWT_INBOUND_main'). Backend rejects standalone
+  // workflow_type='CWT_INBOUND' on save (enum was narrowed); migration
+  // script flipped all live rows to the new shape.
   {
-    key: 'CWT_INBOUND',
+    key: 'COLLECTION',
+    sub_type: 'CWT',
     section: 'collection',
     label: 'Scan CWT (BIR 2307)',
     icon: FileBadge,
     color: '#6366f1',
-    description: 'Certificate of withholding tax from customer',
+    description: 'Certificate of withholding tax from customer (paper to Iloilo office)',
     artifactKind: 'cwt_scan',
     fields: ['amount_declared', 'access_for'],
     active: true,
@@ -139,19 +149,46 @@ const WORKFLOWS = [
     fields: ['amount_declared'],
     active: true,
   },
+  // Phase P1.2 Slice 6.2 (May 06 2026) — GRN tile splits into two so the
+  // proxy can tell at-a-glance which captures need a paper hand-in vs which
+  // are pure OCR feedstock.
+  //   BATCH_PHOTO (D)  — Digital-only photo of vial/box labels. OCR extracts
+  //                      batch + expiry; the physical product itself is the
+  //                      source so no paper arrives at office.
+  //   WAYBILL     (M)  — Photo of the courier waybill paper. The physical
+  //                      paper still needs to be hand-delivered to office —
+  //                      Slice 3 reconciliation will block the BDM's per-diem
+  //                      cycle if it goes missing.
   {
     key: 'GRN',
+    sub_type: 'BATCH_PHOTO',
     section: 'inventory',
-    label: 'Scan GRN Item',
+    label: 'Scan Batch Photo',
+    icon: ScanBarcode,
+    color: '#d97706',
+    description: 'Photo of vial / box labels — OCR extracts batch + expiry',
+    artifactKind: 'barcode_scan',
+    fields: [],
+    digitalOnly: true,
+    active: true,
+  },
+  {
+    key: 'GRN',
+    sub_type: 'WAYBILL',
+    section: 'inventory',
+    label: 'Scan Waybill',
     icon: Truck,
     color: '#dc2626',
-    description: 'Product barcode + qty + batch/expiry + waybill',
-    artifactKind: 'barcode_scan',
+    description: 'Courier waybill paper — proof of arrival, paper to office',
+    artifactKind: 'photo',
     fields: [],
     active: true,
   },
   // PETTY_CASH tile removed May 05 2026 — petty cash request flow moved
-  // off the Capture Hub. Backend enum retained for existing/legacy rows.
+  // off the Capture Hub. Backend enum DROPPED in Phase P1.2 Phase 1 (May 06
+  // 2026); no Capture Hub tile, no enum slot, no migration target. Any
+  // pre-Phase-1 rows remain readable but cannot be re-saved without admin
+  // re-classifying them.
 ];
 
 // ── GPS helper ──

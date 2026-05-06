@@ -16,6 +16,124 @@
 
 ---
 
+## PHASE P1.2 PHASE 1 — Capture-type cleanup + Option D BIR audit gate ✅ SHIPPED (May 6, 2026)
+
+**Goal:** Three coupled changes that close an audit-credibility gap exposed by Round 2C and clean up two unused enum slots:
+1. **Drop `workflow_type='CWT_INBOUND'`** — collapsed into `COLLECTION` + `sub_type='CWT'`. Hospitals send CR + DEPOSIT + CWT together as one collection package, so a single workflow_type covers them all.
+2. **Drop `workflow_type='PETTY_CASH'`** — tile was never shipped on the Capture Hub; enum slot was speculative.
+3. **Two-step BIR receive on `/erp/bir/2307-IN` (Option D audit gate)** — photo evidence (`cert_2307_url`) attaches but does NOT unlock the 1702 credit; finance must ALSO tick a "paper-in-Iloilo" checkbox that flips `status='RECEIVED'` + stamps `physical_received_at`. The gap state (cert URL non-empty + status=PENDING_2307 + physical_received_at NULL) is the new **PHOTO_ATTACHED** pseudo-status, surfaced as a tab + amber pill on the inbound page.
+
+**Why the audit gate matters:** BIR RR No. 2-98 + 1604-E line-item docs require the original paper certificate as documentary evidence for the 1702 "Less: Creditable Tax Withheld" credit. Round 2C let finance pick a BDM photo and immediately mark RECEIVED → 1702 credit unlocked, which under audit could be disallowed → 25% surcharge + 12% interest on the underpaid amount. CSI/CR don't carry this same one-way risk because they're internal docs VIP issues; CWT is the only doc VIP RECEIVES from a third party AND CLAIMS A TAX CREDIT against, so the paper-attestation gate is uniquely necessary here.
+
+**Migration order (mandatory):** `backend/scripts/migrateCwtInboundToCollectionSubtype.js --apply` runs FIRST (raw collection access, dry-run by default, idempotent), flipping all live `workflow_type='CWT_INBOUND'` rows to `workflow_type='COLLECTION'` + `sub_type='CWT'`. Only after migration does the model enum get narrowed. PETTY_CASH rows (if any) are reported but NOT auto-mutated; admin triages manually because the enum drop blocks future saves.
+
+**Files modified (15):**
+
+| File | Change |
+| --- | --- |
+| `backend/erp/models/CaptureSubmission.js` | `workflow_type` enum drops `CWT_INBOUND` + `PETTY_CASH`. `sub_type` enum gains `CWT` (now 6 values: CR / DEPOSIT / PAID_CSI / CWT / BATCH_PHOTO / WAYBILL). Doc-comment updated. |
+| `backend/erp/models/CwtLedger.js` | NEW field `physical_received_at: { type: Date, default: null, index: true }` — Option D paper-attestation fingerprint. Indexed because the new PHOTO_ATTACHED tab on the inbound page filters rows where `cert_2307_url IS NOT NULL && physical_received_at IS NULL`. Doc-comment cites BIR RR No. 2-98 risk. |
+| `backend/erp/controllers/captureSubmissionController.js` | `VALID_TYPES` drops `CWT_INBOUND` + `PETTY_CASH`. `VALID_SUB_TYPES_BY_WORKFLOW.COLLECTION` adds `CWT` (4-value). `REVIEW_WORKFLOWS` (in both `completeCapture` AND `linkCaptureToDocument`) drops `CWT_INBOUND` (COLLECTION already covers it via sub_type). `getProxyQueue` accepts new optional `sub_type` query param + threads to the Mongo filter. `DIGITAL_ONLY` arrow does NOT add COLLECTION+CWT branch — paper certificate must arrive at the Iloilo office, so `physical_required=true` is correct for COLLECTION+CWT captures. |
+| `backend/erp/services/cwt2307ReconciliationService.js` | `markReceived` signature gains `paper_received` (default `true` for backward compat with non-Phase-1 callers; Phase-1 frontend always passes explicitly). Photo evidence (`cert_*` fields) always stamped; paper attestation (`status='RECEIVED'` + `physical_received_at` + `received_at`/`received_by`) only when `paper_received===true`. Server rejects `paper_received=true` with empty `cert_2307_url` (defense in depth, mirrors the disabled-checkbox UI gate). Photo-only saves on already-RECEIVED rows preserve the prior paper attestation (don't demote). `markPending` clears `physical_received_at` along with `received_at`/`received_by`. `listInboundRows` surfaces `physical_received_at` so frontend can render the PHOTO_ATTACHED state. |
+| `backend/erp/controllers/birController.js` | `markReceived2307Inbound` extracts `paper_received` from body, coerces with backward-compat default `true` if absent (for unit tests / scripts), forwards to service. Audit log line `[BIR_2307_INBOUND_MARK_RECEIVED]` extended with `paper_received: bool` + `final_status` + `physical_received_at` so admin can grep historical events to see which receives unlocked the 1702 credit (`paper_received:true`) vs which only attached photo evidence (`paper_received:false → row stays in PHOTO_ATTACHED`). |
+| `backend/scripts/migrateCwtInboundToCollectionSubtype.js` | NEW. Dry-run-by-default, idempotent. Uses raw `mongoose.connection.collection('capture_submissions')` access so it works regardless of whether the model enum has been narrowed yet. Counts PETTY_CASH rows but does NOT auto-delete (admin triages). On dev cluster: 2 CWT_INBOUND rows flipped, 0 PETTY_CASH. |
+| `backend/scripts/healthcheckCaptureHub.js` | Section 16b NEW (Phase 1 sub-section, ~50 asserts). Section 1 / 2 / 3 / 4 updated for narrowed enum + COLLECTION_CWT composite key + PHOTO_ATTACHED tab. Round 2C asserts reflect the new picker shape (`workflowTypes={['COLLECTION','UNCATEGORIZED']}` + `subTypeFilter={{COLLECTION:'CWT'}}`). |
+| `frontend/src/erp/components/PendingCapturesPicker.jsx` | NEW prop `subTypeFilter` (Object keyed by workflow_type). When `subTypeFilter[wt]` matches a workflow_type being iterated, picker passes `sub_type` to `getProxyQueue`. UNCATEGORIZED in the same picker iterates without narrowing. `useCallback` dependencies include `subTypeFilter` so a parent prop change re-fetches. |
+| `frontend/src/erp/pages/mobile/BdmCaptureHub.jsx` | CWT tile flipped from `key:'CWT_INBOUND'` to `key:'COLLECTION', sub_type:'CWT'`. Composite tile key `${w.key}_${w.sub_type \|\| 'main'}` now resolves to `COLLECTION_CWT` (vs legacy `CWT_INBOUND_main`). PETTY_CASH comment updated to note enum drop. |
+| `frontend/src/erp/pages/mobile/BdmReviewQueue.jsx` | WORKFLOW_ICONS / WORKFLOW_COLORS / WORKFLOW_LABELS get a new `COLLECTION_CWT` composite-key entry (FileBadge / `#6366f1` / `'CWT (BIR 2307)'`). Legacy `CWT_INBOUND` + `PETTY_CASH` entries kept as defensive fallbacks. |
+| `frontend/src/erp/pages/capture/CaptureArchive.jsx` | Phase 1 cleanup comment added. Existing icons workflowLabel composite-key resolution already correct for COLLECTION+CWT (renders "COLLECTION / CWT" leaf label). |
+| `frontend/src/erp/pages/proxy/ProxyQueue.jsx` | WORKFLOW_OPTIONS dropdown: drops `PETTY_CASH`, adds `COLLECTION` (with sub_type hint label "Collection (CR / Deposit / PAID CSI / CWT)") + `UNCATEGORIZED` (Quick Capture catchall). |
+| `frontend/src/erp/pages/Bir2307InboundPage.jsx` | NEW `STATUS_META.PHOTO_ATTACHED` (amber `#fef3c7` / `#92400e` palette). NEW `effectiveStatus(row)` helper. NEW `paperReceived` checkbox state, default UNCHECKED on fresh open (auto-tick if reopening already-attested row). Tab strip splits Pending into 2 tabs (Pending / Photo attached). Picker `workflowTypes` flipped from `['CWT_INBOUND','UNCATEGORIZED']` → `['COLLECTION','UNCATEGORIZED']` + `subTypeFilter={{COLLECTION:'CWT'}}`. Modal renders the paper-received checkbox below cert_notes (disabled until cert URL non-empty; cites BIR RR No. 2-98 in the helper text). Save button label branches on paperReceived: `'Save — Mark RECEIVED'` (checked) vs `'Save Photo Only'` (unchecked). Save disabled until cert URL non-empty. Toast text differentiates the two outcomes. Row pill renders via `_effective` so PHOTO_ATTACHED rows show the amber "Photo attached" pill. |
+| `frontend/src/components/common/PageGuide.jsx` | `bir-2307-inbound` banner rewritten (Rule #1) — adds 8-step narrative: pre-flight → workflow → tabs → TWO-STEP RECEIVE (Option D explanation) → picker workflow_type=COLLECTION → exposure number → audit trail (paper-attest fingerprint distinguishes "we have a digital reference" vs "we have the binding paper original") → role gates → EXCLUDE. New tip explains the "Photo attached" tab as the weekly chase queue. |
+| `CLAUDE-ERP.md` | Status banner refreshed to v8.9 with Phase 1 lead paragraph. |
+| `docs/PHASETASK-ERP.md` | THIS file — Phase 1 entry (above Slice 6.2). |
+| `CLAUDE.md` | Numbered note 19 appended (continues 16, 17, 18 from Round 2C / Slice 6 / Slice 6.1 / Slice 6.2). |
+
+**Subscription-readiness preserved:** zero new lookup categories. Paper-attestation gate is hardcoded by BIR-regulation requirement, not subscriber-tunable. Picker reuses `CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE` (defaults `[admin, finance, president]`) + `BIR_ROLES.RECONCILE_INBOUND_2307` (defaults `[admin, finance, bookkeeper]`); subscribers retune via Control Center → Lookup Tables (Rule #3 / Rule #19). `entity_id` (Rule #19) and `bdm_id` (Rule #21) posture unchanged on every endpoint touched.
+
+**Cascading downstream sanity:**
+- **Phase J7 1702 aggregator** (`compute1702CwtRollup`) reads `status='RECEIVED'` and is unchanged — it correctly excludes PHOTO_ATTACHED rows from the credit (because their `status` is still `'PENDING_2307'`). The pending-exposure computation also unchanged — it correctly counts photo-attached rows as exposure (because they ARE still credit-at-risk until paper arrives).
+- **Phase J6 inbound posture** card (`buildInboundPosture`) unchanged — splits by `status` so PHOTO_ATTACHED rows count under PENDING_2307.
+- **Capture Archive (Slice 8)** folder tree groups by `(workflow_type, sub_type)`, so post-migration CWT captures appear under `COLLECTION / CWT` (vs the legacy `CWT_INBOUND` standalone leaf). `workflowLabel()` already handled this composite-key path.
+- **Slice 9 paper-received attestation gate** (`completeCapture` `paper_received` flag on the proxy lifecycle endpoint) is unrelated — it lives on `CaptureSubmission.physical_received_at`, not `CwtLedger.physical_received_at`. The two paper-received fingerprints serve different surfaces (capture-side vs CWT-ledger-side) and don't interact.
+- **Round 2C linkCaptureToDocument** still fires when `capture_id` is forwarded, regardless of `paper_received` value. The capture lifecycle advance is independent of the BIR audit gate.
+
+**Healthcheck:** `node backend/scripts/healthcheckCaptureHub.js` — TBD/TBD PASS (run after this commit).
+
+**API smoke (planned):**
+- `GET /erp/capture-submissions/queue?workflow_type=COLLECTION&sub_type=CWT` — should return only the 2 migrated rows (Mae's earlier captures).
+- `POST /erp/bir/forms/2307-IN/<year>/rows/<rowId>/mark-received` body `{cert_2307_url:'...', paper_received:false}` → row keeps status=PENDING_2307, cert_* fields stamped, `physical_received_at` stays null.
+- Same endpoint with `paper_received:true` → status flips to RECEIVED, `physical_received_at` populated.
+- Same endpoint with `paper_received:true, cert_2307_url:''` → 400 "Cannot attest paper-received without first attaching photo evidence".
+- `GET /erp/bir/forms/1702/<year>/cwt-rollup` → only the `paper_received:true` row counted toward credit.
+
+**Out of scope (deferred to Phase 2):**
+- GRN picker filter tightening (narrowing `/erp/grn` PendingCapturesPicker to BATCH_PHOTO only — Slice 6.2 follow-up)
+- OPENING_AR cleanup (deferred until April 1 CSI backfill is complete — Phase 3)
+- BLANK_CSI / PINK_CSI sub_type split (current SALES workflow_type without discriminator is acceptable)
+
+---
+
+## PHASE P1.2 SLICE 6.2 — GRN sub_type split (BATCH_PHOTO vs WAYBILL) ✅ SHIPPED (May 6, 2026 — pending UI smoke ratification)
+
+**Goal:** Split the single `GRN` capture tile (`Scan GRN Item`, "Product barcode + qty + batch/expiry + waybill") into two tiles whose paper-trail expectations match reality:
+- **(D) BATCH_PHOTO** — photo of vial / box labels for OCR batch + expiry. The physical product itself is the source. **No paper to send to office.** `physical_required = false` / `physical_status = 'N_A'`.
+- **(M) WAYBILL** — courier waybill paper. Physical paper arrives at office. `physical_required = true` / `physical_status = 'PENDING'` until the proxy attests `RECEIVED` via the existing Slice 9 path.
+
+**Trigger:** Phase 2 of the user's locked plan: "Add BATCH_PHOTO (D) vs WAYBILL (M) sub_types — Update BdmCaptureHub: split current GRN tile into two — Migration: existing GRN captures get default sub_type=WAYBILL (conservative) — Update healthcheck."
+
+**Decision (locked May 6 2026):**
+- **Two tiles, same `inventory` section.** Mirrors the COLLECTION pattern (CR / DEPOSIT / PAID_CSI = 3 tiles in one section, 1 sub_type each) so the BDM's mental model stays "one tap per document type." `Scan Batch Photo` uses the `ScanBarcode` lucide icon + amber `#d97706`; `Scan Waybill` keeps the legacy Truck icon + red `#dc2626`. Existing tile composite-key generator `${w.key}_${w.sub_type || 'main'}` produces unique React keys (`GRN_BATCH_PHOTO`, `GRN_WAYBILL`) without code change.
+- **Conservative migration.** Legacy `workflow_type='GRN', sub_type=null` rows → `sub_type='WAYBILL'`. WAYBILL is the safer default because flipping legacy rows to BATCH_PHOTO would silently lift their `physical_required` gate. If a row was actually a batch photo, admin can override one row at a time via the existing Capture Archive `OVERRIDE_PHYSICAL_STATUS` path — no special tooling needed.
+- **Per-workflow sub_type whitelist.** `VALID_SUB_TYPES` (a flat 3-element array that hardcoded `workflow_type !== 'COLLECTION'` rejection logic) → `VALID_SUB_TYPES_BY_WORKFLOW = { COLLECTION: [...3], GRN: ['BATCH_PHOTO','WAYBILL'] }`. Adding a third sub-typed workflow in the future is now a one-row map insertion, not a controller rewrite.
+- **DIGITAL_ONLY arrow gains a third branch.** `(workflow_type === 'GRN' && sub_type === 'BATCH_PHOTO')` joins the existing `'SMER'` and `('COLLECTION' && 'PAID_CSI')` branches.
+- **Picker scope unchanged this slice.** `/erp/grn` Pending-Captures-Picker still queries `workflowTypes={['GRN','UNCATEGORIZED']}`; the existing `sub_type` chip in the drawer row already differentiates BATCH PHOTO vs WAYBILL captures so the proxy picks the right one. Narrowing the picker to BATCH_PHOTO only (so the OCR scan modal sees only OCR-feedstock captures) is a downstream Phase 2.1 follow-up.
+
+**Files touched:**
+
+| File | Change |
+|---|---|
+| `backend/erp/models/CaptureSubmission.js` | `sub_type` enum gains `'BATCH_PHOTO'` + `'WAYBILL'`; comment block describes the D vs M semantics |
+| `backend/erp/controllers/captureSubmissionController.js` | `DIGITAL_ONLY` arrow gains GRN/BATCH_PHOTO branch (with comment); `VALID_SUB_TYPES` (flat) → `VALID_SUB_TYPES_BY_WORKFLOW` (per-workflow map); 400 message lists allowed values for the workflow |
+| `frontend/src/erp/pages/mobile/BdmCaptureHub.jsx` | + `ScanBarcode` lucide import; legacy single GRN tile (`Scan GRN Item`, Truck) replaced by BATCH_PHOTO + WAYBILL tiles, both in `inventory` section, with sub_type forwarded by existing `payload.sub_type = workflow.sub_type` line |
+| `backend/scripts/migrateGrnCaptureSubType.js` (NEW) | Dry-run-by-default migration: `{workflow_type:'GRN', sub_type:null}` → `sub_type='WAYBILL'`; idempotent; samples 10 candidate IDs; logs BATCH_PHOTO + WAYBILL pre/post counts |
+| `backend/scripts/healthcheckCaptureHub.js` | New "Phase P1.2 Slice 6.2" section: 17 assertions covering model enum, controller per-workflow map, DIGITAL_ONLY arrow body precise check (matches BATCH_PHOTO; precisely free of WAYBILL via arrow-body-only regex), 7 frontend tile assertions, 5 migration script assertions, 1 banner assertion. Renames `'sub_type field with 3 values'` to `'sub_type field with COLLECTION trio'` and adds `'sub_type field with GRN pair'`. Removes legacy `'VALID_SUB_TYPES has all three'` and `'sub_type rejected for non-COLLECTION'` (replaced by per-workflow map asserts) |
+| `frontend/src/erp/components/WorkflowGuide.jsx` | `bdm-capture-hub` banner gains a new tip explaining the BATCH_PHOTO digital-only / WAYBILL paper-expected split (Rule #1) |
+| `CLAUDE-ERP.md` | Status banner refreshed to Version 8.8 + Slice 6.2 lead paragraph |
+| `docs/PHASETASK-ERP.md` | + this section |
+| `CLAUDE.md` | Numbered note appended (continues 16, 17, 18 pattern from Slice 7-extension Round 2C + Slice 6 + Slice 6.1) |
+
+**Verified:**
+- ✅ `node backend/scripts/healthcheckCaptureHub.js` — see "Run healthcheck + Vite build" step (executed in same session).
+- ✅ Frontend syntax — `BdmCaptureHub.jsx` parses cleanly via Vite (executed in same session).
+- ✅ Backend syntax — `captureSubmissionController.js` + `CaptureSubmission.js` + `migrateGrnCaptureSubType.js` parse cleanly (executed in same session).
+- ⚠️ Live API + Playwright UI smoke — see "Playwright UI smoke + API smoke" step (next).
+- Migration script NOT YET applied to the dev cluster. Recommended: dry-run first via `node backend/scripts/migrateGrnCaptureSubType.js`, review the sample IDs, then `--apply`.
+
+**Lookup posture / subscription readiness:**
+- Zero new lookup categories this slice — the sub_type whitelist is an inline source-of-truth map (matches the legacy posture for COLLECTION sub_types). Rule #3 future hook is documented in the controller comment: subscribers who want to flip a sub_type's D↔M classification per-entity (e.g., a subscriber whose courier process digitizes the waybill via PDF email instead of paper) can introduce a `CAPTURE_SUB_TYPE_DIGITAL_OVERRIDES` lookup category later — not needed for any known subscriber today.
+- Sub-permission gates unchanged: both new tiles inherit the existing `CAPTURE_LIFECYCLE_ROLES.UPLOAD_OWN_CAPTURE` (default `[staff]`) for BDM-side capture and `PROXY_PULL_CAPTURE` for office-side reuse via the PendingCapturesPicker.
+- `entity_id` and `bdm_id` posture unchanged — controller already enforces (Rule #19 + Rule #21).
+
+**Cascading downstream / integrity check:**
+- **Slice 3 reconciliation** sweeps `physical_status` over `bdm_id × cycle` — the existing index `{ bdm_id: 1, physical_status: 1, created_at: 1 }` is unchanged. BATCH_PHOTO rows now write `physical_status='N_A'` so the sweep correctly skips them.
+- **Slice 8 Capture Archive** aggregates by `{period, cycle, workflow_type, sub_type}` — existing pipeline already groups by `sub_type`, so BATCH_PHOTO + WAYBILL automatically split into separate folders within the GRN workflow leaf. Zero schema or aggregation changes needed.
+- **Slice 9 paper-received attestation** (`paper_received: true` on `completeCapture` + per-row override) is gated by `if (paper_received === true && doc.physical_required)`. BATCH_PHOTO has `physical_required=false` → silently ignored. WAYBILL has `physical_required=true` → attested as before. Same code path, correct branching.
+- **Slice 9 partial — auto-finalize on attach** (`linkCaptureToDocument`) walks `PENDING_PROXY → AWAITING_BDM_REVIEW` only for the existing `REVIEW_WORKFLOWS` list which does NOT include GRN. Both BATCH_PHOTO + WAYBILL captures continue to land in `PROCESSED` (no BDM review) when attached to a GRN doc. Correct posture — GRN already has its own UT-acknowledgment cascade.
+- **PendingCapturesPicker on `/erp/grn`** — picker fetches `workflow_type='GRN'` regardless of sub_type and renders the `sub_type` chip ("GRN · BATCH PHOTO" or "GRN · WAYBILL") in the row meta. Proxy picks visually. No code change required for this slice.
+- **Recent Captures list on `/erp/capture-hub`** — already renders `sub_type.replace(/_/g, ' ')` after the workflow_type label, so legacy rows show "GRN" only and post-migration rows show "GRN · WAYBILL" / "GRN · BATCH PHOTO". No code change.
+
+**Out of scope (intentionally NOT done):**
+- Picker filter tightening — narrowing `/erp/grn` PendingCapturesPicker to BATCH_PHOTO only would prevent the proxy from accidentally feeding a waybill image into the OCR scan modal. Real, but a downstream Phase 2.1 follow-up — picker UX is fine via the chip today.
+- Subscriber-overrideable D/M flag per sub_type — a `CAPTURE_SUB_TYPE_DIGITAL_OVERRIDES` lookup category would let a subscriber flip BATCH_PHOTO from D to M without code, but no subscriber needs this today and the controller already documents the hook for when one does.
+- Frontend WAYBILL upload field on `/erp/grn` accepting WAYBILL captures via picker — out of scope (the existing waybill upload field has its own gallery uploader; reuse via picker is a Phase 2.1 follow-up).
+
+**Plan:** No formal plan file — single in-session slice (~3h end-to-end including doc + smoke).
+
+erp-remote no-push policy in effect — commit cleanly to `dev` only.
+
+---
+
 ## PHASE P1.2 SLICE 6.1 — CRM Visit cities also auto-fill Car Logbook destination ✅ COMPLETE (May 6, 2026 evening)
 
 **Goal:** Decouple Car Logbook destination from the BDM's SMER timing. Pre-Slice-6.1, the only way for `destination` on the per-day grid to populate was via SMER's `hospital_covered + notes`. The SMER notes string DOES carry CRM city data — but only AFTER the BDM clicks "Pull from CRM" on the SMER page. If the SMER for the day was a fresh DRAFT (or didn't exist yet), the Car Logbook destination cell stayed empty even when CRM Visit data was sitting right there. The proxy/admin opening Car Logbook should never be blocked on whether the BDM has used the SMER form yet — CRM is the canonical source for "where did the BDM physically go that day?".
