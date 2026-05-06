@@ -348,7 +348,16 @@ const createSale = catchAsync(async (req, res) => {
     throw err;
   }
 
-  const { assigned_to: _discardAssignedTo, ...bodyWithoutAssignedTo } = req.body || {};
+  // capture_id is a Round 2B / Slice 9 partial signal — when the BDM picked
+  // a Capture Hub photo via the "From BDM Captures" picker, the page
+  // forwards the source CaptureSubmission._id so the controller can
+  // auto-finalize after the sale lands. Extracted out of the body before
+  // the spread so it never reaches the SalesLine document.
+  const {
+    assigned_to: _discardAssignedTo,
+    capture_id,
+    ...bodyWithoutAssignedTo
+  } = req.body || {};
   const saleData = {
     ...bodyWithoutAssignedTo,
     entity_id: req.entityId,
@@ -429,6 +438,25 @@ const createSale = catchAsync(async (req, res) => {
       changed_by: req.user._id,
       note: `Proxy create: ${sale.source || 'SALES_LINE'} ${sale.doc_ref || sale._id} keyed by ${req.user.name || req.user._id} (${req.user.role}) on behalf of BDM ${owner.ownerId}`
     }).catch(err => console.error('[createSale] PROXY_CREATE audit failed (non-critical):', err.message));
+  }
+
+  // Phase P1.2 Slice 9 partial — auto-finalize the source capture so a sale
+  // created via the Round 2B "From BDM Captures" picker stops appearing in
+  // the picker drawer and carries an audit-trail back-link. Best-effort:
+  // failures here do not break the sale create.
+  if (capture_id) {
+    try {
+      const { linkCaptureToDocument } = require('./captureSubmissionController');
+      await linkCaptureToDocument(capture_id, 'SalesLine', sale._id, {
+        user: req.user,
+        entityId: sale.entity_id,
+        isPresident: req.isPresident,
+        isAdmin: req.isAdmin,
+        isFinance: req.isFinance,
+      });
+    } catch (err) {
+      console.error('[createSale] linkCaptureToDocument failed:', err.message);
+    }
   }
 
   res.status(201).json({ success: true, data: sale });

@@ -334,7 +334,10 @@ function ScanUndertakingModal({ open, onClose, onApply, products, initialFile, i
     }));
     onApply(lines, {
       undertaking_attachment_id: ocrData?.attachment_id || null,
-      undertaking_photo_url: ocrData?.s3_url || ''
+      undertaking_photo_url: ocrData?.s3_url || '',
+      // Phase P1.2 Slice 9 partial (Round 2B) — propagate the source capture
+      // so createGrn can auto-finalize it after the row lands.
+      capture_id: initialCaptureId || null
     });
     handleClose();
   };
@@ -454,6 +457,10 @@ export default function GrnEntry() {
   const [waybillUploading, setWaybillUploading] = useState(false);
   const [undertakingPhotoUrl, setUndertakingPhotoUrl] = useState('');
   const [ocrData, setOcrData] = useState(null);
+  // Phase P1.2 Slice 9 partial (Round 2B) — track the source CaptureSubmission
+  // _id so createGrn can auto-finalize after the row lands. Set by handleScanApply
+  // when ScanUndertakingModal returns capture_id; reset after submit.
+  const [pendingCaptureId, setPendingCaptureId] = useState(null);
 
   // Per-entity capture settings (expiry floor, variance tolerance, waybill required)
   const [grnSettings, setGrnSettings] = useState({ minExpiryDays: 30, varianceTolerancePct: 10, waybillRequired: true, requireBatch: true, requireExpiry: true });
@@ -621,6 +628,9 @@ export default function GrnEntry() {
       setUndertakingPhotoUrl(meta.undertaking_photo_url);
       setOcrData({ scanned_at: new Date().toISOString(), attachment_id: meta.undertaking_attachment_id });
     }
+    // Phase P1.2 Slice 9 partial (Round 2B) — capture the source CaptureSubmission
+    // _id so createGrn's payload below can auto-finalize after save.
+    if (meta?.capture_id) setPendingCaptureId(meta.capture_id);
   };
 
   const handleSubmit = async () => {
@@ -660,7 +670,10 @@ export default function GrnEntry() {
         waybill_photo_url: waybillPhotoUrl || undefined,
         undertaking_photo_url: undertakingPhotoUrl || undefined,
         ocr_data: ocrData || undefined,
-        notes: notes || undefined
+        notes: notes || undefined,
+        // Phase P1.2 Slice 9 partial (Round 2B) — auto-finalize the source
+        // capture (set by handleScanApply when picker → modal flow ran).
+        ...(pendingCaptureId ? { capture_id: pendingCaptureId } : {})
       });
       if (res?.approval_pending) { showApprovalPending(res.message); }
       // Reset form
@@ -671,6 +684,7 @@ export default function GrnEntry() {
       if (waybillPreview) URL.revokeObjectURL(waybillPreview);
       setWaybillPhotoUrl(''); setWaybillPreview('');
       setUndertakingPhotoUrl(''); setOcrData(null);
+      setPendingCaptureId(null);
       await loadList();
       purchasing.listPOs({ status: 'APPROVED,PARTIALLY_RECEIVED', limit: 200 })
         .then(r => setReceivablePOs(r?.data || []))

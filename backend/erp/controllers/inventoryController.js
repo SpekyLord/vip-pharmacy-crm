@@ -514,7 +514,12 @@ const recordPhysicalCount = catchAsync(async (req, res) => {
  * POST /grn — BDM creates a Goods Received Note (PENDING)
  */
 const createGrn = catchAsync(async (req, res) => {
-  const { grn_date, line_items, waybill_photo_url, undertaking_photo_url, ocr_data, notes, warehouse_id, po_id, reassignment_id } = req.body;
+  // capture_id is a Round 2B / Slice 9 partial signal — when the BDM picked
+  // a Capture Hub photo via the picker, the page forwards the source
+  // CaptureSubmission._id so the controller can auto-finalize after the GRN
+  // lands. Pulled out of the body separately because GrnEntry has no
+  // capture_id schema field.
+  const { grn_date, line_items, waybill_photo_url, undertaking_photo_url, ocr_data, notes, warehouse_id, po_id, reassignment_id, capture_id } = req.body;
 
   if (!line_items?.length) {
     return res.status(400).json({ success: false, message: 'At least one line item is required' });
@@ -793,6 +798,25 @@ const createGrn = catchAsync(async (req, res) => {
       changed_by: req.user._id,
       note: `Proxy create: GRN ${grn_number} keyed by ${req.user.name || req.user._id} (${req.user.role}) on behalf of BDM ${owner.ownerId}. Auto-Undertaking ${undertaking.undertaking_number} inherits ownership.`
     }).catch(err => console.error('[createGrn] PROXY_CREATE audit failed (non-critical):', err.message));
+  }
+
+  // Phase P1.2 Slice 9 partial — auto-finalize the source capture so a GRN
+  // created via the Round 2B picker stops appearing in the picker drawer
+  // and carries an audit-trail back-link. Best-effort: failures here do
+  // not break the GRN create.
+  if (capture_id) {
+    try {
+      const { linkCaptureToDocument } = require('./captureSubmissionController');
+      await linkCaptureToDocument(capture_id, 'GrnEntry', grn._id, {
+        user: req.user,
+        entityId: grn.entity_id,
+        isPresident: req.isPresident,
+        isAdmin: req.isAdmin,
+        isFinance: req.isFinance,
+      });
+    } catch (err) {
+      console.error('[createGrn] linkCaptureToDocument failed:', err.message);
+    }
   }
 
   res.status(201).json({

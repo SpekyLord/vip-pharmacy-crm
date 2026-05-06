@@ -179,11 +179,21 @@ const MODULE_QUERIES = [
     label: 'GRN (Goods Receipt)',
     sub_key: 'approve_inventory',
     query: async (entityId) => {
+      // Phase 32R-VP (May 6, 2026) — Approval Hub visual parity:
+      // populate `recorded_on_behalf_of` so the Hub card can show the proxy
+      // badge ("On behalf of <name>"), mirroring the EXPENSES card pattern;
+      // populate the `undertaking_id` back-ref so we can render a structured
+      // "Linked Undertaking" badge instead of a truncated _id chip.
       const items = await GrnEntry.find({ entity_id: entityId, status: 'PENDING' })
         .populate('bdm_id', 'name email')
+        .populate('recorded_on_behalf_of', 'name')
         .populate('warehouse_id', 'warehouse_name warehouse_code')
         .populate('vendor_id', 'vendor_name')
         .populate('reviewed_by', 'name')
+        .populate({
+          path: 'undertaking_id',
+          select: 'undertaking_number receipt_date status line_items',
+        })
         .sort({ createdAt: -1 })
         .lean();
       return items.map(item => ({
@@ -217,8 +227,13 @@ const MODULE_QUERIES = [
                                    // can split by adding `approve_undertaking` to
                                    // ERP_SUB_PERMISSION lookup and flipping this key.
     query: async (entityId) => {
+      // Phase 32R-VP (May 6, 2026) — Approval Hub visual parity:
+      // populate `recorded_on_behalf_of` so the UT card shows the proxy badge
+      // alongside the existing Linked GRN block. The UT inherits this field
+      // from its parent GRN at autoUndertakingForGrn time (per Phase G4.5b).
       const items = await Undertaking.find({ entity_id: entityId, status: 'SUBMITTED' })
         .populate('bdm_id', 'name email')
+        .populate('recorded_on_behalf_of', 'name')
         .populate('warehouse_id', 'warehouse_name warehouse_code')
         .populate({
           path: 'linked_grn_id',
