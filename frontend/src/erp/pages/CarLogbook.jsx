@@ -13,6 +13,7 @@ import RejectionBanner from '../components/RejectionBanner';
 import { showError, showApprovalPending } from '../utils/errorToast';
 import { ROLES, ROLE_SETS } from '../../constants/roles';
 import { useAuth } from '../../hooks/useAuth';
+import useWorkingEntity from '../../hooks/useWorkingEntity';
 // Phase G4.5e — proxy eligibility detection reuses the ERP sub-permission hook.
 // When the user has expenses.car_logbook_proxy ticked AND their role is in
 // PROXY_ENTRY_ROLES.CAR_LOGBOOK, they can write to the currently selected BDM's
@@ -174,6 +175,7 @@ const mobileStyles = `
 
 export default function CarLogbook() {
   const { user } = useAuth();
+  const { workingEntityId } = useWorkingEntity();
   const isAdmin = ROLE_SETS.MANAGEMENT.includes(user?.role);
   const isPrivileged = isAdmin; // president/admin/finance may pick which BDM to view
   const isBdm = user?.role === ROLES.CONTRACTOR;
@@ -404,10 +406,13 @@ export default function CarLogbook() {
   // Phase G4.5e — load BDM options for privileged viewers AND proxy-eligible
   // contractors (eBDMs with expenses.car_logbook_proxy ticked). Plain BDMs
   // without proxy still self-scope via tenantFilter and skip this fetch.
+  // Source the entity from the navbar entity switcher (workingEntityId) so a
+  // privileged caller who switches to MG-and-CO sees MG-and-CO BDMs in the
+  // picker — not their home entity's BDMs. Falls back to user's primary entity
+  // for callers that haven't switched yet. Mirrors Smer.jsx.
   useEffect(() => {
     if (!isPrivileged && !canProxyCarLogbook) return;
-    if (!user?.entity_id && !(user?.entity_ids && user.entity_ids.length)) return;
-    const eid = user?.entity_id || user?.entity_ids?.[0];
+    const eid = workingEntityId || user?.entity_id || user?.entity_ids?.[0];
     if (!eid) return;
     (async () => {
       try {
@@ -415,7 +420,14 @@ export default function CarLogbook() {
         setBdmOptions(r?.data || []);
       } catch (err) { console.error('[CarLogbook] load BDMs:', err.message); }
     })();
-  }, [isPrivileged, canProxyCarLogbook, user?.entity_id, user?.entity_ids]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isPrivileged, canProxyCarLogbook, workingEntityId, user?.entity_id, user?.entity_ids]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reset the BDM picker when the working entity changes — the previous
+  // selection is for a different entity and won't appear in the new BDM list.
+  // BDMs default back to self; privileged users to empty (must pick again).
+  useEffect(() => {
+    setSelectedBdmId(isBdm ? (user?._id || '') : '');
+  }, [workingEntityId, isBdm, user?._id]);
 
   // Row change handler
   const handleRowChange = (idx, field, value) => {
