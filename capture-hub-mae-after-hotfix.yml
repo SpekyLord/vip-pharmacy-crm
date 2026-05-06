@@ -1,0 +1,571 @@
+- generic [ref=e7]:
+  - generic [ref=e8]:
+    - button "×" [ref=e9] [cursor=pointer]
+    - generic [ref=e10]:
+      - img [ref=e11]
+      - text: BDM Capture Hub
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - generic [ref=e15]: "1"
+        - generic [ref=e16]: "**If you see the orange \"Allocate prior drives\" panel** — clear it first. Set Start/End KM, drag the Personal/Official slider, Save. (Or tap \"Did not drive\" for vacation/sick days.)"
+      - generic [ref=e17]:
+        - generic [ref=e18]: "2"
+        - generic [ref=e19]: Tap **Quick Capture** to snap any photo with zero typing — office classifies it later
+      - generic [ref=e20]:
+        - generic [ref=e21]: "3"
+        - generic [ref=e22]: Or tap a specific tile that matches the document if you want to fill amount/customer
+      - generic [ref=e23]:
+        - generic [ref=e24]: "4"
+        - generic [ref=e25]: Take a photo or pick from gallery — GPS is captured automatically
+      - generic [ref=e26]:
+        - generic [ref=e27]: "5"
+        - generic [ref=e28]: Submit — the office team enters the ERP record on your behalf
+      - generic [ref=e29]:
+        - generic [ref=e30]: "6"
+        - generic [ref=e31]: Confirm or dispute the entry from the Review Queue when notified
+    - generic [ref=e32]:
+      - generic [ref=e33]: "Next steps:"
+      - button "Review Queue →" [ref=e34] [cursor=pointer]
+      - button "Expenses →" [ref=e35] [cursor=pointer]
+    - generic [ref=e36]: "💡 The Capture Hub is additive — you can always skip it and enter records directly. Quick Capture is the fastest path: snap a photo, the proxy reuses it from the entry-page picker."
+  - generic [ref=e38]:
+    - generic [ref=e39]:
+      - heading "Capture Hub" [level=1] [ref=e40]
+      - paragraph [ref=e41]: 9 capture types — one tap, GPS + photo to office
+    - generic [ref=e42]:
+      - img [ref=e43]
+      - generic [ref=e46]: 2 pending
+  - generic [ref=e47]:
+    - generic [ref=e48]:
+      - heading "Allocate prior drives" [level=3] [ref=e49]
+      - generic [ref=e50]: 11 days pending
+    - paragraph [ref=e51]:
+      - text: Default is
+      - strong [ref=e52]: 0 official km
+      - text: — drag the slider right if any of the drive was for work. Mark
+      - emphasis [ref=e53]: Did not drive
+      - text: for non-driving days. ODO tile is locked until cleared.
+    - generic [ref=e54]:
+      - generic [ref=e56]:
+        - img [ref=e57]
+        - strong [ref=e59]: Thu, 04/16
+        - generic "Prior cycle — within grace window" [ref=e60]: C2 04
+      - generic [ref=e61]:
+        - generic [ref=e62]:
+          - generic [ref=e63]: Start KM
+          - spinbutton "Start KM" [ref=e64]
+        - img [ref=e65]
+        - generic [ref=e67]:
+          - generic [ref=e68]: End KM
+          - spinbutton "End KM" [ref=e69]
+      - generic [ref=e70]:
+        - generic [ref=e71]:
+          - text: "Total:"
+          - strong [ref=e72]: "0"
+          - text: km
+        - generic [ref=e73]:
+          - text: "Personal:"
+          - strong [ref=e74]: "0"
+        - generic [ref=e75]:
+          - text: "Official:"
+          - strong [ref=e76]: "0"
+      - slider "Personal km slider" [disabled] [ref=e77]: "0"
+      - generic [ref=e78]:
+        - generic [ref=e79]: ← All Personal
+        - generic [ref=e80]: All Official →
+      - generic [ref=e81]:
+        - button "Did not drive" [ref=e82] [cursor=pointer]:
+          - img [ref=e83]
+          - text: Did not drive
+        - button "Save allocation" [disabled] [ref=e85]:
+          - img [ref=e86]
+          - text: Save allocation
+    - generic [ref=e90]:
+      - generic [ref=e92]:
+        - img [ref=e93]
+        - strong [ref=e95]: Fri, 04/17
+        - generic "Prior cycle — within grace window" [ref=e96]: C2 04
+      - generic [ref=e97]:
+        - generic [ref=e98]:
+          - generic [ref=e99]: Start KM
+          - spinbutton "Start KM" [ref=e100]
+        - img [ref=e101]
+        - generic [ref=e103]:
+          - generic [ref=e104]: End KM
+          - spinbutton "End KM" [ref=e105]
+      - generic [ref=e106]:
+        - generic [ref=e107]:
+          - text: "Total:"
+          - strong [ref=e108]: "0"
+          - text: km
+        - generic [ref=e109]:
+          - text: "Personal:"
+          - strong [ref=e110]: "0"
+        - generic [ref=e111]:
+          - text: "Official:"
+          - strong [ref=e112]: "0"
+      - slider "Personal km slider" [disabled] [ref=e113]: "0"
+      - generic [ref=e114]:
+        - generic [ref=e115]: ← All Personal
+        - generic [ref=e116]: All Official →
+      - generic [ref=e117]:
+        - button "Did not drive" [ref=e118] [cursor=pointer]:
+          - img [ref=e119]
+          - text: Did not drive
+        - button "Save allocation" [disabled] [ref=e121]:
+          - img [ref=e122]
+          - text: Save allocation
+    - generic [ref=e126]:
+      - generic [ref=e128]:
+        - img [ref=e129]
+        - strong [ref=e131]: Mon, 04/20
+        - generic "Prior cycle — within grace window" [ref=e132]: C2 04
+      - generic [ref=e133]:
+        - generic [ref=e134]:
+          - generic [ref=e135]: Start KM
+          - spinbutton "Start KM" [ref=e136]
+        - img [ref=e137]
+        - generic [ref=e139]:
+          - generic [ref=e140]: End KM
+          - spinbutton "End KM" [ref=e141]
+      - generic [ref=e142]:
+        - generic [ref=e143]:
+          - text: "Total:"
+          - strong [ref=e144]: "0"
+          - text: km
+        - generic [ref=e145]:
+          - text: "Personal:"
+          - strong [ref=e146]: "0"
+        - generic [ref=e147]:
+          - text: "Official:"
+          - strong [ref=e148]: "0"
+      - slider "Personal km slider" [disabled] [ref=e149]: "0"
+      - generic [ref=e150]:
+        - generic [ref=e151]: ← All Personal
+        - generic [ref=e152]: All Official →
+      - generic [ref=e153]:
+        - button "Did not drive" [ref=e154] [cursor=pointer]:
+          - img [ref=e155]
+          - text: Did not drive
+        - button "Save allocation" [disabled] [ref=e157]:
+          - img [ref=e158]
+          - text: Save allocation
+    - generic [ref=e162]:
+      - generic [ref=e164]:
+        - img [ref=e165]
+        - strong [ref=e167]: Tue, 04/21
+        - generic "Prior cycle — within grace window" [ref=e168]: C2 04
+      - generic [ref=e169]:
+        - generic [ref=e170]:
+          - generic [ref=e171]: Start KM
+          - spinbutton "Start KM" [ref=e172]
+        - img [ref=e173]
+        - generic [ref=e175]:
+          - generic [ref=e176]: End KM
+          - spinbutton "End KM" [ref=e177]
+      - generic [ref=e178]:
+        - generic [ref=e179]:
+          - text: "Total:"
+          - strong [ref=e180]: "0"
+          - text: km
+        - generic [ref=e181]:
+          - text: "Personal:"
+          - strong [ref=e182]: "0"
+        - generic [ref=e183]:
+          - text: "Official:"
+          - strong [ref=e184]: "0"
+      - slider "Personal km slider" [disabled] [ref=e185]: "0"
+      - generic [ref=e186]:
+        - generic [ref=e187]: ← All Personal
+        - generic [ref=e188]: All Official →
+      - generic [ref=e189]:
+        - button "Did not drive" [ref=e190] [cursor=pointer]:
+          - img [ref=e191]
+          - text: Did not drive
+        - button "Save allocation" [disabled] [ref=e193]:
+          - img [ref=e194]
+          - text: Save allocation
+    - generic [ref=e198]:
+      - generic [ref=e200]:
+        - img [ref=e201]
+        - strong [ref=e203]: Thu, 04/23
+        - generic "Prior cycle — within grace window" [ref=e204]: C2 04
+      - generic [ref=e205]:
+        - generic [ref=e206]:
+          - generic [ref=e207]: Start KM
+          - spinbutton "Start KM" [ref=e208]: "11860"
+        - img [ref=e209]
+        - generic [ref=e211]:
+          - generic [ref=e212]: End KM
+          - spinbutton "End KM" [ref=e213]
+      - generic [ref=e214]:
+        - generic [ref=e215]:
+          - text: "Total:"
+          - strong [ref=e216]: "0"
+          - text: km
+        - generic [ref=e217]:
+          - text: "Personal:"
+          - strong [ref=e218]: "0"
+        - generic [ref=e219]:
+          - text: "Official:"
+          - strong [ref=e220]: "0"
+      - slider "Personal km slider" [disabled] [ref=e221]: "0"
+      - generic [ref=e222]:
+        - generic [ref=e223]: ← All Personal
+        - generic [ref=e224]: All Official →
+      - generic [ref=e225]:
+        - button "Did not drive" [ref=e226] [cursor=pointer]:
+          - img [ref=e227]
+          - text: Did not drive
+        - button "Save allocation" [disabled] [ref=e229]:
+          - img [ref=e230]
+          - text: Save allocation
+    - generic [ref=e234]:
+      - generic [ref=e236]:
+        - img [ref=e237]
+        - strong [ref=e239]: Mon, 04/27
+        - generic "Prior cycle — within grace window" [ref=e240]: C2 04
+      - generic [ref=e241]:
+        - generic [ref=e242]:
+          - generic [ref=e243]: Start KM
+          - spinbutton "Start KM" [ref=e244]: "11860"
+        - img [ref=e245]
+        - generic [ref=e247]:
+          - generic [ref=e248]: End KM
+          - spinbutton "End KM" [ref=e249]
+      - generic [ref=e250]:
+        - generic [ref=e251]:
+          - text: "Total:"
+          - strong [ref=e252]: "0"
+          - text: km
+        - generic [ref=e253]:
+          - text: "Personal:"
+          - strong [ref=e254]: "0"
+        - generic [ref=e255]:
+          - text: "Official:"
+          - strong [ref=e256]: "0"
+      - slider "Personal km slider" [disabled] [ref=e257]: "0"
+      - generic [ref=e258]:
+        - generic [ref=e259]: ← All Personal
+        - generic [ref=e260]: All Official →
+      - generic [ref=e261]:
+        - button "Did not drive" [ref=e262] [cursor=pointer]:
+          - img [ref=e263]
+          - text: Did not drive
+        - button "Save allocation" [disabled] [ref=e265]:
+          - img [ref=e266]
+          - text: Save allocation
+    - generic [ref=e270]:
+      - generic [ref=e272]:
+        - img [ref=e273]
+        - strong [ref=e275]: Tue, 04/28
+        - generic "Prior cycle — within grace window" [ref=e276]: C2 04
+      - generic [ref=e277]:
+        - generic [ref=e278]:
+          - generic [ref=e279]: Start KM
+          - spinbutton "Start KM" [ref=e280]: "11860"
+        - img [ref=e281]
+        - generic [ref=e283]:
+          - generic [ref=e284]: End KM
+          - spinbutton "End KM" [ref=e285]
+      - generic [ref=e286]:
+        - generic [ref=e287]:
+          - text: "Total:"
+          - strong [ref=e288]: "0"
+          - text: km
+        - generic [ref=e289]:
+          - text: "Personal:"
+          - strong [ref=e290]: "0"
+        - generic [ref=e291]:
+          - text: "Official:"
+          - strong [ref=e292]: "0"
+      - slider "Personal km slider" [disabled] [ref=e293]: "0"
+      - generic [ref=e294]:
+        - generic [ref=e295]: ← All Personal
+        - generic [ref=e296]: All Official →
+      - generic [ref=e297]:
+        - button "Did not drive" [ref=e298] [cursor=pointer]:
+          - img [ref=e299]
+          - text: Did not drive
+        - button "Save allocation" [disabled] [ref=e301]:
+          - img [ref=e302]
+          - text: Save allocation
+    - generic [ref=e306]:
+      - generic [ref=e308]:
+        - img [ref=e309]
+        - strong [ref=e311]: Wed, 04/29
+        - generic "Prior cycle — within grace window" [ref=e312]: C2 04
+      - generic [ref=e313]:
+        - generic [ref=e314]:
+          - generic [ref=e315]: Start KM
+          - spinbutton "Start KM" [ref=e316]: "11860"
+        - img [ref=e317]
+        - generic [ref=e319]:
+          - generic [ref=e320]: End KM
+          - spinbutton "End KM" [ref=e321]
+      - generic [ref=e322]:
+        - generic [ref=e323]:
+          - text: "Total:"
+          - strong [ref=e324]: "0"
+          - text: km
+        - generic [ref=e325]:
+          - text: "Personal:"
+          - strong [ref=e326]: "0"
+        - generic [ref=e327]:
+          - text: "Official:"
+          - strong [ref=e328]: "0"
+      - slider "Personal km slider" [disabled] [ref=e329]: "0"
+      - generic [ref=e330]:
+        - generic [ref=e331]: ← All Personal
+        - generic [ref=e332]: All Official →
+      - generic [ref=e333]:
+        - button "Did not drive" [ref=e334] [cursor=pointer]:
+          - img [ref=e335]
+          - text: Did not drive
+        - button "Save allocation" [disabled] [ref=e337]:
+          - img [ref=e338]
+          - text: Save allocation
+    - generic [ref=e342]:
+      - generic [ref=e344]:
+        - img [ref=e345]
+        - strong [ref=e347]: Fri, 05/01
+        - generic "Current cycle" [ref=e348]: C1 05
+      - generic [ref=e349]:
+        - generic [ref=e350]:
+          - generic [ref=e351]: Start KM
+          - spinbutton "Start KM" [ref=e352]: "12100"
+        - img [ref=e353]
+        - generic [ref=e355]:
+          - generic [ref=e356]: End KM
+          - spinbutton "End KM" [ref=e357]
+      - generic [ref=e358]:
+        - generic [ref=e359]:
+          - text: "Total:"
+          - strong [ref=e360]: "0"
+          - text: km
+        - generic [ref=e361]:
+          - text: "Personal:"
+          - strong [ref=e362]: "0"
+        - generic [ref=e363]:
+          - text: "Official:"
+          - strong [ref=e364]: "0"
+      - slider "Personal km slider" [disabled] [ref=e365]: "0"
+      - generic [ref=e366]:
+        - generic [ref=e367]: ← All Personal
+        - generic [ref=e368]: All Official →
+      - generic [ref=e369]:
+        - button "Did not drive" [ref=e370] [cursor=pointer]:
+          - img [ref=e371]
+          - text: Did not drive
+        - button "Save allocation" [disabled] [ref=e373]:
+          - img [ref=e374]
+          - text: Save allocation
+    - generic [ref=e378]:
+      - generic [ref=e380]:
+        - img [ref=e381]
+        - strong [ref=e383]: Mon, 05/04
+        - generic "Current cycle" [ref=e384]: C1 05
+      - generic [ref=e385]:
+        - generic [ref=e386]:
+          - generic [ref=e387]: Start KM
+          - spinbutton "Start KM" [ref=e388]: "12100"
+        - img [ref=e389]
+        - generic [ref=e391]:
+          - generic [ref=e392]: End KM
+          - spinbutton "End KM" [ref=e393]
+      - generic [ref=e394]:
+        - generic [ref=e395]:
+          - text: "Total:"
+          - strong [ref=e396]: "0"
+          - text: km
+        - generic [ref=e397]:
+          - text: "Personal:"
+          - strong [ref=e398]: "0"
+        - generic [ref=e399]:
+          - text: "Official:"
+          - strong [ref=e400]: "0"
+      - slider "Personal km slider" [disabled] [ref=e401]: "0"
+      - generic [ref=e402]:
+        - generic [ref=e403]: ← All Personal
+        - generic [ref=e404]: All Official →
+      - generic [ref=e405]:
+        - button "Did not drive" [ref=e406] [cursor=pointer]:
+          - img [ref=e407]
+          - text: Did not drive
+        - button "Save allocation" [disabled] [ref=e409]:
+          - img [ref=e410]
+          - text: Save allocation
+    - generic [ref=e414]:
+      - generic [ref=e416]:
+        - img [ref=e417]
+        - strong [ref=e419]: Tue, 05/05
+        - generic "Current cycle" [ref=e420]: C1 05
+      - generic [ref=e421]:
+        - generic [ref=e422]:
+          - generic [ref=e423]: Start KM
+          - spinbutton "Start KM" [ref=e424]: "12100"
+        - img [ref=e425]
+        - generic [ref=e427]:
+          - generic [ref=e428]: End KM
+          - spinbutton "End KM" [ref=e429]
+      - button "Use today's Start KM (12100) — car parked overnight" [ref=e430] [cursor=pointer]:
+        - img [ref=e431]
+        - text: Use today's Start KM (12100) — car parked overnight
+      - generic [ref=e433]:
+        - generic [ref=e434]:
+          - text: "Total:"
+          - strong [ref=e435]: "0"
+          - text: km
+        - generic [ref=e436]:
+          - text: "Personal:"
+          - strong [ref=e437]: "0"
+        - generic [ref=e438]:
+          - text: "Official:"
+          - strong [ref=e439]: "0"
+      - slider "Personal km slider" [disabled] [ref=e440]: "0"
+      - generic [ref=e441]:
+        - generic [ref=e442]: ← All Personal
+        - generic [ref=e443]: All Official →
+      - generic [ref=e444]:
+        - button "Did not drive" [ref=e445] [cursor=pointer]:
+          - img [ref=e446]
+          - text: Did not drive
+        - button "Save allocation" [disabled] [ref=e448]:
+          - img [ref=e449]
+          - text: Save allocation
+  - button "Quick Capture Snap a photo, classify later" [ref=e453] [cursor=pointer]:
+    - img [ref=e454]
+    - generic [ref=e457]: Quick Capture
+    - generic [ref=e458]: Snap a photo, classify later
+  - generic [ref=e459]:
+    - generic [ref=e460]:
+      - generic [ref=e461]:
+        - img [ref=e463]
+        - generic [ref=e467]:
+          - generic [ref=e468]: Vehicle
+          - generic [ref=e469]: Daily reading
+        - generic [ref=e470]: "1"
+      - button "Scan ODO (Start / End) Locked Allocate 11 prior days first" [ref=e472] [cursor=pointer]:
+        - img [ref=e474]
+        - generic [ref=e477]:
+          - generic [ref=e478]:
+            - generic [ref=e479]: Scan ODO (Start / End)
+            - generic [ref=e480]:
+              - img [ref=e481]
+              - text: Locked
+          - generic [ref=e484]: Allocate 11 prior days first
+        - img [ref=e485]
+    - generic [ref=e487]:
+      - generic [ref=e488]:
+        - img [ref=e490]
+        - generic [ref=e493]:
+          - generic [ref=e494]: Cash Out
+          - generic [ref=e495]: Money you spent
+        - generic [ref=e496]: "2"
+      - generic [ref=e497]:
+        - button "Scan OR / Receipt Official receipt — amount + payment mode" [ref=e498] [cursor=pointer]:
+          - img [ref=e500]
+          - generic [ref=e503]:
+            - generic [ref=e505]: Scan OR / Receipt
+            - generic [ref=e506]: Official receipt — amount + payment mode
+          - img [ref=e507]
+        - button "Scan Fuel Receipt Fuel pump receipt — liters + amount" [ref=e509] [cursor=pointer]:
+          - img [ref=e511]
+          - generic [ref=e514]:
+            - generic [ref=e516]: Scan Fuel Receipt
+            - generic [ref=e517]: Fuel pump receipt — liters + amount
+          - img [ref=e518]
+    - generic [ref=e520]:
+      - generic [ref=e521]:
+        - img [ref=e523]
+        - generic [ref=e528]:
+          - generic [ref=e529]: Customer Delivery
+          - generic [ref=e530]: Sale-side documents
+        - generic [ref=e531]: "1"
+      - button "Scan CSI (Delivery Copy) Pink/yellow/duplicate CSI — proof of delivery" [ref=e533] [cursor=pointer]:
+        - img [ref=e535]
+        - generic [ref=e538]:
+          - generic [ref=e540]: Scan CSI (Delivery Copy)
+          - generic [ref=e541]: Pink/yellow/duplicate CSI — proof of delivery
+        - img [ref=e542]
+    - generic [ref=e544]:
+      - generic [ref=e545]:
+        - img [ref=e547]
+        - generic [ref=e550]:
+          - generic [ref=e551]: Collection
+          - generic [ref=e552]: Money coming in
+        - generic [ref=e553]: "4"
+      - generic [ref=e554]:
+        - button "Scan CSI Being Paid Digital only CSI marked paid by customer" [ref=e555] [cursor=pointer]:
+          - img [ref=e557]
+          - generic [ref=e563]:
+            - generic [ref=e564]:
+              - generic [ref=e565]: Scan CSI Being Paid
+              - generic [ref=e566]:
+                - img [ref=e567]
+                - text: Digital only
+            - generic [ref=e570]: CSI marked paid by customer
+          - img [ref=e571]
+        - button "Scan Collection Receipt (CR) CR issued to customer — amount + customer" [ref=e573] [cursor=pointer]:
+          - img [ref=e575]
+          - generic [ref=e577]:
+            - generic [ref=e579]: Scan Collection Receipt (CR)
+            - generic [ref=e580]: CR issued to customer — amount + customer
+          - img [ref=e581]
+        - button "Scan CWT (BIR 2307) Certificate of withholding tax from customer" [ref=e583] [cursor=pointer]:
+          - img [ref=e585]
+          - generic [ref=e590]:
+            - generic [ref=e592]: Scan CWT (BIR 2307)
+            - generic [ref=e593]: Certificate of withholding tax from customer
+          - img [ref=e594]
+        - button "Scan Deposit Slip Bank deposit slip after collection" [ref=e596] [cursor=pointer]:
+          - img [ref=e598]
+          - generic [ref=e600]:
+            - generic [ref=e602]: Scan Deposit Slip
+            - generic [ref=e603]: Bank deposit slip after collection
+          - img [ref=e604]
+    - generic [ref=e606]:
+      - generic [ref=e607]:
+        - img [ref=e609]
+        - generic [ref=e613]:
+          - generic [ref=e614]: Inventory
+          - generic [ref=e615]: Stock received
+        - generic [ref=e616]: "1"
+      - button "Scan GRN Item Product barcode + qty + batch/expiry + waybill" [ref=e618] [cursor=pointer]:
+        - img [ref=e620]
+        - generic [ref=e625]:
+          - generic [ref=e627]: Scan GRN Item
+          - generic [ref=e628]: Product barcode + qty + batch/expiry + waybill
+        - img [ref=e629]
+  - generic [ref=e631]: Recent Captures
+  - generic [ref=e632]:
+    - generic [ref=e633]:
+      - generic [ref=e634]:
+        - generic [ref=e635]: SALES
+        - generic [ref=e636]: 5/6/2026, 7:25:28 AM
+      - generic [ref=e637]: AWAITING BDM REVIEW
+    - generic [ref=e638]:
+      - generic [ref=e639]:
+        - generic [ref=e640]: UNCATEGORIZED
+        - generic [ref=e641]: 5/6/2026, 12:16:10 AM
+      - generic [ref=e642]: PENDING PROXY
+    - generic [ref=e643]:
+      - generic [ref=e644]:
+        - generic [ref=e645]: COLLECTION · DEPOSIT
+        - generic [ref=e646]: 5/5/2026, 9:39:25 PM • ₱50,000
+      - generic [ref=e647]: PENDING PROXY
+    - generic [ref=e648]:
+      - generic [ref=e649]:
+        - generic [ref=e650]: COLLECTION · CR
+        - generic [ref=e651]: 5/5/2026, 9:39:24 PM • ₱50,000
+      - generic [ref=e652]:
+        - img [ref=e653]
+        - text: ACKNOWLEDGED
+    - generic [ref=e655]:
+      - generic [ref=e656]:
+        - generic [ref=e657]: COLLECTION · PAID CSI
+        - generic [ref=e658]: 5/5/2026, 9:39:23 PM
+      - generic [ref=e659]: AWAITING BDM REVIEW
+  - generic [ref=e660]:
+    - strong [ref=e661]: "Tip:"
+    - text: You can always enter expenses, sales, and other records directly from the regular entry pages. The capture hub is an optional shortcut for faster field work.

@@ -15,8 +15,8 @@ export default function useSales() {
   const approveDeletion = (id, reason) => api.post(`/sales/${id}/approve-deletion`, { reason });
   const presidentReverseSale = (id, { reason, confirm }) =>
     api.post(`/sales/${id}/president-reverse`, { reason, confirm });
-  const attachReceivedCsi = (id, { csi_received_photo_url, csi_received_attachment_id }) =>
-    api.put(`/sales/${id}/received-csi`, { csi_received_photo_url, csi_received_attachment_id });
+  const attachReceivedCsi = (id, { csi_received_photo_url, csi_received_attachment_id, capture_id }) =>
+    api.put(`/sales/${id}/received-csi`, { csi_received_photo_url, csi_received_attachment_id, capture_id });
 
   // Phase 15.3 — CSI draft overlay PDF URL. Hand to window.open so the
   // browser downloads the PDF using the current auth cookie.

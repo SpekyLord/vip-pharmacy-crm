@@ -90,6 +90,13 @@ router.use('/variance-alerts', require('./varianceAlertRoutes'));
 // canProxyEntry). Entity scoping enforced in every endpoint.
 router.use('/capture-submissions', require('./captureSubmissionRoutes'));
 
+// ═══ Phase P1.2 Slice 4 — BDM-side daily Personal/Official allocation ═══
+// Same posture as capture-submissions — no module-level erpAccessCheck.
+// Self-scope is the default; cross-BDM writes gated inside the controller via
+// privileged-role check + CAPTURE_LIFECYCLE_ROLES.ALLOCATE_PERSONAL_OFFICIAL /
+// .MARK_NO_DRIVE_DAY lookup gates.
+router.use('/drive-allocations', require('./driveAllocationRoutes'));
+
 // ═══ Phase G8 (P2-9) — Tasks (Secretary Copilot backing store) ═══
 // Cross-cutting productivity collection — no erpAccessCheck (every ERP user
 // can maintain their own tasks). Controller enforces Rule #21 entity scoping.

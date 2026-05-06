@@ -23,7 +23,7 @@ import { ROLE_SETS } from '../../constants/roles';
 import useGrn from '../hooks/useGrn';
 import usePurchasing from '../hooks/usePurchasing';
 import useProducts from '../hooks/useProducts';
-import { processDocument, extractExifDateTime } from '../services/ocrService';
+import { processDocument, processDocumentFromCapture, extractExifDateTime } from '../services/ocrService';
 import { getGrnSettings } from '../services/undertakingService';
 import WarehousePicker from '../components/WarehousePicker';
 import OwnerPicker from '../components/OwnerPicker';
@@ -236,7 +236,7 @@ function toIsoDate(str) {
  * Unmatched OCR rows are surfaced so the BDM can decide whether to retake the
  * photo or fall back to manual entry.
  */
-function ScanUndertakingModal({ open, onClose, onApply, products, initialFile }) {
+function ScanUndertakingModal({ open, onClose, onApply, products, initialFile, initialCaptureId, initialPreviewUrl }) {
   const [step, setStep] = useState('capture');
   const [preview, setPreview] = useState(null);
   const [ocrData, setOcrData] = useState(null);
@@ -247,12 +247,35 @@ function ScanUndertakingModal({ open, onClose, onApply, products, initialFile })
   // Phase P1.2 Slice 7-extension — guard so a transient render during OCR
   // doesn't re-trigger handleFile on the same File from picker.
   const initialFileProcessedRef = useRef(null);
+  // Phase P1.2 Slice 7-extension Round 2B (May 2026) — capture-id handoff
+  // (server-side OCR, sidesteps CORS).
+  const initialCaptureProcessedRef = useRef(null);
 
   const reset = () => {
     if (preview) URL.revokeObjectURL(preview);
     setStep('capture'); setPreview(null); setOcrData(null); setMatchedItems([]); setErrorMsg('');
   };
   const handleClose = () => { reset(); onClose(); };
+
+  // Shared post-OCR matching used by both file-upload and capture-pull flows.
+  const applyOcrResult = (result) => {
+    setOcrData(result);
+    const items = result?.extracted?.line_items || result?.extracted?.items || [];
+    const matched = items.map(item => {
+      const brand = fieldVal(item.brand_name || item.brand);
+      const pMatch = matchProduct(brand, fieldVal(item.dosage), products);
+      return {
+        ocr_brand: brand,
+        ocr_dosage: fieldVal(item.dosage),
+        ocr_batch: fieldVal(item.batch_lot_no || item.batch),
+        ocr_expiry: fieldVal(item.expiry_date || item.expiry),
+        ocr_qty: fieldVal(item.qty),
+        product_match: pMatch
+      };
+    });
+    setMatchedItems(matched);
+    setStep('results');
+  };
 
   const handleFile = async (file) => {
     if (!file) return;
@@ -261,33 +284,37 @@ function ScanUndertakingModal({ open, onClose, onApply, products, initialFile })
     try {
       const exif = await extractExifDateTime(file);
       const result = await processDocument(file, 'UNDERTAKING', exif);
-      setOcrData(result);
-      const items = result?.extracted?.line_items || result?.extracted?.items || [];
-      const matched = items.map(item => {
-        const brand = fieldVal(item.brand_name || item.brand);
-        const pMatch = matchProduct(brand, fieldVal(item.dosage), products);
-        return {
-          ocr_brand: brand,
-          ocr_dosage: fieldVal(item.dosage),
-          ocr_batch: fieldVal(item.batch_lot_no || item.batch),
-          ocr_expiry: fieldVal(item.expiry_date || item.expiry),
-          ocr_qty: fieldVal(item.qty),
-          product_match: pMatch
-        };
-      });
-      setMatchedItems(matched);
-      setStep('results');
+      applyOcrResult(result);
     } catch (err) {
       setErrorMsg(err?.response?.data?.message || err.message || 'OCR failed');
       setStep('error');
     }
   };
 
-  // Phase P1.2 Slice 7-extension — auto-OCR a File handed in by
-  // PendingCapturesPicker. Only fires once per File reference.
+  // Phase P1.2 Slice 7-extension Round 2B — capture-pull mode.
+  const handleCaptureScan = async (captureId, previewUrl) => {
+    if (!captureId) return;
+    if (previewUrl) setPreview(previewUrl);
+    setStep('scanning');
+    try {
+      const result = await processDocumentFromCapture(captureId, 'UNDERTAKING');
+      applyOcrResult(result);
+    } catch (err) {
+      setErrorMsg(err?.response?.data?.message || err.message || 'OCR failed');
+      setStep('error');
+    }
+  };
+
+  // Phase P1.2 Slice 7-extension — auto-OCR a File OR capture-id from picker.
   useEffect(() => {
     if (!open) {
       initialFileProcessedRef.current = null;
+      initialCaptureProcessedRef.current = null;
+      return;
+    }
+    if (initialCaptureId && initialCaptureProcessedRef.current !== initialCaptureId) {
+      initialCaptureProcessedRef.current = initialCaptureId;
+      handleCaptureScan(initialCaptureId, initialPreviewUrl);
       return;
     }
     if (initialFile && initialFileProcessedRef.current !== initialFile) {
@@ -295,7 +322,7 @@ function ScanUndertakingModal({ open, onClose, onApply, products, initialFile })
       handleFile(initialFile);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, initialFile]);
+  }, [open, initialFile, initialCaptureId, initialPreviewUrl]);
 
   const handleApply = () => {
     const lines = matchedItems.map(mi => ({
@@ -412,6 +439,9 @@ export default function GrnEntry() {
   // PendingCapturesPicker. Cleared on close so re-opening returns to the
   // normal Take-Photo / Gallery capture step.
   const [scanInitialFile, setScanInitialFile] = useState(null);
+  // Phase P1.2 Slice 7-extension Round 2B — capture-id handoff (skipFetch).
+  const [scanInitialCaptureId, setScanInitialCaptureId] = useState(null);
+  const [scanInitialPreviewUrl, setScanInitialPreviewUrl] = useState(null);
 
   // PO cross-reference state
   const [linkedPO, setLinkedPO] = useState(null);
@@ -702,11 +732,17 @@ export default function GrnEntry() {
                 workflowTypes={['GRN', 'UNCATEGORIZED']}
                 bdmId={assignedTo || undefined}
                 maxSelect={1}
+                skipFetch
                 buttonLabel="From BDM Captures"
-                onPick={(files) => {
-                  const file = files?.[0];
-                  if (!file) return;
-                  setScanInitialFile(file);
+                onPick={(_files, meta) => {
+                  // Phase P1.2 Slice 7-extension Round 2B — capture-id handoff
+                  // (server-side OCR sidesteps the CORS lurking-bug).
+                  const cap = meta?.captures?.[0];
+                  if (!cap?._id) return;
+                  const previewUrl = cap.captured_artifacts?.[0]?.url || null;
+                  setScanInitialCaptureId(cap._id);
+                  setScanInitialPreviewUrl(previewUrl);
+                  setScanInitialFile(null);
                   setScanOpen(true);
                 }}
               />
@@ -1143,7 +1179,20 @@ export default function GrnEntry() {
           </div>
         </main>
       </div>
-      <ScanUndertakingModal open={scanOpen} onClose={() => { setScanOpen(false); setScanInitialFile(null); }} onApply={handleScanApply} products={productOptions} initialFile={scanInitialFile} />
+      <ScanUndertakingModal
+        open={scanOpen}
+        onClose={() => {
+          setScanOpen(false);
+          setScanInitialFile(null);
+          setScanInitialCaptureId(null);
+          setScanInitialPreviewUrl(null);
+        }}
+        onApply={handleScanApply}
+        products={productOptions}
+        initialFile={scanInitialFile}
+        initialCaptureId={scanInitialCaptureId}
+        initialPreviewUrl={scanInitialPreviewUrl}
+      />
     </div>
   );
 }

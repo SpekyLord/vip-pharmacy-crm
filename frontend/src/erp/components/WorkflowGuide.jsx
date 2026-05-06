@@ -254,7 +254,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Petty Cash', path: '/erp/petty-cash' },
       { label: 'Approval Hub', path: '/erp/approvals' },
     ],
-    tip: 'CSI sales always create AR (collect via Collections). Cash Receipt and Service Invoice with CASH payment can route directly to a Petty Cash Fund — bypassing AR and auto-creating a deposit on posting. Only ACTIVE funds with REVOLVING or DEPOSIT_ONLY mode are available. Re-opening a CSI that a Collection already settled is blocked to keep AR and GL balanced — reopen the Collection first. Proxy entry (Phase G4.5a + G4.5ff May 2026): if the "Record on behalf of" dropdown shows at the top of the form, picking a BDM files the CSI under their bdm_id; every proxied submit is forced through Approval Hub regardless of your role (owner approval required, four-eyes guard). Eligibility is two-layer + lookup-driven (Rule #3): role ∈ PROXY_ENTRY_ROLES.SALES (default admin/finance/president — extend to `staff` to let one BDM cover another) AND sales.proxy_entry ticked on Access Template. The dropdown sources its candidates from /erp/proxy-roster/SALES — a narrow endpoint scoped to your working entity that respects VALID_OWNER_ROLES.SALES (default `staff`). Cross-entity proxy is blocked at the write layer (Rule #21). **Phase P1.2 Slice 7-extension (May 2026)** — the "From BDM Captures" button next to "Scan CSI" pulls a BDM-captured SALES or UNCATEGORIZED photo into the **entry-time OCR scan flow** (blank/unsigned CSI photo → auto-fills doc_ref/date/hospital/line items). This is the entry-time path only. The **signed pink/yellow/duplicate CSI** returned by the hospital after delivery is a separate artifact — it uploads via the **per-row 📷 Attach CSI** button on **Sales Transactions** (list) AFTER the row is POSTED, not here. **Phase P1.2 Slice 7-extension Round 2A (May 2026) shipped** — the **Sales Transactions** list now mounts a per-row "From Captures" picker right next to the **📷 Attach CSI** button. The picker is narrowed to the row\'s own bdm_id (the BDM who owns that sale), so the proxy only sees that BDM\'s pending SALES + UNCATEGORIZED captures. maxSelect=1 (each sale row owns exactly one received-CSI slot). The picked File flows through the same photo-only upload pipeline as gallery — the only difference is no re-upload from gallery. Picker visibility is unconditional (any user who can reach this page can see it); server-side getProxyQueue still gates by lookup-driven `CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE` so a non-eligible click 403s cleanly. Pick the BDM in "Record on behalf of" first to narrow the picker to that BDM\'s captures.',
+    tip: 'CSI sales always create AR (collect via Collections). Cash Receipt and Service Invoice with CASH payment can route directly to a Petty Cash Fund — bypassing AR and auto-creating a deposit on posting. Only ACTIVE funds with REVOLVING or DEPOSIT_ONLY mode are available. Re-opening a CSI that a Collection already settled is blocked to keep AR and GL balanced — reopen the Collection first. Proxy entry (Phase G4.5a + G4.5ff May 2026): if the "Record on behalf of" dropdown shows at the top of the form, picking a BDM files the CSI under their bdm_id; every proxied submit is forced through Approval Hub regardless of your role (owner approval required, four-eyes guard). Eligibility is two-layer + lookup-driven (Rule #3): role ∈ PROXY_ENTRY_ROLES.SALES (default admin/finance/president — extend to `staff` to let one BDM cover another) AND sales.proxy_entry ticked on Access Template. The dropdown sources its candidates from /erp/proxy-roster/SALES — a narrow endpoint scoped to your working entity that respects VALID_OWNER_ROLES.SALES (default `staff`). Cross-entity proxy is blocked at the write layer (Rule #21). **Phase P1.2 Slice 7-extension (May 2026)** — the "From BDM Captures" button next to "Scan CSI" pulls a BDM-captured SALES or UNCATEGORIZED photo into the **entry-time OCR scan flow** (blank/unsigned CSI photo → auto-fills doc_ref/date/hospital/line items). This is the entry-time path only. The **signed pink/yellow/duplicate CSI** returned by the hospital after delivery is a separate artifact — it uploads via the **per-row 📷 Attach CSI** button on **Sales Transactions** (list) AFTER the row is POSTED, not here. **Phase P1.2 Slice 7-extension Round 2A (May 2026) shipped** — the **Sales Transactions** list now mounts a per-row "From Captures" picker right next to the **📷 Attach CSI** button. The picker is narrowed to the row\'s own bdm_id (the BDM who owns that sale), so the proxy only sees that BDM\'s pending SALES + UNCATEGORIZED captures. maxSelect=1 (each sale row owns exactly one received-CSI slot). The picked File flows through the same photo-only upload pipeline as gallery — the only difference is no re-upload from gallery. Picker visibility is unconditional (any user who can reach this page can see it); server-side getProxyQueue still gates by lookup-driven `CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE` so a non-eligible click 403s cleanly. Pick the BDM in "Record on behalf of" first to narrow the picker to that BDM\'s captures. **Phase P1.2 Slice 7-extension Round 2B (May 2026) shipped** — closed the CORS lurking-bug from Round 1\'s file-handoff: the in-browser fetch(signedS3Url) was silently blocked because the private S3 bucket has no CORS allowlist for non-S3 origins. The "From BDM Captures" button (entry-time scan) here on Sales Entry, /erp/collections/session, and /erp/grn now sends only the CaptureSubmission `_id` to the backend; the server downloads the photo S3-side via AWS SDK creds (no browser fetch) and runs the same OCR pipeline. Same `CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE` gate from Slice 1 — non-owners need PROXY_PULL_CAPTURE; admin/finance/president bypass.',
   },
   'sales-list': {
     title: 'Sales Management — Per-Row Lifecycle Hub',
@@ -342,7 +342,7 @@ const WORKFLOW_GUIDES = {
       { label: 'View All Collections', path: '/erp/collections' },
       { label: 'View AR Aging', path: '/erp/collections/ar' },
     ],
-    tip: 'Collections support both hospital and customer targets — the system validates CSIs and AR balance for whichever entity type is used. Opening AR (pre-go-live) CSIs are fully collectable. CWT is auto-computed if applicable. When routed to a petty cash fund, a POSTED deposit is auto-created on submission and auto-voided on reopen. The fund must be ACTIVE and accept deposits (REVOLVING or DEPOSIT_ONLY). Arriving from AR Aging? The hospital and invoice are pre-filled — entity/BDM scope is still enforced by the backend so out-of-scope URLs resolve to an empty form. Role visibility: President/admin/finance see every BDM\'s open CSIs for the selected hospital by default (use the BDM filter to narrow); BDMs see only their own. Proxy entry eligibility is two-layer: role ∈ PROXY_ENTRY_ROLES.COLLECTIONS (lookup, default admin/finance/president) AND collections.proxy_entry ticked on Access Template. Add `contractor` to the lookup to delegate to a back-office clerk. **Phase P1.2 Slice 7-extension (May 2026)** — the "From BDM Captures" button next to "Scan CR to Auto-Fill" pulls a BDM-captured COLLECTION or UNCATEGORIZED photo (CR / deposit slip / paid CSI) into the same OCR flow without re-uploading. Server-side getProxyQueue still enforces lookup-driven `CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE`. Pick the BDM in "Record on behalf of" first to narrow the picker to that BDM\'s captures.',
+    tip: 'Collections support both hospital and customer targets — the system validates CSIs and AR balance for whichever entity type is used. Opening AR (pre-go-live) CSIs are fully collectable. CWT is auto-computed if applicable. When routed to a petty cash fund, a POSTED deposit is auto-created on submission and auto-voided on reopen. The fund must be ACTIVE and accept deposits (REVOLVING or DEPOSIT_ONLY). Arriving from AR Aging? The hospital and invoice are pre-filled — entity/BDM scope is still enforced by the backend so out-of-scope URLs resolve to an empty form. Role visibility: President/admin/finance see every BDM\'s open CSIs for the selected hospital by default (use the BDM filter to narrow); BDMs see only their own. Proxy entry eligibility is two-layer: role ∈ PROXY_ENTRY_ROLES.COLLECTIONS (lookup, default admin/finance/president) AND collections.proxy_entry ticked on Access Template. Add `contractor` to the lookup to delegate to a back-office clerk. **Phase P1.2 Slice 7-extension (May 2026)** — the "From BDM Captures" button next to "Scan CR to Auto-Fill" pulls a BDM-captured COLLECTION or UNCATEGORIZED photo (CR / deposit slip / paid CSI) into the same OCR flow without re-uploading. Server-side getProxyQueue still enforces lookup-driven `CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE`. Pick the BDM in "Record on behalf of" first to narrow the picker to that BDM\'s captures. **Phase P1.2 Slice 7-extension Round 2B (May 2026) shipped** — the picker now sends only the CaptureSubmission `_id` to the backend; the server downloads the S3 object server-side and runs OCR. Closes the CORS lurking-bug from Round 1\'s in-browser fetch (private bucket has no allowlist for non-S3 origins).',
   },
   'ar-aging': {
     title: 'Accounts Receivable Aging',
@@ -577,7 +577,7 @@ const WORKFLOW_GUIDES = {
       { label: 'My Stock', path: '/erp/my-stock' },
       { label: 'Purchase Orders', path: '/erp/purchase-orders' },
     ],
-    tip: 'Phase 32R — GRN is the capture surface. All batch/lot + expiry + qty data is entered here, and the paper Undertaking becomes the OCR source that auto-fills lines in bulk. The Undertaking page downstream is a read-only approval wrapper, not another data-entry form. Every GRN auto-assigns a human-readable number on create — `GRN-{TERR|ENTITY}{MMDDYY}-{NNN}` (e.g. `GRN-ILO042026-001`, matching the CALF/PO/JE format) — sequenced atomically per territory-per-day. Subscribers in non-pharmacy verticals can relax batch/expiry requirements in Control Center → GRN Settings — FIFO stays intact because blanks become safe sentinels (batch="N/A", expiry=9999-12-31). Proxy entry eligibility (Phase G4.5b) is two-layer: role ∈ PROXY_ENTRY_ROLES.GRN (lookup, default admin/finance/president) AND inventory.grn_proxy_entry ticked on Access Template. A "Proxied" pill shows on the GRN list next to the GRN #; the auto-created Undertaking inherits the same ownership so the acknowledgment cascade reaches the target BDM, not the proxy. **Phase G7.A.0 (May 2026)** — Product dropdown is scoped to your working entity. If a product looks missing it usually means the entity does not carry it: ask admin to add it via Master Data → Products (today) or, after Phase G7.A.4 ships, via the new Carry-List Manager (`/erp/carry-list`). The validator at submit only accepts products that the entity is authorized to transact — same SKU under another entity\'s row is rejected by design (Rule #21 — silent cross-entity references break FIFO + batch trace). **Phase P1.2 Slice 7-extension (May 2026)** — the "From BDM Captures" button next to "Scan Undertaking Paper" pulls a BDM-captured GRN or UNCATEGORIZED photo (Undertaking paper) into the same OCR flow without re-uploading. Server-side getProxyQueue still enforces lookup-driven `CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE`. Pick the BDM in "Record on behalf of" first to narrow the picker to that BDM\'s captures.',
+    tip: 'Phase 32R — GRN is the capture surface. All batch/lot + expiry + qty data is entered here, and the paper Undertaking becomes the OCR source that auto-fills lines in bulk. The Undertaking page downstream is a read-only approval wrapper, not another data-entry form. Every GRN auto-assigns a human-readable number on create — `GRN-{TERR|ENTITY}{MMDDYY}-{NNN}` (e.g. `GRN-ILO042026-001`, matching the CALF/PO/JE format) — sequenced atomically per territory-per-day. Subscribers in non-pharmacy verticals can relax batch/expiry requirements in Control Center → GRN Settings — FIFO stays intact because blanks become safe sentinels (batch="N/A", expiry=9999-12-31). Proxy entry eligibility (Phase G4.5b) is two-layer: role ∈ PROXY_ENTRY_ROLES.GRN (lookup, default admin/finance/president) AND inventory.grn_proxy_entry ticked on Access Template. A "Proxied" pill shows on the GRN list next to the GRN #; the auto-created Undertaking inherits the same ownership so the acknowledgment cascade reaches the target BDM, not the proxy. **Phase G7.A.0 (May 2026)** — Product dropdown is scoped to your working entity. If a product looks missing it usually means the entity does not carry it: ask admin to add it via Master Data → Products (today) or, after Phase G7.A.4 ships, via the new Carry-List Manager (`/erp/carry-list`). The validator at submit only accepts products that the entity is authorized to transact — same SKU under another entity\'s row is rejected by design (Rule #21 — silent cross-entity references break FIFO + batch trace). **Phase P1.2 Slice 7-extension (May 2026)** — the "From BDM Captures" button next to "Scan Undertaking Paper" pulls a BDM-captured GRN or UNCATEGORIZED photo (Undertaking paper) into the same OCR flow without re-uploading. Server-side getProxyQueue still enforces lookup-driven `CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE`. Pick the BDM in "Record on behalf of" first to narrow the picker to that BDM\'s captures. **Phase P1.2 Slice 7-extension Round 2B (May 2026) shipped** — the picker now sends only the CaptureSubmission `_id` to the backend; the server downloads the S3 object server-side and runs OCR. Closes the CORS lurking-bug from Round 1\'s in-browser fetch (private bucket has no allowlist for non-S3 origins).',
   },
   // Phase 32R — Undertaking (read-only approval wrapper over a captured GRN)
   'undertaking-entry': {
@@ -1873,10 +1873,13 @@ const WORKFLOW_GUIDES = {
   // Phase P1.1 (May 05 2026) added 4 tiles + sub_type for COLLECTION:
   //   CSI Being Paid (digital-only), Collection Receipt (CR),
   //   Deposit Slip, CWT (BIR 2307). 10 tiles total.
+  // Phase P1.2 Slice 4 + 5 (May 06 2026) added the Allocation Panel + SMER
+  // tile lock. Banner reflects the new gate (Rule #1).
   'bdm-capture-hub': {
     title: 'BDM Capture Hub',
     subtitle: 'One-tap field capture — every BDM-facing document the office needs.',
     steps: [
+      '**If you see the orange "Allocate prior drives" panel** — clear it first. Set Start/End KM, drag the Personal/Official slider, Save. (Or tap "Did not drive" for vacation/sick days.)',
       'Tap **Quick Capture** to snap any photo with zero typing — office classifies it later',
       'Or tap a specific tile that matches the document if you want to fill amount/customer',
       'Take a photo or pick from gallery — GPS is captured automatically',
@@ -1891,8 +1894,11 @@ const WORKFLOW_GUIDES = {
       'If physical paper is missing, the SAME cycle next month may be blocked (e.g., C1 May missing → C1 June blocked)',
       '**Phase P1.2 Slice 1 (May 06 2026):** Photos now upload directly to S3 — captures no longer carry base64 data inside the doc, so storage scales with field volume.',
       '**Quick Capture (zero-typing):** Use this when the proxy will classify the photo later. Submits as workflow_type=UNCATEGORIZED; the proxy reroutes from the Pending-Photos picker on the relevant ERP entry page.',
+      '**Phase P1.2 Slice 4 — Allocation Panel:** Yesterday\'s drive needs to be split into Personal vs Official km BEFORE you snap today\'s ODO. The slider defaults to **0 official km** so you have to actively reallocate — anti-fraud nudge. Snap is 5 km. If End KM is missing on yesterday, the panel offers to use today\'s Start KM (car parked overnight = delta zero).',
+      '**Phase P1.2 Slice 5 — SMER tile lock:** "Scan ODO" is locked when prior workdays in this cycle are unallocated. Tapping the locked tile scrolls to the panel above. Allocate or mark "Did not drive" to unlock.',
+      '"Did not drive" is the escape valve for vacation/sick/off-territory days. No per-diem accrues. Override later requires admin via OVERRIDE_ALLOCATION.',
       'Screenshots get rejected at the server (no EXIF + phone-resolution dimensions) and the page redirects you to Comm Log — that is the right surface for Messenger/Viber chats.',
-      'Sub-permissions are lookup-driven via CAPTURE_LIFECYCLE_ROLES (Control Center → Lookup Tables) so admin can promote a designated proxy `staff` user to MARK_PAPER_RECEIVED or VIEW_ALL_ARCHIVE without a code deploy.',
+      'Sub-permissions are lookup-driven via CAPTURE_LIFECYCLE_ROLES (Control Center → Lookup Tables) so admin can promote a designated proxy `staff` user to MARK_PAPER_RECEIVED or VIEW_ALL_ARCHIVE without a code deploy. ALLOCATE_PERSONAL_OFFICIAL + MARK_NO_DRIVE_DAY default to staff and gate the panel.',
     ],
     next: [
       { label: 'Review Queue', path: '/erp/review-queue' },
@@ -1909,15 +1915,19 @@ const WORKFLOW_GUIDES = {
       'Pick Up the submission to claim it',
       'Open the appropriate entry form and create the ERP record',
       'Return here and Mark Complete — the BDM will be notified to review',
+      'Phase P1.2 Slice 9: tick "Paper received now" before Mark Complete to atomically attest the physical receipt — saves a separate trip to the archive',
     ],
     tips: [
       'SLA target is < 24h turnaround — amber rows need attention',
       'Red rows (> 48h) will trigger an automated alert to management',
       'You can Release a submission back to the queue if you can\'t finish',
       'Rule #20: proxy enters, never approves — the Approval Hub handles approvals',
+      'Phase P1.2 Slice 9: president can click "Override" on the Paper status chip to flip a wrong RECEIVED ↔ MISSING attestation. Lookup-driven (OVERRIDE_PHYSICAL_STATUS); admin can be added by editing the lookup row',
+      'For browse-by-cycle and bulk-mark-received, use the new /erp/capture-archive page',
     ],
     next: [
       { label: 'Expenses', path: '/erp/expenses' },
+      { label: 'Capture Archive', path: '/erp/capture-archive' },
       { label: 'Sales Entry', path: '/erp/sales/entry' },
     ],
     tip: 'Process Expense captures first — highest time-savings, lowest risk.',
@@ -1943,6 +1953,30 @@ const WORKFLOW_GUIDES = {
       { label: 'Dispute Center', path: '/erp/incentive-disputes' },
     ],
     tip: 'Review promptly — auto-acknowledgment kicks in after 72 hours.',
+  },
+  // Phase P1.2 Slice 8 (May 06 2026) — Capture Archive page banner.
+  'capture-archive': {
+    title: 'Capture Archive',
+    subtitle: 'Browse every BDM capture by Year → Cycle → Workflow folder. Multi-select to mark paper received.',
+    steps: [
+      'Pick a Year, then a Cycle, then a Workflow folder on the left to load captures',
+      'Filter by Paper status (Pending / Received / Missing / Digital only) on the right',
+      'Tick rows that have paper on your desk and click "Mark N Received" — atomic bulk attestation',
+      'Click the download icon next to a Cycle to export a CSV audit report',
+      'President can click "Override" on any row to flip a wrong RECEIVED ↔ MISSING attestation',
+    ],
+    tips: [
+      'Only PENDING + paper-required rows are selectable for bulk mark — digital-only and already-received are skipped server-side',
+      'BDMs see only their own captures by default (VIEW_OWN_ARCHIVE); admin/finance/president see all (VIEW_ALL_ARCHIVE) and can filter by BDM',
+      'Cycle audit CSV is the same data the proxy sees, ordered by created_at — auditors can diff across months',
+      'Sub-permissions are lookup-driven via CAPTURE_LIFECYCLE_ROLES (Control Center → Lookup Tables) so admin can promote a designated proxy `staff` user to BULK_MARK_RECEIVED or GENERATE_CYCLE_REPORT without a code deploy',
+      'Override is president-only by default — flipping a RECEIVED back to MISSING can release a previously-held commission, so the lookup default is conservative',
+    ],
+    next: [
+      { label: 'Proxy Queue', path: '/erp/proxy-queue' },
+      { label: 'Capture Hub', path: '/erp/capture-hub' },
+    ],
+    tip: 'Bulk-mark a stack of receipts in one action when the courier delivers them — far faster than walking through Proxy Queue rows one at a time.',
   },
 };
 

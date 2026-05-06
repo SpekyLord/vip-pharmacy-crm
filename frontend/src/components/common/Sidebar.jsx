@@ -806,19 +806,28 @@ const getErpSection = (role, erpAccess, { includeHomeOnly = false, approvalCount
   // ── Phase P1 — Capture Hub (BDM mobile capture + office proxy queue) ─────
   // Visible to all ERP users. BDMs see Capture Hub + Review Queue;
   // admin/finance/president see Proxy Queue. Additive — not mandatory.
+  // Phase P1.2 Slice 8 (May 06 2026) — Capture Archive entry. Backend gates
+  // by VIEW_OWN_ARCHIVE (default: staff) and VIEW_ALL_ARCHIVE (default:
+  // admin/finance/president); the page renders BDM-filtered or cross-BDM
+  // accordingly. Sidebar visibility intentionally broad — the lookup-driven
+  // gate is the source of truth.
   {
     const captureItems = [];
-    // BDM-shaped roles get the mobile capture hub + review queue
+    // BDM-shaped roles get the mobile capture hub + review queue + own archive
     if ([ROLES.CONTRACTOR, ROLES.EMPLOYEE].includes(role)) {
       captureItems.push({ path: '/erp/capture-hub', label: 'Capture Hub', icon: ScanLine });
       captureItems.push({ path: '/erp/review-queue', label: 'Review Queue', icon: ListChecks });
+      captureItems.push({ path: '/erp/capture-archive', label: 'Capture Archive', icon: ScanLine });
     }
-    // Admin/finance/president get the proxy queue
+    // Admin/finance/president get the proxy queue + cross-BDM archive
     if (ROLE_SETS.MANAGEMENT.includes(role)) {
       captureItems.push({ path: '/erp/proxy-queue', label: 'Proxy Queue', icon: Smartphone });
       // Management also sees review queue (for monitoring)
       if (!captureItems.find(i => i.path === '/erp/review-queue')) {
         captureItems.push({ path: '/erp/review-queue', label: 'Review Queue', icon: ListChecks });
+      }
+      if (!captureItems.find(i => i.path === '/erp/capture-archive')) {
+        captureItems.push({ path: '/erp/capture-archive', label: 'Capture Archive', icon: ScanLine });
       }
     }
     if (captureItems.length > 0) {

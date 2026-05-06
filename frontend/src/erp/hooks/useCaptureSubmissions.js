@@ -104,6 +104,45 @@ export default function useCaptureSubmissions() {
     [api]
   );
 
+  // ── Phase P1.2 Slice 8 — Capture Archive ──────────────────────────
+  const getArchiveSummary = useCallback(
+    (params) => api.get('/capture-submissions/archive/summary', { params }),
+    [api]
+  );
+
+  const getArchiveLeaves = useCallback(
+    (params) => api.get('/capture-submissions/archive/leaves', { params }),
+    [api]
+  );
+
+  const bulkMarkReceived = useCallback(
+    (ids) => api.post('/capture-submissions/bulk-mark-received', { ids }),
+    [api]
+  );
+
+  /**
+   * Triggers a CSV download. Returns the Blob+filename pair so the caller
+   * can decide whether to render in-page or save-as. JSON callers should
+   * pass `format='json'` and use the existing api.get path.
+   */
+  const downloadCycleReport = useCallback(
+    async (params) => {
+      const res = await api.get('/capture-submissions/archive/cycle-report', {
+        params: { ...params, format: 'csv' },
+        responseType: 'blob',
+      });
+      return res; // axios returns the blob as res.data when responseType=blob
+    },
+    [api]
+  );
+
+  // ── Phase P1.2 Slice 9 — Override controls ────────────────────────
+  const overridePhysicalStatus = useCallback(
+    (id, physical_status) =>
+      api.put(`/capture-submissions/${id}/physical-status`, { physical_status }),
+    [api]
+  );
+
   return {
     ...api,
     // BDM
@@ -120,6 +159,13 @@ export default function useCaptureSubmissions() {
     pickupCapture,
     releaseCapture,
     completeCapture,
+    // Phase P1.2 Slice 8 — Capture Archive
+    getArchiveSummary,
+    getArchiveLeaves,
+    bulkMarkReceived,
+    downloadCycleReport,
+    // Phase P1.2 Slice 9 — Override controls
+    overridePhysicalStatus,
     // Dashboard
     getQueueStats,
   };

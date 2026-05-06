@@ -1,0 +1,51 @@
+- generic [ref=e7]:
+  - generic [ref=e8]:
+    - button "×" [ref=e9] [cursor=pointer]
+    - generic [ref=e10]:
+      - img [ref=e11]
+      - text: Capture Archive
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - generic [ref=e15]: "1"
+        - generic [ref=e16]: Pick a Year, then a Cycle, then a Workflow folder on the left to load captures
+      - generic [ref=e17]:
+        - generic [ref=e18]: "2"
+        - generic [ref=e19]: Filter by Paper status (Pending / Received / Missing / Digital only) on the right
+      - generic [ref=e20]:
+        - generic [ref=e21]: "3"
+        - generic [ref=e22]: Tick rows that have paper on your desk and click "Mark N Received" — atomic bulk attestation
+      - generic [ref=e23]:
+        - generic [ref=e24]: "4"
+        - generic [ref=e25]: Click the download icon next to a Cycle to export a CSV audit report
+      - generic [ref=e26]:
+        - generic [ref=e27]: "5"
+        - generic [ref=e28]: President can click "Override" on any row to flip a wrong RECEIVED ↔ MISSING attestation
+    - generic [ref=e29]:
+      - generic [ref=e30]: "Next steps:"
+      - button "Proxy Queue →" [ref=e31] [cursor=pointer]
+      - button "Capture Hub →" [ref=e32] [cursor=pointer]
+    - generic [ref=e33]: 💡 Bulk-mark a stack of receipts in one action when the courier delivers them — far faster than walking through Proxy Queue rows one at a time.
+  - generic [ref=e34]:
+    - generic [ref=e35]:
+      - heading "Capture Archive" [level=1] [ref=e36]:
+        - img [ref=e37]
+        - text: Capture Archive
+      - paragraph [ref=e42]: Browse every BDM capture by cycle. Multi-select to mark paper received.
+    - button "Refresh" [ref=e43] [cursor=pointer]:
+      - img [ref=e44]
+      - text: Refresh
+  - generic [ref=e49]:
+    - img [ref=e50]
+    - combobox [ref=e52]:
+      - option "All BDMs" [selected]
+      - option "Mae Navarro (6)"
+    - combobox [ref=e53]:
+      - option "All Years" [selected]
+      - option "2026"
+  - generic [ref=e54]:
+    - button "2026" [ref=e57] [cursor=pointer]:
+      - img [ref=e58]
+      - text: "2026"
+    - generic [ref=e61]:
+      - img [ref=e62]
+      - text: Select a workflow folder on the left.

@@ -10,7 +10,7 @@ import useSettings from '../hooks/useSettings';
 import useAccounting from '../hooks/useAccounting';
 import useErpApi from '../hooks/useErpApi';
 import doctorService from '../../services/doctorService';
-import { processDocument, extractExifDateTime } from '../services/ocrService';
+import { processDocument, processDocumentFromCapture, extractExifDateTime } from '../services/ocrService';
 import { matchHospital, matchCsis, fieldVal, fieldConfidence, parseCrDate, formatReviewReason } from '../utils/ocrMatching';
 
 import SelectField from '../../components/common/Select';
@@ -92,7 +92,7 @@ const pageStyles = `
 `;
 
 // ── ScanCRModal — OCR scan → auto-fill hospital, CR details, CSI matches ──
-function ScanCRModal({ open, onClose, onApply, hospitals, initialFile }) {
+function ScanCRModal({ open, onClose, onApply, hospitals, initialFile, initialCaptureId, initialPreviewUrl }) {
   const [step, setStep] = useState('capture');
   const [preview, setPreview] = useState(null);
   const [ocrData, setOcrData] = useState(null);
@@ -104,9 +104,22 @@ function ScanCRModal({ open, onClose, onApply, hospitals, initialFile }) {
   // Phase P1.2 Slice 7-extension — guard so a transient render during OCR
   // doesn't re-trigger handleFile on the same File handed in by picker.
   const initialFileProcessedRef = useRef(null);
+  // Phase P1.2 Slice 7-extension Round 2B (May 2026) — capture-id handoff
+  // (server-side OCR, no client fetch — closes the CORS lurking-bug).
+  const initialCaptureProcessedRef = useRef(null);
 
   const reset = () => { setStep('capture'); setPreview(null); setOcrData(null); setErrorMsg(''); setMatchedHosp(null); setReviewConfirmed(false); };
   const handleClose = () => { reset(); onClose(); };
+
+  // Shared post-OCR result-matching used by both file and capture flows.
+  const applyOcrResult = (result) => {
+    setOcrData(result);
+    const hospName = fieldVal(result?.extracted?.hospital);
+    if (hospName && hospitals?.length) {
+      setMatchedHosp(matchHospital(hospName, hospitals));
+    }
+    setStep('results');
+  };
 
   const handleFile = async (file) => {
     if (!file) return;
@@ -115,24 +128,39 @@ function ScanCRModal({ open, onClose, onApply, hospitals, initialFile }) {
     try {
       const exif = await extractExifDateTime(file);
       const result = await processDocument(file, 'CR', exif);
-      setOcrData(result);
-      // Fuzzy match hospital
-      const hospName = fieldVal(result?.extracted?.hospital);
-      if (hospName && hospitals?.length) {
-        setMatchedHosp(matchHospital(hospName, hospitals));
-      }
-      setStep('results');
+      applyOcrResult(result);
     } catch (err) {
       setErrorMsg(err?.response?.data?.message || err.message || 'OCR processing failed');
       setStep('error');
     }
   };
 
-  // Phase P1.2 Slice 7-extension — auto-OCR a File handed in by
-  // PendingCapturesPicker. Only fires once per File reference.
+  // Phase P1.2 Slice 7-extension Round 2B — capture-pull mode. Picker yields
+  // a CaptureSubmission._id; backend pulls the photo from S3 and OCRs it.
+  const handleCaptureScan = async (captureId, previewUrl) => {
+    if (!captureId) return;
+    if (previewUrl) setPreview(previewUrl);
+    setStep('scanning');
+    try {
+      const result = await processDocumentFromCapture(captureId, 'CR');
+      applyOcrResult(result);
+    } catch (err) {
+      setErrorMsg(err?.response?.data?.message || err.message || 'OCR processing failed');
+      setStep('error');
+    }
+  };
+
+  // Phase P1.2 Slice 7-extension — auto-OCR a File OR a capture-id handed in
+  // by PendingCapturesPicker. Capture-id takes precedence when both are set.
   useEffect(() => {
     if (!open) {
       initialFileProcessedRef.current = null;
+      initialCaptureProcessedRef.current = null;
+      return;
+    }
+    if (initialCaptureId && initialCaptureProcessedRef.current !== initialCaptureId) {
+      initialCaptureProcessedRef.current = initialCaptureId;
+      handleCaptureScan(initialCaptureId, initialPreviewUrl);
       return;
     }
     if (initialFile && initialFileProcessedRef.current !== initialFile) {
@@ -140,7 +168,7 @@ function ScanCRModal({ open, onClose, onApply, hospitals, initialFile }) {
       handleFile(initialFile);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, initialFile]);
+  }, [open, initialFile, initialCaptureId, initialPreviewUrl]);
 
   const handleApply = () => {
     const e = ocrData?.extracted;
@@ -391,6 +419,9 @@ export default function CollectionSession() {
   // PendingCapturesPicker. Cleared on modal close so re-opening returns
   // to the normal Take-Photo / Gallery capture step.
   const [scanInitialFile, setScanInitialFile] = useState(null);
+  // Phase P1.2 Slice 7-extension Round 2B — capture-id handoff (skipFetch).
+  const [scanInitialCaptureId, setScanInitialCaptureId] = useState(null);
+  const [scanInitialPreviewUrl, setScanInitialPreviewUrl] = useState(null);
   const [ocrFilledFields, setOcrFilledFields] = useState(new Set());
   const pendingCsiMatch = useRef(null);
 
@@ -844,11 +875,17 @@ export default function CollectionSession() {
                 workflowTypes={['COLLECTION', 'UNCATEGORIZED']}
                 bdmId={assignedTo || undefined}
                 maxSelect={1}
+                skipFetch
                 buttonLabel="From BDM Captures"
-                onPick={(files) => {
-                  const file = files?.[0];
-                  if (!file) return;
-                  setScanInitialFile(file);
+                onPick={(_files, meta) => {
+                  // Phase P1.2 Slice 7-extension Round 2B — capture-id handoff
+                  // (server-side OCR sidesteps the CORS lurking-bug).
+                  const cap = meta?.captures?.[0];
+                  if (!cap?._id) return;
+                  const previewUrl = cap.captured_artifacts?.[0]?.url || null;
+                  setScanInitialCaptureId(cap._id);
+                  setScanInitialPreviewUrl(previewUrl);
+                  setScanInitialFile(null);
                   setScanCrOpen(true);
                 }}
               />
@@ -1196,10 +1233,17 @@ export default function CollectionSession() {
           {/* ScanCRModal */}
           <ScanCRModal
             open={scanCrOpen}
-            onClose={() => { setScanCrOpen(false); setScanInitialFile(null); }}
+            onClose={() => {
+              setScanCrOpen(false);
+              setScanInitialFile(null);
+              setScanInitialCaptureId(null);
+              setScanInitialPreviewUrl(null);
+            }}
             onApply={handleCrScanApply}
             hospitals={hospitals}
             initialFile={scanInitialFile}
+            initialCaptureId={scanInitialCaptureId}
+            initialPreviewUrl={scanInitialPreviewUrl}
           />
         </main>
       </div>

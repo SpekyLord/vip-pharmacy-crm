@@ -119,6 +119,12 @@ const ACTIVITY_PERDIEM_RULES_CATEGORIES = new Set(['ACTIVITY_PERDIEM_RULES']);
 const { invalidate: invalidateCaptureLifecycleRolesCache } = require('../../utils/captureLifecycleAccess');
 const CAPTURE_LIFECYCLE_ROLES_CATEGORIES = new Set(['CAPTURE_LIFECYCLE_ROLES']);
 
+// Phase P1.2 Slice 4 (May 06 2026) — DriveAllocation grace-window cache bust.
+// Pull the invalidator from the controller so admin edits to the grace window
+// take effect within the same 60s cache window everything else honors.
+const { invalidateGraceCache: invalidateDriveAllocGraceCache } = require('./driveAllocationController');
+const DRIVE_ALLOCATION_CONFIG_CATEGORIES = new Set(['DRIVE_ALLOCATION_CONFIG']);
+
 // Phase G6.10/G7 — categories whose seeded rows must default is_active: false so
 // subscribers explicitly opt in (Anthropic-billable features, spend caps that
 // could surprise-block in-flight calls). Without this, the first AgentSettings
@@ -3455,6 +3461,20 @@ const SEED_DEFAULTS = {
     { code: 'EDIT_CAR_LOGBOOK_DESTINATION', label: 'Edit auto-pulled Destination cell on Car Logbook',         insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 11, description: 'Proxy fixes a CRM-pull miss (BDM stopped at lab/post office not in Visit log). Add staff if you want BDMs self-correcting.' } },
     { code: 'PROXY_PULL_CAPTURE',           label: 'Use Pending-Photos picker on ERP entry pages',             insert_only_metadata: true, metadata: { roles: ['admin', 'finance'], sort_order: 12, description: 'Drawer on /erp/expenses, /erp/sales/entry, /erp/collection, /erp/grn that shows BDM-captured pending photos and auto-attaches them to the form. Add designated proxy staff here.' } },
   ],
+
+  // ── Phase P1.2 Slice 4 (May 06 2026) — DriveAllocation cross-cycle backfill window ──
+  // The AllocationPanel surfaces unallocated workdays in BOTH the current
+  // C1/C2 reporting cycle AND the immediately-prior cycle, subject to this
+  // grace window measured in elapsed-workdays of the current cycle. Default
+  // 5 = ~1 work-week of catch-up so a BDM reconciling on May 6 still sees
+  // April 30 (= prior cycle C2 April). Beyond grace, prior-cycle backfill
+  // requires admin via OVERRIDE_ALLOCATION (Slice 9 — deferred).
+  //
+  // insert_only_metadata: true so admin tweaks survive future re-seeds —
+  // same posture as VISIT_PHOTO_VALIDATION_RULES + CLM_PERFORMANCE_THRESHOLDS.
+  DRIVE_ALLOCATION_CONFIG: [
+    { code: 'PRIOR_CYCLE_GRACE_WORKDAYS', label: 'Workdays of grace into a new cycle to still backfill the prior cycle', insert_only_metadata: true, metadata: { value: 5, sort_order: 1, description: 'Number of elapsed workdays into the current cycle during which BDMs can still backfill the immediately-prior cycle via the AllocationPanel. After this, prior-cycle backfill needs CAPTURE_LIFECYCLE_ROLES.OVERRIDE_ALLOCATION (admin/president).' } },
+  ],
 };
 
 // List all distinct categories for current entity
@@ -3615,6 +3635,7 @@ exports.create = catchAsync(async (req, res) => {
   if (SALES_DISCOUNT_CONFIG_CATEGORIES.has(cat)) invalidateSalesDiscountCache(req.entityId);
   if (ACTIVITY_PERDIEM_RULES_CATEGORIES.has(cat)) invalidateActivityPerdiemRuleCache(req.entityId);
   if (CAPTURE_LIFECYCLE_ROLES_CATEGORIES.has(cat)) invalidateCaptureLifecycleRolesCache(req.entityId);
+  if (DRIVE_ALLOCATION_CONFIG_CATEGORIES.has(cat)) invalidateDriveAllocGraceCache(req.entityId);
   res.status(201).json({ success: true, data: item });
 });
 
@@ -3652,6 +3673,7 @@ exports.update = catchAsync(async (req, res) => {
   if (SALES_DISCOUNT_CONFIG_CATEGORIES.has(item.category)) invalidateSalesDiscountCache(item.entity_id);
   if (ACTIVITY_PERDIEM_RULES_CATEGORIES.has(item.category)) invalidateActivityPerdiemRuleCache(item.entity_id);
   if (CAPTURE_LIFECYCLE_ROLES_CATEGORIES.has(item.category)) invalidateCaptureLifecycleRolesCache(item.entity_id);
+  if (DRIVE_ALLOCATION_CONFIG_CATEGORIES.has(item.category)) invalidateDriveAllocGraceCache(item.entity_id);
   res.json({ success: true, data: item });
 });
 
@@ -3681,6 +3703,7 @@ exports.remove = catchAsync(async (req, res) => {
   if (SALES_DISCOUNT_CONFIG_CATEGORIES.has(item.category)) invalidateSalesDiscountCache(item.entity_id);
   if (ACTIVITY_PERDIEM_RULES_CATEGORIES.has(item.category)) invalidateActivityPerdiemRuleCache(item.entity_id);
   if (CAPTURE_LIFECYCLE_ROLES_CATEGORIES.has(item.category)) invalidateCaptureLifecycleRolesCache(item.entity_id);
+  if (DRIVE_ALLOCATION_CONFIG_CATEGORIES.has(item.category)) invalidateDriveAllocGraceCache(item.entity_id);
   res.json({ success: true, data: item, message: 'Item deactivated' });
 });
 

@@ -10,7 +10,7 @@ import useCustomers from '../hooks/useCustomers';
 import useErpApi from '../hooks/useErpApi';
 import useReports from '../hooks/useReports';
 import useErpSubAccess from '../hooks/useErpSubAccess';
-import { processDocument, extractExifDateTime } from '../services/ocrService';
+import { processDocument, processDocumentFromCapture, extractExifDateTime } from '../services/ocrService';
 import WarehousePicker from '../components/WarehousePicker';
 import OwnerPicker from '../components/OwnerPicker';
 // Phase P1.2 Slice 7-extension (May 2026) — pull a BDM-captured SALES /
@@ -265,7 +265,7 @@ function formatReviewReason(reason) {
 }
 
 // --- ScanCSIModal inline component ---
-function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions, initialFile }) {
+function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions, initialFile, initialCaptureId, initialPreviewUrl }) {
   const [step, setStep] = useState('capture'); // capture | scanning | results | error
   const [, setPhoto] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -280,6 +280,10 @@ function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions, initi
   // down by PendingCapturesPicker, run OCR on it immediately. Guarded by a
   // ref so re-renders during scan don't re-trigger.
   const initialFileProcessedRef = useRef(null);
+  // Phase P1.2 Slice 7-extension Round 2B (May 2026) — same idea but for the
+  // capture-id handoff. We never see the File browser-side; the server pulls
+  // the photo from S3 and OCRs it. Closes the CORS lurking-bug from Round 1.
+  const initialCaptureProcessedRef = useRef(null);
 
   const reset = () => {
     if (preview) URL.revokeObjectURL(preview);
@@ -295,6 +299,33 @@ function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions, initi
 
   const handleClose = () => { reset(); onClose(); };
 
+  // Shared post-OCR result-matching — shared between file-upload and
+  // capture-pull flows so both produce the same downstream rows.
+  const applyOcrResult = (result) => {
+    setOcrData(result);
+    const hospitalText = fieldVal(result.extracted?.hospital);
+    const hMatch = matchHospital(hospitalText, hospitals);
+    setMatchedHospital(hMatch);
+    const items = result.extracted?.line_items || [];
+    const matched = items.map(item => {
+      const brand = fieldVal(item.brand_name);
+      const dosage = fieldVal(item.dosage);
+      const pMatch = matchProduct(brand, dosage, productOptions);
+      return {
+        ocr_brand: brand,
+        ocr_generic: fieldVal(item.generic_name),
+        ocr_dosage: dosage,
+        ocr_qty: fieldVal(item.qty),
+        ocr_unit_price: fieldVal(item.unit_price),
+        ocr_amount: fieldVal(item.amount),
+        ocr_batch: fieldVal(item.batch_lot_no),
+        product_match: pMatch
+      };
+    });
+    setMatchedItems(matched);
+    setStep('results');
+  };
+
   const handleFile = async (file) => {
     if (!file) return;
     setPhoto(file);
@@ -306,44 +337,44 @@ function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions, initi
     try {
       const exif = await extractExifDateTime(file);
       const result = await processDocument(file, 'CSI', exif);
-      setOcrData(result);
-
-      // Match hospital
-      const hospitalText = fieldVal(result.extracted?.hospital);
-      const hMatch = matchHospital(hospitalText, hospitals);
-      setMatchedHospital(hMatch);
-
-      // Match line items / products
-      const items = result.extracted?.line_items || [];
-      const matched = items.map(item => {
-        const brand = fieldVal(item.brand_name);
-        const dosage = fieldVal(item.dosage);
-        const pMatch = matchProduct(brand, dosage, productOptions);
-        return {
-          ocr_brand: brand,
-          ocr_generic: fieldVal(item.generic_name),
-          ocr_dosage: dosage,
-          ocr_qty: fieldVal(item.qty),
-          ocr_unit_price: fieldVal(item.unit_price),
-          ocr_amount: fieldVal(item.amount),
-          ocr_batch: fieldVal(item.batch_lot_no),
-          product_match: pMatch
-        };
-      });
-      setMatchedItems(matched);
-      setStep('results');
+      applyOcrResult(result);
     } catch (err) {
       setErrorMsg(err?.response?.data?.message || err.message || 'OCR processing failed');
       setStep('error');
     }
   };
 
-  // Phase P1.2 Slice 7-extension — auto-OCR the file handed in by
+  // Phase P1.2 Slice 7-extension Round 2B — capture-pull mode. The picker
+  // hands a CaptureSubmission._id (NOT a File). The backend downloads the
+  // S3 object server-side and runs OCR — sidesteps the CORS block on the
+  // private bucket. Preview comes from the picker's already-signed URL.
+  const handleCaptureScan = async (captureId, previewUrl) => {
+    if (!captureId) return;
+    if (previewUrl) setPreview(previewUrl);
+    setStep('scanning');
+    setErrorMsg('');
+    setReviewConfirmed(false);
+    try {
+      const result = await processDocumentFromCapture(captureId, 'CSI');
+      applyOcrResult(result);
+    } catch (err) {
+      setErrorMsg(err?.response?.data?.message || err.message || 'OCR processing failed');
+      setStep('error');
+    }
+  };
+
+  // Phase P1.2 Slice 7-extension — auto-OCR the file/capture handed in by
   // PendingCapturesPicker. Guarded so a transient state change during the
-  // scan doesn't re-trigger handleFile on the same File object.
+  // scan doesn't re-trigger on the same input.
   useEffect(() => {
     if (!open) {
       initialFileProcessedRef.current = null;
+      initialCaptureProcessedRef.current = null;
+      return;
+    }
+    if (initialCaptureId && initialCaptureProcessedRef.current !== initialCaptureId) {
+      initialCaptureProcessedRef.current = initialCaptureId;
+      handleCaptureScan(initialCaptureId, initialPreviewUrl);
       return;
     }
     if (initialFile && initialFileProcessedRef.current !== initialFile) {
@@ -351,7 +382,7 @@ function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions, initi
       handleFile(initialFile);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, initialFile]);
+  }, [open, initialFile, initialCaptureId, initialPreviewUrl]);
 
   const handleApply = () => {
     const extracted = ocrData?.extracted;
@@ -618,6 +649,11 @@ export default function SalesEntry() {
   // PendingCapturesPicker. Cleared on modal close so re-opening the modal
   // returns to the normal Take-Photo / Gallery capture step.
   const [scanInitialFile, setScanInitialFile] = useState(null);
+  // Phase P1.2 Slice 7-extension Round 2B — capture-id handoff. Set when the
+  // picker is in skipFetch mode and yields a CaptureSubmission._id; modal
+  // OCRs server-side via processDocumentFromCapture. Cleared on close.
+  const [scanInitialCaptureId, setScanInitialCaptureId] = useState(null);
+  const [scanInitialPreviewUrl, setScanInitialPreviewUrl] = useState(null);
   // Rejection-fallback flow: re-upload a CSI photo to a previously-rejected row
   // without re-keying line items. null = inactive; number = target row index;
   // 'NEW' = attach-photo-only to a fresh row (no OCR parsing, proof-only path).
@@ -1091,6 +1127,7 @@ export default function SalesEntry() {
                       workflowTypes={['SALES', 'UNCATEGORIZED']}
                       bdmId={assignedTo || undefined}
                       maxSelect={1}
+                      skipFetch
                       buttonLabel="From BDM Captures"
                       buttonStyle={{
                         padding: '8px 16px',
@@ -1105,10 +1142,15 @@ export default function SalesEntry() {
                         alignItems: 'center',
                         gap: 6,
                       }}
-                      onPick={(files) => {
-                        const file = files?.[0];
-                        if (!file) return;
-                        setScanInitialFile(file);
+                      onPick={(_files, meta) => {
+                        // Phase P1.2 Slice 7-extension Round 2B — capture-id
+                        // handoff. Server-side OCR sidesteps the CORS block.
+                        const cap = meta?.captures?.[0];
+                        if (!cap?._id) return;
+                        const previewUrl = cap.captured_artifacts?.[0]?.url || null;
+                        setScanInitialCaptureId(cap._id);
+                        setScanInitialPreviewUrl(previewUrl);
+                        setScanInitialFile(null);
                         setScanModalOpen(true);
                       }}
                     />
@@ -1690,11 +1732,18 @@ export default function SalesEntry() {
       {/* Scan CSI Modal — primary scan flow (full OCR + line-item matching) */}
       <ScanCSIModal
         open={scanModalOpen}
-        onClose={() => { setScanModalOpen(false); setScanInitialFile(null); }}
+        onClose={() => {
+          setScanModalOpen(false);
+          setScanInitialFile(null);
+          setScanInitialCaptureId(null);
+          setScanInitialPreviewUrl(null);
+        }}
         onApply={handleScanApply}
         hospitals={hospitals}
         productOptions={productOptions}
         initialFile={scanInitialFile}
+        initialCaptureId={scanInitialCaptureId}
+        initialPreviewUrl={scanInitialPreviewUrl}
       />
       {/* Photo-only modal — 'NEW' → toolbar "Upload CSI" creates a fresh row
           with photo attached (no OCR). Re-attaching the signed CSI to an

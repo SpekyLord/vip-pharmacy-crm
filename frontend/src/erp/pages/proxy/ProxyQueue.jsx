@@ -16,11 +16,25 @@ import {
   User, Filter, ChevronDown, ChevronUp, Eye,
   Play, ArrowLeft, CheckCircle2, XCircle,
   BarChart3, RefreshCw, Camera, Receipt, FileText,
-  Truck, Fuel, Wallet, MapPin,
+  Truck, Fuel, Wallet, MapPin, Edit3,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import useCaptureSubmissions from '../../hooks/useCaptureSubmissions';
 import WorkflowGuide from '../../components/WorkflowGuide';
+import { useAuth } from '../../../hooks/useAuth';
+import { ROLES } from '../../../constants/roles';
+
+// Phase P1.2 Slice 9 — frontend mirror of captureLifecycleAccess.js DEFAULTS.
+// Backend is the gate; this is cosmetic visibility only.
+const FRONTEND_DEFAULTS = {
+  MARK_PAPER_RECEIVED: [ROLES.ADMIN, ROLES.FINANCE, ROLES.PRESIDENT],
+  OVERRIDE_PHYSICAL_STATUS: [ROLES.PRESIDENT],
+};
+function userHasFrontendDefault(user, code) {
+  if (!user) return false;
+  if (user.role === ROLES.PRESIDENT) return true;
+  return (FRONTEND_DEFAULTS[code] || []).includes(user.role);
+}
 
 // ── Workflow icon map ──
 const WORKFLOW_ICONS = {
@@ -105,12 +119,83 @@ function StatsBanner({ stats }) {
   );
 }
 
+// ── Physical-status chip + override sheet (Slice 9) ──
+function PhysicalStatusChip({ item }) {
+  if (!item.physical_required) {
+    return <span className="text-xs px-2 py-1 rounded-full font-medium bg-gray-100 text-gray-500 border border-gray-200">Digital only</span>;
+  }
+  const status = item.physical_status || 'PENDING';
+  const cls =
+    status === 'RECEIVED' ? 'bg-green-50 text-green-700 border-green-200'
+    : status === 'MISSING' ? 'bg-red-50 text-red-700 border-red-200'
+    : 'bg-amber-50 text-amber-700 border-amber-200';
+  return (
+    <span className={`text-xs px-2 py-1 rounded-full font-medium border ${cls}`}>
+      Paper: {status}
+    </span>
+  );
+}
+
+function OverrideSheet({ item, onClose, onApply }) {
+  const [next, setNext] = useState(item.physical_status || 'PENDING');
+  const options = ['PENDING', 'RECEIVED', 'MISSING'];
+  return (
+    <div className="fixed inset-0 z-[60] bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4" data-testid="proxy-override-sheet">
+      <div className="bg-white w-full sm:max-w-sm sm:rounded-xl rounded-t-xl p-5">
+        <h3 className="font-semibold text-gray-900 mb-1">Override physical status</h3>
+        <p className="text-xs text-gray-500 mb-4">
+          President-only. Use when paper arrives late OR a previous attestation was a mistake.
+        </p>
+        <div className="space-y-2 mb-5">
+          {options.map(opt => (
+            <button
+              key={opt}
+              onClick={() => setNext(opt)}
+              className={`w-full text-left px-3 py-2 rounded-lg border ${
+                next === opt
+                  ? 'bg-indigo-50 border-indigo-300 text-indigo-700 font-medium'
+                  : 'bg-white border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={onClose}
+            className="flex-1 px-3 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onApply(next)}
+            disabled={next === item.physical_status}
+            className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-700 disabled:opacity-50"
+            data-testid="proxy-override-apply"
+          >
+            Apply
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Detail Drawer ──
-function DetailDrawer({ item, onClose, onPickup, onRelease, onComplete, loading }) {
+function DetailDrawer({ item, onClose, onPickup, onRelease, onComplete, onOverride, loading, canMarkPaper, canOverride }) {
+  // Phase P1.2 Slice 9 — paper_received toggle. Visible only when:
+  //   - the capture expects paper (physical_required=true)
+  //   - paper hasn't already been received
+  //   - the user has MARK_PAPER_RECEIVED
+  const [paperReceived, setPaperReceived] = useState(false);
+  const [showOverride, setShowOverride] = useState(false);
   if (!item) return null;
 
   const Icon = WORKFLOW_ICONS[item.workflow_type] || Camera;
   const color = WORKFLOW_COLORS[item.workflow_type] || '#64748b';
+  const showPaperToggle = canMarkPaper && item.physical_required && item.physical_status === 'PENDING';
+  const showOverrideButton = canOverride && item.physical_required;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4">
@@ -137,14 +222,30 @@ function DetailDrawer({ item, onClose, onPickup, onRelease, onComplete, loading 
         </div>
 
         <div className="p-4 space-y-4">
-          {/* Status + SLA */}
-          <div className="flex items-center gap-3">
+          {/* Status + SLA + paper status (Slice 9) */}
+          <div className="flex items-center gap-3 flex-wrap">
             <span className={`text-xs px-2 py-1 rounded-full font-medium border ${slaClass(item.age_hours)}`}>
               Age: {slaLabel(item.age_hours)}
             </span>
             <span className="text-xs px-2 py-1 rounded-full font-medium bg-gray-100 text-gray-600">
               {item.status.replace(/_/g, ' ')}
             </span>
+            <PhysicalStatusChip item={item} />
+            {showOverrideButton && (
+              <button
+                onClick={() => setShowOverride(true)}
+                className="text-xs text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1"
+                data-testid="proxy-override-open"
+              >
+                <Edit3 size={12} /> Override
+              </button>
+            )}
+            {item.physical_received_at && (
+              <span className="text-xs text-gray-500">
+                Received {new Date(item.physical_received_at).toLocaleDateString()}
+                {item.physical_received_by?.name ? ` by ${item.physical_received_by.name}` : ''}
+              </span>
+            )}
           </div>
 
           {/* BDM notes */}
@@ -241,27 +342,64 @@ function DetailDrawer({ item, onClose, onPickup, onRelease, onComplete, loading 
                   <ArrowLeft size={18} /> Release
                 </button>
                 <button
-                  onClick={() => onComplete(item._id)}
+                  onClick={() => onComplete(item._id, { paper_received: paperReceived })}
                   disabled={loading}
                   className="flex-1 py-3 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  <CheckCircle2 size={18} /> Mark Complete
+                  <CheckCircle2 size={18} /> Mark Complete{paperReceived ? ' + Paper' : ''}
                 </button>
               </>
             )}
           </div>
+
+          {/* Paper-received attestation (Slice 9) — sits between actions and
+              the existing button row so the proxy decides BEFORE clicking
+              Mark Complete. Hidden on digital-only or already-received. */}
+          {item.status === 'IN_PROGRESS' && showPaperToggle && (
+            <label className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg cursor-pointer">
+              <input
+                type="checkbox"
+                checked={paperReceived}
+                onChange={(e) => setPaperReceived(e.target.checked)}
+                className="mt-0.5"
+                data-testid="proxy-paper-received-checkbox"
+              />
+              <div className="text-sm">
+                <div className="font-medium text-amber-900">Paper received now</div>
+                <div className="text-xs text-amber-700">
+                  Tick this if the physical receipt/CSI is on your desk while
+                  you process this entry. It atomically flips Paper status to
+                  RECEIVED so it doesn&apos;t need a separate trip to the archive.
+                </div>
+              </div>
+            </label>
+          )}
         </div>
       </div>
+
+      {showOverride && (
+        <OverrideSheet
+          item={item}
+          onClose={() => setShowOverride(false)}
+          onApply={async (next) => {
+            await onOverride(item._id, next);
+            setShowOverride(false);
+          }}
+        />
+      )}
     </div>
   );
 }
 
 // ── Main Component ──
 export default function ProxyQueue() {
+  const { user } = useAuth();
   const {
     getProxyQueue, getQueueStats, pickupCapture, releaseCapture,
-    completeCapture, getCaptureById, loading,
+    completeCapture, getCaptureById, overridePhysicalStatus, loading,
   } = useCaptureSubmissions();
+  const canMarkPaper = userHasFrontendDefault(user, 'MARK_PAPER_RECEIVED');
+  const canOverride = userHasFrontendDefault(user, 'OVERRIDE_PHYSICAL_STATUS');
 
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
@@ -327,10 +465,18 @@ export default function ProxyQueue() {
     }
   }, [releaseCapture, loadQueue]);
 
-  const handleComplete = useCallback(async (id) => {
+  const handleComplete = useCallback(async (id, opts = {}) => {
     try {
-      await completeCapture(id, {});
-      toast.success('Marked as complete — BDM will be notified for review');
+      // Phase P1.2 Slice 9 — forward the paper_received flag from the drawer.
+      // Backend gates on MARK_PAPER_RECEIVED + physical_required; an unauth'd
+      // attempt 403s and the BDM never sees a partial state (status-flip is
+      // pre-saved with paper-flip).
+      await completeCapture(id, opts);
+      toast.success(
+        opts.paper_received
+          ? 'Marked complete + paper received attested'
+          : 'Marked as complete — BDM will be notified for review'
+      );
       setSelectedItem(null);
       loadQueue();
       loadStats();
@@ -338,6 +484,19 @@ export default function ProxyQueue() {
       toast.error(err?.response?.data?.message || 'Failed to complete');
     }
   }, [completeCapture, loadQueue, loadStats]);
+
+  const handleOverride = useCallback(async (id, physical_status) => {
+    try {
+      const res = await overridePhysicalStatus(id, physical_status);
+      toast.success(`Override applied — physical_status = ${physical_status}`);
+      // Refresh the open drawer with the new physical_* fields so the chip
+      // updates without forcing a full row refetch.
+      setSelectedItem(prev => (prev && res?.data ? { ...prev, ...res.data } : prev));
+      loadQueue();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Override failed');
+    }
+  }, [overridePhysicalStatus, loadQueue]);
 
   const handleRowClick = useCallback(async (item) => {
     try {
@@ -504,7 +663,10 @@ export default function ProxyQueue() {
           onPickup={handlePickup}
           onRelease={handleRelease}
           onComplete={handleComplete}
+          onOverride={handleOverride}
           loading={loading}
+          canMarkPaper={canMarkPaper}
+          canOverride={canOverride}
         />
       )}
     </div>
