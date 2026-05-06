@@ -78,6 +78,81 @@
 
 ---
 
+## PHASE J4.1 — Expense ATC Dropdown UI ✅ SHIPPED + API-RATIFIED (May 6, 2026)
+
+**Status:** Bundled into commit `5e9bfac` alongside Phase A.4 + J2.2 work. Closes deferred-index entry **D.1** (`J2.1.x — Expense ATC dropdown UI`). Healthcheck `33/33 PASS`. Vite green. Live API smoke as Mae Navarro on dev cluster validated POST/GET/null-default/cleanup end-to-end.
+
+> **Naming caveat:** there are two unrelated "J4.1" references in this codebase. THIS is the **Expense ATC Dropdown UI follow-up** (originally indexed as J2.1.x because J2 introduced `atc_code`). The earlier `J4.1` mentioned at line 11047 of this file is the **Phase VIP-1.J / J4 Phase 1 service-layer aggregators** (1604-E + QAP withholding return service). Different scope, same numbering coincidence.
+
+**Goal:** Close the gap that Phase J2 left when it shipped the engine without an entry-side UI. The engine reads `line.atc_code` at expense POST and emits a `WithholdingLedger` row, but `Expenses.jsx` did not let proxies/BDMs tag a line during data entry — `atc_code` could only be set via direct DB write, batch upload, or `Vendor.default_atc_code` resolution.
+
+### What shipped
+
+**Frontend** ([frontend/src/erp/pages/Expenses.jsx](frontend/src/erp/pages/Expenses.jsx)):
+- New `useLookupOptions('BIR_ATC_CODES')` hook + `expenseAtcOpts` filter excluding `applies_to === 'HOSPITAL'` (inbound 2307) and `applies_to.startsWith('EMPLOYEE')` (compensation 1601-C, payslip-only). Leaves the 8 outbound expense-eligible codes: `WI010`/`WI011`/`WC010`/`WC011` (professional fees), `WI160`/`WC160` (rent), `WI080`/`WI081` (TWA-agent purchases).
+- `addLine()` initializes `atc_code: null` — null = non-EWT line, engine short-circuits with `reason: 'NO_ATC'`.
+- `<SelectField>` rendered inline in the form row after `payment_mode`, with `value={line.atc_code || ''}` and `onChange` that maps empty-string → `null` so the schema default contract is preserved.
+- Tooltip on the `<SelectField>` explains: *"BIR ATC — EWT withholding code. Set on rent / professional fees / TWA-agent purchases; leave blank for non-EWT expenses. Engine emits a WithholdingLedger row at POST when set."*
+
+**Backend** — zero code change required. The existing controller path was shape-compatible:
+- `createExpense` ([expenseController.js:2284](../backend/erp/controllers/expenseController.js#L2284)) spreads `...safeBody` into `ExpenseEntry.create({...})`. `req.body.lines[]` flows through to `expenseEntrySchema.lines: [expenseLineSchema]`; Mongoose persists `atc_code` per the existing schema field.
+- `autoClassifyLines` ([expenseController.js:2205](../backend/erp/controllers/expenseController.js#L2205)) only mutates `coa_code`/`expense_category`/`vendor_id` — never `atc_code`.
+- `emitWithholdingForExpense` short-circuits with `reason: 'NO_ATC'` when `!doc.atc_code` — null lines never trigger withholding emit. J2 behavior preserved.
+
+**Banner** ([WorkflowGuide.jsx](../frontend/src/erp/components/WorkflowGuide.jsx) `'expenses'` workflow, Rule #1) — new step added between "Select category" and "Attach receipt photo" describing the dropdown + the HOSPITAL/EMPLOYEE_\* exclusion rationale.
+
+**Healthcheck** ([backend/scripts/healthcheckPhaseJ41AtcDropdown.js](../backend/scripts/healthcheckPhaseJ41AtcDropdown.js)) — **33 assertions PASS**. Covers:
+1. Frontend wiring (12 asserts): hook import, BIR_ATC_CODES call, exclusion regex × 2, `expenseAtcOpts` defined, `addLine` atc_code:null, SelectField bound to line.atc_code, onChange null-coercion, placeholder option, options iteration, tooltip.
+2. Backend model (4 asserts): `expenseLineSchema.atc_code` field + trim + uppercase + null default.
+3. Controller flow (4 asserts): `...safeBody` spread, `autoClassifyLines` no-mutate, engine reads `doc.atc_code`, `NO_ATC` short-circuit guard.
+4. Lookup seed (6 asserts): BIR_ATC_CODES exists, kept-codes (WI010/WI160/WI080) with correct applies_to, excluded-codes (WC158/WI100) with correct applies_to, `insert_only_metadata: true`.
+5. Banner (3 asserts): mentions ATC, mentions EWT-eligible categories, mentions HOSPITAL/EMPLOYEE filter.
+6. Hook contract (2 asserts): returns metadata, caches per (entityId:category).
+7. Engine alignment (1 assert): withholdingService reads `metadata.applies_to`.
+
+### Subscription readiness (Rules #3 + #19)
+
+- **Lookup-driven**: `BIR_ATC_CODES` is a `Lookup` category seeded with `insert_only_metadata: true` in [lookupGenericController.js](../backend/erp/controllers/lookupGenericController.js#L3265). Subscriber edits to label/rate/description survive future re-seeds.
+- **Future-proof by exclusion**: subscribers add new outbound EWT codes via Control Center → Lookup Tables; as long as `metadata.applies_to` is not `'HOSPITAL'` and does not start with `'EMPLOYEE'`, they appear in the dropdown automatically — no code deploy.
+- **Conversely**: any new code tagged `applies_to: 'EMPLOYEE_*'` (e.g. a future compensation withholding variant) is correctly hidden from the expense-line UI even post-migration.
+- **No new role gate, no new lookup category**. Reuses the existing J2 contract end-to-end.
+
+### Verification evidence
+
+- **Healthcheck:** 33/33 PASS (full-contract verifier). Output:
+```
+Phase J4.1 — Expense ATC Dropdown UI healthcheck
+─────────────────────────────────────────────────
+.................................
+
+✓ All Phase J4.1 healthcheck assertions passed (33/33)
+```
+- **Sibling regressions:** J2 EWT 124/124 PASS, A.4 AR/AP recon 78/78 PASS, J2.2 PS auto-flip 81/81 PASS. No regression in any neighboring phase.
+- **Vite build:** ✓ 22.00s post-merge (parallel A.4 + J2.2 + J4.1 all coexist cleanly).
+- **Live API smoke** (dev cluster, BDM session as Mae Navarro):
+  - **POST positive** — body includes `atc_code: 'WI160'` (rent indiv landlord) → 201 with `lines[0].atc_code: "WI160"` persisted on subdoc. `withholding_payee_kind` + `withholding_payee_id` both null (correct: frozen-at-POST contract, doc is DRAFT).
+  - **GET round-trip** — `atc_code: "WI160"` returned intact, no schema drift.
+  - **POST negative** — body omits `atc_code` → response shows `atc_code: null` (schema default works, engine will short-circuit `NO_ATC` at POST time).
+  - **Cleanup** — both DRAFT rows hard-deleted via `DELETE /api/erp/expenses/ore-access/:id` → 200.
+- **Playwright UI smoke:** deferred. Browser MCP was locked by parallel session (confirmed by `ar-aging-snapshot.yml` artifact at repo root). Healthcheck regex (proves `<SelectField>` is bound to `line.atc_code`) + vite green (proves the JSX compiles) + API smoke (proves end-to-end persistence) substantively cover the rendering + binding + flow contract. Recommended ~5-min manual UI walk as a follow-up.
+
+### Files modified (3 + 2 docs)
+
+- [frontend/src/erp/pages/Expenses.jsx](../frontend/src/erp/pages/Expenses.jsx) — +13 lines (hook + filter + addLine init + SelectField).
+- [frontend/src/erp/components/WorkflowGuide.jsx](../frontend/src/erp/components/WorkflowGuide.jsx) — +1 line (ATC step in `'expenses'` workflow).
+- [backend/scripts/healthcheckPhaseJ41AtcDropdown.js](../backend/scripts/healthcheckPhaseJ41AtcDropdown.js) (NEW) — 189 lines / 33 asserts.
+- [CLAUDE-ERP.md](../CLAUDE-ERP.md) — Phase J4.1 section.
+- This file (PHASETASK-ERP.md) — this section.
+
+### Out of scope (deferred)
+
+- Mongoose schema enum constraint on `atc_code` (currently free-form String; lookup-driven trust). Adds ~10 ms per save to validate against `BIR_ATC_CODES` Lookup. Defer until a subscriber requests it or a bad-code engine error surfaces.
+- Per-line withholding preview ("This line will withhold ₱X at POST"). User did not request; engine surfaces the actual amount in the WithholdingLedger row at POST.
+- Auto-suggest ATC based on `expense_category` (e.g. "Rent" → suggest WI160). Possible Phase J4.2 if user wants it; current UX has the dropdown empty by default which is the safer/more deliberate posture.
+- Live UI Playwright walk (deferred per parallel-session browser lock — see Verification section above).
+
+---
+
 ## PHASE P1.2 PHASE 1 — Capture-type cleanup + Option D BIR audit gate ✅ SHIPPED (May 6, 2026)
 
 **Goal:** Three coupled changes that close an audit-credibility gap exposed by Round 2C and clean up two unused enum slots:

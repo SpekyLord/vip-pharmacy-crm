@@ -65,13 +65,36 @@ async function recomputeOutstandingForSale(salesLineId, opts = {}) {
 
   const sl = await SalesLine.findById(salesLineId)
     .session(session || null)
-    .select('_id invoice_total status petty_cash_fund_id payment_mode outstanding_amount paid_amount sale_type')
+    .select('_id invoice_total status petty_cash_fund_id payment_mode outstanding_amount paid_amount sale_type deletion_event_id')
     .lean();
 
   if (!sl) return { _id: salesLineId, skipped: 'NOT_FOUND' };
   if (sl.status !== 'POSTED' && sl.status !== 'DELETION_REQUESTED') {
     // DRAFT/VALID/ERROR — outstanding has no meaning yet.
     return { _id: salesLineId, skipped: 'NOT_POSTED' };
+  }
+  // Phase 28 SAP Storno reversal — the original SalesLine stays POSTED for
+  // audit trail but is paired with a `is_reversal: true` JournalEntry that
+  // credits AR_TRADE back to zero. From the AR sub-ledger's point of view,
+  // the row is effectively closed — Σ outstanding must NOT include these
+  // rows or the sweep will alarm against a balanced GL forever.
+  // Detection: `deletion_event_id` set + a SALES_LINE_REVERSAL TransactionEvent
+  // points at this row. journalEngine.reverseJournal stamps both fields atomically.
+  if (sl.deletion_event_id) {
+    if (sl.outstanding_amount !== 0 || sl.paid_amount !== sl.invoice_total) {
+      await SalesLine.updateOne(
+        { _id: sl._id },
+        { $set: { outstanding_amount: 0, paid_amount: sl.invoice_total, last_payment_at: null } },
+        { session: session || undefined },
+      );
+    }
+    return {
+      _id: sl._id,
+      outstanding_amount: 0,
+      paid_amount: sl.invoice_total,
+      last_payment_at: null,
+      skipped: 'REVERSED',
+    };
   }
   if (isCashRoute(sl)) {
     // Direct-cash sale — never had AR_TRADE exposure. Clamp to 0 if drift.
@@ -172,10 +195,23 @@ async function recomputeOutstandingForSupplierInvoice(siId, opts = {}) {
 
   const si = await SupplierInvoice.findById(siId)
     .session(session || null)
-    .select('_id total_amount amount_paid outstanding_amount status')
+    .select('_id total_amount amount_paid outstanding_amount status deletion_event_id')
     .lean();
   if (!si) return { _id: siId, skipped: 'NOT_FOUND' };
   if (si.status !== 'POSTED') return { _id: siId, skipped: 'NOT_POSTED' };
+  // Phase 28 SAP Storno reversal — see SalesLine note in
+  // recomputeOutstandingForSale. SupplierInvoice carries the same
+  // deletion_event_id contract.
+  if (si.deletion_event_id) {
+    if (si.outstanding_amount !== 0) {
+      await SupplierInvoice.updateOne(
+        { _id: si._id },
+        { $set: { outstanding_amount: 0 } },
+        { session: session || undefined },
+      );
+    }
+    return { _id: si._id, outstanding_amount: 0, amount_paid: si.amount_paid || 0, skipped: 'REVERSED' };
+  }
 
   const outstanding = Math.round(
     (Number(si.total_amount || 0) - Number(si.amount_paid || 0)) * 100,
