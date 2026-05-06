@@ -102,6 +102,25 @@ function buildNotificationBody(scan) {
       lines.push(`  [${f.ledger} ${f.scope}] ⚠ sub-ledger ${fmtPeso(f.sub_ledger_total)} ≠ GL ${fmtPeso(f.gl_net)} (diff ${fmtPeso(f.diff)}, COA ${f.coa_code})`);
     }
 
+    // Phase A.4 — AR/AP STRICT recon
+    const arApBad = (ent.arApSubLedger || []).filter((f) => !f.ok);
+    for (const f of arApBad.slice(0, MAX_ROWS_PER_BLOCK_IN_BODY)) {
+      if (lines.length > MAX_BODY_LINES) break;
+      lines.push(`  [${f.ledger} ${f.scope}] ⚠ sub-ledger ${fmtPeso(f.sub_ledger_total)} (${f.rows} rows) ≠ GL ${fmtPeso(f.gl_net)} (diff ${fmtPeso(f.diff)}, COA ${f.coa_code})`);
+    }
+
+    // Phase A.4 — JE-FAILED rows (POSTED docs with missing GL entry)
+    const jeFailed = ent.jeStatusFailed || [];
+    for (const f of jeFailed.slice(0, MAX_ROWS_PER_BLOCK_IN_BODY)) {
+      if (lines.length > MAX_BODY_LINES) break;
+      const date = f.date ? new Date(f.date).toISOString().slice(0, 10) : '????-??-??';
+      const reason = (f.je_failure_reason || '').slice(0, 80);
+      lines.push(`  [JE-FAILED] ⚠ ${f.kind} ${f.doc_ref} (${date}, ${f.je_attempts}× attempts) — ${reason}`);
+    }
+    if (jeFailed.length > MAX_ROWS_PER_BLOCK_IN_BODY) {
+      lines.push(`  [JE-FAILED] … (+${jeFailed.length - MAX_ROWS_PER_BLOCK_IN_BODY} more rows hidden)`);
+    }
+
     // Period close
     const pcBad = (ent.periodClose || []).filter((f) => !f.ok);
     for (const f of pcBad) {
@@ -140,6 +159,8 @@ function buildNotificationBody(scan) {
 
   lines.push('Repair path:');
   lines.push('  • TB unbalanced — search ErpAuditLog for direct-DB writes; recompute via JE.save().');
+  lines.push('  • AR/AP drift — run `node erp/scripts/migrateSubLedgerOutstanding.js --apply` to refresh outstanding_amount.');
+  lines.push('  • JE-FAILED rows — hit "Retry JE" on the source list page (admin/finance/president); or void+re-post the source doc.');
   lines.push('  • JE-math drift — open the JE in /erp/journal, re-save (pre-save validator recomputes totals).');
   lines.push('  • IC over-settled — void the excess IcSettlement, re-issue with correct settled_transfers.');
   lines.push('  • Period-close drafts — post (or void) every draft listed before flipping the PeriodLock.');
@@ -170,6 +191,17 @@ function buildKeyFindings(scan) {
   const jeBad = (scan.entities || []).flatMap((e) => e.jeMath || []);
   if (jeBad.length) {
     findings.push(`${jeBad.length} JE row(s) with debit ≠ credit`);
+  }
+
+  // Phase A.4 — AR/AP recon summary
+  const arApBad = (scan.entities || []).flatMap((e) => (e.arApSubLedger || []).filter((f) => !f.ok));
+  if (arApBad.length) {
+    findings.push(`${arApBad.length} AR/AP sub-ledger drift(s)`);
+  }
+  // Phase A.4 — JE-FAILED rows summary
+  const jeFailedAll = (scan.entities || []).flatMap((e) => e.jeStatusFailed || []);
+  if (jeFailedAll.length) {
+    findings.push(`${jeFailedAll.length} POSTED row(s) with je_status='FAILED'`);
   }
 
   // Period close

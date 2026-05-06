@@ -105,6 +105,12 @@ router.use('/tasks', require('./taskRoutes'));
 // ═══ Phase 28 — Approval Workflow (Authority Matrix) ═══
 router.use('/approvals', require('./approvalRoutes'));
 
+// ═══ Phase A.4 — AR/AP Sub-Ledger Recon + JE-Asymmetry Repair ═══
+// Admin-only Retry-JE + Recompute-AR endpoints. Role-gated via JE_RETRY_ROLES
+// lookup (defaults admin/finance/president). Both endpoints are idempotent —
+// safe to fire from a retry button.
+router.use('/integrity', require('./integrityRoutes'));
+
 // ═══ Phase G6.10 — AI Cowork (Claude-powered approval/rejection assist) ═══
 // Lookup-driven: AI_COWORK_FEATURES rows control prompts, models, role gates,
 // rate limits per-entity. Subscription opt-in (rows seeded as is_active: false).

@@ -36,6 +36,10 @@ const emailLogSchema = new mongoose.Schema({
       'ERP_APPROVAL_REQUEST',
       'ERP_APPROVAL_DECISION',
       'ERP_PAYROLL_POSTED',
+      // Phase VIP-1.J / J2.2 (May 2026) — PS-eligibility auto-flip alert.
+      // Emitted by backend/erp/services/psAutoFlipService.js whenever
+      // evaluateEligibility(...) flips eligible=true the FIRST time for a BDM.
+      'ERP_PS_ELIGIBILITY_FLIP',
     ],
     required: true,
     index: true,

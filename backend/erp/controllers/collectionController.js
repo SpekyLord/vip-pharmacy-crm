@@ -28,6 +28,17 @@ const Settings = require('../models/Settings');
 const PettyCashFund = require('../models/PettyCashFund');
 const PettyCashTransaction = require('../models/PettyCashTransaction');
 const { resolveOwnerForWrite, widenFilterForProxy, canProxyEntry } = require('../utils/resolveOwnerScope');
+// Phase A.4 — AR sub-ledger maintenance. recomputeOutstandingForCollection
+// re-aggregates Σ POSTED Collection.settled_csis per affected SalesLine and
+// updates outstanding_amount + paid_amount + last_payment_at atomically. Must
+// fire on every Collection lifecycle event (POST / REOPEN / president-reverse)
+// or AR aging drifts silently. Non-fatal — failures log but don't roll back
+// the lifecycle change.
+const arAgingService = require('../services/arAgingService');
+// Phase A.4 — JE-status tracker. Stamps je_status='POSTED' or 'FAILED' on the
+// Collection row depending on the auto-journal outcome. Period-close gate
+// + Retry-JE admin button consume this flag.
+const { markJePosted, markJeFailed } = require('../services/jeStatusTracker');
 
 // ═══ CRUD ═══
 
@@ -567,12 +578,14 @@ const submitCollections = catchAsync(async (req, res) => {
 
     // Phase 11: Auto-journal + VAT/CWT ledger + commission (non-blocking)
     for (const row of validRows) {
+      let jePostedSuccessfully = false; // Phase A.4 — drives the je_status stamp
       try {
         // Collection JE
         const funding = await resolveFundingCoa(row);
         const jeData = await journalFromCollection(row, funding.coa_code, funding.coa_name, req.user._id);
         jeData.source_event_id = row.event_id;
         await createAndPostJournal(row.entity_id, jeData);
+        jePostedSuccessfully = true; // primary CR JE landed; ancillary VAT/CWT/comm follow
 
         // CWT journal if applicable
         if (row.cwt_amount > 0) {
@@ -660,6 +673,52 @@ const submitCollections = catchAsync(async (req, res) => {
         await ErpAuditLog.logChange({ entity_id: row.entity_id, log_type: 'LEDGER_ERROR', target_ref: row.cr_no || row._id?.toString(), target_model: 'JournalEntry', field_changed: 'auto_journal', old_value: '', new_value: jeErr.message, changed_by: req.user._id, note: `Auto-journal failed for collection ${row.cr_no}` }).catch(() => {});
         if (!warnings) warnings = [];
         warnings.push(`Journal failed for ${row.cr_no}: ${jeErr.message}`);
+      }
+
+      // Phase A.4 — stamp je_status on the Collection row. POSTED if the
+      // primary JE landed (ancillary VAT/CWT/commission entries log warnings
+      // but don't flip the status to FAILED — the GL has the principal entry).
+      // FAILED if the primary JE threw — admin sees the yellow badge on the
+      // list page and uses the Retry button.
+      try {
+        if (jePostedSuccessfully) {
+          await markJePosted('COLLECTION', row._id);
+        } else {
+          await markJeFailed('COLLECTION', row._id, 'auto-journal threw — see ErpAuditLog');
+        }
+      } catch (stampErr) {
+        console.error('je_status stamp failed for collection:', row.cr_no, stampErr.message);
+      }
+
+      // Phase A.4 — AR sub-ledger recompute. After this CR is POSTED, every
+      // settled SalesLine's outstanding_amount must shrink by its
+      // settled_csis.invoice_amount. Failure here is logged but never rolls
+      // back the Collection POST — the row+JE are the source of truth; AR
+      // aging is a denormalized cache that the integrity sweep can re-check.
+      try {
+        const recomputed = await arAgingService.recomputeOutstandingForCollection(row);
+        const overCollected = recomputed.filter((r) => r.over_collected > 0);
+        if (overCollected.length) {
+          if (!warnings) warnings = [];
+          warnings.push(
+            `Over-collection detected for CR ${row.cr_no} on ${overCollected.length} CSI(s) — admin should review`,
+          );
+          await ErpAuditLog.logChange({
+            entity_id: row.entity_id,
+            log_type: 'LEDGER_ERROR',
+            target_ref: row.cr_no || row._id?.toString(),
+            target_model: 'SalesLine',
+            field_changed: 'outstanding_amount',
+            old_value: '',
+            new_value: JSON.stringify(overCollected.map((o) => ({ sl: String(o._id), over: o.over_collected }))),
+            changed_by: req.user._id,
+            note: `Over-collection on CR ${row.cr_no}`,
+          }).catch(() => {});
+        }
+      } catch (recomputeErr) {
+        console.error('AR recompute failed for collection:', row.cr_no || row._id, recomputeErr.message);
+        if (!warnings) warnings = [];
+        warnings.push(`AR recompute failed for ${row.cr_no}: ${recomputeErr.message}`);
       }
     }
 
@@ -798,6 +857,18 @@ const reopenCollections = catchAsync(async (req, res) => {
         target_model: 'Collection', changed_by: req.user._id,
         note: `CR ${row.cr_no} reopened`
       });
+
+      // Phase A.4 — AR sub-ledger recompute on reopen. The CR is now DRAFT
+      // (status flipped above inside the txn) so the recompute aggregation
+      // (which filters status='POSTED') excludes its settled_csis. Effect:
+      // outstanding_amount on each affected SalesLine grows back by exactly
+      // the amount this CR previously closed. Fires AFTER the txn commits so
+      // the recompute reads the new DRAFT state.
+      try {
+        await arAgingService.recomputeOutstandingForCollection(row);
+      } catch (recomputeErr) {
+        console.error('AR recompute failed for reopen:', row.cr_no, recomputeErr.message);
+      }
     } catch (txErr) {
       console.error('Reopen transaction failed for collection:', row.cr_no, txErr.message);
       failed.push({ _id: row._id, cr_no: row.cr_no, error: `Transaction failed: ${txErr.message}` });
@@ -905,6 +976,13 @@ const presidentReverseCollection = catchAsync(async (req, res) => {
   // within the entity. accounting.reverse_posted sub-perm still gates the route.
   const scope = await widenFilterForProxy(req, 'collections', { subKey: 'proxy_entry' });
   try {
+    // Capture the original Collection BEFORE reversal so we know which
+    // SalesLines to recompute (the reversal may flip status or hard-delete).
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- _id from req.params; scope passed to service for auth gate
+    const originalCollection = await Collection.findById(req.params.id)
+      .select('_id settled_csis')
+      .lean();
+
     const result = await presidentReverse({
       doc_type: 'COLLECTION',
       doc_id: req.params.id,
@@ -912,6 +990,18 @@ const presidentReverseCollection = catchAsync(async (req, res) => {
       user: req.user,
       tenantFilter: scope,
     });
+
+    // Phase A.4 — recompute AR after reversal. Either path (HARD_DELETE or
+    // STORNO) takes the original CR out of the POSTED-aggregate, so the
+    // settled SalesLines grow back to their pre-CR outstanding values.
+    if (originalCollection?.settled_csis?.length) {
+      try {
+        await arAgingService.recomputeOutstandingForCollection(originalCollection);
+      } catch (recomputeErr) {
+        console.error('AR recompute failed for president-reverse:', req.params.id, recomputeErr.message);
+      }
+    }
+
     res.json({
       success: true,
       message: result.mode === 'HARD_DELETE'
@@ -1025,11 +1115,13 @@ const postSingleCollection = async (doc, userId) => {
   ).catch(() => {});
 
   // Auto-journal (non-blocking)
+  let approvalHubJePosted = false; // Phase A.4
   try {
     const funding = await resolveFundingCoa(doc);
     const jeData = await journalFromCollection(doc, funding.coa_code, funding.coa_name, userId);
     jeData.source_event_id = doc.event_id;
     await createAndPostJournal(doc.entity_id, jeData);
+    approvalHubJePosted = true;
 
     // CWT journal
     if (doc.cwt_amount > 0) {
@@ -1086,6 +1178,26 @@ const postSingleCollection = async (doc, userId) => {
     }
   } catch (jeErr) {
     console.error('Auto-journal failed for collection (approval hub):', doc.cr_no || doc._id, jeErr.message);
+  }
+
+  // Phase A.4 — stamp je_status on the approval-hub path. Same posture as
+  // submitCollections: POSTED if primary JE landed, FAILED otherwise.
+  try {
+    if (approvalHubJePosted) {
+      await markJePosted('COLLECTION', doc._id);
+    } else {
+      await markJeFailed('COLLECTION', doc._id, 'auto-journal threw on approval-hub path');
+    }
+  } catch (stampErr) {
+    console.error('je_status stamp failed (approval hub):', doc.cr_no, stampErr.message);
+  }
+
+  // Phase A.4 — AR sub-ledger recompute on the approval-hub POST path. Same
+  // semantics as submitCollections: log on failure, never roll back the post.
+  try {
+    await arAgingService.recomputeOutstandingForCollection(doc);
+  } catch (recomputeErr) {
+    console.error('AR recompute failed for collection (approval hub):', doc.cr_no || doc._id, recomputeErr.message);
   }
 };
 

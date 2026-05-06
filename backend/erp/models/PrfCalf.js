@@ -133,6 +133,19 @@ const prfCalfSchema = new mongoose.Schema({
   rejection_reason: { type: String },
   event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
 
+  // Phase A.4 — JE-asymmetry capture. See SalesLine.je_status comment for
+  // rationale. PRF posts route through journalFromExpense; CALF advances
+  // route through journalFromExpense with credit_to=AR_BDM (employee advance).
+  // Period-close blocks if any FAILED rows are in scope.
+  je_status: {
+    type: String,
+    enum: ['PENDING', 'POSTED', 'FAILED', null],
+    default: null,
+  },
+  je_failure_reason: { type: String, default: null },
+  je_attempts: { type: Number, default: 0 },
+  last_je_attempt_at: { type: Date, default: null },
+
   // SAP Storno reversal — set when PRF/CALF is reversed; original stays POSTED for audit trail
   deletion_event_id: { type: mongoose.Schema.Types.ObjectId, ref: 'TransactionEvent' },
 
@@ -197,6 +210,12 @@ prfCalfSchema.index({ entity_id: 1, bdm_id: 1, doc_type: 1, period: 1 });
 prfCalfSchema.index({ entity_id: 1, bdm_id: 1, status: 1 });
 prfCalfSchema.index({ doc_type: 1, status: 1 });
 prfCalfSchema.index({ linked_collection_id: 1 });
+// Phase A.4 — list-page badge filter for FAILED JE rows. Sparse so legacy rows
+// with je_status=null don't bloat the index.
+prfCalfSchema.index(
+  { entity_id: 1, je_status: 1, status: 1 },
+  { sparse: true, name: 'je_status_failed' }
+);
 // Phase VIP-1.B — autoPrfRouting idempotency lookup (sparse so it doesn't bloat
 // for non-auto-generated PRFs/CALFs created via the BDM UI).
 prfCalfSchema.index(

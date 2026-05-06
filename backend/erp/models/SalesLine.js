@@ -145,6 +145,35 @@ const salesLineSchema = new mongoose.Schema({
   // Sales (VAT Inclusive) → Less: Discount → Net" without recomputing.
   total_gross_before_discount: { type: Number, default: 0 },
 
+  // Phase A.4 — AR sub-ledger materialized fields.
+  // outstanding_amount = invoice_total − Σ Collection.settled_csis hits − Σ CWT
+  // applied to this CSI (CWT closes AR via journalFromCWT). Maintained by
+  // services/arAgingService.recomputeOutstandingForSale() on Collection POST/
+  // void/reopen — never set client-side. AR aging report reads this directly
+  // (O(1) instead of joining Collection per row).
+  // Initial value: invoice_total at the time the SalesLine first POSTs.
+  // Migration: backend/erp/scripts/migrateSalesLineOutstanding.js backfills
+  // all existing POSTED rows.
+  outstanding_amount: { type: Number, default: null },
+  paid_amount: { type: Number, default: 0 },
+  last_payment_at: { type: Date, default: null },
+
+  // Phase A.4 — JE-asymmetry capture. Tracks whether the autoJournal write
+  // succeeded when this row POSTed. POSTED docs with je_status='FAILED' are
+  // the precise class the orphan-ledger audit was built to catch — but with
+  // this field, the orphan agent's job is reduced from "scan everything" to
+  // "list FAILED rows." Period-close blocks if any FAILED rows are in scope.
+  // Backwards-compat: legacy rows ship with je_status=null and are treated
+  // as POSTED-with-JE by the integrity sweep (verified via JournalEntry sweep).
+  je_status: {
+    type: String,
+    enum: ['PENDING', 'POSTED', 'FAILED', null],
+    default: null,
+  },
+  je_failure_reason: { type: String, default: null },
+  je_attempts: { type: Number, default: 0 },
+  last_je_attempt_at: { type: Date, default: null },
+
   status: {
     type: String,
     enum: ['DRAFT', 'VALID', 'ERROR', 'POSTED', 'DELETION_REQUESTED'],
@@ -282,6 +311,15 @@ salesLineSchema.pre('save', async function () {
   this.total_net_of_vat = Math.round(totalNetOfVat * 100) / 100;
   this.total_discount = Math.round(totalDiscount * 100) / 100;
   this.total_gross_before_discount = Math.round(totalGrossBeforeDiscount * 100) / 100;
+
+  // Phase A.4 — initialize outstanding_amount on first POST. arAgingService
+  // owns subsequent maintenance on Collection POST/void/reopen — DO NOT
+  // recompute here on every save (would clobber paid_amount accumulated by
+  // the recompute hook). Only seed on first transition to POSTED.
+  if (this.status === 'POSTED' && this.outstanding_amount === null) {
+    this.outstanding_amount = this.invoice_total;
+    this.paid_amount = 0;
+  }
 });
 
 // Indexes
@@ -295,5 +333,17 @@ salesLineSchema.index({ petty_cash_fund_id: 1 });
 // Covers validateSales duplicate-detection (scoped by entity + sale_type +
 // SALE_SOURCE bucket + doc_ref). Prevents COLLSCAN on high-volume entities.
 salesLineSchema.index({ entity_id: 1, sale_type: 1, source: 1, doc_ref: 1 });
+// Phase A.4 — partial index for AR aging surface (open invoices only). Skipping
+// fully-paid + closed rows keeps the index tiny on a long-tail Sale collection.
+salesLineSchema.index(
+  { entity_id: 1, csi_date: 1 },
+  { partialFilterExpression: { outstanding_amount: { $gt: 0 }, status: 'POSTED' }, name: 'ar_aging_open' }
+);
+// Phase A.4 — list-page badge filter for FAILED JE rows. Sparse so legacy
+// rows with je_status=null don't bloat the index.
+salesLineSchema.index(
+  { entity_id: 1, je_status: 1, status: 1 },
+  { sparse: true, name: 'je_status_failed' }
+);
 
 module.exports = mongoose.model('SalesLine', salesLineSchema);
