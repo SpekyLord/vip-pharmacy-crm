@@ -113,6 +113,9 @@ scripts/sync-prod-to-dev.sh
 /grn-*.yml
 /grn-*.yaml
 /cc-*.yml
+# Phase P1.2 Slice 7-ext Round 2B + Slice 8/9 smoke artifacts.
+/capture-*.yml
+/capture-*.yaml
 
 # Third-party Agent Skills (coreyhaines31/marketingskills, etc.).
 # Restore on a fresh clone with: npx skills experimental_install

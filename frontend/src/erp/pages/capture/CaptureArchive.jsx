@@ -2,20 +2,21 @@
  * CaptureArchive — Phase P1.2 Slice 8 (May 06 2026).
  *
  * Browseable archive of every CaptureSubmission scoped to the current entity.
- * Hierarchy: Year → Cycle (4-week) → Workflow folder → leaf rows. Multi-select
- * checkboxes feed the bulk Mark-Received action; per-cycle "Download CSV"
- * button calls the audit-report endpoint.
+ * Hierarchy: Year → Period (YYYY-MM) → Cycle (C1|C2 half-monthly) → Workflow
+ * folder → leaf rows. Multi-select checkboxes feed the bulk Mark-Received
+ * action; per-cycle "Download CSV" button calls the audit-report endpoint.
  *
- * Sub-permission gates (frontend mirrors backend; server is the gate):
- *   - VIEW_OWN_ARCHIVE  → BDM sees only their own captures (default for staff)
- *   - VIEW_ALL_ARCHIVE  → cross-BDM picker visible (default for admin/finance/president)
- *   - BULK_MARK_RECEIVED → multi-select bulk action button visible
- *   - GENERATE_CYCLE_REPORT → CSV download button visible
+ * Sub-permission gates (frontend mirrors backend via shared
+ * `captureLifecycleFrontendGates.js`; server is the gate):
+ *   - VIEW_OWN_ARCHIVE       → BDM sees only their own captures (default staff)
+ *   - VIEW_ALL_ARCHIVE       → cross-BDM picker (default admin/finance/president)
+ *   - BULK_MARK_RECEIVED     → multi-select bulk action button
+ *   - GENERATE_CYCLE_REPORT  → CSV download button
+ *   - OVERRIDE_PHYSICAL_STATUS → per-row Override link (default president)
  *
  * Backend short-circuits on missing perm with 403 — frontend visibility is
- * cosmetic. The role-set inline DEFAULTS match captureLifecycleAccess.js so
- * a fresh deploy works with no lookup row required (Rule #3 — lookup row is
- * the override mechanism, not the source of truth).
+ * cosmetic. Lookup row is the override mechanism (Rule #3); inline DEFAULTS
+ * ship with the binary so a fresh deploy works without seeding.
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
@@ -27,23 +28,10 @@ import {
 import toast from 'react-hot-toast';
 import useCaptureSubmissions from '../../hooks/useCaptureSubmissions';
 import WorkflowGuide from '../../components/WorkflowGuide';
+import PhysicalStatusChip from '../../components/PhysicalStatusChip';
+import PhysicalStatusOverrideSheet from '../../components/PhysicalStatusOverrideSheet';
 import { useAuth } from '../../../hooks/useAuth';
-import { ROLES } from '../../../constants/roles';
-
-// ── Lookup-driven role membership (frontend mirror of backend DEFAULTS) ──
-// Backend captureLifecycleAccess.js holds the source of truth; this frontend
-// copy is for cosmetic gating. President always passes.
-const FRONTEND_DEFAULTS = {
-  VIEW_ALL_ARCHIVE: [ROLES.ADMIN, ROLES.FINANCE, ROLES.PRESIDENT],
-  BULK_MARK_RECEIVED: [ROLES.ADMIN, ROLES.PRESIDENT],
-  GENERATE_CYCLE_REPORT: [ROLES.ADMIN, ROLES.FINANCE, ROLES.PRESIDENT],
-  OVERRIDE_PHYSICAL_STATUS: [ROLES.PRESIDENT],
-};
-function userHasFrontendDefault(user, code) {
-  if (!user) return false;
-  if (user.role === ROLES.PRESIDENT) return true;
-  return (FRONTEND_DEFAULTS[code] || []).includes(user.role);
-}
+import { userHasFrontendDefault } from '../../utils/captureLifecycleFrontendGates';
 
 // ── Workflow icons mirror BdmCaptureHub / ProxyQueue ──
 const WORKFLOW_ICONS = {
@@ -78,20 +66,11 @@ function workflowLabel(workflow_type, sub_type) {
   return workflow_type.replace(/_/g, ' ');
 }
 
-function physicalChip(physical_status, physical_required) {
-  if (!physical_required) {
-    return <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200">Digital</span>;
-  }
-  switch (physical_status) {
-    case 'RECEIVED':
-      return <span className="text-xs px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200">Received</span>;
-    case 'MISSING':
-      return <span className="text-xs px-2 py-0.5 rounded-full bg-red-50 text-red-700 border border-red-200">Missing</span>;
-    case 'PENDING':
-    default:
-      return <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">Pending</span>;
-  }
-}
+// physicalChip() and OverrideSheet were inlined in this file pre-refactor;
+// they're now shared components in `frontend/src/erp/components/`. Renders
+// here use `<PhysicalStatusChip status=… required=… prefix="" />` to drop
+// the "Paper: " prefix that ProxyQueue uses (this page's row column already
+// has a "Paper" header so the prefix would be redundant).
 
 function fmtDate(d) {
   if (!d) return '—';
@@ -104,52 +83,8 @@ function fmtDate(d) {
   }
 }
 
-// ── Override sheet (Slice 9) ──
-function OverrideSheet({ row, onClose, onApply }) {
-  const [next, setNext] = useState(row.physical_status || 'PENDING');
-  const options = ['PENDING', 'RECEIVED', 'MISSING'];
-  return (
-    <div className="fixed inset-0 z-50 bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div className="bg-white w-full sm:max-w-sm sm:rounded-xl rounded-t-xl p-5">
-        <h3 className="font-semibold text-gray-900 mb-1">Override physical status</h3>
-        <p className="text-xs text-gray-500 mb-4">
-          President-only. Use this when paper arrives late OR when a previously
-          attested receipt was a mistake.
-        </p>
-        <div className="space-y-2 mb-5">
-          {options.map(opt => (
-            <button
-              key={opt}
-              onClick={() => setNext(opt)}
-              className={`w-full text-left px-3 py-2 rounded-lg border ${
-                next === opt
-                  ? 'bg-indigo-50 border-indigo-300 text-indigo-700 font-medium'
-                  : 'bg-white border-gray-200 hover:bg-gray-50'
-              }`}
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={onClose}
-            className="flex-1 px-3 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => onApply(next)}
-            disabled={next === row.physical_status}
-            className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-700 disabled:opacity-50"
-          >
-            Apply
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// OverrideSheet was inlined here pre-refactor; now lifted to
+// `components/PhysicalStatusOverrideSheet.jsx`.
 
 // ── Main Component ──
 export default function CaptureArchive() {
@@ -599,7 +534,13 @@ export default function CaptureArchive() {
                             {r.amount_declared != null ? `₱${Number(r.amount_declared).toLocaleString()}` : '—'}
                           </td>
                           <td className="px-3 py-2 text-xs">{r.status?.replace(/_/g, ' ')}</td>
-                          <td className="px-3 py-2">{physicalChip(r.physical_status, r.physical_required)}</td>
+                          <td className="px-3 py-2">
+                            <PhysicalStatusChip
+                              status={r.physical_status}
+                              required={r.physical_required}
+                              prefix=""
+                            />
+                          </td>
                           <td className="px-3 py-2 text-xs text-gray-500">
                             {r.physical_received_at
                               ? `${fmtDate(r.physical_received_at)}${r.physical_received_by?.name ? ` by ${r.physical_received_by.name}` : ''}`
@@ -652,12 +593,13 @@ export default function CaptureArchive() {
         </div>
       </div>
 
-      {/* Override sheet */}
+      {/* Override sheet — shared component (Slice 9) */}
       {overrideRow && (
-        <OverrideSheet
-          row={overrideRow}
+        <PhysicalStatusOverrideSheet
+          currentStatus={overrideRow.physical_status}
           onClose={() => setOverrideRow(null)}
           onApply={handleOverrideApply}
+          testIdPrefix="archive-override"
         />
       )}
     </div>

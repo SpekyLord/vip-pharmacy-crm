@@ -860,13 +860,27 @@ assert('controller exports bulkMarkReceived',
   /module\.exports[\s\S]+bulkMarkReceived/.test(ctrlSrcAfter));
 assert('controller exports getCycleAuditReport',
   /module\.exports[\s\S]+getCycleAuditReport/.test(ctrlSrcAfter));
-// C1/C2 helpers — Slice 8 uses the same half-monthly cycle as
+// C1/C2 helpers — Slice 8 imports them from the shared util at
+// `backend/erp/utils/cycleC1C2.js`. Same half-monthly cycle as
 // DriveAllocation / SmerEntry / CarLogbookEntry / Payslip / IncomeReport.
 // NOT the 28-day BDM-visit cycle from CRM scheduleCycleUtils.
-assert('archive defines cycleFor(C1|C2)',
-  /function cycleFor[\s\S]{0,300}'C1'[\s\S]{0,80}'C2'/.test(ctrlSrcAfter));
-assert('archive defines cycleBounds(period, cycle)',
-  /function cycleBounds\(period,\s*cycle\)/.test(ctrlSrcAfter));
+const cycleUtilSrc = read('backend/erp/utils/cycleC1C2.js');
+assert('cycleC1C2.js shared util exists', cycleUtilSrc.length > 0);
+assert('cycleC1C2.js exports cycleFor', /module\.exports[\s\S]+cycleFor/.test(cycleUtilSrc));
+assert('cycleC1C2.js exports cycleBounds', /module\.exports[\s\S]+cycleBounds/.test(cycleUtilSrc));
+assert('cycleC1C2.js exports MANILA_OFFSET_MS', /module\.exports[\s\S]+MANILA_OFFSET_MS/.test(cycleUtilSrc));
+assert('cycleC1C2.js cycleFor returns C1 for day≤15',
+  /day\s*<=\s*15\s*\?\s*'C1'\s*:\s*'C2'/.test(cycleUtilSrc));
+assert('cycleC1C2.js cycleBounds rejects malformed period',
+  /\^\\d\{4\}-\\d\{2\}\$/.test(cycleUtilSrc));
+assert('cycleC1C2.js cycleBounds last-day-of-month leap-safe (Date.UTC trick)',
+  /Date\.UTC\(y,\s*m,\s*0\)/.test(cycleUtilSrc));
+assert('captureSubmissionController imports from shared cycleC1C2 util',
+  /require\(['"]\.\.\/utils\/cycleC1C2['"]\)/.test(ctrlSrcAfter));
+assert('captureSubmissionController does NOT inline cycleFor (uses shared)',
+  !/^function cycleFor/m.test(ctrlSrcAfter));
+assert('captureSubmissionController does NOT inline cycleBounds (uses shared)',
+  !/^function cycleBounds/m.test(ctrlSrcAfter));
 // Note: refer to scheduleCycleUtils only by name in the rationale comment;
 // the require() must be absent.
 assert('archive does NOT require scheduleCycleUtils (CRM-domain cycle is wrong unit)',
@@ -931,7 +945,43 @@ assert('routes — /bulk-mark-received mounted BEFORE /:id',
 
 // ── Phase P1.2 Slice 8 — Capture Archive frontend ─────────────
 section('Slice 8 — Capture Archive frontend');
-const archivePageSrc = read('frontend/src/erp/pages/proxy/CaptureArchive.jsx');
+// Phase P1.2 Slice 8 page lives in pages/capture/ (not pages/proxy/) because
+// it serves both staff (VIEW_OWN_ARCHIVE) and management (VIEW_ALL_ARCHIVE).
+const archivePageSrc = read('frontend/src/erp/pages/capture/CaptureArchive.jsx');
+const sharedChipSrc = read('frontend/src/erp/components/PhysicalStatusChip.jsx');
+const sharedSheetSrc = read('frontend/src/erp/components/PhysicalStatusOverrideSheet.jsx');
+const frontendGatesSrc = read('frontend/src/erp/utils/captureLifecycleFrontendGates.js');
+
+// Shared frontend modules (consolidation pass)
+assert('shared PhysicalStatusChip exists', sharedChipSrc.length > 0);
+assert('shared PhysicalStatusChip default-exports a component',
+  /export default function PhysicalStatusChip/.test(sharedChipSrc));
+assert('shared PhysicalStatusChip handles digital-only (!required)',
+  /!\s*req[\s\S]{0,200}Digital only/.test(sharedChipSrc));
+assert('shared PhysicalStatusOverrideSheet exists', sharedSheetSrc.length > 0);
+assert('shared OverrideSheet exports component',
+  /export default function PhysicalStatusOverrideSheet/.test(sharedSheetSrc));
+assert('shared OverrideSheet has Apply disabled when next === currentStatus',
+  /disabled=\{next\s*===\s*currentStatus\}/.test(sharedSheetSrc));
+assert('shared OverrideSheet supports testIdPrefix prop',
+  /testIdPrefix\s*=\s*['"]override['"]/.test(sharedSheetSrc));
+assert('shared frontend gates helper exists', frontendGatesSrc.length > 0);
+assert('shared frontend gates exports FRONTEND_DEFAULTS',
+  /export const FRONTEND_DEFAULTS/.test(frontendGatesSrc));
+assert('shared frontend gates exports userHasFrontendDefault',
+  /export function userHasFrontendDefault/.test(frontendGatesSrc));
+assert('shared frontend gates has all 12 lifecycle codes',
+  /UPLOAD_OWN_CAPTURE[\s\S]{0,800}VIEW_OWN_ARCHIVE[\s\S]{0,800}VIEW_ALL_ARCHIVE[\s\S]{0,800}MARK_PAPER_RECEIVED[\s\S]{0,800}BULK_MARK_RECEIVED[\s\S]{0,800}OVERRIDE_PHYSICAL_STATUS[\s\S]{0,800}GENERATE_CYCLE_REPORT[\s\S]{0,800}MARK_NO_DRIVE_DAY[\s\S]{0,800}ALLOCATE_PERSONAL_OFFICIAL[\s\S]{0,800}OVERRIDE_ALLOCATION[\s\S]{0,800}EDIT_CAR_LOGBOOK_DESTINATION[\s\S]{0,800}PROXY_PULL_CAPTURE/.test(frontendGatesSrc));
+
+// CaptureArchive uses the shared modules (not local copies)
+assert('CaptureArchive imports shared PhysicalStatusChip',
+  /import\s+PhysicalStatusChip\s+from\s+['"]\.\.\/\.\.\/components\/PhysicalStatusChip['"]/.test(archivePageSrc));
+assert('CaptureArchive imports shared PhysicalStatusOverrideSheet',
+  /import\s+PhysicalStatusOverrideSheet\s+from\s+['"]\.\.\/\.\.\/components\/PhysicalStatusOverrideSheet['"]/.test(archivePageSrc));
+assert('CaptureArchive imports shared frontend-gates helper',
+  /import\s+\{\s*userHasFrontendDefault\s*\}\s+from\s+['"]\.\.\/\.\.\/utils\/captureLifecycleFrontendGates['"]/.test(archivePageSrc));
+assert('CaptureArchive does NOT inline a local FRONTEND_DEFAULTS',
+  !/^const FRONTEND_DEFAULTS/m.test(archivePageSrc));
 const hookSrc = read('frontend/src/erp/hooks/useCaptureSubmissions.js');
 
 assert('CaptureArchive page exists', archivePageSrc.length > 0);
@@ -973,6 +1023,8 @@ assert('hook bulkMarkReceived posts {ids}',
 
 // Route + sidebar wiring
 assert('App.jsx imports CaptureArchive', /CaptureArchive\s*=\s*lazyRetry/.test(appSrc));
+assert('App.jsx imports CaptureArchive from pages/capture/ (consolidation pass)',
+  /lazyRetry\(\(\)\s*=>\s*import\(['"]\.\/erp\/pages\/capture\/CaptureArchive['"]\)\)/.test(appSrc));
 assert('App.jsx mounts /erp/capture-archive',
   /path=["']\/erp\/capture-archive["'][\s\S]{0,200}<CaptureArchive/.test(appSrc));
 assert('Sidebar links Capture Archive',
@@ -1019,18 +1071,31 @@ const proxyQueueSrc = read('frontend/src/erp/pages/proxy/ProxyQueue.jsx');
 assert('ProxyQueue imports useAuth', /from ['"]\.\.\/\.\.\/\.\.\/hooks\/useAuth['"]/.test(proxyQueueSrc));
 assert('ProxyQueue computes canMarkPaper / canOverride',
   /canMarkPaper[\s\S]{0,200}canOverride/.test(proxyQueueSrc));
-assert('ProxyQueue renders PhysicalStatusChip',
-  /function PhysicalStatusChip/.test(proxyQueueSrc));
-assert('ProxyQueue renders OverrideSheet',
-  /function OverrideSheet/.test(proxyQueueSrc));
+assert('ProxyQueue imports shared PhysicalStatusChip',
+  /import\s+PhysicalStatusChip\s+from\s+['"]\.\.\/\.\.\/components\/PhysicalStatusChip['"]/.test(proxyQueueSrc));
+assert('ProxyQueue imports shared PhysicalStatusOverrideSheet',
+  /import\s+PhysicalStatusOverrideSheet\s+from\s+['"]\.\.\/\.\.\/components\/PhysicalStatusOverrideSheet['"]/.test(proxyQueueSrc));
+assert('ProxyQueue imports shared frontend-gates helper',
+  /import\s+\{\s*userHasFrontendDefault\s*\}\s+from\s+['"]\.\.\/\.\.\/utils\/captureLifecycleFrontendGates['"]/.test(proxyQueueSrc));
+assert('ProxyQueue does NOT inline a local FRONTEND_DEFAULTS',
+  !/^const FRONTEND_DEFAULTS/m.test(proxyQueueSrc));
+assert('ProxyQueue renders PhysicalStatusChip via JSX',
+  /<PhysicalStatusChip\s+item=\{item\}/.test(proxyQueueSrc));
+assert('ProxyQueue renders PhysicalStatusOverrideSheet via JSX',
+  /<PhysicalStatusOverrideSheet/.test(proxyQueueSrc));
+assert('ProxyQueue passes testIdPrefix=proxy-override',
+  /testIdPrefix=["']proxy-override["']/.test(proxyQueueSrc));
 assert('ProxyQueue Mark Complete forwards paper_received',
   /onComplete\(item\._id,\s*\{\s*paper_received:\s*paperReceived\s*\}\)/.test(proxyQueueSrc));
 assert('ProxyQueue paper-received checkbox testid',
   /data-testid=["']proxy-paper-received-checkbox["']/.test(proxyQueueSrc));
 assert('ProxyQueue override-open testid',
   /data-testid=["']proxy-override-open["']/.test(proxyQueueSrc));
-assert('ProxyQueue override-apply testid',
-  /data-testid=["']proxy-override-apply["']/.test(proxyQueueSrc));
+// override-apply testid is now produced by the shared OverrideSheet via the
+// testIdPrefix="proxy-override" prop (yields data-testid="proxy-override-apply"
+// at render time). Assert on the shared component contract instead.
+assert('shared OverrideSheet computes apply testid from testIdPrefix',
+  /data-testid=\{`\$\{testIdPrefix\}-apply`\}/.test(sharedSheetSrc));
 assert('ProxyQueue handleOverride defined',
   /const handleOverride\s*=\s*useCallback/.test(proxyQueueSrc));
 assert('ProxyQueue passes onOverride to DetailDrawer',
