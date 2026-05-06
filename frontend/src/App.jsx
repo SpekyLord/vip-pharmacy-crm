@@ -267,7 +267,9 @@ const BdmCaptureHub = lazyRetry(() => import('./erp/pages/mobile/BdmCaptureHub')
 const BdmReviewQueue = lazyRetry(() => import('./erp/pages/mobile/BdmReviewQueue'));
 const ProxyQueue = lazyRetry(() => import('./erp/pages/proxy/ProxyQueue'));
 // Phase P1.2 Slice 8 — Capture Archive (browseable history + bulk Mark Received)
-const CaptureArchive = lazyRetry(() => import('./erp/pages/proxy/CaptureArchive'));
+// Lives in pages/capture/ because the page serves both staff (VIEW_OWN_ARCHIVE)
+// and management (VIEW_ALL_ARCHIVE) — pages/proxy/ is for proxy-only surfaces.
+const CaptureArchive = lazyRetry(() => import('./erp/pages/capture/CaptureArchive'));
 
 // Standalone routes redirect to ControlCenter with the right section param
 const AgentSettingsRedirect = () => <Navigate to="/erp/control-center?section=agent-settings" replace />;

@@ -21,20 +21,10 @@ import {
 import toast from 'react-hot-toast';
 import useCaptureSubmissions from '../../hooks/useCaptureSubmissions';
 import WorkflowGuide from '../../components/WorkflowGuide';
+import PhysicalStatusChip from '../../components/PhysicalStatusChip';
+import PhysicalStatusOverrideSheet from '../../components/PhysicalStatusOverrideSheet';
 import { useAuth } from '../../../hooks/useAuth';
-import { ROLES } from '../../../constants/roles';
-
-// Phase P1.2 Slice 9 — frontend mirror of captureLifecycleAccess.js DEFAULTS.
-// Backend is the gate; this is cosmetic visibility only.
-const FRONTEND_DEFAULTS = {
-  MARK_PAPER_RECEIVED: [ROLES.ADMIN, ROLES.FINANCE, ROLES.PRESIDENT],
-  OVERRIDE_PHYSICAL_STATUS: [ROLES.PRESIDENT],
-};
-function userHasFrontendDefault(user, code) {
-  if (!user) return false;
-  if (user.role === ROLES.PRESIDENT) return true;
-  return (FRONTEND_DEFAULTS[code] || []).includes(user.role);
-}
+import { userHasFrontendDefault } from '../../utils/captureLifecycleFrontendGates';
 
 // ── Workflow icon map ──
 const WORKFLOW_ICONS = {
@@ -119,68 +109,10 @@ function StatsBanner({ stats }) {
   );
 }
 
-// ── Physical-status chip + override sheet (Slice 9) ──
-function PhysicalStatusChip({ item }) {
-  if (!item.physical_required) {
-    return <span className="text-xs px-2 py-1 rounded-full font-medium bg-gray-100 text-gray-500 border border-gray-200">Digital only</span>;
-  }
-  const status = item.physical_status || 'PENDING';
-  const cls =
-    status === 'RECEIVED' ? 'bg-green-50 text-green-700 border-green-200'
-    : status === 'MISSING' ? 'bg-red-50 text-red-700 border-red-200'
-    : 'bg-amber-50 text-amber-700 border-amber-200';
-  return (
-    <span className={`text-xs px-2 py-1 rounded-full font-medium border ${cls}`}>
-      Paper: {status}
-    </span>
-  );
-}
-
-function OverrideSheet({ item, onClose, onApply }) {
-  const [next, setNext] = useState(item.physical_status || 'PENDING');
-  const options = ['PENDING', 'RECEIVED', 'MISSING'];
-  return (
-    <div className="fixed inset-0 z-[60] bg-black/50 flex items-end sm:items-center justify-center p-0 sm:p-4" data-testid="proxy-override-sheet">
-      <div className="bg-white w-full sm:max-w-sm sm:rounded-xl rounded-t-xl p-5">
-        <h3 className="font-semibold text-gray-900 mb-1">Override physical status</h3>
-        <p className="text-xs text-gray-500 mb-4">
-          President-only. Use when paper arrives late OR a previous attestation was a mistake.
-        </p>
-        <div className="space-y-2 mb-5">
-          {options.map(opt => (
-            <button
-              key={opt}
-              onClick={() => setNext(opt)}
-              className={`w-full text-left px-3 py-2 rounded-lg border ${
-                next === opt
-                  ? 'bg-indigo-50 border-indigo-300 text-indigo-700 font-medium'
-                  : 'bg-white border-gray-200 hover:bg-gray-50'
-              }`}
-            >
-              {opt}
-            </button>
-          ))}
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={onClose}
-            className="flex-1 px-3 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => onApply(next)}
-            disabled={next === item.physical_status}
-            className="flex-1 px-3 py-2 rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-700 disabled:opacity-50"
-            data-testid="proxy-override-apply"
-          >
-            Apply
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// PhysicalStatusChip + OverrideSheet were inlined here pre-refactor; both
+// now live in `frontend/src/erp/components/`. The chip uses the default
+// "Paper: " prefix that ProxyQueue's drawer expects; CaptureArchive renders
+// it without the prefix because the row's column header already says "Paper".
 
 // ── Detail Drawer ──
 function DetailDrawer({ item, onClose, onPickup, onRelease, onComplete, onOverride, loading, canMarkPaper, canOverride }) {
@@ -378,13 +310,14 @@ function DetailDrawer({ item, onClose, onPickup, onRelease, onComplete, onOverri
       </div>
 
       {showOverride && (
-        <OverrideSheet
-          item={item}
+        <PhysicalStatusOverrideSheet
+          currentStatus={item.physical_status || 'PENDING'}
           onClose={() => setShowOverride(false)}
           onApply={async (next) => {
             await onOverride(item._id, next);
             setShowOverride(false);
           }}
+          testIdPrefix="proxy-override"
         />
       )}
     </div>

@@ -8203,6 +8203,63 @@ The two collections co-exist. Slice 6 wires the join (~1 day). Until then, CarLo
 
 erp-remote no-push policy in effect — commit cleanly to `dev` only.
 
+### Hotfix (a) — UNION fallback against CarLogbookEntry (May 06, 2026, same-day) ✅ SHIPPED
+
+#### Why
+The known follow-up #1 from the original Slice 4+5 ship was that the SMER tile would dead-end if a proxy backfilled the day directly in `/erp/car-logbook` (skipping the BDM's `AllocationPanel`). The lock count comes from `unallocated.length` — and `getUnallocatedWorkdays` only subtracted `DriveAllocation` rows. So a proxy-posted `CarLogbookEntry` (status `VALID` or `POSTED`) for the same workday would not release the lock, and the BDM would be stuck unable to scan ODO until they ALSO created a duplicate DriveAllocation row through the panel.
+
+The fix preserves both contracts:
+- **DriveAllocation remains the BDM's source-of-truth** for personal/official km — the `/allocate` and `/no-drive` endpoints are unchanged.
+- **CarLogbookEntry is the proxy-posted document** with its own DRAFT→VALID→POSTED lifecycle; treating `VALID|POSTED` as "the day is allocated" releases the SMER lock without forcing the BDM to mirror the proxy's work.
+
+#### What changed
+- **`backend/erp/controllers/driveAllocationController.js`** —
+  - Imported `CarLogbookEntry` near the existing model imports.
+  - In `getUnallocatedWorkdays`, after computing `allCandidateDays` and the existing `DriveAllocation`-derived `allocatedSet`, run **one** bulk `CarLogbookEntry.find({entity_id, bdm_id, entry_date: {$gte: parseManilaDate(earliest), $lt: parseManilaDate(latest)+1d}, status: {$in: ['VALID','POSTED']}}).select('entry_date status').lean()`. Each row's `entry_date` is converted to Manila-local `'YYYY-MM-DD'` via the existing `manilaDateString` helper, then intersected against `allCandidateDays` (defends against any DST-style edge case where the conversion drifts outside the window — theoretically impossible in PHT but cheap defense), and added to BOTH a new `logbookCoveredSet` AND the existing `allocatedSet`.
+  - Response payload gains `coveredByLogbookDays: Array.from(logbookCoveredSet).sort()`. UI may render a "covered by Car Logbook" tally, currently rendered silently (no panel change).
+
+- **`backend/scripts/healthcheckCaptureHub.js`** — Section 16 grows by 4 asserts, all positioned right before the AllocationPanel C1/C2 model render block (so they sit with the rest of the controller-contract checks):
+  - `controller imports CarLogbookEntry` — `require('../models/CarLogbookEntry')`
+  - `controller queries CarLogbookEntry on entry_date + status VALID|POSTED` — checks the find filter has both `entry_date: {$gte` AND `status: {$in: ['VALID','POSTED']}` in one regex
+  - `controller adds logbook day to allocatedSet (UNION fallback)` — checks the day-string is added to BOTH `logbookCoveredSet` AND `allocatedSet`
+  - `controller surfaces coveredByLogbookDays in response payload` — `coveredByLogbookDays: Array.from(logbookCoveredSet)`
+
+#### Out of scope (intentional)
+- **AllocationPanel rendering of `coveredByLogbook` badge.** Per the user's spec ("UX nice-to-have, not strictly required for the hotfix … treat the day as silently allocated"), the panel just sees `unallocated.length` go down and the SMER lock release. The new `coveredByLogbookDays` field is in the API contract for any future UI consumer.
+- **Writes through `/allocate` and `/no-drive` are unchanged.** A BDM can still allocate over a logbook-covered day (verified during smoke); the `DriveAllocation` row is still considered the source-of-truth for personal/official splits. The UNION is read-side only.
+- **DRAFT / ERROR / DELETION_REQUESTED logbook rows do NOT release the lock.** Only `VALID` + `POSTED` count — verified during smoke (DRAFT row on Apr-23 stayed in `unallocated`).
+
+#### Integrity guarantees
+- **Cross-entity bleed is structurally impossible** — the find filter hard-scopes `entity_id: entityId`, same as the DriveAllocation lookup. Verified by reading the query.
+- **Cross-BDM bleed is structurally impossible** — the find filter hard-scopes `bdm_id: bdmId`. Same Rule #21 alignment as the existing DriveAllocation lookup.
+- **One bulk read per call** — date range is bounded by `[parseManilaDate(earliestCandidate), parseManilaDate(latestCandidate)+1d)`. No N+1.
+- **No write-side regressions** — `/allocate`, `/no-drive`, `/my` unchanged. Smoke confirmed BDM can still allocate on a logbook-covered day; the resulting `DriveAllocation` row sits alongside the `CarLogbookEntry` without conflict (they're separate collections with separate unique indexes).
+- **Forward-compat with Slice 6** (Car Logbook auto-populate) — when Slice 6 makes the proxy CarLogbookEntry creation auto-pull from DriveAllocation, the UNION fallback is the **safety net** for when the auto-populate hasn't run yet (e.g., manual proxy entry, or auto-populate skipped a day for any reason).
+- **Year-2 SaaS spin-out** — entity_id scope on the new find filter means tenants are partitioned per Rule #0d. Same posture as the existing DriveAllocation query.
+
+#### Verification matrix
+| Check | Result |
+|---|---|
+| `node backend/scripts/healthcheckCaptureHub.js` | **502/502 PASS** (498 baseline + 4 new asserts) |
+| `cd frontend && npx vite build` | **green in 13.66s** |
+| `node -c backend/erp/controllers/driveAllocationController.js` | **OK** |
+| API smoke #1: VALID logbook on Apr-22 → drops from unallocated + appears in `coveredByLogbookDays` | ✓ |
+| API smoke #2: POSTED logbook on Apr-24 → drops from unallocated + appears in `coveredByLogbookDays` | ✓ |
+| API smoke #3: DRAFT logbook on Apr-23 → STAYS in unallocated, does NOT appear in `coveredByLogbookDays` | ✓ |
+| API smoke #4: `/allocate` on logbook-covered day still 200s + persists DriveAllocation row | ✓ |
+| API smoke #5: post-cleanup baseline restored (13 days / `coveredByLogbookDays: []`) | ✓ |
+| Playwright UI smoke `/erp/capture-hub` as Mae: panel shows 11 days pending (vs 13 baseline) | ✓ |
+| UI smoke: SMER tile renders "Locked / Allocate 11 prior days first" | ✓ |
+| UI smoke: Apr-22 + Apr-24 NOT shown in panel rows; Apr-23 (DRAFT) IS shown | ✓ |
+| Console errors during UI smoke | 0 errors, 1 unrelated warning |
+
+Screenshot at repo root: `phase-p1-2-slice-4-5-hotfix-a-union-fallback-ratified.png`.
+
+#### Files touched
+2 files: `backend/erp/controllers/driveAllocationController.js` (+1 import + ~40 lines of UNION logic + 4 lines of response-payload field) + `backend/scripts/healthcheckCaptureHub.js` (+4 asserts in Section 16). Plus this docs entry + the CLAUDE-ERP.md status banner. **No frontend change** (per "skip the panel rendering" guidance — the lock-release semantics are entirely server-side).
+
+erp-remote no-push policy in effect — commit cleanly to `dev` only. Recommended commit alongside the parent Slice 4+5 work that is still uncommitted (this hotfix shares the same working-tree files; one commit covers both).
+
 ---
 
 ## Phase P1.2 Slice 7-extension Round 2B — Server-side OCR from capture (May 06, 2026) ✅ SHIPPED

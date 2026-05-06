@@ -19,41 +19,15 @@ const { signCaptureArtifacts } = require('../../config/s3');
 const { userCanPerformCaptureAction } = require('../../utils/captureLifecycleAccess');
 
 // ── C1/C2 half-monthly cycle helpers (Phase P1.2 Slice 8) ──────────
-// Same convention as CarLogbookEntry / SmerEntry / IncomeReport / Payslip /
-// DeductionSchedule / DriveAllocation. C1 = day 1–15, C2 = day 16–end-of-
-// month. The 28-day BDM-visit cycle from scheduleCycleUtils is the CRM
-// domain model and is the wrong unit for ERP reporting buckets — see
-// driveAllocationController.js (Slice 4 corrected) for the prior precedent.
-const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
-
-function manilaDateString(date) {
-  const manila = new Date(date.getTime() + MANILA_OFFSET_MS);
-  const yyyy = manila.getUTCFullYear();
-  const mm = String(manila.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(manila.getUTCDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-/** "C1" | "C2" from a Date or 'YYYY-MM-DD'-prefixed string. */
-function cycleFor(dateOrStr) {
-  const day = typeof dateOrStr === 'string'
-    ? Number(dateOrStr.slice(8, 10))
-    : Number(manilaDateString(dateOrStr).slice(8, 10));
-  return day <= 15 ? 'C1' : 'C2';
-}
-
-/** UTC start/end of a (period 'YYYY-MM', cycle 'C1'|'C2') window in Manila local. */
-function cycleBounds(period, cycle) {
-  if (!/^\d{4}-\d{2}$/.test(period) || (cycle !== 'C1' && cycle !== 'C2')) return null;
-  const [y, m] = period.split('-').map(Number);
-  const startDay = cycle === 'C1' ? 1 : 16;
-  // End: C1 → 15; C2 → last day of month (use day 0 of next month trick on UTC).
-  const endDay = cycle === 'C1' ? 15 : new Date(Date.UTC(y, m, 0)).getUTCDate();
-  // Manila midnight = UTC midnight - 8h. Build the UTC representation.
-  const startUtc = new Date(Date.UTC(y, m - 1, startDay) - MANILA_OFFSET_MS);
-  const endUtcExclusive = new Date(Date.UTC(y, m - 1, endDay + 1) - MANILA_OFFSET_MS);
-  return { start: startUtc, end: new Date(endUtcExclusive.getTime() - 1) };
-}
+// Shared util in `backend/erp/utils/cycleC1C2.js`. Same convention as
+// CarLogbookEntry / SmerEntry / IncomeReport / Payslip / DeductionSchedule /
+// DriveAllocation. C1 = day 1–15, C2 = day 16–end-of-month. Manila local
+// time (UTC+8) governs all bucket boundaries.
+//
+// Do NOT inline a copy here — the parallel session's driveAllocationController.js
+// shipped its own inline copy first; this file lifts the math to the shared
+// util to remove the duplication risk before a third controller arrives.
+const { MANILA_OFFSET_MS, cycleBounds } = require('../utils/cycleC1C2');
 
 // ── Allowed status transitions ──
 const TRANSITIONS = {
