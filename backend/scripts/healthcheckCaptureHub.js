@@ -425,34 +425,56 @@ assert('PHASETASK-ERP.md documents Bir2307Inbound defer rationale',
 // into the existing 📷 Attach CSI flow (PUT /sales/:id/received-csi). The
 // picker is filtered to the row's own bdm_id (each sale knows its BDM via
 // the populated bdm_id field); workflowTypes are SALES + UNCATEGORIZED so a
-// BDM who used Quick Capture without classifying still gets surfaced. The
-// picker hands a single File to the shared ScanCSIModal (photoOnly mode) via
-// a new initialFile prop; the modal auto-runs handleFile via useEffect, which
-// in photoOnly mode hits /erp/ocr/process with skip_ocr=true to upload to S3
-// and return { s3_url, attachment_id }, then routes them through the existing
-// handleAttachReceivedCsi → sales.attachReceivedCsi flow. No new endpoint, no
-// new schema, no new lookup category — Round 2A is purely additive UX.
+// BDM who used Quick Capture without classifying still gets surfaced.
+//
+// Round 2A uses skipFetch={true} mode (added to PendingCapturesPicker for
+// this slice) which bypasses the picker's client-side fetch(signedS3Url) →
+// Blob → File pipeline AND the modal re-upload step. Reasons: (a) the
+// private S3 bucket has no CORS allowlist for browser origins, so
+// fetch() from `localhost:5173` (or any non-S3 origin) is blocked; (b) the
+// photo is already on S3, so re-uploading via /erp/ocr/process to get a
+// fresh s3_url is wasteful. Instead, the picker yields the raw capture row
+// via meta.captures[]; SalesList writes the bare S3 URL (sans X-Amz-Signature
+// query string) straight into csi_received_photo_url via the existing
+// attachReceivedCsi controller. Server-side read paths re-sign at
+// consumption time via documentDetailHydrator.signUrl(), so persisting the
+// bare URL is sufficient. No new endpoint, no new schema, no new lookup
+// category — Round 2A is purely additive UX.
 section('Phase P1.2 Slice 7-extension Round 2A — SalesList per-row picker');
 const salesListSrc = read('frontend/src/erp/pages/SalesList.jsx');
 const sharedScanCsiSrc = read('frontend/src/erp/components/ScanCSIModal.jsx');
+// pickerSrc was already loaded earlier in Section 7 — reuse, do not redeclare.
+
+// PendingCapturesPicker — skipFetch contract (Round 2A added this prop)
+assert('PendingCapturesPicker accepts skipFetch prop',           /skipFetch\s*=\s*false\s*,?/.test(pickerSrc));
+assert('PendingCapturesPicker skipFetch path bypasses fetch loop',
+  /if\s*\(\s*skipFetch\s*\)[\s\S]{0,400}captures:\s*picked/.test(pickerSrc));
+assert('PendingCapturesPicker skipFetch path yields onPick([], meta)',
+  /skipFetch\s*\)[\s\S]{0,300}onPick\(\s*\[\s*\]/.test(pickerSrc));
+assert('PendingCapturesPicker handleConfirm deps include skipFetch',
+  /useCallback\([\s\S]{0,3000}\[items,\s*selected,\s*onPick,\s*skipFetch\]\)/.test(pickerSrc));
 
 // SalesList wiring
 assert('SalesList imports PendingCapturesPicker',                /import\s+PendingCapturesPicker\s+from\s+['"][^'"]*PendingCapturesPicker['"]/.test(salesListSrc));
-assert('SalesList declares attachInitialFile state',             /const\s+\[attachInitialFile,\s*setAttachInitialFile\]/.test(salesListSrc));
-assert('SalesList per-row picker passes SALES + UNCATEGORIZED',  /<PendingCapturesPicker[\s\S]{0,800}workflowTypes=\{\[['"]SALES['"][^]*UNCATEGORIZED/.test(salesListSrc));
-assert('SalesList per-row picker scopes bdmId to row.bdm_id',    /<PendingCapturesPicker[\s\S]{0,800}bdmId=\{sale\.bdm_id/.test(salesListSrc));
-assert('SalesList per-row picker uses maxSelect=1',              /<PendingCapturesPicker[\s\S]{0,800}maxSelect=\{1\}/.test(salesListSrc));
-assert('SalesList per-row picker onPick sets attach state',
-  /setAttachInitialFile\(file\)[\s\S]{0,120}setAttachReceivedTarget\(sale\._id\)/.test(salesListSrc));
-assert('SalesList passes initialFile to ScanCSIModal',           /<ScanCSIModal[\s\S]{0,500}initialFile=\{attachInitialFile\}/.test(salesListSrc));
-assert('SalesList onClose clears attachInitialFile',             /setAttachReceivedTarget\(null\);\s*setAttachInitialFile\(null\)/.test(salesListSrc));
+assert('SalesList per-row picker passes SALES + UNCATEGORIZED',  /<PendingCapturesPicker[\s\S]{0,1500}workflowTypes=\{\[['"]SALES['"][^]*UNCATEGORIZED/.test(salesListSrc));
+assert('SalesList per-row picker scopes bdmId to row.bdm_id',    /<PendingCapturesPicker[\s\S]{0,1500}bdmId=\{sale\.bdm_id/.test(salesListSrc));
+assert('SalesList per-row picker uses maxSelect=1',              /<PendingCapturesPicker[\s\S]{0,1500}maxSelect=\{1\}/.test(salesListSrc));
+assert('SalesList per-row picker uses skipFetch=true',           /<PendingCapturesPicker[\s\S]{0,1500}skipFetch=\{true\}/.test(salesListSrc));
+assert('SalesList onPick reads meta.captures[0]',                /onPick=\{[\s\S]{0,1200}meta\?\.captures\?\.\[0\]/.test(salesListSrc));
+assert('SalesList strips X-Amz-Signature query before persisting',
+  /String\(art\.url\)\.split\(['"]\?['"]\)/.test(salesListSrc));
+assert('SalesList onPick calls sales.attachReceivedCsi directly',
+  /onPick=\{[\s\S]{0,1200}sales\.attachReceivedCsi\(\s*sale\._id/.test(salesListSrc));
+assert('SalesList onPick passes csi_received_photo_url + attachment_id',
+  /attachReceivedCsi\([\s\S]{0,300}csi_received_photo_url:\s*bareUrl[\s\S]{0,200}csi_received_attachment_id:\s*cap\._id/.test(salesListSrc));
 // Picker only renders alongside the existing 📷 Attach CSI button — i.e. the
-// same OPENING_AR / deletion / status guard. Loosely enforced: the picker
-// JSX must live inside the same fragment as the Attach CSI button.
+// same OPENING_AR / deletion / status guard.
 assert('SalesList per-row picker scoped to non-OPENING_AR status guard',
-  /sale\.source\s*!==\s*['"]OPENING_AR['"][\s\S]{0,2000}<PendingCapturesPicker/.test(salesListSrc));
+  /sale\.source\s*!==\s*['"]OPENING_AR['"][\s\S]{0,2500}<PendingCapturesPicker/.test(salesListSrc));
 
-// Shared ScanCSIModal contract (used by SalesList photoOnly + OpeningArEntry)
+// Shared ScanCSIModal contract (still used by the existing 📷 Attach CSI
+// Take-Photo / Gallery path; initialFile prop kept as optional consistency
+// surface even though SalesList Round 2A no longer uses it).
 assert('Shared ScanCSIModal accepts initialFile prop',           /export default function ScanCSIModal\([\s\S]{0,500}initialFile\b/.test(sharedScanCsiSrc));
 assert('Shared ScanCSIModal auto-handles initialFile via useEffect',
   /useEffect\([\s\S]{0,500}initialFile[\s\S]{0,300}handleFile\(initialFile\)/.test(sharedScanCsiSrc));
@@ -468,9 +490,7 @@ assert('sales-entry banner cross-references Round 2A on Sales Transactions',
   /sales-entry[\s\S]{0,7000}Round 2A/.test(wgSrc));
 
 // Backend contract — the existing PUT /sales/:id/received-csi endpoint is the
-// terminal write path; Round 2A doesn't change it. Re-assert the route + the
-// gate-via-status it already enforces so a future refactor can't accidentally
-// remove the path the picker funnels into.
+// terminal write path; Round 2A doesn't change it.
 const salesRoutesSrc = read('backend/erp/routes/salesRoutes.js');
 const salesCtrlSrc = read('backend/erp/controllers/salesController.js');
 assert('PUT /:id/received-csi route still mounted',              /router\.put\(['"]\/:id\/received-csi['"]/.test(salesRoutesSrc));
