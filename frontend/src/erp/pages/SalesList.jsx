@@ -677,7 +677,15 @@ export default function SalesList() {
                             try {
                               await sales.attachReceivedCsi(sale._id, {
                                 csi_received_photo_url: bareUrl,
-                                csi_received_attachment_id: cap._id || null,
+                                // capture_id triggers Slice 9 partial auto-finalize
+                                // on the backend — the source CaptureSubmission
+                                // flips out of PENDING_PROXY and back-links to this
+                                // sale. csi_received_attachment_id stays null on
+                                // this path; the bare S3 key + capture-pull is the
+                                // artifact-of-record (no DocumentAttachment is
+                                // created in Round 2A — that's the OCR Mode-B path).
+                                csi_received_attachment_id: null,
+                                capture_id: cap._id || null,
                               });
                               showSuccess('Signed CSI attached from BDM Capture — dunning-ready.');
                               loadSales(pagination.page);

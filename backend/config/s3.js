@@ -172,6 +172,41 @@ const getSignedDownloadUrl = async (key, expiresIn = 3600) => {
 };
 
 /**
+ * Download an S3 object as a Buffer (server-side fetch — no CORS).
+ *
+ * Used by the OCR controller's capture-pull mode (Phase P1.2 Slice 7-extension
+ * Round 2B, May 2026) so the proxy can re-OCR a BDM-uploaded photo without the
+ * browser fetching the private signed URL (which the bucket's missing CORS
+ * allowlist would block on `localhost:5173` and any non-S3-origin caller).
+ *
+ * Stream → Buffer via async iteration, which is the AWS SDK v3 idiom for
+ * Node.js Readable streams returned by `GetObjectCommand`.
+ *
+ * @param {string} key - S3 object key
+ * @returns {Promise<{buffer: Buffer, contentType: string}>}
+ */
+const downloadFromS3 = async (key) => {
+  if (!isConfigured()) {
+    throw new Error('S3 is not configured. Check AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and S3_BUCKET_NAME environment variables.');
+  }
+
+  const command = new GetObjectCommand({
+    Bucket: bucketName,
+    Key: key,
+  });
+
+  const response = await s3Client.send(command);
+
+  const chunks = [];
+  for await (const chunk of response.Body) {
+    chunks.push(chunk);
+  }
+  const buffer = Buffer.concat(chunks);
+
+  return { buffer, contentType: response.ContentType || 'application/octet-stream' };
+};
+
+/**
  * Extract S3 key from a full URL
  * @param {string} url - Full S3 URL
  * @returns {string} S3 key
@@ -350,6 +385,7 @@ module.exports = {
   deleteFromS3,
   deleteByUrl,
   getSignedDownloadUrl,
+  downloadFromS3,
   extractKeyFromUrl,
   isConfigured,
   signVisitPhotos,

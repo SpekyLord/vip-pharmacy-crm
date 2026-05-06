@@ -1622,7 +1622,7 @@ const presidentReverseSale = catchAsync(async (req, res) => {
 // delivery; this writes that artifact to the ledger-of-record without
 // touching posted inventory/AR side effects.
 const attachReceivedCsi = catchAsync(async (req, res) => {
-  const { csi_received_photo_url, csi_received_attachment_id } = req.body || {};
+  const { csi_received_photo_url, csi_received_attachment_id, capture_id } = req.body || {};
   if (!csi_received_photo_url) {
     return res.status(400).json({
       success: false,
@@ -1682,6 +1682,25 @@ const attachReceivedCsi = catchAsync(async (req, res) => {
     changed_by: req.user._id,
     note: previousUrl ? 'Received CSI photo replaced' : 'Received CSI photo attached (dunning proof)'
   });
+
+  // Phase P1.2 Slice 9 partial — auto-finalize the source capture so a row
+  // attached via the Round 2A picker stops appearing in the picker drawer
+  // and carries an audit trail back-link. Best-effort: failures here do
+  // not break the attach.
+  if (capture_id) {
+    try {
+      const { linkCaptureToDocument } = require('./captureSubmissionController');
+      await linkCaptureToDocument(capture_id, 'SalesLine', sale._id, {
+        user: req.user,
+        entityId: sale.entity_id,
+        isPresident: req.isPresident,
+        isAdmin: req.isAdmin,
+        isFinance: req.isFinance,
+      });
+    } catch (err) {
+      console.error('[attachReceivedCsi] linkCaptureToDocument failed:', err.message);
+    }
+  }
 
   res.json({ success: true, data: sale });
 });

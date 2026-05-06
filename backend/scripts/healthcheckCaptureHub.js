@@ -113,7 +113,7 @@ assert('section: inventory', /id:\s*'inventory'/.test(hubSrc));
 assert('SectionHeader component', /function SectionHeader/.test(hubSrc));
 assert('grouped render — SECTIONS map filter', /SECTIONS\.map[\s\S]+filter\(g => g\.workflows\.length > 0\)/.test(hubSrc));
 assert('Digital only pill on tile', /Digital only/.test(hubSrc));
-assert('border-left accent style', /borderLeft:\s*`4px solid \$\{workflow\.color\}`/.test(hubSrc));
+assert('border-left accent style', /borderLeft:\s*`4px solid \$\{[^`]*workflow\.color[^`]*\}`/.test(hubSrc));
 assert('header shows tile count', /\$\{totalActiveTiles\}|totalActiveTiles/.test(hubSrc));
 
 // ── 3c. capture-hub.css — scoped styles actually load ─────────
@@ -358,8 +358,9 @@ assert('SalesEntry passes SALES + UNCATEGORIZED workflowTypes',
   /workflowTypes=\{\[['"]SALES['"][^]+UNCATEGORIZED/.test(salesEntrySrc));
 assert('SalesEntry passes bdmId from assignedTo',             /bdmId=\{assignedTo\s*\|\|\s*undefined\}/.test(salesEntrySrc));
 assert('SalesEntry uses maxSelect=1 (single-pick → modal)',   /<PendingCapturesPicker[\s\S]{0,500}maxSelect=\{1\}/.test(salesEntrySrc));
-assert('SalesEntry onPick sets scanInitialFile + opens modal',
-  /setScanInitialFile\(file\)[\s\S]{0,80}setScanModalOpen\(true\)/.test(salesEntrySrc));
+// Round 2B: picker now hands a capture-id, not a File. Modal still opens.
+assert('SalesEntry onPick sets scanInitialCaptureId + opens modal',
+  /setScanInitialCaptureId\(cap\._id\)[\s\S]{0,300}setScanModalOpen\(true\)/.test(salesEntrySrc));
 assert('ScanCSIModal accepts initialFile prop',               /function ScanCSIModal\([\s\S]{0,200}initialFile\b/.test(salesEntrySrc));
 assert('ScanCSIModal auto-OCRs initialFile via useEffect',    /useEffect\([\s\S]{0,400}initialFile[\s\S]{0,200}handleFile\(initialFile\)/.test(salesEntrySrc));
 assert('SalesEntry passes initialFile to ScanCSIModal',       /<ScanCSIModal[\s\S]{0,400}initialFile=\{scanInitialFile\}/.test(salesEntrySrc));
@@ -371,7 +372,9 @@ assert('CollectionSession passes COLLECTION + UNCATEGORIZED workflowTypes',
   /workflowTypes=\{\[['"]COLLECTION['"][^]+UNCATEGORIZED/.test(collSessSrc));
 assert('CollectionSession passes bdmId from assignedTo',      /bdmId=\{assignedTo\s*\|\|\s*undefined\}/.test(collSessSrc));
 assert('CollectionSession uses maxSelect=1',                  /<PendingCapturesPicker[\s\S]{0,500}maxSelect=\{1\}/.test(collSessSrc));
-assert('CollectionSession onPick opens scanCr with file',     /setScanInitialFile\(file\)[\s\S]{0,80}setScanCrOpen\(true\)/.test(collSessSrc));
+// Round 2B: picker hands capture-id; modal still opens via setScanCrOpen.
+assert('CollectionSession onPick sets scanInitialCaptureId + opens modal',
+  /setScanInitialCaptureId\(cap\._id\)[\s\S]{0,300}setScanCrOpen\(true\)/.test(collSessSrc));
 assert('ScanCRModal accepts initialFile prop',                /function ScanCRModal\([\s\S]{0,200}initialFile\b/.test(collSessSrc));
 assert('ScanCRModal auto-OCRs initialFile via useEffect',     /useEffect\([\s\S]{0,400}initialFile[\s\S]{0,200}handleFile\(initialFile\)/.test(collSessSrc));
 assert('CollectionSession passes initialFile to ScanCRModal', /<ScanCRModal[\s\S]{0,400}initialFile=\{scanInitialFile\}/.test(collSessSrc));
@@ -383,7 +386,9 @@ assert('GrnEntry passes GRN + UNCATEGORIZED workflowTypes',
   /workflowTypes=\{\[['"]GRN['"][^]+UNCATEGORIZED/.test(grnEntrySrc));
 assert('GrnEntry passes bdmId from assignedTo',               /bdmId=\{assignedTo\s*\|\|\s*undefined\}/.test(grnEntrySrc));
 assert('GrnEntry uses maxSelect=1',                           /<PendingCapturesPicker[\s\S]{0,500}maxSelect=\{1\}/.test(grnEntrySrc));
-assert('GrnEntry onPick opens scan modal with file',          /setScanInitialFile\(file\)[\s\S]{0,80}setScanOpen\(true\)/.test(grnEntrySrc));
+// Round 2B: picker hands capture-id; modal still opens via setScanOpen.
+assert('GrnEntry onPick sets scanInitialCaptureId + opens modal',
+  /setScanInitialCaptureId\(cap\._id\)[\s\S]{0,300}setScanOpen\(true\)/.test(grnEntrySrc));
 assert('ScanUndertakingModal accepts initialFile prop',       /function ScanUndertakingModal\([\s\S]{0,200}initialFile\b/.test(grnEntrySrc));
 assert('ScanUndertakingModal auto-OCRs initialFile via useEffect',
   /useEffect\([\s\S]{0,400}initialFile[\s\S]{0,200}handleFile\(initialFile\)/.test(grnEntrySrc));
@@ -465,8 +470,17 @@ assert('SalesList strips X-Amz-Signature query before persisting',
   /String\(art\.url\)\.split\(['"]\?['"]\)/.test(salesListSrc));
 assert('SalesList onPick calls sales.attachReceivedCsi directly',
   /onPick=\{[\s\S]{0,1200}sales\.attachReceivedCsi\(\s*sale\._id/.test(salesListSrc));
-assert('SalesList onPick passes csi_received_photo_url + attachment_id',
-  /attachReceivedCsi\([\s\S]{0,300}csi_received_photo_url:\s*bareUrl[\s\S]{0,200}csi_received_attachment_id:\s*cap\._id/.test(salesListSrc));
+// Slice 9 partial (May 06 2026 follow-on) — onPick now passes capture_id so
+// the backend auto-finalizes the source CaptureSubmission. attachment_id is
+// nulled on this path; the bare S3 URL + capture-pull is the artifact-of-record.
+// Regex window is generous (2000 chars) because the 8-line explainer comment
+// inline above each field fattens the literal-character distance considerably.
+assert('SalesList onPick passes csi_received_photo_url',
+  /attachReceivedCsi\([\s\S]{0,2000}csi_received_photo_url:\s*bareUrl/.test(salesListSrc));
+assert('SalesList onPick passes capture_id (Slice 9 partial auto-finalize)',
+  /attachReceivedCsi\([\s\S]{0,2000}capture_id:\s*cap\._id/.test(salesListSrc));
+assert('SalesList onPick nulls csi_received_attachment_id on Round 2A path',
+  /attachReceivedCsi\([\s\S]{0,2000}csi_received_attachment_id:\s*null/.test(salesListSrc));
 // Picker only renders alongside the existing 📷 Attach CSI button — i.e. the
 // same OPENING_AR / deletion / status guard.
 assert('SalesList per-row picker scoped to non-OPENING_AR status guard',
@@ -503,6 +517,590 @@ assert('attachReceivedCsi blocks reversed rows',                 /Sale has been 
 assert('attachReceivedCsi enforces period-lock',                 /checkPeriodOpen[\s\S]{0,200}sale\.csi_date/.test(salesCtrlSrc));
 assert('attachReceivedCsi audits csi_received_photo_url change', /field_changed:\s*['"]csi_received_photo_url['"]/.test(salesCtrlSrc));
 
+// ── Section 15. Phase P1.2 Slice 7-extension Round 2B (May 2026) ──
+//
+// Closes the Round 1 CORS lurking-bug. The picker's fetch(signedS3Url) is
+// browser-blocked because the private bucket has no CORS allowlist for
+// localhost:5173. Round 2B routes Sales/Collection/GRN entry-time scans
+// through skipFetch=true + a new server-side OCR path that pulls from S3
+// using the existing AWS SDK creds (no browser fetch). Reuses the same
+// CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE gate from Slice 1.
+section('Phase P1.2 Slice 7-extension Round 2B — Server-side OCR from capture');
+
+// Backend — s3.js gained downloadFromS3 helper (s3Src loaded earlier in §11)
+assert('s3.js exports downloadFromS3 helper',
+  /const downloadFromS3\s*=\s*async\s*\(\s*key\s*\)/.test(s3Src));
+assert('s3.js downloadFromS3 streams Body via async iteration',
+  /downloadFromS3[\s\S]{0,800}for\s+await\s+\(\s*const\s+chunk\s+of\s+response\.Body/.test(s3Src));
+assert('s3.js downloadFromS3 returns {buffer, contentType}',
+  /downloadFromS3[\s\S]{0,800}return\s*\{\s*buffer,\s*contentType/.test(s3Src));
+assert('s3.js module.exports includes downloadFromS3',
+  /module\.exports\s*=\s*\{[\s\S]{0,1200}downloadFromS3/.test(s3Src));
+
+// Backend — ocrController gained capture-pull mode
+const ocrCtrlSrc = read('backend/erp/controllers/ocrController.js');
+assert('ocrController imports CaptureSubmission',
+  /require\(['"][^'"]+CaptureSubmission['"]\)/.test(ocrCtrlSrc));
+assert('ocrController imports downloadFromS3 + extractKeyFromUrl',
+  /\{\s*downloadFromS3,\s*extractKeyFromUrl\s*\}\s*=\s*require\(['"][^'"]+config\/s3['"]\)/.test(ocrCtrlSrc));
+assert('ocrController imports userCanPerformCaptureAction',
+  /require\(['"][^'"]+captureLifecycleAccess['"]\)/.test(ocrCtrlSrc));
+assert('ocrController reads capture_id from body',
+  /const captureId\s*=\s*String\(req\.body\.capture_id/.test(ocrCtrlSrc));
+assert('ocrController rejects file+capture_id combo',
+  /Provide either a `photo` file or `capture_id`/.test(ocrCtrlSrc));
+assert('ocrController scopes capture lookup by entity_id',
+  /CaptureSubmission\.findOne\(\s*\{\s*_id:\s*captureId,\s*entity_id:\s*req\.entityId/.test(ocrCtrlSrc));
+assert('ocrController gates non-owners via PROXY_PULL_CAPTURE',
+  /userCanPerformCaptureAction\(\s*req\.user,\s*['"]PROXY_PULL_CAPTURE['"]/.test(ocrCtrlSrc));
+assert('ocrController blocks legacy data: URL captures',
+  /Legacy data URL[\s\S]{0,80}re-upload required before OCR/.test(ocrCtrlSrc));
+assert('ocrController blocks non-S3 capture URLs',
+  /not stored in S3[\s\S]{0,80}cannot OCR/.test(ocrCtrlSrc));
+assert('ocrController reuses existing S3 key (no re-upload in capture mode)',
+  /preExistingUpload[\s\S]{0,400}Promise\.resolve\(preExistingUpload\)/.test(ocrCtrlSrc));
+assert('ocrController strips signed-URL query string before persisting',
+  /artifact\.url\)\.split\(['"]\?['"]\)\[0\]/.test(ocrCtrlSrc));
+assert('ocrController OCR pipeline reads inputBuffer (not req.file.buffer)',
+  /detectText\(visionBuffer/.test(ocrCtrlSrc) &&
+  /imageBuffer:\s*inputBuffer/.test(ocrCtrlSrc));
+assert('ocrController DocumentAttachment uses inputOriginalName',
+  /original_filename:\s*inputOriginalName/.test(ocrCtrlSrc));
+// Controller must still accept the legacy file-upload path (regression guard)
+assert('ocrController still accepts multer req.file path',
+  /if\s*\(\s*!req\.file\s*\)\s*throw new ApiError\(\s*400,\s*['"]Photo file or capture_id is required\.['"]/.test(ocrCtrlSrc));
+
+// Frontend — ocrService gained processDocumentFromCapture
+const ocrSvcSrc = read('frontend/src/erp/services/ocrService.js');
+assert('ocrService exports processDocumentFromCapture',
+  /export\s+async\s+function\s+processDocumentFromCapture\s*\(\s*captureId,\s*docType/.test(ocrSvcSrc));
+assert('processDocumentFromCapture POSTs JSON body with capture_id + docType',
+  /api\.post\(['"]\/erp\/ocr\/process['"]\s*,\s*body\s*,/.test(ocrSvcSrc));
+assert('processDocumentFromCapture has 2-min timeout (S3 download + OCR)',
+  /processDocumentFromCapture[\s\S]{0,1200}timeout:\s*120000/.test(ocrSvcSrc));
+assert('processDocumentFromCapture validates required args',
+  /captureId is required[\s\S]{0,200}docType is required/.test(ocrSvcSrc));
+
+// Frontend — 3 callers swept. salesEntrySrc, collSessSrc, grnEntrySrc loaded
+// earlier in Section 13.
+
+assert('SalesEntry imports processDocumentFromCapture',
+  /processDocumentFromCapture[\s\S]{0,200}from ['"]\.\.\/services\/ocrService['"]/.test(salesEntrySrc));
+assert('CollectionSession imports processDocumentFromCapture',
+  /processDocumentFromCapture[\s\S]{0,200}from ['"]\.\.\/services\/ocrService['"]/.test(collSessSrc));
+assert('GrnEntry imports processDocumentFromCapture',
+  /processDocumentFromCapture[\s\S]{0,200}from ['"]\.\.\/services\/ocrService['"]/.test(grnEntrySrc));
+
+// Each caller flips picker to skipFetch + reads meta.captures[0]._id
+assert('SalesEntry picker uses skipFetch',
+  /<PendingCapturesPicker[\s\S]{0,2000}skipFetch[\s\S]{0,2500}onPick=\{\(_files,\s*meta\)/.test(salesEntrySrc));
+assert('CollectionSession picker uses skipFetch',
+  /<PendingCapturesPicker[\s\S]{0,2000}skipFetch[\s\S]{0,2500}onPick=\{\(_files,\s*meta\)/.test(collSessSrc));
+assert('GrnEntry picker uses skipFetch',
+  /<PendingCapturesPicker[\s\S]{0,2000}skipFetch[\s\S]{0,2500}onPick=\{\(_files,\s*meta\)/.test(grnEntrySrc));
+
+assert('SalesEntry onPick reads cap._id + captured_artifacts[0].url',
+  /meta\?\.captures\?\.\[0\][\s\S]{0,500}cap\.captured_artifacts\?\.\[0\]\?\.url/.test(salesEntrySrc));
+assert('CollectionSession onPick reads cap._id + captured_artifacts[0].url',
+  /meta\?\.captures\?\.\[0\][\s\S]{0,500}cap\.captured_artifacts\?\.\[0\]\?\.url/.test(collSessSrc));
+assert('GrnEntry onPick reads cap._id + captured_artifacts[0].url',
+  /meta\?\.captures\?\.\[0\][\s\S]{0,500}cap\.captured_artifacts\?\.\[0\]\?\.url/.test(grnEntrySrc));
+
+// Each caller threads new state into modal (initialCaptureId + initialPreviewUrl)
+assert('SalesEntry threads initialCaptureId + initialPreviewUrl into ScanCSIModal',
+  /<ScanCSIModal[\s\S]{0,800}initialCaptureId=\{scanInitialCaptureId\}[\s\S]{0,200}initialPreviewUrl=\{scanInitialPreviewUrl\}/.test(salesEntrySrc));
+assert('CollectionSession threads initialCaptureId + initialPreviewUrl into ScanCRModal',
+  /<ScanCRModal[\s\S]{0,800}initialCaptureId=\{scanInitialCaptureId\}[\s\S]{0,200}initialPreviewUrl=\{scanInitialPreviewUrl\}/.test(collSessSrc));
+assert('GrnEntry threads initialCaptureId + initialPreviewUrl into ScanUndertakingModal',
+  /<ScanUndertakingModal[\s\S]{0,800}initialCaptureId=\{scanInitialCaptureId\}[\s\S]{0,200}initialPreviewUrl=\{scanInitialPreviewUrl\}/.test(grnEntrySrc));
+
+// Each caller clears all 3 state vars on modal close (initialFile + 2 new ones)
+assert('SalesEntry clears scanInitialCaptureId on modal close',
+  /onClose=\{[\s\S]{0,250}setScanInitialCaptureId\(null\)/.test(salesEntrySrc));
+assert('CollectionSession clears scanInitialCaptureId on modal close',
+  /onClose=\{[\s\S]{0,250}setScanInitialCaptureId\(null\)/.test(collSessSrc));
+assert('GrnEntry clears scanInitialCaptureId on modal close',
+  /onClose=\{[\s\S]{0,250}setScanInitialCaptureId\(null\)/.test(grnEntrySrc));
+
+// Each Scan modal accepts the new props and routes capture-id through new handler
+assert('SalesEntry inline ScanCSIModal accepts initialCaptureId prop',
+  /function ScanCSIModal\([\s\S]{0,300}initialCaptureId,\s*initialPreviewUrl/.test(salesEntrySrc));
+assert('CollectionSession inline ScanCRModal accepts initialCaptureId prop',
+  /function ScanCRModal\([\s\S]{0,300}initialCaptureId,\s*initialPreviewUrl/.test(collSessSrc));
+assert('GrnEntry inline ScanUndertakingModal accepts initialCaptureId prop',
+  /function ScanUndertakingModal\([\s\S]{0,300}initialCaptureId,\s*initialPreviewUrl/.test(grnEntrySrc));
+
+// Each modal's useEffect prefers capture-id over file when both set
+assert('SalesEntry inline modal handles initialCaptureId in useEffect',
+  /initialCaptureProcessedRef\.current\s*!==\s*initialCaptureId[\s\S]{0,400}handleCaptureScan\(initialCaptureId/.test(salesEntrySrc));
+assert('CollectionSession inline modal handles initialCaptureId in useEffect',
+  /initialCaptureProcessedRef\.current\s*!==\s*initialCaptureId[\s\S]{0,400}handleCaptureScan\(initialCaptureId/.test(collSessSrc));
+assert('GrnEntry inline modal handles initialCaptureId in useEffect',
+  /initialCaptureProcessedRef\.current\s*!==\s*initialCaptureId[\s\S]{0,400}handleCaptureScan\(initialCaptureId/.test(grnEntrySrc));
+
+// Each modal's handleCaptureScan calls processDocumentFromCapture w/ correct docType
+assert('SalesEntry handleCaptureScan calls processDocumentFromCapture with CSI',
+  /handleCaptureScan[\s\S]{0,800}processDocumentFromCapture\(captureId,\s*['"]CSI['"]/.test(salesEntrySrc));
+assert('CollectionSession handleCaptureScan calls processDocumentFromCapture with CR',
+  /handleCaptureScan[\s\S]{0,800}processDocumentFromCapture\(captureId,\s*['"]CR['"]/.test(collSessSrc));
+assert('GrnEntry handleCaptureScan calls processDocumentFromCapture with UNDERTAKING',
+  /handleCaptureScan[\s\S]{0,800}processDocumentFromCapture\(captureId,\s*['"]UNDERTAKING['"]/.test(grnEntrySrc));
+
+// Existing file-upload path preserved (regression guard)
+assert('SalesEntry inline modal still has handleFile path',
+  /const handleFile\s*=\s*async\s*\(\s*file\s*\)/.test(salesEntrySrc));
+assert('CollectionSession inline modal still has handleFile path',
+  /const handleFile\s*=\s*async\s*\(\s*file\s*\)/.test(collSessSrc));
+assert('GrnEntry inline modal still has handleFile path',
+  /const handleFile\s*=\s*async\s*\(\s*file\s*\)/.test(grnEntrySrc));
+
+// ── 16. Phase P1.2 Slice 4 + Slice 5 — DriveAllocation + SMER tile lock ──
+//
+// Slice 4 wires the BDM-owned Personal/Official allocation panel at the top
+// of /erp/capture-hub. Slice 5 locks the SMER tile until prior workdays are
+// cleared (allocate or "did not drive"). Defense-in-depth: server-side
+// pre-save snaps personal_km to nearest 5; NO_DRIVE branch zeroes km; per-
+// cycle gate; anti-fraud default Personal=Total / Official=0.
+section('Phase P1.2 Slice 4 + 5 — DriveAllocation + SMER tile lock');
+
+const driveModelSrc = read('backend/erp/models/DriveAllocation.js');
+const driveCtrlSrc = read('backend/erp/controllers/driveAllocationController.js');
+const driveRoutesSrc = read('backend/erp/routes/driveAllocationRoutes.js');
+const erpRoutesIdxSrc = read('backend/erp/routes/index.js');
+const driveHookSrc = read('frontend/src/erp/hooks/useDriveAllocations.js');
+const allocPanelSrc = read('frontend/src/erp/pages/mobile/AllocationPanel.jsx');
+const hubSrcSlice4 = read('frontend/src/erp/pages/mobile/BdmCaptureHub.jsx');
+const cssSliceSrc = read('frontend/src/styles/capture-hub.css');
+// wgSrc was loaded earlier in Section 6 — reuse, do not redeclare.
+
+// Model
+assert('DriveAllocation file exists',                                 driveModelSrc.length > 0);
+assert('DriveAllocation collection: erp_drive_allocations',           /collection:\s*['"]erp_drive_allocations['"]/.test(driveModelSrc));
+assert('DriveAllocation status enum ALLOCATED + NO_DRIVE',            /enum:\s*\[\s*['"]ALLOCATED['"]\s*,\s*['"]NO_DRIVE['"]\s*\]/.test(driveModelSrc));
+assert('DriveAllocation drive_date YYYY-MM-DD regex',                 /match:\s*\/\^\\d\{4\}-\\d\{2\}-\\d\{2\}\$\//.test(driveModelSrc));
+// C1/C2 cycle model — period (YYYY-MM) + cycle ('C1'|'C2'), matches CarLogbookEntry
+assert('DriveAllocation period YYYY-MM regex',                        /match:\s*\/\^\\d\{4\}-\\d\{2\}\$\//.test(driveModelSrc));
+assert('DriveAllocation cycle enum C1+C2',
+  /cycle:\s*\{[\s\S]{0,200}enum:\s*\[\s*['"]C1['"]\s*,\s*['"]C2['"]\s*\]/.test(driveModelSrc));
+assert('DriveAllocation no longer carries cycle_number Number',
+  !/cycle_number:\s*\{\s*type:\s*Number/.test(driveModelSrc));
+assert('DriveAllocation unique compound (bdm,entity,date)',
+  /index\(\s*\{\s*bdm_id:\s*1\s*,\s*entity_id:\s*1\s*,\s*drive_date:\s*1\s*\}\s*,\s*\{\s*unique:\s*true/.test(driveModelSrc));
+assert('DriveAllocation compound (entity,period,cycle,drive_date)',
+  /index\(\{\s*entity_id:\s*1\s*,\s*period:\s*1\s*,\s*cycle:\s*1\s*,\s*drive_date:\s*1\s*\}\)/.test(driveModelSrc));
+assert('DriveAllocation source enum BDM_SELF + PROXY_OVERRIDE',       /enum:\s*\[\s*['"]BDM_SELF['"]\s*,\s*['"]PROXY_OVERRIDE['"]\s*\]/.test(driveModelSrc));
+assert('DriveAllocation end_km_auto_filled field',                    /end_km_auto_filled:\s*\{\s*type:\s*Boolean/.test(driveModelSrc));
+assert('DriveAllocation source_smer_capture_ids ref CaptureSubmission',
+  /source_smer_capture_ids:[\s\S]+ref:\s*['"]CaptureSubmission['"]/.test(driveModelSrc));
+assert('DriveAllocation pre-save NO_DRIVE zeroes km',
+  /this\.status\s*===\s*['"]NO_DRIVE['"][\s\S]{0,400}this\.personal_km\s*=\s*0/.test(driveModelSrc));
+assert('DriveAllocation pre-save snaps personal_km via KM_SNAP_STEP',
+  /\/\s*KM_SNAP_STEP\)\s*\*\s*KM_SNAP_STEP/.test(driveModelSrc));
+assert('DriveAllocation pre-save derives total_km',
+  /this\.total_km\s*=\s*Math\.max\(\s*0\s*,\s*end\s*-\s*start\s*\)/.test(driveModelSrc));
+assert('DriveAllocation pre-save derives official_km',
+  /this\.official_km\s*=\s*Math\.max\(\s*0\s*,\s*this\.total_km\s*-\s*this\.personal_km\s*\)/.test(driveModelSrc));
+assert('DriveAllocation exports KM_SNAP_STEP = 5',                    /KM_SNAP_STEP\s*=\s*5/.test(driveModelSrc));
+
+// Controller
+assert('controller exports getUnallocatedWorkdays',                   /getUnallocatedWorkdays/.test(driveCtrlSrc));
+assert('controller exports allocate',                                 /module\.exports[\s\S]+allocate/.test(driveCtrlSrc));
+assert('controller exports markNoDrive',                              /markNoDrive/.test(driveCtrlSrc));
+assert('controller exports getMyAllocations',                         /getMyAllocations/.test(driveCtrlSrc));
+assert('controller imports userCanPerformCaptureAction',              /userCanPerformCaptureAction/.test(driveCtrlSrc));
+// C1/C2 model — controller no longer imports the 28-day scheduleCycleUtils.
+// Negative assertion: scheduleCycleUtils must NOT be imported (would betray
+// the wrong cycle model is back).
+assert('controller does NOT import scheduleCycleUtils (C1/C2 model)',
+  !/require\(.{0,30}scheduleCycleUtils/.test(driveCtrlSrc));
+assert('controller has cycleFor helper (day <= 15 → C1)',
+  /day\s*<=\s*15\s*\?\s*['"]C1['"]\s*:\s*['"]C2['"]/.test(driveCtrlSrc));
+assert('controller exports cycleFor + periodFor',
+  /cycleFor[\s\S]{0,200}periodFor/.test(driveCtrlSrc));
+assert('controller exports priorCycle helper',                        /priorCycle/.test(driveCtrlSrc));
+assert('controller has Manila offset constant',                       /MANILA_OFFSET_MS\s*=\s*8\s*\*\s*60\s*\*\s*60\s*\*\s*1000/.test(driveCtrlSrc));
+assert('controller has prior-cycle grace lookup helper',              /getPriorCycleGraceWorkdays/.test(driveCtrlSrc));
+assert('controller queries DRIVE_ALLOCATION_CONFIG lookup',           /category:\s*['"]DRIVE_ALLOCATION_CONFIG['"]/.test(driveCtrlSrc));
+assert('controller default grace = 5 workdays',                       /DEFAULT_GRACE_WORKDAYS\s*=\s*5/.test(driveCtrlSrc));
+assert('controller exports invalidateGraceCache',                     /invalidateGraceCache/.test(driveCtrlSrc));
+assert('allocate gates ALLOCATE_PERSONAL_OFFICIAL',                   /['"]ALLOCATE_PERSONAL_OFFICIAL['"]/.test(driveCtrlSrc));
+assert('markNoDrive gates MARK_NO_DRIVE_DAY',                         /['"]MARK_NO_DRIVE_DAY['"]/.test(driveCtrlSrc));
+assert('controller rejects today/future drive_date',
+  /drive_date\s*>=\s*today/.test(driveCtrlSrc));
+assert('controller rejects non-workday',                              /must be a workday/.test(driveCtrlSrc));
+assert('controller rejects out-of-backfill-window',                   /outside the backfill window/.test(driveCtrlSrc));
+assert('controller suggests OVERRIDE_ALLOCATION on out-of-window',    /OVERRIDE_ALLOCATION/.test(driveCtrlSrc));
+assert('controller cross-BDM gate (privileged check)',
+  /isPresident\s*\|\|\s*req\.isAdmin\s*\|\|\s*req\.isFinance/.test(driveCtrlSrc));
+assert('controller stamps source PROXY_OVERRIDE on cross-BDM write',  /PROXY_OVERRIDE/.test(driveCtrlSrc));
+assert('controller idempotent upsert via findOne+save',
+  /DriveAllocation\.findOne\(filter\)[\s\S]{0,400}await doc\.save\(\)/.test(driveCtrlSrc));
+assert('unallocated returns canAllocate + canMarkNoDrive booleans',
+  /canAllocate[\s\S]{0,300}canMarkNoDrive/.test(driveCtrlSrc));
+assert('unallocated returns todayStartKm hint',                       /todayStartKm/.test(driveCtrlSrc));
+
+// Routes + mount
+assert('drive-allocations routes file exists',                        driveRoutesSrc.length > 0);
+assert('GET /unallocated-workdays mounted',                           /\/unallocated-workdays/.test(driveRoutesSrc));
+assert('GET /my mounted',                                             /router\.get\(['"]\/my['"]/.test(driveRoutesSrc));
+assert('POST /allocate mounted',                                      /router\.post\(['"]\/allocate['"]/.test(driveRoutesSrc));
+assert('POST /no-drive mounted',                                      /router\.post\(['"]\/no-drive['"]/.test(driveRoutesSrc));
+assert('routes/index.js mounts /drive-allocations',
+  /router\.use\(['"]\/drive-allocations['"]/.test(erpRoutesIdxSrc));
+
+// Frontend hook
+assert('useDriveAllocations file exists',                             driveHookSrc.length > 0);
+assert('hook exposes getUnallocatedWorkdays',                         /getUnallocatedWorkdays/.test(driveHookSrc));
+assert('hook exposes allocate',                                       /\ballocate\b/.test(driveHookSrc));
+assert('hook exposes markNoDrive',                                    /markNoDrive/.test(driveHookSrc));
+assert('hook calls /drive-allocations/allocate',                      /\/drive-allocations\/allocate/.test(driveHookSrc));
+assert('hook calls /drive-allocations/no-drive',                      /\/drive-allocations\/no-drive/.test(driveHookSrc));
+
+// AllocationPanel
+assert('AllocationPanel file exists',                                 allocPanelSrc.length > 0);
+assert('AllocationPanel uses forwardRef',                             /forwardRef\(/.test(allocPanelSrc));
+assert('AllocationPanel exposes refresh via useImperativeHandle',
+  /useImperativeHandle\([\s\S]{0,200}refresh/.test(allocPanelSrc));
+assert('AllocationPanel slider step uses KM_SNAP (5)',                /step=\{KM_SNAP\}|step=\{5\}/.test(allocPanelSrc));
+assert('AllocationPanel snaps via Math.round(v / KM_SNAP) * KM_SNAP',
+  /Math\.round\(\s*\(?Number\([^)]+\)[^)]*\)\s*\/\s*KM_SNAP\s*\)\s*\*\s*KM_SNAP/.test(allocPanelSrc));
+assert('AllocationPanel anti-fraud default Personal=Total',
+  /if\s*\(prev\s*===\s*0\s*&&\s*total\s*>\s*0\)\s*return\s*snapKm\(total\)/.test(allocPanelSrc));
+assert('AllocationPanel anti-fraud warning chip when 0 official',
+  /about to claim 0 official km/.test(allocPanelSrc));
+assert('AllocationPanel auto-fill hint uses todayStartKm',            /Use today.{0,5}s Start KM/.test(allocPanelSrc));
+assert('AllocationPanel persists end_km_auto_filled flag',            /end_km_auto_filled:\s*endAutoFilled/.test(allocPanelSrc));
+assert('AllocationPanel "Did not drive" branch',                      /Did not drive/.test(allocPanelSrc));
+assert('AllocationPanel renders #allocation-panel anchor id',         /id=['"]allocation-panel['"]/.test(allocPanelSrc));
+assert('AllocationPanel onChange feeds parent unallocatedCount',      /unallocatedCount/.test(allocPanelSrc));
+
+// BdmCaptureHub integration (Slice 5 — SMER tile lock)
+assert('Hub imports AllocationPanel',                                 /import\s+AllocationPanel/.test(hubSrcSlice4));
+assert('Hub imports Lock icon from lucide-react',                     /Lock,/.test(hubSrcSlice4));
+assert('Hub mounts AllocationPanel above Quick Capture',
+  /<AllocationPanel[\s\S]{0,400}<QuickCaptureButton/.test(hubSrcSlice4));
+assert('Hub computes smerLocked',                                     /smerLocked\s*=/.test(hubSrcSlice4));
+assert('Hub gates SMER tile lock on unallocatedCount > 0',            /unallocatedCount\s*>\s*0/.test(hubSrcSlice4));
+assert('Hub also gates lock on canAllocate || canMarkNoDrive',
+  /canAllocate\s*\|\|\s*allocStatus\.canMarkNoDrive/.test(hubSrcSlice4));
+assert('Hub passes locked + lockReason + onLockedTap to SMER tile',
+  /w\.key\s*===\s*['"]SMER['"][\s\S]{0,400}smerLocked/.test(hubSrcSlice4));
+assert('Hub handleLockedTap scrolls to allocation-panel',
+  /getElementById\(['"]allocation-panel['"]\)[\s\S]{0,300}scrollIntoView/.test(hubSrcSlice4));
+assert('Hub re-fetches alloc panel after SMER capture',               /allocPanelRef\.current\?\.refresh/.test(hubSrcSlice4));
+assert('CaptureCard renders Lock icon when locked',                   /\{locked\s*\?\s*<Lock/.test(hubSrcSlice4));
+assert('CaptureCard renders "Locked" pill when locked',
+  /ch-tile-pill-lock[\s\S]{0,200}Locked/.test(hubSrcSlice4));
+assert('CaptureCard onClick calls onLockedTap when locked',           /if\s*\(locked\)\s*\{\s*onLockedTap/.test(hubSrcSlice4));
+
+// Slice 4+5 hotfix (a) — UNION fallback against CarLogbookEntry
+// SMER tile lock must release when a proxy backfills the day in /erp/car-logbook
+// (status VALID|POSTED) even when no DriveAllocation row exists yet. Pure
+// additive read-side widening; writes are unchanged.
+assert('controller imports CarLogbookEntry',
+  /require\(['"]\.\.\/models\/CarLogbookEntry['"]\)/.test(driveCtrlSrc));
+assert('controller queries CarLogbookEntry on entry_date + status VALID|POSTED',
+  /CarLogbookEntry\.find\(\{[\s\S]{0,400}entry_date:\s*\{\s*\$gte[\s\S]{0,400}status:\s*\{\s*\$in:\s*\[\s*['"]VALID['"]\s*,\s*['"]POSTED['"]\s*\]/.test(driveCtrlSrc));
+assert('controller adds logbook day to allocatedSet (UNION fallback)',
+  /logbookCoveredSet\.add\(dayStr\)[\s\S]{0,200}allocatedSet\.add\(dayStr\)/.test(driveCtrlSrc));
+assert('controller surfaces coveredByLogbookDays in response payload',
+  /coveredByLogbookDays:\s*Array\.from\(logbookCoveredSet\)/.test(driveCtrlSrc));
+
+// AllocationPanel — C1/C2 model render
+assert('AllocationPanel renders cycle tag (period + cycle)',
+  /ap-cycle-tag/.test(allocPanelSrc));
+assert('AllocationPanel highlights prior-cycle rows differently',
+  /ap-cycle-tag-prior/.test(allocPanelSrc));
+assert('AllocationPanel reads currentPeriod from API',
+  /currentPeriod:\s*data\.currentPeriod/.test(allocPanelSrc));
+assert('AllocationPanel empty-state copy uses period + cycle label',
+  /All prior workdays in \{cycleLabel\}/.test(allocPanelSrc));
+
+// Lookup seed + cache-bust hook
+const lookupCtrlAfter = read('backend/erp/controllers/lookupGenericController.js');
+assert('SEED has DRIVE_ALLOCATION_CONFIG',                            /DRIVE_ALLOCATION_CONFIG:\s*\[/.test(lookupCtrlAfter));
+assert('SEED row PRIOR_CYCLE_GRACE_WORKDAYS = 5',
+  /code:\s*['"]PRIOR_CYCLE_GRACE_WORKDAYS['"][\s\S]{0,300}value:\s*5/.test(lookupCtrlAfter));
+assert('SEED row carries insert_only_metadata',
+  /code:\s*['"]PRIOR_CYCLE_GRACE_WORKDAYS['"][\s\S]{0,300}insert_only_metadata:\s*true/.test(lookupCtrlAfter));
+assert('imports invalidateDriveAllocGraceCache',
+  /invalidateGraceCache:\s*invalidateDriveAllocGraceCache/.test(lookupCtrlAfter));
+assert('DRIVE_ALLOCATION_CONFIG_CATEGORIES set defined',
+  /DRIVE_ALLOCATION_CONFIG_CATEGORIES\s*=\s*new Set\(\['DRIVE_ALLOCATION_CONFIG'\]\)/.test(lookupCtrlAfter));
+const driveAllocInvalidateCalls = (lookupCtrlAfter.match(/invalidateDriveAllocGraceCache\(/g) || []).length;
+assert('invalidateDriveAllocGraceCache hook fires in create/update/remove (3)',
+  driveAllocInvalidateCalls === 3);
+
+// Scoped CSS
+assert('capture-hub.css has .ap-panel rule',                          /\.ap-panel\s*\{/.test(cssSliceSrc));
+assert('capture-hub.css has .ap-cycle-tag rule',                      /\.ap-cycle-tag\s*\{/.test(cssSliceSrc));
+assert('capture-hub.css has .ap-cycle-tag-prior rule',                /\.ap-cycle-tag-prior\s*\{/.test(cssSliceSrc));
+assert('capture-hub.css has .ap-slider rule',                         /\.ap-slider\s*\{/.test(cssSliceSrc));
+assert('capture-hub.css has .ch-tile-locked rule',                    /\.ch-tile-locked\s*\{/.test(cssSliceSrc));
+assert('capture-hub.css has .ch-tile-pill-lock rule',                 /\.ch-tile-pill-lock\s*\{/.test(cssSliceSrc));
+assert('capture-hub.css has .ap-auto-fill-hint rule',                 /\.ap-auto-fill-hint\s*\{/.test(cssSliceSrc));
+
+// WorkflowGuide banner (Rule #1)
+assert('bdm-capture-hub banner mentions Slice 4 Allocation Panel',
+  /'bdm-capture-hub':[\s\S]{0,8000}Slice 4/.test(wgSrc));
+assert('bdm-capture-hub banner mentions Slice 5 SMER tile lock',
+  /'bdm-capture-hub':[\s\S]{0,8000}Slice 5/.test(wgSrc));
+assert('bdm-capture-hub banner mentions 0 official km nudge',
+  /'bdm-capture-hub':[\s\S]{0,8000}0 official km/.test(wgSrc));
+
+// ── Phase P1.2 Slice 8 — Capture Archive ──────────────────────
+section('Slice 8 — Capture Archive backend');
+
+// Controller exports + endpoint signatures
+assert('controller exports getCaptureArchiveSummary',
+  /module\.exports[\s\S]+getCaptureArchiveSummary/.test(ctrlSrcAfter));
+assert('controller exports getCaptureArchiveLeaves',
+  /module\.exports[\s\S]+getCaptureArchiveLeaves/.test(ctrlSrcAfter));
+assert('controller exports bulkMarkReceived',
+  /module\.exports[\s\S]+bulkMarkReceived/.test(ctrlSrcAfter));
+assert('controller exports getCycleAuditReport',
+  /module\.exports[\s\S]+getCycleAuditReport/.test(ctrlSrcAfter));
+// C1/C2 helpers — Slice 8 uses the same half-monthly cycle as
+// DriveAllocation / SmerEntry / CarLogbookEntry / Payslip / IncomeReport.
+// NOT the 28-day BDM-visit cycle from CRM scheduleCycleUtils.
+assert('archive defines cycleFor(C1|C2)',
+  /function cycleFor[\s\S]{0,300}'C1'[\s\S]{0,80}'C2'/.test(ctrlSrcAfter));
+assert('archive defines cycleBounds(period, cycle)',
+  /function cycleBounds\(period,\s*cycle\)/.test(ctrlSrcAfter));
+// Note: refer to scheduleCycleUtils only by name in the rationale comment;
+// the require() must be absent.
+assert('archive does NOT require scheduleCycleUtils (CRM-domain cycle is wrong unit)',
+  !/require\([^)]*scheduleCycleUtils/.test(ctrlSrcAfter));
+assert('leaves rejects only-one-of (period,cycle)',
+  /Both period and cycle are required when narrowing by cycle/.test(ctrlSrcAfter));
+assert('cycle-report requires period + cycle',
+  /period[\s\S]{0,200}cycle[\s\S]{0,200}query params are required/.test(ctrlSrcAfter));
+assert('archive summary aggregates _period + _cycle',
+  /_period[\s\S]{0,500}_cycle/.test(ctrlSrcAfter));
+assert('archive summary derives cycle via $lte 15',
+  /\$lte:\s*\['\$_manila_day',\s*15\]/.test(ctrlSrcAfter));
+assert('archive summary returns years[].periods[].cycles[] tree',
+  /years\.push\(\{\s*year[\s\S]{0,80}periods/.test(ctrlSrcAfter));
+
+// Sub-permission gates wired
+assert('archive summary gates VIEW_OWN_ARCHIVE / VIEW_ALL_ARCHIVE',
+  /VIEW_OWN_ARCHIVE[\s\S]{0,300}VIEW_ALL_ARCHIVE/.test(ctrlSrcAfter));
+assert('resolveArchiveScope helper present',
+  /async function resolveArchiveScope/.test(ctrlSrcAfter));
+assert('VIEW_ALL_ARCHIVE caller honors bdm_id query, VIEW_OWN forces self',
+  /canViewAll\s*\?[\s\S]{0,80}queryBdmId[\s\S]{0,200}String\(req\.user\._id\)/.test(ctrlSrcAfter));
+assert('bulkMarkReceived gates BULK_MARK_RECEIVED',
+  /['"]BULK_MARK_RECEIVED['"]/.test(ctrlSrcAfter));
+assert('cycle audit report gates GENERATE_CYCLE_REPORT',
+  /['"]GENERATE_CYCLE_REPORT['"]/.test(ctrlSrcAfter));
+
+// Bulk-mark logic — skips digital-only + already-received
+assert('bulkMarkReceived skips digital-only',
+  /skipped_digital_only/.test(ctrlSrcAfter));
+assert('bulkMarkReceived skips already-RECEIVED',
+  /skipped_already_received/.test(ctrlSrcAfter));
+assert('bulkMarkReceived caps at 200 ids',
+  /capped at 200/.test(ctrlSrcAfter));
+assert('bulkMarkReceived stamps physical_received_by',
+  /physical_received_by:\s*req\.user\._id/.test(ctrlSrcAfter));
+
+// CSV report shape
+assert('cycle report CSV column order stable',
+  /COLUMNS\s*=\s*\[[\s\S]+'created_at'[\s\S]+'workflow_type'[\s\S]+'physical_status'/.test(ctrlSrcAfter));
+assert('cycle report sets text/csv content-type',
+  /Content-Type[\s\S]{0,80}text\/csv/.test(ctrlSrcAfter));
+assert('cycle report sets attachment filename (period+cycle)',
+  /cycle-audit-\$\{period\}-\$\{cycle\}/.test(ctrlSrcAfter)
+  && /Content-Disposition[\s\S]{0,80}attachment;\s*filename/.test(ctrlSrcAfter));
+assert('cycle report supports JSON format',
+  /format\s*===\s*'json'/.test(ctrlSrcAfter));
+
+// Routes mounted with literal-before-:id ordering
+assert('routes mount /archive/summary',
+  /\/archive\/summary[\s\S]{0,80}getCaptureArchiveSummary/.test(routeSrcAfter));
+assert('routes mount /archive/leaves',
+  /\/archive\/leaves[\s\S]{0,80}getCaptureArchiveLeaves/.test(routeSrcAfter));
+assert('routes mount /archive/cycle-report',
+  /\/archive\/cycle-report[\s\S]{0,80}getCycleAuditReport/.test(routeSrcAfter));
+assert('routes mount /bulk-mark-received',
+  /\/bulk-mark-received[\s\S]{0,80}bulkMarkReceived/.test(routeSrcAfter));
+assert('routes — /archive/summary mounted BEFORE /:id',
+  routeSrcAfter.indexOf("/archive/summary") < routeSrcAfter.indexOf("router.get('/:id'"));
+assert('routes — /bulk-mark-received mounted BEFORE /:id',
+  routeSrcAfter.indexOf('/bulk-mark-received') < routeSrcAfter.indexOf("router.get('/:id'"));
+
+// ── Phase P1.2 Slice 8 — Capture Archive frontend ─────────────
+section('Slice 8 — Capture Archive frontend');
+const archivePageSrc = read('frontend/src/erp/pages/proxy/CaptureArchive.jsx');
+const hookSrc = read('frontend/src/erp/hooks/useCaptureSubmissions.js');
+
+assert('CaptureArchive page exists', archivePageSrc.length > 0);
+assert('CaptureArchive default export', /export default function CaptureArchive/.test(archivePageSrc));
+assert('CaptureArchive renders WorkflowGuide pageKey="capture-archive"',
+  /WorkflowGuide\s+pageKey=["']capture-archive["']/.test(archivePageSrc));
+assert('CaptureArchive uses getArchiveSummary', /getArchiveSummary/.test(archivePageSrc));
+assert('CaptureArchive uses getArchiveLeaves', /getArchiveLeaves/.test(archivePageSrc));
+assert('CaptureArchive uses bulkMarkReceived', /bulkMarkReceived/.test(archivePageSrc));
+assert('CaptureArchive uses downloadCycleReport', /downloadCycleReport/.test(archivePageSrc));
+assert('CaptureArchive uses overridePhysicalStatus', /overridePhysicalStatus/.test(archivePageSrc));
+assert('CaptureArchive renders bulk button when selected.size > 0',
+  /selected\.size\s*>\s*0[\s\S]{0,300}archive-bulk-mark/.test(archivePageSrc));
+assert('CaptureArchive bulk-mark testid present',
+  /data-testid=["']archive-bulk-mark["']/.test(archivePageSrc));
+assert('CaptureArchive download CSV testid pattern (period+cycle)',
+  /archive-download-csv-\$\{p\.period\}-\$\{c\.cycle\}/.test(archivePageSrc));
+assert('CaptureArchive renders period level in tree',
+  /y\.periods\.map\(p\s*=>/.test(archivePageSrc));
+assert('CaptureArchive renders cycle level (period.cycles)',
+  /p\.cycles\.map\(c\s*=>/.test(archivePageSrc));
+assert('CaptureArchive activeFolder carries period + cycle',
+  /activeFolder\.period[\s\S]{0,200}activeFolder\.cycle/.test(archivePageSrc));
+assert('CaptureArchive handleDownloadCsv takes (period, cycle)',
+  /handleDownloadCsv\s*=\s*useCallback\(async\s*\(period,\s*cycle\)/.test(archivePageSrc));
+assert('CaptureArchive override row testid pattern',
+  /archive-row-override-/.test(archivePageSrc));
+
+// Hook wires the new endpoints
+assert('hook exports getArchiveSummary',         /getArchiveSummary/.test(hookSrc));
+assert('hook exports getArchiveLeaves',          /getArchiveLeaves/.test(hookSrc));
+assert('hook exports bulkMarkReceived',          /bulkMarkReceived/.test(hookSrc));
+assert('hook exports downloadCycleReport',       /downloadCycleReport/.test(hookSrc));
+assert('hook exports overridePhysicalStatus',    /overridePhysicalStatus/.test(hookSrc));
+assert('hook downloadCycleReport uses responseType blob',
+  /downloadCycleReport[\s\S]{0,400}responseType:\s*['"]blob['"]/.test(hookSrc));
+assert('hook bulkMarkReceived posts {ids}',
+  /bulkMarkReceived[\s\S]{0,300}\{\s*ids\s*\}/.test(hookSrc));
+
+// Route + sidebar wiring
+assert('App.jsx imports CaptureArchive', /CaptureArchive\s*=\s*lazyRetry/.test(appSrc));
+assert('App.jsx mounts /erp/capture-archive',
+  /path=["']\/erp\/capture-archive["'][\s\S]{0,200}<CaptureArchive/.test(appSrc));
+assert('Sidebar links Capture Archive',
+  /\/erp\/capture-archive[\s\S]{0,100}Capture Archive/.test(sidebarSrc));
+
+// WorkflowGuide banner
+assert('capture-archive banner key exists', /'capture-archive'\s*:/.test(wgSrc));
+assert('capture-archive banner mentions BULK_MARK_RECEIVED',
+  /'capture-archive':[\s\S]{0,4000}BULK_MARK_RECEIVED/.test(wgSrc));
+assert('capture-archive banner mentions VIEW_OWN_ARCHIVE',
+  /'capture-archive':[\s\S]{0,4000}VIEW_OWN_ARCHIVE/.test(wgSrc));
+assert('capture-archive banner mentions OVERRIDE_PHYSICAL_STATUS',
+  /'capture-archive':[\s\S]{0,4000}president|'capture-archive':[\s\S]{0,4000}Override/.test(wgSrc));
+
+// ── Phase P1.2 Slice 9 — Mark-Complete inline + override ─────
+section('Slice 9 — Mark-Complete inline + override');
+
+// Backend completeCapture accepts paper_received flag with MARK_PAPER_RECEIVED gate
+assert('completeCapture destructures paper_received',
+  /paper_received[\s\S]{0,80}=\s*req\.body/.test(ctrlSrcAfter));
+assert('completeCapture gates paper_received on MARK_PAPER_RECEIVED',
+  /paper_received\s*===\s*true[\s\S]{0,300}MARK_PAPER_RECEIVED/.test(ctrlSrcAfter));
+assert('completeCapture sets physical_status=RECEIVED on paper_received',
+  /paper_received\s*===\s*true[\s\S]{0,400}physical_status\s*=\s*['"]RECEIVED['"]/.test(ctrlSrcAfter));
+assert('completeCapture stamps physical_received_at + by',
+  /paper_received\s*===\s*true[\s\S]{0,500}physical_received_at[\s\S]{0,200}physical_received_by/.test(ctrlSrcAfter));
+
+// overridePhysicalStatus endpoint
+assert('controller exports overridePhysicalStatus',
+  /module\.exports[\s\S]+overridePhysicalStatus/.test(ctrlSrcAfter));
+assert('overridePhysicalStatus gates OVERRIDE_PHYSICAL_STATUS',
+  /['"]OVERRIDE_PHYSICAL_STATUS['"]/.test(ctrlSrcAfter));
+assert('overridePhysicalStatus rejects digital-only',
+  /Cannot override physical status[\s\S]{0,80}digital-only/.test(ctrlSrcAfter));
+assert('overridePhysicalStatus VALID_OVERRIDE_STATUSES enum',
+  /VALID_OVERRIDE_STATUSES\s*=\s*\['PENDING',\s*'RECEIVED',\s*'MISSING'\]/.test(ctrlSrcAfter));
+assert('overridePhysicalStatus clears received_at on non-RECEIVED',
+  /physical_received_at\s*=\s*undefined/.test(ctrlSrcAfter));
+assert('routes mount PUT /:id/physical-status',
+  /router\.put\(['"]\/:id\/physical-status['"][\s\S]{0,80}overridePhysicalStatus/.test(routeSrcAfter));
+
+// Frontend ProxyQueue paper_received toggle + override
+const proxyQueueSrc = read('frontend/src/erp/pages/proxy/ProxyQueue.jsx');
+assert('ProxyQueue imports useAuth', /from ['"]\.\.\/\.\.\/\.\.\/hooks\/useAuth['"]/.test(proxyQueueSrc));
+assert('ProxyQueue computes canMarkPaper / canOverride',
+  /canMarkPaper[\s\S]{0,200}canOverride/.test(proxyQueueSrc));
+assert('ProxyQueue renders PhysicalStatusChip',
+  /function PhysicalStatusChip/.test(proxyQueueSrc));
+assert('ProxyQueue renders OverrideSheet',
+  /function OverrideSheet/.test(proxyQueueSrc));
+assert('ProxyQueue Mark Complete forwards paper_received',
+  /onComplete\(item\._id,\s*\{\s*paper_received:\s*paperReceived\s*\}\)/.test(proxyQueueSrc));
+assert('ProxyQueue paper-received checkbox testid',
+  /data-testid=["']proxy-paper-received-checkbox["']/.test(proxyQueueSrc));
+assert('ProxyQueue override-open testid',
+  /data-testid=["']proxy-override-open["']/.test(proxyQueueSrc));
+assert('ProxyQueue override-apply testid',
+  /data-testid=["']proxy-override-apply["']/.test(proxyQueueSrc));
+assert('ProxyQueue handleOverride defined',
+  /const handleOverride\s*=\s*useCallback/.test(proxyQueueSrc));
+assert('ProxyQueue passes onOverride to DetailDrawer',
+  /onOverride=\{handleOverride\}/.test(proxyQueueSrc));
+assert('ProxyQueue passes canMarkPaper / canOverride to DetailDrawer',
+  /canMarkPaper=\{canMarkPaper\}[\s\S]{0,80}canOverride=\{canOverride\}/.test(proxyQueueSrc));
+
+// proxy-queue banner mentions Slice 9
+assert('proxy-queue banner mentions Slice 9 paper toggle',
+  /'proxy-queue':[\s\S]{0,4000}Slice 9[\s\S]{0,300}Paper received/.test(wgSrc));
+assert('proxy-queue banner mentions Override',
+  /'proxy-queue':[\s\S]{0,4000}Override/.test(wgSrc));
+assert('proxy-queue banner links to Capture Archive',
+  /'proxy-queue':[\s\S]{0,4000}\/erp\/capture-archive/.test(wgSrc));
+
+// ── Section 17. Slice 1 follow-on + Slice 9 partial (May 06 2026) ──
+//
+// Two narrow follow-ons closing deferred items from Round 2B + Slice 1:
+//   (a) BDM-self picker access on getProxyQueue. Without this, a plain BDM
+//       hitting the picker on /erp/sales (or any future BDM-self surface)
+//       gets 403 because getProxyQueue is gated on canProxyEntry / privileged.
+//       The fix lets `bdm_id=self` (or matching ID) bypass the proxy gate
+//       and hard-scopes the filter to the caller's own captures.
+//   (b) Slice 9 partial — auto-finalize captures after attach. The Round 2A
+//       picker on SalesList writes a bare S3 URL via attachReceivedCsi, but
+//       the source CaptureSubmission stays PENDING_PROXY forever and keeps
+//       appearing in the picker drawer. The fix wires
+//       linkCaptureToDocument(capture_id, 'SalesLine', sale._id) into the
+//       attachReceivedCsi controller — idempotent, best-effort, status walk
+//       to AWAITING_BDM_REVIEW per the existing REVIEW_WORKFLOWS list.
+section('Slice 1 follow-on + Slice 9 partial — picker self-fetch + auto-finalize');
+
+// (a) getProxyQueue self-fetch
+assert('getProxyQueue computes isSelfFetch from bdm_id query',
+  /isSelfFetch\s*=\s*bdm_id\s*===\s*['"]self['"]\s*\|\|\s*\(bdm_id\s*&&\s*String\(bdm_id\)\s*===\s*callerId\)/.test(ctrlSrcAfter));
+assert('getProxyQueue self-fetch + privileged shortcut bypass proxy gate',
+  /if\s*\(\s*!isSelfFetch\s*&&\s*!privileged\s*\)\s*\{[\s\S]{0,500}canProxyEntry/.test(ctrlSrcAfter));
+assert('getProxyQueue hard-scopes filter.bdm_id to callerId on self-fetch',
+  /if\s*\(\s*isSelfFetch\s*\)\s*\{\s*[\s\S]{0,300}filter\.bdm_id\s*=\s*callerId/.test(ctrlSrcAfter));
+
+// (b) linkCaptureToDocument helper
+assert('linkCaptureToDocument helper defined',
+  /async function linkCaptureToDocument\(captureId,\s*kind,\s*docId,\s*ctx\)/.test(ctrlSrcAfter));
+assert('linkCaptureToDocument is idempotent on same kind+id',
+  /linked_doc_kind\s*===\s*kind[\s\S]{0,200}linked_doc_id[\s\S]{0,200}===\s*String\(docId\)/.test(ctrlSrcAfter));
+assert('linkCaptureToDocument allows owner / proxy / privileged',
+  /isOwner\s*=\s*String\(cap\.bdm_id\)[\s\S]{0,200}isProxy\s*=\s*String\(cap\.proxy_id[\s\S]{0,300}isOwner\s*&&\s*!isProxy\s*&&\s*!isPrivileged/.test(ctrlSrcAfter));
+assert('linkCaptureToDocument walks PENDING_PROXY/IN_PROGRESS only',
+  /if\s*\(\s*cap\.status\s*===\s*['"]PENDING_PROXY['"]\s*\|\|\s*cap\.status\s*===\s*['"]IN_PROGRESS['"]\s*\)/.test(ctrlSrcAfter));
+assert('linkCaptureToDocument lands review workflows in AWAITING_BDM_REVIEW',
+  /REVIEW_WORKFLOWS\.includes\(cap\.workflow_type\)[\s\S]{0,80}AWAITING_BDM_REVIEW/.test(ctrlSrcAfter));
+assert('linkCaptureToDocument exported from controller',
+  /module\.exports\s*=\s*\{[\s\S]+linkCaptureToDocument/.test(ctrlSrcAfter));
+
+// (b) salesController.attachReceivedCsi wiring
+assert('attachReceivedCsi destructures capture_id from body',
+  /const\s*\{\s*csi_received_photo_url[\s\S]{0,200}capture_id\s*\}\s*=\s*req\.body/.test(salesCtrlSrc));
+assert('attachReceivedCsi requires linkCaptureToDocument lazily',
+  /require\(['"]\.\/captureSubmissionController['"]\)[\s\S]{0,200}linkCaptureToDocument/.test(salesCtrlSrc));
+// kind is the Mongoose model name per CaptureSubmission.linked_doc_kind enum
+// (ExpenseEntry / SalesLine / Collection / GrnEntry / SmerEntry /
+// PettyCashTransaction / CarLogbookEntry / CwtLedgerEntry). NOT snake_case.
+assert('attachReceivedCsi calls linkCaptureToDocument with SalesLine kind',
+  /linkCaptureToDocument\(\s*capture_id,\s*['"]SalesLine['"],\s*sale\._id/.test(salesCtrlSrc));
+
+// useSales hook forwards capture_id
+const useSalesHookSrc = read('frontend/src/erp/hooks/useSales.js');
+assert('useSales.attachReceivedCsi forwards capture_id',
+  /attachReceivedCsi\s*=\s*\([^)]*capture_id[^)]*\)\s*=>[\s\S]{0,200}capture_id/.test(useSalesHookSrc));
+
 // ── Summary ───────────────────────────────────────────────────
 const total = pass + fail;
 process.stdout.write(`\n${'═'.repeat(60)}\n`);
@@ -512,5 +1110,5 @@ if (fail > 0) {
   failures.forEach(f => process.stdout.write(`  - ${f}\n`));
   process.exit(1);
 }
-process.stdout.write(`\n✓ Capture Hub Phase P1.1 + P1.2 Slice 1 contract is intact.\n`);
+process.stdout.write(`\n✓ Capture Hub Phase P1.1 + P1.2 Slice 1 + Slice 7-ext Rounds 1/2A/2B + Slice 4/5 + Slice 8/9 contract is intact.\n`);
 process.exit(0);

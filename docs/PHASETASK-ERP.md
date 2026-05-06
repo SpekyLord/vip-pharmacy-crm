@@ -7899,6 +7899,113 @@ docs/PHASETASK-ERP.md                                            # this entry
 
 ---
 
+## Phase P1.2 Slice 8 + Slice 9 — Capture Archive + Mark-Complete Inline + Override Controls (May 06, 2026) ✅ SHIPPED
+
+### Why
+Slice 1 shipped the 12-code lookup-driven role grid; Slices 2/3/7 shipped the upload + Quick Capture + entry-page picker; Slices 4/5 shipped the tomorrow-drive allocation gate. Slices 8 + 9 close the lifecycle:
+- **Slice 8** — `/erp/capture-archive`: browseable archive grouped Year → Period (YYYY-MM) → Cycle (C1|C2) → Workflow folder, multi-select bulk-mark-received, one-click CSV cycle audit export.
+- **Slice 9** — Inline paper attestation in ProxyQueue's Mark Complete drawer ("Paper received now" checkbox flips physical_status atomically with the lifecycle transition) + president-only RECEIVED ↔ MISSING override.
+
+### Cycle model — C1/C2 half-monthly (NOT 28-day BDM-visit cycle)
+Same convention as DriveAllocation / SmerEntry / CarLogbookEntry / Payslip / IncomeReport / DeductionSchedule. C1 = day 1–15 inclusive; C2 = day 16–end-of-month. Inline `cycleFor()` + `cycleBounds(period, cycle)` helpers in the controller; the 28-day cycle from `scheduleCycleUtils.js` is the CRM domain model and the wrong unit for ERP reporting buckets — same correction the parallel-session DriveAllocation Slice 4 work made before its production smoke. This means a Capture cycle CSV and a SmerEntry per-diem CSV for the same window now overlay cleanly for auditors.
+
+### What shipped
+
+**Backend** (`backend/erp/controllers/captureSubmissionController.js`):
+- 5 new functions: `getCaptureArchiveSummary` (single `$facet` aggregation → `years[].periods[].cycles[].workflows[]` tree with per-cell counts + cross-BDM picker), `getCaptureArchiveLeaves` (paginated rows with signed S3 URLs), `bulkMarkReceived` (multi-select capped at 200 ids/call, skips digital-only + already-RECEIVED server-side), `getCycleAuditReport` (CSV/JSON, stable column order, filename `cycle-audit-<period>-<cycle>-<today>.csv`), `overridePhysicalStatus` (president-only flip RECEIVED↔MISSING↔PENDING).
+- `completeCapture` extended with optional `paper_received: true` body flag, gated by `MARK_PAPER_RECEIVED`. Atomically flips `physical_status` to RECEIVED + stamps `physical_received_at`/`physical_received_by` in the same write as the `IN_PROGRESS → PROCESSED|AWAITING_BDM_REVIEW` lifecycle transition.
+- `getCaptureById` populates `physical_received_by` so the drawer renders "Received {date} by {name}".
+- `overridePhysicalStatus` returns only the changed `physical_*` fields (NOT the full doc) so the FE's `{ ...prev, ...res.data }` merge into the open drawer doesn't clobber populated `bdm_id`/`proxy_id` refs.
+
+**Backend routes** (`backend/erp/routes/captureSubmissionRoutes.js`):
+- `GET /archive/summary`, `GET /archive/leaves`, `GET /archive/cycle-report`, `POST /bulk-mark-received` — all mounted **BEFORE** `/:id` so Express path-precedence resolves the literals rather than treating "archive" as an `:id` capture.
+- `PUT /:id/physical-status` — president-only flip endpoint.
+
+**Frontend** (`frontend/src/erp/pages/proxy/CaptureArchive.jsx`, NEW, ~570 lines):
+- Two-pane layout. Left: 4-level collapsible tree Year → Period → Cycle → Workflow folder, per-cell pill counts (`Np` pending / `Nm` missing / total), per-cycle CSV download icon. Right: paginated row list with multi-select checkboxes, paper-status filter, dynamic "Mark N Received" button, per-row Override link.
+- `OverrideSheet` sub-component (3 radio options: PENDING / RECEIVED / MISSING; Apply disabled when status unchanged).
+- Client-side role gating mirrors backend `captureLifecycleAccess.js` DEFAULTS so BDMs see only their own captures cosmetically; backend is still the gate (403 on perm fail).
+
+**Frontend** (`frontend/src/erp/pages/proxy/ProxyQueue.jsx`, augmented):
+- New `PhysicalStatusChip` component renders Pending (amber) / Received (green) / Missing (red) / Digital (gray) chip alongside the SLA + status chips on the drawer.
+- New `OverrideSheet` mirrors CaptureArchive's, opens from the drawer's "Override" affordance, gated to OVERRIDE_PHYSICAL_STATUS.
+- New "Paper received now" amber checkbox below Mark Complete — visible only when `physical_required` and `physical_status === 'PENDING'` and caller has `MARK_PAPER_RECEIVED`. Forwards `{ paper_received: true }` to the existing `completeCapture` POST.
+
+**Hook** (`frontend/src/erp/hooks/useCaptureSubmissions.js`):
+- `getArchiveSummary`, `getArchiveLeaves`, `bulkMarkReceived`, `downloadCycleReport` (responseType: 'blob' for CSV), `overridePhysicalStatus`.
+
+**Wiring chain (Rule #2 end-to-end)**:
+- Model — `CaptureSubmission` (existing — uses `physical_status` enum + `physical_required` Boolean shipped in Phase P1.1)
+- Controller — 5 new functions + 1 extended (completeCapture) — exported from `module.exports`
+- Routes — 5 new mounts in route file (all literal paths BEFORE `:id`)
+- Hook — 5 new methods exported
+- Components — `CaptureArchive` page + `ProxyQueue` augmentations + `OverrideSheet` (both pages)
+- App.jsx — `lazyRetry(() => import('./erp/pages/proxy/CaptureArchive'))` + `<Route path="/erp/capture-archive">`
+- Sidebar — link added for both BDM-shaped roles and management
+- WorkflowGuide — new `capture-archive` banner + `proxy-queue` banner extended for Slice 9 (Rule #1)
+
+### Lookup-driven gates wired (Rule #3)
+| Code | Gate Surface | Default |
+|---|---|---|
+| `VIEW_OWN_ARCHIVE` | Archive page (BDM filtered to self when no VIEW_ALL) | `[staff]` |
+| `VIEW_ALL_ARCHIVE` | Archive page cross-BDM picker + bdm_id query honored | `[admin, finance, president]` |
+| `BULK_MARK_RECEIVED` | Archive multi-select bulk-mark button + endpoint | `[admin]` |
+| `GENERATE_CYCLE_REPORT` | Per-cycle CSV download button + endpoint | `[admin, finance, president]` |
+| `MARK_PAPER_RECEIVED` | ProxyQueue drawer "Paper received now" checkbox + completeCapture extension | `[admin, finance]` |
+| `OVERRIDE_PHYSICAL_STATUS` | Archive + ProxyQueue Override link + endpoint | `[president]` |
+
+All 6 gates are lookup-driven via `CAPTURE_LIFECYCLE_ROLES` (already seeded by Slice 1 with `insert_only_metadata: true`). 60s helper cache busts on Lookup save (Rule #19 hot-config posture). Subscribers reroute per-entity via Control Center → Lookup Tables — no code deploy.
+
+### Files
+```
+backend/erp/controllers/captureSubmissionController.js     # +5 functions + completeCapture extension + getCaptureById populate + C1/C2 helpers
+backend/erp/routes/captureSubmissionRoutes.js              # +5 routes (literals before :id)
+backend/scripts/healthcheckCaptureHub.js                   # +76 assertions (Slice 8 + 9 wiring contract incl. C1/C2 cycle)
+frontend/src/erp/hooks/useCaptureSubmissions.js            # +5 hook methods
+frontend/src/erp/pages/proxy/ProxyQueue.jsx                # PhysicalStatusChip + OverrideSheet + paper-received checkbox + handleOverride
+frontend/src/erp/pages/proxy/CaptureArchive.jsx            # NEW — full-page browseable archive with C1/C2 tree
+frontend/src/erp/components/WorkflowGuide.jsx              # +'capture-archive' banner; 'proxy-queue' banner extended for Slice 9
+frontend/src/components/common/Sidebar.jsx                 # +Capture Archive link for staff + management
+frontend/src/App.jsx                                       # lazyRetry + <Route path="/erp/capture-archive">
+CLAUDE-ERP.md                                              # Phase P1.2 Slice 8 + 9 entry
+docs/PHASETASK-ERP.md                                      # this section
+```
+
+### Verification
+- `node -c` on all modified backend files — clean.
+- `node backend/scripts/healthcheckCaptureHub.js` — **498/498 PASS**. 76 assertions specifically cover Slice 8 + 9 wiring (controller exports + endpoint signatures + sub-permission gates + C1/C2 helpers + bulkMark skip semantics + CSV column stability + route mount order + frontend hook exports + page testids + Sidebar link + App.jsx mount + WorkflowGuide banner content).
+- `vite build` — green, ~13.5s, new `CaptureArchive-*.js` chunk emitted.
+- **API smoke (live dev cluster)**:
+  - As president: archive summary returns `years[].periods[].cycles[]` shape with C1 label "C1 (1–15)" + correct date range; leaves with `period+cycle` → 200 + signed S3 URLs; leaves with only `cycle` → 400 with friendly message; bulk-mark 1 PENDING SALES id → `{marked:1,skipped:0,not_found:0}`; physical-status PUT round-trip back to PENDING → clean; invalid status → 400; empty ids[] → 400; cycle-report CSV → 200 + correct `Content-Disposition` filename; Mark-Complete with `{paper_received:true}` → atomic transition to AWAITING_BDM_REVIEW + physical_status=RECEIVED + stamped fields.
+  - As Mae (staff): summary 200 with `canViewAll:false` + bdmFilter forced to her _id; bulk-mark 403; physical-status 403. Gating correct.
+- **Playwright UI smoke (live dev cluster)** as president: login → /erp/capture-archive → 4-level tree expansion (Year 2026 → May 2026 (6) → C1 (1–15) (May 01–May 15, 2026) (6) → 6 workflow folders) → click SALES → 1 leaf row → select → "Mark 1 Received" → flips to Received with "May 06, 2026 by Gregg Louie Vios" → Override → sheet opens with Apply disabled (no-op guard ✓) → pick PENDING → Apply → flips back to Pending → CSV download fetch returns 200 + correct filename. Then /erp/proxy-queue → row click → drawer renders Paper: PENDING chip + Override link (Slice 9 ✓) → Override sheet opens correctly. End-to-end paper-received via API confirmed atomic.
+- **3 mid-smoke bugs found + fixed**:
+  1. `[{ $limit: 0 }]` is invalid in MongoDB `$facet` — switched to `[{ $match: { _id: null } }]` for the VIEW_OWN_ARCHIVE no-op branch.
+  2. `getCaptureById` was not populating `physical_received_by` — added populate so drawer renders "Received {date} by {name}".
+  3. `overridePhysicalStatus` returned the full unpopulated Mongoose doc — restricted to only the changed `physical_*` fields + `_id` so FE's `{ ...prev, ...res.data }` merge doesn't clobber `bdm_id`/`proxy_id` populated refs.
+- **1 mid-design correction**: refactored from 28-day BDM-visit cycle (`scheduleCycleUtils`) to C1/C2 half-monthly to match every other ERP-domain document (DriveAllocation, SmerEntry, CarLogbookEntry, Payslip, IncomeReport, DeductionSchedule). Caught before any production reads.
+
+### Subscription readiness (Rule #19 + Rule 0d)
+- Every endpoint scopes by `req.entityId` so the same code runs cleanly inside Year-2 Pharmacy SaaS spin-out (`tenantId` generalization) without leakage.
+- Every gate is lookup-driven per-entity — subscribers carve different role grids per subsidiary by editing one Lookup row.
+- `bdm_id` filter (Rule #21) — `resolveArchiveScope` honors caller's `bdm_id` query param ONLY when `VIEW_ALL_ARCHIVE` is granted; otherwise forced to `req.user._id`. No silent self-fallback for privileged users (privileged-with-no-bdm_id = "all BDMs in scope").
+- Bulk-mark capped at 200 ids/call to bound a hostile multi-tenant cross-tenant attack surface.
+- C1/C2 cycle naming is universal across PH-business ERP documents and SaaS-portable.
+
+### Banners (Rule #1)
+- New `'capture-archive'` banner: 5-step workflow (pick Year → Cycle → Workflow → tick rows → Mark N Received), 5 tips covering selectable-row rules + cross-BDM scope + CSV diff use case + lookup-driven sub-perms + president-only Override blast radius.
+- `'proxy-queue'` banner extended: 1 new step on Slice 9 paper-received checkbox + 2 new tips on Override + Capture Archive cross-link.
+
+### What's deferred (NOT in scope)
+- **Cycle audit PDF export** — CSV is sufficient for an audit-trail diff; PDF would add a heavyweight dep (`pdfkit`/`puppeteer`) for marginal benefit.
+- **Audit trail of overrides** — `physical_received_at`/`physical_received_by` get stamped, but a full per-flip history of "who flipped what when" is out of scope. Lift if the office team contests an override.
+- **Bulk OVERRIDE** — only single-row override today; bulk is 1-by-1 or use bulk-mark with the new `physical_status` filter.
+
+### Smoke residue
+- Two seeded captures from the parallel session remain on the dev cluster: SALES `69fa7c6862a1f2f8b41cd0ee` (cycled through PENDING→RECEIVED→PENDING during smoke; lifecycle reached AWAITING_BDM_REVIEW via parallel test); CWT_INBOUND `69f9f3096a3ca4ca611e45aa` (smoke target for paper-received attestation, lifecycle now AWAITING_BDM_REVIEW with physical_status=RECEIVED). Both are legitimate evidence rows; neither pollutes production reads.
+
+---
+
 ## Phase P1.2 Slice 1 — Capture Lifecycle Sub-Permissions + UNCATEGORIZED workflow_type (May 06, 2026) ✅ SHIPPED
 
 ### Why
@@ -7946,6 +8053,240 @@ docs/PHASETASK-ERP.md                                            # this entry
 ### Subscription readiness
 - All 12 gates are lookup-driven per-entity (Rule #3 + Rule #19). Subscribers carve different role grids by editing one Lookup row. Example: a subsidiary that wants BDMs self-attesting paper receipt adds `staff` to `MARK_PAPER_RECEIVED.metadata.roles`; cache busts on save and the next request honors the new posture without any code deploy.
 - `entity_id` scopes both lookup query AND cache namespace, so when the same code runs inside Year-2 Pharmacy SaaS spin-out the gates isolate per-tenant cleanly. Rule 0d alignment.
+
+---
+
+## Phase P1.2 Slice 4 + Slice 5 — Tomorrow-drive Allocation Slider + SMER Tile Lock (May 06, 2026, **C1/C2 corrected within same session**) ✅ SHIPPED
+
+### Cycle-model correction (post-ratification, same-day)
+
+After the first round of API + UI smoke ratified, an operational pass exposed a structural mistake: the controller and model had been wired against `scheduleCycleUtils.js` (the 28-day BDM-visit cycle from the CRM domain — anchored to Jan 5, with W1D1..W4D5 buckets for VIP Client visit scheduling) instead of the half-monthly **C1 (day 1–15) / C2 (day 16–end of month)** reporting cycle that ERP uses everywhere else (`CarLogbookEntry`, `SmerEntry`, `IncomeReport`, `Payslip`, `DeductionSchedule`). Two failures stacked:
+
+1. The DriveAllocation row stored `cycle_number: 4` while CarLogbookEntry stores `{period: '2026-05', cycle: 'C1'}` — a Slice 6 join (Car Logbook auto-populate) would have needed a translation layer or silently produced garbage.
+2. A BDM reconciling on May 6 trying to backfill April 30 (= C2 April, prior cycle) hit the strict "must be in current cycle" guard — clearly wrong for the operational pattern where BDMs reconcile yesterday's drive in the first few workdays of a new cycle.
+
+**Fix shipped in the same session before any production rows landed.** Schema flip + controller refactor + new prior-cycle grace window. Schema flip dropped the 7 dev-cluster smoke residue rows; re-smoke on the new shape passed cleanly. The lessons: (a) "cycle" is overloaded in this codebase — CRM uses 28-day, ERP uses C1/C2 — always audit which domain a feature is in before reaching for `scheduleCycleUtils`; (b) `CarLogbookEntry` is the canonical reference for ANY new ERP-side cycle-aware feature.
+
+### What changed in the correction (vs. initial commit)
+
+**Model**: `cycle_number: Number` → `period: String 'YYYY-MM'` + `cycle: String 'C1'|'C2'`. New compound index `{entity_id, period, cycle, drive_date}` for the per-cycle bulk reads. Pre-save math unchanged.
+
+**Controller**: dropped `require('scheduleCycleUtils')` (negative-asserted in healthcheck). Inlined `cycleFor(date)` (`day <= 15 ? 'C1' : 'C2'`), `periodFor(date)` (`'YYYY-MM'`), `priorCycle({period, cycle})` (rolls back across month boundary correctly: `2026-05/C1 → 2026-04/C2`, `2026-01/C1 → 2025-12/C2`), `workdaysIn(period, cycle, untilDate?)`, `workdaysElapsedInCurrentCycle()`. All Manila-time correct via local `MANILA_OFFSET_MS`.
+
+**Backfill window**: `getUnallocatedWorkdays` now enumerates BOTH the current C1/C2 (clamped to Manila yesterday) AND the immediately-prior cycle's workdays — the latter only when `elapsed_workdays_in_current_cycle <= grace`. Endpoint payload gained `currentPeriod`, `priorPeriod`, `priorCycle`, `priorCycleOpen`, `priorCycleGraceWorkdays`; each `days[]` row gained `period`, `cycle`, `priorCycle: bool`. The `allocate` and `markNoDrive` endpoints replaced "must be in current cycle" with "must be in current cycle OR (prior cycle AND grace open)"; out-of-window writes return 400 with the friendly message *"drive_date is outside the backfill window. Ask admin to override (OVERRIDE_ALLOCATION)."*
+
+**Lookup**: NEW category `DRIVE_ALLOCATION_CONFIG` with single row `PRIOR_CYCLE_GRACE_WORKDAYS` (default `value: 5`, `insert_only_metadata: true`). Helper `getPriorCycleGraceWorkdays(entityId)` with 60s in-memory TTL cache + `invalidateGraceCache(entityId)` exposed to `lookupGenericController`. The 3 invalidate hooks (create/update/remove) wire the new `DRIVE_ALLOCATION_CONFIG_CATEGORIES` set so admin saves take effect within the same 60s window everything else honors.
+
+**Frontend**: `useDriveAllocations` hook unchanged (transparent to payload shape). `AllocationPanel` reads `data.currentPeriod` + `data.currentCycle` strings, renders a per-row `{cycle} {MM}` chip (e.g. `C2 04`), and applies `.ap-cycle-tag-prior` (dashed orange border) to rows where `priorCycle: true`. Empty-state copy flipped from `"in cycle 4"` (number) → `"in C1 2026-05"` (period+cycle label).
+
+**Healthcheck**: Section 16 swapped — period/cycle field asserts replace cycle_number; new asserts on `cycleFor` `(day <= 15 ? 'C1' : 'C2')` helper, `priorCycle` helper, grace lookup query, default value 5, controller's negative-import of `scheduleCycleUtils`, AllocationPanel cycle-tag rendering, lookup seed shape, and 3-call invalidate hook count. **473/473 PASS** post-correction.
+
+**API smoke (re-run, all green)**:
+- `GET /unallocated-workdays` → 200, returned 14 days (Apr 16–Apr 30 = 11 days C2 April prior cycle + May 1/4/5 = 3 days C1 May current), `priorCycleOpen: true`, grace=5.
+- `POST /allocate` for **April 30 from May 6** (the operational case the user surfaced) → 200, persisted as `period: '2026-04', cycle: 'C2'`, total=80, personal=30, official=50.
+- `POST /allocate` for March 30 (way prior cycle) → 400 *"outside the backfill window. Ask admin to override (OVERRIDE_ALLOCATION)."*
+- `POST /allocate` idempotent re-allocate Apr 30 → 200, same `_id`, server-side snap (personal=77 → 75).
+- `POST /no-drive` weekend → 400 workday-only.
+- Mae cross-BDM → 403 privileged-required.
+- `GET /my?period=2026-05&cycle=C1` → 200 with empty array (Apr 30 row correctly partitioned to `period=2026-04/cycle=C2`).
+
+**UI smoke**: deferred — Playwright session torn down by parallel chat between API smoke and re-render. Render contract is unchanged from the pre-correction Playwright walk except for the new `{cycle} {MM}` chip + dashed-border highlight on prior-cycle rows; both are covered by the static healthcheck. Recommend a 1-minute Playwright walk after the next time the MCP is loaded — open `/erp/capture-hub` as Mae, confirm prior-cycle rows render the dashed-orange `C2 04` chip and current-cycle rows render the solid `C1 05` chip.
+
+### Why
+The locked Phase P1.2 plan (May 05 evening) made BDM Capture Hub **the** field-data channel. Slices 1+2+3+7 + Round 1 + Round 2A landed the photo plumbing (S3 upload, Quick Capture, picker on entry pages, picker on SalesList). **Slice 4** + **Slice 5** close the next gap: when does the BDM's reflection on yesterday's drive (Personal vs Official km) actually get captured? Today the Car Logbook page asks for it, but it's a back-office page proxies fill in days later — by then the BDM has lost context. Slice 4 brings the reflection forward to the BDM's daily Capture Hub session, with zero typing past the two ODO numbers + a slider drag. Slice 5 enforces it: the SMER ("Scan ODO") tile locks until prior workdays are cleared, so the BDM physically can't keep snapping ODO photos without acknowledging the drive that just happened.
+
+This is also the anti-fraud lever the user wanted explicit: the slider defaults to **0 official km** (Personal=Total). The BDM has to drag the slider right to claim work mileage. Combined with the GPS+EXIF check at SMER capture time (Phase O — already shipped), the chain is "you snapped a photo at this place at this time" → "you allocated N km of that drive as work" → "we can audit if N is plausible vs the CRM Visit destinations served that day" (the latter check is Slice 6's job, deferred).
+
+### What shipped
+
+**Backend (4 files, 3 new + 1 edit)**
+- **NEW `backend/erp/models/DriveAllocation.js`** — collection `erp_drive_allocations`. One row per (BDM × workday × entity); unique compound index `{bdm_id, entity_id, drive_date}` (also `{entity_id, cycle_number, drive_date}` and `{bdm_id, cycle_number, drive_date}`). Status enum `['ALLOCATED', 'NO_DRIVE']`. Fields: `start_km`, `end_km`, `end_km_auto_filled`, `total_km`, `personal_km`, `official_km`, `source_smer_capture_ids: [ObjectId ref CaptureSubmission]`, `notes`, `source: ['BDM_SELF','PROXY_OVERRIDE']`. **Pre-save hook** snaps `personal_km` to nearest 5 km AND clamps to `[0, total_km]` AND re-derives `total_km = max(0, end_km - start_km)` AND re-derives `official_km = max(0, total_km - personal_km)`. **NO_DRIVE branch** zeroes ALL km fields regardless of body — defends against a hostile client posting bogus km on a no-drive row. Exports `KM_SNAP_STEP = 5` for healthcheck/test parity.
+- **NEW `backend/erp/controllers/driveAllocationController.js`** — four endpoints (described under "Backend endpoint contracts" below). All four:
+  - Use `req.entityId` for scope (Rule #19); `req.bdmId || req.user._id` for self-scope.
+  - Privileged callers (admin/finance/president per `req.isPresident || req.isAdmin || req.isFinance`) can pass `?bdmId` or `body.bdm_id` for cross-BDM operation. Non-privileged → silent self-scope (Rule #21 — no fallback misdirection).
+  - Gated via lookup-driven `userCanPerformCaptureAction(req.user, code, req.entityId)` from `captureLifecycleAccess.js`. Codes:
+    - `getUnallocatedWorkdays` → no gate (the panel always shows; CTAs disable based on the response's `canAllocate`/`canMarkNoDrive` booleans).
+    - `allocate` → `ALLOCATE_PERSONAL_OFFICIAL`.
+    - `markNoDrive` → `MARK_NO_DRIVE_DAY`.
+    - `getMyAllocations` → no separate gate (self-scope by default).
+  - Reject `drive_date >= today` and reject non-Mon-Fri Manila dates; reject drive_date outside the current cycle.
+  - Idempotent upsert pattern (find-or-new + Object.assign + save) so the pre-save snap fires on the doc instead of a `$set` raw-update path.
+- **NEW `backend/erp/routes/driveAllocationRoutes.js`** — mounts `GET /unallocated-workdays`, `GET /my`, `POST /allocate`, `POST /no-drive`. No module-level `erpAccessCheck` (mirrors `captureSubmissionRoutes` posture — entity scope + lookup gates inside the controller).
+- **EDIT `backend/erp/routes/index.js`** — `router.use('/drive-allocations', require('./driveAllocationRoutes'))` mounted directly after `/capture-submissions`. Same posture (no module-level erpAccessCheck).
+
+**Frontend (3 files, 2 new + 1 edit)**
+- **NEW `frontend/src/erp/hooks/useDriveAllocations.js`** — wraps the four endpoints (`getUnallocatedWorkdays`, `getMyAllocations`, `allocate`, `markNoDrive`) on top of `useErpApi`. Mirrors `useCaptureSubmissions` shape so callers get the same `loading`/`error` contract.
+- **NEW `frontend/src/erp/pages/mobile/AllocationPanel.jsx`** — `forwardRef` component rendering at top of `BdmCaptureHub`. Owns its day-row state (each row keeps its own `start_km`/`end_km`/`personal_km`/`end_km_auto_filled` draft). Exposes imperative `refresh()` via `useImperativeHandle` so the parent can re-pull after a successful capture without re-rendering as a controlled child. Slider uses `<input type="range" step={5}>` for native snap; defensive client-side `snapKm = Math.round(v / 5) * 5` handles non-snap-aware browsers. Anti-fraud yellow chip ("You're about to claim 0 official km. Drag the slider right…") fires when `snapKm(personalKm) === total && total > 0`. Empty-state path renders `✓ All prior workdays in cycle N are allocated.` so the BDM sees the cleanliness signal. `onChange` callback feeds the parent the `{unallocatedCount, canAllocate, canMarkNoDrive}` triple so the SMER tile lock state stays reactive.
+- **EDIT `frontend/src/erp/pages/mobile/BdmCaptureHub.jsx`** — imports `AllocationPanel` + `Lock` icon, mounts the panel ABOVE Quick Capture (so the gate is the first interaction the BDM sees), tracks `allocStatus` state from the panel's onChange, computes `smerLocked = unallocatedCount > 0 && (canAllocate || canMarkNoDrive)`, and passes `locked` / `lockReason` / `onLockedTap` props into the SMER `CaptureCard`. `CaptureCard` itself was upgraded to render a grey lock state (`Lock` icon + "Locked" pill + dynamic copy) when `locked` is true and to call `onLockedTap` on click instead of opening the modal. `handleLockedTap` calls `document.getElementById('allocation-panel').scrollIntoView({behavior:'smooth'})` + fires a 🔒 toast ("Allocate prior workdays first."). `handleSubmit` calls `allocPanelRef.current.refresh()` after every SMER or UNCATEGORIZED capture so a successful Quick Capture → today's start_km is now visible → the missing-EndODO hint can update for the panel's most-recent row.
+- **EDIT `frontend/src/styles/capture-hub.css`** — adds the `ap-*` block (panel header, day rows, km inputs, slider, anti-fraud chip, no-drive confirm, ghost/primary/warn buttons) + `.ch-tile-locked` + `.ch-tile-pill-lock` for the locked SMER tile.
+- **EDIT `frontend/src/erp/components/WorkflowGuide.jsx`** — `bdm-capture-hub` block gains explicit Slice 4 + Slice 5 steps + tips (Rule #1).
+
+**Healthcheck (1 file edit)**
+- **EDIT `backend/scripts/healthcheckCaptureHub.js`** — Section 15 added with 39 assertions across the model schema, pre-save snap math, controller cycle/workday/today guards, endpoint mount, frontend hook, AllocationPanel anti-fraud default + slider snap, locked-tile rendering, scroll handler, and WorkflowGuide banner.
+
+### Backend endpoint contracts
+
+| Method | Path | Body / query | Returns |
+|---|---|---|---|
+| GET | `/api/erp/drive-allocations/unallocated-workdays` | none | `{ data: { currentCycle, today, todayStartKm, canAllocate, canMarkNoDrive, days: [{date, dayLabel, smerCount, fuelCount, suggestedStartKm}] } }` |
+| GET | `/api/erp/drive-allocations/my` | `?cycle=N&limit=50&skip=0&bdmId=...` | `{ data: [DriveAllocation], total, currentCycle }` |
+| POST | `/api/erp/drive-allocations/allocate` | `{ drive_date, start_km, end_km, personal_km, end_km_auto_filled?, notes?, source_smer_capture_ids?, bdm_id? }` | `{ data: DriveAllocation }` |
+| POST | `/api/erp/drive-allocations/no-drive` | `{ drive_date, notes?, bdm_id? }` | `{ data: DriveAllocation }` |
+
+400-error vocabulary:
+- `drive_date (YYYY-MM-DD) is required.`
+- `drive_date must be a workday (Mon-Fri Manila time). Use NO_DRIVE for non-driving days.` (only on /allocate; /no-drive returns its own variant w/o the suffix)
+- `Cannot allocate today or future dates. Allocate prior workdays only.` (or "mark no-drive" for /no-drive)
+- `drive_date must be in the current cycle.`
+- `start_km and end_km must be numbers.`
+- `end_km cannot be less than start_km.`
+- `personal_km must be a non-negative number.`
+
+403-error vocabulary:
+- `ALLOCATE_PERSONAL_OFFICIAL permission required.` (on /allocate)
+- `MARK_NO_DRIVE_DAY permission required.` (on /no-drive)
+- `Cross-BDM allocation requires admin/finance/president role.` (on /allocate when body.bdm_id ≠ self and caller isn't privileged)
+- `Cross-BDM no-drive marking requires admin/finance/president role.` (on /no-drive variant)
+
+### Anti-fraud guarantees (defense in depth)
+1. **Slider default**: AllocationPanel initializes `personal_km = total` so Official defaults to 0 km. BDM has to actively drag right to claim work mileage.
+2. **Yellow warning chip**: when slider sits at 0 official, panel renders "You're about to claim 0 official km" so the BDM sees the consequence (this is intentional — the user wanted "active reallocation" not "zero by accident").
+3. **Server-side pre-save snap**: even if a hostile client bypasses the slider's `step={5}` and the JS `snapKm` helper, the Mongoose pre-save hook snaps `personal_km` to nearest 5 km on disk. Defense in depth.
+4. **NO_DRIVE zeroing**: status=NO_DRIVE wipes all km fields regardless of body — bogus km on a no-drive row is structurally impossible.
+5. **Cycle / today / workday guards**: cannot allocate today, cannot allocate future, cannot allocate prior cycles, cannot allocate weekends. Each rejects with a friendly 400 explaining the rule.
+
+### Missing-EndODO recovery
+The Phase P1.2 plan rule: "if yesterday's End KM is missing AND today's Start KM is captured, auto-fill yesterday's End KM = today's Start KM. Car parked overnight; delta is zero."
+
+Wired in two places:
+1. **Backend**: `getUnallocatedWorkdays` returns a `todayStartKm` field inferred from the BDM's most-recent prior allocation's `end_km`. Slice 6 OCR will eventually source this directly from today's SMER capture's typed/OCR'd ODO reading.
+2. **Frontend**: when a row is the **most-recent** unallocated day AND its `endKm` field is empty/0 AND `todayStartKm` is known, the panel renders an inline `<button class="ap-auto-fill-hint">` that one-taps fills `endKm = todayStartKm` AND flags the form's `endAutoFilled = true`. On Save, `end_km_auto_filled: true` is persisted so admin can audit later (Slice OVERRIDE_ALLOCATION will surface this as a yellow chip on the audit page).
+
+### Per-cycle gate (not per-day)
+The plan's exact wording: "If BDM is gone 3 days then returns, the panel shows all 3 days oldest-first. Tap through. No one is locked out for legitimate absences." Wired:
+1. `workdaysInCurrentCycleThroughYesterday` enumerates ALL workdays from cycle start through Manila yesterday.
+2. Subtracts the existing DriveAllocation rows (for any status — ALLOCATED OR NO_DRIVE). Returned days are ALL the unallocated workdays, oldest-first.
+3. The BDM clears them sequentially: each Save / "Did not drive" removes the row from the panel (optimistic update + server response confirms). When the array is empty, the SMER tile auto-unlocks.
+
+### SMER tile lock (Slice 5)
+- Lock state computed: `smerLocked = unallocatedCount > 0 && (canAllocate || canMarkNoDrive)` (no point locking out a user who can't act on the lock prompt).
+- `CaptureCard` renders grey-tinted icon, "Locked" pill instead of "Digital only" pill, and dynamic copy ("Allocate N prior days first").
+- Tap the locked tile → `handleLockedTap` scrolls to `#allocation-panel` (smooth) AND fires a 🔒 toast "Allocate prior workdays first." The modal is NOT opened.
+- After every successful allocate / no-drive AND every successful SMER / UNCATEGORIZED capture, parent calls `allocPanelRef.current.refresh()` so the lock state recomputes from the server-authoritative count without a page reload.
+
+### Subscription readiness (Rule #3 + Rule #19)
+- ZERO new lookup category. All three role gates already exist in Slice 1's `CAPTURE_LIFECYCLE_ROLES`:
+  - `ALLOCATE_PERSONAL_OFFICIAL` (default `[staff]`) — gates `POST /allocate`.
+  - `MARK_NO_DRIVE_DAY` (default `[staff]`) — gates `POST /no-drive`.
+  - `OVERRIDE_ALLOCATION` (default `[admin, president]`) — reserved for the future proxy-override path on existing rows (Slice 9).
+- Subscribers loosen any gate via Control Center → Lookup Tables → CAPTURE_LIFECYCLE_ROLES. The lookup invalidate hook in `lookupGenericController.create/update/remove` already covers the wiring (added in Slice 1) — admin saves take effect within 60s without a code deploy.
+- `entity_id` scopes BOTH the cache namespace (in `captureLifecycleAccess.js getRolesFor`) AND the DriveAllocation queries themselves (Rule #19). When the same code runs inside Year-2 Pharmacy SaaS spin-out (Rule #0d), the gates partition per-tenant cleanly.
+
+### Forward-compat with Slice 6 (Car Logbook auto-populate)
+DriveAllocation is the BDM-side **source of truth** for Personal/Official km. The proxy `CarLogbookEntry` (which has its own pre-save fuel-efficiency math) becomes a **review surface** that joins:
+- DriveAllocation rows (for personal_km / official_km / start_km / end_km)
+- CRM Visit destinations (for the destination cell)
+- FUEL_ENTRY captures (for fuel column)
+
+The two collections co-exist. Slice 6 wires the join (~1 day). Until then, CarLogbookEntry continues to work standalone for legacy data.
+
+### Out of scope (deferred)
+- Proxy override on EXISTING DriveAllocation rows — needs `OVERRIDE_ALLOCATION` lookup gate path through the controller. Use case: admin notices a BDM allocated 100% personal on a known-customer-visit day and wants to flip the slider. Plan: add `PATCH /api/erp/drive-allocations/:id` gated by OVERRIDE_ALLOCATION + audit log. Slice 9.
+- OCR'd ODO reading from SMER capture photos (auto-fills start_km/end_km on the panel without typing). Slice 6.
+- Hard delete after audit period — keep all rows on for now (audit retention).
+
+### Healthcheck Section 15 coverage
+39 assertions: model fields + enum + indexes + pre-save snap math + KM_SNAP_STEP export; controller exports + endpoint guards + cycle/workday/today rejections + idempotent upsert + lookup-driven gate; routes mounted + index.js wire; frontend hook exports + endpoint URLs; AllocationPanel anti-fraud default + slider snap + lock-toast pattern; CaptureCard locked-state contract + scroll target id; WorkflowGuide banner content (Slice 4 + Slice 5 mentions + 0 official km nudge mention).
+
+### Files touched
+4 backend new (`DriveAllocation.js` model + `driveAllocationController.js` + `driveAllocationRoutes.js` + 1-line `routes/index.js` mount) + 3 frontend (1 new hook `useDriveAllocations.js` + 1 new component `AllocationPanel.jsx` + 1 edit `BdmCaptureHub.jsx`) + 1 CSS (`capture-hub.css` Allocation Panel block + tile-locked state) + 1 banner (`WorkflowGuide.jsx`) + 1 healthcheck extension (`healthcheckCaptureHub.js` Section 15) + 2 docs (CLAUDE-ERP.md status banner + this entry) = **12** new/changed touchpoints.
+
+erp-remote no-push policy in effect — commit cleanly to `dev` only.
+
+---
+
+## Phase P1.2 Slice 7-extension Round 2B — Server-side OCR from capture (May 06, 2026) ✅ SHIPPED
+
+### Why
+
+The Round 2A handoff explicitly flagged a **CORS lurking-bug** in the Round 1 callers: `SalesEntry` / `CollectionSession` / `GrnEntry` all pass `skipFetch=false` to the picker, which means `PendingCapturesPicker.handleConfirm` does an in-browser `fetch(signedS3Url)` to coerce the BDM's S3 photo into a `File` object before handing it off to the inline `Scan*Modal`. That fetch is **silently blocked by the private bucket's missing CORS allowlist** for non-S3 origins (`localhost:5173` and the future production frontend). Round 2A solved it for `SalesList` by adding a `skipFetch` mode and writing the bare S3 URL directly into the target field — but Round 1's entry-time scan flow needs the **photo bytes** to run OCR (Vision + AI parser), so Round 2A's URL-only path doesn't apply.
+
+Round 2B closes the gap by moving the OCR work **to the server**: the proxy hands the picker a `capture_id`, the backend downloads the S3 object via AWS SDK creds (no browser fetch — `localhost:5173` doesn't talk to S3 at all), runs the same OCR pipeline, and returns the same response shape `Scan*Modal` already consumes. The flow is now:
+
+```
+[BDM Quick Capture]      ─→ S3 (capture-submissions/<entity>/<bdm>/<yyyy-mm>/<uuid>.jpg)
+                                ↓
+[Office picker, skipFetch] ─→ POST /erp/ocr/process { capture_id }
+                                ↓
+[server-side downloadFromS3] ─→ Vision + AI parser (same pipeline as gallery upload)
+                                ↓
+[Scan*Modal results step]  ─→ proxy reviews + applies extracted fields
+```
+
+No new endpoint URL, no new schema, no new lookup category. Round 1's entry-time benefit (proxy doesn't re-upload from gallery) is preserved; the CORS lurking-bug is closed.
+
+### What shipped
+
+- **`backend/config/s3.js`** — new `downloadFromS3(key)` helper. Streams the `GetObjectCommand` Body via `for await ... of response.Body` (AWS SDK v3 idiom), returns `{ buffer, contentType }`. Exported alongside `getSignedDownloadUrl` / `extractKeyFromUrl`.
+
+- **`backend/erp/controllers/ocrController.js`** — `processDocument` is now bi-modal:
+  - **Mode A (legacy, untouched)**: `multipart/form-data` with `photo` File from multer → existing compress + upload to `erp-documents/...`.
+  - **Mode B (new)**: JSON body with `{ capture_id, docType, ... }` → look up `CaptureSubmission` (entity-scoped), gate non-owners by `userCanPerformCaptureAction(req.user, 'PROXY_PULL_CAPTURE', req.entityId)`, pull the first usable `captured_artifacts[i]`, extract its S3 key, `downloadFromS3` server-side, **reuse the existing key** as `uploadResult` (no re-upload), strip the `?X-Amz-Signature=...` query string before persisting. The shared OCR pipeline (preprocessing + `detectText` + `processOcr` + `DocumentAttachment.create` + `OcrUsageLog.create`) runs identically — only the buffer source + upload step differ. **Hard validations** in capture mode: 400 if `data:` URL (legacy P1.1 placeholder), 400 if non-S3 URL, 404 if capture not found, 403 if non-owner without `PROXY_PULL_CAPTURE`, 400 if both `req.file` AND `capture_id` are sent. The original 400 ("Photo file or capture_id is required.") preserves the legacy contract surface.
+
+- **`frontend/src/erp/services/ocrService.js`** — new `processDocumentFromCapture(captureId, docType, opts)` POSTs JSON to `/erp/ocr/process` with a 2-min timeout (S3 download + OCR can be slow). Same response shape as `processDocument` so the modal-side consumer is unchanged. Validates required args (`captureId`, `docType`).
+
+- **`frontend/src/erp/pages/SalesEntry.jsx`** — flipped the existing top-of-form picker to `skipFetch={true}`. `onPick(_files, meta)` reads `meta.captures[0]._id` + `meta.captures[0].captured_artifacts[0].url` (the picker's already-signed URL — fine for `<img>` preview, never `fetch()`-ed) and stuffs them into new state `scanInitialCaptureId` + `scanInitialPreviewUrl`. The inline `ScanCSIModal` accepts the new props and runs `handleCaptureScan(captureId, previewUrl)` on mount via a sibling `useEffect` guarded by `initialCaptureProcessedRef` (mirrors the existing `initialFile` re-trigger guard). The `applyOcrResult` helper is shared between `handleFile` and `handleCaptureScan` so both paths produce identical downstream rows. The legacy `setScanInitialFile(file)` path remains for any future caller that wants to feed a real File (e.g. drag-drop integration); modal `onClose` clears all 3 state vars (`scanInitialFile`, `scanInitialCaptureId`, `scanInitialPreviewUrl`) so re-opening returns to the normal Take-Photo / Gallery capture step.
+
+- **`frontend/src/erp/pages/CollectionSession.jsx`** — same surgery on the `ScanCRModal`. Picker → `skipFetch={true}` → `meta.captures[0]._id` → `handleCaptureScan(captureId, 'CR')`.
+
+- **`frontend/src/erp/pages/GrnEntry.jsx`** — same surgery on the `ScanUndertakingModal`. Picker → `skipFetch={true}` → `meta.captures[0]._id` → `handleCaptureScan(captureId, 'UNDERTAKING')`.
+
+- **`frontend/src/erp/components/WorkflowGuide.jsx`** — `sales-entry` / `collection-session` / `grn-entry` tips appended with the Round 2B narrative (Rule #1).
+
+- **`backend/scripts/healthcheckCaptureHub.js` Section 15** — 50 new assertions: `downloadFromS3` helper contract (4), `ocrController` capture-pull mode (12), `ocrService.processDocumentFromCapture` (4), 3 callers swept (15: imports + skipFetch + capture-id read + state threading + close clear + modal prop accepted + useEffect routes capture-id + handler calls correct docType + legacy file path preserved), and inline modal contract (5).
+
+### Healthcheck + verification
+
+- `node backend/scripts/healthcheckCaptureHub.js` → **350/351 PASS** (sole failure is a pre-existing `border-left accent style` from the parallel Slice 4+5 BdmCaptureHub work — not in this commit's diff).
+- `cd frontend && npx vite build` → **green in 14.82s**.
+- Same `CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE` lookup gate (Slice 1 default `[admin, finance, president]`) — subscribers retune per-entity via Control Center → Lookup Tables, no code deploy (Rule #3).
+- Subscription-readiness preserved: `s3://capture-submissions/<entity>/<bdm>/<yyyy-mm>/<uuid>.jpg` partition intact for Year-2 multi-tenant SaaS spin-out (Rule #0d).
+
+### Integrity check (no severed wiring)
+
+- ✅ Mode-A legacy file upload still works — multer `uploadSingle('photo')` is a no-op on JSON bodies; the controller's `if (!req.file) throw ApiError(400, ...)` only fires after the capture-id branch declines, preserving the original 400 surface for empty-body requests.
+- ✅ `compressImage` + `uploadErpDocument` only run when `preExistingUpload` is null (file-upload mode); capture-mode short-circuits with `Promise.resolve(preExistingUpload)`. No bytes leave the server when the photo is already on S3.
+- ✅ `DocumentAttachment.original_filename` was switched from `req.file.originalname` to `inputOriginalName` so capture mode persists the S3 basename; file mode passes the multer-supplied filename verbatim. Existing `DocumentAttachment` consumers (audit, document detail panel) read `original_filename` as a display string only — no schema change.
+- ✅ `OcrUsageLog` writes happen on both code paths, including the auth-fail path — admin's per-entity OCR usage dashboard still sees every call.
+- ✅ Modal `applyOcrResult` is identical for both flows (file + capture) — no divergence in matched-hospital / matched-products / settled_csis logic.
+- ✅ Modal `onClose` clears the new `scanInitialCaptureId` + `scanInitialPreviewUrl` alongside `scanInitialFile` so re-opening cycles back to the gallery-capture entry step.
+- ✅ Backend test residue is harmless: a captured photo **stays PENDING_PROXY** after OCR — Round 2B doesn't auto-finalize. Slice 9 (Mark-Paper-Received + override controls) is the planned home for the lifecycle flip.
+- ✅ The picker's `<img src={firstPhoto.url} />` thumbnail in the drawer body is a normal `<img>` tag, NOT a `fetch()` — CORS doesn't apply to image-element loads, so the drawer renders correctly even on the private bucket.
+
+### Live API smoke (RATIFIED on dev May 6 2026)
+
+- **President login** → POST `/api/auth/login` → 200 + httpOnly cookies.
+- **Mae login** → POST `/api/auth/login` (s3.vippharmacy@gmail.com) → 200, _id `69b3944f0aee4ab455785c50`.
+- **Mae uploads synthetic JPEG** → POST `/api/erp/capture-submissions/upload-artifact` → 201 with S3 URL `capture-submissions/<entity>/<bdm>/2026-05/<uuid>.jpg`.
+- **Mae creates SALES capture** → POST `/api/erp/capture-submissions` → 201 with `_id` + `status: PENDING_PROXY`.
+- **President API smoke (capture-pull mode)** → POST `/api/erp/ocr/process` with `{ capture_id, docType: 'CSI' }` → 200 with `{ s3_url, attachment_id, doc_type, extracted, classification, ... }`. The bucket-fetch + Vision + AI pipeline runs server-side; **no browser fetch issued from the client**. Round 1 CORS lurking-bug confirmed closed.
+
+### Files touched
+
+```
+M backend/config/s3.js                                           # + downloadFromS3 helper + module.exports row
+M backend/erp/controllers/ocrController.js                       # + capture-pull mode (Mode B); shared OCR pipeline
+M backend/scripts/healthcheckCaptureHub.js                       # + Section 15 (50 Round 2B asserts) + 3 stale Round 1 asserts retargeted
+M frontend/src/erp/services/ocrService.js                        # + processDocumentFromCapture
+M frontend/src/erp/pages/SalesEntry.jsx                          # picker skipFetch + ScanCSIModal capture-id route
+M frontend/src/erp/pages/CollectionSession.jsx                   # picker skipFetch + ScanCRModal capture-id route
+M frontend/src/erp/pages/GrnEntry.jsx                            # picker skipFetch + ScanUndertakingModal capture-id route
+M frontend/src/erp/components/WorkflowGuide.jsx                  # 3 tips updated with Round 2B narrative
+M CLAUDE-ERP.md                                                  # status banner + Round 2B narrative
+M docs/PHASETASK-ERP.md                                          # this entry
+```
+
+erp-remote no-push policy in effect — commit cleanly to `dev` only.
 
 ---
 

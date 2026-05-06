@@ -1,3 +1,4 @@
+const path = require('path');
 const { catchAsync, ApiError } = require('../../middleware/errorHandler');
 const { compressImage } = require('../../middleware/upload');
 const { detectText } = require('../ocr/visionClient');
@@ -7,6 +8,9 @@ const { uploadErpDocument } = require('../services/documentUpload');
 const DocumentAttachment = require('../models/DocumentAttachment');
 const OcrSettings = require('../models/OcrSettings');
 const OcrUsageLog = require('../models/OcrUsageLog');
+const CaptureSubmission = require('../models/CaptureSubmission');
+const { downloadFromS3, extractKeyFromUrl } = require('../../config/s3');
+const { userCanPerformCaptureAction } = require('../../utils/captureLifecycleAccess');
 
 /**
  * OCR Controller — Phase H3 (subscription-ready)
@@ -25,10 +29,81 @@ const OcrUsageLog = require('../models/OcrUsageLog');
  * are null and `ocr_skipped_reason` indicates why.
  */
 const processDocument = catchAsync(async (req, res) => {
-  if (!req.file) throw new ApiError(400, 'Photo file is required.');
-
   const docType = String(req.body.docType || '').trim();
   if (!docType) throw new ApiError(400, 'docType is required.');
+
+  // ── Phase P1.2 Slice 7-extension Round 2B (May 2026) — capture-pull mode ──
+  // Two input shapes, one OCR pipeline:
+  //   Mode A (existing): multipart/form-data with `photo` File — gallery /
+  //     camera capture. Multer parses → req.file.{buffer,mimetype,originalname}.
+  //     The pipeline compresses + uploads to a fresh erp-documents/ key.
+  //   Mode B (new): JSON body with `capture_id` referencing a CaptureSubmission
+  //     uploaded by a BDM via Quick Capture. The proxy reuses the existing
+  //     capture-submissions/ S3 object — no re-upload, no client-side fetch.
+  //     Closes the CORS lurking-bug from Round 1 (private bucket has no
+  //     allowlist for browser origins, so picker's fetch(signedS3Url) is
+  //     silently blocked on localhost:5173).
+  //
+  // Auth gate (capture mode): caller must own the capture OR have
+  // PROXY_PULL_CAPTURE (lookup-driven via CAPTURE_LIFECYCLE_ROLES, defaults
+  // [admin, finance, president]). Mirrors getCaptureById's existing gate.
+  const captureId = String(req.body.capture_id || '').trim();
+  let inputBuffer;
+  let inputOriginalName;
+  let inputMimetype;
+  let preExistingUpload = null; // when set, skip the re-upload step entirely
+
+  if (captureId) {
+    if (req.file) {
+      throw new ApiError(400, 'Provide either a `photo` file or `capture_id`, not both.');
+    }
+    const capture = await CaptureSubmission.findOne({
+      _id: captureId,
+      entity_id: req.entityId,
+    }).lean();
+    if (!capture) throw new ApiError(404, 'Capture not found.');
+
+    const privileged = !!(req.isPresident || req.isAdmin || req.isFinance);
+    const isOwner = String(capture.bdm_id) === String(req.user._id);
+    if (!privileged && !isOwner) {
+      const canProxy = await userCanPerformCaptureAction(
+        req.user, 'PROXY_PULL_CAPTURE', req.entityId,
+      );
+      if (!canProxy) {
+        throw new ApiError(403, 'OCR on another BDM\'s capture requires PROXY_PULL_CAPTURE permission.');
+      }
+    }
+
+    const artifact = (capture.captured_artifacts || []).find((a) => a && a.url);
+    if (!artifact) throw new ApiError(400, 'Capture has no usable artifact to OCR.');
+    if (String(artifact.url).startsWith('data:')) {
+      throw new ApiError(400, 'Legacy data URL — re-upload required before OCR.');
+    }
+    if (!String(artifact.url).includes('.amazonaws.com/')) {
+      throw new ApiError(400, 'Capture artifact is not stored in S3 — cannot OCR.');
+    }
+
+    const s3Key = artifact.key || extractKeyFromUrl(artifact.url);
+    if (!s3Key) throw new ApiError(400, 'Capture artifact has no resolvable S3 key.');
+
+    const downloaded = await downloadFromS3(s3Key);
+    inputBuffer = downloaded.buffer;
+    inputMimetype = downloaded.contentType || 'image/jpeg';
+    inputOriginalName = path.basename(s3Key) || `capture-${captureId}.jpg`;
+
+    // Reuse the existing capture-submissions/ key — no need to re-upload to
+    // erp-documents/. Strip any signed-URL query string so we persist the
+    // bare URL (read-time signing handles authorization).
+    preExistingUpload = {
+      url: String(artifact.url).split('?')[0],
+      key: s3Key,
+    };
+  } else {
+    if (!req.file) throw new ApiError(400, 'Photo file or capture_id is required.');
+    inputBuffer = req.file.buffer;
+    inputMimetype = req.file.mimetype;
+    inputOriginalName = req.file.originalname;
+  }
 
   const feature = String(req.body.feature || '').trim() || undefined;
   const period = String(req.body.period || '').trim() || undefined;
@@ -63,14 +138,18 @@ const processDocument = catchAsync(async (req, res) => {
   }
 
   // ── Step 2: fork S3 upload + OCR work in parallel. ──
-  const uploadPromise = (async () => {
-    const { buffer, mimetype } = await compressImage(
-      req.file.buffer, req.file.mimetype, { maxDim: 1920, quality: 80 }
-    );
-    return uploadErpDocument(
-      buffer, req.file.originalname, req.user?.name, period, cycle, docType, mimetype
-    );
-  })();
+  // Capture mode reuses the existing S3 object — no re-upload, just a
+  // resolved promise carrying the existing url+key.
+  const uploadPromise = preExistingUpload
+    ? Promise.resolve(preExistingUpload)
+    : (async () => {
+        const { buffer, mimetype } = await compressImage(
+          inputBuffer, inputMimetype, { maxDim: 1920, quality: 80 }
+        );
+        return uploadErpDocument(
+          buffer, inputOriginalName, req.user?.name, period, cycle, docType, mimetype
+        );
+      })();
 
   // OCR state that needs to survive a partial failure so OcrUsageLog reflects
   // how far the pipeline got (e.g. preprocessing ran but Vision timed out).
@@ -88,9 +167,9 @@ const processDocument = catchAsync(async (req, res) => {
     // Phase H4: enhance the image for Vision (auto-rotate, grayscale, contrast, sharpen).
     // Original buffer is preserved on S3 so the BDM still sees their actual photo;
     // the enhanced version is in-memory only and used purely as Vision input.
-    let visionBuffer = req.file.buffer;
+    let visionBuffer = inputBuffer;
     if (settings.preprocessing_enabled) {
-      const pre = await enhanceForOcr(req.file.buffer);
+      const pre = await enhanceForOcr(inputBuffer);
       visionBuffer = pre.buffer;
       ocrState.preprocessing_applied = pre.applied;
     }
@@ -98,7 +177,7 @@ const processDocument = catchAsync(async (req, res) => {
     const exifDateTime = String(req.body.exifDateTime || '').trim() || null;
     const processed = await processOcr(docType, ocrResult, {
       exifDateTime,
-      imageBuffer: req.file.buffer,
+      imageBuffer: inputBuffer,
       entityId,
       userId,
       aiFallbackEnabled: settings.ai_fallback_enabled,
@@ -130,7 +209,7 @@ const processDocument = catchAsync(async (req, res) => {
         ocr_applied: ocrApplied,
         storage_url: uploadResult.url,
         s3_key: uploadResult.key,
-        original_filename: req.file.originalname,
+        original_filename: inputOriginalName,
         uploaded_by: userId,
       });
       return att._id;

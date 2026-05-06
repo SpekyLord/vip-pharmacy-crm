@@ -40,9 +40,21 @@ router.put('/:id/cancel',     ctrl.cancelCapture);
 // ── Proxy-side ──
 router.get('/queue',          ctrl.getProxyQueue);
 router.get('/stats',          ctrl.getQueueStats);
+
+// ── Phase P1.2 Slice 8 — Capture Archive ──────────────────────────
+// Mounted BEFORE /:id so Express path-precedence resolves these literals
+// rather than treating "archive" as an :id capture. Same posture as the
+// Slice 7-ext Round 2B mount of /upload-artifact above.
+router.get('/archive/summary',     ctrl.getCaptureArchiveSummary);
+router.get('/archive/leaves',      ctrl.getCaptureArchiveLeaves);
+router.get('/archive/cycle-report', ctrl.getCycleAuditReport);
+router.post('/bulk-mark-received', ctrl.bulkMarkReceived);
+
 router.get('/:id',            ctrl.getCaptureById);
 router.put('/:id/pickup',     ctrl.pickupCapture);
 router.put('/:id/release',    ctrl.releaseCapture);
 router.put('/:id/complete',   ctrl.completeCapture);
+// Phase P1.2 Slice 9 — president-only physical status override.
+router.put('/:id/physical-status', ctrl.overridePhysicalStatus);
 
 module.exports = router;

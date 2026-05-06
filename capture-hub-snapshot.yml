@@ -1,0 +1,140 @@
+- generic [ref=e7]:
+  - generic [ref=e8]:
+    - button "×" [ref=e9] [cursor=pointer]
+    - generic [ref=e10]:
+      - img [ref=e11]
+      - text: BDM Capture Hub
+    - generic [ref=e13]:
+      - generic [ref=e14]:
+        - generic [ref=e15]: "1"
+        - generic [ref=e16]: "**If you see the orange \"Allocate prior drives\" panel** — clear it first. Set Start/End KM, drag the Personal/Official slider, Save. (Or tap \"Did not drive\" for vacation/sick days.)"
+      - generic [ref=e17]:
+        - generic [ref=e18]: "2"
+        - generic [ref=e19]: Tap **Quick Capture** to snap any photo with zero typing — office classifies it later
+      - generic [ref=e20]:
+        - generic [ref=e21]: "3"
+        - generic [ref=e22]: Or tap a specific tile that matches the document if you want to fill amount/customer
+      - generic [ref=e23]:
+        - generic [ref=e24]: "4"
+        - generic [ref=e25]: Take a photo or pick from gallery — GPS is captured automatically
+      - generic [ref=e26]:
+        - generic [ref=e27]: "5"
+        - generic [ref=e28]: Submit — the office team enters the ERP record on your behalf
+      - generic [ref=e29]:
+        - generic [ref=e30]: "6"
+        - generic [ref=e31]: Confirm or dispute the entry from the Review Queue when notified
+    - generic [ref=e32]:
+      - generic [ref=e33]: "Next steps:"
+      - button "Review Queue →" [ref=e34] [cursor=pointer]
+      - button "Expenses →" [ref=e35] [cursor=pointer]
+    - generic [ref=e36]: "💡 The Capture Hub is additive — you can always skip it and enter records directly. Quick Capture is the fastest path: snap a photo, the proxy reuses it from the entry-page picker."
+  - generic [ref=e39]:
+    - heading "Capture Hub" [level=1] [ref=e40]
+    - paragraph [ref=e41]: 9 capture types — one tap, GPS + photo to office
+  - generic [ref=e44]: ✓ All prior workdays in cycle are allocated.
+  - button "Quick CaptureSnap a photo, classify later" [ref=e45] [cursor=pointer]:
+    - img [ref=e46]
+    - text: Quick CaptureSnap a photo, classify later
+  - generic [ref=e49]:
+    - generic [ref=e50]:
+      - generic [ref=e51]:
+        - img [ref=e53]
+        - generic [ref=e57]:
+          - generic [ref=e58]: Vehicle
+          - generic [ref=e59]: Daily reading
+        - generic [ref=e60]: "1"
+      - button "Scan ODO (Start / End) Digital only Daily odometer reading photos — start + end of day" [ref=e62] [cursor=pointer]:
+        - img [ref=e64]
+        - generic [ref=e67]:
+          - generic [ref=e68]:
+            - generic [ref=e69]: Scan ODO (Start / End)
+            - generic [ref=e70]:
+              - img [ref=e71]
+              - text: Digital only
+          - generic [ref=e74]: Daily odometer reading photos — start + end of day
+        - img [ref=e75]
+    - generic [ref=e77]:
+      - generic [ref=e78]:
+        - img [ref=e80]
+        - generic [ref=e83]:
+          - generic [ref=e84]: Cash Out
+          - generic [ref=e85]: Money you spent
+        - generic [ref=e86]: "2"
+      - generic [ref=e87]:
+        - button "Scan OR / Receipt Official receipt — amount + payment mode" [ref=e88] [cursor=pointer]:
+          - img [ref=e90]
+          - generic [ref=e93]:
+            - generic [ref=e95]: Scan OR / Receipt
+            - generic [ref=e96]: Official receipt — amount + payment mode
+          - img [ref=e97]
+        - button "Scan Fuel Receipt Fuel pump receipt — liters + amount" [ref=e99] [cursor=pointer]:
+          - img [ref=e101]
+          - generic [ref=e104]:
+            - generic [ref=e106]: Scan Fuel Receipt
+            - generic [ref=e107]: Fuel pump receipt — liters + amount
+          - img [ref=e108]
+    - generic [ref=e110]:
+      - generic [ref=e111]:
+        - img [ref=e113]
+        - generic [ref=e118]:
+          - generic [ref=e119]: Customer Delivery
+          - generic [ref=e120]: Sale-side documents
+        - generic [ref=e121]: "1"
+      - button "Scan CSI (Delivery Copy) Pink/yellow/duplicate CSI — proof of delivery" [ref=e123] [cursor=pointer]:
+        - img [ref=e125]
+        - generic [ref=e128]:
+          - generic [ref=e130]: Scan CSI (Delivery Copy)
+          - generic [ref=e131]: Pink/yellow/duplicate CSI — proof of delivery
+        - img [ref=e132]
+    - generic [ref=e134]:
+      - generic [ref=e135]:
+        - img [ref=e137]
+        - generic [ref=e140]:
+          - generic [ref=e141]: Collection
+          - generic [ref=e142]: Money coming in
+        - generic [ref=e143]: "4"
+      - generic [ref=e144]:
+        - button "Scan CSI Being Paid Digital only CSI marked paid by customer" [ref=e145] [cursor=pointer]:
+          - img [ref=e147]
+          - generic [ref=e153]:
+            - generic [ref=e154]:
+              - generic [ref=e155]: Scan CSI Being Paid
+              - generic [ref=e156]:
+                - img [ref=e157]
+                - text: Digital only
+            - generic [ref=e160]: CSI marked paid by customer
+          - img [ref=e161]
+        - button "Scan Collection Receipt (CR) CR issued to customer — amount + customer" [ref=e163] [cursor=pointer]:
+          - img [ref=e165]
+          - generic [ref=e167]:
+            - generic [ref=e169]: Scan Collection Receipt (CR)
+            - generic [ref=e170]: CR issued to customer — amount + customer
+          - img [ref=e171]
+        - button "Scan CWT (BIR 2307) Certificate of withholding tax from customer" [ref=e173] [cursor=pointer]:
+          - img [ref=e175]
+          - generic [ref=e180]:
+            - generic [ref=e182]: Scan CWT (BIR 2307)
+            - generic [ref=e183]: Certificate of withholding tax from customer
+          - img [ref=e184]
+        - button "Scan Deposit Slip Bank deposit slip after collection" [ref=e186] [cursor=pointer]:
+          - img [ref=e188]
+          - generic [ref=e190]:
+            - generic [ref=e192]: Scan Deposit Slip
+            - generic [ref=e193]: Bank deposit slip after collection
+          - img [ref=e194]
+    - generic [ref=e196]:
+      - generic [ref=e197]:
+        - img [ref=e199]
+        - generic [ref=e203]:
+          - generic [ref=e204]: Inventory
+          - generic [ref=e205]: Stock received
+        - generic [ref=e206]: "1"
+      - button "Scan GRN Item Product barcode + qty + batch/expiry + waybill" [ref=e208] [cursor=pointer]:
+        - img [ref=e210]
+        - generic [ref=e215]:
+          - generic [ref=e217]: Scan GRN Item
+          - generic [ref=e218]: Product barcode + qty + batch/expiry + waybill
+        - img [ref=e219]
+  - generic [ref=e221]:
+    - strong [ref=e222]: "Tip:"
+    - text: You can always enter expenses, sales, and other records directly from the regular entry pages. The capture hub is an optional shortcut for faster field work.

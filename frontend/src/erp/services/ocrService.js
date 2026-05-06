@@ -81,6 +81,46 @@ export async function processDocument(photo, docType, exifDateTime, opts = {}) {
 }
 
 /**
+ * Run OCR against an already-uploaded BDM capture (Phase P1.2 Slice 7-extension
+ * Round 2B, May 2026).
+ *
+ * Closes the CORS lurking-bug from Round 1 — instead of the picker fetching
+ * the signed S3 URL into a Blob (which the private bucket's missing CORS
+ * allowlist blocks on `localhost:5173` and any non-S3-origin caller), the
+ * proxy hands the CaptureSubmission `_id` to the backend and the server
+ * downloads the buffer S3-side, runs the same OCR pipeline, and returns the
+ * same response shape as `processDocument`.
+ *
+ * @param {string} captureId - CaptureSubmission._id (from picker.meta.captures[0]._id)
+ * @param {string} docType - One of: CSI, CR, CWT_2307, GAS_RECEIPT, ODOMETER, OR, UNDERTAKING, DR
+ * @param {object} [opts]
+ * @param {string} [opts.feature] - Optional Vision feature override
+ * @param {string} [opts.period] - Optional period segment for storage path
+ * @param {string} [opts.cycle] - Optional cycle segment for storage path
+ * @param {boolean} [opts.skipOcr] - When true, just pull the photo without running OCR
+ * @returns {Promise<object>} Same shape as processDocument: { s3_url, doc_type, extracted, ... }
+ */
+export async function processDocumentFromCapture(captureId, docType, opts = {}) {
+  if (!captureId) throw new Error('captureId is required');
+  if (!docType) throw new Error('docType is required');
+
+  const body = {
+    capture_id: captureId,
+    docType,
+  };
+  if (opts.feature) body.feature = opts.feature;
+  if (opts.period) body.period = opts.period;
+  if (opts.cycle) body.cycle = opts.cycle;
+  if (opts.skipOcr) body.skip_ocr = true;
+
+  const response = await api.post('/erp/ocr/process', body, {
+    timeout: 120000, // 2 min — server-side S3 download + OCR can be slow
+  });
+
+  return response.data.data;
+}
+
+/**
  * Fetch the list of supported document types.
  */
 export async function getSupportedTypes() {

@@ -266,6 +266,8 @@ const TasksPage = lazyRetry(() => import('./erp/pages/TasksPage'));
 const BdmCaptureHub = lazyRetry(() => import('./erp/pages/mobile/BdmCaptureHub'));
 const BdmReviewQueue = lazyRetry(() => import('./erp/pages/mobile/BdmReviewQueue'));
 const ProxyQueue = lazyRetry(() => import('./erp/pages/proxy/ProxyQueue'));
+// Phase P1.2 Slice 8 — Capture Archive (browseable history + bulk Mark Received)
+const CaptureArchive = lazyRetry(() => import('./erp/pages/proxy/CaptureArchive'));
 
 // Standalone routes redirect to ControlCenter with the right section param
 const AgentSettingsRedirect = () => <Navigate to="/erp/control-center?section=agent-settings" replace />;
@@ -1311,6 +1313,9 @@ function App() {
           <Route path="/erp/capture-hub" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL}><BdmCaptureHub /></ProtectedRoute>} />
           <Route path="/erp/review-queue" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL}><BdmReviewQueue /></ProtectedRoute>} />
           <Route path="/erp/proxy-queue" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL}><ProxyQueue /></ProtectedRoute>} />
+          {/* Phase P1.2 Slice 8 — Capture Archive. Backend gates with VIEW_OWN_ARCHIVE / VIEW_ALL_ARCHIVE
+              so the route guard stays broad (ERP_ALL) and lookup-driven sub-perms decide what renders. */}
+          <Route path="/erp/capture-archive" element={<ProtectedRoute allowedRoles={ROLE_SETS.ERP_ALL}><CaptureArchive /></ProtectedRoute>} />
 
           {/* Orphaned page direct routes — redirect to Control Center with correct section */}
           <Route path="/erp/agent-settings" element={<ProtectedRoute allowedRoles={ROLE_SETS.MANAGEMENT}><AgentSettingsRedirect /></ProtectedRoute>} />

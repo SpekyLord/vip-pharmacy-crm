@@ -17,12 +17,13 @@ import {
   MapPin, Clock, Upload,
   ChevronRight, RefreshCw, X,
   Car, Wallet as WalletOut, Handshake, Banknote, PackageOpen,
-  Sparkles, Check,
+  Sparkles, Check, Lock,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import useCaptureSubmissions from '../../hooks/useCaptureSubmissions';
 import { useAuth } from '../../../hooks/useAuth';
 import WorkflowGuide from '../../components/WorkflowGuide';
+import AllocationPanel from './AllocationPanel';
 import '../../../styles/capture-hub.css';
 
 // ── Sections + Workflow definitions ──
@@ -174,31 +175,49 @@ function useGps() {
 }
 
 // ── Capture Card Component ──
-function CaptureCard({ workflow, onCapture, disabled }) {
+//
+// Phase P1.2 Slice 5 (May 06 2026) — SMER tile carries an optional lock state
+// when prior workdays in the current cycle are unallocated. Tap on a locked
+// tile scrolls to the AllocationPanel above instead of opening the modal.
+function CaptureCard({ workflow, onCapture, disabled, locked, lockReason, onLockedTap }) {
   const Icon = workflow.icon;
+  const handleClick = () => {
+    if (locked) {
+      onLockedTap?.();
+      return;
+    }
+    onCapture(workflow);
+  };
   return (
     <button
-      onClick={() => onCapture(workflow)}
+      onClick={handleClick}
       disabled={disabled}
-      className="ch-tile"
-      style={{ borderLeft: `4px solid ${workflow.color}` }}
+      className={`ch-tile ${locked ? 'ch-tile-locked' : ''}`}
+      style={{ borderLeft: `4px solid ${locked ? '#94a3b8' : workflow.color}` }}
+      data-testid={locked ? `ch-tile-locked-${workflow.key}` : undefined}
     >
       <div
         className="ch-tile-icon"
-        style={{ backgroundColor: `${workflow.color}15`, color: workflow.color }}
+        style={{ backgroundColor: `${locked ? '#94a3b8' : workflow.color}15`, color: locked ? '#475569' : workflow.color }}
       >
-        <Icon size={22} />
+        {locked ? <Lock size={22} /> : <Icon size={22} />}
       </div>
       <div className="ch-tile-body">
         <div className="ch-tile-title-row">
           <div className="ch-tile-title">{workflow.label}</div>
-          {workflow.digitalOnly && (
+          {locked ? (
+            <span className="ch-tile-pill ch-tile-pill-lock">
+              <Lock size={10} /> Locked
+            </span>
+          ) : workflow.digitalOnly && (
             <span className="ch-tile-pill">
               <Sparkles size={10} /> Digital only
             </span>
           )}
         </div>
-        <div className="ch-tile-desc">{workflow.description}</div>
+        <div className="ch-tile-desc">
+          {locked ? (lockReason || 'Allocate yesterday first') : workflow.description}
+        </div>
       </div>
       <ChevronRight size={20} className="ch-tile-chevron" />
     </button>
@@ -595,6 +614,14 @@ export default function BdmCaptureHub() {
   const [activeWorkflow, setActiveWorkflow] = useState(null);
   const [pendingCount, setPendingCount] = useState(0);
   const [recentCaptures, setRecentCaptures] = useState([]);
+  // Phase P1.2 Slice 5 — track unallocated workdays so the SMER tile can lock.
+  // The AllocationPanel feeds this via onChange after fetching the API. We
+  // only lock when the role gate allows allocation (no point locking out a
+  // BDM who can't act on the lock prompt).
+  const [allocStatus, setAllocStatus] = useState({
+    unallocatedCount: 0, canAllocate: false, canMarkNoDrive: false,
+  });
+  const allocPanelRef = useRef(null);
 
   // Load pending count + recent captures
   const loadData = useCallback(async () => {
@@ -624,11 +651,24 @@ export default function BdmCaptureHub() {
       toast.success('Capture submitted to office queue!');
       setActiveWorkflow(null);
       loadData(); // Refresh counts
+      // A successful SMER capture for today may unlock new auto-fill suggestions
+      // for yesterday's allocation panel — re-fetch.
+      if (payload?.workflow_type === 'SMER' || payload?.workflow_type === 'UNCATEGORIZED') {
+        allocPanelRef.current?.refresh?.();
+      }
     } catch (err) {
       toast.error(err?.response?.data?.message || 'Failed to submit capture');
     }
   }, [createCapture, loadData]);
 
+  // Phase P1.2 Slice 5 — scroll to AllocationPanel when a locked tile is tapped.
+  const handleLockedTap = useCallback(() => {
+    const el = document.getElementById('allocation-panel');
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      toast('Allocate prior workdays first.', { icon: '🔒' });
+    }
+  }, []);
 
   // Group active workflows by section for the rendered list
   const grouped = SECTIONS.map(s => ({
@@ -637,6 +677,15 @@ export default function BdmCaptureHub() {
   })).filter(g => g.workflows.length > 0);
 
   const totalActiveTiles = grouped.reduce((acc, g) => acc + g.workflows.length, 0);
+
+  // SMER tile lock — only lock when there are unallocated days AND the BDM
+  // has at least one of the two allocation gates (otherwise locking out a
+  // user who can't unblock is a UX dead-end).
+  const smerLocked = allocStatus.unallocatedCount > 0 &&
+    (allocStatus.canAllocate || allocStatus.canMarkNoDrive);
+  const smerLockReason = smerLocked
+    ? `Allocate ${allocStatus.unallocatedCount} prior day${allocStatus.unallocatedCount === 1 ? '' : 's'} first`
+    : null;
 
   return (
     <div className="ch-page">
@@ -655,12 +704,15 @@ export default function BdmCaptureHub() {
         </div>
       </div>
 
+      {/* Phase P1.2 Slice 4 — Tomorrow-drive allocation panel */}
+      <AllocationPanel ref={allocPanelRef} onChange={setAllocStatus} />
+
       {/* Phase P1.2 Slice 1 — Quick Capture (zero-typing path) */}
       <QuickCaptureButton
         gps={gps}
         uploadArtifact={uploadArtifact}
         createCapture={createCapture}
-        onSuccess={loadData}
+        onSuccess={() => { loadData(); allocPanelRef.current?.refresh?.(); }}
       />
 
       {/* Sectioned workflow cards */}
@@ -675,6 +727,9 @@ export default function BdmCaptureHub() {
                   workflow={w}
                   onCapture={handleCapture}
                   disabled={loading}
+                  locked={w.key === 'SMER' && smerLocked}
+                  lockReason={w.key === 'SMER' ? smerLockReason : null}
+                  onLockedTap={handleLockedTap}
                 />
               ))}
             </div>
