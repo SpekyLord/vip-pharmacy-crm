@@ -16,6 +16,70 @@
 
 ---
 
+## PHASE P1.2 SLICE 6.1 — CRM Visit cities also auto-fill Car Logbook destination ✅ COMPLETE (May 6, 2026 evening)
+
+**Goal:** Decouple Car Logbook destination from the BDM's SMER timing. Pre-Slice-6.1, the only way for `destination` on the per-day grid to populate was via SMER's `hospital_covered + notes`. The SMER notes string DOES carry CRM city data — but only AFTER the BDM clicks "Pull from CRM" on the SMER page. If the SMER for the day was a fresh DRAFT (or didn't exist yet), the Car Logbook destination cell stayed empty even when CRM Visit data was sitting right there. The proxy/admin opening Car Logbook should never be blocked on whether the BDM has used the SMER form yet — CRM is the canonical source for "where did the BDM physically go that day?".
+
+**Trigger:** User asked "I do not need the estimated km. I know the territory just by looking the city, town or province. SMER Details and Car Logbook Details should give summary of the city, town or province." Plus the architectural mismatch noted above — the data was already in the system but not flowing to the right cell without an extra BDM action.
+
+**Decision (locked May 6 2026 evening):**
+- **CRM > SMER for destination.** When a day has CRM Visits (VIP `Visit` + EXTRA `ClientVisit`, yes-equal-weight per smerCrmBridge contract), the destination cell shows `"City/Municipality, Province; ..."` with a cyan `CRM` badge. SMER's `hospital_covered + notes` becomes the fallback for OFFICE-only / no-CRM-visit days.
+- **Direct query, not a SMER pass-through.** `pullCrmVisitDestinations` is a parallel sibling of `pullSmerDestination` in the autopop service — fires in the same `Promise.all` sweep, no SMER lookup dependency.
+- **Same locality+province format as SMER.** Reads `Doctor.locality + Doctor.province` (Phase G1.5 backfill — every record has structured fields), falls back to `clinicOfficeAddress` for any legacy doctor that slipped past backfill. Mirrors `smerCrmBridge.aggregateDailyByCollection`'s label-builder so SMER's notes column and Car Logbook's destination column are visually consistent.
+- **Dedup via Set.** A BDM with 8 visits to the same MD = 1 city in the string. 5 visits to 3 different cities = 3 cities. Joined with `'; '` so the proxy can scan a long string at a glance.
+- **No new lookup category.** Reuses existing `Doctor.locality/province` (Phase G1.5 schema). Subscription-readiness inherits from the upstream model — no Year-2 SaaS tenant work needed in this phase.
+- **Pure additive.** Existing `pullSmerDestination` is untouched. SMER notes auto-fill from CRM (Smer.jsx:550) is unchanged. The new helper just gives Car Logbook a parallel, stronger signal.
+
+**Files touched:**
+
+| File | Change |
+|---|---|
+| `backend/erp/services/carLogbookAutoPopulate.js` | + 4 model imports (Visit, Doctor, ClientVisit, Client); + `SOURCE_TAGS.CRM_VISIT_CITY`; + `pullCrmVisitDestinations({bdm_id, dateStr})` helper; wire into 5-way `Promise.all` parallel sweep; new destination resolution chain (CRM > SMER > empty); surface `_crm_visits` raw signal in return shape; export new helper |
+| `frontend/src/erp/pages/CarLogbook.jsx` | + `CRM_VISIT_CITY` entry in `AUTOPOP_SOURCE_META` (cyan `#cffafe`/`#155e75`, label "CRM", tooltip "Filled from CRM Visits — locality + province of every doctor/client the BDM visited that day") |
+| `frontend/src/erp/components/WorkflowGuide.jsx` | `car-logbook` step 2 + tip extended with Slice 6.1 narrative (CRM > SMER priority, cyan badge, FIVE sources); `smer` tip extended with Slice 6.1 cross-fill note |
+| `backend/scripts/healthcheckCarLogbookAutoPopulate.js` | + 17 new assertions (SOURCE_TAGS.CRM_VISIT_CITY defined; 4 model imports; helper exported + defined; yes-equal-weight Visit + ClientVisit query; locality+province label preferred; dedup via Set; semicolon delimiter; in parallel sweep; CRM > SMER resolution; `_crm_visits` surfaced; cyan palette in CarLogbook.jsx; banner mentions; smer banner cross-fill note). 88/88 PASS |
+| `CLAUDE-ERP.md` | Status banner refreshed to Version 8.7 + Slice 6.1 lead paragraph |
+| `docs/PHASETASK-ERP.md` | + this section |
+| `CLAUDE.md` | Numbered note appended (continues 16, 17 pattern from Slice 7-extension Round 2C + Slice 6) |
+
+**Verified:**
+- ✅ `node backend/scripts/healthcheckCarLogbookAutoPopulate.js` → **88/88 PASS** (was 70/70 pre-Slice-6.1)
+- ✅ `node backend/scripts/healthcheckCaptureHub.js` → **576/576 PASS** (no regression)
+- ✅ `cd frontend && npx vite build` → **green in 13.44s**
+- ✅ Backend syntax: `node -c backend/erp/services/carLogbookAutoPopulate.js` clean
+- ✅ Live API smoke (Mae Navarro on dev as president):
+  - `GET /api/erp/expenses/car-logbook/preview?bdm_id=Mae&date=2026-05-03` → 200 + `destination: "BAMC; TDh; Medical Plaza; San carlos city"` + `_autopop_sources.destination: "CRM_VISIT_CITY"` + `_crm_visits.visit_count: 7`
+  - `?date=2026-05-05` → 200 + `destination: "BAMC; Medical Plaza"` + same source tag + visit_count 2
+  - `?date=2026-04-30` → 200 + empty destination + null source (no CRM data for the day, correctly falls through)
+  - Rule #21 — privileged without `?bdm_id=` → HTTP 400 (preserved)
+- ✅ Live Playwright UI smoke (president on `/erp/car-logbook` → Mae Navarro):
+  - Banner step 2 renders the new "FIVE sources" / "cyan CRM badge" text
+  - May 5 row destination cell shows `"BAMC; Medical Plaza"` + cyan `CRM` badge with correct tooltip
+  - Manual override (typed "Custom proxy override" into the cell) flips badge to red `Manual` per Slice 6 contract
+  - 0 console errors throughout the session
+  - Screenshot: `phase-p1-2-slice-6-1-crm-cities-ratified.png` (repo root, not committed)
+
+**Lookup posture / subscription readiness:**
+- Zero new lookup categories. Re-uses `Doctor.locality + .province` (Phase G1.5 schema). No Year-2 SaaS tenant work in this phase.
+- `entity_id` is enforced on the autoPopulateCarLogbookDay parameters (Rule #19). The new helper does NOT scope by `entity_id` — Visit/ClientVisit are CRM models scoped by `user` (the BDM). When SaaS spin-out generalizes `entity_id` to `tenant_id` (Year 2 per CLAUDE.md 0d), this helper inherits whatever scoping the CRM Visit collection ships with at that time.
+- `bdm_id` required at the controller (Rule #21 — `previewCarLogbookDay` returns 400 if privileged caller omits it). Helper assumes the controller has validated.
+
+**Cascading downstream:**
+- **Phase G1.7 SMER Pull-from-CRM** unchanged. SMER notes still auto-fill from CRM cities (Smer.jsx:550). Slice 6.1 just decouples Car Logbook from SMER timing — both surfaces converge on the same upstream data.
+- **Phase 33 cycle-wrapper** unchanged. Auto-populate writes only the inputs (destination); the pre-save hook on CarLogbookEntry still owns derived math (total_km / official_km / fuel total / efficiency / gas split).
+- **Slice 6 source badge palette** extends 6 → 7 codes. `EDIT_CAR_LOGBOOK_DESTINATION` lookup gate (Slice 1, default `[admin, finance, president]`) still controls who can override the destination.
+
+**Out of scope (intentionally NOT done):**
+- Distance estimation (Haversine / Google Maps Distance Matrix) — user explicitly said they estimate km by looking at city/province. The string is enough.
+- City + only on first appearance, city only on dedupe — every locality already shows `City, Province` (no special-case logic for first vs subsequent). The existing dedup sufficient.
+- Multi-tenant tenant_id sweep on Visit/ClientVisit — Year-2 SaaS spin-out concern, outside Slice 6.1 scope.
+
+**Plan:** No formal plan file — single in-session slice (~1.5h end-to-end including doc + smoke).
+
+erp-remote no-push policy in effect — commit cleanly to `dev` only.
+
+---
+
 ## PHASE P1.2 SLICE 1 — Capture Hub S3 Upload Pipeline + Quick Capture + PendingCapturesPicker ✅ COMPLETE (May 6, 2026)
 
 **Goal:** Close the production-day blocker that has been sitting at `BdmCaptureHub.jsx:270` since Phase P1 shipped — photos were stored as base64 data URLs inside the CaptureSubmission Mongo doc with the comment "In production, these would be uploaded to S3 first." With 9 BDMs × ~30 photos/day, the 16 MB doc cap would reject writes within a week. Plus deliver the locked Path A scope (May 5, 2026 evening user direction): the `Quick Capture` zero-typing button on `/erp/capture-hub` and the `PendingCapturesPicker` drawer on `/erp/expenses` so proxies can reuse BDM-snapped photos without re-uploading from gallery.

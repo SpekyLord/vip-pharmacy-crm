@@ -34,6 +34,10 @@ const SmerEntry = require('../models/SmerEntry');
 const CaptureSubmission = require('../models/CaptureSubmission');
 const DriveAllocation = require('../models/DriveAllocation');
 const CarLogbookEntry = require('../models/CarLogbookEntry');
+const Visit = require('../../models/Visit');
+const Doctor = require('../../models/Doctor');
+const ClientVisit = require('../../models/ClientVisit');
+const Client = require('../../models/Client');
 const { manilaDateString } = require('../utils/cycleC1C2');
 
 // ── Source tag enum — exposed for healthcheck + tests + frontend badge map ──
@@ -43,6 +47,7 @@ const SOURCE_TAGS = Object.freeze({
   DRIVE_ALLOCATION: 'DRIVE_ALLOCATION',
   FUEL_ENTRY_CAPTURE: 'FUEL_ENTRY_CAPTURE',
   PRIOR_DAY: 'PRIOR_DAY',             // ending_km of prior CarLogbookEntry (fallback for starting_km)
+  CRM_VISIT_CITY: 'CRM_VISIT_CITY',   // Visit + ClientVisit → Doctor/Client.locality + .province
   MANUAL: 'MANUAL',                   // proxy edited the field
 });
 
@@ -269,6 +274,85 @@ async function pullFuelEntries({ entity_id, bdm_id, dateStr }) {
 }
 
 /**
+ * Pull the day's CRM visit destinations as a city/town/province summary.
+ *
+ * Mirrors the smerCrmBridge.getDailyMdCounts contract (yes-equal-weight: VIP
+ * Visit + EXTRA ClientVisit), but day-scoped and returns a single string for
+ * the Car Logbook destination cell. Reads `locality + province` directly from
+ * Doctor and Client master records (Phase G1.5 backfill — every record has
+ * structured locality/province now), falls back to `clinicOfficeAddress` for
+ * any legacy doctor that slipped past backfill.
+ *
+ * Why a Car Logbook helper instead of reading from SMER's notes:
+ *   - SMER's location string only lands in `notes` AFTER the BDM clicks
+ *     "Pull from CRM" on the SMER page. If the SMER for the day is still a
+ *     fresh DRAFT (or doesn't exist yet), the destination falls through to
+ *     empty even when CRM has rich Visit data sitting right there.
+ *   - The proxy/admin opening Car Logbook should never be blocked on whether
+ *     the BDM has used the SMER form yet. CRM is the canonical source for
+ *     "where did the BDM physically go that day?".
+ *   - The badge `CRM_VISIT_CITY` makes the provenance explicit so the proxy
+ *     knows the cities came from actual logged CRM visits (not BDM typing).
+ *
+ * Returns `{ destination: 'Iloilo City, Iloilo; Oton, Iloilo', visit_count: 5 }`
+ * or `null` when no CRM visits exist for the day. Empty when records exist but
+ * none have any geo data (defensive — should never happen post-backfill).
+ *
+ * Subscription readiness: Visit/ClientVisit are CRM models scoped by user (BDM)
+ * — Rule #21 enforces bdm_id at the controller. Multi-tenant SaaS spin-out
+ * (CLAUDE.md 0d) is a separate sweep; this helper inherits whatever scoping
+ * the CRM Visit collection ships with at that time.
+ */
+async function pullCrmVisitDestinations({ bdm_id, dateStr }) {
+  const bounds = manilaDayBounds(dateStr);
+  if (!bounds) return null;
+
+  // Yes-equal-weight: pull both VIP Visit (→ Doctor) and EXTRA ClientVisit
+  // (→ Client). Same window, same status filter as smerCrmBridge.
+  const window = { $gte: bounds.startUtc, $lt: bounds.endUtc };
+  const [vipVisits, extraVisits] = await Promise.all([
+    Visit.find({ user: bdm_id, visitDate: window, status: 'completed' })
+      .select('doctor').lean(),
+    ClientVisit.find({ user: bdm_id, visitDate: window, status: 'completed' })
+      .select('client').lean(),
+  ]);
+
+  const visit_count = vipVisits.length + extraVisits.length;
+  if (visit_count === 0) return null;
+
+  // Batch-fetch master records for locality/province. dedupe IDs first to
+  // minimize the round-trip (a BDM with 8 visits to the same MD = 1 fetch).
+  const doctorIds = [...new Set(vipVisits.map(v => String(v.doctor)).filter(Boolean))];
+  const clientIds = [...new Set(extraVisits.map(v => String(v.client)).filter(Boolean))];
+  const [doctors, clients] = await Promise.all([
+    doctorIds.length
+      ? Doctor.find({ _id: { $in: doctorIds } })
+          .select('locality province clinicOfficeAddress').lean()
+      : [],
+    clientIds.length
+      ? Client.find({ _id: { $in: clientIds } })
+          .select('locality province clinicOfficeAddress').lean()
+      : [],
+  ]);
+
+  // Build labels per master record (city + province preferred, locality only
+  // if no province, raw address as last-resort fallback). Then dedupe across
+  // the day's visits — same city visited 5 times shows once.
+  const labels = [];
+  for (const m of [...doctors, ...clients]) {
+    if (m.locality && m.province) labels.push(`${m.locality}, ${m.province}`);
+    else if (m.locality) labels.push(m.locality);
+    else if (m.clinicOfficeAddress) labels.push(m.clinicOfficeAddress);
+  }
+  const uniqueLabels = [...new Set(labels)];
+
+  return {
+    destination: uniqueLabels.join('; '),
+    visit_count,
+  };
+}
+
+/**
  * Fall back to PRIOR DAY's CarLogbookEntry.ending_km for starting_km when the
  * SMER ODO capture pipeline is empty. Same heuristic as
  * driveAllocationController.inferTodayStartKm but scoped to a specific day
@@ -308,12 +392,14 @@ async function autoPopulateCarLogbookDay({ entity_id, bdm_id, entry_date }) {
     throw new Error(`autoPopulateCarLogbookDay: entry_date must be YYYY-MM-DD or a Date (got ${entry_date})`);
   }
 
-  // Pull all four sources in parallel — Rule #19 entity_id is on every find()
-  const [smer, odo, alloc, fuel] = await Promise.all([
+  // Pull all five sources in parallel — Rule #19 entity_id is on every find()
+  // that targets ERP collections; CRM Visit/ClientVisit scope by user (Rule #21).
+  const [smer, odo, alloc, fuel, crmCities] = await Promise.all([
     pullSmerDestination({ entity_id, bdm_id, dateStr }),
     pullSmerOdoCaptures({ entity_id, bdm_id, dateStr }),
     pullDriveAllocation({ entity_id, bdm_id, dateStr }),
     pullFuelEntries({ entity_id, bdm_id, dateStr }),
+    pullCrmVisitDestinations({ bdm_id, dateStr }),
   ]);
 
   // Resolve starting_km — prefer SMER capture, fall back to prior day ending.
@@ -342,9 +428,27 @@ async function autoPopulateCarLogbookDay({ entity_id, bdm_id, entry_date }) {
   // official_km is derived by the CarLogbookEntry pre-save hook from total_km
   // and personal_km — we expose it on the preview shape for UI display only.
 
-  // Destination — SMER hospital_covered + notes
-  const destination = smer ? smer.destination : '';
-  const destination_source = (smer && smer.destination) ? SOURCE_TAGS.SMER : null;
+  // Destination — priority chain:
+  //   1. CRM Visit cities (richest signal, decoupled from BDM filing the SMER)
+  //   2. SMER hospital_covered + notes (manual BDM entry / SMER Pull-from-CRM)
+  //   3. empty (proxy fills)
+  // CRM wins because it's the canonical "where the BDM physically went" — the
+  // SMER notes string typically MIRRORS this same data anyway (it's populated
+  // by SMER Pull-from-CRM from the same Visit/ClientVisit join), so we
+  // short-circuit the dependency on the BDM clicking Pull. If the BDM types a
+  // specific hospital name in SMER (e.g., "St. Luke's BGC") and ALSO has CRM
+  // visits, CRM wins on the Car Logbook destination — but the SMER hospital
+  // name still surfaces via _smer_meta on the preview shape so the proxy can
+  // see both signals if they expand the row.
+  let destination = '';
+  let destination_source = null;
+  if (crmCities && crmCities.destination) {
+    destination = crmCities.destination;
+    destination_source = SOURCE_TAGS.CRM_VISIT_CITY;
+  } else if (smer && smer.destination) {
+    destination = smer.destination;
+    destination_source = SOURCE_TAGS.SMER;
+  }
 
   // Fuel entries — every FUEL_ENTRY capture for the day becomes a row
   const fuel_entries = fuel;
@@ -373,6 +477,7 @@ async function autoPopulateCarLogbookDay({ entity_id, bdm_id, entry_date }) {
     // SMER notes, etc., without re-querying.
     _smer_meta: smer,
     _drive_allocation: alloc,
+    _crm_visits: crmCities, // { destination, visit_count } | null
     _has_any_signal: !!(
       destination_source || starting_km_source || ending_km_source ||
       personal_km_source || fuel_entries_source
@@ -393,4 +498,5 @@ module.exports = {
   pullDriveAllocation,
   pullFuelEntries,
   pullPriorDayEndingKm,
+  pullCrmVisitDestinations,
 };

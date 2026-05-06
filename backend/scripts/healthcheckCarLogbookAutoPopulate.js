@@ -58,6 +58,7 @@ assert('SOURCE_TAGS.SMER_CAPTURE defined', /SMER_CAPTURE:\s*'SMER_CAPTURE'/.test
 assert('SOURCE_TAGS.DRIVE_ALLOCATION defined', /DRIVE_ALLOCATION:\s*'DRIVE_ALLOCATION'/.test(svcSrc));
 assert('SOURCE_TAGS.FUEL_ENTRY_CAPTURE defined', /FUEL_ENTRY_CAPTURE:\s*'FUEL_ENTRY_CAPTURE'/.test(svcSrc));
 assert('SOURCE_TAGS.PRIOR_DAY defined', /PRIOR_DAY:\s*'PRIOR_DAY'/.test(svcSrc));
+assert('SOURCE_TAGS.CRM_VISIT_CITY defined (Slice 6.1)', /CRM_VISIT_CITY:\s*'CRM_VISIT_CITY'/.test(svcSrc));
 assert('SOURCE_TAGS.MANUAL defined', /MANUAL:\s*'MANUAL'/.test(svcSrc));
 
 assert('Rule #19 — entity_id required check', /entity_id is required/.test(svcSrc));
@@ -68,6 +69,10 @@ assert('imports CaptureSubmission', /require\(['"]\.\.\/models\/CaptureSubmissio
 assert('imports DriveAllocation', /require\(['"]\.\.\/models\/DriveAllocation['"]\)/.test(svcSrc));
 assert('imports CarLogbookEntry (prior-day fallback)', /require\(['"]\.\.\/models\/CarLogbookEntry['"]\)/.test(svcSrc));
 assert('imports cycleC1C2 helper', /require\(['"]\.\.\/utils\/cycleC1C2['"]\)/.test(svcSrc));
+assert('Slice 6.1 — imports Visit (CRM)', /require\(['"]\.\.\/\.\.\/models\/Visit['"]\)/.test(svcSrc));
+assert('Slice 6.1 — imports Doctor (CRM)', /require\(['"]\.\.\/\.\.\/models\/Doctor['"]\)/.test(svcSrc));
+assert('Slice 6.1 — imports ClientVisit (CRM, EXTRA calls)', /require\(['"]\.\.\/\.\.\/models\/ClientVisit['"]\)/.test(svcSrc));
+assert('Slice 6.1 — imports Client (CRM, EXTRA call counterpart)', /require\(['"]\.\.\/\.\.\/models\/Client['"]\)/.test(svcSrc));
 
 assert('VALID_CAPTURE_STATUSES excludes CANCELLED', !/VALID_CAPTURE_STATUSES[\s\S]{0,300}'CANCELLED'/.test(svcSrc));
 assert('pulls SMER destination by daily_entries', /daily_entries\.entry_date/.test(svcSrc));
@@ -75,6 +80,15 @@ assert('pulls SMER ODO captures workflow_type SMER', /workflow_type:\s*'SMER'/.t
 assert('pulls FUEL_ENTRY captures', /workflow_type:\s*'FUEL_ENTRY'/.test(svcSrc));
 assert('pulls DriveAllocation by drive_date', /drive_date:\s*dateStr/.test(svcSrc));
 assert('parallel Promise.all sweep', /Promise\.all\(\[\s*pullSmerDestination/.test(svcSrc));
+assert('Slice 6.1 — pullCrmVisitDestinations exported', /module\.exports[\s\S]{0,2000}pullCrmVisitDestinations/.test(svcSrc));
+assert('Slice 6.1 — pullCrmVisitDestinations defined', /async function pullCrmVisitDestinations/.test(svcSrc));
+assert('Slice 6.1 — yes-equal-weight Visit + ClientVisit query', /Visit\.find[\s\S]{0,500}ClientVisit\.find/.test(svcSrc));
+assert('Slice 6.1 — locality + province label preferred', /\$\{m\.locality\},\s*\$\{m\.province\}/.test(svcSrc));
+assert('Slice 6.1 — dedupes via Set', /\[\.\.\.\s*new Set\(labels\)\]/.test(svcSrc));
+assert('Slice 6.1 — joins with semicolon delimiter', /uniqueLabels\.join\(['"]\;\s*['"]\)/.test(svcSrc));
+assert('Slice 6.1 — pullCrmVisitDestinations in parallel sweep', /pullCrmVisitDestinations\(\{\s*bdm_id,\s*dateStr\s*\}\)/.test(svcSrc));
+assert('Slice 6.1 — destination prefers CRM > SMER', /crmCities\.destination[\s\S]{0,300}SOURCE_TAGS\.CRM_VISIT_CITY[\s\S]{0,300}SOURCE_TAGS\.SMER/.test(svcSrc));
+assert('Slice 6.1 — _crm_visits surfaced in return shape', /_crm_visits:\s*crmCities/.test(svcSrc));
 
 // 8 expected return shape fields
 const RETURN_FIELDS = ['destination', 'starting_km', 'ending_km', 'starting_km_photo_url', 'ending_km_photo_url', 'personal_km', 'official_km', 'fuel_entries'];
@@ -151,8 +165,9 @@ assert('imports previewCarLogbookDay from useExpenses',
   /previewCarLogbookDay/.test(pageSrc));
 assert('SourceBadge component defined',
   /function SourceBadge/.test(pageSrc));
-assert('AUTOPOP_SOURCE_META has all 6 source codes',
-  /AUTOPOP_SOURCE_META[\s\S]{0,500}SMER:[\s\S]{0,200}SMER_CAPTURE:[\s\S]{0,200}DRIVE_ALLOCATION:[\s\S]{0,200}FUEL_ENTRY_CAPTURE:[\s\S]{0,200}PRIOR_DAY:[\s\S]{0,200}MANUAL:/.test(pageSrc));
+assert('AUTOPOP_SOURCE_META has all 7 source codes (Slice 6 + 6.1)',
+  /AUTOPOP_SOURCE_META[\s\S]{0,800}SMER:[\s\S]{0,200}SMER_CAPTURE:[\s\S]{0,200}DRIVE_ALLOCATION:[\s\S]{0,200}FUEL_ENTRY_CAPTURE:[\s\S]{0,200}PRIOR_DAY:[\s\S]{0,200}CRM_VISIT_CITY:[\s\S]{0,200}MANUAL:/.test(pageSrc));
+assert('Slice 6.1 — CRM_VISIT_CITY badge has cyan palette + tip', /CRM_VISIT_CITY:[\s\S]{0,300}cffafe[\s\S]{0,200}CRM Visits/.test(pageSrc));
 assert('row state seeds _autopop_sources empty map',
   /_autopop_sources:\s*\{\}/.test(pageSrc));
 assert('loadAndMerge calls previewCarLogbookDay',
@@ -188,6 +203,12 @@ assert('car-logbook banner names the 4 sources',
   /SMER[\s\S]{0,400}DriveAllocation[\s\S]{0,400}FUEL_ENTRY/i.test(guideSrc));
 assert('car-logbook tip explains source badge palette',
   /source badge[\s\S]{0,500}SMER[\s\S]{0,500}ODO[\s\S]{0,500}Drive[\s\S]{0,500}Fuel cap[\s\S]{0,500}Prior[\s\S]{0,500}Manual/i.test(guideSrc));
+assert('Slice 6.1 — car-logbook banner mentions CRM Visits source',
+  /Slice 6\.1[\s\S]{0,300}CRM Visits/i.test(guideSrc));
+assert('Slice 6.1 — car-logbook tip explains CRM > SMER priority',
+  /CRM[\s\S]{0,200}wins over SMER/i.test(guideSrc));
+assert('Slice 6.1 — smer banner mentions cross-fill to Car Logbook',
+  /Phase P1\.2 Slice 6\.1[\s\S]{0,300}Car Logbook destination/i.test(guideSrc));
 
 // ── 7. Lookup-driven gate (Rule #3) ───────────────────────────────
 section('Lookup gate — backend/utils/captureLifecycleAccess.js');
