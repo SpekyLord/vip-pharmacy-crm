@@ -17,6 +17,7 @@ import {
   MapPin, Clock, Upload,
   ChevronRight, RefreshCw, X,
   Car, Wallet as WalletOut, Handshake, Banknote, PackageOpen,
+  ScanBarcode,
   Sparkles, Check, Lock,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -139,14 +140,38 @@ const WORKFLOWS = [
     fields: ['amount_declared'],
     active: true,
   },
+  // Phase P1.2 Slice 6.2 (May 06 2026) — GRN tile splits into two so the
+  // proxy can tell at-a-glance which captures need a paper hand-in vs which
+  // are pure OCR feedstock.
+  //   BATCH_PHOTO (D)  — Digital-only photo of vial/box labels. OCR extracts
+  //                      batch + expiry; the physical product itself is the
+  //                      source so no paper arrives at office.
+  //   WAYBILL     (M)  — Photo of the courier waybill paper. The physical
+  //                      paper still needs to be hand-delivered to office —
+  //                      Slice 3 reconciliation will block the BDM's per-diem
+  //                      cycle if it goes missing.
   {
     key: 'GRN',
+    sub_type: 'BATCH_PHOTO',
     section: 'inventory',
-    label: 'Scan GRN Item',
+    label: 'Scan Batch Photo',
+    icon: ScanBarcode,
+    color: '#d97706',
+    description: 'Photo of vial / box labels — OCR extracts batch + expiry',
+    artifactKind: 'barcode_scan',
+    fields: [],
+    digitalOnly: true,
+    active: true,
+  },
+  {
+    key: 'GRN',
+    sub_type: 'WAYBILL',
+    section: 'inventory',
+    label: 'Scan Waybill',
     icon: Truck,
     color: '#dc2626',
-    description: 'Product barcode + qty + batch/expiry + waybill',
-    artifactKind: 'barcode_scan',
+    description: 'Courier waybill paper — proof of arrival, paper to office',
+    artifactKind: 'photo',
     fields: [],
     active: true,
   },

@@ -1890,6 +1890,7 @@ const WORKFLOW_GUIDES = {
     tips: [
       'ODO is a daily capture — start of day + end of day, every working day',
       'CSI Being Paid is digital-only — no paper expected at the office',
+      '**Phase P1.2 Slice 6.2 (May 06 2026) — GRN tile split:** "Scan Batch Photo" (BATCH_PHOTO) is digital-only — the photo of vial/box labels is the OCR feedstock, no paper to send. "Scan Waybill" (WAYBILL) still expects the courier waybill paper to arrive at office; Slice 3 reconciliation enforces it.',
       'All other captures expect physical paper to follow within 8–10 days',
       'Cycle: C1 = day 1–15, C2 = day 16–end of month — pace your captures accordingly',
       'If physical paper is missing, the SAME cycle next month may be blocked (e.g., C1 May missing → C1 June blocked)',

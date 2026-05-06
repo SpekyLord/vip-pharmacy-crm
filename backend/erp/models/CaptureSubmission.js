@@ -89,10 +89,14 @@ const captureSubmissionSchema = new mongoose.Schema({
     index: true,
   },
 
-  // ── Sub-classification (used by COLLECTION) ──
+  // ── Sub-classification ──
+  // COLLECTION: CR | DEPOSIT | PAID_CSI
+  // GRN (Phase P1.2 Slice 6.2 — May 06 2026): BATCH_PHOTO | WAYBILL
+  //   BATCH_PHOTO  — D (Digital-only): photo of vials/boxes for OCR batch+expiry. No paper.
+  //   WAYBILL      — M (Manual/Material): courier waybill paper arrives at office.
   sub_type: {
     type: String,
-    enum: ['CR', 'DEPOSIT', 'PAID_CSI', null],
+    enum: ['CR', 'DEPOSIT', 'PAID_CSI', 'BATCH_PHOTO', 'WAYBILL', null],
     default: null,
   },
 

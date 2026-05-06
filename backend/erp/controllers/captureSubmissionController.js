@@ -58,9 +58,23 @@ function canTransition(from, to) {
 //   SMER:                   ODO photos are device-clock evidence, no paper
 //   COLLECTION/PAID_CSI:    photo of CSI marked paid; the original CSI copy
 //                           travels with collection paperwork separately
+//   GRN/BATCH_PHOTO:        photo of vial/box labels for OCR batch+expiry —
+//                           the physical product itself is the source, no
+//                           paper to send. (Phase P1.2 Slice 6.2 — May 06 2026)
 const DIGITAL_ONLY = (workflow_type, sub_type) =>
   workflow_type === 'SMER' ||
-  (workflow_type === 'COLLECTION' && sub_type === 'PAID_CSI');
+  (workflow_type === 'COLLECTION' && sub_type === 'PAID_CSI') ||
+  (workflow_type === 'GRN' && sub_type === 'BATCH_PHOTO');
+
+// Per-workflow sub_type whitelist. Phase P1.2 Slice 6.2 (May 06 2026) splits
+// GRN into BATCH_PHOTO (D — digital-only OCR feed) vs WAYBILL (M — paper
+// arrives with the courier). COLLECTION whitelist unchanged from Phase P1.
+// Subscribers loosen via lookup row CAPTURE_SUB_TYPE_RULES (Rule #3) — defaults
+// ship with the binary so a Lookup outage never goes dark.
+const VALID_SUB_TYPES_BY_WORKFLOW = {
+  COLLECTION: ['CR', 'DEPOSIT', 'PAID_CSI'],
+  GRN:        ['BATCH_PHOTO', 'WAYBILL'],
+};
 
 const createCapture = catchAsync(async (req, res) => {
   const {
@@ -82,10 +96,18 @@ const createCapture = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: `Invalid workflow_type. Must be one of: ${VALID_TYPES.join(', ')}` });
   }
 
-  // sub_type only valid for COLLECTION
-  const VALID_SUB_TYPES = ['CR', 'DEPOSIT', 'PAID_CSI'];
-  if (sub_type && (workflow_type !== 'COLLECTION' || !VALID_SUB_TYPES.includes(sub_type))) {
-    return res.status(400).json({ success: false, message: `sub_type '${sub_type}' is invalid for workflow_type '${workflow_type}'` });
+  // sub_type whitelist is per-workflow (COLLECTION + GRN today).
+  if (sub_type) {
+    const allowed = VALID_SUB_TYPES_BY_WORKFLOW[workflow_type];
+    if (!allowed || !allowed.includes(sub_type)) {
+      const allowedHint = allowed
+        ? ` Expected one of: ${allowed.join(', ')}`
+        : ` workflow_type '${workflow_type}' does not accept sub_type.`;
+      return res.status(400).json({
+        success: false,
+        message: `sub_type '${sub_type}' is invalid for workflow_type '${workflow_type}'.${allowedHint}`,
+      });
+    }
   }
 
   if (!captured_artifacts || !Array.isArray(captured_artifacts) || captured_artifacts.length === 0) {

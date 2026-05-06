@@ -56,7 +56,11 @@ assert('artifact kind: cr_scan', /'cr_scan'/.test(modelSrc));
 assert('artifact kind: deposit_slip', /'deposit_slip'/.test(modelSrc));
 assert('artifact kind: cwt_scan', /'cwt_scan'/.test(modelSrc));
 assert('workflow_type: CWT_INBOUND', /'CWT_INBOUND'/.test(modelSrc));
-assert('sub_type field with 3 values', /sub_type:[\s\S]+'CR'[\s\S]+'DEPOSIT'[\s\S]+'PAID_CSI'/.test(modelSrc));
+// Phase P1.2 Slice 6.2 (May 06 2026) — sub_type carries 5 values now: 3 for
+// COLLECTION + 2 for GRN. Legacy 3-value assert kept (still passes) plus new
+// assertions for the GRN pair.
+assert('sub_type field with COLLECTION trio', /sub_type:[\s\S]+'CR'[\s\S]+'DEPOSIT'[\s\S]+'PAID_CSI'/.test(modelSrc));
+assert('sub_type field with GRN pair',         /sub_type:[\s\S]+'BATCH_PHOTO'[\s\S]+'WAYBILL'/.test(modelSrc));
 assert('physical_required field', /physical_required:[\s\S]+Boolean/.test(modelSrc));
 assert('physical_status enum', /physical_status:[\s\S]+'PENDING'[\s\S]+'RECEIVED'[\s\S]+'MISSING'[\s\S]+'N_A'/.test(modelSrc));
 assert('physical_received_at field', /physical_received_at:\s*\{\s*type:\s*Date/.test(modelSrc));
@@ -69,8 +73,12 @@ section('Controller — backend/erp/controllers/captureSubmissionController.js')
 const ctrlSrc = read('backend/erp/controllers/captureSubmissionController.js');
 
 assert('VALID_TYPES includes CWT_INBOUND', /VALID_TYPES\s*=\s*\[[\s\S]+'CWT_INBOUND'/.test(ctrlSrc));
-assert('VALID_SUB_TYPES has all three', /VALID_SUB_TYPES\s*=\s*\['CR',\s*'DEPOSIT',\s*'PAID_CSI'\]/.test(ctrlSrc));
-assert('sub_type rejected for non-COLLECTION', /sub_type[\s\S]+'COLLECTION'/.test(ctrlSrc));
+// Phase P1.2 Slice 6.2 (May 06 2026) — sub_type whitelist is now per-workflow.
+// COLLECTION: CR / DEPOSIT / PAID_CSI; GRN: BATCH_PHOTO / WAYBILL.
+assert('Sub-type whitelist for COLLECTION', /COLLECTION:\s*\['CR',\s*'DEPOSIT',\s*'PAID_CSI'\]/.test(ctrlSrc));
+assert('Sub-type whitelist for GRN',        /GRN:\s*\['BATCH_PHOTO',\s*'WAYBILL'\]/.test(ctrlSrc));
+assert('VALID_SUB_TYPES_BY_WORKFLOW map exists', /VALID_SUB_TYPES_BY_WORKFLOW/.test(ctrlSrc));
+assert('createCapture references VALID_SUB_TYPES_BY_WORKFLOW', /VALID_SUB_TYPES_BY_WORKFLOW\[workflow_type\]/.test(ctrlSrc));
 assert('DIGITAL_ONLY helper defined', /const DIGITAL_ONLY/.test(ctrlSrc));
 assert('digital-only: SMER', /workflow_type === 'SMER'/.test(ctrlSrc));
 assert('digital-only: COLLECTION/PAID_CSI', /'COLLECTION'[\s\S]+'PAID_CSI'/.test(ctrlSrc));
@@ -1333,6 +1341,70 @@ assert('GrnEntry createGrn forwards pendingCaptureId',
   /pendingCaptureId\s*\?\s*\{\s*capture_id:\s*pendingCaptureId\s*\}/.test(grnEntrySrc2));
 assert('GrnEntry resets pendingCaptureId after submit',
   /setPendingCaptureId\(null\)/.test(grnEntrySrc2));
+
+// ── Phase P1.2 Slice 6.2 — GRN sub_type split (BATCH_PHOTO vs WAYBILL) ──
+section('Phase P1.2 Slice 6.2 — GRN sub_type split (BATCH_PHOTO vs WAYBILL)');
+
+// Model — sub_type enum carries the new pair alongside the legacy COLLECTION trio
+assert('Model sub_type enum has BATCH_PHOTO',
+  /enum:\s*\[[^\]]*'BATCH_PHOTO'/.test(modelSrc));
+assert('Model sub_type enum has WAYBILL',
+  /enum:\s*\[[^\]]*'WAYBILL'/.test(modelSrc));
+assert('Model sub_type comment notes Slice 6.2',
+  /Phase P1\.2 Slice 6\.2/.test(modelSrc));
+
+// Controller — DIGITAL_ONLY recognizes GRN/BATCH_PHOTO; per-workflow whitelist
+assert('DIGITAL_ONLY treats GRN/BATCH_PHOTO as digital',
+  /workflow_type === 'GRN'\s*&&\s*sub_type === 'BATCH_PHOTO'/.test(ctrlSrc));
+// Inside the DIGITAL_ONLY arrow body itself, there must be NO branch on WAYBILL —
+// extract just the arrow body and grep there. A WAYBILL hit elsewhere in the file
+// (e.g., the VALID_SUB_TYPES_BY_WORKFLOW map) is fine and irrelevant.
+{
+  const m = ctrlSrc.match(/const DIGITAL_ONLY[\s\S]+?;\s*\n/);
+  const arrowBody = m ? m[0] : '';
+  assert('DIGITAL_ONLY arrow body does NOT branch on WAYBILL',
+    arrowBody.length > 0 && !/'WAYBILL'/.test(arrowBody));
+}
+assert('createCapture rejects unknown sub_type with allowedHint',
+  /Expected one of:\s*\$\{allowed\.join\(', '\)\}/.test(ctrlSrc));
+
+// Frontend — BdmCaptureHub renders both GRN tiles with correct flags
+const hubSrcSlice62 = read('frontend/src/erp/pages/mobile/BdmCaptureHub.jsx');
+assert('BdmCaptureHub imports ScanBarcode icon',
+  /\bScanBarcode\b/.test(hubSrcSlice62));
+assert('BdmCaptureHub has BATCH_PHOTO tile (digitalOnly)',
+  /sub_type:\s*'BATCH_PHOTO'[\s\S]{0,400}digitalOnly:\s*true/.test(hubSrcSlice62));
+assert('BdmCaptureHub has WAYBILL tile (paper expected — no digitalOnly)',
+  // WAYBILL block must NOT carry `digitalOnly: true` within ~400 chars of its sub_type line
+  !/sub_type:\s*'WAYBILL'[\s\S]{0,400}digitalOnly:\s*true/.test(hubSrcSlice62));
+assert('BATCH_PHOTO tile labelled "Scan Batch Photo"',
+  /label:\s*'Scan Batch Photo'/.test(hubSrcSlice62));
+assert('WAYBILL tile labelled "Scan Waybill"',
+  /label:\s*'Scan Waybill'/.test(hubSrcSlice62));
+assert('No legacy "Scan GRN Item" tile remains',
+  !/label:\s*'Scan GRN Item'/.test(hubSrcSlice62));
+assert('Both GRN tiles live in inventory section',
+  /sub_type:\s*'BATCH_PHOTO'[\s\S]{0,200}section:\s*'inventory'/.test(hubSrcSlice62) &&
+  /sub_type:\s*'WAYBILL'[\s\S]{0,200}section:\s*'inventory'/.test(hubSrcSlice62));
+
+// Migration script — exists, dry-run-by-default, idempotent, conservative
+const migPath = 'backend/scripts/migrateGrnCaptureSubType.js';
+let migSrc = '';
+try { migSrc = read(migPath); } catch { /* missing */ }
+assert('migrateGrnCaptureSubType.js exists', migSrc.length > 0);
+assert('migration is dry-run by default',
+  /DRY_RUN\s*=\s*!process\.argv\.includes\(['"]--apply['"]\)/.test(migSrc));
+assert('migration filter targets only null sub_type GRN rows',
+  /workflow_type:\s*['"]GRN['"][\s\S]{0,200}sub_type:\s*null/.test(migSrc));
+assert('migration sets sub_type=WAYBILL (conservative default)',
+  /\$set:\s*\{\s*sub_type:\s*['"]WAYBILL['"]/.test(migSrc));
+assert('migration logs BATCH_PHOTO + WAYBILL pre/post counts',
+  /BATCH_PHOTO[\s\S]{0,400}WAYBILL/.test(migSrc));
+
+// WorkflowGuide — bdm-capture-hub banner mentions the split (Rule #1)
+const wgSliceSrc = read('frontend/src/erp/components/WorkflowGuide.jsx');
+assert('bdm-capture-hub banner mentions Slice 6.2 GRN split',
+  /Slice 6\.2[\s\S]{0,500}BATCH_PHOTO[\s\S]{0,300}WAYBILL/.test(wgSliceSrc));
 
 // ── Summary ───────────────────────────────────────────────────
 const total = pass + fail;

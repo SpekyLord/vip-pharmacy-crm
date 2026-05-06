@@ -16,6 +16,66 @@
 
 ---
 
+## PHASE P1.2 SLICE 6.2 — GRN sub_type split (BATCH_PHOTO vs WAYBILL) ✅ SHIPPED (May 6, 2026 — pending UI smoke ratification)
+
+**Goal:** Split the single `GRN` capture tile (`Scan GRN Item`, "Product barcode + qty + batch/expiry + waybill") into two tiles whose paper-trail expectations match reality:
+- **(D) BATCH_PHOTO** — photo of vial / box labels for OCR batch + expiry. The physical product itself is the source. **No paper to send to office.** `physical_required = false` / `physical_status = 'N_A'`.
+- **(M) WAYBILL** — courier waybill paper. Physical paper arrives at office. `physical_required = true` / `physical_status = 'PENDING'` until the proxy attests `RECEIVED` via the existing Slice 9 path.
+
+**Trigger:** Phase 2 of the user's locked plan: "Add BATCH_PHOTO (D) vs WAYBILL (M) sub_types — Update BdmCaptureHub: split current GRN tile into two — Migration: existing GRN captures get default sub_type=WAYBILL (conservative) — Update healthcheck."
+
+**Decision (locked May 6 2026):**
+- **Two tiles, same `inventory` section.** Mirrors the COLLECTION pattern (CR / DEPOSIT / PAID_CSI = 3 tiles in one section, 1 sub_type each) so the BDM's mental model stays "one tap per document type." `Scan Batch Photo` uses the `ScanBarcode` lucide icon + amber `#d97706`; `Scan Waybill` keeps the legacy Truck icon + red `#dc2626`. Existing tile composite-key generator `${w.key}_${w.sub_type || 'main'}` produces unique React keys (`GRN_BATCH_PHOTO`, `GRN_WAYBILL`) without code change.
+- **Conservative migration.** Legacy `workflow_type='GRN', sub_type=null` rows → `sub_type='WAYBILL'`. WAYBILL is the safer default because flipping legacy rows to BATCH_PHOTO would silently lift their `physical_required` gate. If a row was actually a batch photo, admin can override one row at a time via the existing Capture Archive `OVERRIDE_PHYSICAL_STATUS` path — no special tooling needed.
+- **Per-workflow sub_type whitelist.** `VALID_SUB_TYPES` (a flat 3-element array that hardcoded `workflow_type !== 'COLLECTION'` rejection logic) → `VALID_SUB_TYPES_BY_WORKFLOW = { COLLECTION: [...3], GRN: ['BATCH_PHOTO','WAYBILL'] }`. Adding a third sub-typed workflow in the future is now a one-row map insertion, not a controller rewrite.
+- **DIGITAL_ONLY arrow gains a third branch.** `(workflow_type === 'GRN' && sub_type === 'BATCH_PHOTO')` joins the existing `'SMER'` and `('COLLECTION' && 'PAID_CSI')` branches.
+- **Picker scope unchanged this slice.** `/erp/grn` Pending-Captures-Picker still queries `workflowTypes={['GRN','UNCATEGORIZED']}`; the existing `sub_type` chip in the drawer row already differentiates BATCH PHOTO vs WAYBILL captures so the proxy picks the right one. Narrowing the picker to BATCH_PHOTO only (so the OCR scan modal sees only OCR-feedstock captures) is a downstream Phase 2.1 follow-up.
+
+**Files touched:**
+
+| File | Change |
+|---|---|
+| `backend/erp/models/CaptureSubmission.js` | `sub_type` enum gains `'BATCH_PHOTO'` + `'WAYBILL'`; comment block describes the D vs M semantics |
+| `backend/erp/controllers/captureSubmissionController.js` | `DIGITAL_ONLY` arrow gains GRN/BATCH_PHOTO branch (with comment); `VALID_SUB_TYPES` (flat) → `VALID_SUB_TYPES_BY_WORKFLOW` (per-workflow map); 400 message lists allowed values for the workflow |
+| `frontend/src/erp/pages/mobile/BdmCaptureHub.jsx` | + `ScanBarcode` lucide import; legacy single GRN tile (`Scan GRN Item`, Truck) replaced by BATCH_PHOTO + WAYBILL tiles, both in `inventory` section, with sub_type forwarded by existing `payload.sub_type = workflow.sub_type` line |
+| `backend/scripts/migrateGrnCaptureSubType.js` (NEW) | Dry-run-by-default migration: `{workflow_type:'GRN', sub_type:null}` → `sub_type='WAYBILL'`; idempotent; samples 10 candidate IDs; logs BATCH_PHOTO + WAYBILL pre/post counts |
+| `backend/scripts/healthcheckCaptureHub.js` | New "Phase P1.2 Slice 6.2" section: 17 assertions covering model enum, controller per-workflow map, DIGITAL_ONLY arrow body precise check (matches BATCH_PHOTO; precisely free of WAYBILL via arrow-body-only regex), 7 frontend tile assertions, 5 migration script assertions, 1 banner assertion. Renames `'sub_type field with 3 values'` to `'sub_type field with COLLECTION trio'` and adds `'sub_type field with GRN pair'`. Removes legacy `'VALID_SUB_TYPES has all three'` and `'sub_type rejected for non-COLLECTION'` (replaced by per-workflow map asserts) |
+| `frontend/src/erp/components/WorkflowGuide.jsx` | `bdm-capture-hub` banner gains a new tip explaining the BATCH_PHOTO digital-only / WAYBILL paper-expected split (Rule #1) |
+| `CLAUDE-ERP.md` | Status banner refreshed to Version 8.8 + Slice 6.2 lead paragraph |
+| `docs/PHASETASK-ERP.md` | + this section |
+| `CLAUDE.md` | Numbered note appended (continues 16, 17, 18 pattern from Slice 7-extension Round 2C + Slice 6 + Slice 6.1) |
+
+**Verified:**
+- ✅ `node backend/scripts/healthcheckCaptureHub.js` — see "Run healthcheck + Vite build" step (executed in same session).
+- ✅ Frontend syntax — `BdmCaptureHub.jsx` parses cleanly via Vite (executed in same session).
+- ✅ Backend syntax — `captureSubmissionController.js` + `CaptureSubmission.js` + `migrateGrnCaptureSubType.js` parse cleanly (executed in same session).
+- ⚠️ Live API + Playwright UI smoke — see "Playwright UI smoke + API smoke" step (next).
+- Migration script NOT YET applied to the dev cluster. Recommended: dry-run first via `node backend/scripts/migrateGrnCaptureSubType.js`, review the sample IDs, then `--apply`.
+
+**Lookup posture / subscription readiness:**
+- Zero new lookup categories this slice — the sub_type whitelist is an inline source-of-truth map (matches the legacy posture for COLLECTION sub_types). Rule #3 future hook is documented in the controller comment: subscribers who want to flip a sub_type's D↔M classification per-entity (e.g., a subscriber whose courier process digitizes the waybill via PDF email instead of paper) can introduce a `CAPTURE_SUB_TYPE_DIGITAL_OVERRIDES` lookup category later — not needed for any known subscriber today.
+- Sub-permission gates unchanged: both new tiles inherit the existing `CAPTURE_LIFECYCLE_ROLES.UPLOAD_OWN_CAPTURE` (default `[staff]`) for BDM-side capture and `PROXY_PULL_CAPTURE` for office-side reuse via the PendingCapturesPicker.
+- `entity_id` and `bdm_id` posture unchanged — controller already enforces (Rule #19 + Rule #21).
+
+**Cascading downstream / integrity check:**
+- **Slice 3 reconciliation** sweeps `physical_status` over `bdm_id × cycle` — the existing index `{ bdm_id: 1, physical_status: 1, created_at: 1 }` is unchanged. BATCH_PHOTO rows now write `physical_status='N_A'` so the sweep correctly skips them.
+- **Slice 8 Capture Archive** aggregates by `{period, cycle, workflow_type, sub_type}` — existing pipeline already groups by `sub_type`, so BATCH_PHOTO + WAYBILL automatically split into separate folders within the GRN workflow leaf. Zero schema or aggregation changes needed.
+- **Slice 9 paper-received attestation** (`paper_received: true` on `completeCapture` + per-row override) is gated by `if (paper_received === true && doc.physical_required)`. BATCH_PHOTO has `physical_required=false` → silently ignored. WAYBILL has `physical_required=true` → attested as before. Same code path, correct branching.
+- **Slice 9 partial — auto-finalize on attach** (`linkCaptureToDocument`) walks `PENDING_PROXY → AWAITING_BDM_REVIEW` only for the existing `REVIEW_WORKFLOWS` list which does NOT include GRN. Both BATCH_PHOTO + WAYBILL captures continue to land in `PROCESSED` (no BDM review) when attached to a GRN doc. Correct posture — GRN already has its own UT-acknowledgment cascade.
+- **PendingCapturesPicker on `/erp/grn`** — picker fetches `workflow_type='GRN'` regardless of sub_type and renders the `sub_type` chip ("GRN · BATCH PHOTO" or "GRN · WAYBILL") in the row meta. Proxy picks visually. No code change required for this slice.
+- **Recent Captures list on `/erp/capture-hub`** — already renders `sub_type.replace(/_/g, ' ')` after the workflow_type label, so legacy rows show "GRN" only and post-migration rows show "GRN · WAYBILL" / "GRN · BATCH PHOTO". No code change.
+
+**Out of scope (intentionally NOT done):**
+- Picker filter tightening — narrowing `/erp/grn` PendingCapturesPicker to BATCH_PHOTO only would prevent the proxy from accidentally feeding a waybill image into the OCR scan modal. Real, but a downstream Phase 2.1 follow-up — picker UX is fine via the chip today.
+- Subscriber-overrideable D/M flag per sub_type — a `CAPTURE_SUB_TYPE_DIGITAL_OVERRIDES` lookup category would let a subscriber flip BATCH_PHOTO from D to M without code, but no subscriber needs this today and the controller already documents the hook for when one does.
+- Frontend WAYBILL upload field on `/erp/grn` accepting WAYBILL captures via picker — out of scope (the existing waybill upload field has its own gallery uploader; reuse via picker is a Phase 2.1 follow-up).
+
+**Plan:** No formal plan file — single in-session slice (~3h end-to-end including doc + smoke).
+
+erp-remote no-push policy in effect — commit cleanly to `dev` only.
+
+---
+
 ## PHASE P1.2 SLICE 6.1 — CRM Visit cities also auto-fill Car Logbook destination ✅ COMPLETE (May 6, 2026 evening)
 
 **Goal:** Decouple Car Logbook destination from the BDM's SMER timing. Pre-Slice-6.1, the only way for `destination` on the per-day grid to populate was via SMER's `hospital_covered + notes`. The SMER notes string DOES carry CRM city data — but only AFTER the BDM clicks "Pull from CRM" on the SMER page. If the SMER for the day was a fresh DRAFT (or didn't exist yet), the Car Logbook destination cell stayed empty even when CRM Visit data was sitting right there. The proxy/admin opening Car Logbook should never be blocked on whether the BDM has used the SMER form yet — CRM is the canonical source for "where did the BDM physically go that day?".
