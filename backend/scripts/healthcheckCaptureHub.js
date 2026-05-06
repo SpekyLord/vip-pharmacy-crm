@@ -55,11 +55,18 @@ assert('artifact kind: paid_csi_scan', /'paid_csi_scan'/.test(modelSrc));
 assert('artifact kind: cr_scan', /'cr_scan'/.test(modelSrc));
 assert('artifact kind: deposit_slip', /'deposit_slip'/.test(modelSrc));
 assert('artifact kind: cwt_scan', /'cwt_scan'/.test(modelSrc));
-assert('workflow_type: CWT_INBOUND', /'CWT_INBOUND'/.test(modelSrc));
-// Phase P1.2 Slice 6.2 (May 06 2026) — sub_type carries 5 values now: 3 for
-// COLLECTION + 2 for GRN. Legacy 3-value assert kept (still passes) plus new
-// assertions for the GRN pair.
-assert('sub_type field with COLLECTION trio', /sub_type:[\s\S]+'CR'[\s\S]+'DEPOSIT'[\s\S]+'PAID_CSI'/.test(modelSrc));
+// Phase P1.2 Phase 1 (May 06 2026) — workflow_type enum dropped CWT_INBOUND
+// and PETTY_CASH. CWT now lives under COLLECTION as a sub_type. Legacy
+// PETTY_CASH rows remain readable in DB (not enum-validated on read) but
+// can't be re-saved.
+assert('workflow_type enum does NOT include CWT_INBOUND',
+  !/workflow_type:\s*\{[\s\S]*?enum:\s*\[[\s\S]*?'CWT_INBOUND'[\s\S]*?\][\s\S]*?\}/.test(modelSrc));
+assert('workflow_type enum does NOT include PETTY_CASH',
+  !/workflow_type:\s*\{[\s\S]*?enum:\s*\[[\s\S]*?'PETTY_CASH'[\s\S]*?\][\s\S]*?\}/.test(modelSrc));
+// Phase P1.2 Phase 1 (May 06 2026) — sub_type carries 6 values now: 4 for
+// COLLECTION (CR / DEPOSIT / PAID_CSI / CWT) + 2 for GRN.
+assert('sub_type field with COLLECTION quartet (CR/DEPOSIT/PAID_CSI/CWT)',
+  /sub_type:[\s\S]+'CR'[\s\S]+'DEPOSIT'[\s\S]+'PAID_CSI'[\s\S]+'CWT'/.test(modelSrc));
 assert('sub_type field with GRN pair',         /sub_type:[\s\S]+'BATCH_PHOTO'[\s\S]+'WAYBILL'/.test(modelSrc));
 assert('physical_required field', /physical_required:[\s\S]+Boolean/.test(modelSrc));
 assert('physical_status enum', /physical_status:[\s\S]+'PENDING'[\s\S]+'RECEIVED'[\s\S]+'MISSING'[\s\S]+'N_A'/.test(modelSrc));
@@ -72,20 +79,44 @@ assert('reconciliation index', /index\(\{\s*bdm_id:\s*1,\s*physical_status:\s*1,
 section('Controller — backend/erp/controllers/captureSubmissionController.js');
 const ctrlSrc = read('backend/erp/controllers/captureSubmissionController.js');
 
-assert('VALID_TYPES includes CWT_INBOUND', /VALID_TYPES\s*=\s*\[[\s\S]+'CWT_INBOUND'/.test(ctrlSrc));
-// Phase P1.2 Slice 6.2 (May 06 2026) — sub_type whitelist is now per-workflow.
-// COLLECTION: CR / DEPOSIT / PAID_CSI; GRN: BATCH_PHOTO / WAYBILL.
-assert('Sub-type whitelist for COLLECTION', /COLLECTION:\s*\['CR',\s*'DEPOSIT',\s*'PAID_CSI'\]/.test(ctrlSrc));
+// Phase P1.2 Phase 1 (May 06 2026) — VALID_TYPES dropped CWT_INBOUND
+// (collapsed into COLLECTION+CWT) and PETTY_CASH (tile never shipped).
+// REVIEW_WORKFLOWS dropped CWT_INBOUND (COLLECTION already covers it via
+// sub_type). New sub_type filter on getProxyQueue lets the picker on
+// /erp/bir/2307-IN narrow to COLLECTION+CWT.
+assert('VALID_TYPES does NOT include CWT_INBOUND',
+  !/VALID_TYPES\s*=\s*\[[^\]]*'CWT_INBOUND'/.test(ctrlSrc));
+assert('VALID_TYPES does NOT include PETTY_CASH',
+  !/VALID_TYPES\s*=\s*\[[^\]]*'PETTY_CASH'/.test(ctrlSrc));
+assert('VALID_TYPES includes COLLECTION',
+  /VALID_TYPES\s*=\s*\[[^\]]*'COLLECTION'/.test(ctrlSrc));
+assert('VALID_TYPES includes UNCATEGORIZED',
+  /VALID_TYPES\s*=\s*\[[^\]]*'UNCATEGORIZED'/.test(ctrlSrc));
+// Phase P1.2 Phase 1 (May 06 2026) — COLLECTION whitelist now includes CWT.
+// GRN unchanged from Slice 6.2.
+assert('Sub-type whitelist for COLLECTION includes CWT (Phase 1)',
+  /COLLECTION:\s*\['CR',\s*'DEPOSIT',\s*'PAID_CSI',\s*'CWT'\]/.test(ctrlSrc));
 assert('Sub-type whitelist for GRN',        /GRN:\s*\['BATCH_PHOTO',\s*'WAYBILL'\]/.test(ctrlSrc));
 assert('VALID_SUB_TYPES_BY_WORKFLOW map exists', /VALID_SUB_TYPES_BY_WORKFLOW/.test(ctrlSrc));
 assert('createCapture references VALID_SUB_TYPES_BY_WORKFLOW', /VALID_SUB_TYPES_BY_WORKFLOW\[workflow_type\]/.test(ctrlSrc));
 assert('DIGITAL_ONLY helper defined', /const DIGITAL_ONLY/.test(ctrlSrc));
 assert('digital-only: SMER', /workflow_type === 'SMER'/.test(ctrlSrc));
 assert('digital-only: COLLECTION/PAID_CSI', /'COLLECTION'[\s\S]+'PAID_CSI'/.test(ctrlSrc));
+// COLLECTION+CWT is NOT digital-only — paper certificate must arrive at
+// the Iloilo office (CwtLedger physical_received_at gates the 1702 credit).
+assert('DIGITAL_ONLY does NOT classify COLLECTION+CWT as digital',
+  !/(workflow_type === 'COLLECTION' && sub_type === 'CWT')/.test(ctrlSrc));
 assert('physical_required derived at create', /physical_required:\s*!isDigitalOnly/.test(ctrlSrc));
 assert('physical_status N_A for digital-only', /physical_status:\s*isDigitalOnly\s*\?\s*'N_A'\s*:\s*'PENDING'/.test(ctrlSrc));
-assert('REVIEW_WORKFLOWS includes COLLECTION', /REVIEW_WORKFLOWS\s*=\s*\[[\s\S]+'COLLECTION'/.test(ctrlSrc));
-assert('REVIEW_WORKFLOWS includes CWT_INBOUND', /REVIEW_WORKFLOWS\s*=\s*\[[\s\S]+'CWT_INBOUND'/.test(ctrlSrc));
+assert('REVIEW_WORKFLOWS includes COLLECTION', /REVIEW_WORKFLOWS\s*=\s*\[[\s\S]+?'COLLECTION'/.test(ctrlSrc));
+assert('REVIEW_WORKFLOWS does NOT include CWT_INBOUND (collapsed into COLLECTION)',
+  !/REVIEW_WORKFLOWS\s*=\s*\[[^\]]*'CWT_INBOUND'/.test(ctrlSrc));
+// Phase 1 — sub_type query param surfaced from getProxyQueue so the picker
+// on Bir2307Inbound can narrow to COLLECTION+CWT (vs all COLLECTION rows).
+assert('getProxyQueue accepts sub_type query param',
+  /const\s*\{\s*status,\s*workflow_type,\s*sub_type,\s*bdm_id/.test(ctrlSrc));
+assert('getProxyQueue threads sub_type into filter',
+  /if\s*\(sub_type\)\s*filter\.sub_type\s*=\s*sub_type/.test(ctrlSrc));
 
 // ── 3. Frontend Capture Hub ────────────────────────────────────
 section('Frontend — frontend/src/erp/pages/mobile/BdmCaptureHub.jsx');
@@ -100,9 +131,17 @@ assert('CR tile present', /Scan Collection Receipt \(CR\)/.test(hubSrc));
 assert('Deposit Slip tile present', /Scan Deposit Slip/.test(hubSrc));
 assert('CSI Being Paid tile present', /Scan CSI Being Paid/.test(hubSrc));
 assert('CWT tile present', /Scan CWT \(BIR 2307\)/.test(hubSrc));
+// Phase P1.2 Phase 1 (May 06 2026) — CWT tile is now COLLECTION + sub_type=CWT
+// (was top-level workflow_type='CWT_INBOUND'). The composite key
+// `${w.key}_${w.sub_type || 'main'}` now resolves to 'COLLECTION_CWT'.
+assert('CWT tile uses key=COLLECTION (Phase 1)',
+  /key:\s*'COLLECTION'[\s\S]{0,400}sub_type:\s*'CWT'[\s\S]{0,200}label:\s*'Scan CWT \(BIR 2307\)'/.test(hubSrc));
+assert('No standalone CWT_INBOUND tile remains',
+  !/key:\s*'CWT_INBOUND'/.test(hubSrc));
 assert('sub_type: CR', /sub_type:\s*'CR'/.test(hubSrc));
 assert('sub_type: DEPOSIT', /sub_type:\s*'DEPOSIT'/.test(hubSrc));
 assert('sub_type: PAID_CSI', /sub_type:\s*'PAID_CSI'/.test(hubSrc));
+assert('sub_type: CWT (Phase 1)', /sub_type:\s*'CWT'/.test(hubSrc));
 assert('digitalOnly flag on SMER', /key:\s*'SMER'[\s\S]+digitalOnly:\s*true/.test(hubSrc));
 assert('digitalOnly flag on PAID_CSI', /sub_type:\s*'PAID_CSI'[\s\S]+digitalOnly:\s*true/.test(hubSrc));
 assert('payload forwards sub_type', /payload\.sub_type\s*=\s*workflow\.sub_type/.test(hubSrc));
@@ -144,7 +183,11 @@ const rqSrc = read('frontend/src/erp/pages/mobile/BdmReviewQueue.jsx');
 assert('icons map: COLLECTION_CR', /COLLECTION_CR:\s*ReceiptText/.test(rqSrc));
 assert('icons map: COLLECTION_DEPOSIT', /COLLECTION_DEPOSIT:\s*Landmark/.test(rqSrc));
 assert('icons map: COLLECTION_PAID_CSI', /COLLECTION_PAID_CSI:\s*HandCoins/.test(rqSrc));
-assert('icons map: CWT_INBOUND', /CWT_INBOUND:\s*FileBadge/.test(rqSrc));
+// Phase P1.2 Phase 1 (May 06 2026) — CWT collapsed into COLLECTION sub_type.
+// COLLECTION_CWT is the new composite-key entry; CWT_INBOUND retained as a
+// defensive fallback for any unmigrated row.
+assert('icons map: COLLECTION_CWT (Phase 1)', /COLLECTION_CWT:\s*FileBadge/.test(rqSrc));
+assert('icons map: CWT_INBOUND legacy fallback retained', /CWT_INBOUND:\s*FileBadge/.test(rqSrc));
 assert('labels map exists', /WORKFLOW_LABELS\s*=/.test(rqSrc));
 assert('label: CSI Delivery Copy', /'CSI Delivery Copy'/.test(rqSrc));
 assert('label: Collection Receipt', /'Collection Receipt \(CR\)'/.test(rqSrc));
@@ -710,35 +753,44 @@ assert('Bir2307InboundPage onPick remembers pickedCaptureId',
 assert('Bir2307InboundPage manual cert_2307_url edit clears pickedCaptureId',
   /onChange=\{[\s\S]{0,500}setReceiveDraft\([\s\S]{0,300}cert_2307_url:\s*e\.target\.value[\s\S]{0,300}if\s*\(\s*pickedCaptureId\s*\)\s*setPickedCaptureId\(null\)/.test(bir2307Src));
 
-// Picker mount
-assert('Bir2307InboundPage picker uses CWT_INBOUND + UNCATEGORIZED workflowTypes',
-  /<PendingCapturesPicker[\s\S]{0,1200}workflowTypes=\{\[['"]CWT_INBOUND['"][^]+UNCATEGORIZED/.test(bir2307Src));
+// Picker mount — Phase P1.2 Phase 1 (May 06 2026) flipped picker workflowTypes
+// from 'CWT_INBOUND' (dropped) to 'COLLECTION' + subTypeFilter narrowing the
+// COLLECTION feed to sub_type='CWT'. UNCATEGORIZED stays as a fallback.
+assert('Bir2307InboundPage picker uses COLLECTION + UNCATEGORIZED workflowTypes (Phase 1)',
+  /<PendingCapturesPicker[\s\S]{0,1500}workflowTypes=\{\[['"]COLLECTION['"][^]+UNCATEGORIZED/.test(bir2307Src));
+assert('Bir2307InboundPage picker uses subTypeFilter={{COLLECTION:CWT}} (Phase 1)',
+  /<PendingCapturesPicker[\s\S]{0,1500}subTypeFilter=\{\{\s*COLLECTION:\s*['"]CWT['"]\s*\}\}/.test(bir2307Src));
+assert('Bir2307InboundPage picker no longer references CWT_INBOUND workflowType',
+  !/<PendingCapturesPicker[\s\S]{0,1500}workflowTypes=\{\[[^]]*['"]CWT_INBOUND['"]/.test(bir2307Src));
 assert('Bir2307InboundPage picker uses cross-BDM scope (bdmId={null})',
-  /<PendingCapturesPicker[\s\S]{0,1200}bdmId=\{null\}/.test(bir2307Src));
+  /<PendingCapturesPicker[\s\S]{0,1500}bdmId=\{null\}/.test(bir2307Src));
 assert('Bir2307InboundPage picker uses skipFetch={true}',
-  /<PendingCapturesPicker[\s\S]{0,1200}skipFetch=\{true\}/.test(bir2307Src));
+  /<PendingCapturesPicker[\s\S]{0,1500}skipFetch=\{true\}/.test(bir2307Src));
 assert('Bir2307InboundPage picker uses maxSelect={1}',
-  /<PendingCapturesPicker[\s\S]{0,1200}maxSelect=\{1\}/.test(bir2307Src));
+  /<PendingCapturesPicker[\s\S]{0,1500}maxSelect=\{1\}/.test(bir2307Src));
 assert('Bir2307InboundPage picker mounted INSIDE the Mark-Received modal',
-  /Mark 2307 Received[\s\S]{0,3500}<PendingCapturesPicker/.test(bir2307Src));
+  /Mark 2307 Received[\s\S]{0,4000}<PendingCapturesPicker/.test(bir2307Src));
 assert('Bir2307InboundPage picker mounted ABOVE the cert_2307_url input',
-  /<PendingCapturesPicker[\s\S]{0,2500}<label[^>]*>Certificate URL or path<\/label>/.test(bir2307Src));
+  /<PendingCapturesPicker[\s\S]{0,3500}<label[^>]*>Certificate URL or path<\/label>/.test(bir2307Src));
 
-// Submit forwards capture_id
+// Submit forwards capture_id — Phase P1.2 Phase 1 refactored the payload from
+// a ternary into a single object with conditional capture_id assignment, so
+// the regex shape is broader (looking for the conditional add-only path).
 assert('Bir2307InboundPage onSubmitReceive forwards capture_id when picker-sourced',
-  /onSubmitReceive[\s\S]{0,800}pickedCaptureId\s*\?\s*\{\s*\.\.\.receiveDraft,\s*capture_id:\s*pickedCaptureId\s*\}/.test(bir2307Src));
-assert('Bir2307InboundPage onSubmitReceive omits capture_id when manually typed',
-  /onSubmitReceive[\s\S]{0,800}:\s*\{\s*\.\.\.receiveDraft\s*\}/.test(bir2307Src));
+  /onSubmitReceive[\s\S]{0,2000}if\s*\(pickedCaptureId\)\s*payload\.capture_id\s*=\s*pickedCaptureId/.test(bir2307Src));
+assert('Bir2307InboundPage onSubmitReceive payload spreads receiveDraft without capture_id',
+  /onSubmitReceive[\s\S]{0,1200}const\s+payload\s*=\s*\{\s*\.\.\.receiveDraft,/.test(bir2307Src));
 
-// Modal close hygiene
-assert('Bir2307InboundPage onCloseReceive clears both modal state and pickedCaptureId',
-  /const onCloseReceive\s*=\s*\(\)\s*=>\s*\{\s*setReceiveModalRow\(null\);\s*setPickedCaptureId\(null\);\s*\}/.test(bir2307Src));
+// Modal close hygiene — Phase 1 added paperReceived reset alongside the existing two.
+assert('Bir2307InboundPage onCloseReceive clears modal state, pickedCaptureId, paperReceived',
+  /const onCloseReceive\s*=\s*\(\)\s*=>\s*\{[\s\S]{0,300}setReceiveModalRow\(null\);[\s\S]{0,80}setPickedCaptureId\(null\);[\s\S]{0,80}setPaperReceived\(false\);/.test(bir2307Src));
 assert('Bir2307InboundPage onOpenReceive resets pickedCaptureId on each fresh open',
-  /onOpenReceive[\s\S]{0,600}setPickedCaptureId\(null\)/.test(bir2307Src));
+  /onOpenReceive[\s\S]{0,1200}setPickedCaptureId\(null\)/.test(bir2307Src));
 
-// Backend wiring — birController.markReceived2307Inbound
+// Backend wiring — birController.markReceived2307Inbound. Phase 1 extended
+// the destructure with paper_received (multi-line, possibly across lines).
 assert('birController extracts capture_id from req.body',
-  /const\s*\{\s*cert_2307_url,\s*cert_filename,\s*cert_content_hash,\s*cert_notes,\s*capture_id\s*\}\s*=\s*req\.body/.test(birCtrlSrc));
+  /const\s*\{[\s\S]{0,400}cert_2307_url,\s*cert_filename,\s*cert_content_hash,\s*cert_notes,[\s\S]{0,80}capture_id[\s\S]{0,80}\}\s*=\s*req\.body/.test(birCtrlSrc));
 assert('birController calls linkCaptureToDocument with kind=CwtLedgerEntry',
   /linkCaptureToDocument\(\s*capture_id,\s*['"]CwtLedgerEntry['"],\s*row\._id/.test(birCtrlSrc));
 assert('birController capture-link path is best-effort (try/catch around linkCaptureToDocument)',
@@ -773,6 +825,150 @@ assert('PHASETASK-ERP.md has Round 2C section heading',
   /Slice 7-extension Round 2C/i.test(phaseTaskErpSrc2C));
 assert('PHASETASK-ERP.md Round 2C names Bir2307InboundPage',
   /Round 2C[\s\S]{0,4000}Bir2307InboundPage/i.test(phaseTaskErpSrc2C));
+
+// ─── 16b. Phase P1.2 Phase 1 — capture cleanup + Option D BIR audit gate ───
+//
+// Shipped May 06 2026. Three coupled changes:
+//   • Drop workflow_type 'CWT_INBOUND' (collapsed into COLLECTION+CWT).
+//   • Drop workflow_type 'PETTY_CASH' (tile never shipped).
+//   • Two-step BIR receive on /erp/bir/2307-IN: photo evidence (cert_2307_url)
+//     attaches but doesn't unlock the 1702 credit; finance must ALSO tick a
+//     "paper-in-Iloilo" checkbox to flip status='RECEIVED' + stamp
+//     physical_received_at. The gap state (cert URL non-empty + status=
+//     PENDING_2307 + physical_received_at NULL) is the new PHOTO_ATTACHED
+//     pseudo-status, surfaced as a tab + amber pill on the inbound page.
+//
+// Migration: backend/scripts/migrateCwtInboundToCollectionSubtype.js flipped
+// all live CWT_INBOUND rows BEFORE the model enum was narrowed.
+section('Phase P1.2 Phase 1 — capture cleanup + Option D BIR audit gate');
+
+const cwtLedgerSrcP1 = read('backend/erp/models/CwtLedger.js');
+const reconSvcSrcP1 = read('backend/erp/services/cwt2307ReconciliationService.js');
+const birCtrlSrcP1 = read('backend/erp/controllers/birController.js');
+const pickerSrcP1 = read('frontend/src/erp/components/PendingCapturesPicker.jsx');
+const proxyQueueSrcP1 = read('frontend/src/erp/pages/proxy/ProxyQueue.jsx');
+const bir2307SrcP1 = read('frontend/src/erp/pages/Bir2307InboundPage.jsx');
+const pgSrcP1 = read('frontend/src/components/common/PageGuide.jsx');
+const migScriptSrcP1 = read('backend/scripts/migrateCwtInboundToCollectionSubtype.js');
+const phaseTaskErpSrcP1 = read('docs/PHASETASK-ERP.md');
+const captureArchiveSrcP1 = read('frontend/src/erp/pages/capture/CaptureArchive.jsx');
+
+// CwtLedger model — physical_received_at field + index
+assert('CwtLedger schema has physical_received_at field',
+  /physical_received_at:\s*\{\s*type:\s*Date,\s*default:\s*null,\s*index:\s*true/.test(cwtLedgerSrcP1));
+assert('CwtLedger doc-comment explains Option D audit gate',
+  /Option D[\s\S]{0,800}physical_received_at/.test(cwtLedgerSrcP1));
+
+// Reconciliation service — paper_received branching
+assert('markReceived signature accepts paper_received',
+  /async function markReceived\(\s*rowId\s*,\s*\{[\s\S]{0,500}paper_received\s*=\s*true/.test(reconSvcSrcP1));
+assert('markReceived stamps physical_received_at when paper_received=true',
+  /paper_received\s*===\s*true[\s\S]{0,400}physical_received_at\s*=\s*new Date/.test(reconSvcSrcP1));
+assert('markReceived flips status to RECEIVED only when paper_received=true',
+  /paper_received\s*===\s*true[\s\S]{0,400}row\.status\s*=\s*['"]RECEIVED['"]/.test(reconSvcSrcP1));
+assert('markReceived rejects paper_received=true with empty cert_2307_url',
+  /Cannot attest paper-received without first attaching photo evidence/.test(reconSvcSrcP1));
+assert('markReceived photo-only branch (paper_received=false) keeps status PENDING_2307',
+  /Photo only[\s\S]{0,800}row\.status\s*=\s*['"]PENDING_2307['"]/.test(reconSvcSrcP1));
+assert('markReceived audit log differentiates paper-attest vs photo-only',
+  /2307-IN RECEIVED \(paper in Iloilo\)[\s\S]{0,400}2307-IN PHOTO ATTACHED/.test(reconSvcSrcP1));
+assert('markPending clears physical_received_at',
+  /markPending[\s\S]{0,800}row\.physical_received_at\s*=\s*null/.test(reconSvcSrcP1));
+assert('listInboundRows surfaces physical_received_at on response shape',
+  /physical_received_at:\s*r\.physical_received_at\s*\|\|\s*null/.test(reconSvcSrcP1));
+
+// birController — paper_received forwarding + audit log
+assert('birController extracts paper_received from req.body',
+  /const\s*\{[\s\S]{0,500}capture_id,\s*paper_received,?\s*\}\s*=\s*req\.body/.test(birCtrlSrcP1));
+assert('birController coerces paper_received default true (backward compat)',
+  /paper_received === undefined[\s\S]{0,200}\?\s*true/.test(birCtrlSrcP1));
+assert('birController forwards paper_received to reconciliation service',
+  /markReceived\([\s\S]{0,400}paper_received:\s*paperReceivedFlag/.test(birCtrlSrcP1));
+assert('birController audit log records paper_received fingerprint',
+  /paper_received:\s*paperReceivedFlag[\s\S]{0,200}final_status:\s*row\.status/.test(birCtrlSrcP1));
+
+// PendingCapturesPicker — subTypeFilter prop
+assert('PendingCapturesPicker accepts subTypeFilter prop',
+  /subTypeFilter\s*=\s*\{\}/.test(pickerSrcP1));
+assert('PendingCapturesPicker threads sub_type when subTypeFilter[wt] matches',
+  /if\s*\(subTypeFilter\s*&&\s*subTypeFilter\[wt\]\)\s*\{[\s\S]{0,150}params\.sub_type/.test(pickerSrcP1));
+assert('PendingCapturesPicker load() depends on subTypeFilter (re-fetch on change)',
+  /\}\s*,\s*\[getProxyQueue,\s*workflowTypes,\s*bdmId,\s*subTypeFilter\]/.test(pickerSrcP1));
+
+// ProxyQueue dropdown — PETTY_CASH dropped
+assert('ProxyQueue WORKFLOW_OPTIONS does NOT include PETTY_CASH option',
+  !/value:\s*['"]PETTY_CASH['"]/.test(proxyQueueSrcP1));
+assert('ProxyQueue WORKFLOW_OPTIONS includes COLLECTION (with sub_type hint)',
+  /value:\s*['"]COLLECTION['"][\s\S]{0,200}label:\s*['"]Collection \(CR \/ Deposit \/ PAID CSI \/ CWT\)['"]/.test(proxyQueueSrcP1));
+assert('ProxyQueue WORKFLOW_OPTIONS includes UNCATEGORIZED Quick Capture entry',
+  /value:\s*['"]UNCATEGORIZED['"]/.test(proxyQueueSrcP1));
+
+// CaptureArchive — Phase 1 cleanup comment + COLLECTION row icon untouched
+assert('CaptureArchive notes legacy CWT_INBOUND fallback comment',
+  /Phase P1\.2 Phase 1[\s\S]{0,400}CWT_INBOUND/.test(captureArchiveSrcP1));
+
+// Bir2307InboundPage — paper_received checkbox + PHOTO_ATTACHED + tabs
+assert('Bir2307InboundPage STATUS_META has PHOTO_ATTACHED entry',
+  /PHOTO_ATTACHED:\s*\{\s*label:\s*['"]Photo attached['"]/.test(bir2307SrcP1));
+assert('Bir2307InboundPage effectiveStatus helper defined',
+  /function effectiveStatus\(row\)\s*\{[\s\S]{0,400}'PHOTO_ATTACHED'/.test(bir2307SrcP1));
+assert('Bir2307InboundPage effectiveStatus matches PHOTO_ATTACHED contract',
+  /row\.status\s*===\s*['"]PENDING_2307['"][\s\S]{0,150}row\.cert_2307_url[\s\S]{0,150}!row\.physical_received_at/.test(bir2307SrcP1));
+assert('Bir2307InboundPage owns paperReceived state, default false',
+  /\[paperReceived,\s*setPaperReceived\]\s*=\s*useState\(false\)/.test(bir2307SrcP1));
+assert('Bir2307InboundPage paperReceived pre-ticks for already-attested rows',
+  /setPaperReceived\(row\.status\s*===\s*['"]RECEIVED['"]\s*&&\s*!!row\.physical_received_at\)/.test(bir2307SrcP1));
+assert('Bir2307InboundPage onCloseReceive resets paperReceived',
+  /onCloseReceive[\s\S]{0,300}setPaperReceived\(false\)/.test(bir2307SrcP1));
+assert('Bir2307InboundPage onSubmitReceive guards paper_received without cert URL',
+  /paperReceived\s*&&\s*!receiveDraft\.cert_2307_url\?\.trim\(\)[\s\S]{0,300}toast\.error/.test(bir2307SrcP1));
+assert('Bir2307InboundPage onSubmitReceive forwards paper_received in payload',
+  /paper_received:\s*!!paperReceived/.test(bir2307SrcP1));
+assert('Bir2307InboundPage success toast differentiates paper-attest vs photo-only',
+  /paper attested[\s\S]{0,400}Photo evidence attached[\s\S]{0,200}mark received when paper arrives/.test(bir2307SrcP1));
+assert('Bir2307InboundPage modal renders paper-received checkbox',
+  /data-testid="paper-received-checkbox"/.test(bir2307SrcP1));
+assert('Bir2307InboundPage checkbox disabled until cert URL non-empty',
+  /disabled=\{!receiveDraft\.cert_2307_url\?\.trim\(\)\}/.test(bir2307SrcP1));
+assert('Bir2307InboundPage checkbox label cites BIR RR No. 2-98',
+  /BIR RR No\. 2-98/.test(bir2307SrcP1));
+assert('Bir2307InboundPage Save button label branches on paperReceived',
+  /paperReceived\s*\?\s*['"]Save — Mark RECEIVED['"]\s*:\s*['"]Save Photo Only['"]/.test(bir2307SrcP1));
+assert('Bir2307InboundPage Save button disabled until cert URL non-empty',
+  /disabled=\{!!savingId\s*\|\|\s*!receiveDraft\.cert_2307_url\?\.trim\(\)\}/.test(bir2307SrcP1));
+assert('Bir2307InboundPage tab strip includes "Photo attached" tab',
+  /activeTab === ['"]PHOTO_ATTACHED['"][\s\S]{0,200}Photo attached/.test(bir2307SrcP1));
+assert('Bir2307InboundPage tab counts computed via tabCounts (effective-status)',
+  /const tabCounts\s*=\s*useMemo[\s\S]{0,800}c\[r\._effective\]/.test(bir2307SrcP1));
+assert('Bir2307InboundPage row pill uses _effective for STATUS_META lookup',
+  /STATUS_META\[r\._effective\]/.test(bir2307SrcP1));
+
+// PageGuide banner (Rule #1)
+assert('PageGuide bir-2307-inbound mentions Phase 1 two-step receive',
+  /'bir-2307-inbound':[\s\S]{0,12000}TWO-STEP RECEIVE/.test(pgSrcP1));
+assert('PageGuide bir-2307-inbound mentions paper-in-Iloilo checkbox semantics',
+  /'bir-2307-inbound':[\s\S]{0,12000}paper certificate is in the Iloilo office/.test(pgSrcP1));
+assert('PageGuide bir-2307-inbound mentions PHOTO_ATTACHED tab',
+  /'bir-2307-inbound':[\s\S]{0,12000}Photo attached/.test(pgSrcP1));
+assert('PageGuide bir-2307-inbound cites BIR RR No. 2-98 audit risk',
+  /'bir-2307-inbound':[\s\S]{0,12000}BIR RR No\. 2-98/.test(pgSrcP1));
+assert('PageGuide bir-2307-inbound mentions Phase 1 picker workflow_type=COLLECTION',
+  /'bir-2307-inbound':[\s\S]{0,12000}workflow_type=COLLECTION/.test(pgSrcP1));
+
+// Migration script
+assert('migrateCwtInboundToCollectionSubtype.js exists', migScriptSrcP1.length > 0);
+assert('migration is dry-run by default',
+  /DRY_RUN\s*=\s*!process\.argv\.includes\(['"]--apply['"]\)/.test(migScriptSrcP1));
+assert('migration filter targets workflow_type=CWT_INBOUND',
+  /workflow_type:\s*['"]CWT_INBOUND['"]/.test(migScriptSrcP1));
+assert('migration sets workflow_type=COLLECTION + sub_type=CWT',
+  /\$set:\s*\{\s*workflow_type:\s*['"]COLLECTION['"]\s*,\s*sub_type:\s*['"]CWT['"]\s*\}/.test(migScriptSrcP1));
+assert('migration counts PETTY_CASH but does NOT auto-delete',
+  /PETTY_CASH[\s\S]{0,400}NOT auto-mutated/.test(migScriptSrcP1));
+
+// PHASETASK-ERP.md documents Phase 1
+assert('PHASETASK-ERP.md has Phase 1 section heading',
+  /Phase P1\.2 Phase 1\b/i.test(phaseTaskErpSrcP1));
 
 // ── 17. Phase P1.2 Slice 4 + Slice 5 — DriveAllocation + SMER tile lock ──
 //

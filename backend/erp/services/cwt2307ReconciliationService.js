@@ -247,6 +247,11 @@ async function listInboundRows({ entityId, year, quarter = null, status = null, 
       status: r.status || 'PENDING_2307',
       received_at: r.received_at || null,
       received_by: r.received_by || null,
+      // Phase P1.2 Phase 1 (May 06 2026) — exposes the Option D paper-attest
+      // fingerprint so the frontend can render the implicit PHOTO_ATTACHED
+      // state pill (cert_2307_url non-empty AND status=PENDING_2307 AND
+      // physical_received_at IS NULL).
+      physical_received_at: r.physical_received_at || null,
       cert_2307_url: r.cert_2307_url || null,
       cert_filename: r.cert_filename || null,
       cert_content_hash: r.cert_content_hash || null,
@@ -274,14 +279,42 @@ async function _findRowOrThrow(rowId, entityId) {
 }
 
 /**
- * Flip PENDING_2307 → RECEIVED. Bookkeeper records that the hospital sent
- * the certificate. cert_* fields are admin-supplied references (URL +
- * filename + optional hash + free-form notes) — we do NOT store the PDF
- * bytes. If admin wants tamper-detect, they paste the SHA-256 of the file.
+ * Two-step receive (Phase P1.2 Phase 1 — May 06 2026, Option D audit gate).
+ *
+ * cert_* fields = digital evidence (photo / PDF reference). Always stamped.
+ * paper_received = PAPER attestation (the original BIR-stamped certificate
+ *                  is in the Iloilo office archive). Required by BIR RR
+ *                  No. 2-98 for the 1702 "Less: Creditable Tax Withheld"
+ *                  credit; photo evidence alone does NOT unlock the
+ *                  credit (BIR can disallow on audit → 25% surcharge +
+ *                  12% interest).
+ *
+ * Status semantics:
+ *   • paper_received=true  → status='RECEIVED', physical_received_at stamped,
+ *                            received_at + received_by stamped. Credit
+ *                            unlocks for 1702 rollup.
+ *   • paper_received=false → cert_* fields stamped only. Status stays at
+ *                            whatever it was (typically PENDING_2307). The
+ *                            row is now in implicit "PHOTO_ATTACHED" state:
+ *                            status='PENDING_2307' AND cert_2307_url IS NOT
+ *                            NULL AND physical_received_at IS NULL. The new
+ *                            PHOTO_ATTACHED tab on /erp/bir/2307-IN filters
+ *                            this state.
+ *
+ * Defense-in-depth: server-side rejects paper_received=true with empty
+ * cert_2307_url (can't attest paper without first attaching photo evidence).
+ * The frontend's checkbox-disabled-until-URL-non-empty mirrors this.
+ *
+ * Backward compat: pre-Phase-1 callers (tests / scripts that don't pass
+ * paper_received) behave like the legacy markReceived — paper_received
+ * defaults to true so the historical "tick this row received → flip to
+ * RECEIVED + unlock credit" semantics are preserved for non-Phase-1 callers.
+ * The Phase-1 frontend ALWAYS passes paper_received explicitly.
  */
 async function markReceived(rowId, {
   entityId, userId, cert_2307_url = null, cert_filename = null,
   cert_content_hash = null, cert_notes = null,
+  paper_received = true,
 }) {
   const row = await _findRowOrThrow(rowId, entityId);
   if (row.status === 'EXCLUDED') {
@@ -289,17 +322,50 @@ async function markReceived(rowId, {
     err.status = 409;
     throw err;
   }
-  row.status = 'RECEIVED';
-  row.received_at = new Date();
-  row.received_by = userId || null;
+
+  // Always stamp cert_* fields. They represent digital evidence and are
+  // valid even when paper has not yet arrived (PHOTO_ATTACHED state).
   if (cert_2307_url !== undefined) row.cert_2307_url = sanitize(cert_2307_url);
   if (cert_filename !== undefined) row.cert_filename = sanitize(cert_filename);
   if (cert_content_hash !== undefined) row.cert_content_hash = sanitize(cert_content_hash);
   if (cert_notes !== undefined) row.cert_notes = sanitize(cert_notes);
+
+  // Defense-in-depth: cannot attest paper-received without first attaching
+  // photo evidence. The frontend disables the checkbox until cert_url is
+  // non-empty; this is the server-side mirror.
+  if (paper_received === true && !row.cert_2307_url) {
+    const err = new Error(
+      'Cannot attest paper-received without first attaching photo evidence (cert_2307_url).',
+    );
+    err.status = 400;
+    throw err;
+  }
+
+  if (paper_received === true) {
+    // Both photo + paper attested. Credit unlocks.
+    row.status = 'RECEIVED';
+    row.received_at = new Date();
+    row.received_by = userId || null;
+    row.physical_received_at = new Date();
+  } else {
+    // Photo only — DO NOT demote from RECEIVED if it was already attested.
+    // Saving photo edits on an already-RECEIVED row should not invalidate
+    // the prior paper attestation.
+    if (row.status !== 'RECEIVED') {
+      // PENDING_2307 stays. cert_* now non-empty → row is in PHOTO_ATTACHED
+      // implicit state. received_at + received_by + physical_received_at
+      // stay null until paper actually arrives.
+      row.status = 'PENDING_2307';
+    }
+  }
+
   await row.save();
+
   await _appendBirAuditLog({
     entityId, userId, year: row.year,
-    notes: `2307-IN RECEIVED — CR ${row.cr_no || row._id} (₱${row.cwt_amount.toFixed(2)} CWT, ${row.period})`,
+    notes: paper_received === true
+      ? `2307-IN RECEIVED (paper in Iloilo) — CR ${row.cr_no || row._id} (₱${row.cwt_amount.toFixed(2)} CWT, ${row.period})`
+      : `2307-IN PHOTO ATTACHED (paper not yet received) — CR ${row.cr_no || row._id} (₱${row.cwt_amount.toFixed(2)} CWT, ${row.period})`,
     artifactKind: 'METADATA',
     contentHash: cert_content_hash || _hashRowState(row),
   });
@@ -310,6 +376,10 @@ async function markReceived(rowId, {
  * Flip RECEIVED → PENDING_2307 (undo). Doesn't clear cert_* fields — admin
  * may re-mark received with corrections without re-typing. excluded_reason
  * is cleared because excluded rows can't reach this path.
+ *
+ * Phase P1.2 Phase 1 (May 06 2026) — also clears physical_received_at so
+ * the row drops out of the 1702 credit pool (matches received_at/received_by
+ * clearing semantics — all three are paper-attestation fingerprints).
  */
 async function markPending(rowId, { entityId, userId }) {
   const row = await _findRowOrThrow(rowId, entityId);
@@ -322,6 +392,7 @@ async function markPending(rowId, { entityId, userId }) {
   row.status = 'PENDING_2307';
   row.received_at = null;
   row.received_by = null;
+  row.physical_received_at = null;
   await row.save();
   await _appendBirAuditLog({
     entityId, userId, year: row.year,

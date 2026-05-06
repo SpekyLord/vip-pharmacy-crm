@@ -45,7 +45,22 @@ const STATUS_META = {
   PENDING_2307: { label: 'Pending 2307',  bg: '#fef9c3', fg: '#854d0e' },
   RECEIVED:     { label: 'Received',      bg: '#dcfce7', fg: '#15803d' },
   EXCLUDED:     { label: 'Excluded',      bg: '#fee2e2', fg: '#b91c1c' },
+  // Phase P1.2 Phase 1 (May 06 2026) — implicit pseudo-status for the row
+  // pill when status='PENDING_2307' AND cert_2307_url IS NOT NULL AND
+  // physical_received_at IS NULL. The DB row is still PENDING_2307; this
+  // is purely a frontend visual state for the new PHOTO_ATTACHED tab.
+  PHOTO_ATTACHED: { label: 'Photo attached', bg: '#fef3c7', fg: '#92400e' },
 };
+
+// Phase P1.2 Phase 1 (May 06 2026) — row classifier for the PHOTO_ATTACHED
+// tab + per-row pill. Returns the EFFECTIVE status the UI shows, not the DB
+// `status` column. Used by both the tab filter and the row pill renderer.
+function effectiveStatus(row) {
+  if (row.status === 'PENDING_2307' && row.cert_2307_url && !row.physical_received_at) {
+    return 'PHOTO_ATTACHED';
+  }
+  return row.status;
+}
 
 const QUARTER_LABELS = ['Q1', 'Q2', 'Q3', 'Q4'];
 
@@ -126,6 +141,12 @@ export default function Bir2307InboundPage() {
   // _id so onSubmitReceive can forward it to the controller for back-link +
   // lifecycle advance. Cleared on modal close + on receive success.
   const [pickedCaptureId, setPickedCaptureId] = useState(null);
+  // Phase P1.2 Phase 1 (May 06 2026) — Option D audit gate. Default UNCHECKED
+  // so finance must explicitly attest the paper certificate is in the Iloilo
+  // office archive before the row flips to RECEIVED + 1702 credit unlocks.
+  // Photo-only saves (unchecked) keep status='PENDING_2307' but stamp cert_*
+  // — that's the new PHOTO_ATTACHED state.
+  const [paperReceived, setPaperReceived] = useState(false);
   const [excludeModalRow, setExcludeModalRow] = useState(null);
   const [excludeReason, setExcludeReason] = useState('');
   const [savingId, setSavingId] = useState(null);
@@ -148,9 +169,30 @@ export default function Bir2307InboundPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Phase P1.2 Phase 1 (May 06 2026) — pre-compute effectiveStatus for every
+  // row so the tab counts AND the filter both stay consistent (no risk of a
+  // row appearing on the PHOTO_ATTACHED tab but showing a "Pending" pill in
+  // its row, or vice versa).
+  const rowsWithEffective = useMemo(
+    () => rows.map(r => ({ ...r, _effective: effectiveStatus(r) })),
+    [rows],
+  );
+
+  // Tab counts are computed off the SAME effective-status that drives the
+  // tab filter, so the Pending count shrinks when rows move into
+  // PHOTO_ATTACHED state (matches the user's mental model — "pending" means
+  // "we have no photo yet").
+  const tabCounts = useMemo(() => {
+    const c = { PENDING_2307: 0, PHOTO_ATTACHED: 0, RECEIVED: 0, EXCLUDED: 0, ALL: rowsWithEffective.length };
+    for (const r of rowsWithEffective) {
+      if (c[r._effective] !== undefined) c[r._effective] += 1;
+    }
+    return c;
+  }, [rowsWithEffective]);
+
   const filteredRows = useMemo(() => {
-    let r = rows;
-    if (activeTab !== 'ALL') r = r.filter(x => x.status === activeTab);
+    let r = rowsWithEffective;
+    if (activeTab !== 'ALL') r = r.filter(x => x._effective === activeTab);
     const term = search.trim().toLowerCase();
     if (term) {
       r = r.filter(x =>
@@ -161,7 +203,7 @@ export default function Bir2307InboundPage() {
     }
     if (hospitalFilter) r = r.filter(x => String(x.hospital_id || '') === hospitalFilter);
     return r;
-  }, [rows, activeTab, search, hospitalFilter]);
+  }, [rowsWithEffective, activeTab, search, hospitalFilter]);
 
   const onOpenReceive = (row) => {
     setReceiveModalRow(row);
@@ -174,11 +216,17 @@ export default function Bir2307InboundPage() {
     // Round 2C — fresh modal open clears the previously-picked capture
     // (typed-URL flow + manual entry don't carry a capture_id audit link).
     setPickedCaptureId(null);
+    // Phase P1.2 Phase 1 (May 06 2026) — Option D audit gate. Pre-tick the
+    // checkbox if the row is ALREADY RECEIVED + has physical_received_at set
+    // (re-opening a previously-attested row to fix a typo in cert_filename).
+    // Otherwise default UNCHECKED — finance must explicitly attest each time.
+    setPaperReceived(row.status === 'RECEIVED' && !!row.physical_received_at);
   };
 
   const onCloseReceive = () => {
     setReceiveModalRow(null);
     setPickedCaptureId(null);
+    setPaperReceived(false);
   };
 
   // Round 2C picker callback (skipFetch=true mode). The picker hands back
@@ -211,6 +259,14 @@ export default function Bir2307InboundPage() {
 
   const onSubmitReceive = async () => {
     if (!receiveModalRow) return;
+    // Phase P1.2 Phase 1 (May 06 2026) — Option D defense in depth. Cannot
+    // attest paper-received without first attaching photo evidence. The
+    // checkbox is also disabled in the render path; this is the redundant
+    // client gate before the API call.
+    if (paperReceived && !receiveDraft.cert_2307_url?.trim()) {
+      toast.error('Attach the photo evidence (Certificate URL) before attesting paper-received.');
+      return;
+    }
     setSavingId(receiveModalRow._id);
     try {
       // Round 2C — capture_id is appended to the body when the URL came from
@@ -218,11 +274,20 @@ export default function Bir2307InboundPage() {
       // cwt2307ReconciliationService and best-effort calls
       // linkCaptureToDocument so the source CaptureSubmission flips out of
       // PENDING_PROXY and back-links to this CwtLedger row.
-      const payload = pickedCaptureId
-        ? { ...receiveDraft, capture_id: pickedCaptureId }
-        : { ...receiveDraft };
+      //
+      // Phase 1 — paper_received attestation forwarded so the controller
+      // knows whether to flip status RECEIVED + stamp physical_received_at
+      // (true) or just stamp cert_* fields and leave status PENDING_2307
+      // (false → PHOTO_ATTACHED implicit state).
+      const payload = {
+        ...receiveDraft,
+        paper_received: !!paperReceived,
+      };
+      if (pickedCaptureId) payload.capture_id = pickedCaptureId;
       await birService.markReceived2307Inbound(year, receiveModalRow._id, payload);
-      toast.success('Marked RECEIVED — credit will roll into 1702.');
+      toast.success(paperReceived
+        ? 'Marked RECEIVED — paper attested, credit will roll into 1702.'
+        : 'Photo evidence attached — mark received when paper arrives at the Iloilo office.');
       onCloseReceive();
       await load();
     } catch (err) {
@@ -428,17 +493,29 @@ export default function Bir2307InboundPage() {
               {/* Row list with status tabs */}
               <div className="ib-card">
                 <div className="ib-tabs" role="tablist">
+                  {/*
+                    Phase P1.2 Phase 1 (May 06 2026) — tabs split PENDING into
+                    two: rows with no photo evidence (no cert_2307_url), and
+                    rows with photo attached but paper not yet attested
+                    (PHOTO_ATTACHED). Counts come from `tabCounts` (computed
+                    off effective-status) not `totals` (server's status-only
+                    breakdown), so the Pending count shrinks as rows move
+                    into PHOTO_ATTACHED — matches the user's mental model.
+                  */}
                   <div role="tab" className={`ib-tab ${activeTab === 'PENDING_2307' ? 'active' : ''}`} onClick={() => setActiveTab('PENDING_2307')}>
-                    Pending ({totals.PENDING_2307?.count || 0})
+                    Pending ({tabCounts.PENDING_2307})
+                  </div>
+                  <div role="tab" className={`ib-tab ${activeTab === 'PHOTO_ATTACHED' ? 'active' : ''}`} onClick={() => setActiveTab('PHOTO_ATTACHED')}>
+                    Photo attached ({tabCounts.PHOTO_ATTACHED})
                   </div>
                   <div role="tab" className={`ib-tab ${activeTab === 'RECEIVED' ? 'active' : ''}`} onClick={() => setActiveTab('RECEIVED')}>
-                    Received ({totals.RECEIVED?.count || 0})
+                    Received ({tabCounts.RECEIVED})
                   </div>
                   <div role="tab" className={`ib-tab ${activeTab === 'EXCLUDED' ? 'active' : ''}`} onClick={() => setActiveTab('EXCLUDED')}>
-                    Excluded ({totals.EXCLUDED?.count || 0})
+                    Excluded ({tabCounts.EXCLUDED})
                   </div>
                   <div role="tab" className={`ib-tab ${activeTab === 'ALL' ? 'active' : ''}`} onClick={() => setActiveTab('ALL')}>
-                    All ({totals.row_count || 0})
+                    All ({tabCounts.ALL})
                   </div>
                 </div>
 
@@ -489,7 +566,12 @@ export default function Bir2307InboundPage() {
                       </thead>
                       <tbody>
                         {filteredRows.map(r => {
-                          const meta = STATUS_META[r.status] || STATUS_META.PENDING_2307;
+                          // Phase P1.2 Phase 1 (May 06 2026) — render via
+                          // effective-status so PHOTO_ATTACHED rows show the
+                          // amber "Photo attached" pill instead of bare
+                          // "Pending 2307". Falls through to legacy
+                          // STATUS_META[r.status] for the canonical statuses.
+                          const meta = STATUS_META[r._effective] || STATUS_META[r.status] || STATUS_META.PENDING_2307;
                           return (
                             <tr key={String(r._id)}>
                               <td>
@@ -582,15 +664,23 @@ export default function Bir2307InboundPage() {
                 </p>
 
                 {/* Phase P1.2 Slice 7-extension Round 2C — pull the 2307 photo
-                    a BDM uploaded via Capture Hub (workflow_type=CWT_INBOUND
-                    or UNCATEGORIZED/Quick Capture). bdmId={null} → cross-BDM
+                    a BDM uploaded via Capture Hub. bdmId={null} → cross-BDM
                     scope (the page is finance-organized by CR row, not by
                     BDM, so finance visually matches by amount + hospital).
                     skipFetch=true bypasses the cross-origin S3 fetch (private
                     bucket has no CORS allowlist) and writes the bare S3 URL
                     straight into cert_2307_url. Server still gates the queue
                     read via lookup-driven CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE
-                    (defaults admin / finance / president). */}
+                    (defaults admin / finance / president).
+
+                    Phase P1.2 Phase 1 (May 06 2026) — workflow_type flipped
+                    from 'CWT_INBOUND' (dropped) to 'COLLECTION' + sub_type
+                    filter 'CWT'. CWT collapsed into COLLECTION because
+                    hospitals send CR + DEPOSIT + CWT together as one
+                    package. UNCATEGORIZED stays in the workflowTypes array
+                    as a fallback (Quick Capture rows the proxy hasn't yet
+                    classified) — and intentionally has NO sub_type entry in
+                    subTypeFilter so it iterates without narrowing. */}
                 <div style={{ marginBottom: '0.75rem', padding: '0.6rem', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 6 }}>
                   <div style={{ fontSize: '0.78rem', color: '#075985', fontWeight: 600, marginBottom: 6 }}>
                     Pull from Capture Hub
@@ -599,7 +689,8 @@ export default function Bir2307InboundPage() {
                     Pick a 2307 photo a BDM already uploaded — saves you re-uploading from a shared drive.
                   </div>
                   <PendingCapturesPicker
-                    workflowTypes={['CWT_INBOUND', 'UNCATEGORIZED']}
+                    workflowTypes={['COLLECTION', 'UNCATEGORIZED']}
+                    subTypeFilter={{ COLLECTION: 'CWT' }}
                     bdmId={null}
                     skipFetch={true}
                     maxSelect={1}
@@ -657,10 +748,67 @@ export default function Bir2307InboundPage() {
                     onChange={(e) => setReceiveDraft({ ...receiveDraft, cert_notes: e.target.value })}
                   />
                 </div>
+
+                {/*
+                  Phase P1.2 Phase 1 (May 06 2026) — Option D audit gate.
+                  The paper attestation is the ONLY signal that flips status
+                  → RECEIVED + unlocks the 1702 credit. Photo evidence alone
+                  (cert_2307_url) keeps status at PENDING_2307 / PHOTO_ATTACHED.
+                  Disabled until cert_2307_url is non-empty (server-side mirror
+                  rejects paper_received=true with empty URL — defense in depth).
+                  Default UNCHECKED on fresh modal open so finance must act.
+                */}
+                <div
+                  style={{
+                    marginTop: '0.4rem',
+                    marginBottom: '0.6rem',
+                    padding: '0.7rem',
+                    background: paperReceived ? '#f0fdf4' : '#fef9c3',
+                    border: `1px solid ${paperReceived ? '#86efac' : '#fde68a'}`,
+                    borderRadius: 6,
+                  }}
+                >
+                  <label
+                    style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: receiveDraft.cert_2307_url?.trim() ? 'pointer' : 'not-allowed' }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={paperReceived}
+                      disabled={!receiveDraft.cert_2307_url?.trim()}
+                      onChange={(e) => setPaperReceived(e.target.checked)}
+                      style={{ marginTop: 3, width: 18, height: 18, accentColor: '#15803d' }}
+                      data-testid="paper-received-checkbox"
+                    />
+                    <span style={{ fontSize: '0.85rem', color: '#374151', lineHeight: 1.4 }}>
+                      <strong>I confirm the paper certificate is in the Iloilo office archive.</strong>
+                      <br />
+                      <span style={{ fontSize: '0.74rem', color: '#6b7280' }}>
+                        BIR RR No. 2-98 requires the paper certificate as documentary evidence
+                        for the 1702 Creditable Tax Withheld credit. Photo evidence alone is
+                        not sufficient — the credit only unlocks when the paper is filed in
+                        audit-defendable storage.
+                      </span>
+                    </span>
+                  </label>
+                  {!receiveDraft.cert_2307_url?.trim() && (
+                    <div style={{ fontSize: '0.72rem', color: '#92400e', marginTop: 6 }}>
+                      Attach photo evidence first (paste a URL or pick from BDM Captures).
+                    </div>
+                  )}
+                </div>
+
                 <div className="ib-row" style={{ justifyContent: 'flex-end' }}>
                   <button className="ib-btn ib-btn-secondary" onClick={onCloseReceive}>Cancel</button>
-                  <button className="ib-btn ib-btn-primary" disabled={!!savingId} onClick={onSubmitReceive}>
-                    <Save size={14} /> {savingId ? 'Saving…' : 'Save Received'}
+                  <button
+                    className="ib-btn ib-btn-primary"
+                    disabled={!!savingId || !receiveDraft.cert_2307_url?.trim()}
+                    onClick={onSubmitReceive}
+                    data-testid="save-receive-btn"
+                  >
+                    <Save size={14} />
+                    {savingId
+                      ? 'Saving…'
+                      : (paperReceived ? 'Save — Mark RECEIVED' : 'Save Photo Only')}
                   </button>
                 </div>
               </div>

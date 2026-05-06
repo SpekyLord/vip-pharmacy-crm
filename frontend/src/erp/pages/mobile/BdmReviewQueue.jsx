@@ -23,19 +23,26 @@ import '../../../styles/capture-hub.css';
 
 // Icon + color per (workflow_type, sub_type) — must match BdmCaptureHub.WORKFLOWS
 // so the BDM sees the same visual identity at capture time and review time.
+// Phase P1.2 Phase 1 (May 06 2026) — added COLLECTION_CWT composite entries.
+// CWT_INBOUND legacy keys kept as defensive fallbacks: the migration script
+// flipped all live rows so they should never resolve via these legacy keys
+// in practice, but a stale row caught mid-deploy would still render with a
+// recognisable icon/color rather than a generic Receipt fallback.
+// PETTY_CASH legacy keys also kept defensively for the same reason.
 const WORKFLOW_ICONS = {
   EXPENSE: Receipt,
   SMER: Camera,
   SALES: FileText,
   GRN: Truck,
   FUEL_ENTRY: Fuel,
-  PETTY_CASH: Wallet,
+  PETTY_CASH: Wallet,                  // legacy fallback — workflow_type dropped Phase 1
   OPENING_AR: FileText,
   COLLECTION: ReceiptText,            // generic CR-style — overridden by sub_type below
   COLLECTION_CR: ReceiptText,
   COLLECTION_DEPOSIT: Landmark,
   COLLECTION_PAID_CSI: HandCoins,
-  CWT_INBOUND: FileBadge,
+  COLLECTION_CWT: FileBadge,           // Phase P1.2 Phase 1 — was CWT_INBOUND
+  CWT_INBOUND: FileBadge,              // legacy fallback for any unmigrated rows
 };
 
 const WORKFLOW_COLORS = {
@@ -44,13 +51,14 @@ const WORKFLOW_COLORS = {
   SALES: '#7c3aed',
   GRN: '#dc2626',
   FUEL_ENTRY: '#ea580c',
-  PETTY_CASH: '#ca8a04',
+  PETTY_CASH: '#ca8a04',                // legacy fallback
   OPENING_AR: '#6366f1',
   COLLECTION: '#0891b2',
   COLLECTION_CR: '#0891b2',
   COLLECTION_DEPOSIT: '#0d9488',
   COLLECTION_PAID_CSI: '#0ea5e9',
-  CWT_INBOUND: '#6366f1',
+  COLLECTION_CWT: '#6366f1',            // Phase P1.2 Phase 1 — same indigo as legacy CWT_INBOUND
+  CWT_INBOUND: '#6366f1',               // legacy fallback
 };
 
 // Friendly display label per (workflow_type, sub_type) — matches the BDM's
@@ -61,13 +69,14 @@ const WORKFLOW_LABELS = {
   SALES: 'CSI Delivery Copy',
   GRN: 'GRN Item',
   FUEL_ENTRY: 'Fuel Receipt',
-  PETTY_CASH: 'Petty Cash Request',
+  PETTY_CASH: 'Petty Cash Request',     // legacy fallback
   OPENING_AR: 'Opening AR',
   COLLECTION: 'Collection',
   COLLECTION_CR: 'Collection Receipt (CR)',
   COLLECTION_DEPOSIT: 'Deposit Slip',
   COLLECTION_PAID_CSI: 'CSI Being Paid',
-  CWT_INBOUND: 'CWT (BIR 2307)',
+  COLLECTION_CWT: 'CWT (BIR 2307)',     // Phase P1.2 Phase 1 — was CWT_INBOUND
+  CWT_INBOUND: 'CWT (BIR 2307)',        // legacy fallback
 };
 
 // Resolve composite key from item (workflow_type[_sub_type])

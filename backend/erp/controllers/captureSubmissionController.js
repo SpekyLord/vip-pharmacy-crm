@@ -61,18 +61,27 @@ function canTransition(from, to) {
 //   GRN/BATCH_PHOTO:        photo of vial/box labels for OCR batch+expiry —
 //                           the physical product itself is the source, no
 //                           paper to send. (Phase P1.2 Slice 6.2 — May 06 2026)
+//
+// Phase P1.2 Phase 1 (May 06 2026) — note that COLLECTION/CWT is NOT
+// digital-only. The capture's photo is digital evidence, but the underlying
+// BIR Form 2307 paper certificate must arrive at the Iloilo office (CwtLedger
+// physical_received_at gates the 1702 credit; Slice 3 reconciliation correctly
+// flags the capture as physical_required=true).
 const DIGITAL_ONLY = (workflow_type, sub_type) =>
   workflow_type === 'SMER' ||
   (workflow_type === 'COLLECTION' && sub_type === 'PAID_CSI') ||
   (workflow_type === 'GRN' && sub_type === 'BATCH_PHOTO');
 
-// Per-workflow sub_type whitelist. Phase P1.2 Slice 6.2 (May 06 2026) splits
-// GRN into BATCH_PHOTO (D — digital-only OCR feed) vs WAYBILL (M — paper
-// arrives with the courier). COLLECTION whitelist unchanged from Phase P1.
+// Per-workflow sub_type whitelist.
+//   • Slice 6.2 (May 06 2026) split GRN into BATCH_PHOTO (D) / WAYBILL (M).
+//   • Phase 1 (May 06 2026) added CWT to COLLECTION (was a top-level
+//     workflow_type='CWT_INBOUND' — collapsed because hospitals send CR +
+//     DEPOSIT + CWT together as one collection package). The migration
+//     script flipped live rows ahead of this enum narrowing.
 // Subscribers loosen via lookup row CAPTURE_SUB_TYPE_RULES (Rule #3) — defaults
 // ship with the binary so a Lookup outage never goes dark.
 const VALID_SUB_TYPES_BY_WORKFLOW = {
-  COLLECTION: ['CR', 'DEPOSIT', 'PAID_CSI'],
+  COLLECTION: ['CR', 'DEPOSIT', 'PAID_CSI', 'CWT'],
   GRN:        ['BATCH_PHOTO', 'WAYBILL'],
 };
 
@@ -86,10 +95,11 @@ const createCapture = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'workflow_type is required' });
   }
 
+  // Phase P1.2 Phase 1 (May 06 2026) — dropped 'CWT_INBOUND' (now
+  // COLLECTION+CWT) and 'PETTY_CASH' (tile never shipped; speculative slot).
   const VALID_TYPES = [
     'SMER', 'EXPENSE', 'SALES', 'OPENING_AR',
-    'COLLECTION', 'GRN', 'PETTY_CASH', 'FUEL_ENTRY',
-    'CWT_INBOUND',
+    'COLLECTION', 'GRN', 'FUEL_ENTRY',
     'UNCATEGORIZED',  // P1.2 Slice 1 — zero-typing capture; proxy classifies later
   ];
   if (!VALID_TYPES.includes(workflow_type)) {
@@ -404,7 +414,14 @@ const cancelCapture = catchAsync(async (req, res) => {
  * other BDMs' rows).
  */
 const getProxyQueue = catchAsync(async (req, res) => {
-  const { status, workflow_type, bdm_id, limit = 50, skip = 0, sort_by = 'created_at', sort_dir = 'asc' } = req.query;
+  // Phase P1.2 Phase 1 (May 06 2026) — added optional `sub_type` filter so the
+  // PendingCapturesPicker on Bir2307InboundPage can narrow to COLLECTION+CWT
+  // (vs all COLLECTION sub_types). Previously the picker would have needed a
+  // top-level workflow_type='CWT_INBOUND' which was dropped this phase.
+  const {
+    status, workflow_type, sub_type, bdm_id,
+    limit = 50, skip = 0, sort_by = 'created_at', sort_dir = 'asc',
+  } = req.query;
 
   // Self-fetch intent — 'self' is the explicit form; matching ID is also
   // honored so callers passing the user's own _id work unchanged.
@@ -436,6 +453,12 @@ const getProxyQueue = catchAsync(async (req, res) => {
     filter.status = { $in: ['PENDING_PROXY', 'IN_PROGRESS'] };
   }
   if (workflow_type) filter.workflow_type = workflow_type;
+  // Phase P1.2 Phase 1 (May 06 2026) — sub_type narrowing. The picker on
+  // Bir2307InboundPage uses this to surface only COLLECTION+CWT captures
+  // (vs all COLLECTION sub_types). Defense in depth: even if the caller
+  // passes sub_type without workflow_type, Mongo will simply find rows
+  // where sub_type matches across all workflows, which is harmless.
+  if (sub_type) filter.sub_type = sub_type;
 
   if (isSelfFetch) {
     // Hard-scope to caller's own captures — no leak even if a future caller
@@ -613,10 +636,12 @@ const completeCapture = catchAsync(async (req, res) => {
 
   // Workflows that need BDM review before final acknowledgment.
   // SMER review = personal-vs-official gas split (per business rule).
-  // COLLECTION + CWT_INBOUND review = money/tax reconciliation.
+  // COLLECTION review = money/tax reconciliation (covers CR + DEPOSIT +
+  // PAID_CSI + CWT sub_types — Phase P1.2 Phase 1 May 06 2026 collapsed
+  // the legacy CWT_INBOUND workflow_type into COLLECTION+CWT).
   const REVIEW_WORKFLOWS = [
     'EXPENSE', 'SALES', 'FUEL_ENTRY', 'SMER',
-    'COLLECTION', 'CWT_INBOUND',
+    'COLLECTION',
   ];
   if (!skip_review && REVIEW_WORKFLOWS.includes(doc.workflow_type)) {
     doc.status = 'AWAITING_BDM_REVIEW';
@@ -718,9 +743,12 @@ async function linkCaptureToDocument(captureId, kind, docId, ctx) {
   // stay where they are. PROCESSED here is intentional: don't re-trigger
   // a BDM review notification on a capture the BDM already saw.
   if (cap.status === 'PENDING_PROXY' || cap.status === 'IN_PROGRESS') {
+    // COLLECTION covers CR + DEPOSIT + PAID_CSI + CWT (Phase P1.2 Phase 1
+    // — May 06 2026). The legacy CWT_INBOUND workflow_type was collapsed
+    // into COLLECTION+CWT so no separate enum slot is needed.
     const REVIEW_WORKFLOWS = [
       'EXPENSE', 'SALES', 'FUEL_ENTRY', 'SMER',
-      'COLLECTION', 'CWT_INBOUND',
+      'COLLECTION',
     ];
     cap.status = REVIEW_WORKFLOWS.includes(cap.workflow_type)
       ? 'AWAITING_BDM_REVIEW'

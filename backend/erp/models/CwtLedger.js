@@ -19,6 +19,21 @@
  *   • tagged_for_1702_year — defaults to `year`; overridable for cross-year
  *     reconciliation (rare — when 2307 arrives after 1702 was already filed).
  *
+ * Phase P1.2 Phase 1 (May 06 2026) — Option D two-step audit gate:
+ *   • physical_received_at — set when finance attests the PAPER certificate
+ *     is in the Iloilo office archive. Distinct from `received_at` which
+ *     stamps when the digital reference (cert_2307_url) was first attached.
+ *   The audit gate matters because BIR RR No. 2-98 requires the original
+ *   paper certificate as documentary evidence for the 1702 "Less: Creditable
+ *   Tax Withheld" credit. Photo-only evidence is necessary but not
+ *   sufficient — claiming the credit against a photo alone exposes VIP to
+ *   25% surcharge + 12% interest if BIR audits and disallows. So the
+ *   1702-credit gate (J7 compute1702CwtRollup) reads `status='RECEIVED'`,
+ *   and `status` only flips to RECEIVED when finance ticks the
+ *   "paper-in-Iloilo" checkbox at the Mark-Received modal.
+ *   Implicit "PHOTO_ATTACHED" state = status='PENDING_2307' AND
+ *   cert_2307_url IS NOT NULL AND physical_received_at IS NULL.
+ *
  * INBOUND vs OUTBOUND separation — CwtLedger is the source-of-truth for
  * INBOUND (hospital→VIP) CWT. WithholdingLedger.DIRECTIONS reserves
  * 'INBOUND' but J2's engine only writes OUTBOUND today. J6 chose to extend
@@ -86,6 +101,13 @@ const cwtLedgerSchema = new mongoose.Schema({
   },
   received_at: { type: Date, default: null },
   received_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  // Phase P1.2 Phase 1 (May 06 2026) — Option D audit gate. Stamped when
+  // finance ticks the "paper certificate is in the Iloilo office archive"
+  // checkbox at Mark-Received. ONLY then does status flip to RECEIVED →
+  // 1702 credit unlocks. Indexed because the new PHOTO_ATTACHED tab on
+  // /erp/bir/2307-IN filters rows where status='PENDING_2307' AND
+  // cert_2307_url IS NOT NULL AND physical_received_at IS NULL.
+  physical_received_at: { type: Date, default: null, index: true },
   cert_2307_url: { type: String, trim: true, default: null },
   cert_filename: { type: String, trim: true, default: null },
   cert_content_hash: { type: String, trim: true, default: null },

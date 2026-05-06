@@ -117,13 +117,22 @@ const WORKFLOWS = [
     fields: ['amount_declared', 'access_for'],
     active: true,
   },
+  // Phase P1.2 Phase 1 (May 06 2026) — CWT collapsed from a top-level
+  // workflow_type='CWT_INBOUND' to a sub_type of COLLECTION. Hospitals send
+  // CR + DEPOSIT + CWT together as one collection package, so a single
+  // workflow_type covers them all. The composite tile key
+  // `${w.key}_${w.sub_type || 'main'}` now resolves to 'COLLECTION_CWT'
+  // (vs the legacy 'CWT_INBOUND_main'). Backend rejects standalone
+  // workflow_type='CWT_INBOUND' on save (enum was narrowed); migration
+  // script flipped all live rows to the new shape.
   {
-    key: 'CWT_INBOUND',
+    key: 'COLLECTION',
+    sub_type: 'CWT',
     section: 'collection',
     label: 'Scan CWT (BIR 2307)',
     icon: FileBadge,
     color: '#6366f1',
-    description: 'Certificate of withholding tax from customer',
+    description: 'Certificate of withholding tax from customer (paper to Iloilo office)',
     artifactKind: 'cwt_scan',
     fields: ['amount_declared', 'access_for'],
     active: true,
@@ -176,7 +185,10 @@ const WORKFLOWS = [
     active: true,
   },
   // PETTY_CASH tile removed May 05 2026 — petty cash request flow moved
-  // off the Capture Hub. Backend enum retained for existing/legacy rows.
+  // off the Capture Hub. Backend enum DROPPED in Phase P1.2 Phase 1 (May 06
+  // 2026); no Capture Hub tile, no enum slot, no migration target. Any
+  // pre-Phase-1 rows remain readable but cannot be re-saved without admin
+  // re-classifying them.
 ];
 
 // ── GPS helper ──

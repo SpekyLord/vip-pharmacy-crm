@@ -41,6 +41,15 @@ import '../../styles/pending-captures-picker.css';
 
 export default function PendingCapturesPicker({
   workflowTypes = [],
+  // Phase P1.2 Phase 1 (May 06 2026) — optional sub_type narrowing per
+  // workflow_type. Shape: { COLLECTION: 'CWT' } means "when iterating
+  // workflowTypes for COLLECTION, also pass sub_type=CWT to the queue
+  // query." Workflow_types not present in this map fall through with no
+  // sub_type filter (legacy behaviour). Used by Bir2307InboundPage to
+  // narrow COLLECTION captures to just CWT (vs CR/DEPOSIT/PAID_CSI), since
+  // CWT was collapsed from a top-level workflow_type into a sub_type of
+  // COLLECTION this phase.
+  subTypeFilter = {},
   bdmId,
   onPick,
   buttonLabel = 'From BDM Captures',
@@ -78,6 +87,14 @@ export default function PendingCapturesPicker({
           sort_dir: 'desc',
         };
         if (bdmId) params.bdm_id = bdmId;
+        // Phase P1.2 Phase 1 (May 06 2026) — sub_type narrowing only fires
+        // when the caller mapped the workflow_type. Other workflow_types in
+        // the same picker (e.g. UNCATEGORIZED catch-all) iterate without a
+        // sub_type filter so the caller can blend a strictly-narrowed feed
+        // (COLLECTION+CWT) with a broad fallback (UNCATEGORIZED).
+        if (subTypeFilter && subTypeFilter[wt]) {
+          params.sub_type = subTypeFilter[wt];
+        }
         const res = await getProxyQueue(params);
         (res?.data || []).forEach((d) => {
           if (!seen.has(d._id)) { seen.add(d._id); merged.push(d); }
@@ -90,7 +107,7 @@ export default function PendingCapturesPicker({
     } finally {
       setLoading(false);
     }
-  }, [getProxyQueue, workflowTypes, bdmId]);
+  }, [getProxyQueue, workflowTypes, bdmId, subTypeFilter]);
 
   useEffect(() => {
     if (open) load();

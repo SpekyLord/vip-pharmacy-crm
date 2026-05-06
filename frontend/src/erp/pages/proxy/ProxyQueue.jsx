@@ -59,14 +59,19 @@ const STATUS_OPTIONS = [
   { value: 'DISPUTED', label: 'Disputed' },
 ];
 
+// Phase P1.2 Phase 1 (May 06 2026) — dropped PETTY_CASH (workflow_type slot
+// removed; tile was never shipped). COLLECTION covers CR/DEPOSIT/PAID_CSI/CWT
+// sub_types; the queue intentionally surfaces only the parent workflow_type
+// here — proxy can still see the sub_type per row in the rendered card.
 const WORKFLOW_OPTIONS = [
   { value: '', label: 'All Workflows' },
   { value: 'EXPENSE', label: 'Expense / OR' },
   { value: 'SMER', label: 'SMER / ODO' },
   { value: 'SALES', label: 'Sales / CSI' },
-  { value: 'GRN', label: 'GRN' },
+  { value: 'COLLECTION', label: 'Collection (CR / Deposit / PAID CSI / CWT)' },
+  { value: 'GRN', label: 'GRN (Batch Photo / Waybill)' },
   { value: 'FUEL_ENTRY', label: 'Fuel Entry' },
-  { value: 'PETTY_CASH', label: 'Petty Cash' },
+  { value: 'UNCATEGORIZED', label: 'Quick Capture (Uncategorized)' },
 ];
 
 // ── SLA color helper ──

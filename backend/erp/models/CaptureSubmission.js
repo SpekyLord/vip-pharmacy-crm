@@ -65,6 +65,16 @@ const captureSubmissionSchema = new mongoose.Schema({
   },
 
   // ── Workflow classification ──
+  // Phase P1.2 Phase 1 (May 06 2026) — capture-type cleanup:
+  //   • Dropped 'CWT_INBOUND' → CWT is now a sub_type of COLLECTION
+  //     (hospitals send CR + DEPOSIT + CWT together as one collection
+  //     package, so a single workflow_type covers them all).
+  //   • Dropped 'PETTY_CASH' → tile was never shipped on the Capture Hub;
+  //     enum slot was speculative. Existing rows (if any) are read-only
+  //     until admin triages via override path.
+  //   Migration: backend/scripts/migrateCwtInboundToCollectionSubtype.js
+  //   has flipped all live CWT_INBOUND rows to COLLECTION+CWT before this
+  //   enum narrowing took effect.
   workflow_type: {
     type: String,
     enum: [
@@ -72,11 +82,9 @@ const captureSubmissionSchema = new mongoose.Schema({
       'EXPENSE',        // #2 — OR-based expense
       'SALES',          // #3 — CSI delivery copy (pink/yellow proof of delivery)
       'OPENING_AR',     // #4 — opening AR (all proxy)
-      'COLLECTION',     // #5 — collection capture; sub_type ∈ {CR, DEPOSIT, PAID_CSI}
-      'GRN',            // #6 — product scan + batch/expiry
-      'PETTY_CASH',     // #7 — mobile request
-      'FUEL_ENTRY',     // #8 — fuel pump receipt
-      'CWT_INBOUND',    // #9 — BIR 2307 received from customer (bridges to CwtLedger)
+      'COLLECTION',     // #5 — collection capture; sub_type ∈ {CR, DEPOSIT, PAID_CSI, CWT}
+      'GRN',            // #6 — product scan + batch/expiry; sub_type ∈ {BATCH_PHOTO, WAYBILL}
+      'FUEL_ENTRY',     // #7 — fuel pump receipt
       // Phase P1.2 Slice 1 (May 06 2026) — zero-typing capture path. BDM
       // taps "Quick Capture" → camera → snap → submit; proxy classifies
       // later from /erp/capture-archive or the Pending-Photos picker on
@@ -90,13 +98,22 @@ const captureSubmissionSchema = new mongoose.Schema({
   },
 
   // ── Sub-classification ──
-  // COLLECTION: CR | DEPOSIT | PAID_CSI
+  // COLLECTION: CR | DEPOSIT | PAID_CSI | CWT
+  //   CR           — Collection Receipt issued to hospital (paper expected)
+  //   DEPOSIT      — Bank deposit slip after collection (paper expected)
+  //   PAID_CSI     — D (Digital-only): photo of CSI marked paid; original CSI
+  //                  travels with collection paperwork separately
+  //   CWT          — BIR Form 2307 (Phase P1.2 Phase 1 — May 06 2026): hospital
+  //                  withholding tax certificate. Photo evidence is digital,
+  //                  but the paper certificate must arrive at the Iloilo office
+  //                  before the 1702 audit gate unlocks (see CwtLedger
+  //                  physical_received_at — Option D two-step receive).
   // GRN (Phase P1.2 Slice 6.2 — May 06 2026): BATCH_PHOTO | WAYBILL
   //   BATCH_PHOTO  — D (Digital-only): photo of vials/boxes for OCR batch+expiry. No paper.
   //   WAYBILL      — M (Manual/Material): courier waybill paper arrives at office.
   sub_type: {
     type: String,
-    enum: ['CR', 'DEPOSIT', 'PAID_CSI', 'BATCH_PHOTO', 'WAYBILL', null],
+    enum: ['CR', 'DEPOSIT', 'PAID_CSI', 'CWT', 'BATCH_PHOTO', 'WAYBILL', null],
     default: null,
   },
 
