@@ -31,6 +31,7 @@ const {
   previewNameCleanup,
   applyNameCleanup,
   setPartnershipStatus,
+  joinCoverage,
 } = require('../controllers/doctorController');
 
 const { protect } = require('../middleware/auth');
@@ -61,6 +62,14 @@ router.put('/:id/target-products', adminOrEmployee, updateTargetProducts);
 // manage cross-records; BDMs self-transition own records; PARTNER promotion is
 // gated by SET_AGREEMENT_DATE roles + agreement_date).
 router.put('/:id/partnership-status', setPartnershipStatus);
+
+// Phase A.5.3 — "Join coverage" partner of the DUPLICATE_VIP_CLIENT 409 flow.
+// Auth required at the route level; the controller enforces the lookup-driven
+// VIP_CLIENT_LIFECYCLE_ROLES.JOIN_COVERAGE_AUTO / JOIN_COVERAGE_APPROVAL gates.
+// MUST be before the `PUT /:id` line below so Express doesn't route /:id/join-coverage
+// to updateDoctor (Express resolves in declared order, but a literal segment after
+// `:id` is fine — left here for documentation parity with partnership-status).
+router.post('/:id/join-coverage', joinCoverage);
 
 // Admin or Employee (BDM) routes - ownership checked in controller
 router.put('/:id', adminOrEmployee, updateDoctorValidation, updateDoctor);

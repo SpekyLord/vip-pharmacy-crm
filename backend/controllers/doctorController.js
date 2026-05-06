@@ -16,6 +16,7 @@ const ProductAssignment = require('../models/ProductAssignment');
 const User = require('../models/User');
 const CrmProduct = require('../models/CrmProduct');
 const Specialization = require('../models/Specialization');
+const MessageInbox = require('../models/MessageInbox');
 const { catchAsync, NotFoundError, ForbiddenError } = require('../middleware/errorHandler');
 const { sanitizeSearchString } = require('../utils/controllerHelpers');
 const { ROLES, isAdminLike } = require('../constants/roles');
@@ -34,6 +35,129 @@ const { dateToSlot, validateAlternatingWeek, rejectPastCycle } = require('../uti
 // getPrimaryAssigneeId instead of the legacy `doctor.assignedTo?._id || doctor.assignedTo`
 // ternary, which silently miscompares against array shapes.
 const { isAssignedTo, getAssigneeIds, getPrimaryAssigneeId } = require('../utils/assigneeAccess');
+
+// ── Phase A.5.3 — DUPLICATE_VIP_CLIENT response builder ────────────────────
+//
+// Centralized 409 helper used by createDoctor + updateDoctor when the
+// canonical-name unique index trips (MongoServerError 11000 on
+// `vip_client_name_clean`). Shape is intentionally rich so the frontend modal
+// can offer a precise "Rename mine" / "Join their coverage" / "Request to join"
+// flow without a second round-trip:
+//
+//   {
+//     success: false,
+//     code: 'DUPLICATE_VIP_CLIENT',
+//     message: '<actionable copy>',
+//     existing: {
+//       _id, firstName, lastName, fullName,
+//       primaryAssignee: { _id, name, email } | null,
+//       assignedTo: [{ _id, name, email }],
+//       visitCount: <int>,        // total Visits referencing this Doctor
+//       isActive: <bool>,
+//     },
+//     suggested_action: 'rename_or_join_coverage',
+//     // Lookup-driven (VIP_CLIENT_LIFECYCLE_ROLES) — modal uses these to
+//     // decide which buttons to show. Both can be true (admin/president).
+//     can_join_auto: <bool>,
+//     can_join_approval: <bool>,
+//   }
+//
+// Why we re-fetch + populate here instead of trusting the original Doctor.create
+// payload: the colliding canonical key uniquely identifies the OTHER record (the
+// one that already exists), and we need its assignees to render the prompt.
+async function buildDuplicateVipClient409(req, canonicalKey) {
+  const existing = await Doctor.findOne({ vip_client_name_clean: canonicalKey })
+    .populate('assignedTo', 'name email')
+    .populate('primaryAssignee', 'name email')
+    .lean();
+
+  // Defensive: if the colliding record vanished between the index trip and
+  // this re-fetch (extremely unlikely race), surface a generic 409 so the UX
+  // doesn't 500. The caller can still show a toast with the message.
+  if (!existing) {
+    return {
+      success: false,
+      code: 'DUPLICATE_VIP_CLIENT',
+      message: 'A VIP Client with this name already exists. Rename yours, or contact admin to share coverage.',
+      suggested_action: 'rename_or_join_coverage',
+    };
+  }
+
+  const visitCount = await Visit.countDocuments({ doctor: existing._id });
+
+  // Lookup-driven role gates. Defaults [admin, president]; subscribers loosen
+  // JOIN_COVERAGE_AUTO to include `staff` for self-join, or narrow to
+  // `president` only — all without code changes (Rule #3 / #19).
+  const reqEntityId = req.entityId || null;
+  const [canJoinAuto, canJoinApproval] = await Promise.all([
+    userCanPerformLifecycleAction(req.user, 'JOIN_COVERAGE_AUTO', reqEntityId),
+    userCanPerformLifecycleAction(req.user, 'JOIN_COVERAGE_APPROVAL', reqEntityId),
+  ]);
+
+  // Tailor the message based on what the user can do. Avoids dead-end UI
+  // copy ("Join coverage" when the user has no permission for either branch).
+  let message;
+  if (canJoinAuto) {
+    message = `A VIP Client named "${existing.firstName} ${existing.lastName}" already exists. Rename yours to disambiguate, or join their coverage.`;
+  } else if (canJoinApproval) {
+    message = `A VIP Client named "${existing.firstName} ${existing.lastName}" already exists. Rename yours to disambiguate, or request admin approval to join the existing coverage.`;
+  } else {
+    message = `A VIP Client named "${existing.firstName} ${existing.lastName}" already exists. Rename yours to a unique label (e.g. "Dr. Sharon Cruz — Iloilo General"), or contact admin to share coverage.`;
+  }
+
+  return {
+    success: false,
+    code: 'DUPLICATE_VIP_CLIENT',
+    message,
+    existing: {
+      _id: existing._id,
+      firstName: existing.firstName,
+      lastName: existing.lastName,
+      fullName: `${existing.firstName || ''} ${existing.lastName || ''}`.trim(),
+      isActive: existing.isActive !== false,
+      primaryAssignee: existing.primaryAssignee
+        ? {
+            _id: existing.primaryAssignee._id,
+            name: existing.primaryAssignee.name,
+            email: existing.primaryAssignee.email,
+          }
+        : null,
+      assignedTo: Array.isArray(existing.assignedTo)
+        ? existing.assignedTo.map((u) => ({ _id: u._id, name: u.name, email: u.email }))
+        : [],
+      visitCount,
+    },
+    suggested_action: 'rename_or_join_coverage',
+    can_join_auto: canJoinAuto,
+    can_join_approval: canJoinApproval,
+  };
+}
+
+/**
+ * Identifies a MongoDB duplicate-key error against `vip_client_name_clean`.
+ * Mongo surfaces these in two slightly different shapes depending on driver
+ * version (keyPattern vs keyValue), so check both to be safe.
+ */
+function isVipClientNameCleanDuplicate(err) {
+  if (!err || err.code !== 11000) return false;
+  if (err.keyPattern && Object.prototype.hasOwnProperty.call(err.keyPattern, 'vip_client_name_clean')) return true;
+  if (err.keyValue && Object.prototype.hasOwnProperty.call(err.keyValue, 'vip_client_name_clean')) return true;
+  // errmsg fallback for older drivers that don't populate keyPattern/keyValue
+  if (typeof err.errmsg === 'string' && err.errmsg.includes('vip_client_name_clean')) return true;
+  return false;
+}
+
+/**
+ * Compute the canonical key for a candidate Doctor payload — mirrors the
+ * pre-save hook (Doctor.js:508-510) so the controller can re-lookup the
+ * existing record without re-running cleanName. Used as a defensive fallback
+ * when err.keyValue.vip_client_name_clean is missing.
+ */
+function computeCanonicalKey(firstName, lastName) {
+  const last = (lastName || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  const first = (firstName || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return `${last}|${first}`;
+}
 
 // Phase VIP-1.A — Mirrors Doctor.js schema enum. If you change the schema, change this list.
 // Health check asserts the two stay in sync.
@@ -400,9 +524,24 @@ const createDoctor = catchAsync(async (req, res) => {
     hospitals,
   };
 
+  // Phase A.5.3 — interpret duplicate-key errors specifically (the global
+  // errorHandler maps these to a friendly 409 message, but A.5.3 needs a
+  // structured payload so the frontend modal can offer "Rename mine" / "Join
+  // their coverage" without a second round-trip). isVipClientNameCleanDuplicate
+  // distinguishes canonical-name collisions from schedule-slot collisions.
   let doctor;
   if (validatedSlots.length === 0) {
-    doctor = await Doctor.create(doctorPayload);
+    try {
+      doctor = await Doctor.create(doctorPayload);
+    } catch (err) {
+      if (isVipClientNameCleanDuplicate(err)) {
+        const key = (err.keyValue && err.keyValue.vip_client_name_clean)
+          || computeCanonicalKey(firstName, lastName);
+        const payload = await buildDuplicateVipClient409(req, key);
+        return res.status(409).json(payload);
+      }
+      throw err;
+    }
   } else {
     // Try transactional path first; fall back to compensating delete on standalone Mongo.
     const session = await mongoose.startSession();
@@ -430,6 +569,16 @@ const createDoctor = catchAsync(async (req, res) => {
       const isReplicaSetMissing = /replica set|mongos|Transaction numbers/.test(txnErr.message || '');
       if (!isReplicaSetMissing) {
         await session.endSession().catch(() => {});
+        // Phase A.5.3 — distinguish canonical-name collision from
+        // schedule-slot collision. The canonical-name path emits the rich
+        // DUPLICATE_VIP_CLIENT payload; schedule-slot keeps the generic
+        // friendly message (no modal — admin re-picks dates inline).
+        if (isVipClientNameCleanDuplicate(txnErr)) {
+          const key = (txnErr.keyValue && txnErr.keyValue.vip_client_name_clean)
+            || computeCanonicalKey(firstName, lastName);
+          const payload = await buildDuplicateVipClient409(req, key);
+          return res.status(409).json(payload);
+        }
         if (txnErr.code === 11000) {
           return res.status(409).json({
             success: false,
@@ -438,8 +587,18 @@ const createDoctor = catchAsync(async (req, res) => {
         }
         throw txnErr;
       }
-      // Fallback path
-      doctor = await Doctor.create(doctorPayload);
+      // Fallback path (standalone Mongo / test fixtures)
+      try {
+        doctor = await Doctor.create(doctorPayload);
+      } catch (createErr) {
+        if (isVipClientNameCleanDuplicate(createErr)) {
+          const key = (createErr.keyValue && createErr.keyValue.vip_client_name_clean)
+            || computeCanonicalKey(firstName, lastName);
+          const payload = await buildDuplicateVipClient409(req, key);
+          return res.status(409).json(payload);
+        }
+        throw createErr;
+      }
       try {
         const scheduleRows = validatedSlots.map((s) => ({
           doctor: doctor._id,
@@ -576,7 +735,23 @@ const updateDoctor = catchAsync(async (req, res) => {
     }
   });
 
-  await doctor.save();
+  // Phase A.5.3 — rename collision returns the same structured DUPLICATE_VIP_CLIENT
+  // 409 used by createDoctor, so the modal UX is symmetric for "I'm trying to
+  // rename Sharon Cruz → Maria Santos but Maria Santos already exists".
+  try {
+    await doctor.save();
+  } catch (err) {
+    if (isVipClientNameCleanDuplicate(err)) {
+      // Use the post-clean canonical key from the in-memory doc (pre-save hook
+      // already recomputed it). Falls back to recomputing from the request body.
+      const key = doctor.vip_client_name_clean
+        || (err.keyValue && err.keyValue.vip_client_name_clean)
+        || computeCanonicalKey(req.body.firstName || doctor.firstName, req.body.lastName || doctor.lastName);
+      const payload = await buildDuplicateVipClient409(req, key);
+      return res.status(409).json(payload);
+    }
+    throw err;
+  }
   // Phase A.5.4 — assignedTo is an array; populate when at least one assignee.
   if (Array.isArray(doctor.assignedTo) && doctor.assignedTo.length > 0) {
     await doctor.populate('assignedTo', 'name email');
@@ -1151,6 +1326,132 @@ const setPartnershipStatus = catchAsync(async (req, res) => {
   });
 });
 
+/**
+ * @desc    Phase A.5.3 — "Join coverage" partner of the DUPLICATE_VIP_CLIENT
+ *          409 flow. Adds the calling user to the existing Doctor's
+ *          assignedTo[] array (auto-mode) OR posts a MessageInbox approval
+ *          request to admin (approval-mode), based on lookup-driven role gates:
+ *
+ *            VIP_CLIENT_LIFECYCLE_ROLES.JOIN_COVERAGE_AUTO     (default: admin, president)
+ *            VIP_CLIENT_LIFECYCLE_ROLES.JOIN_COVERAGE_APPROVAL (default: admin, president)
+ *
+ *          Subscribers loosen JOIN_COVERAGE_AUTO to include `staff` for BDM
+ *          self-join (Rule #3 / #19), or keep the AUTO gate tight and loosen
+ *          JOIN_COVERAGE_APPROVAL to let BDMs request admin approval.
+ *
+ *          Body: { notes?: string }  // optional rationale for approval-mode
+ *
+ *          Response shapes:
+ *            mode='auto'             → 200 + { data: <updated doctor> }
+ *            mode='approval_pending' → 202 + { data: { messageId, ... } }
+ *
+ * @route   POST /api/doctors/:id/join-coverage
+ * @access  Authenticated; controller does the role gate
+ */
+const joinCoverage = catchAsync(async (req, res) => {
+  const { id } = req.params;
+  const { notes } = req.body || {};
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ success: false, message: 'Invalid doctor ID' });
+  }
+
+  const doctor = await Doctor.findById(id);
+  if (!doctor) throw new NotFoundError('VIP Client not found');
+  // Soft-deleted (merged loser) Doctors are not joinable. Caller should have
+  // been redirected to the merge winner earlier (Phase A.5.6 resolver). This
+  // is defense-in-depth: block stale clients that still hold a loser ref.
+  if (doctor.mergedInto) {
+    return res.status(409).json({
+      success: false,
+      code: 'DOCTOR_MERGED',
+      message: 'This VIP Client record was merged into another. Refresh the list and join the consolidated record.',
+      mergedInto: doctor.mergedInto,
+    });
+  }
+
+  // Already on the assignees list? Idempotent success — no double-join, no
+  // approval-mode bait when the BDM already has access.
+  if (isAssignedTo(doctor, req.user._id)) {
+    return res.status(200).json({
+      success: true,
+      mode: 'auto',
+      message: 'You are already assigned to this VIP Client.',
+      data: doctor,
+      already_assigned: true,
+    });
+  }
+
+  const reqEntityId = req.entityId || null;
+  const [canAuto, canApproval] = await Promise.all([
+    userCanPerformLifecycleAction(req.user, 'JOIN_COVERAGE_AUTO', reqEntityId),
+    userCanPerformLifecycleAction(req.user, 'JOIN_COVERAGE_APPROVAL', reqEntityId),
+  ]);
+
+  if (!canAuto && !canApproval) {
+    throw new ForbiddenError(
+      'Joining VIP-Client coverage is not enabled for your role. Ask admin to update VIP_CLIENT_LIFECYCLE_ROLES → JOIN_COVERAGE_AUTO or JOIN_COVERAGE_APPROVAL.'
+    );
+  }
+
+  if (canAuto) {
+    // Auto-mode: $addToSet the requester onto assignedTo[]. We use $addToSet
+    // to avoid the model's pre-save hook reordering primaryAssignee — the
+    // existing primary stays primary, the new user joins as a secondary
+    // assignee. (If the original Doctor had no assignees somehow, the pre-save
+    // hook will set req.user as primary; that's correct.)
+    await Doctor.updateOne(
+      { _id: doctor._id },
+      { $addToSet: { assignedTo: req.user._id } }
+    );
+
+    const refreshed = await Doctor.findById(doctor._id)
+      .populate('assignedTo', 'name email')
+      .populate('primaryAssignee', 'name email');
+
+    return res.status(200).json({
+      success: true,
+      mode: 'auto',
+      message: `You have joined coverage of "${doctor.firstName} ${doctor.lastName}".`,
+      data: refreshed,
+    });
+  }
+
+  // Approval-mode: post a MessageInbox to admin. Admin reviews and either
+  // grants by adding the BDM via the admin DoctorManagement edit modal
+  // (Phase A.5.4 chip picker), OR by calling this same endpoint themselves
+  // (admin has JOIN_COVERAGE_AUTO so it auto-applies).
+  const requesterName = req.user.name || req.user.email || 'A BDM';
+  const noteSnippet = (typeof notes === 'string' && notes.trim())
+    ? `\n\nReason: ${notes.trim()}`
+    : '';
+
+  // Phase G9.R8 contract — recipientRole='admin' is a broadcast to all admins
+  // (recipientUserId stays null). category='approval_request' fits the
+  // existing MESSAGE_CATEGORY lookup; priority='normal' since no SLA. The
+  // sender carries enough context that admin doesn't need a back-channel
+  // chase to identify the requester.
+  const message = await MessageInbox.create({
+    senderUserId: req.user._id,
+    senderName: requesterName,
+    senderRole: req.user.role || 'staff',
+    title: `Coverage join request — ${doctor.firstName} ${doctor.lastName}`,
+    body: `${requesterName} (${req.user.email || 'no email'}) is requesting to join coverage of "${doctor.firstName} ${doctor.lastName}" so they can log visits to this VIP Client.${noteSnippet}\n\nTo grant: open /admin/doctors → edit the VIP Client → add ${requesterName} as an assignee.\nTo decline: archive this message (no action needed).`,
+    category: 'approval_request',
+    priority: 'normal',
+    recipientRole: 'admin',
+    recipientUserId: null,
+    entity_id: req.entityId || null,
+  });
+
+  return res.status(202).json({
+    success: true,
+    mode: 'approval_pending',
+    message: 'Your request has been sent to admin for approval. You will be able to log visits once admin grants coverage.',
+    data: { messageId: message._id, doctorId: doctor._id },
+  });
+});
+
 module.exports = {
   getAllDoctors,
   getDoctorById,
@@ -1167,4 +1468,5 @@ module.exports = {
   previewNameCleanup,
   applyNameCleanup,
   setPartnershipStatus,
+  joinCoverage,
 };
