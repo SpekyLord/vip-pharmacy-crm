@@ -33,6 +33,13 @@ import Navbar from '../../components/common/Navbar';
 import Sidebar from '../../components/common/Sidebar';
 import PageGuide from '../../components/common/PageGuide';
 import birService from '../../erp/services/birService';
+// Phase P1.2 Slice 7-extension Round 2C — picker on the Mark-Received modal.
+// The page's `cert_2307_url` field is a typed URL (Drive / S3 / shared folder
+// link), not a re-uploaded file. The picker uses skipFetch=true so it bypasses
+// the in-browser cross-origin S3 fetch (private bucket has no CORS allowlist
+// for browser origins) and writes the bare S3 URL straight into the field —
+// the same Round 2A pattern that SalesList per-row Attach CSI uses.
+import PendingCapturesPicker from '../components/PendingCapturesPicker';
 
 const STATUS_META = {
   PENDING_2307: { label: 'Pending 2307',  bg: '#fef9c3', fg: '#854d0e' },
@@ -114,6 +121,11 @@ export default function Bir2307InboundPage() {
   const [hospitalFilter, setHospitalFilter] = useState('');
   const [receiveModalRow, setReceiveModalRow] = useState(null);
   const [receiveDraft, setReceiveDraft] = useState({ cert_2307_url: '', cert_filename: '', cert_content_hash: '', cert_notes: '' });
+  // Phase P1.2 Slice 7-extension Round 2C — when finance picks a 2307 photo
+  // via the "From BDM Captures" picker, this holds the source CaptureSubmission
+  // _id so onSubmitReceive can forward it to the controller for back-link +
+  // lifecycle advance. Cleared on modal close + on receive success.
+  const [pickedCaptureId, setPickedCaptureId] = useState(null);
   const [excludeModalRow, setExcludeModalRow] = useState(null);
   const [excludeReason, setExcludeReason] = useState('');
   const [savingId, setSavingId] = useState(null);
@@ -159,15 +171,59 @@ export default function Bir2307InboundPage() {
       cert_content_hash: row.cert_content_hash || '',
       cert_notes: row.cert_notes || '',
     });
+    // Round 2C — fresh modal open clears the previously-picked capture
+    // (typed-URL flow + manual entry don't carry a capture_id audit link).
+    setPickedCaptureId(null);
+  };
+
+  const onCloseReceive = () => {
+    setReceiveModalRow(null);
+    setPickedCaptureId(null);
+  };
+
+  // Round 2C picker callback (skipFetch=true mode). The picker hands back
+  // raw capture rows in meta.captures — we take the first artifact's bare S3
+  // URL and write it straight into cert_2307_url, auto-fill cert_filename
+  // from the artifact key when available, and remember capture_id so
+  // onSubmitReceive can forward it for back-linking + lifecycle advance.
+  const onPickFromCaptures = (_files, meta) => {
+    const cap = meta?.captures?.[0];
+    if (!cap) return;
+    const bareUrl = cap?.captured_artifacts?.[0]?.url || '';
+    if (!bareUrl) {
+      toast.error('Picked capture has no photo URL. Pick a different one or fall back to manual entry.');
+      return;
+    }
+    // Cert filename: prefer the artifact key tail (the captured photo's
+    // original filename), fall back to whatever finance had typed manually.
+    const artifactKey = cap?.captured_artifacts?.[0]?.key || '';
+    const fnameTail = artifactKey ? artifactKey.split('/').pop() : '';
+    setReceiveDraft((prev) => ({
+      ...prev,
+      cert_2307_url: bareUrl,
+      cert_filename: fnameTail || prev.cert_filename || '',
+      // cert_content_hash + cert_notes stay manual — hash is computed by
+      // finance from the actual file bytes (defeats Round 2A's CORS-avoidance
+      // if we tried to compute it client-side); notes are human judgment.
+    }));
+    setPickedCaptureId(cap._id);
   };
 
   const onSubmitReceive = async () => {
     if (!receiveModalRow) return;
     setSavingId(receiveModalRow._id);
     try {
-      await birService.markReceived2307Inbound(year, receiveModalRow._id, receiveDraft);
+      // Round 2C — capture_id is appended to the body when the URL came from
+      // the picker. Backend extracts it before delegating to
+      // cwt2307ReconciliationService and best-effort calls
+      // linkCaptureToDocument so the source CaptureSubmission flips out of
+      // PENDING_PROXY and back-links to this CwtLedger row.
+      const payload = pickedCaptureId
+        ? { ...receiveDraft, capture_id: pickedCaptureId }
+        : { ...receiveDraft };
+      await birService.markReceived2307Inbound(year, receiveModalRow._id, payload);
       toast.success('Marked RECEIVED — credit will roll into 1702.');
-      setReceiveModalRow(null);
+      onCloseReceive();
       await load();
     } catch (err) {
       toast.error(err?.response?.data?.message || 'Failed to mark received.');
@@ -514,23 +570,62 @@ export default function Bir2307InboundPage() {
 
           {/* Mark Received modal */}
           {receiveModalRow && (
-            <div className="ib-modal-backdrop" onClick={() => setReceiveModalRow(null)}>
+            <div className="ib-modal-backdrop" onClick={onCloseReceive}>
               <div className="ib-modal" onClick={(e) => e.stopPropagation()}>
                 <div className="ib-row" style={{ justifyContent: 'space-between', marginBottom: '0.75rem' }}>
                   <h2 style={{ fontSize: '1.05rem', fontWeight: 700 }}>Mark 2307 Received</h2>
-                  <button className="ib-btn ib-btn-secondary" onClick={() => setReceiveModalRow(null)}><X size={14} /></button>
+                  <button className="ib-btn ib-btn-secondary" onClick={onCloseReceive}><X size={14} /></button>
                 </div>
                 <p style={{ fontSize: '0.85rem', color: '#4b5563', marginBottom: '0.75rem' }}>
                   CR <strong>{receiveModalRow.cr_no || receiveModalRow._id}</strong> · {receiveModalRow.hospital_name} ·
                   {' '}<strong>₱{fmtMoney(receiveModalRow.cwt_amount)}</strong> CWT · {receiveModalRow.quarter} {receiveModalRow.year}
                 </p>
+
+                {/* Phase P1.2 Slice 7-extension Round 2C — pull the 2307 photo
+                    a BDM uploaded via Capture Hub (workflow_type=CWT_INBOUND
+                    or UNCATEGORIZED/Quick Capture). bdmId={null} → cross-BDM
+                    scope (the page is finance-organized by CR row, not by
+                    BDM, so finance visually matches by amount + hospital).
+                    skipFetch=true bypasses the cross-origin S3 fetch (private
+                    bucket has no CORS allowlist) and writes the bare S3 URL
+                    straight into cert_2307_url. Server still gates the queue
+                    read via lookup-driven CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE
+                    (defaults admin / finance / president). */}
+                <div style={{ marginBottom: '0.75rem', padding: '0.6rem', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 6 }}>
+                  <div style={{ fontSize: '0.78rem', color: '#075985', fontWeight: 600, marginBottom: 6 }}>
+                    Pull from Capture Hub
+                  </div>
+                  <div style={{ fontSize: '0.74rem', color: '#0369a1', marginBottom: 8 }}>
+                    Pick a 2307 photo a BDM already uploaded — saves you re-uploading from a shared drive.
+                  </div>
+                  <PendingCapturesPicker
+                    workflowTypes={['CWT_INBOUND', 'UNCATEGORIZED']}
+                    bdmId={null}
+                    skipFetch={true}
+                    maxSelect={1}
+                    buttonLabel="From BDM Captures"
+                    onPick={onPickFromCaptures}
+                  />
+                  {pickedCaptureId && (
+                    <div style={{ fontSize: '0.72rem', color: '#15803d', marginTop: 6 }}>
+                      ✓ Linked to BDM Capture — saving will mark the source capture PROCESSED.
+                    </div>
+                  )}
+                </div>
+
                 <div className="ib-form-cell">
                   <label className="ib-form-label">Certificate URL or path</label>
                   <input
                     className="ib-input"
                     placeholder="https://drive.google.com/… or s3://… or /shared/2307s/2026/Q2/cr-1234.pdf"
                     value={receiveDraft.cert_2307_url}
-                    onChange={(e) => setReceiveDraft({ ...receiveDraft, cert_2307_url: e.target.value })}
+                    onChange={(e) => {
+                      // Manual edit invalidates the picker linkage — finance
+                      // is overriding the picked URL, so we drop capture_id
+                      // to avoid stamping a stale back-link.
+                      setReceiveDraft({ ...receiveDraft, cert_2307_url: e.target.value });
+                      if (pickedCaptureId) setPickedCaptureId(null);
+                    }}
                   />
                   <span className="ib-form-help">Where you saved the PDF — Drive, S3, shared folder, etc. We do NOT store the file bytes; only the reference for audit.</span>
                 </div>
@@ -563,7 +658,7 @@ export default function Bir2307InboundPage() {
                   />
                 </div>
                 <div className="ib-row" style={{ justifyContent: 'flex-end' }}>
-                  <button className="ib-btn ib-btn-secondary" onClick={() => setReceiveModalRow(null)}>Cancel</button>
+                  <button className="ib-btn ib-btn-secondary" onClick={onCloseReceive}>Cancel</button>
                   <button className="ib-btn ib-btn-primary" disabled={!!savingId} onClick={onSubmitReceive}>
                     <Save size={14} /> {savingId ? 'Saving…' : 'Save Received'}
                   </button>

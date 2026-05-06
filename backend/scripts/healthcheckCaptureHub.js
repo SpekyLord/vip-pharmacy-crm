@@ -343,9 +343,10 @@ assert('Expenses onPick merges into batchFiles[]',
 // Each picker hands a single File to the page's existing OCR scan modal via a
 // new initialFile prop; the modal auto-runs OCR on mount via a useEffect
 // guarded by a ref so a re-render during scan doesn't re-trigger.
-// SMER (digital-only — no photo upload UI) and Bir2307InboundPage (URL-string
-// based, no File upload handler) are intentionally deferred with rationale in
-// docs/PHASETASK-ERP.md Phase P1.2 Slice 7-extension.
+// SMER (digital-only — no photo upload UI) is intentionally deferred with
+// rationale in docs/PHASETASK-ERP.md Phase P1.2 Slice 7-extension. The
+// originally-deferred Bir2307InboundPage SHIPPED in Round 2C below — its
+// typed-URL field was a perfect fit for skipFetch=true (Round 2A pattern).
 section('Phase P1.2 Slice 7-extension — Sales / Collection / GRN');
 const salesEntrySrc = read('frontend/src/erp/pages/SalesEntry.jsx');
 const collSessSrc = read('frontend/src/erp/pages/CollectionSession.jsx');
@@ -415,13 +416,12 @@ assert('CAPTURE_LIFECYCLE_ROLES still has insert_only_metadata seed',
   /CAPTURE_LIFECYCLE_ROLES/.test(read('backend/erp/controllers/lookupGenericController.js')));
 
 // Defer documentation guard — record the explicit decision so a future
-// session doesn't silently bolt the picker onto SMER (digital-only) or
-// Bir2307InboundPage (URL-string handler) without re-litigating the trade.
+// session doesn't silently bolt the picker onto SMER (digital-only) without
+// re-litigating the trade. CWT-Inbound originally deferred but SHIPPED in
+// Round 2C — see Section 16 below.
 const phaseTaskErpSrc = read('docs/PHASETASK-ERP.md');
 assert('PHASETASK-ERP.md documents SMER defer rationale',
   /Slice 7-extension[\s\S]{0,3000}SMER/i.test(phaseTaskErpSrc));
-assert('PHASETASK-ERP.md documents Bir2307Inbound defer rationale',
-  /Slice 7-extension[\s\S]{0,3000}(2307|CWT_INBOUND|Bir2307Inbound)/i.test(phaseTaskErpSrc));
 
 // ── 14. Phase P1.2 Slice 7-extension Round 2A — SalesList per-row picker ──
 //
@@ -654,7 +654,119 @@ assert('CollectionSession inline modal still has handleFile path',
 assert('GrnEntry inline modal still has handleFile path',
   /const handleFile\s*=\s*async\s*\(\s*file\s*\)/.test(grnEntrySrc));
 
-// ── 16. Phase P1.2 Slice 4 + Slice 5 — DriveAllocation + SMER tile lock ──
+// ── 16. Phase P1.2 Slice 7-extension Round 2C — Bir2307Inbound picker ──
+//
+// Round 2C closes the original Slice 7-extension scope. The CWT-inbound page
+// (Bir2307InboundPage.jsx) was DEFERRED in Round 1's defer-rationale because
+// its `cert_2307_url` field was a typed string with no file-upload handler —
+// the original picker pattern (fetch → Blob → File → upload) didn't fit.
+// Round 2A's skipFetch=true mode makes the deferred reason obsolete: the
+// picker yields the bare S3 URL of the BDM-captured photo, which is exactly
+// the shape `cert_2307_url` already accepts. No new upload route, no new OCR
+// path — the picker writes the URL straight into the receive modal.
+//
+// Lifecycle: when finance picks a capture and saves the receive modal,
+// Bir2307InboundPage forwards `capture_id` in the body; birController
+// extracts it and best-effort calls linkCaptureToDocument (kind =
+// 'CwtLedgerEntry') so the source CaptureSubmission flips out of
+// PENDING_PROXY → PROCESSED with proxy_id / proxy_completed_at stamped and
+// linked_doc_id pointing at the CwtLedger row. Failures are non-fatal — the
+// receive completes either way (the CWT credit posture is the system of
+// record; the back-link is audit metadata).
+//
+// SMER stays deferred (digital-only — no photo upload UI to mount a picker
+// next to). Same rationale as Round 1.
+section('Phase P1.2 Slice 7-extension Round 2C — Bir2307Inbound receive-modal picker');
+const bir2307Src = read('frontend/src/erp/pages/Bir2307InboundPage.jsx');
+const birCtrlSrc = read('backend/erp/controllers/birController.js');
+const captureModelSrc2C = read('backend/erp/models/CaptureSubmission.js');
+
+// Frontend wiring — Bir2307InboundPage
+assert('Bir2307InboundPage imports PendingCapturesPicker',
+  /import\s+PendingCapturesPicker\s+from\s+['"][^'"]*PendingCapturesPicker['"]/.test(bir2307Src));
+assert('Bir2307InboundPage owns pickedCaptureId state',
+  /\[pickedCaptureId,\s*setPickedCaptureId\]\s*=\s*useState\(\s*null\s*\)/.test(bir2307Src));
+assert('Bir2307InboundPage onPickFromCaptures callback defined',
+  /const onPickFromCaptures\s*=\s*\(_files,\s*meta\)/.test(bir2307Src));
+assert('Bir2307InboundPage onPick reads cap.captured_artifacts[0].url',
+  /onPickFromCaptures[\s\S]{0,800}cap\?\.captured_artifacts\?\.\[0\]\?\.url/.test(bir2307Src));
+assert('Bir2307InboundPage onPick stamps cert_2307_url from picker',
+  /setReceiveDraft[\s\S]{0,400}cert_2307_url:\s*bareUrl/.test(bir2307Src));
+assert('Bir2307InboundPage onPick auto-fills cert_filename from artifact key tail',
+  /artifactKey\.split\(['"]\/['"]\)\.pop\(\)/.test(bir2307Src));
+assert('Bir2307InboundPage onPick remembers pickedCaptureId',
+  /setPickedCaptureId\(cap\._id\)/.test(bir2307Src));
+
+// Manual-edit invalidation — typing in the URL field after picking drops the
+// linkage so a stale capture_id can't be stamped against a hand-typed URL.
+assert('Bir2307InboundPage manual cert_2307_url edit clears pickedCaptureId',
+  /onChange=\{[\s\S]{0,500}setReceiveDraft\([\s\S]{0,300}cert_2307_url:\s*e\.target\.value[\s\S]{0,300}if\s*\(\s*pickedCaptureId\s*\)\s*setPickedCaptureId\(null\)/.test(bir2307Src));
+
+// Picker mount
+assert('Bir2307InboundPage picker uses CWT_INBOUND + UNCATEGORIZED workflowTypes',
+  /<PendingCapturesPicker[\s\S]{0,1200}workflowTypes=\{\[['"]CWT_INBOUND['"][^]+UNCATEGORIZED/.test(bir2307Src));
+assert('Bir2307InboundPage picker uses cross-BDM scope (bdmId={null})',
+  /<PendingCapturesPicker[\s\S]{0,1200}bdmId=\{null\}/.test(bir2307Src));
+assert('Bir2307InboundPage picker uses skipFetch={true}',
+  /<PendingCapturesPicker[\s\S]{0,1200}skipFetch=\{true\}/.test(bir2307Src));
+assert('Bir2307InboundPage picker uses maxSelect={1}',
+  /<PendingCapturesPicker[\s\S]{0,1200}maxSelect=\{1\}/.test(bir2307Src));
+assert('Bir2307InboundPage picker mounted INSIDE the Mark-Received modal',
+  /Mark 2307 Received[\s\S]{0,3500}<PendingCapturesPicker/.test(bir2307Src));
+assert('Bir2307InboundPage picker mounted ABOVE the cert_2307_url input',
+  /<PendingCapturesPicker[\s\S]{0,2500}<label[^>]*>Certificate URL or path<\/label>/.test(bir2307Src));
+
+// Submit forwards capture_id
+assert('Bir2307InboundPage onSubmitReceive forwards capture_id when picker-sourced',
+  /onSubmitReceive[\s\S]{0,800}pickedCaptureId\s*\?\s*\{\s*\.\.\.receiveDraft,\s*capture_id:\s*pickedCaptureId\s*\}/.test(bir2307Src));
+assert('Bir2307InboundPage onSubmitReceive omits capture_id when manually typed',
+  /onSubmitReceive[\s\S]{0,800}:\s*\{\s*\.\.\.receiveDraft\s*\}/.test(bir2307Src));
+
+// Modal close hygiene
+assert('Bir2307InboundPage onCloseReceive clears both modal state and pickedCaptureId',
+  /const onCloseReceive\s*=\s*\(\)\s*=>\s*\{\s*setReceiveModalRow\(null\);\s*setPickedCaptureId\(null\);\s*\}/.test(bir2307Src));
+assert('Bir2307InboundPage onOpenReceive resets pickedCaptureId on each fresh open',
+  /onOpenReceive[\s\S]{0,600}setPickedCaptureId\(null\)/.test(bir2307Src));
+
+// Backend wiring — birController.markReceived2307Inbound
+assert('birController extracts capture_id from req.body',
+  /const\s*\{\s*cert_2307_url,\s*cert_filename,\s*cert_content_hash,\s*cert_notes,\s*capture_id\s*\}\s*=\s*req\.body/.test(birCtrlSrc));
+assert('birController calls linkCaptureToDocument with kind=CwtLedgerEntry',
+  /linkCaptureToDocument\(\s*capture_id,\s*['"]CwtLedgerEntry['"],\s*row\._id/.test(birCtrlSrc));
+assert('birController capture-link path is best-effort (try/catch around linkCaptureToDocument)',
+  /if\s*\(\s*capture_id\s*\)\s*\{\s*try\s*\{\s*const\s*\{\s*linkCaptureToDocument\s*\}\s*=\s*require\(['"][^'"]+captureSubmissionController['"]\)/.test(birCtrlSrc));
+assert('birController capture-link logs capture_id in audit event',
+  /BIR_2307_INBOUND_MARK_RECEIVED[\s\S]{0,500}capture_id:\s*capture_id\s*\?\s*String\(capture_id\)\s*:\s*null/.test(birCtrlSrc));
+assert('birController capture-link passes full ctx (user/entity/privileged)',
+  /linkCaptureToDocument[\s\S]{0,600}user:\s*req\.user[\s\S]{0,200}entityId:\s*req\.entityId[\s\S]{0,200}isPresident:\s*req\.isPresident[\s\S]{0,200}isAdmin:\s*req\.isAdmin[\s\S]{0,200}isFinance:\s*req\.isFinance/.test(birCtrlSrc));
+
+// CaptureSubmission model has CwtLedgerEntry kind in the linked-doc enum
+assert('CaptureSubmission.linked_doc_kind enum includes CwtLedgerEntry (Round 2C target)',
+  /linked_doc_kind:[\s\S]{0,300}'CwtLedgerEntry'/.test(captureModelSrc2C));
+
+// PageGuide (Bir2307Inbound uses PageGuide, not WorkflowGuide)
+const pgSrc2C = read('frontend/src/components/common/PageGuide.jsx');
+assert('PageGuide bir-2307-inbound mentions Round 2C picker step',
+  /'bir-2307-inbound':[\s\S]{0,8000}Round 2C/.test(pgSrc2C));
+assert('PageGuide bir-2307-inbound mentions "From BDM Captures" button',
+  /'bir-2307-inbound':[\s\S]{0,8000}From BDM Captures/.test(pgSrc2C));
+assert('PageGuide bir-2307-inbound surfaces PROXY_PULL_CAPTURE lookup gate',
+  /'bir-2307-inbound':[\s\S]{0,8000}PROXY_PULL_CAPTURE/.test(pgSrc2C));
+
+// Subscription-readiness — picker reuses the SAME lookup-driven gate from
+// Slice 1; no new lookup category, no new role enum.
+const helperSrc2C = read('backend/utils/captureLifecycleAccess.js');
+assert('PROXY_PULL_CAPTURE still in helper after Round 2C',
+  /PROXY_PULL_CAPTURE/.test(helperSrc2C));
+
+// PHASETASK-ERP.md documents Round 2C
+const phaseTaskErpSrc2C = read('docs/PHASETASK-ERP.md');
+assert('PHASETASK-ERP.md has Round 2C section heading',
+  /Slice 7-extension Round 2C/i.test(phaseTaskErpSrc2C));
+assert('PHASETASK-ERP.md Round 2C names Bir2307InboundPage',
+  /Round 2C[\s\S]{0,4000}Bir2307InboundPage/i.test(phaseTaskErpSrc2C));
+
+// ── 17. Phase P1.2 Slice 4 + Slice 5 — DriveAllocation + SMER tile lock ──
 //
 // Slice 4 wires the BDM-owned Personal/Official allocation panel at the top
 // of /erp/capture-hub. Slice 5 locks the SMER tile until prior workdays are
@@ -1165,6 +1277,62 @@ assert('attachReceivedCsi calls linkCaptureToDocument with SalesLine kind',
 const useSalesHookSrc = read('frontend/src/erp/hooks/useSales.js');
 assert('useSales.attachReceivedCsi forwards capture_id',
   /attachReceivedCsi\s*=\s*\([^)]*capture_id[^)]*\)\s*=>[\s\S]{0,200}capture_id/.test(useSalesHookSrc));
+
+// ── Section 18. Round 2B auto-finalize on create paths (May 06 2026) ──
+//
+// Slice 9 partial extension into the OCR-then-create flows. Round 2A on
+// SalesList (PUT /sales/:id/received-csi with capture_id) was the easy path;
+// these are the harder paths: SalesEntry / CollectionSession / GrnEntry pick
+// a capture, OCR runs (Mode B), user reviews + creates, the source capture
+// must auto-finalize the same way. Wiring: ScanModal.handleApply → page row /
+// pendingCaptureId state → create payload → controller calls linkCaptureToDocument.
+section('Slice 9 partial — Round 2B auto-finalize on create paths');
+
+// (a) Sales — backend
+assert('createSale destructures capture_id out of body',
+  /const\s*\{\s*assigned_to[\s\S]{0,300}capture_id,[\s\S]{0,200}\}\s*=\s*req\.body/.test(salesCtrlSrc));
+assert('createSale calls linkCaptureToDocument with SalesLine kind',
+  /\[createSale\][\s\S]{0,4000}|linkCaptureToDocument\(\s*capture_id,\s*['"]SalesLine['"],\s*sale\._id/.test(salesCtrlSrc));
+// Sales — frontend
+const salesEntrySrc2 = read('frontend/src/erp/pages/SalesEntry.jsx');
+assert('SalesEntry ScanCSIModal handleApply emits capture_id from initialCaptureId',
+  /capture_id:\s*initialCaptureId\s*\|\|\s*null/.test(salesEntrySrc2));
+assert('SalesEntry handleScanApply persists capture_id onto new row',
+  /capture_id:\s*scannedData\.capture_id\s*\|\|\s*null/.test(salesEntrySrc2));
+assert('SalesEntry create-only forwards row.capture_id',
+  /isCreate\s*&&\s*row\.capture_id\s*\?\s*\{\s*capture_id:\s*row\.capture_id\s*\}/.test(salesEntrySrc2));
+
+// (b) Collection — backend
+const collCtrlSrc = read('backend/erp/controllers/collectionController.js');
+assert('createCollection destructures capture_id out of body',
+  /const\s*\{\s*assigned_to[\s\S]{0,300}capture_id,[\s\S]{0,200}\}\s*=\s*req\.body/.test(collCtrlSrc));
+assert('createCollection calls linkCaptureToDocument with Collection kind',
+  /linkCaptureToDocument\(\s*capture_id,\s*['"]Collection['"],\s*collection\._id/.test(collCtrlSrc));
+// Collection — frontend
+const collSessSrc2 = read('frontend/src/erp/pages/CollectionSession.jsx');
+assert('ScanCRModal handleApply emits capture_id from initialCaptureId',
+  /capture_id:\s*initialCaptureId\s*\|\|\s*null/.test(collSessSrc2));
+assert('CollectionSession handleCrScanApply sets pendingCaptureId',
+  /setPendingCaptureId\(data\.capture_id\)/.test(collSessSrc2));
+assert('CollectionSession createCollection forwards pendingCaptureId',
+  /pendingCaptureId\s*\?\s*\{\s*capture_id:\s*pendingCaptureId\s*\}/.test(collSessSrc2));
+
+// (c) GRN — backend
+const invCtrlSrc = read('backend/erp/controllers/inventoryController.js');
+assert('createGrn destructures capture_id from body',
+  /const\s*\{[\s\S]{0,800}capture_id\s*\}\s*=\s*req\.body/.test(invCtrlSrc));
+assert('createGrn calls linkCaptureToDocument with GrnEntry kind',
+  /linkCaptureToDocument\(\s*capture_id,\s*['"]GrnEntry['"],\s*grn\._id/.test(invCtrlSrc));
+// GRN — frontend
+const grnEntrySrc2 = read('frontend/src/erp/pages/GrnEntry.jsx');
+assert('ScanUndertakingModal onApply meta includes capture_id',
+  /onApply\(lines,\s*\{[\s\S]{0,400}capture_id:\s*initialCaptureId\s*\|\|\s*null/.test(grnEntrySrc2));
+assert('GrnEntry handleScanApply sets pendingCaptureId from meta',
+  /setPendingCaptureId\(meta\.capture_id\)/.test(grnEntrySrc2));
+assert('GrnEntry createGrn forwards pendingCaptureId',
+  /pendingCaptureId\s*\?\s*\{\s*capture_id:\s*pendingCaptureId\s*\}/.test(grnEntrySrc2));
+assert('GrnEntry resets pendingCaptureId after submit',
+  /setPendingCaptureId\(null\)/.test(grnEntrySrc2));
 
 // ── Summary ───────────────────────────────────────────────────
 const total = pass + fail;
