@@ -40,6 +40,19 @@ const emailLogSchema = new mongoose.Schema({
       // Emitted by backend/erp/services/psAutoFlipService.js whenever
       // evaluateEligibility(...) flips eligible=true the FIRST time for a BDM.
       'ERP_PS_ELIGIBILITY_FLIP',
+      // Sales-goal plan lifecycle (erpNotificationService.notifySalesGoalPlanLifecycle).
+      // emailType is built as `ERP_SALES_GOAL_${event}` where event ∈ {ACTIVATED, CLOSED, REOPENED}.
+      'ERP_SALES_GOAL_ACTIVATED',
+      'ERP_SALES_GOAL_CLOSED',
+      'ERP_SALES_GOAL_REOPENED',
+      // Incentive tier reached (erpNotificationService.notifyTierReached).
+      'ERP_TIER_REACHED',
+      // KPI variance (erpNotificationService.notifyKpiVariance).
+      'ERP_KPI_VARIANCE',
+      // Compensation statement ready (erpNotificationService.notifyCompStatementReady).
+      'ERP_COMP_STATEMENT_READY',
+      // Task lifecycle (erpNotificationService.notifyTaskEvent).
+      'ERP_TASK_EVENT',
     ],
     required: true,
     index: true,
