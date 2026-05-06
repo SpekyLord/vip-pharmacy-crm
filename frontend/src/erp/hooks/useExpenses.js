@@ -55,6 +55,16 @@ export default function useExpenses() {
   const getLinkedExpenses = (calfId) => api.get(`/expenses/prf-calf/${calfId}/linked-expenses`);
   const getSmerDestinationByDate = (date) => api.get(`/expenses/car-logbook/smer-destination/${date}`);
   const getSmerDestinationsBatch = (dates) => api.get('/expenses/car-logbook/smer-destinations', { params: { dates: dates.join(',') } });
+  // Phase P1.2 Slice 6 (May 06 2026) — auto-populate preview. Returns the
+  // CarLogbookEntry shape the proxy WOULD post if every signal were accepted
+  // as-is, plus _autopop_sources for source-badge rendering. Single-day
+  // (date=) and batch (dates=) shapes both supported.
+  const previewCarLogbookDay = ({ bdmId, date, dates }) => {
+    const params = { ...(bdmId ? { bdm_id: bdmId } : {}) };
+    if (Array.isArray(dates) && dates.length > 0) params.dates = dates.join(',');
+    else if (date) params.date = date;
+    return api.get('/expenses/car-logbook/preview', { params });
+  };
 
   // ═══ ORE / ACCESS ═══
   const getExpenseList = (params) => api.get('/expenses/ore-access', { params });
@@ -108,6 +118,8 @@ export default function useExpenses() {
     getCarLogbookList, getCarLogbookById, createCarLogbook, updateCarLogbook, deleteDraftCarLogbook,
     validateCarLogbook, submitCarLogbook, reopenCarLogbook, submitFuelForApproval,
     getSmerDestinationByDate, getSmerDestinationsBatch,
+    // Phase P1.2 Slice 6 — Car Logbook auto-populate preview
+    previewCarLogbookDay,
     // Phase 33 — CALF linked-expenses audit
     getLinkedExpenses,
     // ORE/ACCESS

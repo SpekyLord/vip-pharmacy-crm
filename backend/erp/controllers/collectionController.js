@@ -48,7 +48,13 @@ const createCollection = catchAsync(async (req, res) => {
     throw err;
   }
 
-  const { assigned_to: _discardAssignedTo, ...bodyWithoutAssignedTo } = req.body || {};
+  // capture_id is a Round 2B / Slice 9 partial signal — extracted out of the
+  // body so it never reaches the Collection document (no schema field).
+  const {
+    assigned_to: _discardAssignedTo,
+    capture_id,
+    ...bodyWithoutAssignedTo
+  } = req.body || {};
   const data = {
     ...bodyWithoutAssignedTo,
     entity_id: req.entityId,
@@ -70,6 +76,24 @@ const createCollection = catchAsync(async (req, res) => {
       changed_by: req.user._id,
       note: `Proxy create: CR ${collection.cr_no || collection._id} keyed by ${req.user.name || req.user._id} (${req.user.role}) on behalf of BDM ${owner.ownerId}`
     }).catch(err => console.error('[createCollection] PROXY_CREATE audit failed (non-critical):', err.message));
+  }
+
+  // Phase P1.2 Slice 9 partial — auto-finalize the source capture so a CR
+  // created via the Round 2B picker stops appearing in the picker drawer
+  // and carries an audit-trail back-link. Best-effort.
+  if (capture_id) {
+    try {
+      const { linkCaptureToDocument } = require('./captureSubmissionController');
+      await linkCaptureToDocument(capture_id, 'Collection', collection._id, {
+        user: req.user,
+        entityId: collection.entity_id,
+        isPresident: req.isPresident,
+        isAdmin: req.isAdmin,
+        isFinance: req.isFinance,
+      });
+    } catch (err) {
+      console.error('[createCollection] linkCaptureToDocument failed:', err.message);
+    }
   }
 
   res.status(201).json({ success: true, data: collection });

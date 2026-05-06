@@ -392,13 +392,37 @@ export default function DocumentDetailPanel(props) {
           <ReversedBadge d={d} />
           <ContractorLine d={d} label="Received by" />
           <StalenessLine d={d} />
+          {/* Phase 32R-VP (May 6, 2026) — visual parity with the UT card.
+              `Undertaking` removed from LinkedRefsLine (was rendering as
+              truncated `_id.slice(-8)` chip) — now surfaced via the
+              structured "Linked Undertaking" block below. StockReassignment
+              ref stays in the cascade chip; that's a different relationship. */}
           <LinkedRefsLine refs={[
-            ['Undertaking', d.undertaking_id],
             ['StockReassignment', d.reassignment_id, 'internal-transfer'],
           ]} />
           <div style={{ marginBottom: 6 }}>
             <strong>Status:</strong><StatusChip status={d.status} />
+            {d.recorded_on_behalf_of && (
+              <span style={{ marginLeft: 8, padding: '2px 6px', borderRadius: 4, background: '#e0e7ff', color: '#3730a3', fontSize: 11, fontWeight: 700 }}>
+                On behalf of {d.recorded_on_behalf_of}
+              </span>
+            )}
           </div>
+          {/* Linked Undertaking card — mirrors UT block's "Linked GRN" card */}
+          {d.linked_undertaking && (
+            <div style={{ padding: 8, borderRadius: 6, background: 'var(--erp-accent-soft, #e8efff)', marginBottom: 8, fontSize: 12 }}>
+              <strong>Linked Undertaking:</strong>{' '}
+              {d.linked_undertaking.undertaking_number || (d.linked_undertaking._id ? String(d.linked_undertaking._id).slice(-6) : '—')}
+              {d.linked_undertaking.receipt_date && <> · {new Date(d.linked_undertaking.receipt_date).toLocaleDateString()}</>}
+              {d.linked_undertaking.scan_total_count > 0 && (
+                <> · {d.linked_undertaking.scan_confirmed_count}/{d.linked_undertaking.scan_total_count} scanned</>
+              )}
+              {d.linked_undertaking.variance_count > 0 && (
+                <> · <span style={{ color: '#92400e', fontWeight: 700 }}>{d.linked_undertaking.variance_count} variance{d.linked_undertaking.variance_count === 1 ? '' : 's'}</span></>
+              )}
+              {d.linked_undertaking.status && <StatusChip status={d.linked_undertaking.status} />}
+            </div>
+          )}
           <div style={{ marginBottom: 8 }}>
             <strong>GRN Date:</strong> {d.grn_date ? new Date(d.grn_date).toLocaleDateString() : '—'}
             {d.warehouse_name && <> · <strong>Warehouse:</strong> {d.warehouse_name}</>}
@@ -478,6 +502,12 @@ export default function DocumentDetailPanel(props) {
             {d.variance_count > 0 && (
               <span style={{ padding: '2px 8px', borderRadius: 999, background: '#fef3c7', color: '#92400e', fontSize: 11, fontWeight: 700 }}>
                 {d.variance_count} variance{d.variance_count === 1 ? '' : 's'}
+              </span>
+            )}
+            {/* Phase 32R-VP (May 6, 2026) — proxy badge parity with INVENTORY + EXPENSES cards */}
+            {d.recorded_on_behalf_of && (
+              <span style={{ padding: '2px 6px', borderRadius: 4, background: '#e0e7ff', color: '#3730a3', fontSize: 11, fontWeight: 700 }}>
+                On behalf of {d.recorded_on_behalf_of}
               </span>
             )}
           </div>

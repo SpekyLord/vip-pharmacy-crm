@@ -103,6 +103,42 @@ const FUEL_APPROVAL_COLORS = {
 const DAYS_OF_WEEK = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 const WEEKEND_BG = '#f8fafc';
 
+// Phase P1.2 Slice 6 — source-badge palette. Mirrors the SOURCE_TAGS enum in
+// backend/erp/services/carLogbookAutoPopulate.js. The badge tells the proxy
+// which signal each field came from so a quick scan flags any auto-pop they
+// want to override.
+const AUTOPOP_SOURCE_META = {
+  SMER:               { label: 'SMER',     bg: '#dbeafe', fg: '#1d4ed8', tip: 'Filled from SMER daily entry (hospital_covered + notes)' },
+  SMER_CAPTURE:       { label: 'ODO',      bg: '#dcfce7', fg: '#166534', tip: 'Filled from SMER ODO photo capture (OCR reading)' },
+  DRIVE_ALLOCATION:   { label: 'Drive',    bg: '#fef3c7', fg: '#92400e', tip: 'Filled from BDM\'s DriveAllocation row (Personal/Official slider)' },
+  FUEL_ENTRY_CAPTURE: { label: 'Fuel cap', bg: '#fce7f3', fg: '#9d174d', tip: 'Filled from FUEL_ENTRY capture OCR (station, liters, price)' },
+  PRIOR_DAY:          { label: 'Prior',    bg: '#e0e7ff', fg: '#3730a3', tip: 'Filled from prior day\'s ending_km (no SMER ODO capture today)' },
+  MANUAL:             { label: 'Manual',   bg: '#fee2e2', fg: '#991b1b', tip: 'Manual override — proxy edited this field' },
+};
+
+function SourceBadge({ source }) {
+  if (!source) return null;
+  const meta = AUTOPOP_SOURCE_META[source];
+  if (!meta) return null;
+  return (
+    <span
+      title={meta.tip}
+      style={{
+        display: 'inline-block',
+        fontSize: 9,
+        fontWeight: 600,
+        padding: '1px 5px',
+        borderRadius: 3,
+        background: meta.bg,
+        color: meta.fg,
+        marginLeft: 4,
+        verticalAlign: 'middle',
+        lineHeight: 1.4,
+      }}
+    >{meta.label}</span>
+  );
+}
+
 function formatLocalDate(year, month, day) {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
@@ -155,7 +191,7 @@ export default function CarLogbook() {
   const {
     getCarLogbookList, createCarLogbook, updateCarLogbook, deleteDraftCarLogbook,
     validateCarLogbook, submitCarLogbook, reopenCarLogbook, submitFuelForApproval,
-    getSmerDestinationsBatch, loading
+    getSmerDestinationsBatch, previewCarLogbookDay, loading
   } = useExpenses();
   const { settings } = useSettings();
   const { options: fuelTypeOpts } = useLookupOptions('FUEL_TYPE');
@@ -221,6 +257,7 @@ export default function CarLogbook() {
         isWeekend: dow === 0 || dow === 6,
         _id: null,
         starting_km: 0, ending_km: 0, personal_km: 0,
+        starting_km_photo_url: '', ending_km_photo_url: '',
         fuel_entries: [],
         destination: '', notes: '',
         status: null,
@@ -228,7 +265,12 @@ export default function CarLogbook() {
         total_km: 0, official_km: 0,
         actual_liters: 0, total_fuel_amount: 0,
         overconsumption_flag: false,
-        validation_errors: []
+        validation_errors: [],
+        // Phase P1.2 Slice 6 — provenance map (per-field source tag) drives
+        // the colored source badges next to each input. null = no auto-pop
+        // signal; set to MANUAL when proxy edits.
+        _autopop_sources: {},
+        _autopop_meta: null,
       });
     }
     return dayRows;
@@ -282,25 +324,79 @@ export default function CarLogbook() {
       console.error('[CarLogbook] Load failed:', err.message);
       showError(err, 'Could not load logbook entries');
     }
-    // Batch fetch SMER destinations for days without a saved destination (single request)
-    const undecidedDates = dayRows
-      .filter(r => !r.destination && !r.isWeekend)
+    // Phase P1.2 Slice 6 — batch auto-populate preview for days WITHOUT an
+    // existing logbook row. Pulls destination + ODO + DriveAllocation +
+    // FUEL_ENTRY captures in one round-trip per day. Falls back silently to
+    // the legacy SMER-destinations-only path if preview is unavailable (so
+    // older deployments without Slice 6 keep rendering).
+    const previewTargetDates = dayRows
+      .filter(r => !r._id && !r.isWeekend)
       .map(r => r.entry_date);
-    if (undecidedDates.length > 0) {
+
+    let previewMap = null;
+    if (previewTargetDates.length > 0) {
       try {
-        const res = await getSmerDestinationsBatch(undecidedDates);
-        const destMap = res?.data || {};
-        for (let i = 0; i < dayRows.length; i++) {
-          if (!dayRows[i].destination && destMap[dayRows[i].entry_date]?.destination) {
-            dayRows[i].destination = destMap[dayRows[i].entry_date].destination;
-          }
+        const bdmIdForPreview = (isPrivileged || canProxyCarLogbook) ? selectedBdmId : (user?._id || '');
+        if (bdmIdForPreview) {
+          const res = await previewCarLogbookDay({ bdmId: bdmIdForPreview, dates: previewTargetDates });
+          previewMap = res?.data?.byDate || null;
         }
-      } catch { /* ignore, destinations stay empty */ }
+      } catch (err) {
+        console.warn('[CarLogbook] preview unavailable, falling back to SMER-only fill:', err.message);
+      }
+    }
+
+    if (previewMap) {
+      for (let i = 0; i < dayRows.length; i++) {
+        const r = dayRows[i];
+        const p = previewMap[r.entry_date];
+        if (!p || p.error) continue;
+        // Only fill blanks — never overwrite a saved row's value.
+        if (!r.destination && p.destination) r.destination = p.destination;
+        if (!r.starting_km && p.starting_km) r.starting_km = p.starting_km;
+        if (!r.ending_km && p.ending_km) r.ending_km = p.ending_km;
+        if (!r.starting_km_photo_url && p.starting_km_photo_url) r.starting_km_photo_url = p.starting_km_photo_url;
+        if (!r.ending_km_photo_url && p.ending_km_photo_url) r.ending_km_photo_url = p.ending_km_photo_url;
+        if (!r.personal_km && p.personal_km) r.personal_km = p.personal_km;
+        if ((!r.fuel_entries || r.fuel_entries.length === 0) && Array.isArray(p.fuel_entries) && p.fuel_entries.length > 0) {
+          r.fuel_entries = p.fuel_entries;
+          r.actual_liters = p.fuel_entries.reduce((s, f) => s + (Number(f.liters) || 0), 0);
+          r.total_fuel_amount = p.fuel_entries.reduce((s, f) => s + (Number(f.total_amount) || 0), 0);
+        }
+        // Auto-recompute totals if we filled km
+        r.total_km = Math.max(0, (r.ending_km || 0) - (r.starting_km || 0));
+        r.official_km = Math.max(0, r.total_km - (r.personal_km || 0));
+        r._autopop_sources = p._autopop_sources || {};
+        r._autopop_meta = {
+          smer: p._smer_meta || null,
+          drive_allocation: p._drive_allocation || null,
+          has_any_signal: !!p._has_any_signal,
+        };
+      }
+    } else {
+      // Fallback path — preview failed (or no BDM selected for privileged
+      // viewers). Legacy SMER destinations call so the existing UX doesn't
+      // regress for proxies who only need destination prefill.
+      const undecidedDates = dayRows
+        .filter(r => !r.destination && !r.isWeekend)
+        .map(r => r.entry_date);
+      if (undecidedDates.length > 0) {
+        try {
+          const res = await getSmerDestinationsBatch(undecidedDates);
+          const destMap = res?.data || {};
+          for (let i = 0; i < dayRows.length; i++) {
+            if (!dayRows[i].destination && destMap[dayRows[i].entry_date]?.destination) {
+              dayRows[i].destination = destMap[dayRows[i].entry_date].destination;
+              dayRows[i]._autopop_sources = { ...(dayRows[i]._autopop_sources || {}), destination: 'SMER' };
+            }
+          }
+        } catch { /* ignore, destinations stay empty */ }
+      }
     }
 
     setRows(dayRows);
     setExpandedRow(null);
-  }, [period, cycle, generateDays, isPrivileged, selectedBdmId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [period, cycle, generateDays, isPrivileged, canProxyCarLogbook, selectedBdmId, user?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadAndMerge(); }, [loadAndMerge]);
 
@@ -329,6 +425,11 @@ export default function CarLogbook() {
       if (field === 'starting_km' || field === 'ending_km' || field === 'personal_km') {
         row.total_km = Math.max(0, (row.ending_km || 0) - (row.starting_km || 0));
         row.official_km = Math.max(0, row.total_km - (row.personal_km || 0));
+      }
+      // Phase P1.2 Slice 6 — flip source tag to MANUAL on edit so the badge
+      // shows the proxy that they overrode an auto-populated value.
+      if (row._autopop_sources && row._autopop_sources[field] && row._autopop_sources[field] !== 'MANUAL') {
+        row._autopop_sources = { ...row._autopop_sources, [field]: 'MANUAL' };
       }
       updated[idx] = row;
       return updated;
@@ -413,7 +514,11 @@ export default function CarLogbook() {
           return u;
         });
       } else if (!row._id) {
-        const res = await createCarLogbook({ ...data, assigned_to: assignedTo });
+        // Phase P1.2 Slice 6 — autopopulate=true so the backend re-runs the
+        // service and merges any signals the proxy hasn't typed manually
+        // (defense in depth: if the in-memory _autopop fields drifted from
+        // what the service would compute now, the server-side merge re-syncs).
+        const res = await createCarLogbook({ ...data, assigned_to: assignedTo, autopopulate: true });
         const doc = res?.data;
         setRows(prev => {
           const u = [...prev];
@@ -744,6 +849,7 @@ export default function CarLogbook() {
                           ) : (
                             <span style={{ fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', maxWidth: 150 }} title={row.destination}>{row.destination || '—'}</span>
                           )}
+                          <SourceBadge source={row._autopop_sources?.destination} />
                         </td>
                         <td style={{ padding: '3px 4px', textAlign: 'right' }}>
                           {editable ? (
@@ -754,6 +860,7 @@ export default function CarLogbook() {
                           {row.starting_km_photo_url && (
                             <a href={row.starting_km_photo_url} target="_blank" rel="noopener noreferrer" title="Starting odometer photo (OCR-scanned)" style={{ marginLeft: 3, fontSize: 10, textDecoration: 'none' }}>📷</a>
                           )}
+                          <SourceBadge source={row._autopop_sources?.starting_km} />
                         </td>
                         <td style={{ padding: '1px 0', textAlign: 'center' }}>
                           {editable && <button onClick={() => handleScanOdometer(idx, 'starting')} style={scanBtn} title="Scan start odometer">S</button>}
@@ -767,6 +874,7 @@ export default function CarLogbook() {
                           {row.ending_km_photo_url && (
                             <a href={row.ending_km_photo_url} target="_blank" rel="noopener noreferrer" title="Ending odometer photo (OCR-scanned)" style={{ marginLeft: 3, fontSize: 10, textDecoration: 'none' }}>📷</a>
                           )}
+                          <SourceBadge source={row._autopop_sources?.ending_km} />
                         </td>
                         <td style={{ padding: '1px 0', textAlign: 'center' }}>
                           {editable && <button onClick={() => handleScanOdometer(idx, 'ending')} style={scanBtn} title="Scan end odometer">E</button>}
@@ -777,12 +885,14 @@ export default function CarLogbook() {
                           ) : (
                             <span style={{ fontSize: 11 }}>{(row.personal_km || 0).toLocaleString()}</span>
                           )}
+                          <SourceBadge source={row._autopop_sources?.personal_km} />
                         </td>
                         <td style={{ padding: '3px 4px', textAlign: 'right', fontWeight: 500, fontSize: 11, color: '#2563eb' }}>{(row.official_km || 0).toLocaleString()}</td>
                         <td style={{ padding: '3px 4px', textAlign: 'right' }}>
                           <button onClick={() => setExpandedRow(isExp ? null : idx)} style={{ padding: '1px 5px', borderRadius: 4, fontSize: 10, border: '1px solid var(--erp-border, #dbe4f0)', background: fuelCount > 0 ? '#f0fdf4' : '#fff', cursor: 'pointer', fontWeight: fuelCount > 0 ? 600 : 400, color: fuelCount > 0 ? '#166534' : 'var(--erp-muted)' }}>
                             {fuelCount > 0 ? `${(row.actual_liters || 0).toFixed(1)}L` : '+Fuel'}
                           </button>
+                          <SourceBadge source={row._autopop_sources?.fuel_entries} />
                         </td>
                         <td style={{ padding: '3px 4px', textAlign: 'right', fontSize: 11, fontWeight: 500 }}>{row.total_fuel_amount ? `₱${row.total_fuel_amount.toLocaleString()}` : ''}</td>
                         <td style={{ padding: '3px 4px', textAlign: 'center' }}>
@@ -919,11 +1029,14 @@ export default function CarLogbook() {
                     </div>
                   </div>
                   {/* Destination */}
-                  {editable ? (
-                    <input value={row.destination || ''} onChange={e => handleRowChange(idx, 'destination', e.target.value)} placeholder="Destination..." style={{ width: '100%', padding: '4px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12, marginBottom: 6 }} />
-                  ) : row.destination ? (
-                    <div style={{ fontSize: 12, color: '#2563eb', marginBottom: 6 }}>{row.destination}</div>
-                  ) : null}
+                  <div style={{ marginBottom: 6 }}>
+                    {editable ? (
+                      <input value={row.destination || ''} onChange={e => handleRowChange(idx, 'destination', e.target.value)} placeholder="Destination..." style={{ width: '100%', padding: '4px 8px', borderRadius: 4, border: '1px solid var(--erp-border, #dbe4f0)', fontSize: 12 }} />
+                    ) : row.destination ? (
+                      <div style={{ fontSize: 12, color: '#2563eb' }}>{row.destination}</div>
+                    ) : null}
+                    <SourceBadge source={row._autopop_sources?.destination} />
+                  </div>
                   {/* KM Grid */}
                   <div className="cl-card-grid">
                     <div>

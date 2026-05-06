@@ -187,7 +187,10 @@ function ScanCRModal({ open, onClose, onApply, hospitals, initialFile, initialCa
         amount: parseFloat(fieldVal(sc.amount)) || 0
       })),
       s3_url: ocrData?.s3_url || '',
-      attachment_id: ocrData?.attachment_id || null
+      attachment_id: ocrData?.attachment_id || null,
+      // Phase P1.2 Slice 9 partial (Round 2B) — propagate the source capture
+      // so create-collection can auto-finalize it after the row lands.
+      capture_id: initialCaptureId || null
     });
     handleClose();
   };
@@ -422,6 +425,10 @@ export default function CollectionSession() {
   // Phase P1.2 Slice 7-extension Round 2B — capture-id handoff (skipFetch).
   const [scanInitialCaptureId, setScanInitialCaptureId] = useState(null);
   const [scanInitialPreviewUrl, setScanInitialPreviewUrl] = useState(null);
+  // Phase P1.2 Slice 9 partial (Round 2B) — track the source capture so
+  // createCollection can auto-finalize it after the row lands. Set by
+  // handleCrScanApply when ScanCRModal returns capture_id.
+  const [pendingCaptureId, setPendingCaptureId] = useState(null);
   const [ocrFilledFields, setOcrFilledFields] = useState(new Set());
   const pendingCsiMatch = useRef(null);
 
@@ -743,6 +750,10 @@ export default function CollectionSession() {
     }
     if (data.attachment_id) setAttachmentIds(prev => [...prev, data.attachment_id]);
 
+    // Phase P1.2 Slice 9 partial (Round 2B) — capture the source CaptureSubmission
+    // _id so createCollection's payload below can auto-finalize after save.
+    if (data.capture_id) setPendingCaptureId(data.capture_id);
+
     // Stash extracted CSIs for deferred matching (open CSIs load async after hospital change)
     if (data.settled_csis?.length) {
       pendingCsiMatch.current = data.settled_csis;
@@ -839,7 +850,10 @@ export default function CollectionSession() {
         csi_photo_urls: csiPhotoUrls.length ? csiPhotoUrls : undefined,
         deposit_slip_url: depositSlipUrl || undefined,
         cwt_certificate_url: cwtCertUrl || undefined,
-        attachment_ids: attachmentIds.length ? attachmentIds : undefined
+        attachment_ids: attachmentIds.length ? attachmentIds : undefined,
+        // Phase P1.2 Slice 9 partial (Round 2B) — auto-finalize the source
+        // capture (set by handleCrScanApply when picker → modal flow ran).
+        ...(pendingCaptureId ? { capture_id: pendingCaptureId } : {})
       });
       navigate('/erp/collections');
     } catch (err) {

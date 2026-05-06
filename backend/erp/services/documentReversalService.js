@@ -180,6 +180,18 @@ async function reverseLinkedJEs({ event_id, reason, userId, entityId }) {
  * event. Used by GRN, IC Transfer, Sales reversals. Operates in a session.
  */
 async function reverseInventoryFor({ event_id, reversalEventId, userId, session }) {
+  // Hard guard — null/undefined event_id would degrade to find({event_id:null})
+  // and match every InventoryLedger row whose event_id field is missing
+  // (notably OPENING_BALANCE rows seeded by importStockOnHand.js, which never
+  // stamp event_id). That cross-cuts every warehouse and entity in the DB and
+  // detonates legacy stock on a single doc reversal. Two prior incidents
+  // confirmed this: 2026-04-21 (242 rows wiped, 10 warehouses) and 2026-05-06
+  // (532 rows wiped). Refuse rather than guess.
+  if (!event_id) {
+    const err = new Error('reverseInventoryFor: event_id is required (refusing — null/missing event_id would cross-cut OPENING_BALANCE rows and drain unrelated warehouses).');
+    err.statusCode = 500;
+    throw err;
+  }
   // eslint-disable-next-line vip-tenant/require-entity-filter -- event_id is unique; original entry's entity_id is preserved on the reversal row below
   const originals = await InventoryLedger.find({ event_id }).session(session);
   for (const e of originals) {

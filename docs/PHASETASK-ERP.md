@@ -8006,6 +8006,107 @@ docs/PHASETASK-ERP.md                                      # this section
 
 ---
 
+## Phase P1.2 Slice 6 — Car Logbook Auto-Populate (May 06, 2026) ✅ SHIPPED
+
+### Why
+With Slices 1+2+3+4+5+7+8+9 already in flight, the Car Logbook is the last surface still demanding a proxy type the same data twice — once in the BDM's capture flow (SMER ODO photos, DriveAllocation slider, FUEL_ENTRY OCR) and again on `/erp/car-logbook` when posting the cycle. Slice 6 closes the loop: the proxy now opens the page and *reviews* a pre-populated grid rather than entering data.
+
+Four signals merge into one shape per day:
+
+| Signal | Source collection | Field(s) populated | Source-tag |
+|---|---|---|---|
+| Hospital + notes | SmerEntry.daily_entries (entry_date Manila-day match) | `destination` | `SMER` |
+| ODO OCR readings | CaptureSubmission `workflow_type=SMER` (artifact ocr_result.reading) | `starting_km` (min), `ending_km` (max), photo URLs | `SMER_CAPTURE` |
+| BDM allocation | DriveAllocation (drive_date YYYY-MM-DD match) | `personal_km` / `official_km` | `DRIVE_ALLOCATION` |
+| Fuel receipt OCR | CaptureSubmission `workflow_type=FUEL_ENTRY` (extracted.station/liters/price) | `fuel_entries[]` | `FUEL_ENTRY_CAPTURE` |
+| Prior day's ending_km | CarLogbookEntry (most-recent VALID/POSTED before this day) | `starting_km` fallback | `PRIOR_DAY` |
+| Proxy edit | (UI flag) | (any field) | `MANUAL` |
+
+### What shipped
+
+**Backend service** (`backend/erp/services/carLogbookAutoPopulate.js`, NEW, ~280 lines):
+- `autoPopulateCarLogbookDay({ entity_id, bdm_id, entry_date })` — single entry point. Pulls all four signals in parallel via `Promise.all`. Returns the populated row plus `_autopop_sources` per-field provenance map plus `_smer_meta` + `_drive_allocation` raw signals + `_has_any_signal` boolean.
+- `pullSmerDestination`, `pullSmerOdoCaptures`, `pullDriveAllocation`, `pullFuelEntries`, `pullPriorDayEndingKm` — testable internal helpers, each scoped by entity_id (Rule #19) + bdm_id explicit (Rule #21 — no silent self-fallback).
+- `manilaDayBounds(dateStr)` returns UTC bounds for a Manila-local YYYY-MM-DD (Manila midnight = UTC midnight − 8h).
+- `readOcrNumber` / `readOcrString` coerce the three known OCR result shapes (raw value, `{value, confidence}` envelope, string with units/commas) to clean primitives. Empty after strip → null (so 'garbage' doesn't masquerade as 0 when `Number('') === 0`).
+- `VALID_CAPTURE_STATUSES` whitelist excludes only CANCELLED — every other lifecycle stage (PENDING_PROXY through AUTO_ACKNOWLEDGED + DISPUTED) carries valid OCR data the proxy can review.
+- `SOURCE_TAGS` enum frozen and exported for the healthcheck and the frontend badge palette.
+
+**Backend controller** (`backend/erp/controllers/expenseController.js`):
+- `previewCarLogbookDay(req, res)` — `GET /erp/expenses/car-logbook/preview`. Two shapes:
+  - `?bdm_id=X&date=YYYY-MM-DD` — single day, returns the populated row.
+  - `?bdm_id=X&dates=YYYY-MM-DD,YYYY-MM-DD,...` (max 31) — batch, returns `{byDate: {YYYY-MM-DD: populated, ...}}` for one round-trip per cycle.
+  - Privileged/proxy callers MUST pass `bdm_id` (HTTP 400 otherwise — Rule #21).
+- `createCarLogbook` extended with opt-in autopopulate flag (accepted via `?autopopulate=true` query OR `body.autopopulate=true`). Body wins on every overlapping field (proxy may have already typed a correction). Auto-populate is **non-fatal** — falls through to plain create on failure with a `console.warn`. Provenance map persists in `edit_history[0] = { action: 'AUTO_POPULATE', sources, at, by }` for audit. Response carries `auto_populated: boolean` + `autopop_sources: {field: tag}` so the FE can render the badges.
+
+**Backend route** (`backend/erp/routes/expenseRoutes.js`):
+- `router.get('/car-logbook/preview', previewCarLogbookDay)` mounted **BEFORE** `/car-logbook/:id` so Express path-precedence resolves the literal rather than treating "preview" as an `:id` capture (same pattern as Slice 8's archive routes — proven shape).
+
+**Frontend hook** (`frontend/src/erp/hooks/useExpenses.js`):
+- `previewCarLogbookDay({ bdmId, date, dates })` — single + batch shapes via the same method. Auto-builds the query params; supports both the single-day `date` and the array `dates`.
+
+**Frontend page** (`frontend/src/erp/pages/CarLogbook.jsx`):
+- New `SourceBadge` component (mini pill, 6 colors, tooltips) + `AUTOPOP_SOURCE_META` palette mirroring backend `SOURCE_TAGS`.
+- Row state seeds an empty `_autopop_sources: {}` map.
+- `loadAndMerge` calls `previewCarLogbookDay` once per cycle for days WITHOUT an existing logbook row (single round-trip — server sweeps SmerEntry / CaptureSubmission / DriveAllocation in parallel for each day). Falls back silently to the legacy SMER-destinations-only path if preview fails (older deployments without Slice 6 keep rendering).
+- **Saved rows are never overwritten by auto-pop** — the merge fills blanks only.
+- `handleRowChange` flips the source tag to `'MANUAL'` on edit so the badge color changes from green/blue/amber to red.
+- `saveRow` sends `autopopulate: true` on create so the server-side merge re-syncs (defense in depth: if the in-memory `_autopop` fields drifted from what the service would compute now, the server's re-pull catches the drift).
+- Source badges render next to: destination, starting_km, ending_km, personal_km, fuel_entries (table view + mobile-card view).
+
+**WorkflowGuide banner** (`frontend/src/erp/components/WorkflowGuide.jsx`):
+- `'car-logbook'` updated per Rule #1: new step explaining the 4 sources + source-badge palette + the override flow + the "auto-pop never overwrites saved rows" invariant. Tip extended with the full Slice 6 overview.
+
+**Healthcheck** (`backend/scripts/healthcheckCarLogbookAutoPopulate.js`, NEW, 70 assertions):
+- Service exports + 6 SOURCE_TAGS codes + Rule #19/#21 guards + 4-source pull functions + parallel sweep.
+- Controller: imports + previewCarLogbookDay function + bdm_id Rule #21 + autopopulate body/query accept + edit_history AUTO_POPULATE row + auto_populated/autopop_sources response.
+- Routes: `/preview` mounted + ordered before `/:id` (Express shadowing guard).
+- Frontend hook: previewCarLogbookDay + single + batch + endpoint URL.
+- Frontend page: SourceBadge component + 6-source palette + preview call + manual-flip + save-with-autopopulate + badges next to all 5 fields.
+- WorkflowGuide: Slice 6 mention + 4-source list + badge palette in tip.
+- Lookup gate: EDIT_CAR_LOGBOOK_DESTINATION present (forward-compat for subscriber-tunable destination edit gate).
+
+### Verification
+
+- `node backend/scripts/healthcheckCarLogbookAutoPopulate.js` → **70/70 PASS**.
+- `node backend/scripts/healthcheckCaptureHub.js` → **531/531 PASS** (no Slice 1+2+3+4+5+7+8+9 regression).
+- `node -c` on all 3 modified backend files (controller, routes, service) — clean.
+- Service-level helper unit smoke: `readOcrNumber` (8 cases incl. envelope, commas, units, NaN, empty, garbage), `readOcrString` (5 cases), `manilaDayBounds` (start/end UTC bounds + reject garbage) — **16/16 PASS**.
+- `vite build` → **green, 35.55s**, no warnings, `CarLogbook-*.js` chunk emits cleanly with the new SourceBadge component.
+- **Live API smoke (dev cluster)** as president (`yourpartner@viosintegrated.net`):
+  - `GET /preview?date=2026-05-06` (no bdm_id) → 400 with friendly Rule #21 message ("bdm_id is required — privileged/proxy users must specify which BDM to preview"). ✓
+  - `GET /preview?bdm_id=Mae&date=2026-05-06` → 200, `_has_any_signal: false` (Mae has no signal that day). ✓
+  - `GET /preview?bdm_id=Mae&dates=2026-04-30,...,2026-05-06` (7 days) → 200, `byDate['2026-04-30']._has_any_signal: true`, `personal_km: 75`, `official_km: 25`, `_autopop_sources.personal_km: 'DRIVE_ALLOCATION'`, `_drive_allocation: { status: ALLOCATED, start_km: 12000, end_km: 12100, total_km: 100, personal_km: 75, official_km: 25 }`. ✓
+- **Playwright UI smoke (dev cluster)** as president → `/erp/car-logbook` → BDM picker → Mae Navarro → period 2026-04 → cycle C2 → preview fetched once for the 11 cycle workdays → grid renders 17 rows (header + 15 days + totals) → Apr 30 row shows green "Drive" badge with tooltip "Filled from BDM's DriveAllocation row (Personal/Official slider)" → typed "50" into personal_km → badge flips to red "Manual" with tooltip "Manual override — proxy edited this field" → unsaved `*` indicator visible. Screenshot residue at repo root: `phase-p1-2-slice-6-carlogbook-autopop-ratified.png`, `phase-p1-2-slice-6-manual-override-ratified.png` (NOT to be committed — repo .gitignore already lists `*.png` if pattern matches).
+
+### Subscription readiness (Rule #19 + Rule 0d)
+- Every service helper sweep is `entity_id`-scoped — same code runs unchanged inside Year-2 Pharmacy SaaS multi-tenant context.
+- `EDIT_CAR_LOGBOOK_DESTINATION` lookup-driven gate already exists from Slice 1; subscribers loosen/tighten via Control Center → Lookup Tables → CAPTURE_LIFECYCLE_ROLES.
+- `bdm_id` is explicit on every preview call (Rule #21 — no silent self-fallback). Privileged-without-bdm_id = HTTP 400 (not "fall back to caller's _id").
+- Auto-populate is **purely additive** — empty signals produce zeros, the page stays editable, the proxy is never blocked by missing data.
+- Body-wins-on-overlap merge means the proxy's manual override is the winning state; service is a hint, not a constraint.
+
+### Files
+```
+backend/erp/services/carLogbookAutoPopulate.js                   # NEW (~280 lines)
+backend/erp/controllers/expenseController.js                     # +previewCarLogbookDay + createCarLogbook autopopulate merge + edit_history + import
+backend/erp/routes/expenseRoutes.js                              # +/car-logbook/preview route (before /:id)
+backend/scripts/healthcheckCarLogbookAutoPopulate.js             # NEW (70 assertions)
+frontend/src/erp/hooks/useExpenses.js                            # +previewCarLogbookDay method
+frontend/src/erp/pages/CarLogbook.jsx                            # +SourceBadge + AUTOPOP_SOURCE_META + preview wiring + MANUAL flip + autopopulate=true on save
+frontend/src/erp/components/WorkflowGuide.jsx                    # car-logbook banner + tip per Rule #1
+CLAUDE-ERP.md                                                    # Phase P1.2 Slice 6 entry
+docs/PHASETASK-ERP.md                                            # this section
+```
+
+### What's deferred (NOT in scope)
+- **`?autopopulate=true` on update path** — proxy can re-trigger by clearing the row first then saving; explicit Refresh-from-signals button could lift if asked.
+- **Bulk auto-pop the whole cycle** — currently triggers on page load only; a "Refresh All Days" button could re-run the preview without a navigation. Lift if proxies report missing rows after late-arriving captures.
+- **OCR confidence threshold** — service trusts every reading > 0; could add a confidence floor lookup (`CAR_LOGBOOK_AUTOPOP_CONFIG.MIN_OCR_CONFIDENCE`) if low-confidence FUEL_ENTRY readings start polluting the grid.
+- **Audit trail of overrides** — `edit_history[0]` records the AUTO_POPULATE event; subsequent MANUAL overrides aren't yet stamped per-edit. Lift if the audit team needs a per-field flip log.
+
+---
+
 ## Phase P1.2 Slice 1 — Capture Lifecycle Sub-Permissions + UNCATEGORIZED workflow_type (May 06, 2026) ✅ SHIPPED
 
 ### Why
@@ -8347,6 +8448,79 @@ erp-remote no-push policy in effect — commit cleanly to `dev` only.
 
 ---
 
+## Phase P1.2 Slice 7-extension Round 2C — CWT-Inbound picker on Mark-Received modal (May 06, 2026) ✅ SHIPPED
+
+### Why
+
+The original Slice 7-extension scope listed five pages (Sales / Collection / GRN / SMER / **CWT-inbound**). The first three shipped in Round 1; CWT-inbound was deferred at the time on the rationale that `Bir2307InboundPage.jsx` had no `handleFile` / `handleUpload` handler — the receive modal stores `cert_2307_url` as a typed string (Drive link / S3 URI / shared folder path), not an uploaded File. Wiring the picker would have meant a new file-upload route. Estimated 4h.
+
+Round 2A's `skipFetch=true` mode changes the math entirely. The picker can write the **bare S3 URL** straight into the field — no in-browser fetch, no re-upload, no new backend route. What was a 4h task became a ~3h thin-wrap on top of existing infra: the controller already accepts `cert_2307_url` from the body; the model already has `CWT_INBOUND` in `workflow_type` enum and `CwtLedgerEntry` in `linked_doc_kind` enum (Slice 1 baseline); the `linkCaptureToDocument` helper already routes `CWT_INBOUND` captures to `AWAITING_BDM_REVIEW` via `REVIEW_WORKFLOWS`.
+
+The user flow is: BDM (or office runner / receptionist) snaps the BIR Form 2307 paper or PDF that arrives from the hospital → Capture Hub upload as `CWT_INBOUND` (or `UNCATEGORIZED` Quick Capture) → finance opens `/erp/bir/2307-IN/:year` → finds the matching CR row → clicks **Mark Received** → clicks **From BDM Captures** → picks the photo → the bare S3 URL drops into the certificate URL field, filename auto-fills from the artifact key tail → finance fills Notes + (optional) SHA-256 hash → Save. The source `CaptureSubmission` flips out of `PENDING_PROXY` (→ `AWAITING_BDM_REVIEW`) and back-links to the `CwtLedger` row's `_id`, so it stops surfacing in subsequent picker drawers and carries an audit trail.
+
+### What shipped
+
+- **`backend/erp/controllers/birController.js` `markReceived2307Inbound`** — destructures `capture_id` out of the request body before delegating to `cwt2307ReconciliationService.markReceived` (which only sees the cert_* fields, no schema bleed). After the service call succeeds, **best-effort** `linkCaptureToDocument(capture_id, 'CwtLedgerEntry', row._id, ctx)` — failures here log but do NOT roll back the receive (the CWT credit posture is the system of record; the capture back-link is audit metadata that the office can re-stamp manually if it drifts). Audit log line `[BIR_2307_INBOUND_MARK_RECEIVED]` extended with `from_capture: !!capture_id` + `capture_id: capture_id ? String(capture_id) : null`.
+
+- **`frontend/src/erp/pages/Bir2307InboundPage.jsx`** — picker mounted in the Mark-Received modal between the CR/hospital recap and the Certificate URL field. Cross-BDM scope (`bdmId={null}`) by default — finance reconciles by hospital cert amount, not by which BDM originated the underlying sale (the cert may have been snapped by office runner / receptionist / finance herself, not the BDM). `skipFetch={true}` + `maxSelect={1}`. `onPickFromCaptures` writes `cert_2307_url` from the bare S3 URL (artifact `url` with no query string), auto-fills `cert_filename` from the artifact `key` tail when present (preserves any manual entry as fallback), and stores the picked `capture_id` in new `pickedCaptureId` state for the eventual receive submit. **Manual edit of the URL field after picking invalidates the back-link** — `onChange` clears `pickedCaptureId` so a typo doesn't silently re-stamp a stale capture (defense in depth around the controller-side ownership check). Modal close + receive success both clear `pickedCaptureId` so a fresh open starts from a clean slate. A green confirmation pill ("✓ Linked to BDM Capture") renders below the picker when a capture is selected.
+
+- **`frontend/src/components/common/PageGuide.jsx` `bir-2307-inbound`** — banner now describes the Round 2C flow (Rule #1): Workflow step mentions "either pulls the photo from BDM Captures (Slice 7-extension Round 2C — see step 4) OR types where they saved the file"; new step 4 walks the picker UX + cross-BDM scope rationale + lifecycle advance; subscription-readiness step adds `CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE` next to `BIR_ROLES.RECONCILE_INBOUND_2307`; tip recommends "From BDM Captures" over re-uploading to Drive when the BDM has already snapped it; Capture Archive added to the next-links list.
+
+- **`backend/scripts/healthcheckCaptureHub.js` Section 13** — defer-rationale assertion at line ~423 (was `'PHASETASK-ERP.md documents Bir2307Inbound defer rationale'`) **dropped**; SMER defer assertion at line ~421 stays. Section 13 preamble comment updated to "SMER (digital-only — no photo upload UI) is intentionally deferred" (drops the Bir2307InboundPage clause).
+
+- **`backend/scripts/healthcheckCaptureHub.js` Section 19 (NEW)** — `Phase P1.2 Slice 7-extension Round 2C — CWT-inbound picker on Bir2307InboundPage` — 12 assertions: page imports `PendingCapturesPicker`, picker mounted with `workflowTypes=['CWT_INBOUND', 'UNCATEGORIZED']`, `bdmId={null}`, `skipFetch={true}`, `maxSelect={1}`, `onPickFromCaptures` reads `meta.captures[0]`, manual URL edit invalidates `pickedCaptureId`, controller destructures `capture_id` out of body, controller calls `linkCaptureToDocument` with `'CwtLedgerEntry'`, banner mentions "From BDM Captures" + Round 2C, audit log records `from_capture` flag.
+
+### Healthcheck + verification
+
+- `node backend/scripts/healthcheckCaptureHub.js` → all Round 2C assertions PASS; pre-existing failures from parallel Slice 4+5 BdmCaptureHub work persist (not in this commit's scope).
+- `cd frontend && npx vite build` → green.
+- Same `CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE` lookup gate from Slice 1 (default `[admin, finance, president]`) gates the picker's queue read; admin can broaden to `[admin, finance, president, bookkeeper]` via Control Center → Lookup Tables, no code deploy (Rule #3 / Rule #19).
+- `RECONCILE_INBOUND_2307` BIR role gate on the controller is unchanged — finance still controls who can mark received.
+
+### Lookup posture / subscription readiness
+
+Zero new lookup categories. Round 2C reuses three existing categories:
+- `CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE` (Slice 1) — picker queue read.
+- `BIR_ROLES.RECONCILE_INBOUND_2307` (Phase J6) — controller write.
+- Implicit `MODULE_DEFAULT_ROLES.BIR` (Phase 29 / G4) — Approval Hub gating.
+
+When SaaS spin-out generalizes `entity_id` to `tenant_id` (Year 2 per CLAUDE.md 0d), Round 2C inherits the rename automatically — no work in this phase.
+
+### Cascading downstream
+
+- **Phase J7 1702 income tax** — RECEIVED rows tagged `tagged_for_1702_year=YEAR` continue to be the source of "Less: Creditable Tax Withheld" — Round 2C only changes HOW the row gets RECEIVED, not what the J7 aggregator reads.
+- **Capture Archive (`/erp/capture-archive`, Slice 8)** — picked CWT_INBOUND captures now have `linked_doc_kind='CwtLedgerEntry'` + `linked_doc_id=<row._id>`, so they surface in the archive's "Linked to" column with a click-through to the BIR 2307 inbound row (when archive's link-resolver supports CwtLedger drill-down — current archive renders the bare ID; sub-future enhancement to add the click-through).
+- **Slice 9 inline Mark Complete / Override (`captureSubmissionController` archive endpoints)** — CWT_INBOUND captures that pass through Round 2C land in `AWAITING_BDM_REVIEW` (per `REVIEW_WORKFLOWS`), where the existing Slice 9 inline-acknowledge controls take over. No regression.
+
+### Files
+
+```
+backend/erp/controllers/birController.js                   # capture_id pass-through + best-effort linkCaptureToDocument
+frontend/src/erp/pages/Bir2307InboundPage.jsx              # picker mount + pickedCaptureId state + onPickFromCaptures + manual-edit invalidation
+frontend/src/components/common/PageGuide.jsx               # bir-2307-inbound banner update (Rule #1)
+backend/scripts/healthcheckCaptureHub.js                   # Section 13 defer-rationale cleanup + Section 19 new (Round 2C)
+docs/PHASETASK-ERP.md                                      # this entry + defer-rationale cleanup at Slice 7-extension parent
+CLAUDE-ERP.md                                              # Phase P1.2 Round 2C status entry
+CLAUDE.md                                                  # numbered note (continues Phase O.1 / A.6 / D.4c pattern)
+```
+
+### Integrity check
+
+- ✅ Backend: capture_id is OPTIONAL; receive endpoint with no body capture_id behaves identically to pre-Round-2C (typed-URL flow). The destructure default of `undefined` is safe — `if (capture_id)` guard skips the helper call.
+- ✅ Backend: `linkCaptureToDocument` is idempotent + ownership-checked. A hostile capture_id re-stamp attempt either no-ops (already-linked to same doc) or 403s (caller is neither owner / proxy / privileged) — no silent corruption surface.
+- ✅ Frontend: cross-BDM scope (`bdmId={null}`) is intentional. Per-BDM filter would be wrong because the cert may have been snapped by office runner / receptionist / finance herself, not the BDM who originally sold to the hospital. Documented in inline JSX comment + banner step.
+- ✅ Frontend: manual edit of `cert_2307_url` after picking clears `pickedCaptureId` so the back-link doesn't drift if finance overrides the picked URL.
+- ✅ Frontend: typed-URL flow still works — the picker is an additive sibling above the existing input. Operators who don't have a BDM-snapped capture continue to type the Drive / S3 / shared-folder URL.
+- ✅ Lifecycle: CWT_INBOUND is in `REVIEW_WORKFLOWS` so the source capture goes to `AWAITING_BDM_REVIEW` (not `PROCESSED`) — admin still wants the BDM to acknowledge that their snapshot was used. Same posture as SALES / EXPENSE / FUEL_ENTRY / SMER / COLLECTION / CWT_INBOUND.
+- ✅ Audit: `[BIR_2307_INBOUND_MARK_RECEIVED]` log line records `from_capture: bool` so the office can grep historical receives to see which were picker-sourced vs typed.
+- ✅ Banner: Rule #1 — bir-2307-inbound PageGuide reflects the new flow.
+- ✅ Subscription-ready: zero new lookups; subscribers reuse existing `CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE` + `BIR_ROLES.RECONCILE_INBOUND_2307` (Rule #3 / Rule #19).
+- ✅ Defer-rationale doc updated: SMER stays deferred (digital-only architectural mismatch), CWT-Inbound removed from defer list — Round 2C explicitly closes it.
+
+erp-remote no-push policy in effect — commit cleanly to `dev` only.
+
+---
+
 ## Phase P1.2 Slice 7-extension Round 2A — SalesList per-row 📷 Attach CSI picker (May 06, 2026) ✅ SHIPPED
 
 ### Why
@@ -8450,13 +8624,12 @@ The pattern is identical across all three pages:
 4. `bdmId` defaults to the page's `assignedTo` so the proxy POV (Phase G4.5a..G4.5ff) reads naturally — pick the BDM in OwnerPicker, then pull from their captures.
 5. `maxSelect={1}` because each scan modal auto-fills exactly one document; multi-pick would race the form-population state.
 
-### Defer rationale (SMER + CWT-Inbound)
-The original Slice 7-extension scope listed five pages (Sales/Collection/GRN/SMER/CWT-inbound). Two were deferred after surveying the page architecture:
+### Defer rationale (SMER)
+The original Slice 7-extension scope listed five pages (Sales/Collection/GRN/SMER/CWT-inbound). One stays deferred after surveying the page architecture:
 
-- **SMER** (`Smer.jsx`) — SMER is digital-only. `captureSubmissionController.js:50-52` defines `DIGITAL_ONLY = workflow_type === 'SMER' || (workflow_type === 'COLLECTION' && sub_type === 'PAID_CSI')`, and `physical_required` defaults to `false` for SMER captures. The page itself has no photo-upload UI to mount a picker next to (no `<input type="file">`, no `FormData`, no `cameraRef`/`galleryRef`). Adding a picker would require building a new ODO-photo upload schema + UI on the SMER page, which is its own slice. **Status**: deferred to "Slice 7-extension Round 2" if subscribers want it. Estimated 4h of work (one new state + one new upload handler + one PageGuide entry).
-- **Bir2307InboundPage.jsx** — the inbound 2307 receive flow stores `cert_2307_url` as a typed string in the receive modal (operator types the URL/filename/hash, no actual file upload). The page has no `handleFile` / `handleUpload` handler to feed picker output through. Wiring the picker would require a new file-upload route that returns an S3 URL the page populates into `cert_2307_url`. **Status**: deferred. Estimated 4h.
+- **SMER** (`Smer.jsx`) — SMER is digital-only. `captureSubmissionController.js:50-52` defines `DIGITAL_ONLY = workflow_type === 'SMER' || (workflow_type === 'COLLECTION' && sub_type === 'PAID_CSI')`, and `physical_required` defaults to `false` for SMER captures. The page itself has no photo-upload UI to mount a picker next to (no `<input type="file">`, no `FormData`, no `cameraRef`/`galleryRef`). Adding a picker would require building a new ODO-photo upload schema + UI on the SMER page, which is its own slice. The right consumer for SMER captures is **Slice 6 Car Logbook auto-populate** — ODO capture's OCR reading flows into `starting_km` / `ending_km`, not a parallel picker on the SMER page. **Status**: stays deferred indefinitely; if subscribers ask for SMER receipts to be picker-attachable, that's a new slice (estimated 4h). The defer is documented at the top of `healthcheckCaptureHub.js` Section 13 so a future session doesn't silently bolt a picker onto SMER without re-litigating the trade.
 
-Both pages remain healthy without the picker — the current cell-typed URL flow on Bir2307 and the digital-only stamp flow on SMER are unchanged. The defer is documented at the top of `healthcheckCaptureHub.js` Section 13 so a future session doesn't silently bolt the picker onto either page without re-litigating the trade.
+**Bir2307InboundPage** was originally co-deferred but **shipped as Round 2C (May 06 2026)** — Round 2A's `skipFetch=true` pattern made the picker mount trivial (no new upload route needed; bare S3 URL writes straight into `cert_2307_url`). See "Phase P1.2 Slice 7-extension Round 2C" entry below.
 
 ### Files
 ```
@@ -11729,3 +11902,48 @@ Apr 29 Playwright UI smoke surfaced two 404s on every `/erp/non-md-rebate-matrix
 - Playwright re-smoke deferred (MCP browser locked by user's open PR-review Chrome instance at fix time). Mechanical fix, not blocking.
 
 **Files touched (1)**: [frontend/src/erp/pages/NonMdRebateMatrixPage.jsx](frontend/src/erp/pages/NonMdRebateMatrixPage.jsx).
+
+---
+
+### Phase 32R-VP — Approval Hub Visual Parity (May 6 2026)
+
+**Why**: live screenshot from president showed two paired GRN+UT cards in `/erp/approvals` with very different density — the UT card had a rich proxy banner + structured "Linked GRN" badge, while the partner GRN card showed no proxy info and a truncated `_id.slice(-8)` chip (`776ae49c`) for its linked Undertaking. Approver had to mentally pair the two by scrolling. The data was already in the database (`GrnEntry.recorded_on_behalf_of`, `Undertaking.recorded_on_behalf_of`, `GrnEntry.undertaking_id` back-ref) — Hub layer just wasn't surfacing it. Existing two-click approve flow continues to work; this is a render-only enhancement.
+
+**Scope decision**: ship the visual parity fix only. Co-location (server-side pair_id sort) and bulk Approve-pair endpoint were considered but rejected as premature — co-location is redundant once cards name their partners by doc_ref, and a new atomic bulk-approve endpoint carries ledger risk (Rule 20 audit on `postSingleUndertaking` / `postSingleExpense` / `postSinglePrfCalf` session-threading) for a 5-second click-savings win. Re-evaluate later if click fatigue becomes a real complaint.
+
+**Tasks**:
+
+- [x] `universalApprovalService.js` INVENTORY MODULE_QUERIES populates `recorded_on_behalf_of` (mirroring EXPENSES at L641) AND `undertaking_id` back-ref (with `select: 'undertaking_number receipt_date status line_items'`) so the detail builder can render a structured Linked Undertaking badge.
+- [x] `universalApprovalService.js` UNDERTAKING MODULE_QUERIES populates `recorded_on_behalf_of` so the UT card renders the same proxy badge.
+- [x] `documentDetailBuilder.buildInventoryDetails` emits `recorded_on_behalf_of` AND a structured `linked_undertaking` object (`{ _id, undertaking_number, receipt_date, status, scan_total_count, scan_confirmed_count, variance_count }`) mirroring the existing `linked_grn` shape on the UT side. Raw `undertaking_id` still emitted for downstream consumers (reversal cascade chip, etc.).
+- [x] `documentDetailBuilder.buildUndertakingDetails` emits `recorded_on_behalf_of`.
+- [x] `DocumentDetailPanel.jsx` INVENTORY block: violet "On behalf of" pill added next to Status (copies the EXPENSE-card pattern at L1028-1031); structured "Linked Undertaking: UT-XXX · receipt date · scanned/total · variances · status" badge inserted between Status and GRN Date in the same `var(--erp-accent-soft)` style as the UT-side "Linked GRN" badge; old `['Undertaking', d.undertaking_id]` ref removed from `LinkedRefsLine` (was the source of the truncated `_id.slice(-8)` chip). `StockReassignment` ref kept — different relationship.
+- [x] `DocumentDetailPanel.jsx` UNDERTAKING block: same violet "On behalf of" pill added inside the existing chip row alongside scan/variance badges.
+- [x] `WorkflowGuide.jsx` `approval-manager` step list gains a "GRN ↔ Undertaking pairing" line so users notice the new visual signals (Rule #1 — banner reflects current behavior).
+- [x] NEW healthcheck `backend/erp/scripts/healthcheckApprovalHubVisualParity.js` (16 static-source assertions across 4 sections: hub queries, detail builder, panel renders, model-field regression guard). **Run: `node backend/erp/scripts/healthcheckApprovalHubVisualParity.js` — 16/16 PASS.**
+- [x] Vite build: green in 12.93s. DocumentDetailPanel chunk compiled clean.
+
+**Lookup posture**: zero lookup changes. `recorded_on_behalf_of` is already population-driven via the proxy entry path (`resolveOwnerForWrite` on the GRN create + `autoUndertakingForGrn` inheritance per Phase G4.5b). No new categories, no metadata. Subscription model: when SaaS spin-out generalizes `entity_id` to `tenant_id` (Year 2 per CLAUDE.md 0d), the hub query inherits the eventual rename automatically — no work in this phase.
+
+**Subscription readiness**: per-entity `entity_id` filter on the hub query is unchanged (Rule #21 alignment intact); cross-entity president visibility is inherited from `getUniversalPending`. No new role gates introduced — relies entirely on the existing `MODULE_DEFAULT_ROLES.INVENTORY` + `MODULE_DEFAULT_ROLES.UNDERTAKING` + `approve_inventory` sub-permission stack.
+
+**Backwards compatibility / wiring integrity**:
+- Existing two-click approve flow on the Hub is unchanged. President / approver can still click Approve on the GRN, then Approve on the UT — no flow regression.
+- The `LinkedRefsLine` reversal-cascade component itself is unchanged — INVENTORY just no longer passes `['Undertaking', d.undertaking_id]` to it. Other modules that use the same component (INCOME, EXPENSES) are untouched.
+- `documentDetailHydrator` (Phase 32 wiring) — not edited. The new `linked_undertaking` field is additive; old consumers that read `details.undertaking_id` still get the bare ID.
+- Reversal Console — uses the same `DocumentDetailPanel` component but sources `details` from the reversal preview API. The new fields are absent there (no populate), so the new badges simply don't render in reversal mode. Zero behavioral change for the reversal console.
+
+**Verification (manual smoke)**:
+1. Login as president (`yourpartner@viosintegrated.net`) → `/erp/approvals` → confirm proxied GRN + partner UT both show the violet "On behalf of <name>" pill.
+2. Expand the GRN card → confirm the truncated `776ae49c` chip is gone; new "Linked Undertaking: UT-XXX · ..." badge appears in the accent-soft style.
+3. Confirm non-proxied GRNs render with NO violet pill (no false-positive).
+4. Confirm standalone GRNs (no linked Undertaking) render without the new badge (no broken render on null).
+5. Approve flow unchanged: green Approve button still posts each card individually.
+6. `node backend/erp/scripts/healthcheckApprovalHubVisualParity.js` → exit 0.
+
+**Files touched (5)**:
+- modified: [backend/erp/services/universalApprovalService.js](backend/erp/services/universalApprovalService.js) — `.populate('recorded_on_behalf_of', 'name')` on INVENTORY + UNDERTAKING; populate `undertaking_id` on INVENTORY.
+- modified: [backend/erp/services/documentDetailBuilder.js](backend/erp/services/documentDetailBuilder.js) — `buildInventoryDetails` + `buildUndertakingDetails` emit new fields.
+- modified: [frontend/src/erp/components/DocumentDetailPanel.jsx](frontend/src/erp/components/DocumentDetailPanel.jsx) — violet pill on INVENTORY + UNDERTAKING; structured Linked Undertaking badge on INVENTORY; truncated chip removed.
+- modified: [frontend/src/erp/components/WorkflowGuide.jsx](frontend/src/erp/components/WorkflowGuide.jsx) — `approval-manager` guide tip.
+- new: [backend/erp/scripts/healthcheckApprovalHubVisualParity.js](backend/erp/scripts/healthcheckApprovalHubVisualParity.js) — 16-check regression contract.

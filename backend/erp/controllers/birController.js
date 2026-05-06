@@ -1307,18 +1307,47 @@ exports.markReceived2307Inbound = catchAsync(async (req, res) => {
   if (!(await ensureRole(req, res, 'RECONCILE_INBOUND_2307'))) return;
   const { rowId } = req.params;
   if (!rowId) return res.status(400).json({ success: false, message: 'rowId is required.' });
-  const { cert_2307_url, cert_filename, cert_content_hash, cert_notes } = req.body || {};
+  // Phase P1.2 Slice 7-extension Round 2C — when finance picks a 2307 photo
+  // from the "From BDM Captures" picker on the Mark-Received modal, the page
+  // forwards the source CaptureSubmission._id so this controller can back-link
+  // the capture and advance its lifecycle (PENDING_PROXY → PROCESSED) after
+  // the cert is recorded. Extracted before passing the remaining fields to
+  // the reconciliation service so capture_id never reaches the CwtLedger row.
+  const { cert_2307_url, cert_filename, cert_content_hash, cert_notes, capture_id } = req.body || {};
   try {
     const row = await cwt2307ReconciliationService.markReceived(rowId, {
       entityId: req.entityId, userId: req.user?._id,
       cert_2307_url, cert_filename, cert_content_hash, cert_notes,
     });
+
+    // Round 2C — best-effort: a failure here does NOT roll back the receive
+    // (the CWT credit posture is the system of record; the capture back-link
+    // is audit metadata that the office can re-stamp manually if it drifts).
+    // linkCaptureToDocument is idempotent and verifies the caller is owner /
+    // proxy / privileged before mutating, so a hostile capture_id can not
+    // silently re-flip an unrelated capture.
+    if (capture_id) {
+      try {
+        const { linkCaptureToDocument } = require('./captureSubmissionController');
+        await linkCaptureToDocument(capture_id, 'CwtLedgerEntry', row._id, {
+          user: req.user,
+          entityId: req.entityId,
+          isPresident: req.isPresident,
+          isAdmin: req.isAdmin,
+          isFinance: req.isFinance,
+        });
+      } catch (linkErr) {
+        console.error('[markReceived2307Inbound] linkCaptureToDocument failed:', linkErr.message);
+      }
+    }
+
     console.log('[BIR_2307_INBOUND_MARK_RECEIVED]', JSON.stringify({
       user: req.user?.email, role: req.user?.role,
       entity_id: String(req.entityId),
       row_id: String(row._id), cr_no: row.cr_no, cwt: row.cwt_amount,
       year: row.year, quarter: row.quarter,
       content_hash: row.cert_content_hash, has_url: !!row.cert_2307_url,
+      capture_id: capture_id ? String(capture_id) : null,
       ts: new Date().toISOString(),
     }));
     res.json({ success: true, data: row });

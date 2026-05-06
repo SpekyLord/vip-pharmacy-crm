@@ -401,6 +401,10 @@ function ScanCSIModal({ open, onClose, onApply, hospitals, productOptions, initi
       doc_ref: fieldVal(extracted.invoice_no),
       csi_photo_url: ocrData?.s3_url || '',
       csi_attachment_id: ocrData?.attachment_id || null,
+      // Phase P1.2 Slice 9 partial (Round 2B) — when the OCR ran in capture-pull
+      // mode, propagate the source CaptureSubmission._id so createSale can
+      // auto-finalize it. Picker → modal → onApply → row → submit payload.
+      capture_id: initialCaptureId || null,
       line_items: matchedItems.length > 0
         ? matchedItems.map(mi => ({
             product_id: mi.product_match?.product?.product_id || '',
@@ -906,6 +910,9 @@ export default function SalesEntry() {
       doc_ref: scannedData.doc_ref,
       csi_photo_url: scannedData.csi_photo_url || '',
       csi_attachment_id: scannedData.csi_attachment_id || null,
+      // Phase P1.2 Slice 9 partial (Round 2B) — propagate source capture so
+      // createSale can auto-finalize it after this row is saved.
+      capture_id: scannedData.capture_id || null,
       line_items: scannedData.line_items?.length
         ? scannedData.line_items.map(li => ({ ...li, batch_lot_no: li.batch_lot_no || '', fifo_override: false, override_reason: '' }))
         : [{ product_id: '', qty: '', unit: '', unit_price: '', line_discount_percent: '', item_key: '', batch_lot_no: '', fifo_override: false, override_reason: '' }]
@@ -1003,6 +1010,10 @@ export default function SalesEntry() {
           petty_cash_fund_id: saleType === 'CASH_RECEIPT' && cashReceiptFundId ? cashReceiptFundId : undefined,
           csi_photo_url: row.csi_photo_url || undefined,
           csi_attachment_id: row.csi_attachment_id || undefined,
+          // Phase P1.2 Slice 9 partial (Round 2B) — only forward on isCreate;
+          // capture-finalize on update would double-flip an already-linked
+          // capture if the user re-saves a draft.
+          ...(isCreate && row.capture_id ? { capture_id: row.capture_id } : {}),
           line_items: validItems.map(li => ({
             product_id: idOf(li.product_id),
             item_key: li.item_key,

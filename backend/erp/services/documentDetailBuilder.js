@@ -101,17 +101,37 @@ function buildIncomeDetails(item) {
 }
 
 function buildInventoryDetails(item) {
+  // Phase 32R-VP (May 6, 2026) — surface the proxy submitter and the linked
+  // Undertaking back-ref structurally so the GRN approval card matches the
+  // density of its sibling UT card. Both fields are populated by the hub
+  // query in universalApprovalService.js (INVENTORY MODULE_QUERIES).
+  const ut = (item.undertaking_id && typeof item.undertaking_id === 'object')
+    ? item.undertaking_id
+    : null;
   return {
     grn_date: item.grn_date,
     status: item.status,
     bdm: item.bdm_id?.name || null,
     bdm_email: item.bdm_id?.email || null,
+    recorded_on_behalf_of: item.recorded_on_behalf_of?.name || null,
     posted_by: item.posted_by?.name || null,
     posted_at: item.posted_at || null,
     deletion_event_id: item.deletion_event_id || null,
     reopen_count: item.reopen_count || 0,
     created_at: item.created_at || null,
-    undertaking_id: item.undertaking_id || null,
+    // Keep raw `undertaking_id` for downstream callers that read the bare ID
+    // (reversal cascade chip, undertaking_id back-ref consumers); the new
+    // structured `linked_undertaking` is what the visual card renders.
+    undertaking_id: ut?._id || item.undertaking_id || null,
+    linked_undertaking: ut ? {
+      _id: ut._id,
+      undertaking_number: ut.undertaking_number || null,
+      receipt_date: ut.receipt_date || null,
+      status: ut.status || null,
+      scan_total_count: (ut.line_items || []).length,
+      scan_confirmed_count: (ut.line_items || []).filter(l => l.scan_confirmed).length,
+      variance_count: (ut.line_items || []).filter(l => l.variance_flag).length,
+    } : null,
     reassignment_id: item.reassignment_id || null,
     warehouse_name: item.warehouse_id?.warehouse_name
       ? `${item.warehouse_id.warehouse_name} (${item.warehouse_id.warehouse_code})`
@@ -164,6 +184,10 @@ function buildUndertakingDetails(item) {
     receipt_date: item.receipt_date,
     bdm: item.bdm_id?.name || null,
     bdm_email: item.bdm_id?.email || null,
+    // Phase 32R-VP (May 6, 2026) — proxy badge parity. UT inherits this from
+    // its parent GRN at autoUndertakingForGrn time so approver sees the same
+    // "On behalf of <name>" pill on both cards of the pair.
+    recorded_on_behalf_of: item.recorded_on_behalf_of?.name || null,
     acknowledged_by: item.acknowledged_by?.name || null,
     acknowledged_at: item.acknowledged_at || null,
     reopen_count: item.reopen_count || 0,
