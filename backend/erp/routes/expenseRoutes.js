@@ -18,7 +18,7 @@ const {
   // Car Logbook
   createCarLogbook, updateCarLogbook, getCarLogbookList, getCarLogbookById, deleteDraftCarLogbook,
   validateCarLogbook, submitCarLogbook, reopenCarLogbook, submitFuelEntryForApproval,
-  getSmerDailyByDate, getSmerDestinationsBatch,
+  getSmerDailyByDate, getSmerDestinationsBatch, previewCarLogbookDay,
   // Expenses (ORE/ACCESS)
   createExpense, updateExpense, getExpenseList, getExpenseById, deleteDraftExpense,
   validateExpenses, submitExpenses, reopenExpenses,
@@ -69,6 +69,11 @@ router.post('/car-logbook', createCarLogbook);
 router.get('/car-logbook', getCarLogbookList);
 router.get('/car-logbook/smer-destinations', getSmerDestinationsBatch);
 router.get('/car-logbook/smer-destination/:date', getSmerDailyByDate);
+// Phase P1.2 Slice 6 (May 06 2026) — auto-populate preview. Mounted BEFORE
+// `/car-logbook/:id` so Express doesn't route /preview to getCarLogbookById.
+// Single day:  ?date=YYYY-MM-DD
+// Batch:       ?dates=YYYY-MM-DD,YYYY-MM-DD,...
+router.get('/car-logbook/preview', previewCarLogbookDay);
 router.post('/car-logbook/validate', validateCarLogbook);
 router.post('/car-logbook/submit', periodLockCheck('EXPENSE'), submitCarLogbook);
 router.post('/car-logbook/reopen', periodLockCheck('EXPENSE'), reopenCarLogbook);

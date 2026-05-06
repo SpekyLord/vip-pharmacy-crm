@@ -27,6 +27,11 @@ const { getEditableStatuses } = require('../services/approvalService');
 // inline `assigned_to` handling that lived only in batch upload. Unifies
 // audit codes with Sales / Collections / GRN (PROXY_CREATE / PROXY_UPDATE).
 const { resolveOwnerForWrite, widenFilterForProxy, canProxyEntry } = require('../utils/resolveOwnerScope');
+// Phase P1.2 Slice 6 (May 06 2026) — auto-populate Car Logbook day from
+// SMER + DriveAllocation + FUEL_ENTRY captures. The service is the single
+// source of truth; createCarLogbook merges it with body, previewCarLogbookDay
+// returns the raw shape for the proxy review surface.
+const { autoPopulateCarLogbookDay, SOURCE_TAGS: CAR_LOGBOOK_SOURCE_TAGS } = require('../services/carLogbookAutoPopulate');
 
 const { ROLES } = require('../../constants/roles');
 const { detectText } = require('../ocr/visionClient');
@@ -1258,14 +1263,78 @@ const createCarLogbook = catchAsync(async (req, res) => {
   // reassign owner or proxy audit past the helper's gate.
   const { assigned_to: _dAssigned, bdm_id: _dBdm, recorded_on_behalf_of: _dProxy, ...safeBody } = req.body || {};
 
+  // Phase P1.2 Slice 6 — opt-in auto-populate. When the proxy hits
+  //   POST /erp/car-logbook?autopopulate=true
+  // and provides at least entry_date, we merge body ON TOP of the auto-pop
+  // shape so manual overrides win. _autopop_sources is persisted in
+  // edit_history for audit (per-field provenance trail).
+  let autopopSources = null;
+  let mergedBody = safeBody;
+  // Accept autopopulate flag from query OR body — the frontend hook posts it
+  // in the body to avoid threading a custom config object through useExpenses.
+  const autopopulateRequested =
+    String(req.query.autopopulate || '').toLowerCase() === 'true'
+    || safeBody.autopopulate === true
+    || String(safeBody.autopopulate || '').toLowerCase() === 'true';
+  // Strip the meta flag from the persistence body so it doesn't end up on the doc.
+  delete safeBody.autopopulate;
+  if (autopopulateRequested && safeBody.entry_date) {
+    try {
+      const populated = await autoPopulateCarLogbookDay({
+        entity_id: req.entityId,
+        bdm_id: owner.ownerId,
+        entry_date: safeBody.entry_date,
+      });
+      // Body wins on every overlapping field (proxy may have already typed a
+      // correction). Only fill blanks from the auto-pop shape.
+      mergedBody = {
+        destination: safeBody.destination || populated.destination || '',
+        starting_km: safeBody.starting_km != null ? safeBody.starting_km : populated.starting_km,
+        ending_km: safeBody.ending_km != null ? safeBody.ending_km : populated.ending_km,
+        starting_km_photo_url: safeBody.starting_km_photo_url || populated.starting_km_photo_url || '',
+        ending_km_photo_url: safeBody.ending_km_photo_url || populated.ending_km_photo_url || '',
+        personal_km: safeBody.personal_km != null ? safeBody.personal_km : populated.personal_km,
+        // fuel_entries: body wins entirely if provided (proxy may have edited
+        // some of them); empty/undefined → auto-pop fills.
+        fuel_entries: Array.isArray(safeBody.fuel_entries) && safeBody.fuel_entries.length > 0
+          ? safeBody.fuel_entries
+          : populated.fuel_entries,
+        // Pass-through everything else (period, cycle, notes, etc.)
+        ...Object.fromEntries(
+          Object.entries(safeBody).filter(([k]) =>
+            ![
+              'destination', 'starting_km', 'ending_km',
+              'starting_km_photo_url', 'ending_km_photo_url',
+              'personal_km', 'fuel_entries',
+            ].includes(k)
+          )
+        ),
+      };
+      autopopSources = populated._autopop_sources;
+    } catch (err) {
+      // Auto-populate is non-fatal — log + fall through to plain create.
+      console.warn('[createCarLogbook] auto-populate failed, falling through:', err.message);
+    }
+  }
+
+  const initialEditHistory = autopopSources
+    ? [{
+        action: 'AUTO_POPULATE',
+        sources: autopopSources,
+        at: new Date(),
+        by: req.user._id,
+      }]
+    : [];
+
   const entry = await CarLogbookEntry.create({
-    ...safeBody,
+    ...mergedBody,
     km_per_liter: kmPerLiter,
     entity_id: req.entityId,
     bdm_id: owner.ownerId,
     recorded_on_behalf_of: owner.proxiedBy,
     created_by: req.user._id,
-    status: 'DRAFT'
+    status: 'DRAFT',
+    edit_history: initialEditHistory,
   });
 
   if (owner.isOnBehalf) {
@@ -1281,7 +1350,15 @@ const createCarLogbook = catchAsync(async (req, res) => {
   }
 
   const autoCalf = await autoCalfForSource(entry, 'CARLOGBOOK');
-  res.status(201).json({ success: true, data: entry, auto_calf: autoCalf ? { _id: autoCalf._id, calf_number: autoCalf.calf_number, amount: autoCalf.amount } : null });
+  res.status(201).json({
+    success: true,
+    data: entry,
+    auto_calf: autoCalf ? { _id: autoCalf._id, calf_number: autoCalf.calf_number, amount: autoCalf.amount } : null,
+    // Phase P1.2 Slice 6 — proxy review surface uses these to render the
+    // source badges next to each field. Null when autopopulate wasn't requested.
+    auto_populated: !!autopopSources,
+    autopop_sources: autopopSources,
+  });
 });
 
 const updateCarLogbook = catchAsync(async (req, res) => {
@@ -1454,6 +1531,92 @@ const getSmerDestinationsBatch = catchAsync(async (req, res) => {
   }
 
   res.json({ success: true, data: result });
+});
+
+// Phase P1.2 Slice 6 — Car Logbook auto-populate preview.
+//
+// GET /erp/car-logbook/preview?bdm_id=<id>&date=YYYY-MM-DD&dates=YYYY-MM-DD,YYYY-MM-DD
+//
+// Returns the auto-populated row(s) WITHOUT writing. Used by the proxy review
+// surface on /erp/car-logbook to render source badges before the proxy decides
+// to save. Does NOT need an EDIT_CAR_LOGBOOK_DESTINATION gate — preview is a
+// pre-condition to editing, and the actual write is gated by the existing
+// proxy resolver (Phase G4.5e).
+//
+// Two request shapes:
+//   single day → ?date=YYYY-MM-DD             returns { day, populated, _autopop_sources, ... }
+//   batch     → ?dates=YYYY-MM-DD,YYYY-MM-DD  returns { byDate: {YYYY-MM-DD: populated, ...} }
+//
+// Rule #21: privileged callers (and proxy contractors) must pass bdm_id —
+//           no silent self-fallback. Plain BDMs get scoped to req.bdmId.
+const previewCarLogbookDay = catchAsync(async (req, res) => {
+  // Widen filter so an eligible proxy can preview a target BDM's day. This is
+  // a no-op for admin/finance/president (they're tenant-scoped already).
+  await widenFilterForProxy(req, 'expenses', CAR_LOGBOOK_PROXY_OPTS);
+
+  const privileged = !!(req.isPresident || req.isAdmin || req.isFinance);
+  const proxy = await canProxyEntry(req, 'expenses', CAR_LOGBOOK_PROXY_OPTS);
+  const bdmId = req.query.bdm_id || ((privileged || proxy) ? null : req.bdmId);
+  if ((privileged || proxy) && !req.query.bdm_id) {
+    return res.status(400).json({
+      success: false,
+      message: 'bdm_id is required — privileged/proxy users must specify which BDM to preview',
+    });
+  }
+  if (!bdmId) {
+    return res.status(400).json({
+      success: false,
+      message: 'bdm_id could not be resolved',
+    });
+  }
+
+  const { date, dates } = req.query || {};
+
+  // Batch shape — one round-trip for a whole cycle's days
+  if (dates) {
+    const dateList = String(dates).split(',').filter(Boolean);
+    if (!dateList.length) return res.json({ success: true, data: { byDate: {} } });
+    if (dateList.length > 31) {
+      return res.status(400).json({
+        success: false,
+        message: 'preview accepts at most 31 dates per request',
+      });
+    }
+    const byDate = {};
+    // Sequential to keep memory bounded; each day is 4 small queries → fine.
+    for (const d of dateList) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        byDate[d] = await autoPopulateCarLogbookDay({
+          entity_id: req.entityId,
+          bdm_id: bdmId,
+          entry_date: d,
+        });
+      } catch (err) {
+        byDate[d] = { error: err.message, _has_any_signal: false };
+      }
+    }
+    return res.json({ success: true, data: { byDate } });
+  }
+
+  // Single-day shape
+  if (!date) {
+    return res.status(400).json({
+      success: false,
+      message: 'date (YYYY-MM-DD) or dates (comma-separated) is required',
+    });
+  }
+
+  try {
+    const populated = await autoPopulateCarLogbookDay({
+      entity_id: req.entityId,
+      bdm_id: bdmId,
+      entry_date: date,
+    });
+    return res.json({ success: true, data: populated });
+  } catch (err) {
+    return res.status(400).json({ success: false, message: err.message });
+  }
 });
 
 const deleteDraftCarLogbook = catchAsync(async (req, res) => {
@@ -4377,6 +4540,8 @@ module.exports = {
   createCarLogbook, updateCarLogbook, getCarLogbookList, getCarLogbookById, deleteDraftCarLogbook,
   validateCarLogbook, submitCarLogbook, reopenCarLogbook, submitFuelEntryForApproval,
   getSmerDailyByDate, getSmerDestinationsBatch,
+  // Phase P1.2 Slice 6 (May 06 2026) — auto-populate preview
+  previewCarLogbookDay,
   // Expenses (ORE/ACCESS)
   createExpense, updateExpense, getExpenseList, getExpenseById, deleteDraftExpense,
   validateExpenses, submitExpenses, reopenExpenses,
