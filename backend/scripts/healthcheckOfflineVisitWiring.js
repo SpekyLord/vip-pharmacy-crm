@@ -226,8 +226,103 @@ console.log('─'.repeat(50));
     if (!/Generate Deck Link/.test(file)) {
       warn('PAGEGUIDE', "'communication-log' banner missing Phase N 'Generate Deck Link' copy (Phase N.6)");
     }
+    // Phase N.8 — banner must reflect the new "rejected on sync" UX so BDMs
+    // know to look at the Sync Errors tray when a server-rejected replay
+    // surfaces.
+    if (!/Phase N\.8|rejected on sync|Sync Errors tray/i.test(file)) {
+      warn('PAGEGUIDE', "'new-visit' banner missing Phase N.8 'rejected on sync' / 'Sync Errors tray' copy");
+    }
   }
   if (issues === startIssues) console.log('  ✓ PageGuide Phase N copy wired');
+}
+
+// ── 9. Phase N.8 — Service worker broadcasts VIP_VISIT_DRAFT_LOST on 4xx ──
+// Without this, server-rejected replays (Phase O 422 SCREENSHOT_DETECTED, 400
+// VISIT_PHOTO_TOO_OLD, etc.) silently delete the draft photos with no UI
+// feedback. The fix is in the SW replay loop: capture the server's structured
+// {code, message} and broadcast it before deleting.
+console.log('\n9. Phase N.8 — SW broadcasts VIP_VISIT_DRAFT_LOST on 4xx replay');
+console.log('─'.repeat(50));
+{
+  const startIssues = issues;
+  const file = readSafe(path.join(FRONTEND, 'public', 'sw.js'));
+  if (!file) {
+    warn('SW_N8', 'frontend/public/sw.js not found');
+  } else {
+    // Cache version must be bumped to force production clients to drop old SW
+    if (!/CACHE_VERSION\s*=\s*['"]v4['"]/.test(file)) {
+      warn('SW_N8', "CACHE_VERSION not bumped to 'v4' — production clients will keep running pre-N.8 SW");
+    }
+    // 4xx broadcast block must exist and reach the listener pool
+    if (!/Phase N\.8 — Generic 4xx/.test(file)) {
+      warn('SW_N8', "Phase N.8 generic-4xx broadcast block missing — server-rejected replays still silent");
+    }
+    if (!/type:\s*['"]VIP_VISIT_DRAFT_LOST['"]/.test(file)) {
+      warn('SW_N8', "VIP_VISIT_DRAFT_LOST type emission missing in SW");
+    }
+    // Carries server `code` and `status` through to the listener payload
+    if (!/code:\s*errCode/.test(file) || !/status:\s*response\.status/.test(file)) {
+      warn('SW_N8', "VIP_VISIT_DRAFT_LOST payload missing structured `code` + `status` fields");
+    }
+    // E11000 dedup branch must STILL be silent (no broadcast — that path is
+    // a successful idempotent dedup, not a draft-lost event).
+    if (!/already been logged this week|duplicate key|e11000/.test(file)) {
+      warn('SW_N8', "E11000 idempotent-dedup branch missing — duplicate offline replays will surface as draft-lost noise");
+    }
+  }
+  if (issues === startIssues) console.log('  ✓ Phase N.8 SW broadcast wired');
+}
+
+// ── 10. Phase N.8 — SW refuses to fake-200 multipart-mid-flight failures ──
+// Without this, an online multipart POST that throws mid-flight gets queued
+// with a stale text() body (no Blob bytes) and replays as a server 4xx →
+// silent draft loss. The fix returns a real 503 OFFLINE_REPLAY_UNAVAILABLE
+// instead, so VisitLogger's catch block fires and the local draft survives.
+console.log('\n10. Phase N.8 — SW refuses fake-200 on multipart-mid-flight failure');
+console.log('─'.repeat(50));
+{
+  const startIssues = issues;
+  const file = readSafe(path.join(FRONTEND, 'public', 'sw.js'));
+  if (!file) {
+    warn('SW_N8_503', 'frontend/public/sw.js not found');
+  } else {
+    if (!/OFFLINE_REPLAY_UNAVAILABLE/.test(file)) {
+      warn('SW_N8_503', "OFFLINE_REPLAY_UNAVAILABLE error code missing — multipart-mid-flight fake-200 hole still open");
+    }
+    if (!/status:\s*503/.test(file)) {
+      warn('SW_N8_503', "503 response shape missing for mid-flight multipart refusal");
+    }
+  }
+  // VisitLogger must surface the OFFLINE_REPLAY_UNAVAILABLE code to the BDM
+  // — otherwise they get a generic "Failed to log visit" toast and don't
+  // know that retrying is the right action.
+  const vl = readSafe(path.join(FRONTEND, 'src', 'components', 'employee', 'VisitLogger.jsx'));
+  if (!vl) {
+    warn('SW_N8_503', 'frontend/src/components/employee/VisitLogger.jsx not found');
+  } else if (!/OFFLINE_REPLAY_UNAVAILABLE/.test(vl)) {
+    warn('SW_N8_503', "VisitLogger does not handle OFFLINE_REPLAY_UNAVAILABLE — BDM gets generic toast");
+  }
+  if (issues === startIssues) console.log('  ✓ Phase N.8 fake-200 refusal wired');
+}
+
+// ── 11. Phase N.8 — listener + tray surface the structured code/status ──
+console.log('\n11. Phase N.8 — listener + tray carry structured code through');
+console.log('─'.repeat(50));
+{
+  const startIssues = issues;
+  const om = readSafe(path.join(FRONTEND, 'src', 'utils', 'offlineManager.js'));
+  if (!om) {
+    warn('LISTENER', 'frontend/src/utils/offlineManager.js not found');
+  } else if (!/code:\s*data\.code/.test(om) || !/status:\s*typeof data\.status === 'number'/.test(om)) {
+    warn('LISTENER', "offlineManager.handleSWMessage doesn't surface code/status to onVisitDraftLost subscribers");
+  }
+  const hook = readSafe(path.join(FRONTEND, 'src', 'hooks', 'useOfflineSyncListener.js'));
+  if (!hook) {
+    warn('LISTENER', 'useOfflineSyncListener hook not found');
+  } else if (!/isServerRejection/.test(hook) || !/Offline visit rejected on sync/.test(hook)) {
+    warn('LISTENER', "useOfflineSyncListener doesn't differentiate photo-loss from server-rejection toast");
+  }
+  if (issues === startIssues) console.log('  ✓ Phase N.8 listener + toast differentiation wired');
 }
 
 console.log('\n' + '═'.repeat(50));

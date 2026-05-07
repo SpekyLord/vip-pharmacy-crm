@@ -711,6 +711,20 @@ const VisitLogger = ({ doctor, onSuccess }) => {
         return;
       }
 
+      // Phase N.8 — Service worker refused to fake-200 a multipart visit POST
+      // that failed mid-flight (radio dropped during upload while nominally
+      // online). The local draft IS still safe — VisitLogger has not yet
+      // deleted it (only deletes on success at line ~646). Tell the BDM to
+      // tap Submit again; if they're now genuinely offline, the next attempt
+      // routes through createOffline() and queues cleanly.
+      if (err.response?.status === 503 && err.response?.data?.code === 'OFFLINE_REPLAY_UNAVAILABLE') {
+        toast.error(
+          err.response.data.message || 'Network dropped while submitting. Tap Submit again — your draft is safe.',
+          { duration: 8000 }
+        );
+        return;
+      }
+
       // Show detailed validation errors if available
       if (err.response?.data?.errors?.length > 0) {
         const errorMessages = err.response.data.errors.map(e => `${e.field}: ${e.message}`).join(', ');
