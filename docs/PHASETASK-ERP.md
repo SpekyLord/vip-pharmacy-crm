@@ -16,6 +16,76 @@
 
 ---
 
+## PHASE 32R-Transfer-Stock-Scope — IST/ICT Product Dropdown ∩ Source Warehouse ✅ SHIPPED + RATIFIED (May 7, 2026)
+
+**Goal:** Fix "Internal Stock Reassignment product dropdown is empty even after picking Source Custodian + Source Warehouse" reported with screenshot. Pick the same fix for the Inter-Company Transfer modal (same class of bug, surfaced if the user had reached it).
+
+**Why now:** User report with a screenshot of `/erp/transfers` Internal modal — Judy Mae Patrocinio + ACC Shared Services picked, Product dropdown empty. The shared-warehouse model (`BAC — VIP Bacolod`, `ACC — Shared Services`) is becoming common as BDMs share office/warehouse facilities.
+
+**Root cause (two coupled bugs):**
+
+1. **Backend `fifoEngine.buildStockMatch` was XOR**, not AND. When BOTH `bdmId` and `opts.warehouseId` were provided, the code:
+   ```js
+   if (opts?.warehouseId) match.warehouse_id = ...
+   else if (bdmId) match.bdm_id = ...
+   ```
+   silently dropped the bdm_id filter. For shared warehouses with multiple BDMs' stock, the dropdown returned the warehouse-wide union — letting BDM A see (and pick) BDM B's stock. For non-overlapping cases, the entity_id mismatch could collapse the result to zero (the symptom Patrocinio's screenshot showed).
+
+2. **Frontend never forwarded `warehouse_id`** to the dropdown queries. `TransferOrders.jsx` called `getMyStock(newBdmId)` (Internal) and `getMyStock(newBdmId, form.source_entity_id)` (IC), with no warehouse, and never re-fetched on warehouse change. The Internal modal also dropped `entity_id`, falling through to `req.entityId` (top-right working-entity header), which can differ from the BDM list's home entity for privileged callers — Jay Ann viewing VIP, Patrocinio's BDM record in MG-CO → `req.entityId=VIP` returns no Patrocinio stock → empty dropdown.
+
+**The fix:**
+
+1. **`backend/erp/services/fifoEngine.js` `buildStockMatch`** — XOR → AND when both filters provided. Two independent `if` statements (no `else if`). Backwards-compatible: callers passing only one filter get the same match they always got. Strict-superset safety on consume-side callers (salesController, consignmentController, interCompanyService) that already pass both — each InventoryLedger row carries a single (bdm_id, warehouse_id) pair, so AND never excludes legitimate rows in single-owner warehouses, and correctly excludes wrong-owner rows in shared warehouses.
+
+2. **`frontend/src/erp/pages/TransferOrders.jsx`**:
+   - IC + Internal modals each get a `useEffect` keyed on `(source_bdm_id, source_warehouse_id, source_entity_id)` that fetches stock + clears batch cache on change. Source Custodian onChange handlers reduced to pure state setters (no in-handler fetch — the useEffect owns it).
+   - `getBatches` calls forward `source_warehouse_id` so cross-warehouse batches don't leak into the line-item batch dropdown. Internal modal's `cacheKey` extended with `source_warehouse_id` so two warehouses' batches stay partitioned.
+   - Internal modal also forwards `user?.entity_id` (the BDM dropdown's home entity) to keep the stock query aligned with the BDM list.
+   - Product `<SelectField>` `disabled={!sourceReady}` with placeholder `"Pick custodian + warehouse"` until both are picked. Amber hint banner above the line-items table explains why.
+   - Internal modal's product label now also shows the available qty (`brand — 30000 TABLET`), matching the IC modal pattern.
+
+3. **`frontend/src/erp/components/WorkflowGuide.jsx` `transfers`** — step 4 + tip explain the new BDM ∩ warehouse intersection contract (Rule #1).
+
+4. **`backend/scripts/healthcheckTransferStockScope.js`** (NEW) — 40 assertions covering the AND mode + endpoint contracts + frontend hook signatures + IC + Internal modal wiring + banner copy + consume-side callers unchanged.
+
+**Subscription readiness:** zero new lookup categories. Reuses every existing role gate — `PROXY_ENTRY_ROLES.INTERNAL_TRANSFER` (Phase G4.5dd), MODULE_DEFAULT_ROLES.INVENTORY (Phase G4) for two-person approval rule, period locks, and the same-custodian rebalance flow (Phase G4.5dd-r2). `req.entityId` (Rule #19) and `?bdm_id=` privileged-caller override (Rule #21) posture unchanged.
+
+**Cascading downstream sanity verified:**
+- salesController.consumeFIFO/consumeSpecificBatch — passes `(entity, submitBdmId, ..., {warehouseId})`. Pre-fix XOR consumed from "warehouse Y, any BDM"; post-fix AND consumes from "warehouse Y AND that BDM". Same rows in single-owner warehouses; correctly fewer rows in shared warehouses (closes a latent cross-BDM stock-touch loophole).
+- consignmentController.consumeFIFO/consumeSpecificBatch — same pattern.
+- interCompanyController.consumeSpecificBatch — same pattern.
+- interCompanyService.consumeFIFO/consumeSpecificBatch — same pattern.
+- creditNoteController.buildStockSnapshot — passes only bdmId, no warehouseId; behavior identical pre/post.
+- inventoryController.getMyStock display + getBatches display — privileged users querying their own bdm_id at a shared warehouse now correctly see only their slice (this was the original symptom). Non-privileged users (BDM querying their own scope) — behavior identical.
+
+**Verification:**
+- Healthcheck: **40/40 PASS** ([backend/scripts/healthcheckTransferStockScope.js](../backend/scripts/healthcheckTransferStockScope.js)).
+- Regression healthcheck: `healthcheckCaptureHub.js` **660/660 PASS**.
+- Vite build: ✓ 43.92s, no warnings.
+- Live API smoke (president on dev VIP entity): warehouse `BAC` holds stock from 2 BDMs (BDM A: 30100u/2 products; BDM B: 7415u/19 products). Pre-fix `?bdm_id=A&warehouse_id=BAC` returned 37515u/21 (warehouse-only — wrong). Post-fix returns **30100u/2** for BDM A's slice; **7415u/19** for BDM B's slice; **37515u/21** for warehouse-only (no bdm); **40897u/4** for BDM A across all warehouses. AND mode works correctly across all four query shapes.
+- Live UI smoke (Playwright as president): `/erp/transfers` → Internal tab → "+ Reassign Stock" → modal opens cleanly with amber hint banner, Product placeholder "Pick custodian + warehouse", picker disabled. Pick Source Custodian = Gregg Louie Vios + Source Warehouse = BAC → dropdown enables and lists exactly **2 products** (Anaway Forte 30000 TABLET + Ascorsaph-Zee 100 CAPSULE) matching the API. Switch Source Warehouse to ILO-MAIN → dropdown re-fetches and shows **2 different products** (Viprazole 4998 VIAL + Viptriaxone 5799 VIAL) — totals match API. IC modal also opens with hint banner + disabled placeholder. 0 console errors throughout.
+- Screenshots at repo root: `phase-32r-ist-ratified-product-dropdown-populated.png`, `phase-32r-ist-ratified-warehouse-change-refetched.png`, `phase-32r-ict-ratified-gate-banner.png` (DO NOT commit).
+
+**Files modified/added (4 + docs):** [backend/erp/services/fifoEngine.js](../backend/erp/services/fifoEngine.js), [frontend/src/erp/pages/TransferOrders.jsx](../frontend/src/erp/pages/TransferOrders.jsx), [frontend/src/erp/components/WorkflowGuide.jsx](../frontend/src/erp/components/WorkflowGuide.jsx), [backend/scripts/healthcheckTransferStockScope.js](../backend/scripts/healthcheckTransferStockScope.js) (NEW). Plus this PHASETASK-ERP.md section + CLAUDE-ERP.md banner refresh to v9.1 + new memory note.
+
+**Out of scope (deferred):** A consume-side AND-mode regression sweep across `salesController` + `consignmentController` test fixtures with intentional shared-warehouse scenarios. Production data didn't surface any such case (the salesController posts a sale with the actual bdm_id of the seller, so AND consumption is exactly the same set of rows XOR was consuming from). Add fixture-driven tests in a future hardening pass if a subscriber goes live with shared-warehouse multi-BDM stock at scale.
+
+**Status / Commit recipe:**
+- Working tree includes 4 modified files + 1 new healthcheck. UNCOMMITTED on `dev`. erp-remote no-push policy in force.
+- DO NOT `git add .` — also bundles the legacy GRN-Approve-UX uncommitted state from this morning. Explicit list:
+  ```
+  git add backend/erp/services/fifoEngine.js \
+          frontend/src/erp/pages/TransferOrders.jsx \
+          frontend/src/erp/components/WorkflowGuide.jsx \
+          backend/scripts/healthcheckTransferStockScope.js \
+          CLAUDE-ERP.md \
+          docs/PHASETASK-ERP.md
+  ```
+  Then `git commit -m "feat(erp): Phase 32R-Transfer-Stock-Scope — IST/ICT product dropdown intersects source BDM with source warehouse (closes shared-warehouse leak)"`.
+- Memory note: `~/.claude/projects/.../memory/handoff_phase_32r_transfer_stock_scope_may07_2026.md` (next session reads from there).
+
+---
+
 ## PHASE 32R-GRN-Approve-UX — Direct GRN Approve Unblock ✅ SHIPPED + RATIFIED (May 7, 2026)
 
 **Goal:** Fix "Can't approve VIP GRN ENTRY" reported with screenshot. The direct GRN approve path on `/erp/grn` was silently broken: clicking the green Approve button on a PENDING row appeared to do nothing — no toast, no error, the row stayed PENDING.

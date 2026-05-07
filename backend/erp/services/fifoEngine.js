@@ -14,7 +14,21 @@ const { cleanBatchNo } = require('../utils/normalize');
 
 /**
  * Build the $match filter for inventory queries.
- * Supports both legacy bdm_id filtering and new warehouse_id filtering.
+ *
+ * Phase 32R-Transfer-Stock-Scope (May 07 2026): switched from XOR (warehouse_id
+ * wins, bdm_id ignored) to AND (both filters intersect) when BOTH are provided.
+ * Rationale: shared warehouses (e.g. "ACC — Shared Services") can hold stock
+ * from multiple BDMs. Under the old XOR, a query "BDM X's stock at warehouse Y"
+ * would return ANY BDM's stock at Y, leaking cross-BDM visibility AND letting
+ * consume-side flows touch the wrong owner's rows. AND is semantically correct
+ * for IST product-dropdown filtering and a strict superset of safety on the
+ * consume side: each InventoryLedger row carries a single (bdm_id, warehouse_id)
+ * pair, so when the caller already knows both, intersecting them only filters
+ * out rows that did not match anyway.
+ *
+ * Backwards-compatible: callers passing only bdmId, only warehouseId, or
+ * neither, get the same match they got before.
+ *
  * @param {string} entityId
  * @param {string} bdmId
  * @param {Object} [opts] - { warehouseId }
@@ -22,11 +36,11 @@ const { cleanBatchNo } = require('../utils/normalize');
  */
 const buildStockMatch = (entityId, bdmId, opts, productId) => {
   const match = { entity_id: new mongoose.Types.ObjectId(entityId) };
-  // Prefer warehouse_id if provided (Phase 17); fall back to bdm_id
+  if (bdmId) {
+    match.bdm_id = new mongoose.Types.ObjectId(bdmId);
+  }
   if (opts?.warehouseId) {
     match.warehouse_id = new mongoose.Types.ObjectId(opts.warehouseId);
-  } else if (bdmId) {
-    match.bdm_id = new mongoose.Types.ObjectId(bdmId);
   }
   if (productId) {
     match.product_id = new mongoose.Types.ObjectId(productId);
