@@ -727,7 +727,7 @@ export default function TransferOrders() {
               <h3 style={{ fontSize: 14, fontWeight: 600, marginTop: 16, marginBottom: 8 }}>Line Items</h3>
               {!icSourceReady && (
                 <p style={{ fontSize: 11, color: '#92400e', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 6, padding: '6px 10px', margin: '0 0 8px' }}>
-                  Pick Source Entity, Source Custodian and Source Warehouse first — the Product dropdown lists the source custodian's stock at the chosen warehouse.
+                  Pick Source Entity, Source Custodian and Source Warehouse first — the Product dropdown lists the source custodian&apos;s stock at the chosen warehouse.
                 </p>
               )}
               <table className="line-items-grid">
@@ -840,7 +840,7 @@ export default function TransferOrders() {
               <h3 style={{ fontSize: 14, fontWeight: 600, marginTop: 16, marginBottom: 8 }}>Line Items</h3>
               {!internalSourceReady && (
                 <p style={{ fontSize: 11, color: '#92400e', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 6, padding: '6px 10px', margin: '0 0 8px' }}>
-                  Pick Source Custodian and Source Warehouse first — the Product dropdown lists the source custodian's stock at the chosen warehouse.
+                  Pick Source Custodian and Source Warehouse first — the Product dropdown lists the source custodian&apos;s stock at the chosen warehouse.
                 </p>
               )}
               <table className="line-items-grid">

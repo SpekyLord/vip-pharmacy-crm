@@ -100,7 +100,7 @@ section('4. TransferOrders.jsx — IC modal forwards warehouse_id + gates picker
     check('IC useEffect resets sourceStock + batchCache when not ready', /if\s*\(!ready\)\s*\{\s*setSourceStock\(\[\]\);\s*setBatchCache\(\{\}\)/.test(f));
     check('IC getBatches forwards warehouse_id', /getBatches\(val,\s*form\.source_bdm_id,\s*form\.source_entity_id,\s*form\.source_warehouse_id\)/.test(f));
     check('IC Product SelectField has disabled={!icSourceReady}', /SelectField[\s\S]{0,400}value=\{li\.product_id\}[\s\S]{0,200}disabled=\{!icSourceReady\}/.test(f));
-    check('IC banner copy: "Pick Source Entity, Source Custodian and Source Warehouse first"', /Pick Source Entity, Source Custodian and Source Warehouse first/.test(f));
+    check('IC banner copy: "Pick Source Entity, Source Custodian and Source Warehouse first"', /Pick Source Entity, Source Custodian and Source Warehouse first[\s\S]{0,100}custodian&apos;s stock/.test(f));
   }
 }
 
@@ -115,7 +115,7 @@ section('5. TransferOrders.jsx — Internal modal forwards warehouse_id + gates 
     check('Internal getBatches forwards entity_id + warehouse_id', /getBatches\(val,\s*reassignForm\.source_bdm_id,\s*user\?\.entity_id,\s*reassignForm\.source_warehouse_id\)/.test(f));
     check('Internal cacheKey includes warehouse_id', /r_\$\{val\}_\$\{reassignForm\.source_bdm_id\}_\$\{reassignForm\.source_warehouse_id\s*\|\|\s*'nowh'\}/.test(f));
     check('Internal Product SelectField has disabled={!internalSourceReady}', /SelectField[\s\S]{0,400}value=\{li\.product_id\}[\s\S]{0,200}disabled=\{!internalSourceReady\}/.test(f));
-    check('Internal banner copy: "Pick Source Custodian and Source Warehouse first"', /Pick Source Custodian and Source Warehouse first/.test(f));
+    check('Internal banner copy: "Pick Source Custodian and Source Warehouse first"', /Pick Source Custodian and Source Warehouse first[\s\S]{0,100}custodian&apos;s stock/.test(f));
   }
 }
 
