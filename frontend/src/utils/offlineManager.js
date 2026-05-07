@@ -346,6 +346,10 @@ function handleSWMessage(event) {
           syncedKinds: data.syncedKinds || {},
           bytes: Number(data.bytes || 0),
           remaining: Number(data.remaining || 0),
+          // Phase A.5.6 follow-up — list of `{from, to, message, offline_replay}`
+          // for visits that the server re-pointed to a merge winner during
+          // offline replay. Listeners (useOfflineSyncListener) toast each.
+          mergeRedirects: Array.isArray(data.mergeRedirects) ? data.mergeRedirects : [],
           completedAt: data.completedAt || new Date().toISOString(),
         });
       } catch { /* ignore */ }

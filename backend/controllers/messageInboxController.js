@@ -775,6 +775,13 @@ const executeAction = catchAsync(async (req, res) => {
   if (rowActionType === 'approve' && (bodyAction === 'approve' || bodyAction === 'reject')) {
     actionType = bodyAction;
   }
+  // Phase A.5.3 follow-up — coverage-join approval row exposes both [Approve]
+  // and [Reject]; we keep rowActionType as the dispatch key but pivot the
+  // verb based on bodyAction inside the branch.
+  let coverageVerb = null;
+  if (rowActionType === 'approve_coverage_join') {
+    coverageVerb = bodyAction === 'reject' ? 'reject' : 'approve';
+  }
 
   // Delegation map — all paths reuse existing controllers (Rule #20: no bypass).
   let downstream;
@@ -834,6 +841,104 @@ const executeAction = catchAsync(async (req, res) => {
         results.push({ id: vid, ok: true });
       }
       downstream = { resolved: results };
+    } else if (actionType === 'approve_coverage_join') {
+      // Phase A.5.3 follow-up — inline coverage-join approval from inbox.
+      // Mirrors the auto path of doctorController.joinCoverage but acts on
+      // BEHALF of the requester (the BDM who originally hit DUPLICATE_VIP_CLIENT
+      // and clicked Request approval), not the approving admin.
+      //
+      // Role gate: caller must have JOIN_COVERAGE_AUTO for the message's
+      // entity. Defaults [admin, president]; subscribers configure via
+      // VIP_CLIENT_LIFECYCLE_ROLES (Rule #3 / #19).
+      const Doctor = require('../models/Doctor');
+      const { userCanPerformLifecycleAction } = require('../utils/resolveVipClientLifecycleRole');
+      const reqEntityId = msg.entity_id || req.entityId || null;
+      const canApprove = await userCanPerformLifecycleAction(req.user, 'JOIN_COVERAGE_AUTO', reqEntityId);
+      if (!canApprove) {
+        return res.status(403).json({
+          success: false,
+          message: 'Granting coverage is not enabled for your role. Ask admin to update VIP_CLIENT_LIFECYCLE_ROLES → JOIN_COVERAGE_AUTO.',
+        });
+      }
+      const doctorId = payload.doctor_id;
+      const requesterId = payload.requester_user_id;
+      if (!doctorId || !requesterId) {
+        return res.status(400).json({ success: false, message: 'Missing doctor_id or requester_user_id in payload' });
+      }
+      if (coverageVerb === 'reject' && !reason.trim()) {
+        return res.status(400).json({ success: false, message: 'Reason is required for rejection' });
+      }
+
+      if (coverageVerb === 'approve') {
+        // Walk the merge chain — admin may have merged this Doctor between the
+        // request and the approval. Hop forward to the winner so we don't
+        // attribute the new assignee to a soft-deleted loser. Cap at 5 hops.
+        let currentId = doctorId;
+        let walked = false;
+        for (let hop = 0; hop < 5; hop += 1) {
+          // eslint-disable-next-line no-await-in-loop
+          const node = await Doctor.findById(currentId).select('_id mergedInto isActive').lean();
+          if (!node) break;
+          if (!node.mergedInto) break;
+          walked = true;
+          currentId = node.mergedInto;
+        }
+        const winner = await Doctor.findById(currentId);
+        if (!winner) {
+          return res.status(404).json({ success: false, message: 'VIP Client no longer exists' });
+        }
+        if (winner.mergedInto) {
+          return res.status(409).json({ success: false, message: 'VIP Client merge chain is unresolved; refresh and retry.' });
+        }
+        await Doctor.updateOne(
+          { _id: winner._id },
+          { $addToSet: { assignedTo: requesterId } }
+        );
+
+        // System DM to the requester so they know they have access now. Best-
+        // effort — failure here doesn't block the approval (the assignedTo
+        // mutation already happened).
+        try {
+          await MessageInbox.create({
+            senderUserId: req.user._id,
+            senderName: req.user.name || req.user.email || 'Admin',
+            senderRole: req.user.role || 'admin',
+            title: `Coverage approved — ${payload.doctor_name || 'VIP Client'}`,
+            body: `Your request to join coverage of "${payload.doctor_name || 'VIP Client'}" was approved. Refresh your VIP Client list to see them.`,
+            category: 'approval_decision',
+            priority: 'normal',
+            recipientRole: 'staff',
+            recipientUserId: requesterId,
+            entity_id: msg.entity_id || null,
+          });
+        } catch { /* best-effort */ }
+
+        downstream = {
+          coverage_join: {
+            doctor_id: winner._id,
+            requester_user_id: requesterId,
+            merge_redirected: walked,
+          },
+        };
+      } else {
+        // Reject path — write a polite system DM to the requester carrying the
+        // reason. No mutation on Doctor.
+        try {
+          await MessageInbox.create({
+            senderUserId: req.user._id,
+            senderName: req.user.name || req.user.email || 'Admin',
+            senderRole: req.user.role || 'admin',
+            title: `Coverage request declined — ${payload.doctor_name || 'VIP Client'}`,
+            body: `Your request to join coverage of "${payload.doctor_name || 'VIP Client'}" was not approved.\n\nReason: ${reason.trim()}`,
+            category: 'approval_decision',
+            priority: 'normal',
+            recipientRole: 'staff',
+            recipientUserId: requesterId,
+            entity_id: msg.entity_id || null,
+          });
+        } catch { /* best-effort */ }
+        downstream = { coverage_join: { rejected: true, reason: reason.trim() } };
+      }
     } else if (actionType === 'acknowledge') {
       // No downstream — just stamp completion + mark read
       downstream = { acknowledged: true };

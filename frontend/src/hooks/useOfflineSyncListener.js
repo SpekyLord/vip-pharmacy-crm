@@ -52,7 +52,7 @@ export default function useOfflineSyncListener({ enabled = true } = {}) {
   useEffect(() => {
     if (!enabled) return undefined;
 
-    const unsubSyncComplete = offlineManager.onSyncComplete(({ synced, syncedKinds, bytes, remaining, completedAt }) => {
+    const unsubSyncComplete = offlineManager.onSyncComplete(({ synced, syncedKinds, bytes, remaining, mergeRedirects, completedAt }) => {
       if (!synced || synced <= 0) return; // empty replay — no toast needed
       const kindLabel = dominantKindLabel(syncedKinds, synced);
       const sizeText = bytes > 0 ? ` (~${bytesHuman(bytes)})` : '';
@@ -60,12 +60,40 @@ export default function useOfflineSyncListener({ enabled = true } = {}) {
         duration: 5000,
         icon: '☁',
       });
+      // Phase A.5.6 follow-up — the offline-replay path can hit the merge
+      // resolver in visitController (BDM was offline while admin merged
+      // duplicate VIP Clients; cached doctorId points at the soft-deleted
+      // loser). Surface each redirect so the BDM understands why the doctor
+      // list shifted after sync. One info toast per redirect, capped via
+      // SW-side MAX_MERGE_REDIRECTS so noisy sweeps don't spam.
+      if (Array.isArray(mergeRedirects) && mergeRedirects.length > 0) {
+        const fallback = 'A queued visit was logged against the consolidated VIP Client record (the original was merged).';
+        mergeRedirects.forEach((r) => {
+          if (!r) return;
+          toast(r.message || fallback, {
+            duration: 7000,
+            icon: 'ℹ️',
+          });
+          // Best-effort audit trail to the inbox so admin can review later.
+          messageInboxService.recordSystemEvent({
+            event_type: 'visit_merge_redirected',
+            payload: { from: r.from, to: r.to, offline_replay: !!r.offline_replay },
+          }).catch(() => { /* best-effort */ });
+        });
+      }
       // Best-effort inbox audit. The toast already informed the BDM; if the
       // network call to write the inbox entry fails (rare — they JUST came
       // online to trigger the sync) we silently skip it.
       messageInboxService.recordSystemEvent({
         event_type: 'sync_complete',
-        payload: { synced, syncedKinds, bytes, remaining, completedAt },
+        payload: {
+          synced,
+          syncedKinds,
+          bytes,
+          remaining,
+          merge_redirect_count: Array.isArray(mergeRedirects) ? mergeRedirects.length : 0,
+          completedAt,
+        },
       }).catch(() => { /* best-effort */ });
     });
 

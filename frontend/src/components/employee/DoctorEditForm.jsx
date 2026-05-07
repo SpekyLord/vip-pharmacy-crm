@@ -10,12 +10,18 @@
  * - onSaved: callback after successful save (receives updated doctor data)
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import toast from 'react-hot-toast';
 import doctorService from '../../services/doctorService';
 import specializationService from '../../services/specializationService';
 import useLookupData from '../../hooks/useLookupData';
 import { useLookupOptions } from '../../erp/hooks/useLookups';
 import SelectField from '../common/Select';
+// Phase A.5.3 follow-up — wire BDM-side rename collisions through the same
+// modal admin uses. Without this the BDM saw a generic "Failed to update"
+// toast on canonical-name collision; now they see the structured 409 modal
+// with role-gated Rename / Join their coverage / Request approval buttons.
+import DuplicateVipClientModal from '../admin/DuplicateVipClientModal';
 
 const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
   const { programs: PROGRAMS, supportTypes: SUPPORT_TYPES } = useLookupData();
@@ -26,6 +32,11 @@ const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [specializations, setSpecializations] = useState([]);
+  // Phase A.5.3 follow-up — DUPLICATE_VIP_CLIENT 409 modal state. Stays mounted
+  // above the edit form (z-index 1100 > 1000) so BDM can decide Rename / Join
+  // / Request approval without losing field values.
+  const [duplicate, setDuplicate] = useState(null);
+  const lastNameRef = useRef(null);
 
   useEffect(() => {
     specializationService.getAll({ isActive: true }).then((res) => {
@@ -103,9 +114,57 @@ const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
       onSaved?.(res.data);
       onClose();
     } catch (err) {
+      // Phase A.5.3 follow-up — structured 409 → open the duplicate modal
+      // instead of a generic toast. Form stays open underneath so the BDM
+      // can either rename + retry, or close it via Join / Request flow.
+      const data = err.response?.data;
+      if (err.response?.status === 409 && data?.code === 'DUPLICATE_VIP_CLIENT') {
+        setDuplicate(data);
+        return;
+      }
       setError(err.response?.data?.message || 'Failed to update VIP Client');
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Phase A.5.3 — modal callbacks. Mirrors the admin DoctorsPage handlers but
+  // scoped to the BDM edit context: Rename closes the duplicate modal and
+  // refocuses lastName so the BDM can disambiguate; Join / Request route
+  // through doctorService.joinCoverage (server-side role gate decides).
+  const handleDuplicateRename = () => {
+    setDuplicate(null);
+    toast('Tip: rename your VIP Client to a unique label, then Save again.', { icon: '✏️' });
+    setTimeout(() => lastNameRef.current?.focus(), 0);
+  };
+
+  const handleDuplicateJoinAuto = async (existingId) => {
+    try {
+      const res = await doctorService.joinCoverage(existingId);
+      if (res?.already_assigned) {
+        toast(`You were already on this VIP Client's coverage.`, { icon: 'ℹ️' });
+      } else {
+        toast.success(res?.message || 'Joined coverage successfully.');
+      }
+      // Joining = the BDM no longer needs to keep editing this duplicate.
+      // Close the form so the parent list refreshes via onSaved.
+      onSaved?.(res?.data || null);
+      onClose();
+      return true;
+    } catch (err) {
+      toast.error(err.response?.data?.message || err.message || 'Join coverage failed');
+      return false;
+    }
+  };
+
+  const handleDuplicateJoinApproval = async (existingId, notes) => {
+    try {
+      const res = await doctorService.joinCoverage(existingId, notes);
+      toast.success(res?.message || 'Request sent to admin for approval.');
+      return true;
+    } catch (err) {
+      toast.error(err.response?.data?.message || err.message || 'Request failed');
+      return false;
     }
   };
 
@@ -140,6 +199,7 @@ const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
               <input
                 type="text"
                 name="lastName"
+                ref={lastNameRef}
                 value={formData.lastName}
                 onChange={handleFormChange}
                 required
@@ -389,6 +449,16 @@ const DoctorEditForm = ({ doctor, onClose, onSaved }) => {
           </div>
         </form>
       </div>
+      {/* Phase A.5.3 — DUPLICATE_VIP_CLIENT 409 modal stacks above edit form. */}
+      {duplicate && (
+        <DuplicateVipClientModal
+          duplicate={duplicate}
+          onRename={handleDuplicateRename}
+          onJoinAuto={handleDuplicateJoinAuto}
+          onJoinApproval={handleDuplicateJoinApproval}
+          onClose={() => setDuplicate(null)}
+        />
+      )}
       <style>{`
         .def-overlay {
           position: fixed; inset: 0;

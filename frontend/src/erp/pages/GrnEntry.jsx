@@ -782,9 +782,15 @@ export default function GrnEntry() {
             <div className="grn-actions">
               <button className="btn btn-primary" onClick={() => setScanOpen(true)} style={{ background: '#7c3aed' }}>Scan Undertaking Paper</button>
               {/* Phase P1.2 Slice 7-extension — pull a BDM-captured Undertaking
-                  photo into the same OCR flow without re-uploading. */}
+                  photo into the same OCR flow without re-uploading.
+                  Phase P1.2 Slice 6.2 follow-up (Phase 2.1) — narrow the GRN
+                  feed to sub_type='BATCH_PHOTO' so the OCR picker no longer
+                  surfaces WAYBILL captures (those go to the waybill panel
+                  picker below). UNCATEGORIZED stays unfiltered as a fallback
+                  for Quick Capture rows the proxy hasn't classified yet. */}
               <PendingCapturesPicker
                 workflowTypes={['GRN', 'UNCATEGORIZED']}
+                subTypeFilter={{ GRN: 'BATCH_PHOTO' }}
                 bdmId={assignedTo || undefined}
                 maxSelect={1}
                 skipFetch
@@ -908,6 +914,43 @@ export default function GrnEntry() {
                   <button type="button" className="btn btn-outline btn-sm" onClick={() => waybillGalleryRef.current?.click()} disabled={waybillUploading}>
                     {waybillPhotoUrl ? '📁 Replace (Gallery)' : '📁 Choose from Gallery'}
                   </button>
+                  {/* Phase P1.2 Slice 6.2 follow-up (Phase 2.1) — proxy-side
+                      attach: pull a BDM-captured WAYBILL photo from the
+                      Capture Hub queue without re-snapping. Filtered to GRN
+                      sub_type='WAYBILL' so BATCH_PHOTO captures (which feed
+                      the Undertaking OCR flow above) don't mis-land here.
+                      UNCATEGORIZED stays unfiltered as a Quick Capture
+                      fallback. Fetch-mode (skipFetch=false) — the picker
+                      pulls the signed S3 URL into a Blob → File → routes
+                      through the existing handleWaybillUpload pipeline so
+                      a fresh, owned S3 object lands in waybill_photo_url.
+                      Same downstream code path as gallery upload — no
+                      backend change needed. */}
+                  <PendingCapturesPicker
+                    workflowTypes={['GRN', 'UNCATEGORIZED']}
+                    subTypeFilter={{ GRN: 'WAYBILL' }}
+                    bdmId={assignedTo || undefined}
+                    maxSelect={1}
+                    buttonLabel="From BDM Captures"
+                    buttonStyle={{
+                      padding: '4px 10px',
+                      borderRadius: 10,
+                      background: 'transparent',
+                      color: 'var(--erp-text)',
+                      border: '1px solid var(--erp-border, #dbe4f0)',
+                      cursor: 'pointer',
+                      fontWeight: 700,
+                      fontSize: 12,
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                    onPick={(files) => {
+                      const file = files?.[0];
+                      if (!file) return;
+                      handleWaybillUpload(file);
+                    }}
+                  />
                   {waybillPhotoUrl && (
                     <button type="button" className="btn-remove-line" onClick={() => { setWaybillPhotoUrl(''); setWaybillPreview(''); }} title="Remove waybill">×</button>
                   )}

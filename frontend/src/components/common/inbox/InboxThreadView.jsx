@@ -162,6 +162,13 @@ export default function InboxThreadView({
     if (actionType === 'approve') {
       actionRow.push({ code: 'approve', label: 'Approve', variant: 'primary', confirm: false });
       actionRow.push({ code: 'reject', label: 'Reject', variant: 'danger', confirm: true, reasonRequired: true });
+    } else if (actionType === 'approve_coverage_join') {
+      // Phase A.5.3 follow-up — admin-side inline approval for a BDM's
+      // "Request approval to join coverage" of an existing VIP Client. Same
+      // Approve/Reject UX as a generic approve row but the backend dispatch
+      // adds the requester to Doctor.assignedTo (or sends a rejection DM).
+      actionRow.push({ code: 'approve', label: 'Approve & grant coverage', variant: 'primary', confirm: false });
+      actionRow.push({ code: 'reject', label: 'Reject', variant: 'danger', confirm: true, reasonRequired: true });
     } else if (actionType === 'resolve') {
       actionRow.push({ code: 'resolve', label: action?.label || 'Resolve', variant: action?.variant || 'primary', confirm: action?.confirm ?? true, reasonRequired: action?.reason_required ?? true });
     } else if (actionType === 'acknowledge') {

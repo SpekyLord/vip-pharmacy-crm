@@ -582,6 +582,12 @@ async function replayQueue() {
   let syncedCount = 0;
   const syncedKinds = {}; // { visit: 2, clm: 1, ... }
   let approxBytes = 0;
+  // Phase A.5.6 follow-up — collect merge_redirected hits across the run so
+  // the page can toast each redirect once. Shape mirrors backend/visitController
+  // response: { from, to, message }. Bounded to MAX_REDIRECTS to keep payload
+  // small even in pathological multi-merge sweeps.
+  const mergeRedirects = [];
+  const MAX_MERGE_REDIRECTS = 10;
 
   for (const item of queued) {
     // Age eviction — drop anything older than QUEUE_MAX_AGE_MS regardless
@@ -661,6 +667,23 @@ async function replayQueue() {
           // lower bound rather than 0.
           approxBytes += 1024;
         }
+        // Phase A.5.6 follow-up — capture merge_redirected if the server
+        // re-pointed an offline-cached doctorId at a merge winner. Read body
+        // via clone() so the original response is untouched. Best-effort:
+        // a parse failure just means no redirect surfaced for this item.
+        if (item.kind === 'visit' && mergeRedirects.length < MAX_MERGE_REDIRECTS) {
+          try {
+            const body = await response.clone().json();
+            if (body && body.merge_redirected && body.merge_redirected.from && body.merge_redirected.to) {
+              mergeRedirects.push({
+                from: String(body.merge_redirected.from),
+                to: String(body.merge_redirected.to),
+                message: body.merge_redirected.message || null,
+                offline_replay: true,
+              });
+            }
+          } catch { /* JSON parse best-effort */ }
+        }
         syncedCount += 1;
         const k = item.kind || 'other';
         syncedKinds[k] = (syncedKinds[k] || 0) + 1;
@@ -701,6 +724,21 @@ async function replayQueue() {
               }
             } else {
               approxBytes += 1024;
+            }
+            // Phase A.5.6 follow-up — same merge_redirected capture on the
+            // 401-then-refresh retry path.
+            if (item.kind === 'visit' && mergeRedirects.length < MAX_MERGE_REDIRECTS) {
+              try {
+                const body = await retryResponse.clone().json();
+                if (body && body.merge_redirected && body.merge_redirected.from && body.merge_redirected.to) {
+                  mergeRedirects.push({
+                    from: String(body.merge_redirected.from),
+                    to: String(body.merge_redirected.to),
+                    message: body.merge_redirected.message || null,
+                    offline_replay: true,
+                  });
+                }
+              } catch { /* JSON parse best-effort */ }
             }
             syncedCount += 1;
             const k = item.kind || 'other';
@@ -786,12 +824,16 @@ async function replayQueue() {
     synced: syncedCount,
     syncedKinds,
     bytes: approxBytes,
+    // Phase A.5.6 follow-up — surface offline-replay merge redirects to the
+    // page so EmployeeDashboard can toast "Visit logged against the
+    // consolidated VIP Client record" once per redirect.
+    mergeRedirects,
     completedAt: new Date().toISOString(),
   };
   clients.forEach((client) => {
     client.postMessage(stats);
   });
-  return { synced: syncedCount, syncedKinds, bytes: approxBytes };
+  return { synced: syncedCount, syncedKinds, bytes: approxBytes, mergeRedirects };
 }
 
 // ── Periodic sync check (fallback for browsers without Background Sync) ──
@@ -811,6 +853,7 @@ self.addEventListener('message', (event) => {
         synced: replayStats?.synced || 0,
         syncedKinds: replayStats?.syncedKinds || {},
         bytes: replayStats?.bytes || 0,
+        mergeRedirects: replayStats?.mergeRedirects || [],
         completedAt: new Date().toISOString(),
       });
     });
