@@ -232,6 +232,42 @@ export default function TransferOrders() {
     (async () => { try { const r = await whApi.getWarehousesByEntity(form.target_entity_id); setTargetWarehouses(r.data || []); } catch (err) { console.error('[TransferOrders] load target warehouses:', err.message); } })();
   }, [form.target_entity_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Phase 32R-Transfer-Stock-Scope (May 07 2026) — re-fetch source stock + reset
+  // batch cache whenever (source BDM, source warehouse) changes on the IC modal.
+  // The product dropdown only populates once both are picked. The fetch is keyed
+  // on the warehouse so two BDMs sharing one warehouse stay correctly partitioned
+  // (fifoEngine.buildStockMatch now ANDs bdm_id with warehouse_id).
+  // NOTE: deps reference primitive form fields directly (not the `icSourceReady`
+  // gate const) because the gate const is declared LATER in the function body
+  // and using it in a hook dep array hits the TDZ on first render.
+  useEffect(() => {
+    const ready = !!(form.source_bdm_id && form.source_warehouse_id);
+    if (!ready) { setSourceStock([]); setBatchCache({}); return; }
+    let cancelled = false;
+    getMyStock(form.source_bdm_id, form.source_entity_id, form.source_warehouse_id)
+      .then(res => { if (!cancelled) setSourceStock(res.data || []); })
+      .catch(err => { if (!cancelled) console.error('[TransferOrders] IC stock refetch:', err.message); });
+    // Reset batch cache so previously cached batches (from a different warehouse)
+    // don't leak into the new warehouse's line items.
+    setBatchCache({});
+    return () => { cancelled = true; };
+  }, [form.source_bdm_id, form.source_warehouse_id, form.source_entity_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Same shape for the Internal modal. Internal modal scopes to `user.entity_id`
+  // (the BDM dropdown is populated from that entity), so we send entity_id
+  // explicitly so privileged callers viewing a different working entity in the
+  // top-right entity switcher still get stock from the BDM-list's home entity.
+  useEffect(() => {
+    const ready = !!(reassignForm.source_bdm_id && reassignForm.source_warehouse_id);
+    if (!ready) { setReassignStock([]); setReassignBatchCache({}); return; }
+    let cancelled = false;
+    getMyStock(reassignForm.source_bdm_id, user?.entity_id, reassignForm.source_warehouse_id)
+      .then(res => { if (!cancelled) setReassignStock(res.data || []); })
+      .catch(err => { if (!cancelled) console.error('[TransferOrders] Internal stock refetch:', err.message); });
+    setReassignBatchCache({});
+    return () => { cancelled = true; };
+  }, [reassignForm.source_bdm_id, reassignForm.source_warehouse_id, user?.entity_id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Load BDMs for internal reassignment (user's entity)
   useEffect(() => {
     const eid = user?.entity_id;
@@ -248,19 +284,26 @@ export default function TransferOrders() {
     })();
   }, [user?.entity_id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // IC Transfer: show only products the source custodian has stock for
+  // Phase 32R-Transfer-Stock-Scope (May 07 2026):
+  // Product dropdown reflects "<source custodian>'s stock at <source warehouse>".
+  // Until BOTH source BDM AND source warehouse are picked, the dropdown is empty
+  // (the form below also disables the picker with a hint). This is correct for a
+  // shared-warehouse model where one warehouse can hold stock from multiple BDMs:
+  // showing the union would let the user pick a product they don't actually own.
+  // The fetch is keyed on (bdm_id, warehouse_id) and re-runs when either changes.
   const sourceStockProductIds = new Set(sourceStock.map(s => s.product_id?.toString()));
   const sourceProducts = sourceStock.length > 0
     ? allProducts.filter(p => sourceStockProductIds.has(String(p._id)))
-    : (form.source_entity_id
-        ? allProducts.filter(p => String(p.entity_id?._id || p.entity_id) === form.source_entity_id)
-        : []);
+    : [];
 
-  // Internal: show only products the source custodian has stock for
   const reassignStockProductIds = new Set(reassignStock.map(s => s.product_id?.toString()));
   const entityProducts = reassignStock.length > 0
     ? allProducts.filter(p => reassignStockProductIds.has(String(p._id)))
     : [];
+
+  // Phase 32R: gates that decide whether to fetch + whether to enable Product picker.
+  const icSourceReady = !!(form.source_bdm_id && form.source_warehouse_id);
+  const internalSourceReady = !!(reassignForm.source_bdm_id && reassignForm.source_warehouse_id);
 
   // IC Transfer handlers
   const handleCreate = async () => {
@@ -343,10 +386,11 @@ export default function TransferOrders() {
     const items = [...lineItems];
     items[i] = { ...items[i], [field]: val };
 
-    // When product changes, fetch batches for source BDM (FIFO)
+    // When product changes, fetch batches scoped to (source BDM, source warehouse)
+    // so cross-warehouse batches don't leak into the dropdown.
     if (field === 'product_id' && val && form.source_bdm_id) {
       if (!batchCache[val]) {
-        getBatches(val, form.source_bdm_id, form.source_entity_id).then(res => {
+        getBatches(val, form.source_bdm_id, form.source_entity_id, form.source_warehouse_id).then(res => {
           setBatchCache(prev => ({ ...prev, [val]: res.data || [] }));
         }).catch(err => console.error('[TransferOrders]', err.message));
       }
@@ -374,11 +418,12 @@ export default function TransferOrders() {
     const items = [...reassignItems];
     items[i] = { ...items[i], [field]: val };
 
-    // When product changes, fetch batches for source BDM (FIFO)
+    // When product changes, fetch batches scoped to (source BDM, source warehouse).
+    // Cache key includes warehouse_id so two warehouses' batches stay separate.
     if (field === 'product_id' && val && reassignForm.source_bdm_id) {
-      const cacheKey = `r_${val}_${reassignForm.source_bdm_id}`;
+      const cacheKey = `r_${val}_${reassignForm.source_bdm_id}_${reassignForm.source_warehouse_id || 'nowh'}`;
       if (!reassignBatchCache[cacheKey]) {
-        getBatches(val, reassignForm.source_bdm_id).then(res => {
+        getBatches(val, reassignForm.source_bdm_id, user?.entity_id, reassignForm.source_warehouse_id).then(res => {
           setReassignBatchCache(prev => ({ ...prev, [cacheKey]: res.data || [] }));
         }).catch(err => console.error('[TransferOrders]', err.message));
       }
@@ -388,7 +433,7 @@ export default function TransferOrders() {
 
     // When batch is selected, auto-fill expiry
     if (field === 'batch_lot_no' && val) {
-      const cacheKey = `r_${items[i].product_id}_${reassignForm.source_bdm_id}`;
+      const cacheKey = `r_${items[i].product_id}_${reassignForm.source_bdm_id}_${reassignForm.source_warehouse_id || 'nowh'}`;
       const batches = reassignBatchCache[cacheKey] || [];
       const match = batches.find(b => b.batch_lot_no === val);
       if (match) {
@@ -621,22 +666,10 @@ export default function TransferOrders() {
                 <div className="form-group">
                   <label>Source Custodian</label>
                   <SelectField value={form.source_bdm_id} onChange={e => {
-                    const newBdmId = e.target.value;
-                    setForm(f => ({ ...f, source_bdm_id: newBdmId }));
-                    setBatchCache({});
-                    setSourceStock([]);
-                    if (newBdmId) {
-                      // Fetch this custodian's stock to filter product dropdown (pass source entity_id)
-                      getMyStock(newBdmId, form.source_entity_id).then(res => setSourceStock(res.data || [])).catch(err => console.error('[TransferOrders]', err.message));
-                      // Re-fetch batches for already-selected products
-                      lineItems.forEach(li => {
-                        if (li.product_id) {
-                          getBatches(li.product_id, newBdmId, form.source_entity_id).then(res => {
-                            setBatchCache(prev => ({ ...prev, [li.product_id]: res.data || [] }));
-                          }).catch(err => console.error('[TransferOrders]', err.message));
-                        }
-                      });
-                    }
+                    // Phase 32R-Transfer-Stock-Scope: stock + batch refetch
+                    // happens in the (icSourceReady, source_bdm_id, source_warehouse_id)
+                    // useEffect — keep this handler purely as state update.
+                    setForm(f => ({ ...f, source_bdm_id: e.target.value }));
                   }}>
                     <option value="">Select...</option>
                     {sourceBdms.map(u => <option key={u._id} value={u._id}>{formatBdmLabel(u)}</option>)}
@@ -692,6 +725,11 @@ export default function TransferOrders() {
               </div>
 
               <h3 style={{ fontSize: 14, fontWeight: 600, marginTop: 16, marginBottom: 8 }}>Line Items</h3>
+              {!icSourceReady && (
+                <p style={{ fontSize: 11, color: '#92400e', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 6, padding: '6px 10px', margin: '0 0 8px' }}>
+                  Pick Source Entity, Source Custodian and Source Warehouse first — the Product dropdown lists the source custodian&apos;s stock at the chosen warehouse.
+                </p>
+              )}
               <table className="line-items-grid">
                 <thead><tr><th>Product</th><th>Batch (FIFO)</th><th>Expiry</th><th>Qty</th><th>Price</th><th></th></tr></thead>
                 <tbody>
@@ -700,8 +738,8 @@ export default function TransferOrders() {
                     return (
                       <tr key={i}>
                         <td>
-                          <SelectField value={li.product_id} onChange={e => updateLineItem(i, 'product_id', e.target.value)}>
-                            <option value="">Select...</option>
+                          <SelectField value={li.product_id} onChange={e => updateLineItem(i, 'product_id', e.target.value)} disabled={!icSourceReady}>
+                            <option value="">{icSourceReady ? 'Select...' : 'Pick custodian + warehouse'}</option>
                             {sourceProducts.map(p => {
                               const stock = sourceStock.find(s => String(s.product_id) === String(p._id));
                               const qty = stock?.total_qty || 0;
@@ -753,21 +791,9 @@ export default function TransferOrders() {
                 <div className="form-group">
                   <label>Source Custodian</label>
                   <SelectField value={reassignForm.source_bdm_id} onChange={e => {
-                    const newBdmId = e.target.value;
-                    setReassignForm(f => ({ ...f, source_bdm_id: newBdmId }));
-                    setReassignBatchCache({});
-                    setReassignStock([]);
-                    if (newBdmId) {
-                      getMyStock(newBdmId).then(res => setReassignStock(res.data || [])).catch(err => console.error('[TransferOrders]', err.message));
-                      reassignItems.forEach(li => {
-                        if (li.product_id) {
-                          const ck = `r_${li.product_id}_${newBdmId}`;
-                          getBatches(li.product_id, newBdmId).then(res => {
-                            setReassignBatchCache(prev => ({ ...prev, [ck]: res.data || [] }));
-                          }).catch(err => console.error('[TransferOrders]', err.message));
-                        }
-                      });
-                    }
+                    // Phase 32R-Transfer-Stock-Scope: refetch driven by useEffect,
+                    // keyed on (source_bdm_id, source_warehouse_id, entity_id).
+                    setReassignForm(f => ({ ...f, source_bdm_id: e.target.value }));
                   }}>
                     <option value="">Select...</option>
                     {entityBdms.map(u => <option key={u._id} value={u._id}>{formatBdmLabel(u)}</option>)}
@@ -812,18 +838,27 @@ export default function TransferOrders() {
                 Reference number auto-assigned on submit: <code>IST-{`{TERRITORY|ENTITY}{MMDDYY}-{NNN}`}</code> — same scheme as ICT / JE / CALF / PO. Territory derives from the source BDM; entity short_name is the fallback.
               </p>
               <h3 style={{ fontSize: 14, fontWeight: 600, marginTop: 16, marginBottom: 8 }}>Line Items</h3>
+              {!internalSourceReady && (
+                <p style={{ fontSize: 11, color: '#92400e', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: 6, padding: '6px 10px', margin: '0 0 8px' }}>
+                  Pick Source Custodian and Source Warehouse first — the Product dropdown lists the source custodian&apos;s stock at the chosen warehouse.
+                </p>
+              )}
               <table className="line-items-grid">
                 <thead><tr><th>Product</th><th>Batch (FIFO)</th><th>Expiry</th><th>Qty</th><th></th></tr></thead>
                 <tbody>
                   {reassignItems.map((li, i) => {
-                    const cacheKey = `r_${li.product_id}_${reassignForm.source_bdm_id}`;
+                    const cacheKey = `r_${li.product_id}_${reassignForm.source_bdm_id}_${reassignForm.source_warehouse_id || 'nowh'}`;
                     const batches = reassignBatchCache[cacheKey] || [];
                     return (
                       <tr key={i}>
                         <td>
-                          <SelectField value={li.product_id} onChange={e => updateReassignItem(i, 'product_id', e.target.value)}>
-                            <option value="">Select...</option>
-                            {entityProducts.map(p => <option key={p._id} value={p._id}>{p.brand_name}{p.dosage_strength ? ` ${p.dosage_strength}` : ''} — {p.unit_code || 'PC'}</option>)}
+                          <SelectField value={li.product_id} onChange={e => updateReassignItem(i, 'product_id', e.target.value)} disabled={!internalSourceReady}>
+                            <option value="">{internalSourceReady ? 'Select...' : 'Pick custodian + warehouse'}</option>
+                            {entityProducts.map(p => {
+                              const stock = reassignStock.find(s => String(s.product_id) === String(p._id));
+                              const qty = stock?.total_qty || 0;
+                              return <option key={p._id} value={p._id}>{p.brand_name}{p.dosage_strength ? ` ${p.dosage_strength}` : ''} — {qty} {p.unit_code || 'PC'}</option>;
+                            })}
                           </SelectField>
                         </td>
                         <td>
