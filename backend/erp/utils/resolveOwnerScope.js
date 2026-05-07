@@ -236,10 +236,98 @@ async function widenFilterForProxy(req, moduleKey, { subKey = 'proxy_entry', loo
   return widened;
 }
 
+/**
+ * Resource-first access check for endpoints opened via `window.open()` (PDF
+ * downloads, file links). Those flows bypass the SPA's axios interceptor, so
+ * `X-Entity-Id` never reaches the backend and `req.entityId` falls back to the
+ * caller's primary entity. Matching that against `resource.entity_id` causes
+ * a false 404 whenever the resource lives outside the caller's primary entity
+ * (e.g. president's primary is VIP but they want to view an MG and CO CSI).
+ *
+ * Decision rule:
+ *   - president / ceo  → always allowed (cross-entity by design).
+ *   - admin / finance  → allowed iff `resource.entity_id ∈ caller.entity_ids`.
+ *   - staff (BDM)      → allowed iff caller owns the row OR caller is an
+ *                        eligible proxy (PROXY_ENTRY_ROLES + sub-permission).
+ *
+ * Throws an Error with `.statusCode = 403` on denial — never silently swaps
+ * to the caller's working entity (Rule #21).
+ *
+ * @param {object} req            Express request (post-auth, post-tenantFilter).
+ * @param {object} resource       Lean document with `entity_id` and `bdm_id`.
+ * @param {object} [opts]
+ * @param {string} [opts.moduleKey]   Module for proxy gate (e.g. 'sales').
+ * @param {string} [opts.subKey]      Sub-permission key (default 'proxy_entry').
+ * @param {string} [opts.lookupCode]  Override for PROXY_ENTRY_ROLES lookup.
+ * @param {string} [opts.resourceLabel='record']  Used in the 403 message.
+ */
+async function assertResourceReadAccess(req, resource, opts = {}) {
+  if (!req || !req.user) {
+    const err = new Error('Authentication required');
+    err.statusCode = 401;
+    throw err;
+  }
+  if (!resource || !resource.entity_id) {
+    const err = new Error('Resource missing entity_id');
+    err.statusCode = 500;
+    throw err;
+  }
+
+  // President / CEO: always allowed (cross-entity superusers).
+  if (req.isPresident) return;
+
+  const resourceEntity = String(resource.entity_id);
+  const userEntities = new Set();
+  if (req.user.entity_id) userEntities.add(String(req.user.entity_id));
+  if (Array.isArray(req.user.entity_ids)) {
+    req.user.entity_ids.forEach((id) => userEntities.add(String(id)));
+  }
+  const inUserEntities = userEntities.has(resourceEntity);
+
+  const label = opts.resourceLabel || 'record';
+
+  // Admin / Finance: must be assigned to this entity.
+  if (req.isAdmin || req.isFinance) {
+    if (!inUserEntities) {
+      const err = new Error(
+        `You do not have access to this ${label}'s entity. Ask the president to add this entity to your assignment.`
+      );
+      err.statusCode = 403;
+      throw err;
+    }
+    return;
+  }
+
+  // Staff (BDM): entity must match AND (own the row OR eligible proxy).
+  if (!inUserEntities) {
+    const err = new Error(`You do not have access to this ${label}'s entity.`);
+    err.statusCode = 403;
+    throw err;
+  }
+  const isOwner = resource.bdm_id && String(resource.bdm_id) === String(req.user._id);
+  if (isOwner) return;
+
+  if (!opts.moduleKey) {
+    const err = new Error(`You can only view your own ${label}s.`);
+    err.statusCode = 403;
+    throw err;
+  }
+  const { canProxy } = await canProxyEntry(req, opts.moduleKey, {
+    subKey: opts.subKey || 'proxy_entry',
+    lookupCode: opts.lookupCode,
+  });
+  if (!canProxy) {
+    const err = new Error(`You can only view your own ${label}s.`);
+    err.statusCode = 403;
+    throw err;
+  }
+}
+
 module.exports = {
   canProxyEntry,
   resolveOwnerForWrite,
   widenFilterForProxy,
+  assertResourceReadAccess,
   invalidateProxyRolesCache,
   hasProxySubPermission,
   getProxyRolesForModule,
