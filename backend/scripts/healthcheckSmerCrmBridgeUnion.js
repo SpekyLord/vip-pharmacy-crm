@@ -88,8 +88,8 @@ check(
   /async function aggregateDailyByCollection\(Model,\s*fkField,\s*userObjectId,\s*dateRange\)/.test(bridge)
 );
 check(
-  'getDailyMdCounts merges per-day buckets across both streams (allDayKeys union)',
-  /allDayKeys\s*=\s*new Set\(\[\.\.\.vipResults\.map[\s\S]*?\.\.\.extraResults\.map/.test(bridge)
+  'getDailyMdCounts merges per-day buckets across all streams (allDayKeys union: VIP + EXTRA + CommLog)',
+  /allDayKeys\s*=\s*new\s+Set\([\s\S]*?vipResults\.map[\s\S]*?extraResults\.map[\s\S]*?commLogResults\.map/.test(bridge)
 );
 check(
   'getDailyMdCounts batch-fetches Doctor + Client master records for locations',
@@ -201,10 +201,101 @@ check(
   /G1\.7\.1[\s\S]{0,200}date-column lockstep/i.test(wf)
 );
 
+// ── 12. Phase SMER-CL — CommLog per-diem inclusion contract ─────────────────
+// Manual-source CommunicationLog screenshots count toward MD threshold when
+// admin enables `include_comm_log` on PERDIEM_RATES.<role>. Trust model:
+// admin-in-chat — fraud bounded by Messenger spot-check. One CommLog row =
+// one MD credit. Same-day same-MD across Visit + CommLog dedups at merge
+// (Set-based). Phase O 14-day photo cutoff inherits (server enforces at the
+// bridge). No daily cap by default; lookup-tunable.
+check(
+  'smerCrmBridge requires CommunicationLog (Phase SMER-CL chat stream)',
+  /require\(['"]\.\.\/\.\.\/models\/CommunicationLog['"]\)/.test(bridge)
+);
+check(
+  'aggregateCommLogDaily helper defined with (userObjectId, dateRange, opts) signature',
+  /async function aggregateCommLogDaily\(userObjectId,\s*dateRange,\s*opts\s*=\s*\{\}\)/.test(bridge)
+);
+check(
+  'aggregateCommLogDaily groups by contactedAt (NOT visitDate) — CommLog\'s date field',
+  /\$dateToString:\s*\{[^}]*date:\s*['"]\$contactedAt['"]/.test(bridge)
+);
+check(
+  'aggregateCommLogDaily filters source by allowedSources whitelist (default [\'manual\'])',
+  /source:\s*\{\s*\$in:\s*allowedSources\s*\}/.test(bridge)
+);
+check(
+  'aggregateCommLogDaily inherits Phase O 14-day cutoff via createdAt - photos[0].capturedAt',
+  /COMM_LOG_MAX_AGE_MS/.test(bridge) && /\$subtract:\s*\[\s*['"]\$createdAt['"]/.test(bridge)
+);
+check(
+  'getDailyMdCounts batches CommLog aggregation in the same Promise.all (when includeCommLog=true)',
+  /includeCommLog\s*\?\s*aggregateCommLogDaily\(/.test(bridge)
+);
+check(
+  'getDailyMdCounts merge uses Set<string> for cross-stream dedup (Phase SMER-CL)',
+  /const\s+setAll\s*=\s*new\s+Set\(\s*\)/.test(bridge) && /setAll\.add\(\s*id\.toString\(\s*\)\s*\)/.test(bridge)
+);
+check(
+  'getDailyMdCounts per-day output carries comm_log_count (chat-only post-dedup contribution)',
+  /comm_log_count:\s*chatOnlySet\.size/.test(bridge)
+);
+check(
+  'smerCrmBridge exports aggregateCommLogDaily',
+  /module\.exports\s*=\s*\{[\s\S]*?aggregateCommLogDaily/.test(bridge)
+);
+
+check(
+  'perdiemCalc.resolvePerdiemConfig returns include_comm_log (default false unless explicitly enabled)',
+  /include_comm_log:\s*m\.include_comm_log\s*===\s*true/.test(perdiem)
+);
+check(
+  'perdiemCalc.resolvePerdiemConfig returns comm_log_daily_cap (null = no cap)',
+  /comm_log_daily_cap:\s*\(m\.comm_log_daily_cap\s*!=\s*null\)/.test(perdiem)
+);
+check(
+  'perdiemCalc.resolvePerdiemConfig returns comm_log_allowed_sources (default [\'manual\'])',
+  /comm_log_allowed_sources:[\s\S]{0,160}\['manual'\]/.test(perdiem)
+);
+
+check(
+  'PERDIEM_RATES.BDM seed includes include_comm_log: true (VIP entity default ON)',
+  /code:\s*['"]BDM['"][\s\S]{0,800}?include_comm_log:\s*true/.test(lookups)
+);
+check(
+  'PERDIEM_RATES.ECOMMERCE_BDM seed includes include_comm_log: true',
+  /code:\s*['"]ECOMMERCE_BDM['"][\s\S]{0,800}?include_comm_log:\s*true/.test(lookups)
+);
+check(
+  'PERDIEM_RATES.DELIVERY_DRIVER seed has include_comm_log: false (SaaS-template OFF)',
+  /code:\s*['"]DELIVERY_DRIVER['"][\s\S]{0,800}?include_comm_log:\s*false/.test(lookups)
+);
+
+check(
+  'expenseController.getSmerCrmMdCounts forwards includeCommLog to getDailyMdCounts',
+  /getDailyMdCounts\([\s\S]{0,800}?includeCommLog:\s*perdiemConfig\.include_comm_log/.test(expCtrl)
+);
+check(
+  'expenseController response surfaces include_comm_log + comm_log_count per entry',
+  /include_comm_log:\s*!!perdiemConfig\.include_comm_log/.test(expCtrl)
+  && /comm_log_count:\s*crmData\.comm_log_count/.test(expCtrl)
+);
+
+check(
+  'WorkflowGuide SMER tip mentions Phase SMER-CL + include_comm_log toggle',
+  /Phase SMER-CL/.test(wf) && /include_comm_log/.test(wf)
+);
+
+const pageGuide = read('frontend/src/components/common/PageGuide.jsx');
+check(
+  'PageGuide \'communication-log\' tip mentions Phase SMER-CL per-diem inclusion',
+  /Phase SMER-CL/.test(pageGuide) && /include_comm_log/.test(pageGuide)
+);
+
 // ── Report ────────────────────────────────────────────────────────────────────
 const total = checks.length;
 const passed = total - failed;
-console.log('Phase G1.7 SMER ↔ CRM Bridge Union (yes-equal-weight + date lockstep) healthcheck');
+console.log('Phase G1.7 + SMER-CL — SMER ↔ CRM Bridge Union (yes-equal-weight + chat-screenshot inclusion + date lockstep) healthcheck');
 console.log('===================================================================');
 checks.forEach((c, i) => {
   const idx = String(i + 1).padStart(2);

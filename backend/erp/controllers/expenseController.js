@@ -3477,6 +3477,8 @@ const getSmerCrmMdCounts = catchAsync(async (req, res) => {
   // Phase G1.6 — dispatch source (visit/logbook/manual/none) per subscriber config.
   // May 05 2026 — pipe include_extra_calls through so subscribers can opt out
   // of the yes-equal-weight policy via Control Center → PERDIEM_RATES metadata.
+  // Phase SMER-CL (May 07 2026) — pipe include_comm_log + comm_log_* knobs so
+  // manual-source CommLog screenshots count toward MD threshold when admin opts in.
   const perdiemConfig = await resolvePerdiemConfig({ entityId: req.entityId, role: 'BDM' });
   const dailyCounts = await getDailyMdCounts(
     bdmUserId,
@@ -3486,6 +3488,10 @@ const getSmerCrmMdCounts = catchAsync(async (req, res) => {
       skipFlagged: perdiemConfig.skip_flagged,
       source: perdiemConfig.eligibility_source,
       includeExtraCalls: perdiemConfig.include_extra_calls,
+      includeCommLog: perdiemConfig.include_comm_log,
+      commLogDailyCap: perdiemConfig.comm_log_daily_cap,
+      commLogRequireOutbound: perdiemConfig.comm_log_require_outbound,
+      commLogAllowedSources: perdiemConfig.comm_log_allowed_sources,
     }
   );
 
@@ -3518,6 +3524,12 @@ const getSmerCrmMdCounts = catchAsync(async (req, res) => {
       md_count: crmData.md_count,
       unique_doctors: crmData.unique_doctors,
       flagged_excluded: crmData.flagged_excluded || 0,
+      // Phase SMER-CL (May 07 2026) — chat-only contribution post-cross-stream-dedup.
+      // Frontend renders "💬 N chats" badge when > 0. comm_log_excluded surfaces
+      // only when a daily cap was applied and bit (typically null = absent).
+      comm_log_count: crmData.comm_log_count || 0,
+      comm_log_excluded: crmData.comm_log_excluded || 0,
+      visit_count: crmData.visit_count || 0,
       locations: crmData.locations || '',
       perdiem_tier: tier,
       perdiem_amount: amount,
@@ -3537,10 +3549,15 @@ const getSmerCrmMdCounts = catchAsync(async (req, res) => {
       eligibility_source: perdiemConfig.eligibility_source,
       skip_flagged: !!perdiemConfig.skip_flagged,
       include_extra_calls: !!perdiemConfig.include_extra_calls,
+      // Phase SMER-CL (May 07 2026) — surface so the UI can show "Chat
+      // screenshots are counted" hint and so admin can confirm the lookup
+      // toggle is applied to this BDM's PERDIEM_RATES row.
+      include_comm_log: !!perdiemConfig.include_comm_log,
       daily_entries: entries,
       total_md_visits: entries.reduce((s, e) => s + e.md_count, 0),
       total_perdiem: entries.reduce((s, e) => s + e.perdiem_amount, 0),
       total_flagged_excluded: entries.reduce((s, e) => s + (e.flagged_excluded || 0), 0),
+      total_comm_log_count: entries.reduce((s, e) => s + (e.comm_log_count || 0), 0),
       full_days: entries.filter(e => e.perdiem_tier === 'FULL').length,
       half_days: entries.filter(e => e.perdiem_tier === 'HALF').length,
       zero_days: entries.filter(e => e.perdiem_tier === 'ZERO').length

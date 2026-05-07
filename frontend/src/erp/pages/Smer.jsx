@@ -542,6 +542,10 @@ export default function Smer() {
             md_count: crm.md_count,
             unique_doctors: crm.unique_doctors,
             _flaggedExcluded: crm.flagged_excluded || 0,
+            // Phase SMER-CL (May 07 2026) — chat-only contribution post-dedup.
+            // Renders "💬 N chats" badge below md_count when > 0.
+            _commLogCount: crm.comm_log_count || 0,
+            _commLogExcluded: crm.comm_log_excluded || 0,
             perdiem_tier: crm.perdiem_tier,
             perdiem_amount: crm.perdiem_amount,
             transpo_p2p: 0,
@@ -560,7 +564,15 @@ export default function Smer() {
           // Stash flagged_excluded as a transient UI hint so the per-day row can
           // surface "X flagged not counted" — not persisted on save (server is
           // the source of truth for flag-driven exclusions on every re-pull).
-          const updated = { ...entry, md_count: crm.md_count, _flaggedExcluded: crm.flagged_excluded || 0 };
+          // Phase SMER-CL (May 07 2026) — also stash chat-only count for the
+          // "💬 N chats" row badge (server is source of truth on every re-pull).
+          const updated = {
+            ...entry,
+            md_count: crm.md_count,
+            _flaggedExcluded: crm.flagged_excluded || 0,
+            _commLogCount: crm.comm_log_count || 0,
+            _commLogExcluded: crm.comm_log_excluded || 0,
+          };
           if (!entry.perdiem_override) {
             updated.perdiem_tier = crm.perdiem_tier;
             updated.perdiem_amount = crm.perdiem_amount;
@@ -1188,6 +1200,11 @@ export default function Smer() {
                               {entry._flaggedExcluded} flagged
                             </div>
                           )}
+                          {entry._commLogCount > 0 && (
+                            <div title={`${entry._commLogCount} chat screenshot${entry._commLogCount === 1 ? '' : 's'} credited toward this day's MD count (Phase SMER-CL — manual-source CommLog rows).`} style={{ fontSize: 9, fontWeight: 600, color: '#1d4ed8', marginTop: 1, cursor: 'help' }}>
+                              💬 {entry._commLogCount} chat{entry._commLogCount === 1 ? '' : 's'}
+                            </div>
+                          )}
                         </td>
                         <td style={{ padding: 3, textAlign: 'center' }}>
                           <span style={{ padding: '1px 5px', borderRadius: 4, fontSize: 10, fontWeight: 600, color: entry.perdiem_tier === 'FULL' ? '#16a34a' : entry.perdiem_tier === 'HALF' ? '#d97706' : '#9ca3af', background: entry.perdiem_tier === 'FULL' ? '#dcfce7' : entry.perdiem_tier === 'HALF' ? '#fef3c7' : '#f3f4f6' }}>
@@ -1259,6 +1276,9 @@ export default function Smer() {
                         <input type="number" min={0} value={entry.md_count} onChange={e => handleEntryChange(idx, 'md_count', Number(e.target.value))} disabled={entry.activity_type === 'NO_WORK'} style={entry.activity_type === 'NO_WORK' ? { opacity: 0.4 } : undefined} />
                         {entry._flaggedExcluded > 0 && (
                           <div style={{ fontSize: 10, fontWeight: 600, color: '#9a3412', marginTop: 2 }}>{entry._flaggedExcluded} flagged not counted</div>
+                        )}
+                        {entry._commLogCount > 0 && (
+                          <div style={{ fontSize: 10, fontWeight: 600, color: '#1d4ed8', marginTop: 2 }}>💬 {entry._commLogCount} chat{entry._commLogCount === 1 ? '' : 's'} counted</div>
                         )}
                       </div>
                       <div className="smer-card-field full-width">

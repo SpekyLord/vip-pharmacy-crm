@@ -326,6 +326,21 @@ async function resolvePerdiemConfig({ entityId, role = 'BDM' } = {}) {
     // subscriber that wants strict VIP-only can flip this to false in
     // Control Center → Lookup Tables → PERDIEM_RATES.<role>.metadata.
     include_extra_calls: m.include_extra_calls !== false,
+    // Phase SMER-CL (May 07 2026) — manual-source CommLog screenshots count
+    // toward MD threshold when admin opts in. Default OFF (must be explicitly
+    // enabled per role per entity). VIP entity seed flips it ON for BDM /
+    // ECOMMERCE_BDM. Trust model: admin (Gregg) is in the BDM group chats →
+    // per-diem credits are real-time auditable via Messenger scroll. SaaS
+    // subscribers default OFF (no admin-in-chat trust there).
+    //   comm_log_daily_cap          null = no cap (admin spot-check is the guard)
+    //   comm_log_require_outbound   false = group chats bidirectional, participation = the work
+    //   comm_log_allowed_sources    ['manual'] = exclude api/invite_reply/opt_out/system by default
+    include_comm_log: m.include_comm_log === true,
+    comm_log_daily_cap: (m.comm_log_daily_cap != null) ? Number(m.comm_log_daily_cap) : null,
+    comm_log_require_outbound: m.comm_log_require_outbound === true,
+    comm_log_allowed_sources: Array.isArray(m.comm_log_allowed_sources) && m.comm_log_allowed_sources.length
+      ? m.comm_log_allowed_sources
+      : ['manual'],
     full_tier_threshold: (m.full_tier_threshold != null) ? Number(m.full_tier_threshold) : null,
     half_tier_threshold: (m.half_tier_threshold != null) ? Number(m.half_tier_threshold) : null,
   };

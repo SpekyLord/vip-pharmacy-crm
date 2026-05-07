@@ -517,7 +517,7 @@ const PAGE_GUIDES = {
       { label: 'My Visits', path: '/bdm/visits' },
       { label: 'Dashboard', path: '/bdm' },
     ],
-    tip: 'Generated deck links are anonymous + read-only. The VIP Client opens the URL on any browser — no login required. If you log a CommLog right after generating a link, the two records are joined automatically for analytics.',
+    tip: 'Generated deck links are anonymous + read-only. The VIP Client opens the URL on any browser — no login required. If you log a CommLog right after generating a link, the two records are joined automatically for analytics. **Phase SMER-CL (May 07 2026)** — when admin enables `include_comm_log` on your `PERDIEM_RATES.<role>` row, manual-source screenshots logged here also count toward your daily SMER MD per-diem (no cap by default — admin sees every chat group you screenshot). Photos must be < 14 days old at upload time per Phase O. Outreach via group chat where admin is a member is auditable via Messenger scroll, so credits are bounded by spot-check rather than a hardcoded cap.',
   },
   'admin-communication-logs': {
     title: 'Communication Logs Overview',
