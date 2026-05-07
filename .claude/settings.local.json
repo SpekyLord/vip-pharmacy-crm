@@ -22,7 +22,9 @@
       "Bash(grep -c \"import\\\\|from\" \"c:/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm/frontend/src/services\"/*.js)",
       "Bash(grep -r \"findOne.*\\\\$\\\\|find.*\\\\$\\\\|query.*\\\\$\\\\|aggregate.*\\\\$\" \"/c/Users/LENOVO/OneDrive/Documents/VIP and VS CODE/VIP IP/VIP CRM ERP/vip-pharmacy-crm/backend/controllers/\")",
       "Bash(git commit -m ' *)",
-      "Bash(gh pr create --base main --head dev --title 'Phase G4.2 — Deduction Schedule Unified Approval Flow' --body ' *)"
+      "Bash(gh pr create --base main --head dev --title 'Phase G4.2 — Deduction Schedule Unified Approval Flow' --body ' *)",
+      "PowerShell(Get-ChildItem -Path \"$env:USERPROFILE\\\\.claude\\\\projects\\\\c--Users-Lenovo-Documents-VIP-and-VS-CODE-vip-pharmacy-crm\\\\memory\\\\\" -Force -ErrorAction SilentlyContinue | Select-Object Name, Length)",
+      "PowerShell($path = \"$env:USERPROFILE\\\\.claude\\\\projects\\\\c--Users-Lenovo-Documents-VIP-and-VS-CODE-vip-pharmacy-crm\\\\memory\"; Test-Path $path; if \\(Test-Path $path\\) { Get-ChildItem $path -Force | Format-Table Name, Length -AutoSize } else { Write-Output \"Directory does not exist\" })"
     ]
   }
 }
