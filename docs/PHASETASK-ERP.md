@@ -10115,7 +10115,56 @@ docs/PHASETASK-ERP.md                                       (this section)
 - ✅ Per-user printer offset preserved (`csi_printer_offset_x_mm/_y_mm`).
 - ✅ Audit log crumb (`ErpAuditLog.log_type = 'CSI_TRACE'`) preserved.
 - ✅ `getSaleById`, `getDraftsPendingCsi`, `getCsiCalibrationGrid` untouched — they're called via the SPA which DOES send X-Entity-Id, so no false-404 risk for them.
-- ✅ Other `window.open()` print endpoints (receipts, credit notes, POs, GRN, petty cash) **still have the same fragility class** but were not modified — out of scope for this fix; future sweep should apply the same `assertResourceReadAccess` pattern.
+- ✅ Other `window.open()` print endpoints (receipts, credit notes, POs, GRN, petty cash) **still have the same fragility class** but were not modified — out of scope for this fix; future sweep should apply the same `assertResourceReadAccess` pattern. **Closed by Phase 15.3-fix-2 (May 7 2026) — see below.**
+
+---
+
+### Phase 15.3-fix-2 — Print Controller resource-first sweep (May 07 2026)
+
+**Bug**: user clicked **Print / PDF** button on `/erp/purchase-orders` and got `{"success":false,"message":"Purchase order not found"}` for a PO that exists. Same fragility class as Phase 15.3-fix — `printController.getPurchaseOrderHtml` used `findOne({_id, ...req.tenantFilter})` and the URL is opened via `window.open()` which bypasses the SPA's `X-Entity-Id` injection. Since the print routes were the explicit "future sweep" left open by Phase 15.3-fix, this closes that follow-up.
+
+**Sweep applied** to all 5 authenticated print endpoints in `backend/erp/controllers/printController.js`:
+
+| Function | Resource | Module gate | Sub-permission | Notes |
+|---|---|---|---|---|
+| `getReceiptHtml` | SalesLine | `sales` | `proxy_entry` | mirrors `generateCsiDraft` |
+| `getGrnHtml` | GrnEntry | `inventory` | `grn_proxy_entry` | matches G4.5x/y proxy gate |
+| `getCreditNoteHtml` | CreditNote | `sales` | `proxy_entry` | CN reduces sales — same gate |
+| `getPurchaseOrderHtml` | PurchaseOrder | `purchasing` | `proxy_entry` | the user's reported bug |
+| `getPettyCashFormHtml` | PettyCashRemittance | none (no PROXY_ENTRY_ROLES.PETTY_CASH) | n/a | aliases `custodian_id → bdm_id` so the helper checks the right field; preserves staff-custodian access; widens admin/finance to entity allowlist |
+
+**Public route stays exempt**: `getSharedPOHtml` (`/erp/po/share/:token`) is mounted *before* the protect/tenantFilter wall — `share_token` IS the auth, cross-entity by design. Healthcheck explicitly asserts this contract holds.
+
+**Files (modified)**:
+- `backend/erp/controllers/printController.js` — full rewrite of all 6 functions; 1 new import (`assertResourceReadAccess`); 5 endpoints swept; 1 public unchanged.
+- `frontend/src/erp/components/WorkflowGuide.jsx` — `purchase-orders` tip extended to mention "resource-first access" so admins discover the new behavior (Rule #1).
+
+**Files (new, tooling)**:
+- `backend/scripts/healthcheckPrintControllerAccess.js` — 47-assertion contract verifier covering all 5 endpoints + the public-share exemption + WorkflowGuide banner update + lookup-driven gate intact + Rule #21 enforcement. **47/47 PASS.**
+
+**No new lookup categories, no schema changes**. Reuses existing `PROXY_ENTRY_ROLES.{SALES,INVENTORY,PURCHASING}` rows. Subscribers retune via Control Center → Lookup Tables (Rule #3 / Rule #19). Cache invalidation (60s TTL or manual `invalidateProxyRolesCache(entityId)`) covers all 5 endpoints automatically.
+
+**Live verification (dev cluster, parallel backend on :5001 to avoid disturbing user's :5000 dev stack)**:
+- API smoke 9/9 PASS — president (HTTP 200 + HTML), s19 staff non-owner (HTTP 403 friendly message "You can only view your own purchase orders."), real 404 preserved for non-existent ObjectId — across receipt + GRN + PO endpoints.
+- Playwright UI smoke 8/8 PASS — president navigated `/api/erp/print/purchase-order/<id>` end-to-end, page rendered "VIOS INTEGRATED PROJECTS (VIP) INC. PURCHASE ORDER PO-BAC041026-002" with vendor (PAN-JECT PHARMACEUTICAL CORPORATION), warehouse (VIP Bacolod), line items (Arcicort 100 mg, AMPULE, qty 50 @ 48.00 = 2,400.00), VAT split (Net 2,142.86 / VAT 257.14), grand total, activity log (3 status updates with waybill numbers), Prepared/Approved By signature blocks, and the Print button. Screenshot at `c:/tmp/phase-15-3-fix-2-po-pdf-renders.png`.
+- Regression healthcheck: existing `healthcheckCsiDraftAccess.js` **18/18 PASS** (no Phase 15.3-fix regression).
+- Vite build: ✓ 15.59s, no warnings.
+
+**Integrity checklist** (no regressions):
+- ✅ Real 404 preserved for every endpoint (existence check before access check).
+- ✅ Malformed ObjectId still returns 400 (`handleCastError` in errorHandler upstream of controller).
+- ✅ Mongoose `.populate()` chains preserved across all 5 endpoints (vendor / hospital / customer / warehouse / approved_by / created_by / activity_log.created_by). `getPurchaseOrderHtml` carefully unpacks `po.entity_id._id` (populated object → raw ObjectId) before passing to the helper.
+- ✅ Cross-DB ProductMaster fetch (`product_name`, `brand_name`, `dosage_strength`, `unit_code`, `purchase_uom`) still wraps in try/catch with non-critical fallthrough.
+- ✅ Public `/erp/po/share/:token` route still uses `findOne({share_token})` and does NOT call `assertResourceReadAccess` — verified by healthcheck Section 4 (would always 401 if helper fired on a no-auth request).
+- ✅ Route mount order verified: `/print` is mounted *after* `protect, tenantFilter`; `/po/share/:token` is mounted *before* — healthcheck Section 5 enforces both.
+- ✅ Frontend call sites unchanged (4 `window.open()` calls in PurchaseOrders.jsx, CreditNotes.jsx, PettyCash.jsx, SalesEntry.jsx) — the fix is server-side only.
+- ✅ Receipt template renderers unchanged — same `(doc, lineProducts)` call signature for all 5.
+- ✅ PettyCash custodian_id alias preserves the existing "custodian can view their own form" behavior; tightens "any entity-matched user can view" to "entity-matched + custodian only" — STRICTER than today, but more correct (PettyCash forms are signature-bearing instruments, not informational documents).
+- ✅ ESLint custom rule `vip-tenant/require-entity-filter` is satisfied via per-line `eslint-disable-next-line` comments on each `findById` call, with explicit reasoning — pattern matches `salesController.generateCsiDraft` from Phase 15.3-fix.
+- ✅ `node -c` syntax check clean.
+- ✅ No subscriber-shippable surface affected — the rebate stack already lives under `/erp/*` (Phase R1) and Phase 15.3-fix-2 only touches print endpoints.
+
+**Why bug was hidden so long**: print URLs are infrequently used (most ERP work is the SPA itself, which DOES inject `X-Entity-Id`). When the user finally clicked Print on a PO and the working entity didn't match the PO's entity, the false-404 surfaced. Same root cause that produced the Phase 15.3-fix bug 6 hours earlier in the same session — Phase 15.3-fix's "future sweep" follow-up was ratified by the user encountering the next instance.
 
 ### Deploy order
 

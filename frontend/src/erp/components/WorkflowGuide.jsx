@@ -656,7 +656,7 @@ const WORKFLOW_GUIDES = {
       { label: 'Warehouse Manager', path: '/erp/warehouse-manager' },
       { label: 'Lookup Tables', path: '/erp/lookups' },
     ],
-    tip: 'No products showing? Subsidiary entities inherit the parent company product catalog by default. Admin can enable/disable this per entity in Control Center → Lookup Tables → PRODUCT_CATALOG_ACCESS. The Activity Log tracks all PO updates with timestamps.',
+    tip: 'No products showing? Subsidiary entities inherit the parent company product catalog by default. Admin can enable/disable this per entity in Control Center → Lookup Tables → PRODUCT_CATALOG_ACCESS. The Activity Log tracks all PO updates with timestamps. "Print / PDF" uses resource-first access (Phase 15.3-fix-2 May 2026): admin/finance can print POs from any entity in their assignment, not just their working entity — staff still gated by ownership or PROXY_ENTRY_ROLES.PURCHASING.',
   },
   'supplier-invoices': {
     title: 'Supplier Invoices',
