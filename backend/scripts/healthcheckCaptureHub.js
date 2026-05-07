@@ -1602,6 +1602,48 @@ const wgSliceSrc = read('frontend/src/erp/components/WorkflowGuide.jsx');
 assert('bdm-capture-hub banner mentions Slice 6.2 GRN split',
   /Slice 6\.2[\s\S]{0,500}BATCH_PHOTO[\s\S]{0,300}WAYBILL/.test(wgSliceSrc));
 
+// ── Phase P1.2 Slice 6.2 follow-up (Phase 2.1) — picker sub_type narrowing
+//    + WAYBILL upload picker on /erp/grn ──────────────────────────────────
+section('Phase P1.2 Slice 6.2 follow-up (Phase 2.1) — GrnEntry picker narrowing');
+
+// grnEntrySrc was loaded earlier in section "Slice 7-extension". Reuse it.
+//
+// Item 1 — existing OCR picker (next to "Scan Undertaking Paper") MUST narrow
+// to GRN/BATCH_PHOTO so it stops surfacing WAYBILL captures. UNCATEGORIZED
+// stays unfiltered for Quick Capture fallback.
+assert('GrnEntry OCR picker passes subTypeFilter={{GRN:BATCH_PHOTO}} (Phase 2.1)',
+  /<PendingCapturesPicker[\s\S]{0,1500}subTypeFilter=\{\{\s*GRN:\s*['"]BATCH_PHOTO['"]\s*\}\}/.test(grnEntrySrc));
+
+// Item 2 — second picker mounted INSIDE the waybill panel, filtered to
+// GRN/WAYBILL, hands off to handleWaybillUpload (fetch-mode → File →
+// processDocument(WAYBILL) skip-OCR path → waybill_photo_url).
+assert('GrnEntry mounts a SECOND PendingCapturesPicker (waybill panel)',
+  // Two <PendingCapturesPicker mounts in the file
+  (grnEntrySrc.match(/<PendingCapturesPicker\b/g) || []).length >= 2);
+assert('GrnEntry waybill picker passes subTypeFilter={{GRN:WAYBILL}} (Phase 2.1)',
+  /<PendingCapturesPicker[\s\S]{0,1500}subTypeFilter=\{\{\s*GRN:\s*['"]WAYBILL['"]\s*\}\}/.test(grnEntrySrc));
+assert('GrnEntry waybill picker hands first file to handleWaybillUpload',
+  /<PendingCapturesPicker[\s\S]{0,2000}subTypeFilter=\{\{\s*GRN:\s*['"]WAYBILL['"]\s*\}\}[\s\S]{0,2500}handleWaybillUpload\(file\)/.test(grnEntrySrc));
+assert('GrnEntry waybill picker uses fetch-mode (no skipFetch on the WAYBILL block)',
+  // Split by the JSX open tag and pick the segment that carries WAYBILL — the
+  // earlier BATCH_PHOTO segment has `skipFetch` and would taint a global
+  // regex's lazy match. Truncate at the next `/>` to avoid bleeding into
+  // later JSX (the {waybillPhotoUrl && …} button that follows).
+  (() => {
+    const segments = grnEntrySrc.split('<PendingCapturesPicker');
+    const waybillSegment = segments.find(s =>
+      /^[\s\S]*?subTypeFilter=\{\{\s*GRN:\s*['"]WAYBILL['"]/.test(s)
+    );
+    if (!waybillSegment) return false;
+    const close = waybillSegment.indexOf('/>');
+    const block = close >= 0 ? waybillSegment.slice(0, close) : waybillSegment;
+    return !/\bskipFetch\b/.test(block);
+  })());
+
+// WorkflowGuide — grn-entry tip should mention the Phase 2.1 follow-up
+assert('grn-entry banner mentions Phase 2.1 follow-up (BATCH_PHOTO + WAYBILL pickers)',
+  /Slice 6\.2 follow-up[\s\S]{0,800}BATCH_PHOTO[\s\S]{0,500}WAYBILL/.test(wgSliceSrc));
+
 // ── Summary ───────────────────────────────────────────────────
 const total = pass + fail;
 process.stdout.write(`\n${'═'.repeat(60)}\n`);

@@ -380,12 +380,60 @@ Phase J4.1 — Expense ATC Dropdown UI healthcheck
 - **PendingCapturesPicker on `/erp/grn`** — picker fetches `workflow_type='GRN'` regardless of sub_type and renders the `sub_type` chip ("GRN · BATCH PHOTO" or "GRN · WAYBILL") in the row meta. Proxy picks visually. No code change required for this slice.
 - **Recent Captures list on `/erp/capture-hub`** — already renders `sub_type.replace(/_/g, ' ')` after the workflow_type label, so legacy rows show "GRN" only and post-migration rows show "GRN · WAYBILL" / "GRN · BATCH PHOTO". No code change.
 
-**Out of scope (intentionally NOT done):**
-- Picker filter tightening — narrowing `/erp/grn` PendingCapturesPicker to BATCH_PHOTO only would prevent the proxy from accidentally feeding a waybill image into the OCR scan modal. Real, but a downstream Phase 2.1 follow-up — picker UX is fine via the chip today.
-- Subscriber-overrideable D/M flag per sub_type — a `CAPTURE_SUB_TYPE_DIGITAL_OVERRIDES` lookup category would let a subscriber flip BATCH_PHOTO from D to M without code, but no subscriber needs this today and the controller already documents the hook for when one does.
-- Frontend WAYBILL upload field on `/erp/grn` accepting WAYBILL captures via picker — out of scope (the existing waybill upload field has its own gallery uploader; reuse via picker is a Phase 2.1 follow-up).
+**Out of scope (intentionally NOT done — Phase 2.1 follow-up bullets shipped May 7 2026, see next section):**
+- ~~Picker filter tightening — narrowing `/erp/grn` PendingCapturesPicker to BATCH_PHOTO only~~ → **shipped** (Phase 2.1, May 7 2026).
+- Subscriber-overrideable D/M flag per sub_type — a `CAPTURE_SUB_TYPE_DIGITAL_OVERRIDES` lookup category would let a subscriber flip BATCH_PHOTO from D to M without code, but no subscriber needs this today and the controller already documents the hook for when one does. **Still deferred.**
+- ~~Frontend WAYBILL upload field on `/erp/grn` accepting WAYBILL captures via picker~~ → **shipped** (Phase 2.1, May 7 2026).
 
 **Plan:** No formal plan file — single in-session slice (~3h end-to-end including doc + smoke).
+
+erp-remote no-push policy in effect — commit cleanly to `dev` only.
+
+---
+
+## PHASE P1.2 SLICE 6.2 follow-up (Phase 2.1) — GrnEntry picker sub_type narrowing + WAYBILL upload picker ✅ SHIPPED (May 7, 2026 — pending UI smoke ratification)
+
+**Goal:** Close the two Phase 2.1 follow-up bullets that Slice 6.2 deferred. The original split made BATCH_PHOTO and WAYBILL distinct sub_types on the BDM capture side, but `/erp/grn` still treated them as one bucket — both pickers/flows surfaced both sub_types, leaving the proxy to disambiguate by reading the chip. This slice routes each sub_type to the surface that actually consumes it.
+
+**Decision (locked May 7 2026):**
+- **OCR picker → GRN/BATCH_PHOTO only.** The existing "From BDM Captures" button next to "Scan Undertaking Paper" feeds the OCR scan modal. The Undertaking paper photo is structurally a BATCH_PHOTO sub_type (vials/boxes for OCR batch+expiry). A WAYBILL surfacing here would be misuse — the courier waybill carries no batch data. Filter narrowed via existing `subTypeFilter` prop (Phase 1 introduced for Bir2307InboundPage CWT narrowing — same prop, same code path).
+- **Waybill panel → second picker, GRN/WAYBILL only.** The waybill upload card now carries its own "From BDM Captures" button alongside the legacy Camera + Gallery buttons. Filtered to `subTypeFilter={{ GRN: 'WAYBILL' }}`. UNCATEGORIZED stays unfiltered in both pickers as Quick Capture fallback (BDM's untagged captures the proxy hasn't classified yet).
+- **Fetch-mode for waybill picker (NOT skipFetch).** The OCR picker uses `skipFetch` because the server-side OCR endpoint accepts a capture_id and re-signs the S3 URL itself. The waybill picker has no equivalent server-side path — `waybill_photo_url` is set by `processDocument(file, 'WAYBILL')` (skip-OCR mode in the OCR endpoint, returns a fresh `s3_url`). Picker pulls signed S3 URL → Blob → File → routes through existing `handleWaybillUpload` → same downstream as gallery upload. No backend change. CORS may block the in-browser fetch on dev (private bucket has no allowlist for `localhost:5173`); existing PendingCapturesPicker fallback is "No fetchable photos in the selection" toast → proxy retries via Gallery upload of the same photo. Acceptable degradation.
+- **Two pickers, no cross-bleed.** A WAYBILL capture can no longer accidentally land in the OCR scan modal, and a BATCH_PHOTO capture can no longer accidentally overwrite the waybill slot. The integrity gain is small (proxy could already disambiguate via chip) but the UX intent is now wired into the data flow, not just the user's eyes.
+
+**Why now (vs deferring further):** Phase 2.1 was the original landing zone for these per the Slice 6.2 close-out comment; user explicitly authorized them in this session. The third bullet (subscriber-overrideable D/M flag) stays deferred — no subscriber needs it today.
+
+**Why not a backend `attach-existing-capture` endpoint for waybill:** considered. Would avoid the re-upload + the CORS lurking-bug. Out of scope: needs `WaybillFromCapture` controller helper, S3 server-side copy, route mount, gate checks, healthcheck assertions, plus a separate response shape so the frontend can substitute `s3_url`. The fetch-mode reuse of `processDocument(WAYBILL)` ships in two minutes with zero backend change. If CORS blocks in production we can revisit, but production runs on the same domain as the API so same-origin should hold.
+
+**Lookup posture / subscription readiness:**
+- Zero new lookup categories. The `subTypeFilter` prop is already a runtime parameter — subscribers who want different sub_type → page mappings (e.g., a non-pharmacy subscriber whose courier waybill goes to a different page) can pass a different value at the call site without code changes here.
+- Sub-permission gates unchanged: both pickers inherit `CAPTURE_LIFECYCLE_ROLES.PROXY_PULL_CAPTURE` (server-side `getProxyQueue`).
+- `entity_id` and `bdm_id` posture unchanged — `bdmId={assignedTo || undefined}` means the picker self-fetches when no proxy target is selected (Slice 1 follow-on path) and narrows to the target BDM when one is.
+
+**Cascading downstream / integrity check:**
+- `/erp/grn` saves unchanged — `waybill_photo_url` semantic identical (a fresh S3 URL from `processDocument(WAYBILL)`), `pendingCaptureId` flow on submit unchanged.
+- `Undertaking` model gains no new fields — its `waybill_photo_url` mirror (set by `createGrn` in `inventoryController`) gets the same value as before.
+- `linkCaptureToDocument` is NOT called on waybill picker pick — that helper is for capture → doc finalization on submit, scoped to `REVIEW_WORKFLOWS` (which does not include GRN). The picked WAYBILL CaptureSubmission stays `PENDING_PROXY` until the proxy explicitly marks it complete via the existing Capture Archive override path. This matches the prior behavior where a WAYBILL capture was viewable but had no automatic finalization tie-in.
+- Slice 9 `paper_received` attestation flow on the WAYBILL CaptureSubmission row continues to work independently — picker flow does not touch `physical_status`.
+- Healthcheck (`backend/scripts/healthcheckCaptureHub.js`) gains 6 asserts under a new "Phase P1.2 Slice 6.2 follow-up (Phase 2.1)" section (665 → 671 PASS).
+
+**Files touched:**
+
+| File | Change |
+|---|---|
+| `frontend/src/erp/pages/GrnEntry.jsx` | Existing OCR picker gains `subTypeFilter={{ GRN: 'BATCH_PHOTO' }}`. New second `<PendingCapturesPicker>` mounted inside the waybill panel button row, filtered to GRN/WAYBILL, fetch-mode, hands first File to `handleWaybillUpload`. |
+| `frontend/src/erp/components/WorkflowGuide.jsx` | `grn-entry` tip appended with the Phase 2.1 follow-up paragraph (Rule #1 — banner reflects current behavior). |
+| `backend/scripts/healthcheckCaptureHub.js` | New section "Phase P1.2 Slice 6.2 follow-up (Phase 2.1)" — 6 asserts: BATCH_PHOTO subTypeFilter on OCR picker, second picker mount count, WAYBILL subTypeFilter on second picker, fetch-mode on the WAYBILL block (segment-split parsing avoids the BATCH_PHOTO block's `skipFetch` tainting the regex), `handleWaybillUpload(file)` wiring, banner mention. |
+| `docs/PHASETASK-ERP.md` | THIS section. Updated Slice 6.2 "Out of scope" bullets to mark these two as shipped. |
+| `CLAUDE-ERP.md` | Status banner refreshed with Phase 2.1 follow-up lead paragraph. |
+| `CLAUDE.md` | Note 19 will be left as-is (Slice 6.2 contract); no new numbered note needed since this is a Phase 2.1 follow-up sub-slice rather than a new phase. |
+
+**Out of scope (intentionally NOT done — still deferred):**
+- Subscriber-overrideable D/M flag per sub_type via `CAPTURE_SUB_TYPE_DIGITAL_OVERRIDES` lookup category. No subscriber needs it today.
+- Backend `attach-existing-capture` endpoint for waybill (avoids re-upload + CORS lurking-bug). Considered; not worth the surface for the same-origin production case where CORS won't fire.
+- Picker filter tightening on the OCR sales/collection sister pages — out of this slice; those pages already handle sub_type narrowing as needed (Bir2307InboundPage Phase 1, etc.).
+
+**Plan:** No formal plan file — small in-session slice (~30min end-to-end).
 
 erp-remote no-push policy in effect — commit cleanly to `dev` only.
 

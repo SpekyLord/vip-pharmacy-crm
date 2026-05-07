@@ -640,8 +640,21 @@ const VisitLogger = ({ doctor, onSuccess }) => {
         submitData.append('photos', file);
       }
 
-      await visitService.create(submitData);
+      const createRes = await visitService.create(submitData);
       toast.success('Visit logged successfully!');
+      // Phase A.5.6 follow-up — the merge resolver in visitController
+      // re-points cached merged-loser doctorIds to the winner BEFORE running
+      // weekly-cap / schedule-match. When that happens the API response
+      // carries a `merge_redirected: { from, to, message }` payload. Surface
+      // it so the BDM understands why the doctor row may shift in the list
+      // after the visit lands.
+      const redirected = createRes?.merge_redirected || createRes?.data?.merge_redirected;
+      if (redirected && redirected.from && redirected.to) {
+        toast(
+          redirected.message || 'This VIP Client record was consolidated. The visit was logged against the canonical record.',
+          { duration: 7000, icon: 'ℹ️' }
+        );
+      }
       // Phase N — Drop the persisted draft + photos on successful sync.
       try { await offlineStore.deleteVisitDraft(draftIdRef.current); } catch { /* ignore */ }
       onSuccess?.();
