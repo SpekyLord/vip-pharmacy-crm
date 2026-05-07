@@ -26,7 +26,9 @@ const Collection = require('../models/Collection');
 const { validateCsiNumber, markUsed: markCsiUsed, unmarkUsed: unmarkCsiUsed } = require('../services/csiBookletService');
 const Lookup = require('../models/Lookup');
 // Phase G4.5a — proxy entry (record on behalf of another BDM)
-const { resolveOwnerForWrite, widenFilterForProxy } = require('../utils/resolveOwnerScope');
+// `assertResourceReadAccess` (Phase 15.3-fix May 07 2026) is the resource-first
+// access gate used by `window.open()` flows that lose X-Entity-Id (CSI Draft).
+const { resolveOwnerForWrite, widenFilterForProxy, assertResourceReadAccess } = require('../utils/resolveOwnerScope');
 // Phase R2 — Sales Discount lookup-driven cap
 const { getDiscountConfig, canBypassDiscountCap } = require('../../utils/salesDiscountConfig');
 
@@ -1755,16 +1757,27 @@ const attachReceivedCsi = catchAsync(async (req, res) => {
  * BIR booklet page into their printer and the ink lands on pre-printed
  * blanks. Never a valid BIR receipt. See Phase 15.3 plan for compliance.
  *
- * Access: same-scope as getSaleById (owner + proxy + admin/finance/president)
- * via widenFilterForProxy. No Rule #21 shortcuts.
+ * Access (Phase 15.3-fix May 07 2026 — resource-first):
+ *   This URL is opened via `window.open()` (the only way to get the browser
+ *   to download a PDF using the auth cookie), which bypasses the SPA's
+ *   X-Entity-Id header. So matching the caller's working entity against the
+ *   sale's entity_id was producing false 404s for admin/finance whenever
+ *   their primary entity ≠ the sale's entity (e.g. an MG and CO CSI viewed
+ *   by an admin whose primary is VIP).
+ *
+ *   Fix: look up the sale by _id only (cross-entity lookup is safe because
+ *   _id is globally unique), then enforce access via `assertResourceReadAccess`
+ *   which checks the sale's OWN entity_id against the caller's allowlist
+ *   (entity_ids). President/CEO always pass. BDMs still gate on ownership +
+ *   proxy. No Rule #21 silent self-fill.
  */
 const generateCsiDraft = catchAsync(async (req, res) => {
   const { renderCsiDraft } = require('../services/csiDraftRenderer');
   const Entity = require('../models/Entity');
   const User = require('../../models/User');
 
-  const scope = await widenFilterForProxy(req, 'sales', { subKey: 'proxy_entry' });
-  const sale = await SalesLine.findOne({ _id: req.params.id, ...scope })
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- resource-first read; entity gate enforced by assertResourceReadAccess on sale.entity_id
+  const sale = await SalesLine.findById(req.params.id)
     .populate('hospital_id', 'hospital_name address payment_terms')
     .populate('customer_id', 'customer_name address payment_terms')
     .lean();
@@ -1772,6 +1785,15 @@ const generateCsiDraft = catchAsync(async (req, res) => {
   if (!sale) {
     return res.status(404).json({ success: false, message: 'Sale not found' });
   }
+
+  // 403 if caller can't read this sale's entity. Privileged short-circuit for
+  // president/CEO; admin/finance need the entity in their allowlist; staff
+  // need ownership or eligible proxy access.
+  await assertResourceReadAccess(req, sale, {
+    moduleKey: 'sales',
+    subKey: 'proxy_entry',
+    resourceLabel: 'sale',
+  });
 
   if (!sale.line_items || sale.line_items.length === 0) {
     return res.status(400).json({
