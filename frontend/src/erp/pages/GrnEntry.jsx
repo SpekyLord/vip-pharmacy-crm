@@ -716,11 +716,52 @@ export default function GrnEntry() {
     try {
       const res = await grn.approveGrn(id, action, reason);
       if (res?.approval_pending) { showApprovalPending(res.message); }
+      else { showSuccess(res?.message || (action === 'APPROVED' ? 'GRN approved' : 'GRN rejected')); }
       await loadList();
     } catch (err) {
-      if (err?.response?.data?.approval_pending) { showApprovalPending(err.response.data.message); await loadList(); }
-      else console.error('GRN approve error:', err);
+      // Phase 32R-GRN-Approve-UX (May 07 2026) — surface real backend errors
+      // instead of swallowing them in console. The most common path is the
+      // Phase 32R guard ("Undertaking is SUBMITTED — GRN posts only after
+      // ACKNOWLEDGED") — when the backend ships the linked UT id we deep-link
+      // the user there with one click.
+      if (err?.response?.data?.approval_pending) {
+        showApprovalPending(err.response.data.message);
+        await loadList();
+        return;
+      }
+      const data = err?.response?.data || {};
+      const msg = data.message || err.message || 'GRN approve failed';
+      if (data?.data?.undertaking_id) {
+        showError(err, `${msg} — opening Undertaking…`);
+        navigate(`/erp/undertaking/${data.data.undertaking_id}`);
+        return;
+      }
+      const errors = data.errors;
+      if (Array.isArray(errors) && errors.length) {
+        showError(null, `${msg}: ${errors.slice(0, 3).join('; ')}`);
+      } else {
+        showError(err, msg);
+      }
+      await loadList();
     }
+  };
+
+  // Phase 32R-GRN-Approve-UX — Direct GRN approve is gated on the linked
+  // Undertaking being ACKNOWLEDGED (controller enforces; only president
+  // bypasses). Encode that here so the button reflects the real state instead
+  // of misleading the user into clicking and seeing nothing.
+  const isPresident = user?.role === 'president';
+  const grnApproveState = (g) => {
+    if (g.status !== 'PENDING') return { canApprove: false };
+    if (isPresident) return { canApprove: true, hint: 'President bypass — direct GRN approve allowed' };
+    const ut = g.undertaking;
+    if (!ut) return { canApprove: false, hint: 'No linked Undertaking found yet — refresh shortly or contact admin' };
+    if (ut.status === 'ACKNOWLEDGED') return { canApprove: true, hint: `Undertaking ${ut.undertaking_number} is ACKNOWLEDGED` };
+    return {
+      canApprove: false,
+      hint: `Approve via Undertaking ${ut.undertaking_number} (currently ${ut.status})`,
+      undertaking_id: ut._id,
+    };
   };
 
   return (
@@ -1073,28 +1114,61 @@ export default function GrnEntry() {
                         </span>
                       </td>
                       <td>
-                        <a
-                          onClick={e => { e.preventDefault(); navigate(`/erp/grn/${g._id}/audit`); }}
-                          href={`/erp/grn/${g._id}/audit`}
-                          style={{ fontSize: 12, color: '#2563eb', cursor: 'pointer' }}
-                        >
-                          View →
-                        </a>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          {g.undertaking ? (
+                            <>
+                              <a
+                                onClick={e => { e.preventDefault(); navigate(`/erp/undertaking/${g.undertaking._id}`); }}
+                                href={`/erp/undertaking/${g.undertaking._id}`}
+                                style={{ fontSize: 12, color: '#2563eb', cursor: 'pointer', fontFamily: 'monospace' }}
+                              >
+                                {g.undertaking.undertaking_number} →
+                              </a>
+                              <span style={{ fontSize: 10, color: g.undertaking.status === 'ACKNOWLEDGED' ? '#166534' : g.undertaking.status === 'REJECTED' ? '#991b1b' : '#92400e' }}>
+                                {g.undertaking.status}
+                              </span>
+                            </>
+                          ) : (
+                            <a
+                              onClick={e => { e.preventDefault(); navigate(`/erp/grn/${g._id}/audit`); }}
+                              href={`/erp/grn/${g._id}/audit`}
+                              style={{ fontSize: 12, color: '#2563eb', cursor: 'pointer' }}
+                            >
+                              View →
+                            </a>
+                          )}
+                        </div>
                       </td>
                       <td>{g.reviewed_by?.name || '—'}</td>
                       <td>
-                        {g.status === 'PENDING' && (ROLE_SETS.MANAGEMENT.includes(user?.role)) && (
-                          <div style={{ display: 'flex', gap: 4 }}>
-                            <button
-                              className="btn btn-success btn-sm"
-                              onClick={() => handleApprove(g._id, 'APPROVED')}
-                              title="Blocked until the Undertaking is ACKNOWLEDGED"
-                            >
-                              Approve
-                            </button>
-                            <button className="btn btn-danger btn-sm" onClick={() => handleApprove(g._id, 'REJECTED', prompt('Rejection reason:') || '')}>Reject</button>
-                          </div>
-                        )}
+                        {g.status === 'PENDING' && (ROLE_SETS.MANAGEMENT.includes(user?.role)) && (() => {
+                          const gate = grnApproveState(g);
+                          return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <div style={{ display: 'flex', gap: 4 }}>
+                                <button
+                                  className="btn btn-success btn-sm"
+                                  onClick={() => handleApprove(g._id, 'APPROVED')}
+                                  disabled={!gate.canApprove}
+                                  style={!gate.canApprove ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}
+                                  title={gate.hint || ''}
+                                >
+                                  Approve
+                                </button>
+                                <button className="btn btn-danger btn-sm" onClick={() => handleApprove(g._id, 'REJECTED', prompt('Rejection reason:') || '')}>Reject</button>
+                              </div>
+                              {!gate.canApprove && gate.undertaking_id && (
+                                <a
+                                  onClick={e => { e.preventDefault(); navigate(`/erp/undertaking/${gate.undertaking_id}`); }}
+                                  href={`/erp/undertaking/${gate.undertaking_id}`}
+                                  style={{ fontSize: 11, color: '#2563eb' }}
+                                >
+                                  Open Undertaking →
+                                </a>
+                              )}
+                            </div>
+                          );
+                        })()}
                         <RejectionBanner row={g} moduleKey="INVENTORY" variant="row" />
                       </td>
                     </tr>
@@ -1169,19 +1243,42 @@ export default function GrnEntry() {
                       </a>
                     </div>
 
-                    {g.status === 'PENDING' && (ROLE_SETS.MANAGEMENT.includes(user?.role)) && (
-                      <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
-                        <button
-                          className="btn btn-success btn-sm"
-                          style={{ flex: 1 }}
-                          onClick={() => handleApprove(g._id, 'APPROVED')}
-                          title="Blocked until the Undertaking is ACKNOWLEDGED"
-                        >
-                          Approve
-                        </button>
-                        <button className="btn btn-danger btn-sm" style={{ flex: 1 }} onClick={() => handleApprove(g._id, 'REJECTED', prompt('Rejection reason:') || '')}>Reject</button>
-                      </div>
-                    )}
+                    {g.status === 'PENDING' && (ROLE_SETS.MANAGEMENT.includes(user?.role)) && (() => {
+                      const gate = grnApproveState(g);
+                      return (
+                        <>
+                          <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                            <button
+                              className="btn btn-success btn-sm"
+                              style={{ flex: 1, ...(gate.canApprove ? {} : { opacity: 0.55, cursor: 'not-allowed' }) }}
+                              onClick={() => handleApprove(g._id, 'APPROVED')}
+                              disabled={!gate.canApprove}
+                              title={gate.hint || ''}
+                            >
+                              Approve
+                            </button>
+                            <button className="btn btn-danger btn-sm" style={{ flex: 1 }} onClick={() => handleApprove(g._id, 'REJECTED', prompt('Rejection reason:') || '')}>Reject</button>
+                          </div>
+                          {!gate.canApprove && gate.hint && (
+                            <div style={{ marginTop: 6, fontSize: 11, color: '#92400e', background: '#fef3c7', borderRadius: 6, padding: '6px 8px' }}>
+                              {gate.hint}
+                              {gate.undertaking_id && (
+                                <>
+                                  {' '}
+                                  <a
+                                    onClick={e => { e.preventDefault(); navigate(`/erp/undertaking/${gate.undertaking_id}`); }}
+                                    href={`/erp/undertaking/${gate.undertaking_id}`}
+                                    style={{ color: '#2563eb', fontWeight: 600 }}
+                                  >
+                                    Open →
+                                  </a>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 ))}
                 {!grnList.length && (

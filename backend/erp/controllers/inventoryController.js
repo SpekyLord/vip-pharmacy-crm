@@ -19,6 +19,13 @@ const { getMyStock: getMyStockAgg, getAvailableBatches } = require('../services/
 const { cleanBatchNo } = require('../utils/normalize');
 const { journalFromInventoryAdjustment } = require('../services/autoJournal');
 const { createAndPostJournal } = require('../services/journalEngine');
+// Phase 32R-GRN-Approve-UX (May 07 2026) — hoisted from createGrn function
+// scope to module scope so approveGrnCore (the auto-approve cascade from
+// undertakingController.postSingleUndertaking AND the direct GRN approve
+// HTTP handler) can resolve the symbol. Pre-fix this was destructured inside
+// createGrn only, so every direct GRN approval threw `ReferenceError:
+// getGrnSetting is not defined` and the frontend silently swallowed it.
+const { getGrnSetting } = require('../services/undertakingService');
 
 /**
  * GET /my-stock — BDM's stock dashboard data
@@ -563,7 +570,7 @@ const createGrn = catchAsync(async (req, res) => {
   // Phase 32R: waybill is evidence of physical delivery. Required at capture
   // time — subscribers CAN relax this via GRN_SETTINGS.WAYBILL_REQUIRED if their
   // workflow permits (e.g. internal transfer with no waybill), see below.
-  const { getGrnSetting } = require('../services/undertakingService');
+  // (getGrnSetting is module-scoped — see Phase 32R-GRN-Approve-UX header.)
   const waybillRequired = await getGrnSetting(req.entityId, 'WAYBILL_REQUIRED', 1);
   if (waybillRequired && !waybill_photo_url) {
     return res.status(400).json({
@@ -1092,6 +1099,36 @@ const getGrnList = catchAsync(async (req, res) => {
       .lean(),
     GrnEntry.countDocuments(filter)
   ]);
+
+  // Phase 32R-GRN-Approve-UX (May 07 2026) — enrich each GRN with its linked
+  // Undertaking summary so the frontend can render approve-button state
+  // accurately (the direct GRN/approve endpoint is gated on UT.status ===
+  // 'ACKNOWLEDGED' for non-president callers; surfacing that gate state in the
+  // list avoids the "click Approve, nothing happens, error swallowed in console"
+  // failure mode). One round trip per page, indexed by linked_grn_id.
+  if (grns.length) {
+    const Undertaking = require('../models/Undertaking');
+    const grnIds = grns.map(g => g._id);
+    // eslint-disable-next-line vip-tenant/require-entity-filter -- grnIds are entity-scoped above; UT.linked_grn_id is unique per non-reversed GRN
+    const uts = await Undertaking.find({ linked_grn_id: { $in: grnIds } })
+      .select('linked_grn_id undertaking_number status acknowledged_at deletion_event_id')
+      .lean();
+    const utByGrn = new Map();
+    for (const ut of uts) {
+      // Skip reversed UTs — the partial unique index allows multiple rows per
+      // GRN when one is reversed; keep the live (non-deletion_event_id) one.
+      if (ut.deletion_event_id) continue;
+      utByGrn.set(ut.linked_grn_id.toString(), {
+        _id: ut._id,
+        undertaking_number: ut.undertaking_number,
+        status: ut.status,
+        acknowledged_at: ut.acknowledged_at || null,
+      });
+    }
+    for (const g of grns) {
+      g.undertaking = utByGrn.get(g._id.toString()) || null;
+    }
+  }
 
   res.json({
     success: true,

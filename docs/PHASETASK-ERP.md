@@ -16,6 +16,56 @@
 
 ---
 
+## PHASE 32R-GRN-Approve-UX — Direct GRN Approve Unblock ✅ SHIPPED + RATIFIED (May 7, 2026)
+
+**Goal:** Fix "Can't approve VIP GRN ENTRY" reported with screenshot. The direct GRN approve path on `/erp/grn` was silently broken: clicking the green Approve button on a PENDING row appeared to do nothing — no toast, no error, the row stayed PENDING.
+
+**Why now:** User report this morning with a screenshot showing 2 PENDING GRN-VIP* rows where the Approve button was non-functional.
+
+**Root cause (two coupled bugs):**
+
+1. **Backend `ReferenceError: getGrnSetting is not defined`** in [`approveGrnCore`](backend/erp/controllers/inventoryController.js). The helper was destructured from `require('../services/undertakingService')` inside `createGrn`'s function scope (line 566) but referenced *unqualified* inside `approveGrnCore` (line 869, called by both the direct GRN approve HTTP handler AND `undertakingController.postSingleUndertaking`'s auto-approve cascade). Every direct GRN approval threw `ReferenceError` → HTTP 500. The auto-approve cascade hit the same error but the `withTransaction` wrapper rolled it back as a generic 500, masking the diagnosis.
+2. **Frontend silent-error swallow** in [`GrnEntry.handleApprove`](frontend/src/erp/pages/GrnEntry.jsx). The catch block called `console.error('GRN approve error:', err)` for any non-`approval_pending` error — no toast, no modal, no user-visible feedback. So the 500 from bug #1 (and any other backend rejection — period lock, waybill missing, Phase 32R UT-not-acknowledged) presented as a silent no-op click.
+
+**Files modified (4) + 2 docs:**
+
+| File | Status | Change |
+| --- | --- | --- |
+| `backend/erp/controllers/inventoryController.js` | Modified | (a) Hoist `const { getGrnSetting } = require('../services/undertakingService');` to module scope (top of file). (b) Drop the redundant inner `require` in `createGrn`. (c) Enrich `getGrnList` with `undertaking` summary (`{_id, undertaking_number, status, acknowledged_at}`) per row — single `$in` query per page, skips reversed UTs via partial unique index. |
+| `frontend/src/erp/pages/GrnEntry.jsx` | Modified | (a) `handleApprove` now calls `showSuccess`/`showError` from errorToast.js. (b) When backend ships `data.undertaking_id` in 400 (Phase 32R guard), navigate to that UT page. (c) New `grnApproveState(g)` helper — disables Approve button when UT not ACKNOWLEDGED, surfaces reason via `title=` tooltip, renders "Open Undertaking →" CTA. President bypass mirrors the controller. (d) Undertaking column shows `UT-XXX → STATUS` colored by ACK/REJECTED/other. |
+| `frontend/src/erp/components/WorkflowGuide.jsx` | Modified | `grn-entry` step 6 added: explains the gate + president bypass + Open Undertaking deep-link (Rule #1). |
+| `backend/scripts/healthcheckGrnApproveUx.js` | NEW | 30 assertions covering the require hoist + listing enrichment + frontend handler + button gate + banner. |
+| `CLAUDE-ERP.md` | Modified | Status banner refresh to v9.0. |
+| `docs/PHASETASK-ERP.md` | Modified | This section. |
+
+**Cascading downstream sanity verified:**
+
+- `undertakingController.postSingleUndertaking` cascade — also fixed by the require-hoist; the auto-approve path was hitting the same ReferenceError.
+- `interCompanyController` GRN approvals — uses `approveGrnCore`, also fixed.
+- `getGrnList` consumers — only `frontend/src/erp/hooks/useGrn.js` calls it; the new `undertaking` field is purely additive (existing keys unchanged).
+- Period-lock + waybill + authority-matrix gates downstream of `approveGrnCore` are unchanged — fix is purely the require resolution + UI surface.
+
+**Subscription-readiness:** zero new lookup categories. Fix is purely UX-routing for the existing `MODULE_DEFAULT_ROLES.INVENTORY` (Phase G4) gate + the existing president-bypass invariant. Re-uses `gateApproval()` for the authority matrix path. `entity_id` (Rule #19) and `bdm_id` (Rule #21) posture unchanged.
+
+**Verification:**
+
+- Healthcheck: `node backend/scripts/healthcheckGrnApproveUx.js` → **30/30 PASS**.
+- Regression healthchecks: `healthcheckCaptureHub.js` **660/660 PASS** (no regression on Slices 1-9), `healthcheckInternalTransferProxy.js` **33/33 PASS**, `healthcheckProductGlobalization.js` **56/56 PASS**.
+- Vite build: ✓ green in 16.71s.
+- Live API smoke (president on dev VIP entity): seeded 3 PENDING GRNs (no UT / DRAFT UT / ACKNOWLEDGED UT) — all three approved via `POST /api/erp/inventory/grn/:id/approve` returned **HTTP 200** + `"GRN approved — stock updated"`. Pre-fix the same call returned 500 + `getGrnSetting is not defined`.
+- Live UI smoke (Playwright as president, `/erp/grn`): PENDING tab rendered all 3 smoke rows with the new `UT-XXX → STATUS` column + correct status colors (ACKNOWLEDGED green, DRAFT amber, none gray). Click on a synthetic row that pre-fix would have silently console.error'd now toasts the real backend error message.
+- Smoke fixtures + ledger residue cleaned up after ratification (one-shot `_smokeGrnApproveUx.js` + `_smokeGrnApproveUxResidue.js` deleted from repo).
+
+**Why bug A was hidden so long:** the auto-approve cascade through Undertaking ACK is the dominant production path (Phase 32R intentionally routes approvals through UT, not directly through GRN). The cascade also hit the ReferenceError but the generic transaction rollback masked it. Direct-GRN approves are rare (UT-ACK is the dominant path); when one user finally tried (after a UT they wanted to skip), the silent frontend swallow masked the underlying ReferenceError. Today's user report finally surfaced it.
+
+**Out of scope:**
+
+- Period-lock UX surfacing — already toasts the real message via the new handler, no extra work needed.
+- Lookup-driven president bypass — president bypass is a system-wide invariant per Rule #20; subscriber tunability is out-of-scope.
+- Undertaking column UX in mobile card view — already updated to show UT# + status in card layout via the same gate helper.
+
+---
+
 ## PHASE A.4 — AR/AP Sub-Ledger Recon + JE-Asymmetry Repair ✅ SHIPPED (May 6, 2026)
 
 **Goal:** Materialize `outstanding_amount` on `SalesLine` + `SupplierInvoice` so AR/AP aging reads O(1), wire the strict integrity recon (`Σ outstanding ≡ GL AR_TRADE/AP_TRADE`) into the daily Accounting Integrity Agent, and capture per-doc `je_status` so POSTED-but-no-JE drift becomes visible (and period-close blocks until admin retries the JE). SaaS-readiness deliverable per CLAUDE.md §0d (Year-2 Vios Software Solutions spin-out).
