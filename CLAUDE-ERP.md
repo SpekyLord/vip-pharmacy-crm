@@ -8641,3 +8641,37 @@ User-reported bug: opening `/api/erp/sales/<MG-and-CO-sale-id>/csi-draft` from t
 **Known follow-up — same fragility class lurks in print endpoints**: `/api/erp/print/receipt/:id`, `/print/credit-note/:id`, `/print/purchase-order/:id`, `/print/grn/:id`, `/print/petty-cash/:id` are all opened via `window.open()` and all use `req.tenantFilter` for scoping. They will misfire the same way for a multi-entity admin viewing a cross-entity print. Out of scope for this hotfix; future sweep should apply `assertResourceReadAccess` to each.
 
 **Verification**: 18/18 healthcheck + 10/10 unit smoke + `node -c` syntax-clean + `scripts/check-system-health.js` Section 9 (CSI Draft Overlay wiring) still green. Live UI ratification deferred to post-deploy (the dev cluster's auth was returning unexpected user identities under my login attempts, separate from this fix). See PHASETASK-ERP.md "Phase 15.3-fix" subsection for the full cascade map and integrity checklist.
+
+---
+
+## Phase 15.3-fix-2 — Print Controller resource-first sweep (May 7 2026, ✅ shipped + UI+API ratified on dev)
+
+User-reported bug: clicking the **Print / PDF** button on `/erp/purchase-orders` returned `{"success":false,"message":"Purchase order not found"}` for a PO that exists. Root cause: same fragility flagged in the Phase 15.3-fix follow-up — `printController.getPurchaseOrderHtml` used `findOne({_id, ...req.tenantFilter})`, and the print URL is opened via `window.open()` which bypasses the SPA's `X-Entity-Id` injection. `req.entityId` falls back to the caller's primary entity, so the entity_id on the tenantFilter masks any PO whose `entity_id` doesn't equal the working entity. Closes the deferred sweep.
+
+**Sweep applied to all 5 authenticated print endpoints**:
+- `getReceiptHtml` (sales receipt) → `moduleKey: 'sales'`, `subKey: 'proxy_entry'`, `resourceLabel: 'sale'`
+- `getGrnHtml` → `moduleKey: 'inventory'`, `subKey: 'grn_proxy_entry'`, `resourceLabel: 'GRN'`
+- `getCreditNoteHtml` → `moduleKey: 'sales'`, `subKey: 'proxy_entry'`, `resourceLabel: 'credit note'`
+- `getPurchaseOrderHtml` → `moduleKey: 'purchasing'`, `subKey: 'proxy_entry'`, `resourceLabel: 'purchase order'`
+- `getPettyCashFormHtml` → no moduleKey (no PROXY_ENTRY_ROLES.PETTY_CASH today); custodian_id aliased onto `bdm_id` field so the helper's staff-ownership branch checks the right field. Preserves staff-custodian access; widens admin/finance to entity allowlist.
+
+**Public route stays exempt**: `getSharedPOHtml` (`/erp/po/share/:token`) is mounted *before* the protect/tenantFilter wall — `share_token` IS the auth, cross-entity access is by design (vendor-facing PO link). Healthcheck explicitly asserts this contract holds.
+
+**Why one helper covers all five**: every print endpoint had the same shape (`findOne({_id, ...scope})` + 404 fallthrough). Reusing `assertResourceReadAccess` (Phase 15.3-fix) gives identical behavior across endpoints — president/CEO short-circuit, admin/finance entity allowlist, staff ownership-or-proxy gate. No new lookup categories; subscribers retune `PROXY_ENTRY_ROLES.{SALES,INVENTORY,PURCHASING}` via Control Center → Lookup Tables (Rule #3 / Rule #19).
+
+**Files (modified)**:
+- `backend/erp/controllers/printController.js` — full rewrite of all 6 functions (5 internal swept, 1 public unchanged with explicit comment).
+- `frontend/src/erp/components/WorkflowGuide.jsx` — `purchase-orders` tip mentions "resource-first access" so admins discover the new behavior (Rule #1).
+
+**Files (new, tooling)**:
+- `backend/scripts/healthcheckPrintControllerAccess.js` — 47-assertion contract verifier covering all 5 endpoints + the public-share exemption + WorkflowGuide banner update + lookup-driven gate. **47/47 PASS.**
+
+**Live verification (dev cluster, parallel backend on :5001)**:
+- API smoke 9/9 PASS — president (HTTP 200 + HTML), s19 staff non-owner (HTTP 403 friendly message), real 404 for non-existent ObjectId — across receipt + GRN + PO endpoints.
+- Playwright UI smoke 8/8 PASS — president navigated `/api/erp/print/purchase-order/<id>` end-to-end, page rendered "VIOS INTEGRATED PROJECTS (VIP) INC. PURCHASE ORDER PO-BAC041026-002" with vendor, line items, totals, activity log, signature blocks, and the Print button. Screenshot at `c:/tmp/phase-15-3-fix-2-po-pdf-renders.png`.
+- Regression healthcheck: existing `healthcheckCsiDraftAccess.js` **18/18 PASS** (no Phase 15.3-fix regression).
+- Vite build: ✓ 15.59s.
+
+**Cascading downstream sanity**: (1) `/erp/po/share/:token` public route untouched — vendor-facing share links keep working. (2) Frontend call sites (`window.open(...)` in PurchaseOrders.jsx, CreditNotes.jsx, PettyCash.jsx, SalesEntry.jsx) need no change — fix is server-side only. (3) The 5 receipt template renderers (`renderSalesReceipt`, `renderPettyCashForm`, `renderGrnReceipt`, `renderCreditNote`, `renderPurchaseOrderHtml`) are called identically — same `(doc, lineProducts)` signature. (4) `PROXY_ENTRY_ROLES` cache invalidation (60s TTL or manual `invalidateProxyRolesCache(entityId)` on lookup edit) covers all 5 endpoints automatically. (5) Print routes mount order verified by healthcheck — `/print` lives behind the protect/tenantFilter wall (auth required), `/po/share/:token` lives in front of it (public).
+
+See PHASETASK-ERP.md "Phase 15.3-fix-2" subsection for the integrity checklist.
