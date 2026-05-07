@@ -37,6 +37,15 @@ const Doctor = require('../../models/Doctor');
 const ClientVisit = require('../../models/ClientVisit');
 const Client = require('../../models/Client');
 const CarLogbookEntry = require('../models/CarLogbookEntry');
+// Phase SMER-CL (May 07 2026) — manual-source CommunicationLog screenshots
+// (Messenger / Viber / WhatsApp / Email / Google Chat) join Visit and ClientVisit
+// as a third per-diem-bearing stream when admin opts in via PERDIEM_RATES.<role>.
+// metadata.include_comm_log. Trust model: admin is in the BDM group chats, so
+// chat-credit fraud is bounded by real-time spot-check. One CommLog row = one
+// MD credit (existing doctor/client FK). Same-day same-MD across Visit + CommLog
+// dedups at merge to 1. Phase O's 14-day photo cutoff inherits — old screenshots
+// cannot retroactively pad SMER per-diem.
+const CommunicationLog = require('../../models/CommunicationLog');
 
 // Phase O (May 2026) — only FRAUD flags should disqualify a visit from per-diem.
 // The pre-Phase-O bridge treated ANY photoFlag as disqualifying ($size === 0
@@ -123,7 +132,18 @@ async function getDailyMdCounts(bdmUserId, startDate, endDate, opts = {}) {
   // includeExtraCalls (May 05 2026, lookup-driven via PERDIEM_RATES.<role>.metadata.include_extra_calls):
   //   true  = sum VIP Visit + EXTRA ClientVisit (yes-equal-weight policy, default)
   //   false = strict VIP-only (legacy / opt-out for subscribers that gate per-diem on the curated VIP list)
-  const { skipFlagged = false, source = 'visit', includeExtraCalls = true } = opts;
+  // includeCommLog (Phase SMER-CL, May 07 2026, lookup-driven via .include_comm_log):
+  //   true  = manual-source CommunicationLog screenshots also count
+  //   false = visit/extra streams only (legacy default)
+  const {
+    skipFlagged = false,
+    source = 'visit',
+    includeExtraCalls = true,
+    includeCommLog = false,
+    commLogDailyCap = null,
+    commLogRequireOutbound = false,
+    commLogAllowedSources = ['manual'],
+  } = opts;
 
   // Phase G1.6 — dispatch by eligibility source. 'visit' = pharma CRM Visit (+ ClientVisit
   // when includeExtraCalls is true, default); 'logbook' = CarLogbook (non-pharma
@@ -145,23 +165,39 @@ async function getDailyMdCounts(bdmUserId, startDate, endDate, opts = {}) {
     : bdmUserId;
   const dateRange = { $gte: manilaDayStart(startKey), $lte: manilaDayEnd(endKey) };
 
-  // Run the same per-day "all vs unflagged" aggregation against both Visit (VIP,
-  // FK = doctor) and ClientVisit (EXTRA, FK = client). Both schemas share user /
-  // visitDate / status / photoFlags, so the only thing that varies is the FK
-  // field name. Results are merged in JS keyed by Manila calendar day. When
-  // includeExtraCalls=false we short-circuit the EXTRA stream to an empty
-  // result so the merge code stays single-shape.
-  const [vipResults, extraResults] = await Promise.all([
+  // Run the same per-day "all vs unflagged" aggregation against Visit (VIP,
+  // FK = doctor), ClientVisit (EXTRA, FK = client), AND CommunicationLog
+  // (CHAT, FK = doctor OR client) when their respective lookups are on. Visit/
+  // ClientVisit share user / visitDate / status / photoFlags, so only FK name
+  // varies. CommLog shares user but uses contactedAt (not visitDate), has no
+  // photoFlags concept, and can reference EITHER doctor or client. Results
+  // merge in JS keyed by Manila calendar day. Disabled streams short-circuit
+  // to [] so the merge stays single-shape.
+  const [vipResults, extraResults, commLogResults] = await Promise.all([
     aggregateDailyByCollection(Visit, 'doctor', userObjectId, dateRange),
     includeExtraCalls
       ? aggregateDailyByCollection(ClientVisit, 'client', userObjectId, dateRange)
+      : Promise.resolve([]),
+    includeCommLog
+      ? aggregateCommLogDaily(userObjectId, dateRange, {
+          allowedSources: commLogAllowedSources,
+          requireOutbound: commLogRequireOutbound,
+        })
       : Promise.resolve([])
   ]);
 
   // Batch-fetch master records to resolve location labels. Doctor and Client
   // share the locality/province/clinicOfficeAddress contract (Phase G1.5).
+  // CommLog can reference either, so we union the IDs from all three streams
+  // into the appropriate master fetch — no extra round trip vs. the legacy 2-stream pattern.
   const doctorIds = collectIds(vipResults);
   const clientIds = collectIds(extraResults);
+  // CommLog rows surface ids_doctor and ids_client separately so each MD ID
+  // routes to the correct master collection (Doctor vs Client).
+  for (const r of commLogResults) {
+    for (const id of (r.ids_doctor || [])) doctorIds.add(id.toString());
+    for (const id of (r.ids_client || [])) clientIds.add(id.toString());
+  }
   const [doctors, clients] = await Promise.all([
     doctorIds.size
       ? Doctor.find({ _id: { $in: [...doctorIds] } })
@@ -176,32 +212,62 @@ async function getDailyMdCounts(bdmUserId, startDate, endDate, opts = {}) {
   for (const d of doctors) masterMap.set(d._id.toString(), d);
   for (const c of clients) masterMap.set(c._id.toString(), c);
 
-  // Merge per-day buckets across the two streams. EXTRA and VIP IDs live in
-  // different collections so they cannot collide; we just union them. If the
-  // same physical MD appears in both Doctor and Client master data (legacy
-  // dirty-data case the merge tool is designed to clean), each visit log
-  // counts separately — this mirrors how the CRM list view renders them.
-  const allDayKeys = new Set([...vipResults.map(r => r._id), ...extraResults.map(r => r._id)]);
+  // Merge per-day buckets across all three streams. Phase SMER-CL (May 07 2026)
+  // — the merge is now Set<string>-based on stringified ObjectIds so a same-day
+  // same-MD pair across Visit + CommLog dedups to 1 (BDM in-person visits Dr. X
+  // in the morning AND messages Dr. X in the evening = 1 MD credit, not 2).
+  // Pre-Phase-SMER-CL the merge concat-then-counted, which was technically wrong
+  // even for VIP+EXTRA cross-stream (Doctor/Client _id collisions are practically
+  // zero but theoretically allowed). Switching to Set is strictly safer.
+  const allDayKeys = new Set([
+    ...vipResults.map(r => r._id),
+    ...extraResults.map(r => r._id),
+    ...commLogResults.map(r => r._id),
+  ]);
   const counts = {};
   for (const dayKey of [...allDayKeys].sort()) {
     const vip = vipResults.find(r => r._id === dayKey);
     const extra = extraResults.find(r => r._id === dayKey);
+    const chat = commLogResults.find(r => r._id === dayKey);
 
-    const idsAll = [
-      ...((vip && vip.ids_all) || []),
-      ...((extra && extra.ids_all) || [])
-    ];
-    const idsUnflagged = [
-      ...((vip && (vip.ids_unflagged || []).filter(x => x !== null)) || []),
-      ...((extra && (extra.ids_unflagged || []).filter(x => x !== null)) || [])
-    ];
+    // CommLog has no photoFlags concept — its rows always count toward both
+    // ids_all and ids_unflagged. The skip_flagged guard (Phase G1.5) only
+    // applies to Visit/ClientVisit fraud flags.
+    const chatIds = chat ? [...(chat.ids_doctor || []), ...(chat.ids_client || [])] : [];
 
-    const flaggedCount = idsAll.length - idsUnflagged.length;
-    const countedIds = skipFlagged ? idsUnflagged : idsAll;
+    // Set-based dedup across all three streams (Phase SMER-CL May 07 2026).
+    // Stringify _id so the Set treats Mongo ObjectIds as primitives.
+    const setAll = new Set();
+    for (const id of ((vip && vip.ids_all) || [])) setAll.add(id.toString());
+    for (const id of ((extra && extra.ids_all) || [])) setAll.add(id.toString());
+    for (const id of chatIds) setAll.add(id.toString());
+
+    const setUnflagged = new Set();
+    for (const id of ((vip && (vip.ids_unflagged || []).filter(x => x !== null)) || [])) setUnflagged.add(id.toString());
+    for (const id of ((extra && (extra.ids_unflagged || []).filter(x => x !== null)) || [])) setUnflagged.add(id.toString());
+    // CommLog rows are unconditionally "unflagged" for the per-diem skip check.
+    for (const id of chatIds) setUnflagged.add(id.toString());
+
+    const flaggedCount = setAll.size - setUnflagged.size;
+    const countedSet = skipFlagged ? setUnflagged : setAll;
+    const countedIds = [...countedSet];
+
+    // CommLog-only contribution post-dedup (a same-day same-MD with Visit
+    // doesn't double-credit chat — it's already in the merged Set). This is
+    // the count the row-level UI badge surfaces: "💬 N chats" reflects MDs
+    // that earned per-diem ONLY via chat outreach today.
+    const chatOnlySet = new Set();
+    const visitMdSet = new Set();
+    for (const id of ((vip && vip.ids_all) || [])) visitMdSet.add(id.toString());
+    for (const id of ((extra && extra.ids_all) || [])) visitMdSet.add(id.toString());
+    for (const id of chatIds) {
+      const k = id.toString();
+      if (!visitMdSet.has(k)) chatOnlySet.add(k);
+    }
 
     const locationLabels = countedIds
       .map(id => {
-        const m = masterMap.get(id.toString());
+        const m = masterMap.get(id);
         if (!m) return null;
         if (m.locality && m.province) return `${m.locality}, ${m.province}`;
         if (m.locality) return m.locality;
@@ -216,8 +282,29 @@ async function getDailyMdCounts(bdmUserId, startDate, endDate, opts = {}) {
       md_count: uniqueMdCount,
       unique_doctors: uniqueMdCount,
       flagged_excluded: skipFlagged ? flaggedCount : 0,
+      // Phase SMER-CL — chat-only contribution, post-cross-stream-dedup.
+      // Frontend renders "💬 N chats" badge below md_count when > 0.
+      comm_log_count: chatOnlySet.size,
+      visit_count: visitMdSet.size,
       locations: uniqueLocations.join('; ')
     };
+
+    // Phase SMER-CL — comm_log_daily_cap (lookup-tunable, default null = no cap).
+    // Admin spot-check via Messenger is the primary fraud guard (trust model:
+    // admin is in the BDM group chats). Cap exists for SaaS subscribers without
+    // that trust model. When applied, it caps the chat-only contribution; the
+    // BDM keeps any visit-driven count and loses excess chat credits.
+    if (includeCommLog && commLogDailyCap != null && Number.isFinite(commLogDailyCap) && commLogDailyCap >= 0) {
+      const cap = Number(commLogDailyCap);
+      const chatOnly = chatOnlySet.size;
+      if (chatOnly > cap) {
+        const excess = chatOnly - cap;
+        counts[dayKey].md_count = Math.max(uniqueMdCount - excess, 0);
+        counts[dayKey].unique_doctors = counts[dayKey].md_count;
+        counts[dayKey].comm_log_count = cap;
+        counts[dayKey].comm_log_excluded = excess;
+      }
+    }
   }
   return counts;
 }
@@ -277,6 +364,108 @@ function collectIds(results) {
     for (const id of (r.ids_all || [])) ids.add(id.toString());
   }
   return ids;
+}
+
+/**
+ * Phase SMER-CL (May 07 2026) — Daily aggregation of manual-source CommunicationLog
+ * screenshots that earned per-diem credit. Mirrors aggregateDailyByCollection's
+ * shape but with three structural differences:
+ *
+ *   1. Groups by `contactedAt` (CommLog's date field), not `visitDate`.
+ *   2. Returns separate `ids_doctor` and `ids_client` arrays — CommLog can
+ *      reference EITHER a Doctor (VIP Client) or a Client (Regular Client) via
+ *      its `doctor` / `client` FK, and the merge needs to route each ID to the
+ *      right master collection for location resolution.
+ *   3. Eligibility is gated on:
+ *      - `source ∈ allowedSources` (default ['manual'] — webhook/system spam excluded)
+ *      - `direction === 'outbound'` IF `requireOutbound` (default false — group
+ *        chats are bidirectional; participation is the work)
+ *      - `photos.0` exists (manual-source already requires ≥1 screenshot at the
+ *        model level — defensive check at the bridge in case the rule ever drifts)
+ *      - **Phase O 14-day late-log inheritance**: `(createdAt - photos[0].capturedAt)
+ *        ≤ COMM_LOG_MAX_AGE_MS`. Old screenshots cannot retroactively pad SMER per-diem.
+ *        Falls back to `contactedAt` for legacy rows missing `photos[0].capturedAt`.
+ *
+ * No `photoFlags` concept — CommLog has none. Per-row counts always toward both
+ * ids_all and ids_unflagged at merge time.
+ *
+ * @param {ObjectId} userObjectId
+ * @param {{ $gte: Date, $lte: Date }} dateRange - Manila day window
+ * @param {Object} opts
+ * @param {String[]} [opts.allowedSources=['manual']]
+ * @param {Boolean} [opts.requireOutbound=false]
+ * @returns {Promise<Array<{ _id: string, ids_doctor: ObjectId[], ids_client: ObjectId[] }>>}
+ */
+async function aggregateCommLogDaily(userObjectId, dateRange, opts = {}) {
+  const { allowedSources = ['manual'], requireOutbound = false } = opts;
+  // Phase O inheritance: 14-day cutoff measured between photos[0].capturedAt
+  // and createdAt. Hardcoded here for now — future Phase SMER-CL.2 can promote
+  // to a lookup key (`comm_log_max_age_days`) if subscribers ask. Matches the
+  // Phase O default (`VISIT_PHOTO_VALIDATION_RULES.late_log_max_days`).
+  const COMM_LOG_MAX_AGE_DAYS = 14;
+  const COMM_LOG_MAX_AGE_MS = COMM_LOG_MAX_AGE_DAYS * 24 * 60 * 60 * 1000;
+
+  const match = {
+    user: userObjectId,
+    contactedAt: dateRange,
+    status: 'logged',
+    source: { $in: allowedSources },
+    // photos.0 means "at least one element exists at index 0" — guards
+    // against rows where the photos array is empty (legacy or edge-case
+    // rows that shouldn't have escaped pre-validate).
+    'photos.0': { $exists: true },
+  };
+  if (requireOutbound) match.direction = 'outbound';
+
+  return CommunicationLog.aggregate([
+    { $match: match },
+    // Phase O 14-day cutoff: gate per row using $expr so each row's own
+    // photos[0].capturedAt vs createdAt drives the decision. ifNull falls back
+    // to contactedAt for legacy rows missing photos[0].capturedAt.
+    {
+      $addFields: {
+        _photo_capturedAt: {
+          $ifNull: [
+            { $arrayElemAt: ['$photos.capturedAt', 0] },
+            '$contactedAt'
+          ]
+        }
+      }
+    },
+    {
+      $match: {
+        $expr: {
+          $lte: [
+            { $subtract: ['$createdAt', '$_photo_capturedAt'] },
+            COMM_LOG_MAX_AGE_MS
+          ]
+        }
+      }
+    },
+    {
+      $group: {
+        _id: {
+          $dateToString: { format: '%Y-%m-%d', date: '$contactedAt', timezone: MANILA_TZ }
+        },
+        ids_doctor: { $addToSet: '$doctor' },
+        ids_client: { $addToSet: '$client' },
+      }
+    },
+    // Strip null FK entries so ids_doctor / ids_client only contain real ObjectIds.
+    // CommLog can have either doctor=null+client=set OR doctor=set+client=null.
+    {
+      $project: {
+        _id: 1,
+        ids_doctor: {
+          $filter: { input: '$ids_doctor', as: 'd', cond: { $ne: ['$$d', null] } }
+        },
+        ids_client: {
+          $filter: { input: '$ids_client', as: 'c', cond: { $ne: ['$$c', null] } }
+        }
+      }
+    },
+    { $sort: { _id: 1 } }
+  ]);
 }
 
 /**
@@ -422,5 +611,8 @@ module.exports = {
   getDailyMdCount,
   getDailyMdCounts,
   getDailyLogbookCounts,
-  getDailyVisitDetails
+  getDailyVisitDetails,
+  // Phase SMER-CL (May 07 2026) — exported for healthcheck visibility and
+  // future drilldown wiring. Not currently called by any controller directly.
+  aggregateCommLogDaily,
 };

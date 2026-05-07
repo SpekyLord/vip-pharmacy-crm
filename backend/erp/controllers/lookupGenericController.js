@@ -2666,18 +2666,32 @@ const SEED_DEFAULTS = {
   // include_extra_calls (May 05 2026, yes-equal-weight policy):
   //   true  = VIP Visits + EXTRA ClientVisits both count toward MD threshold (default)
   //   false = strict VIP-only (legacy behavior — for subscribers that gate per-diem on VIP list only)
+  // include_comm_log (Phase SMER-CL, May 07 2026 — manual-source CommLog screenshots
+  // count toward MD threshold when admin opts in). Trust model: admin is in the BDM
+  // group chats, so spot-check is one Messenger scroll away and per-diem credit on
+  // chat outreach is auditable in real-time. VIP entity defaults to ON; SaaS
+  // subscribers (Year-2 Vios Software Solutions spin-out) default to OFF — no
+  // admin-in-chat trust there. One CommLog row = one MD credit (existing doctor/
+  // client FK). No daily cap. Same-day same-MD across Visit + CommLog dedups at
+  // merge to 1. Phase O's 14-day photo cutoff inherits — old screenshots cannot
+  // retroactively pad SMER per-diem.
+  //   include_comm_log:           true|false (default false — must be explicitly enabled)
+  //   comm_log_daily_cap:         null|N (null = no cap; admin spot-check is the guard)
+  //   comm_log_require_outbound:  true|false (default false — group chats bidirectional)
+  //   comm_log_allowed_sources:   ['manual', ...] — exclude api/invite_reply/opt_out/system
   // full_tier_threshold / half_tier_threshold:
   //   null   = defer to CompProfile → Settings chain (backward compat)
   //   number = per-role override. Precedence: CompProfile > PERDIEM_RATES > Settings.
   //            Example: delivery driver with full_tier_threshold=1 → any worked day
   //            (any POSTED CarLogbookEntry with official_km>0) triggers FULL per-diem.
   PERDIEM_RATES: [
-    { code: 'BDM', label: 'BDM (pharma field rep) — visit-driven per-diem', insert_only_metadata: true, metadata: { rate_php: 800, eligibility_source: 'visit', skip_flagged: true, allow_weekend: false, include_extra_calls: true, full_tier_threshold: null, half_tier_threshold: null } },
-    { code: 'ECOMMERCE_BDM', label: 'E-commerce BDM — visit-driven per-diem', insert_only_metadata: true, metadata: { rate_php: 800, eligibility_source: 'visit', skip_flagged: true, allow_weekend: false, include_extra_calls: true, full_tier_threshold: null, half_tier_threshold: null } },
+    { code: 'BDM', label: 'BDM (pharma field rep) — visit-driven per-diem', insert_only_metadata: true, metadata: { rate_php: 800, eligibility_source: 'visit', skip_flagged: true, allow_weekend: false, include_extra_calls: true, include_comm_log: true, comm_log_daily_cap: null, comm_log_require_outbound: false, comm_log_allowed_sources: ['manual'], full_tier_threshold: null, half_tier_threshold: null } },
+    { code: 'ECOMMERCE_BDM', label: 'E-commerce BDM — visit-driven per-diem', insert_only_metadata: true, metadata: { rate_php: 800, eligibility_source: 'visit', skip_flagged: true, allow_weekend: false, include_extra_calls: true, include_comm_log: true, comm_log_daily_cap: null, comm_log_require_outbound: false, comm_log_allowed_sources: ['manual'], full_tier_threshold: null, half_tier_threshold: null } },
     // Phase G1.6 — non-pharma example template. Delivery driver: any POSTED logbook
     // day with official_km > 0 triggers full per-diem (threshold=1). Weekends allowed.
-    // include_extra_calls is irrelevant for logbook source (no EXTRA-call concept).
-    { code: 'DELIVERY_DRIVER', label: 'Delivery driver — logbook-driven per-diem (example template)', insert_only_metadata: true, metadata: { rate_php: 500, eligibility_source: 'logbook', skip_flagged: false, allow_weekend: true, include_extra_calls: false, full_tier_threshold: 1, half_tier_threshold: 1 } },
+    // include_extra_calls + include_comm_log are irrelevant for logbook source (no
+    // EXTRA-call / chat concept). Defaults reflect the SaaS-subscriber posture: OFF.
+    { code: 'DELIVERY_DRIVER', label: 'Delivery driver — logbook-driven per-diem (example template)', insert_only_metadata: true, metadata: { rate_php: 500, eligibility_source: 'logbook', skip_flagged: false, allow_weekend: true, include_extra_calls: false, include_comm_log: false, comm_log_daily_cap: null, comm_log_require_outbound: false, comm_log_allowed_sources: ['manual'], full_tier_threshold: 1, half_tier_threshold: 1 } },
   ],
 
   // Phase G4.5ee (Apr 30 2026) — Activity-aware per-diem tier rule.
