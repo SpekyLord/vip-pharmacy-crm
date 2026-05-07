@@ -69,21 +69,34 @@ export default function useOfflineSyncListener({ enabled = true } = {}) {
       }).catch(() => { /* best-effort */ });
     });
 
-    const unsubDraftLost = offlineManager.onVisitDraftLost(async ({ message, draftId }) => {
+    const unsubDraftLost = offlineManager.onVisitDraftLost(async ({ message, draftId, code, status, kind, sessionGroupId }) => {
       const reason = String(message || 'Photos missing — draft could not be replayed.');
-      toast.error(`Offline visit lost — ${reason}`, { duration: 7000 });
-      // Persist a row to sync_errors so the badge / drawer survives reload.
+      // Phase N.8 — toast copy depends on the failure kind. Photo-blob-loss
+      // (no code, no status) reads as "lost"; server-rejected (code present)
+      // reads as "rejected" so the BDM understands the action they need to
+      // take (re-capture vs. fix camera clock vs. log to Comm Log instead).
+      const isServerRejection = !!code || (typeof status === 'number' && status >= 400);
+      const headline = isServerRejection
+        ? 'Offline visit rejected on sync'
+        : 'Offline visit lost';
+      toast.error(`${headline} — ${reason}`, { duration: 8000 });
       try {
         await offlineStore.recordSyncError({
-          kind: 'visit_draft_lost',
-          draftId: draftId || null,
-          message: reason,
+          kind: kind === 'visit' || !kind ? 'visit_draft_lost' : `${kind}_draft_lost`,
+          draftId: draftId || sessionGroupId || null,
+          message: code ? `[${code}] ${reason}` : reason,
         });
       } catch { /* drawer is best-effort */ }
-      // Self-DM into the inbox so there's a permanent audit trail.
       messageInboxService.recordSystemEvent({
         event_type: 'visit_draft_lost',
-        payload: { draft_id: draftId || '', reason },
+        payload: {
+          draft_id: draftId || '',
+          session_group_id: sessionGroupId || '',
+          reason,
+          code: code || '',
+          status: status || 0,
+          kind: kind || 'visit',
+        },
       }).catch(() => { /* best-effort */ });
     });
 

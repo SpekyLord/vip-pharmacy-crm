@@ -22,7 +22,18 @@
 // triggered cache.put(POST) rejections in console. Fixed by excluding
 // /api/ from the static-asset path. Bumping the version forces a fresh
 // SW install so production clients pick up the corrected routing.
-const CACHE_VERSION = 'v3';
+//
+// May 07 2026 — bumped to v4 (Phase N.8): replay loop now broadcasts
+// VIP_VISIT_DRAFT_LOST on every server-rejected (4xx) visit replay, with
+// the server's structured `code` + `message` carried through. Closes the
+// silent-drop hole where Phase O 422 SCREENSHOT_DETECTED, 400 VISIT_PHOTO_
+// TOO_OLD, etc. would delete the draft photos with no UI feedback. Also
+// closes the online-multipart-fails-mid-flight fake-200 path: a multipart
+// visit POST that throws is now refused (real failure response back to
+// VisitLogger so its existing catch block can preserve the draft) instead
+// of being queued with a stale text() body. Cache version bump forces
+// production clients to drop old v3 SW cleanly.
+const CACHE_VERSION = 'v4';
 const SHELL_CACHE = `vip-shell-${CACHE_VERSION}`;
 const CLM_CACHE = `vip-clm-${CACHE_VERSION}`;
 const DATA_CACHE = `vip-data-${CACHE_VERSION}`;
@@ -423,7 +434,31 @@ self.addEventListener('fetch', (event) => {
             }
           }
 
-          // Default path (CLM, or non-envelope visit) — store JSON body verbatim
+          // Phase N.8 — Multipart visit POST that failed mid-flight (radio
+          // dropped during upload while the BDM was nominally online).
+          // Queueing the request.text() here would write a stale boundary
+          // string with NO Blob bytes — replay cannot reconstruct the photos
+          // and the server returns 4xx, photos are deleted, draft silently
+          // lost. Refuse to queue and return a real failure so VisitLogger's
+          // existing catch block fires and the local draft is preserved.
+          // The BDM can retry; if their connection is now genuinely offline,
+          // the next attempt routes through visitService.createOffline() and
+          // the JSON-envelope branch above (which DOES queue cleanly).
+          if (isVisit && !contentType.includes('application/json')) {
+            return new Response(
+              JSON.stringify({
+                success: false,
+                code: 'OFFLINE_REPLAY_UNAVAILABLE',
+                message: 'Network dropped while submitting. Your draft is safe — please tap Submit again. If you stay offline, the next try will queue automatically.',
+              }),
+              { status: 503, headers: { 'Content-Type': 'application/json' } }
+            );
+          }
+
+          // Default path (CLM, or non-envelope non-visit mutation) — store
+          // JSON body verbatim. Safe because CLM/commLog payloads are JSON
+          // by contract; any other queueable path that arrives here is
+          // expected to be JSON-shaped per QUEUEABLE_API_PATHS.
           const body = await request.clone().text();
           const queued = await enqueueRequest(request, body);
           if (queued) {
@@ -733,32 +768,75 @@ async function replayQueue() {
         continue;
       }
 
+      // Phase N — Capture the server's structured error body ONCE so both the
+      // E11000 dedup branch (silent success) and the generic 4xx broadcast
+      // branch (Phase N.8 — visible failure) can read it. .clone() is needed
+      // because reading via .json() consumes the body; we may need to
+      // re-evaluate against a different decision branch.
+      let errBody = null;
+      let errMessage = '';
+      let errCode = '';
+      if (response.status >= 400 && response.status < 500) {
+        try {
+          errBody = await response.clone().json();
+          errMessage = String(errBody?.message || '');
+          errCode = String(errBody?.code || '');
+        } catch {
+          // Body wasn't JSON (HTML 502 from a proxy, etc.). Leave fields empty —
+          // downstream branches handle that gracefully.
+        }
+      }
+
       // Phase N — Treat E11000 (visit unique-index dup) as idempotent success.
       // Visit's compound unique index on {doctor, user, yearWeekKey} naturally
       // dedups offline retries — if BDM-1 had already submitted this visit
       // online from another device while their offline queue was sitting,
       // the server returns 400 with a "weekly limit" error. Drop the queued
-      // copy so it doesn't loop indefinitely.
+      // copy so it doesn't loop indefinitely. NO draft-lost broadcast — this
+      // is the success path (the visit is already in the database).
       if (response.status === 400) {
-        try {
-          const errBody = await response.clone().json();
-          const msg = String(errBody?.message || '').toLowerCase();
-          if (msg.includes('already been logged this week') || msg.includes('duplicate key') || msg.includes('e11000')) {
-            if (item.kind === 'visit' && Array.isArray(item.photoRefs)) {
-              for (const ref of item.photoRefs) {
-                await deleteVisitPhotoBlob(ref);
-              }
+        const lcMsg = errMessage.toLowerCase();
+        if (lcMsg.includes('already been logged this week') || lcMsg.includes('duplicate key') || lcMsg.includes('e11000')) {
+          if (item.kind === 'visit' && Array.isArray(item.photoRefs)) {
+            for (const ref of item.photoRefs) {
+              await deleteVisitPhotoBlob(ref);
             }
-            await removeQueuedRequest(item.id);
-            continue;
           }
-        } catch {
-          // JSON parse failed — fall through to generic 4xx path
+          await removeQueuedRequest(item.id);
+          continue;
         }
       }
 
-      // 4xx (other than 401/409) = client error, remove to prevent infinite retry
+      // Phase N.8 — Generic 4xx (server-rejected replay): broadcast
+      // VIP_VISIT_DRAFT_LOST so SyncErrorsTray can surface the failure with
+      // the server's structured `code`. Without this, the BDM's draft
+      // disappeared silently when Phase O fired 422 SCREENSHOT_DETECTED, 400
+      // VISIT_PHOTO_TOO_OLD, 400 VISIT_PHOTO_FUTURE_DATED, 400 CAMERA_PHOTO_
+      // MISSING_EXIF, or any other server-side validation failure. Now the
+      // BDM sees a toast + an audit row + an inbox DM — same UX contract as
+      // photo-blob-loss, but driven by the server's own error code so it
+      // stays subscription-neutral (no business values inside the SW).
+      // CLM-side queued items (kind !== 'visit') are also surfaced so e.g.
+      // a session 4xx-rejected on replay isn't silently lost either.
       if (response.status >= 400 && response.status < 500) {
+        const lostMessage = errMessage
+          || (errCode ? `Sync rejected (${errCode}). Please re-capture and try again.` : 'Offline draft rejected by server. Please re-capture and try again.');
+        try {
+          const broadcastClients = await self.clients.matchAll();
+          broadcastClients.forEach((client) => {
+            client.postMessage({
+              type: 'VIP_VISIT_DRAFT_LOST',
+              message: lostMessage,
+              code: errCode || null,
+              status: response.status,
+              kind: item.kind || 'other',
+              draftId: item.id,
+              sessionGroupId: (item.formFields && item.formFields.session_group_id) || null,
+            });
+          });
+        } catch (broadcastErr) {
+          console.warn('[SW] VIP_VISIT_DRAFT_LOST broadcast failed:', broadcastErr);
+        }
         if (item.kind === 'visit' && Array.isArray(item.photoRefs)) {
           for (const ref of item.photoRefs) {
             await deleteVisitPhotoBlob(ref);
