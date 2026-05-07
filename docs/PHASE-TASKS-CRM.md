@@ -1746,3 +1746,205 @@ PRG-1 schema additions are entity-neutral (program_id is per-tenant lookup ref).
 
 ### Trigger to un-defer
 Build PRG-1 + PRG-2 only when admin asks "how much did we spend on Dr. X under CME GRANT this quarter?" or "show me which program is wasting money." Until then, the existing coverage% signal is sufficient and any added complexity is premature.
+
+---
+
+## Phase A.5.1 + A.5.2 + A.5.5 — Canonical VIP Client Key + Merge Tool ✅ SHIPPED (April 2026 on dev + prod)
+
+Closes the duplicate-Doctor problem on the live cluster. Two BDMs covering the same territory (Iloilo) had created duplicate Doctor records over time because pre-A.5.4 `assignedTo` was scalar — same MD couldn't be shared across two BDMs.
+
+### A.5.1 — Canonical key (`vip_client_name_clean`)
+
+`Doctor.vip_client_name_clean` auto-maintained by pre-save + pre-findOneAndUpdate hooks as `lastname|firstname` (lowercased). Mirrors `Customer.customer_name_clean` (Phase G5) and `Hospital.hospital_name_clean`. Unique partial index `{ vip_client_name_clean: 1 }` with `partialFilterExpression: { mergedInto: null }` — soft-deleted losers (which keep their canonical key + get `mergedInto` set + `isActive: false`) don't trip the constraint on rollback.
+
+Global `errorHandler.js` maps E11000 on this key to a friendly 409 (kept as defense-in-depth fallback for non-modal callers; full DUPLICATE_VIP_CLIENT modal contract lives in Phase A.5.3 below).
+
+### A.5.2 — Backfill + Iloilo bulk merge
+
+Backfilled `vip_client_name_clean` + `primaryAssignee` across both clusters. Bulk-merged Iloilo duplicate canonical-key groups via [backend/scripts/bulkMergeIloiloDupes.js](backend/scripts/bulkMergeIloiloDupes.js) — per-merge audit + 30-day rollback grace via [DoctorMergeAudit](backend/models/DoctorMergeAudit.js).
+
+`primaryAssignee` is the forward-compatible ownership scalar that A.5.4's `assignedTo` scalar→array flip preserves.
+
+### A.5.5 — Merge tool + 13-path cascade map (Apr 28 2026)
+
+Doctor merge re-points 13 FK paths across CRM + ERP. Service is manifest-driven ([backend/services/doctorMergeService.js](backend/services/doctorMergeService.js) `buildCascadeManifest()`). Cascade kinds:
+
+- **simple** (5 paths): `CommunicationLog.doctor`, `CommunicationLog.aiMatchSuggestion.doctorId`, `InviteLink.doctor`, `CLMSession.doctor`, `MdProductRebate.doctor_id`, `MdCapitationRule.doctor_id`, `PrfCalf.partner_id` → bulk `updateMany`.
+- **nested-array** (2 paths): `Collection.settled_csis.partner_tags.doctor_id`, `Collection.settled_csis.md_rebate_lines.md_id` → positional `$[]` arrayFilters update.
+- **visit-week** (1 path): `Visit.doctor` — collisions on unique `{doctor,user,yearWeekKey}` defused by writing sentinel `<orig>__MERGED_<loserId>` on the loser visit's yearWeekKey. Audit captures original_value for rollback.
+- **schedule** (1 path): `Schedule.doctor` — collisions on unique `{doctor,user,cycleNumber,scheduledWeek,scheduledDay}` defused by bumping cycleNumber by 1e9.
+- **pa-active** (1 path): `ProductAssignment.doctor` — partial-unique on `{product,doctor,active=true}`. Loser rows that collide get deactivated rather than re-pointed; rollback re-activates if winner side is unchanged.
+- **attribution** (1 path): `PatientMdAttribution.doctor_id` — unique on `{entity_id,patient_id,doctor_id}`. Collisions deactivate loser side; non-collisions re-point.
+
+Cascade runs inside Mongoose `withTransaction` when Atlas/replica-set is detected; falls back to sequential writes on standalone Mongo (test fixtures only). `DoctorMergeAudit` row written OUTSIDE the cascade txn so audit failures don't roll back a committed merge — controller surfaces hard error so admin knows rollback won't work.
+
+**Cron hard-delete** (30-day grace) is NOT yet wired — defer until first 30-day audit row ages. Until then, manual cleanup via DB shell.
+
+### Decision D11 (locked Apr 24, ratified by A.5.5)
+
+All A.5 lifecycle operations gated by the `VIP_CLIENT_LIFECYCLE_ROLES` Lookup category (lazy-seed-from-inline-defaults; mirrors `PROXY_ENTRY_ROLES` and `MD_PARTNER_ROLES`). Helper [backend/utils/resolveVipClientLifecycleRole.js](backend/utils/resolveVipClientLifecycleRole.js) exports getters for 7 codes: `VIEW_MERGE_TOOL`, `EXECUTE_MERGE`, `ROLLBACK_MERGE`, `HARD_DELETE_MERGED` (all wired by A.5.5), and `REASSIGN_PRIMARY`, `JOIN_COVERAGE_AUTO`, `JOIN_COVERAGE_APPROVAL` (consumed by A.5.4 + A.5.3).
+
+Defaults: admin + president for VIEW/EXECUTE/ROLLBACK; **president-only** for HARD_DELETE_MERGED (it bypasses the 30-day rollback grace).
+
+### Healthcheck
+
+[backend/scripts/healthcheckMdMergeAudit.js](backend/scripts/healthcheckMdMergeAudit.js) — 9-section contract verifier covering canonical-key uniqueness + merge audit + cascade manifest + soft-delete contract.
+
+Plan: `~/.claude/plans/phase-a5-canonical-vip-client.md`.
+
+---
+
+## Phase N — Offline Visit + CLM Merge + Public Deck ✅ SHIPPED (April 26, 2026)
+
+One encounter → two DB rows linked by a client-generated UUID. Closes three holes: in-person Visit had no path to the CLM presentation flow, remote pitches had no shareable link, and offline-queued visits dropped photo Blobs at SW restart.
+
+### Schema additions (sparse, backwards-compat)
+
+- **Visit** ([backend/models/Visit.js](backend/models/Visit.js)) — `clm_session_id` (sparse ref CLMSession) + `session_group_id` (sparse String, maxlength 128).
+- **CLMSession** ([backend/models/CLMSession.js](backend/models/CLMSession.js)) — `visit_id` (sparse ref Visit), `mode` enum `['in_person','remote']` default `'in_person'`, `deckOpenedAt` + `deckOpenCount` for public-link analytics.
+- **CommunicationLog** — `clm_session_id` (sparse) so admin can join "remote pitch shared" → "deck opened."
+
+### Linkage logic
+
+[visitController.createVisit](backend/controllers/visitController.js) — when FormData carries `session_group_id`, controller looks up CLMSession by `idempotencyKey` and stamps `clm_session_id` on the Visit + back-stamps `visit_id` on the CLMSession. Both writes best-effort (Visit saves with just session_group_id if CLM lookup fails).
+
+### Public deck route
+
+`GET /api/clm/deck/:id` ([clmController.getPublicDeck](backend/controllers/clmController.js)) mounted **OUTSIDE** `router.use(protect)` in [clmRoutes.js](backend/routes/clmRoutes.js). Rate-limited 10 req/min/IP via express-rate-limit. Returns ONLY remote-mode sessions (in-person 404s even with correct ID), redacts to first names only — no BDM email/phone, no GPS.
+
+Frontend public route at `/clm/deck/:id` → [DeckViewerPage.jsx](frontend/src/pages/public/DeckViewerPage.jsx) renders `CLMPresenter previewMode=true`. Uses `withCredentials: false` so cookies never travel even if browser has them.
+
+### Offline visit submit
+
+SW queue path in [sw.js](frontend/public/sw.js) accepts `/api/visits/` plus JSON envelope `{ kind:'visit', photoRefs, formFields }`. Photo Blobs persist in `vip-offline-data` IndexedDB DB v3, store `visit_photos`; SW reads them at replay time and rebuilds FormData. E11000 (weekly-limit dup) treated as success → dequeue, not retry.
+
+### Merged in-person flow
+
+VisitLogger generates a stable UUID (`draftIdRef`), passes it to CameraCapture as `draftId` (triggers Blob persistence) AND uses it as `session_group_id` at submit. The "Start Presentation" button navigates to `/bdm/partnership?doctorId=…&session_group_id=…&products=…`; PartnershipCLM reads the params, prefills the doctor + products, and uses the same UUID as `idempotencyKey` on `clmService.startSession`.
+
+### Remote flow
+
+CommLogPage has a "Generate Deck Link" panel that creates a remote-mode CLMSession, copies `https://app/clm/deck/<id>` to clipboard; the next CommLog submission via CommLogForm carries `clm_session_id`.
+
+### Gotchas
+
+(a) DB version bump (`vip-offline-data` v2 → v3) — main thread (offlineStore.js) owns the schema migration; SW opens read-only and falls back to `[]` if SW activates before main has upgraded.
+(b) Visit unique index `{doctor, user, yearWeekKey}` naturally dedups offline replays — SW catches both 409 and "already been logged this week" 400 as idempotent success.
+(c) `mode='remote'` discards any `location` payload server-side so a hostile client can't fake an in-person attribution.
+(d) The new visit fields are sparse — backwards-compat intact for every Visit row created before this phase.
+
+### Healthcheck
+
+[backend/scripts/healthcheckOfflineVisitWiring.js](backend/scripts/healthcheckOfflineVisitWiring.js) — 8 sections, 0 issues at ship time on Phase N.1–N.6.
+
+Plan: `~/.claude/plans/phase-n-offline-visit-clm-merge.md`.
+
+---
+
+## Phase N+ — CLM Finalization Gate + Always-Render CLM Panel + Bidirectional Merged Flow ✅ SHIPPED (May 03–04, 2026)
+
+Closes the merged-encounter UX gaps from Phase N.
+
+### Always-render
+
+VisitLogger's "Run Partnership Presentation" panel was previously gated on `formData.productsDiscussed.length > 0`. Gate dropped — panel now renders for every doctor; CLM has its own product-picker step. Forwarded URL still includes `&products=` (empty CSV when nothing preselected). Button label dynamically reads "Start Presentation" or "Start Presentation with N Products."
+
+### CLM-finalization gate (the rule)
+
+Gate is **opt-in by CLM use, not by doctor**. When BDM does NOT click Start Presentation → no `clm_pending` flag → Submit only requires a photo. When BDM DOES click Start Presentation, then clicks Skip on the Session Complete modal, `returnAfterCLM({ pendingSession: true })` appends `?clm_pending=1&session_group_id=…` on the back URL.
+
+VisitLogger reads `clm_pending` via `useSearchParams`, replaces the yellow panel with a red "CLM session not finalized" warning + "Resume CLM session" button, AND disables Submit Visit. Defense-in-depth: `handleSubmit` early-exits with toast if `clmPending` is true.
+
+**Why**: BDM presented partnership material → that interaction needs Interest Level + Outcome + Notes captured before the visit can count, otherwise admin loses the analytics signal.
+
+### Bidirectional merged flow
+
+Renamed `returnToVisitLoggerIfLaunchedFromIt` → `returnAfterCLM`. Unified post-modal navigation resolves `doctorIdToUse` and `uuidToUse` from URL params (merged flow) OR `selectedDoctor + activeIdempotencyKey` state (direct flow). Direct-mode Save Session forwards to `/bdm/visit/new?doctorId=X&session_group_id=Y` — eventual Visit gets `clm_session_id` stamped via the existing Phase N idempotencyKey lookup.
+
+### v2 (May 04 2026) — Symmetric Skip + Save Session gate + Resume vs duplicate-sync split
+
+- **Symmetric Skip**: removed the early-exit for direct-mode Skip on step='doctor'. Both Skip paths now navigate to `/bdm/visit/new?doctorId=X&session_group_id=Y&clm_pending=1`. Visit Submit stays blocked in both channels until Resume → Save Session.
+- **Save Session button gate**: disabled unless `endForm.bdmNotes?.trim()` AND `endForm.interestLevel ∈ [1,5]` AND `endForm.outcome` is set. Notes label has red asterisk.
+- **Backend Resume vs duplicate-sync split** ([clmController.js:82-110 + 156-178](backend/controllers/clmController.js)): `POST /clm/sessions` with `X-Idempotency-Key` — `(sameUser && status === 'in_progress') → 200 { data: existing, resumed: true }` (Resume); else `409 { data: existing }` (duplicate-sync). Both pre-check AND race-safe E11000 catch implement same split.
+- **Resume toast**: PartnershipCLM reads `res.resumed === true` from 200 response and fires confirmation toast.
+
+### Healthcheck
+
+[backend/scripts/healthcheckClmIdempotency.js](backend/scripts/healthcheckClmIdempotency.js) — 6-section contract verifier (same-user + in_progress guards, 200/resumed:true vs 409 split, E11000 catch, sparse unique index on idempotencyKey, `X-Idempotency-Key` CORS list).
+
+---
+
+## Phase PRG-Foundation — Programs / Support Types Ratification ✅ SMOKE-RATIFIED (May 05, 2026, no code change)
+
+Confirms the four configurable Programs (CME GRANT, MED SOCIETY PARTICIPATION, REBATES / MONEY, REST AND RECREATION) and five Support Types (AIR FRESHENER, FULL DOSE, PATIENT DISCOUNT, PROMATS, STARTER DOSES) are wired end-to-end and healthy on dev.
+
+### Contract verified
+
+- **Models**: [Program.js](backend/models/Program.js) + [SupportType.js](backend/models/SupportType.js) — admin-owned MongoDB collections (NOT lookup enums); `{ name, isActive, timestamps }` with case-insensitive uniqueness.
+- **Doctor tags**: `Doctor.programsToImplement` + `Doctor.supportDuringCoverage` are string arrays (NOT FK refs). Indexed for `$in` filter performance.
+- **Endpoints**: `GET /api/programs` + `/stats`, `GET /api/support-types` + `/stats` — read open to all authenticated roles, CRUD + `/stats` adminOnly. Stats compute enrolled-doctor-count + visited-this-cycle + coverage% per item.
+- **Admin UI**: [/admin/settings](frontend/src/pages/admin/SettingsPage.jsx) (sidebar label "Programs") renders two tabs via shared [ProgramSupportManager](frontend/src/components/admin/ProgramSupportManager.jsx) — Add / Rename / Deactivate / Reactivate / Seed-from-Existing.
+- **Stats UI**: [StatisticsPage.jsx Programs tab](frontend/src/pages/admin/StatisticsPage.jsx) renders 9 cards (4 Programs + 5 Support Types) with coverage%/enrolled/visited.
+- **Doctor filter**: `programsToImplement` + `supportDuringCoverage` query params drive `$in` filters; bad values return 0 (no silent fallback — Rule #21).
+
+### Smoke evidence (May 05 2026)
+
+API as president — `/programs` 200 (4 active), `/programs/stats` 200 cycle 4 (REST=87 enrolled / 3 visited / 3%; MED SOCIETY=5/0/0%; CME GRANT=0/0/0%; REBATES=23/0/0%), `/support-types` 200 (5 active), `/support-types/stats` 200 (AIR=16/3/19%; PROMATS=83/0/0%; FULL DOSE / PATIENT DISCOUNT / STARTER DOSES = 2/0/0% each); Doctor filter `programsToImplement=REST AND RECREATION` → 87 (matches stats), `supportDuringCoverage=AIR FRESHENER` → 16 (matches), nonexistent value → 0; anon → 401, BDM `/programs` → 200 + `/programs/stats` → 403 (correct gate).
+
+Playwright UI — Settings page Programs tab 4 rows / Support Types tab 5 rows; Statistics → Programs tab 9 cards matching API; Doctors page "All Programs" dropdown 4 opts → REBATES/MONEY → "20 of 23".
+
+### Known SaaS gap (deferred — Phase S6)
+
+`getProgramStats` and `getSupportTypeStats` query `Doctor` + `Visit` globally without `req.entityId`. Fine for VIP single-tenant today, but will cross-leak when SaaS spins out. Same posture as several pre-S6 endpoints; addressed in the broader Phase S6 tenant-isolation sweep, not in isolation.
+
+### Future spend-attribution
+
+See "Phase PRG" section above for the deferred PRG-1 → PRG-4 buildout (schema tag → Stats overhaul → per-MD drill-down → auto-join Rx attribution).
+
+---
+
+## Phase A.5.3 + A.5.6 — Duplicate VIP Client UX + Offline Merge Resolver ✅ SHIPPED (May 06, 2026, pending UI smoke)
+
+Closes the dedup story opened by A.5.1 + A.5.2 + A.5.4 + A.5.5. Two coupled concerns, one merged commit.
+
+### A.5.3 — Duplicate-on-Create UX
+
+Creating or renaming a VIP Client whose canonical key (`lastname|firstname` lowercased) already exists used to surface as a generic 409 toast. Now the backend returns a structured `DUPLICATE_VIP_CLIENT` 409 with the colliding record's identity + visit count + role-gated `can_join_auto` / `can_join_approval` flags, and the admin frontend renders [DuplicateVipClientModal](frontend/src/components/admin/DuplicateVipClientModal.jsx) on top of the add/edit modal (z-index 1100 > 1000).
+
+Three buttons:
+- **Rename mine** (always shown) — closes only the duplicate modal so admin can adjust + retry.
+- **Join their coverage** — `$addToSet: { assignedTo: req.user._id }` against the existing record. Gated by `VIP_CLIENT_LIFECYCLE_ROLES.JOIN_COVERAGE_AUTO` (default `[admin, president]`).
+- **Request admin approval** — posts a `MessageInbox` row to all admins with `category='approval_request'` + the BDM's optional notes. Gated by `VIP_CLIENT_LIFECYCLE_ROLES.JOIN_COVERAGE_APPROVAL` (default `[admin, president]`; subscribers loosen to include `staff`).
+
+New endpoint `POST /api/doctors/:id/join-coverage` ([doctorRoutes.js](backend/routes/doctorRoutes.js)) wraps both flows. Idempotent on already-assigned (returns 200 + `already_assigned: true`); rejects merged-loser refs (409 + `code: 'DOCTOR_MERGED'` + `mergedInto`).
+
+`createDoctor` + `updateDoctor` wrap `Doctor.create` + `doctor.save()` in try/catch keyed off `isVipClientNameCleanDuplicate(err)` predicate (handles `keyPattern` / `keyValue` / `errmsg` driver-version drift). `buildDuplicateVipClient409(req, key)` re-fetches the existing Doctor with `assignedTo` + `primaryAssignee` populated and `Visit.countDocuments({doctor: existing._id})` to power the modal card.
+
+### A.5.6 — Phase-N Offline Merge Resolver
+
+A BDM working offline still has a doctor list cached on-device. While they're offline, admin runs the merge tool and consolidates duplicates — that BDM's doctorId now points at a soft-deleted loser (`mergedInto != null`, `isActive: false`). When their offline queue replays the visit, the resolver in [visitController.createVisit](backend/controllers/visitController.js) walks the `mergedInto` chain (capped at `MAX_MERGE_HOPS=5` for cycle defense) BEFORE the access check / weekly-cap check / schedule match, redirecting `doctorId` to the canonical winner so the visit lands on the right record.
+
+Without this, the visit would create a row attributed to the merged loser and become invisible to every list query (loser is `isActive:false`). Response carries `merge_redirected: { from, to, message }` so the frontend can show a soft info toast.
+
+### Subscription readiness
+
+Re-uses `VIP_CLIENT_LIFECYCLE_ROLES.JOIN_COVERAGE_AUTO` + `JOIN_COVERAGE_APPROVAL` (already seeded by A.5.4 with `insert_only_metadata: true`). Defaults `[admin, president]`. Subscribers loosen `JOIN_COVERAGE_AUTO` to include `staff` for instant BDM self-join, OR loosen only `JOIN_COVERAGE_APPROVAL` to give BDMs the "request approval" button instead of admin self-service.
+
+### Healthcheck
+
+[backend/scripts/healthcheckPhaseA5_3_6.js](backend/scripts/healthcheckPhaseA5_3_6.js) — 11 sections, **80/80 PASS**: Doctor model (8), errorHandler fallback (3), doctorController contract (21), routes mount order (3), visitController resolver (8), role helper (7), lookup seed (5), modal (8), service (3), DoctorsPage wiring (9), banner (6).
+
+### Cross-controller integrity
+
+(a) BDM offline-queued visit replay path in [sw.js](frontend/public/sw.js) hits `/api/visits/` POST → `visitController.createVisit` which now resolves merged-loser refs first;
+(b) existing `unique({doctor, user, yearWeekKey})` Visit index keeps weekly-cap enforcement correct *post-redirect* — if BDM had already logged against the winner this week, the redirect maps the offline replay to the same winner and the unique index correctly rejects as duplicate;
+(c) global E11000 fallback in [errorHandler.js](backend/middleware/errorHandler.js) unchanged — operates as defense-in-depth for callers that bypass `doctorController`;
+(d) regression-protected: schedule-slot collision branch in `createDoctor` (txn fallback) still distinguishes canonical-name (return 409 modal) from slot-collision (return 409 generic) via the same `isVipClientNameCleanDuplicate` predicate.
+
+### Out of scope (deferred)
+
+- BDM-side editors hitting the `DUPLICATE_VIP_CLIENT` 409 still surface as toasts (no modal — BDMs typically can't create Doctors).
+- `EmployeeDashboard` BDM "log offline visit" UX doesn't show the `merge_redirected` toast yet — soft enhancement.
+- Approval-mode "approve from inbox" inline button (admin currently grants by opening /admin/doctors → edit chip picker → save).
+
+Plan: `~/.claude/plans/phase-a5-canonical-vip-client.md` updated.
