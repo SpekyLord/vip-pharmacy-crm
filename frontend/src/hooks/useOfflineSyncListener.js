@@ -52,7 +52,7 @@ export default function useOfflineSyncListener({ enabled = true } = {}) {
   useEffect(() => {
     if (!enabled) return undefined;
 
-    const unsubSyncComplete = offlineManager.onSyncComplete(({ synced, syncedKinds, bytes, remaining, completedAt }) => {
+    const unsubSyncComplete = offlineManager.onSyncComplete(({ synced, syncedKinds, bytes, remaining, mergeRedirects, completedAt }) => {
       if (!synced || synced <= 0) return; // empty replay — no toast needed
       const kindLabel = dominantKindLabel(syncedKinds, synced);
       const sizeText = bytes > 0 ? ` (~${bytesHuman(bytes)})` : '';
@@ -60,30 +60,71 @@ export default function useOfflineSyncListener({ enabled = true } = {}) {
         duration: 5000,
         icon: '☁',
       });
+      // Phase A.5.6 follow-up — the offline-replay path can hit the merge
+      // resolver in visitController (BDM was offline while admin merged
+      // duplicate VIP Clients; cached doctorId points at the soft-deleted
+      // loser). Surface each redirect so the BDM understands why the doctor
+      // list shifted after sync. One info toast per redirect, capped via
+      // SW-side MAX_MERGE_REDIRECTS so noisy sweeps don't spam.
+      if (Array.isArray(mergeRedirects) && mergeRedirects.length > 0) {
+        const fallback = 'A queued visit was logged against the consolidated VIP Client record (the original was merged).';
+        mergeRedirects.forEach((r) => {
+          if (!r) return;
+          toast(r.message || fallback, {
+            duration: 7000,
+            icon: 'ℹ️',
+          });
+          // Best-effort audit trail to the inbox so admin can review later.
+          messageInboxService.recordSystemEvent({
+            event_type: 'visit_merge_redirected',
+            payload: { from: r.from, to: r.to, offline_replay: !!r.offline_replay },
+          }).catch(() => { /* best-effort */ });
+        });
+      }
       // Best-effort inbox audit. The toast already informed the BDM; if the
       // network call to write the inbox entry fails (rare — they JUST came
       // online to trigger the sync) we silently skip it.
       messageInboxService.recordSystemEvent({
         event_type: 'sync_complete',
-        payload: { synced, syncedKinds, bytes, remaining, completedAt },
+        payload: {
+          synced,
+          syncedKinds,
+          bytes,
+          remaining,
+          merge_redirect_count: Array.isArray(mergeRedirects) ? mergeRedirects.length : 0,
+          completedAt,
+        },
       }).catch(() => { /* best-effort */ });
     });
 
-    const unsubDraftLost = offlineManager.onVisitDraftLost(async ({ message, draftId }) => {
+    const unsubDraftLost = offlineManager.onVisitDraftLost(async ({ message, draftId, code, status, kind, sessionGroupId }) => {
       const reason = String(message || 'Photos missing — draft could not be replayed.');
-      toast.error(`Offline visit lost — ${reason}`, { duration: 7000 });
-      // Persist a row to sync_errors so the badge / drawer survives reload.
+      // Phase N.8 — toast copy depends on the failure kind. Photo-blob-loss
+      // (no code, no status) reads as "lost"; server-rejected (code present)
+      // reads as "rejected" so the BDM understands the action they need to
+      // take (re-capture vs. fix camera clock vs. log to Comm Log instead).
+      const isServerRejection = !!code || (typeof status === 'number' && status >= 400);
+      const headline = isServerRejection
+        ? 'Offline visit rejected on sync'
+        : 'Offline visit lost';
+      toast.error(`${headline} — ${reason}`, { duration: 8000 });
       try {
         await offlineStore.recordSyncError({
-          kind: 'visit_draft_lost',
-          draftId: draftId || null,
-          message: reason,
+          kind: kind === 'visit' || !kind ? 'visit_draft_lost' : `${kind}_draft_lost`,
+          draftId: draftId || sessionGroupId || null,
+          message: code ? `[${code}] ${reason}` : reason,
         });
       } catch { /* drawer is best-effort */ }
-      // Self-DM into the inbox so there's a permanent audit trail.
       messageInboxService.recordSystemEvent({
         event_type: 'visit_draft_lost',
-        payload: { draft_id: draftId || '', reason },
+        payload: {
+          draft_id: draftId || '',
+          session_group_id: sessionGroupId || '',
+          reason,
+          code: code || '',
+          status: status || 0,
+          kind: kind || 'visit',
+        },
       }).catch(() => { /* best-effort */ });
     });
 

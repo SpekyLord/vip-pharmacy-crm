@@ -1874,6 +1874,67 @@ Renamed `returnToVisitLoggerIfLaunchedFromIt` → `returnAfterCLM`. Unified post
 
 ---
 
+## Phase N.8 — Offline Replay Failure Surfacing ✅ SHIPPED (May 07, 2026)
+
+Closes two silent-failure modes in the Phase N offline visit chain that surfaced during a ruthless audit on May 07. Both broke the "BDMs can use this flawlessly" bar by quietly losing visit drafts in the field.
+
+### What was broken
+
+1. **Server-rejected replays vanished without a trace.** When a queued visit replayed and the server returned 4xx (Phase O 422 `SCREENSHOT_DETECTED`, 400 `VISIT_PHOTO_TOO_OLD`, `VISIT_PHOTO_FUTURE_DATED`, `CAMERA_PHOTO_MISSING_EXIF`, missing engagement type, etc.), the SW deleted the photo Blobs and removed the queue item with **no `VIP_VISIT_DRAFT_LOST` postMessage, no toast, no `sync_errors` row**. The BDM thought the visit synced. Highest-frequency hit: Filipino BDMs sharing Messenger screenshots as "proof" — Phase O 422s those exact files.
+2. **Online-multipart-fails-mid-flight returned a fake 200.** When the BDM was nominally online (`navigator.onLine === true`) and submitted via the multipart path, but the radio dropped during upload, the SW catch block fell through to the JSON-envelope check (which silently failed because the content-type was multipart), then into the "default path" which queued `request.text()` of the multipart body — pure text with no Blob bytes. Synthetic 200 returned to the UI, VisitLogger deleted the local draft on success, and the queued payload was unrecoverable on next replay (multer parse failure → 4xx → silent drop per failure mode #1).
+
+### What was fixed
+
+**SW patch ([frontend/public/sw.js](frontend/public/sw.js))** — `CACHE_VERSION` bumped `v3 → v4` to force production clients to drop the old SW cleanly:
+
+- **4xx broadcast block** (replay loop): captures the server's structured `{code, message}` response body once, broadcasts `VIP_VISIT_DRAFT_LOST` to every page client with `{message, code, status, kind, draftId, sessionGroupId}` BEFORE deleting photo Blobs and removing the queue item. The E11000 dedup branch (`"already been logged this week" || "duplicate key" || "e11000"`) stays silent — that path is idempotent success, not a draft-lost event.
+- **Multipart-mid-flight refusal** (fetch handler catch): when the failed request is `isVisit && contentType !== 'application/json'`, the SW returns a real `503 OFFLINE_REPLAY_UNAVAILABLE` response shape instead of fake-200ing. VisitLogger's existing catch block fires, the local draft is preserved (only deleted on `toast.success` path), and the BDM can retry. If they're now genuinely offline, the next attempt routes through `visitService.createOffline()` and the JSON-envelope branch which queues cleanly.
+
+**Listener payload extension ([frontend/src/utils/offlineManager.js](frontend/src/utils/offlineManager.js))** — `handleSWMessage` now forwards `{code, status, kind, sessionGroupId}` to `onVisitDraftLost` subscribers. Legacy photo-blob-loss path passes them as `null` — additive fields, no breakage.
+
+**Differentiated UX ([frontend/src/hooks/useOfflineSyncListener.js](frontend/src/hooks/useOfflineSyncListener.js))** — toast headline switches on `isServerRejection` (code present OR status ≥ 400):
+- Photo-blob-loss → `"Offline visit lost — Photos missing — draft could not be replayed."` (BDM action: re-capture)
+- Server-rejected → `"Offline visit rejected on sync — [server's message]"` (BDM action: read code, fix root cause — clock skew / use Comm Log for screenshots / contact admin for backfill)
+
+`sync_errors` row stores `[CODE] message` so SyncErrorsTray displays the structured code; inbox audit row carries `code/status/session_group_id`.
+
+**VisitLogger 503 handler** ([VisitLogger.jsx:~700-712](frontend/src/components/employee/VisitLogger.jsx)) — distinct branch in the existing error-handler ladder for `OFFLINE_REPLAY_UNAVAILABLE`. Toast tells the BDM "tap Submit again — your draft is safe." Sits between `CAMERA_PHOTO_MISSING_EXIF` and the generic error fallback so prior Phase O codes still match first.
+
+**PageGuide banner refresh** — `'new-visit'` tip now mentions the Sync Errors tray + the "rejected on sync" UX so BDMs know where to look when a replay fails. Required by Rule #1 (banners stay in lockstep with workflow changes).
+
+### Subscription / lookup-driven posture
+
+The fix introduces **zero new business values**. Both branches forward the server's existing structured `{code, message}` (which themselves already come from lookup-driven `VISIT_PHOTO_VALIDATION_RULES`). SaaS subscribers tune cutoffs / strictness via the existing Phase O lookup; the SW patch is pure pass-through of the server's verdict. No code in the SW knows what `SCREENSHOT_DETECTED` means — only that the server rejected, and that fact must reach the BDM.
+
+### Healthcheck
+
+[backend/scripts/healthcheckOfflineVisitWiring.js](backend/scripts/healthcheckOfflineVisitWiring.js) — extended to 11 sections (was 8). New gates 9, 10, 11 verify:
+- `CACHE_VERSION === 'v4'`
+- 4xx broadcast block emits `VIP_VISIT_DRAFT_LOST` with structured `code` + `status`
+- E11000 dedup branch stays silent (no draft-lost noise on idempotent retries)
+- `OFFLINE_REPLAY_UNAVAILABLE` 503 path exists in SW
+- VisitLogger handles `OFFLINE_REPLAY_UNAVAILABLE` (no generic fallback toast)
+- offlineManager surfaces `code`/`status` to listeners
+- useOfflineSyncListener differentiates "lost" vs "rejected on sync"
+- PageGuide banner mentions Phase N.8 / "rejected on sync" / "Sync Errors tray"
+
+### Files touched (5 modified, no new files)
+
+- `frontend/public/sw.js` (CACHE_VERSION bump + 4xx broadcast + 503 multipart refusal)
+- `frontend/src/utils/offlineManager.js` (forward code/status/kind/sessionGroupId)
+- `frontend/src/hooks/useOfflineSyncListener.js` (differentiated toast + structured audit)
+- `frontend/src/components/employee/VisitLogger.jsx` (503 handler)
+- `frontend/src/components/common/PageGuide.jsx` (banner copy)
+- `backend/scripts/healthcheckOfflineVisitWiring.js` (gates 9–11)
+
+### Known limits (deferred)
+
+- **Offline-only CLM sessions** — `PartnershipCLM` still gates `startSession` on `navigator.onLine` and only IDB-saves on End. A BDM presenting offline who closes the tab before End loses the in-progress session. Not addressed by Phase N.8 (different surface).
+- **`merge_redirected` info toast** — server returns it, frontend ignores it. Cosmetic, not a data-loss bug.
+- **"N drafts queued for other BDMs"** indicator on shared tablets — replay filter works correctly; no UI counter for queued-but-foreign-user items.
+
+---
+
 ## Phase PRG-Foundation — Programs / Support Types Ratification ✅ SMOKE-RATIFIED (May 05, 2026, no code change)
 
 Confirms the four configurable Programs (CME GRANT, MED SOCIETY PARTICIPATION, REBATES / MONEY, REST AND RECREATION) and five Support Types (AIR FRESHENER, FULL DOSE, PATIENT DISCOUNT, PROMATS, STARTER DOSES) are wired end-to-end and healthy on dev.

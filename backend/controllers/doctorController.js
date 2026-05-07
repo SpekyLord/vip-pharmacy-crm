@@ -1428,19 +1428,37 @@ const joinCoverage = catchAsync(async (req, res) => {
 
   // Phase G9.R8 contract — recipientRole='admin' is a broadcast to all admins
   // (recipientUserId stays null). category='approval_request' fits the
-  // existing MESSAGE_CATEGORY lookup; priority='normal' since no SLA. The
-  // sender carries enough context that admin doesn't need a back-channel
-  // chase to identify the requester.
+  // existing MESSAGE_CATEGORY lookup → folder=APPROVALS via inboxLookups
+  // CATEGORY_TO_FOLDER. priority='normal' since no SLA.
+  //
+  // Phase A.5.3 follow-up — surface the row as an actionable inbox item
+  // (requires_action + action_type='approve_coverage_join' + action_payload).
+  // InboxThreadView renders Approve/Reject inline; messageInboxController
+  // executeAction dispatches to a new approve_coverage_join branch that
+  // $addToSet's the requester onto Doctor.assignedTo (or stamps a rejection
+  // notice). Folder is set explicitly to APPROVALS to bypass any caller
+  // override that might land it in INBOX.
   const message = await MessageInbox.create({
     senderUserId: req.user._id,
     senderName: requesterName,
     senderRole: req.user.role || 'staff',
     title: `Coverage join request — ${doctor.firstName} ${doctor.lastName}`,
-    body: `${requesterName} (${req.user.email || 'no email'}) is requesting to join coverage of "${doctor.firstName} ${doctor.lastName}" so they can log visits to this VIP Client.${noteSnippet}\n\nTo grant: open /admin/doctors → edit the VIP Client → add ${requesterName} as an assignee.\nTo decline: archive this message (no action needed).`,
+    body: `${requesterName} (${req.user.email || 'no email'}) is requesting to join coverage of "${doctor.firstName} ${doctor.lastName}" so they can log visits to this VIP Client.${noteSnippet}\n\nApprove from this row to grant coverage immediately, or Reject (with a reason) to decline. You can also open /admin/doctors and edit the assignees manually.`,
     category: 'approval_request',
     priority: 'normal',
     recipientRole: 'admin',
     recipientUserId: null,
+    folder: 'APPROVALS',
+    requires_action: true,
+    action_type: 'approve_coverage_join',
+    action_payload: {
+      doctor_id: doctor._id,
+      doctor_name: `${doctor.firstName} ${doctor.lastName}`.trim(),
+      requester_user_id: req.user._id,
+      requester_name: requesterName,
+      requester_email: req.user.email || null,
+      requester_notes: (typeof notes === 'string' && notes.trim()) ? notes.trim() : null,
+    },
     entity_id: req.entityId || null,
   });
 

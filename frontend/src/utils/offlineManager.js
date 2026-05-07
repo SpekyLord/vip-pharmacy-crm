@@ -346,6 +346,10 @@ function handleSWMessage(event) {
           syncedKinds: data.syncedKinds || {},
           bytes: Number(data.bytes || 0),
           remaining: Number(data.remaining || 0),
+          // Phase A.5.6 follow-up — list of `{from, to, message, offline_replay}`
+          // for visits that the server re-pointed to a merge winner during
+          // offline replay. Listeners (useOfflineSyncListener) toast each.
+          mergeRedirects: Array.isArray(data.mergeRedirects) ? data.mergeRedirects : [],
           completedAt: data.completedAt || new Date().toISOString(),
         });
       } catch { /* ignore */ }
@@ -382,8 +386,22 @@ function handleSWMessage(event) {
     authListeners.forEach((cb) => {
       try { cb(message); } catch { /* ignore */ }
     });
+    // Phase N.8 — surface the structured error envelope so the tray /
+    // inbox audit row can carry the server's `code` (e.g. SCREENSHOT_DETECTED,
+    // VISIT_PHOTO_TOO_OLD, CAMERA_PHOTO_MISSING_EXIF). The legacy
+    // photo-blob-loss path passes neither code nor status, so consumers must
+    // tolerate them being null — same shape, additive fields.
     visitDraftLostListeners.forEach((cb) => {
-      try { cb({ message, draftId: data.draftId || null }); } catch { /* ignore */ }
+      try {
+        cb({
+          message,
+          draftId: data.draftId || null,
+          code: data.code || null,
+          status: typeof data.status === 'number' ? data.status : null,
+          kind: data.kind || 'visit',
+          sessionGroupId: data.sessionGroupId || null,
+        });
+      } catch { /* ignore */ }
     });
   }
 }
