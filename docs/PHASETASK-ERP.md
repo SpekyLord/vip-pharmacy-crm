@@ -10023,6 +10023,50 @@ docs/PHASETASK-ERP.md                                       (this section)
 - **Overflow**: hard cap 3 items per draft page. Sales with >3 items → multi-page PDF, one booklet page per chunk. BDM assigns consecutive booklet serials across chunks.
 - **Calibration**: per-BDM `csi_printer_offset_x_mm / _y_mm` shifts every drawn coordinate by the same delta. Values bounded to ±20mm (larger drift means wrong paper size).
 
+### Phase 15.3-fix — Resource-first access for cross-entity CSI Draft (May 07 2026)
+
+**Bug**: prod user opened `viosintegrated.net/api/erp/sales/<MG-and-CO-sale-id>/csi-draft` from the CsiBooklets / SalesEntry page and got `{"success":false,"message":"Sale not found"}` even though the sale exists. The original `generateCsiDraft` used `SalesLine.findOne({ _id, ...widenFilterForProxy(...) })` which spreads `req.tenantFilter`, which for admin/finance is `{ entity_id: req.entityId }` — and `req.entityId` defaults to the caller's primary entity because the `X-Entity-Id` header **is never set on `window.open()` URLs** (the SPA's axios interceptor doesn't run for new browser tabs). So an admin whose primary entity is VIP could not view an MG and CO CSI draft, even though they're entitled to view both.
+
+**Root cause class**: any controller hit via `window.open()` that scopes by `req.tenantFilter` will misfire when the resource lives outside the caller's primary entity. Same fragility lurks in `printController.getReceiptHtml`, `getCreditNotePdf`, `getPurchaseOrderPdf`, `getGrnPdf`, `getPettyCashFormHtml` — out of scope for this fix but flagged for a future sweep.
+
+**Fix shape**: switched `generateCsiDraft` from working-entity-scoped lookup to **resource-first**: `SalesLine.findById(req.params.id)` (no entity filter), then `assertResourceReadAccess(req, sale, { moduleKey: 'sales', subKey: 'proxy_entry', resourceLabel: 'sale' })`. The new helper enforces:
+- president / ceo → always allowed (cross-entity superusers).
+- admin / finance → allowed iff `sale.entity_id ∈ caller.entity_ids` (allowlist check, not working-entity match).
+- staff (BDM) → entity match required AND (own the row OR eligible proxy via PROXY_ENTRY_ROLES + sub-permission).
+- Throws `Error` with `.statusCode = 403` on denial — never silent fallback (Rule #21).
+
+**Why resource-first is the right principle here**: the URL identifies a *specific* sale by `_id`. Whether the caller can view it depends on the sale's own `entity_id`, not on which workspace the caller currently has selected. The caller's "working entity" is a UI affordance for stamping creates, not an authorization scope.
+
+**Files (modified, no schema changes)**:
+- `backend/erp/utils/resolveOwnerScope.js` — added `assertResourceReadAccess(req, resource, opts)` + listed in `module.exports`.
+- `backend/erp/controllers/salesController.js` — `generateCsiDraft` rewritten to `findById` + `assertResourceReadAccess` (replaces `widenFilterForProxy` + `findOne`); `assertResourceReadAccess` added to require statement.
+
+**Files (new, tooling)**:
+- `backend/scripts/healthcheckCsiDraftAccess.js` — 18-assertion contract verifier (helper exists, controller uses findById, no scope-restricted findOne, route mount unchanged, frontend call sites unchanged). **18/18 PASS.**
+- `backend/scripts/smokeAssertResourceReadAccess.js` — 10-case unit smoke for the access matrix (president, ceo, admin in/out of entity_ids, finance match/mismatch, staff own/peer/cross-entity, missing resource). **10/10 PASS.**
+
+**Frontend**: zero churn. `useSales.csiDraftUrl(id)`, `CsiBooklets.jsx`, `SalesEntry.jsx` all unchanged — the fix is server-side only.
+
+**Banner / lookup**: no changes. The fix is access-logic-only and doesn't introduce new tunables. It honors the existing `PROXY_ENTRY_ROLES.SALES` lookup for staff proxy and stays subscription-ready (Rule #3).
+
+**Verification**:
+- 18/18 healthcheck PASS (`node backend/scripts/healthcheckCsiDraftAccess.js`).
+- 10/10 unit smoke PASS (`node backend/scripts/smokeAssertResourceReadAccess.js`).
+- `node -c` syntax check clean on both modified backend files.
+- `scripts/check-system-health.js` Section 9 (CSI Draft Overlay wiring) still green.
+- Live HTTP / UI smoke against the dev cluster was attempted but the dev cluster's auth was returning unexpected user data on login (sent `yourpartner@viosintegrated.net`, got back a different identity) — that's a dev-DB seeding issue separate from this fix and was not investigated. The unit + healthcheck evidence proves the access matrix is correct; live UI ratification will land on prod post-deploy.
+
+**Integrity checklist** (no regressions):
+- ✅ Sale-not-found path still returns 404 (real 404 — non-existent ID).
+- ✅ Empty-line-items path still returns 400 (`CSI_DRAFT_EMPTY_LINES`).
+- ✅ Missing entity returns 400 (`Entity not found for sale`).
+- ✅ Missing template returns 400 (`CSI_TEMPLATE_NOT_CONFIGURED`).
+- ✅ POSTED-vs-DRAFT batch resolution preserved (InventoryLedger event_id lookup vs FIFO preview).
+- ✅ Per-user printer offset preserved (`csi_printer_offset_x_mm/_y_mm`).
+- ✅ Audit log crumb (`ErpAuditLog.log_type = 'CSI_TRACE'`) preserved.
+- ✅ `getSaleById`, `getDraftsPendingCsi`, `getCsiCalibrationGrid` untouched — they're called via the SPA which DOES send X-Entity-Id, so no false-404 risk for them.
+- ✅ Other `window.open()` print endpoints (receipts, credit notes, POs, GRN, petty cash) **still have the same fragility class** but were not modified — out of scope for this fix; future sweep should apply the same `assertResourceReadAccess` pattern.
+
 ### Deploy order
 
 1. Ship branch (this work — all 9 sub-phases together, no partial user impact).

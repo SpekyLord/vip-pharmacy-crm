@@ -8609,3 +8609,33 @@ Closes the original Slice 7-extension scope. Bir2307InboundPage (`/erp/bir/2307-
 - **Live Playwright UI smoke** (dev cluster, president): `/erp/car-logbook` → BDM picker = Mae Navarro → period = 2026-04 → cycle = C2 → preview fetched once for the 11 cycle workdays → grid renders 17 rows → Apr 30 row shows green "Drive" badge with tooltip "Filled from BDM's DriveAllocation row (Personal/Official slider)" → typed "50" into personal_km input → badge flips to red "Manual" with tooltip "Manual override — proxy edited this field" + unsaved `*` indicator visible. Screenshot residue at repo root: `phase-p1-2-slice-6-carlogbook-autopop-ratified.png`, `phase-p1-2-slice-6-manual-override-ratified.png` (do NOT commit).
 
 **Verification**: healthcheck Section 16 24/24 PASS, Vite build green, API + Playwright UI smoke ratified end-to-end on dev cluster (see PHASETASK-ERP.md Round 2C section).
+
+---
+
+## Phase 15.3-fix — Resource-first access for cross-entity CSI Draft (May 7 2026)
+
+User-reported bug: opening `/api/erp/sales/<MG-and-CO-sale-id>/csi-draft` from the CsiBooklets / SalesEntry page returned `{"success":false,"message":"Sale not found"}` even when the sale exists. Root cause: `generateCsiDraft` used `widenFilterForProxy(...)` which spreads `req.tenantFilter`, and for admin/finance that's `{ entity_id: req.entityId }` — but `req.entityId` falls back to the caller's *primary* entity because the SPA's `X-Entity-Id` header is **never set on `window.open()` URLs** (the axios interceptor doesn't run for new browser tabs). An admin whose primary is VIP could not view an MG and CO CSI draft, even though they're entitled to view both.
+
+**Fix**: switched `generateCsiDraft` to **resource-first access control** — look up the sale by `_id` only (no entity filter), then verify access against the sale's *own* `entity_id` via the new helper `assertResourceReadAccess(req, sale, opts)` in `backend/erp/utils/resolveOwnerScope.js`.
+
+**Access matrix enforced by the helper**:
+- president / ceo → always allowed (cross-entity superusers).
+- admin / finance → allowed iff `sale.entity_id ∈ caller.entity_ids` (allowlist check, not working-entity match).
+- staff → entity match required AND (own the row OR eligible proxy via `PROXY_ENTRY_ROLES` + sub-permission).
+- denial → throws `Error` with `.statusCode = 403` (no Rule #21 silent fallback).
+
+**Why this is the right fix shape**: a URL identifies a *specific* resource by `_id`. Whether the caller can view it depends on the resource's own `entity_id`, not on the caller's currently-selected workspace. The "working entity" is a UI affordance for stamping creates, not an authorization scope. Resource-first also means URLs are *shareable* — a colleague with access to the same entity can open the link without needing to switch workspaces first.
+
+**Files (modified)**:
+- `backend/erp/utils/resolveOwnerScope.js` — exports `assertResourceReadAccess(req, resource, opts)`.
+- `backend/erp/controllers/salesController.js` — `generateCsiDraft` rewritten (`SalesLine.findById` + `assertResourceReadAccess` replaces `widenFilterForProxy` + `findOne`).
+
+**Files (new, tooling)**:
+- `backend/scripts/healthcheckCsiDraftAccess.js` — 18-assertion contract verifier. **18/18 PASS.**
+- `backend/scripts/smokeAssertResourceReadAccess.js` — 10-case unit smoke for the access matrix. **10/10 PASS.**
+
+**Frontend / banner / lookup**: no changes. The fix is server-side only and honors the existing `PROXY_ENTRY_ROLES.SALES` lookup, staying subscription-ready (Rule #3).
+
+**Known follow-up — same fragility class lurks in print endpoints**: `/api/erp/print/receipt/:id`, `/print/credit-note/:id`, `/print/purchase-order/:id`, `/print/grn/:id`, `/print/petty-cash/:id` are all opened via `window.open()` and all use `req.tenantFilter` for scoping. They will misfire the same way for a multi-entity admin viewing a cross-entity print. Out of scope for this hotfix; future sweep should apply `assertResourceReadAccess` to each.
+
+**Verification**: 18/18 healthcheck + 10/10 unit smoke + `node -c` syntax-clean + `scripts/check-system-health.js` Section 9 (CSI Draft Overlay wiring) still green. Live UI ratification deferred to post-deploy (the dev cluster's auth was returning unexpected user identities under my login attempts, separate from this fix). See PHASETASK-ERP.md "Phase 15.3-fix" subsection for the full cascade map and integrity checklist.
