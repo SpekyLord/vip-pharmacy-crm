@@ -19,6 +19,13 @@ const { getMyStock: getMyStockAgg, getAvailableBatches } = require('../services/
 const { cleanBatchNo } = require('../utils/normalize');
 const { journalFromInventoryAdjustment } = require('../services/autoJournal');
 const { createAndPostJournal } = require('../services/journalEngine');
+// Phase 32R-GRN-Approve-UX (May 07 2026) — hoisted from createGrn function
+// scope to module scope so approveGrnCore (the auto-approve cascade from
+// undertakingController.postSingleUndertaking AND the direct GRN approve
+// HTTP handler) can resolve the symbol. Pre-fix this was destructured inside
+// createGrn only, so every direct GRN approval threw `ReferenceError:
+// getGrnSetting is not defined` and the frontend silently swallowed it.
+const { getGrnSetting } = require('../services/undertakingService');
 
 /**
  * GET /my-stock — BDM's stock dashboard data
@@ -563,7 +570,7 @@ const createGrn = catchAsync(async (req, res) => {
   // Phase 32R: waybill is evidence of physical delivery. Required at capture
   // time — subscribers CAN relax this via GRN_SETTINGS.WAYBILL_REQUIRED if their
   // workflow permits (e.g. internal transfer with no waybill), see below.
-  const { getGrnSetting } = require('../services/undertakingService');
+  // (getGrnSetting is module-scoped — see Phase 32R-GRN-Approve-UX header.)
   const waybillRequired = await getGrnSetting(req.entityId, 'WAYBILL_REQUIRED', 1);
   if (waybillRequired && !waybill_photo_url) {
     return res.status(400).json({
