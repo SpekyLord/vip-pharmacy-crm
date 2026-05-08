@@ -170,6 +170,10 @@ async function runDataGates() {
     console.log('\n(DATA gates skipped — pass --data to run)');
     return;
   }
+  // Load .env from cwd first (covers running from project root or backend/),
+  // then script-relative as a fallback (covers worktree-local invocation when
+  // backend/.env exists alongside the script).
+  require('dotenv').config();
   require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
   if (!process.env.MONGO_URI) {
     console.log('\n  FAIL  MONGO_URI not set — cannot run DATA gates');
