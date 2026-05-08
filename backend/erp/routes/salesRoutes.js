@@ -29,11 +29,20 @@ router.get('/:id/csi-draft', c.generateCsiDraft);
 // Phase R-Storefront (May 8 2026) — manual MD rebate + BDM commission
 // attribution on storefront cash sales (CASH_RECEIPT + SERVICE_INVOICE
 // routed through petty_cash_fund). Editable post-POSTED — once posted,
-// the sale was paid; admin attaches MDs after the fact. No period-lock
-// here (data capture only, no JE side effect at this phase).
+// the sale was paid; admin attaches MDs after the fact.
+// Phase 2 (May 8 2026): now writes RebatePayout(ACCRUING) +
+// CommissionPayout(ACCRUING) + DRAFT PRF on POSTED sales. Period-lock is
+// enforced inline on the sale's csi_date (closed period needs accounting.
+// reverse_posted to bypass).
 // Permission: PROXY_ENTRY_ROLES.SALES_REBATE_ENTRY + sales.proxy_rebate_entry
 // sub-perm. Predicate: STOREFRONT_REBATE_SCOPE.DEFAULT lookup.
 router.post('/:id/storefront-rebate-attribution', c.attachStorefrontRebate);
+
+// Phase R-Storefront Phase 2 (May 8 2026) — period-close batch sweep.
+// Idempotent re-run over POSTED storefront cash sales for an OPEN period.
+// Catches sales whose attribution was attached or edited after initial POST.
+// Body: { period: "YYYY-MM" }. Same permission gate as attachStorefrontRebate.
+router.post('/storefront-rebate-sweep', c.storefrontRebateSweepHandler);
 
 router.post('/:id/request-deletion', c.requestDeletion);
 // Phase 3c — legacy approve-deletion path (President Reverse preferred). Tier 2 lookup-only.

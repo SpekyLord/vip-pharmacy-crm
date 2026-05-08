@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * healthcheckStorefrontRebateWiring — Phase R-Storefront Phase 1 (May 8 2026)
+ * healthcheckStorefrontRebateWiring — Phase R-Storefront Phase 1 + Phase 2 (May 8 2026)
  *
  * Verifies the full wiring chain for the manual MD rebate + BDM commission
  * attribution feature on storefront cash sales (CASH_RECEIPT + SERVICE_INVOICE
@@ -9,7 +9,7 @@
  * Run: node backend/scripts/healthcheckStorefrontRebateWiring.js
  * Exits 1 on first failure so it can serve as a CI gate.
  *
- * Coverage:
+ * Phase 1 coverage (gates 1–10):
  *   1. SalesLine schema — partnerTagSchema + lineItem.partner_tags + top-level
  *      partner_tags + commission_pct/_amount + total_partner_rebates + audit fields
  *   2. SalesLine pre-save calc — MAX_MD_REBATE_PCT cap + per-line/top-level branches
@@ -21,6 +21,21 @@
  *   7. Permission gate — canProxyEntry call with SALES_REBATE_ENTRY lookupCode
  *   8. Predicate gate — STOREFRONT_REBATE_SCOPE lookup read in controller
  *   9. Audit — partner_rebate_entry_mode + ErpAuditLog SALES_REBATE_ATTRIBUTION
+ *  10. Doctor model imported for partner_tag denorm
+ *
+ * Phase 2 coverage (gates 11–22):
+ *  11. autoPrfRoutingForSale.js — service exports + idempotency keys
+ *  12. RebatePayout.source_kind enum extended with STOREFRONT_MANUAL
+ *  13. CommissionPayout.source_kind enum extended with STOREFRONT_BDM
+ *  14. PrfCalf.linked_sales_line_id field + sparse index + idempotency index
+ *  15. postSaleRow CASH_RECEIPT branch calls routePrfsForSale
+ *  16. postSaleRow SERVICE_INVOICE early-return branch calls routePrfsForSale
+ *  17. submitSales loop calls routePrfsForSale (atomicity contract)
+ *  18. Period-lock guard on attachStorefrontRebate (Option A)
+ *  19. attachStorefrontRebate routes after save (post-POSTED path)
+ *  20. Period-close batch sweep route + handler + audit
+ *  21. SalesEntry banner additions for storefront cash sales
+ *  22. WorkflowGuide updated for sales-list (Phase 2) + sales-entry callout
  */
 
 const fs = require('fs');
@@ -48,7 +63,7 @@ function warn(condition, message) {
   if (!condition) warnings.push(`WARN: ${message}`);
 }
 
-console.log('Phase R-Storefront Phase 1 wiring health check\n──────────────────────────────────────────────');
+console.log('Phase R-Storefront Phase 1 + Phase 2 wiring health check\n──────────────────────────────────────────────────');
 
 // ── 1. SalesLine schema fields ─────────────────────────────────────────────
 const slSrc = read('backend/erp/models/SalesLine.js');
@@ -110,6 +125,105 @@ expect(/log_type:\s*['"]SALES_REBATE_ATTRIBUTION['"]/.test(ctrlSrc), 'attachStor
 // ── 10. Doctor model imported for partner denorm ───────────────────────────
 expect(/require\(['"]\.\.\/\.\.\/models\/Doctor['"]\)/.test(ctrlSrc), 'salesController imports Doctor model for partner_tag denorm');
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase R-Storefront Phase 2 — autoPrfRoutingForSale + period-close sweep +
+// real-time routing + period-lock guard + SalesEntry banner
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── 11. autoPrfRoutingForSale service ──────────────────────────────────────
+const routingSrc = read('backend/erp/services/autoPrfRoutingForSale.js');
+expect(/^function deriveSalePeriod/m.test(routingSrc), 'autoPrfRoutingForSale.deriveSalePeriod defined');
+expect(/^function aggregatePartnerTagsByPayee/m.test(routingSrc), 'autoPrfRoutingForSale.aggregatePartnerTagsByPayee defined');
+expect(/^async function writeRebatePayouts/m.test(routingSrc), 'autoPrfRoutingForSale.writeRebatePayouts defined');
+expect(/^async function writeBdmCommissionPayout/m.test(routingSrc), 'autoPrfRoutingForSale.writeBdmCommissionPayout defined');
+expect(/^async function ensurePrfForBucket/m.test(routingSrc), 'autoPrfRoutingForSale.ensurePrfForBucket defined');
+expect(/^async function routePrfsForSale/m.test(routingSrc), 'autoPrfRoutingForSale.routePrfsForSale (main entry) defined');
+expect(/^async function storefrontRebateSweep/m.test(routingSrc), 'autoPrfRoutingForSale.storefrontRebateSweep defined');
+expect(/source_kind:\s*['"]STOREFRONT_MANUAL['"]/.test(routingSrc), 'RebatePayout writes use source_kind=STOREFRONT_MANUAL');
+expect(/source_kind:\s*['"]STOREFRONT_BDM['"]/.test(routingSrc), 'CommissionPayout writes use source_kind=STOREFRONT_BDM');
+expect(/payee_role:\s*['"]BDM['"]/.test(routingSrc), 'CommissionPayout payee_role=BDM');
+expect(/'metadata\.source_sales_line_id'/.test(routingSrc), 'PrfCalf idempotency keyed on metadata.source_sales_line_id');
+expect(/linked_sales_line_id:\s*sale\._id/.test(routingSrc), 'PrfCalf.linked_sales_line_id stamped from sale._id');
+expect(/bir_flag:\s*['"]INTERNAL['"]/.test(routingSrc), 'PrfCalf bir_flag=INTERNAL (Phase 0 invariant)');
+expect(/payee_type:\s*['"]DOCTOR['"]/.test(routingSrc), 'PrfCalf payee_type=DOCTOR for storefront partner_tags');
+expect(/auto_generated_by:\s*['"]autoPrfRoutingForSale['"]/.test(routingSrc), 'PrfCalf metadata.auto_generated_by=autoPrfRoutingForSale (provenance)');
+expect(/checkPeriodOpen\(entityId,\s*period\)/.test(routingSrc), 'storefrontRebateSweep calls checkPeriodOpen before routing');
+expect(/sale\.status\s*!==\s*['"]POSTED['"]/.test(routingSrc), 'routePrfsForSale rejects non-POSTED sales (defensive)');
+expect(/sale\.deletion_event_id/.test(routingSrc), 'routePrfsForSale skips reversed sales');
+
+// ── 12. RebatePayout enum extension ────────────────────────────────────────
+const rpSrc = read('backend/erp/models/RebatePayout.js');
+expect(/values:\s*\[['"]TIER_A_PRODUCT['"],\s*['"]TIER_B_CAPITATION['"],\s*['"]NON_MD['"],\s*['"]STOREFRONT_MANUAL['"]\]/.test(rpSrc), 'RebatePayout.source_kind enum extended with STOREFRONT_MANUAL');
+
+// ── 13. CommissionPayout enum extension ────────────────────────────────────
+const cpSrc = read('backend/erp/models/CommissionPayout.js');
+expect(/values:\s*\[['"]ERP_COLLECTION['"],\s*['"]STOREFRONT_ECOMM['"],\s*['"]STOREFRONT_AREA_BDM['"],\s*['"]STOREFRONT_BDM['"]\]/.test(cpSrc), 'CommissionPayout.source_kind enum extended with STOREFRONT_BDM');
+
+// ── 14. PrfCalf — linked_sales_line_id + idempotency index ─────────────────
+const pcSrc = read('backend/erp/models/PrfCalf.js');
+expect(/linked_sales_line_id:\s*\{\s*type:\s*mongoose\.Schema\.Types\.ObjectId,\s*ref:\s*['"]SalesLine['"]/.test(pcSrc), 'PrfCalf.linked_sales_line_id field defined (ref SalesLine)');
+expect(/prfCalfSchema\.index\(\s*\{\s*linked_sales_line_id:\s*1\s*\},\s*\{\s*sparse:\s*true\s*\}\)/.test(pcSrc), 'PrfCalf sparse index on linked_sales_line_id');
+expect(/'metadata\.source_sales_line_id':\s*1[\s\S]{0,200}name:\s*['"]autoPrfRoutingForSale_idem['"]/.test(pcSrc), 'PrfCalf autoPrfRoutingForSale_idem index defined for storefront idempotency');
+
+// ── 15. Real-time routing wired into postSaleRow (CASH_RECEIPT path) ───────
+expect(/CASH_RECEIPT['"],\s*['"]SERVICE_INVOICE['"]\][\s\S]{0,400}row\.petty_cash_fund_id[\s\S]{0,400}routePrfsForSale/.test(ctrlSrc), 'postSaleRow CASH_RECEIPT branch calls routePrfsForSale on storefront cash sales');
+
+// ── 16. Real-time routing wired into postSaleRow (SERVICE_INVOICE branch) ──
+expect(/saleType === 'SERVICE_INVOICE'\s*&&\s*row\.petty_cash_fund_id[\s\S]{0,500}routePrfsForSale/.test(ctrlSrc), 'postSaleRow SERVICE_INVOICE early-return branch also calls routePrfsForSale');
+
+// ── 17. Real-time routing wired into submitSales loop ──────────────────────
+expect(/\(submit\) \$\{saleType\}/.test(ctrlSrc), 'submitSales console log identifies (submit) routing path');
+expect(/autoPrfRoutingForSale failed for/.test(ctrlSrc), 'submitSales rebate routing failure aborts the batch (atomicity contract)');
+
+// ── 18. Period-lock guard on attachStorefrontRebate ────────────────────────
+expect(/checkPeriodOpen\(sale\.entity_id,\s*periodOfSale,\s*\{\s*source:\s*sale\.source\s*\}\)/.test(ctrlSrc), 'attachStorefrontRebate calls checkPeriodOpen on sale.csi_date period');
+expect(/sub_permissions[\s\S]{0,200}accounting\?\.reverse_posted/.test(ctrlSrc), 'period-lock bypass requires accounting.reverse_posted (or president)');
+expect(/log_type:\s*['"]PERIOD_LOCK_BYPASS['"]/.test(ctrlSrc), 'period-lock bypass writes PERIOD_LOCK_BYPASS audit row');
+expect(/code:\s*['"]PERIOD_LOCKED['"]/.test(ctrlSrc), 'period-lock 403 carries code=PERIOD_LOCKED');
+
+// ── 19. attachStorefrontRebate routes after save (post-POSTED path) ────────
+expect(/await sale\.save\(\{\s*session\s*\}\)/.test(ctrlSrc), 'attachStorefrontRebate save uses transaction session');
+expect(/sale\.status === ['"]POSTED['"][\s\S]{0,200}routePrfsForSale/.test(ctrlSrc), 'attachStorefrontRebate post-POSTED routing wired (POSTED-only fast path)');
+expect(/routing:\s*routingResult/.test(ctrlSrc), 'attachStorefrontRebate response includes routing summary');
+
+// ── 20. Period-close batch sweep route + handler ───────────────────────────
+expect(/router\.post\(\s*'\/storefront-rebate-sweep'\s*,\s*c\.storefrontRebateSweepHandler\s*\)/.test(routesSrc), 'POST /storefront-rebate-sweep mounted to storefrontRebateSweepHandler');
+expect(/^const storefrontRebateSweepHandler = catchAsync/m.test(ctrlSrc), 'storefrontRebateSweepHandler controller defined');
+expect(/storefrontRebateSweepHandler/.test(ctrlSrc.split('module.exports')[1] || ''), 'storefrontRebateSweepHandler exported');
+expect(/log_type:\s*['"]STOREFRONT_REBATE_SWEEP['"]/.test(ctrlSrc), 'sweep handler writes STOREFRONT_REBATE_SWEEP audit row');
+expect(/PERIOD_LOCKED/.test(ctrlSrc), 'sweep handler propagates PERIOD_LOCKED error code');
+
+// ── 21. SalesEntry banner additions ────────────────────────────────────────
+const seSrc = read('frontend/src/erp/pages/SalesEntry.jsx');
+expect(/Storefront cash sale/.test(seSrc), 'SalesEntry banner mentions "Storefront cash sale"');
+expect(/Attach MD Rebate \/ BDM Commission/.test(seSrc), 'SalesEntry banner points users to Sales List → Attach MD Rebate / BDM Commission');
+
+// ── 22. WorkflowGuide updated for sales-list and sales-entry ───────────────
+const wgSrc = read('frontend/src/erp/components/WorkflowGuide.jsx');
+expect(/Phase 2 \(May 8 2026\) shipped/.test(wgSrc), 'WorkflowGuide sales-list step mentions Phase 2 ship');
+expect(/Phase R-Storefront[^\n]*post-POSTED workflow/.test(wgSrc) || /Storefront cash MD attribution \(Phase R-Storefront/.test(wgSrc), 'WorkflowGuide sales-entry step has storefront cash MD attribution callout');
+
+// ── 23. Mongo-compatible partial filter on RebatePayout/CommissionPayout idem index ──
+// Atlas rejects $ne in partial filters — Phase R-Storefront Phase 2 surfaced
+// this latent Phase VIP-1.B bug. Use $in of allowed statuses instead.
+expect(/partialFilterExpression:\s*\{\s*status:\s*\{\s*\$in:\s*\['ACCRUING',\s*'READY_TO_PAY',\s*'PAID'\]\s*\}\s*\}/.test(rpSrc), 'RebatePayout idem index uses Atlas-compatible $in partial filter');
+expect(/partialFilterExpression:\s*\{\s*status:\s*\{\s*\$in:\s*\['ACCRUING',\s*'READY_TO_PAY',\s*'PAID'\]\s*\}\s*\}/.test(cpSrc), 'CommissionPayout idem index uses Atlas-compatible $in partial filter');
+// Defense — neither model should still ship $ne in the partial filter
+expect(!/partialFilterExpression:\s*\{\s*status:\s*\{\s*\$ne:/.test(rpSrc), 'RebatePayout no longer uses unsupported $ne in partial filter');
+expect(!/partialFilterExpression:\s*\{\s*status:\s*\{\s*\$ne:/.test(cpSrc), 'CommissionPayout no longer uses unsupported $ne in partial filter');
+
+// ── 24. ErpAuditLog enum carries Phase R-Storefront codes ───────────────────
+const elSrc = read('backend/erp/models/ErpAuditLog.js');
+expect(/'SALES_REBATE_ATTRIBUTION'/.test(elSrc), 'ErpAuditLog.log_type enum includes SALES_REBATE_ATTRIBUTION');
+expect(/'STOREFRONT_REBATE_SWEEP'/.test(elSrc), 'ErpAuditLog.log_type enum includes STOREFRONT_REBATE_SWEEP');
+expect(/'PERIOD_LOCK_BYPASS'/.test(elSrc), 'ErpAuditLog.log_type enum includes PERIOD_LOCK_BYPASS');
+
+// ── 25. Migration script present (idempotency repair) ──────────────────────
+const migSrc = read('backend/scripts/migrateRebateCommissionPayoutIndexes.js');
+expect(/syncIndexes/.test(migSrc), 'migration script calls syncIndexes()');
+expect(/'\$in'/.test(migSrc) || /\$in/.test(migSrc), 'migration script references $in fix path');
+expect(/--apply/.test(migSrc), 'migration script supports --apply flag (DRY-RUN by default)');
+
 console.log('\n');
 if (warnings.length) {
   console.log(`\n${warnings.length} WARNINGS:`);
@@ -118,7 +232,7 @@ if (warnings.length) {
 if (errors.length) {
   console.log(`\n${errors.length} FAILURES:`);
   errors.forEach(e => console.log('  ' + e));
-  console.log('\nPhase R-Storefront Phase 1 health check FAILED.');
+  console.log('\nPhase R-Storefront Phase 1 + Phase 2 health check FAILED.');
   process.exit(1);
 }
-console.log('Phase R-Storefront Phase 1 health check PASSED — schema + lookups + endpoint + audit all wired.');
+console.log('Phase R-Storefront Phase 1 + Phase 2 health check PASSED — schema + lookups + endpoint + audit + autoPrfRoutingForSale + period-lock + sweep all wired.');

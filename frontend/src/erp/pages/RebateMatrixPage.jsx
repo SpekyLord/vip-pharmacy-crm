@@ -87,7 +87,9 @@ export default function RebateMatrixPage() {
     } finally {
       setLoading(false);
     }
-    // Phase E1 — re-fetch on entity switch.
+    // Phase E1 — re-fetch on entity switch (X-Entity-Id header changes
+    // automatically; workingEntityId in deps forces the refetch).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterActive, workingEntityId]);
 
   // Phase R1 + E1: only MDs (clientType='MD') with PARTNER + agreement_date,
@@ -115,6 +117,9 @@ export default function RebateMatrixPage() {
       console.warn('Failed to load hospitals:', err.message);
       setHospitals([]);
     }
+    // Phase E1 — re-fetch on entity switch (X-Entity-Id header carries
+    // the scope; workingEntityId in deps forces the refetch).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workingEntityId]);
 
   useEffect(() => { load(); }, [load]);

@@ -338,6 +338,81 @@ New step explaining the storefront rebate flow + when it kicks in vs Collection-
 - **SalesEntry-form integration** — Phase 1 only wires the post-POSTED edit drawer in SalesList modal. SalesEntry (entry-time) does not yet expose the panel; entry-time attribution can be added in Phase 2 when the data shape is proven.
 - **Playwright UI smoke + API smoke** — backend + Vite are green this phase, but live UI smoke against `/erp/sales` modal + API smoke (create CASH_RECEIPT → POST → attach rebate → read back) deferred to Phase 2 for cleaner ratification.
 
+---
+
+## Phase R-Storefront Phase 2 — autoPrfRoutingForSale + Period-Lock + Period-Close Sweep + SalesEntry Banner (May 8, 2026)
+
+> **Status**: SHIPPED (this commit, working-tree). Healthcheck **79/79 PASS** — `node backend/scripts/healthcheckStorefrontRebateWiring.js`. Vite ✓ 11.23s.
+
+### Why
+
+Phase 1 captured per-line MD rebate + BDM commission on storefront cash sales. The fields landed on `SalesLine`, but no payment-instruction artifact existed yet — `total_partner_rebates` was a number with no PRF, no audit ledger. Phase R1 single-flow lock (Apr 29 2026) requires every rebate accrual to route to `PrfCalf` (no `IncentivePayout` PAID_DIRECT — PRC Code of Ethics kickback exposure). Phase 2 closes the loop.
+
+### What changed
+
+**New service**: [autoPrfRoutingForSale.js](backend/erp/services/autoPrfRoutingForSale.js) — sister of `autoPrfRouting.js` (Collection version). For each storefront cash sale that lands POSTED:
+
+- Walks `line_items[].partner_tags[]` (CASH_RECEIPT/CSI) AND top-level `partner_tags[]` (SERVICE_INVOICE)
+- Aggregates per-MD into buckets, writes `RebatePayout(ACCRUING, source_kind='STOREFRONT_MANUAL')` per (line, MD)
+- Writes `CommissionPayout(ACCRUING, source_kind='STOREFRONT_BDM', payee_role='BDM')` for the sale's BDM
+- Creates one DRAFT `PrfCalf` per MD payee with `linked_sales_line_id` + `metadata.source_sales_line_id` + `bir_flag='INTERNAL'`
+- Idempotent — re-running on the same sale is a no-op via partial unique indexes + sparse PrfCalf metadata index
+
+**Atomicity contract** — same as Collection POSTED:
+
+| Trigger | Path | Roll-back behavior |
+|---|---|---|
+| Real-time on POST (postSaleRow) | Inside the existing `session.withTransaction()` | Routing failure rolls back FIFO + JE + petty cash + sale status |
+| Real-time on POST (submitSales loop) | Inside the batch `session.withTransaction()` | Routing failure aborts the whole batch (existing JE-TX posture) |
+| Post-POSTED edit (attachStorefrontRebate) | New transaction wrapping `sale.save() + audit + routing` | Routing failure rolls back the attribution edit too |
+| Period-close sweep (storefrontRebateSweep) | Per-sale, idempotent | Sweep continues past per-sale errors; PERIOD_LOCKED aborts whole sweep |
+
+**Period-lock guard (Option A)**: `attachStorefrontRebate` now calls `checkPeriodOpen(entity_id, dateToPeriod(sale.csi_date))` inline. Closed-period edits return HTTP 403 + `code: 'PERIOD_LOCKED'` unless the caller is President OR has `accounting.reverse_posted` (same gate as Collection.reopen / president-reverse). Privileged bypass writes a `PERIOD_LOCK_BYPASS` audit row.
+
+**Period-close batch sweep**: `POST /api/erp/sales/storefront-rebate-sweep` body `{ period: "YYYY-MM" }` — same permission gate as `attachStorefrontRebate` (`canProxyEntry(sales, proxy_rebate_entry)` + `PROXY_ENTRY_ROLES.SALES_REBATE_ENTRY`). Idempotent over POSTED storefront cash sales for the period; refuses CLOSED/LOCKED periods. Writes `STOREFRONT_REBATE_SWEEP` audit row.
+
+**Schema additions (additive, no breaking changes)**:
+
+| Model | New field / enum value |
+|---|---|
+| `RebatePayout.source_kind` | `+ STOREFRONT_MANUAL` |
+| `CommissionPayout.source_kind` | `+ STOREFRONT_BDM` |
+| `PrfCalf.linked_sales_line_id` | New optional `ObjectId` ref `SalesLine` (sparse-indexed) |
+| `PrfCalf` indexes | New `autoPrfRoutingForSale_idem` sparse index on `(entity, doc_type, period, metadata.source_sales_line_id, metadata.payee_id)` for idempotency + new sparse index on `linked_sales_line_id` for reverse-lookup |
+
+**Frontend integration**: [SalesEntry.jsx](frontend/src/erp/pages/SalesEntry.jsx) gains a green info note for storefront cash flows (CASH_RECEIPT with petty-cash fund OR SERVICE_INVOICE with CASH+petty-cash fund) pointing users to Sales List → "🩺 Attach MD Rebate / BDM Commission" for post-POSTED attribution. The post-POSTED panel ([StorefrontRebatePanel.jsx](frontend/src/erp/components/StorefrontRebatePanel.jsx)) is unchanged from Phase 1 — it now triggers routing on save, returning `routing` summary in the response.
+
+**WorkflowGuide updates**: `sales-list` and `sales-entry` steps both updated with Phase 2 callouts (PRF generation + Approval Hub flow).
+
+### Lookup-driven (Rule #3) — no new lookups added
+
+Phase 2 reuses the Phase 1 lookups:
+- `PROXY_ENTRY_ROLES.SALES_REBATE_ENTRY` (admin/finance/president default)
+- `STOREFRONT_REBATE_SCOPE.DEFAULT` (sale_types + require_petty_cash_fund predicate)
+- `Settings.MAX_MD_REBATE_PCT` (default 25)
+
+Plus the existing approval/period-lock gates:
+- `MODULE_DEFAULT_ROLES.PRF` — for the eventual PRF posting authority (admin/finance/president default)
+- `accounting.reverse_posted` sub-perm — for closed-period bypass
+
+### Subscription posture
+
+- Pure additive: no breaking enum changes (only enum extensions); no required-field additions.
+- Multi-tenant safe: every write carries `entity_id`; `PrfCalf.linked_sales_line_id` cross-references stay scoped via the sale's `entity_id`.
+- BIR_FLAG `INTERNAL` (Phase 0 invariant) — rebate JEs never hit BIR P&L.
+
+### Files touched
+
+- [backend/erp/services/autoPrfRoutingForSale.js](backend/erp/services/autoPrfRoutingForSale.js) — NEW (~360 LOC).
+- [backend/erp/models/RebatePayout.js](backend/erp/models/RebatePayout.js) — enum extension.
+- [backend/erp/models/CommissionPayout.js](backend/erp/models/CommissionPayout.js) — enum extension.
+- [backend/erp/models/PrfCalf.js](backend/erp/models/PrfCalf.js) — new field + 2 indexes.
+- [backend/erp/controllers/salesController.js](backend/erp/controllers/salesController.js) — routing wired into `postSaleRow` (CASH_RECEIPT + SERVICE_INVOICE branches) + `submitSales` loop + `attachStorefrontRebate` (txn wrap + post-POSTED routing) + period-lock guard + new `storefrontRebateSweepHandler`.
+- [backend/erp/routes/salesRoutes.js](backend/erp/routes/salesRoutes.js) — POST `/storefront-rebate-sweep` mount.
+- [backend/scripts/healthcheckStorefrontRebateWiring.js](backend/scripts/healthcheckStorefrontRebateWiring.js) — extended 36 → **79 gates** (Phase 1 + Phase 2).
+- [frontend/src/erp/pages/SalesEntry.jsx](frontend/src/erp/pages/SalesEntry.jsx) — info banner on CASH_RECEIPT + SERVICE_INVOICE storefront flows.
+- [frontend/src/erp/components/WorkflowGuide.jsx](frontend/src/erp/components/WorkflowGuide.jsx) — sales-list Phase 2 callout + sales-entry storefront callout.
+
 ### Files touched
 
 - [backend/erp/models/SalesLine.js](backend/erp/models/SalesLine.js) — partnerTagSchema + per-line + top-level partner_tags + commission/rebate audit fields + pre-save calc.

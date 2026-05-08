@@ -30,6 +30,16 @@ const erpAuditLogSchema = new mongoose.Schema({
     // updateSale's PROXY_UPDATE call is unwrapped, which made every proxy edit
     // 400 after sale.save() had already committed (audit error bubbled up via
     // catchAsync), leaving the DB updated and the UI saying "save failed."
+    // May 08 2026: added Phase R-Storefront audit codes —
+    // SALES_REBATE_ATTRIBUTION (Phase 1: emitted by attachStorefrontRebate when
+    // admin attaches MD rebate / BDM commission to a storefront cash sale —
+    // before this fix, the strict-enum validator rejected the row and the
+    // save() inside the txn rolled back, surfacing as "Validation failed" on
+    // every attempt), STOREFRONT_REBATE_SWEEP (Phase 2: emitted by the period-
+    // close batch handler so admin sweeps are auditable even when zero rows
+    // were routed), and PERIOD_LOCK_BYPASS (Phase 2: emitted when a privileged
+    // user with accounting.reverse_posted overrides the period-lock guard on
+    // attachStorefrontRebate to edit attribution in a CLOSED period).
     enum: [
       'SALES_EDIT', 'PRICE_CHANGE', 'ITEM_CHANGE', 'DELETION', 'REOPEN',
       'STATUS_CHANGE', 'PRESIDENT_REVERSAL',
@@ -39,6 +49,7 @@ const erpAuditLogSchema = new mongoose.Schema({
       'CREATE', 'UPDATE', 'DELETE', 'BACKFILL',
       'PROXY_CREATE', 'PROXY_UPDATE',
       'PRICE_CREATE', 'PRICE_CANCEL', 'PO_CANCEL',
+      'SALES_REBATE_ATTRIBUTION', 'STOREFRONT_REBATE_SWEEP', 'PERIOD_LOCK_BYPASS',
     ],
     required: true
   },

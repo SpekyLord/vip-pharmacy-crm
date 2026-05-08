@@ -164,8 +164,16 @@ const rebatePayoutSchema = new mongoose.Schema(
 );
 
 // Idempotency: same (collection|order, line, payee, period) cannot accrue twice.
-// Partial filter: only enforce when one of the source IDs is set (the engine
-// sets exactly one of collection_id+sales_line_id OR order_id per row).
+// Partial filter: only enforce on ACTIVE rows — VOIDED rows are excluded so
+// re-accrual after a Collection reopen / sale reversal can land cleanly.
+//
+// IMPORTANT (May 8 2026 fix — Phase R-Storefront Phase 2 surfaced): Mongo Atlas
+// rejects `$ne` in partial filter expressions (Mongoose translates `$ne` to a
+// `$not: {$eq}` form, which Atlas explicitly disallows). Without a working
+// partial filter, this whole compound index FAILED to create on production +
+// dev clusters — meaning duplicate accruals could land silently. Using `$in`
+// of the allowed statuses (which IS supported in partial filters since 3.6)
+// gets the index created and idempotency restored.
 rebatePayoutSchema.index(
   {
     entity_id: 1,
@@ -178,7 +186,7 @@ rebatePayoutSchema.index(
   },
   {
     unique: true,
-    partialFilterExpression: { status: { $ne: 'VOIDED' } },
+    partialFilterExpression: { status: { $in: ['ACCRUING', 'READY_TO_PAY', 'PAID'] } },
   }
 );
 

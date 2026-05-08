@@ -91,6 +91,7 @@ export default function NonMdRebateMatrixPage() {
     // Phase E1 — workingEntityId is a load dependency: switching entities must
     // refetch even though the X-Entity-Id header change happens automatically,
     // because React doesn't otherwise know the data is stale.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterActive, workingEntityId]);
 
   useEffect(() => { load(); }, [load]);
