@@ -76,6 +76,36 @@ section('2. inventoryController.getMyStock + getBatches accept warehouse_id');
   }
 }
 
+// ── 2b. Phase 32R-Batch-Proxy-Scope: getBatches mirrors getMyStock widening ─
+// Closes the bug where IST proxy users saw the source-BDM's product (via
+// getMyStock's existing proxy widening) but got an empty Batch dropdown
+// (because getBatches only honored privileged callers, not proxy sub-perms).
+section('2b. inventoryController.getBatches mirrors getMyStock proxy widening');
+{
+  const f = readFile('backend/erp/controllers/inventoryController.js');
+  if (f) {
+    // Slice the getBatches body for the targeted assertions.
+    const body = f.match(/const getBatches\s*=\s*catchAsync[\s\S]{0,2500}?\n\}\);/);
+    check('getBatches body locatable', !!body);
+    if (body) {
+      const b = body[0];
+      check('getBatches calls canProxyEntry on grn_proxy_entry', /canProxyEntry\(req,\s*'inventory',\s*\{\s*subKey:\s*'grn_proxy_entry'\s*\}\)/.test(b));
+      check('getBatches calls canProxyEntry on batch_metadata_proxy', /canProxyEntry\(req,\s*'inventory',\s*\{\s*subKey:\s*'batch_metadata_proxy'\s*\}\)/.test(b));
+      check('getBatches calls canProxyEntry on physical_count_proxy', /canProxyEntry\(req,\s*'inventory',\s*\{\s*subKey:\s*'physical_count_proxy'\s*\}\)/.test(b));
+      check('getBatches calls canProxyEntry on internal_transfer_proxy', /canProxyEntry\(req,\s*'inventory',\s*\{\s*subKey:\s*'internal_transfer_proxy'\s*\}\)/.test(b));
+      check('getBatches uses widenScope ? req.query.bdm_id : req.bdmId', /widenScope\s*\?\s*\(req\.query\.bdm_id\s*\|\|\s*null\)\s*:\s*req\.bdmId/.test(b));
+      check('getBatches keeps cross-entity admin-only (not widened by proxy)', /entityId\s*=\s*privileged\s*&&\s*req\.query\.entity_id/.test(b));
+    }
+    // getMyStock should also include internal_transfer_proxy in its widening
+    // bundle so a future IST proxy without grn_proxy_entry stays unblocked
+    // on the product dropdown side too.
+    const mystock = f.match(/const getMyStock\s*=\s*catchAsync[\s\S]{0,2500}?\n\}\);/);
+    if (mystock) {
+      check('getMyStock widening bundle includes internal_transfer_proxy', /canProxyEntry\(req,\s*'inventory',\s*\{\s*subKey:\s*'internal_transfer_proxy'\s*\}\)/.test(mystock[0]));
+    }
+  }
+}
+
 // ── 3. Frontend hook forwards entity_id + warehouse_id ───────────────────
 section('3. useInventory hook forwards entity_id + warehouse_id');
 {
