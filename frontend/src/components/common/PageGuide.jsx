@@ -748,12 +748,15 @@ const PAGE_GUIDES = {
     title: 'Tier-A MD Product Rebate Matrix',
     steps: [
       'List shows active MdProductRebate rows (one per MD × Hospital × Product). Switch the filter to see inactive / superseded rows.',
-      'Click Add Rule to seed a new (MD × Hospital × Product × %) row. Phase R1 added Hospital as a required match dimension — same MD at different hospitals routinely has different rates (separate MOA per institution).',
+      // Phase E1 — same entity-scope language as Non-MD page.
+      'Click Add Rule to seed a new (MD × Hospital × Product × %) row. Phase R1 added Hospital as a required match dimension — same MD at different hospitals routinely has different rates (separate MOA per institution). Phase E1: the MD picker is now scoped to the working entity, so switching entities re-scopes the dropdown.',
       'The 3-gate validator enforces: PARTNER status + signed agreement_date + rebate_pct ≤ Settings.MAX_MD_REBATE_PCT (default 25%). Only MDs (clientType=MD) appear in the picker; pharmacists/admin go on the Non-MD form.',
       'Failures surface the schema error verbatim — fix the underlying gate (promote MD via /admin/md-leads, set agreement date, or raise the ceiling via Control Center → Settings).',
       'Hospital options come from the selected MD\'s hospitals[] array on the VIP Client profile. If the MD has none, add at least one before creating a rule.',
       'Multiple rules at the same (MD, hospital, product) all earn full % independently — no winner-take-all.',
       'Rules walked at Collection.save → md_rebate_lines auto-populated → Tier-A excludes the line_item from Non-MD partner rebate base when calculation_mode=EXCLUDE_MD_COVERED. All MD Tier-A accruals route to PRF/CALF (single-flow), bir_flag=INTERNAL even after disbursement.',
+      // Phase E1 — same referential consistency banner step as Non-MD.
+      'Phase E1 entity-consistency gate: a rule cannot be saved if the chosen MD has no BDM coverage in the working entity. Resolve by assigning a BDM (whose entity_ids include this entity) on the VIP Client profile, or switching entities first.',
     ],
     next: [
       { label: 'MD Leads', path: '/admin/md-leads' },
@@ -766,12 +769,15 @@ const PAGE_GUIDES = {
     title: 'Non-MD Partner Rebate Matrix',
     steps: [
       'List shows NonMdPartnerRebateRule rows for non-MD partners (pharmacist, purchaser, administrator, key decision maker). Phase R1 simplified the match grain to per-(partner × hospital).',
-      'Partner picker filters by clientType ≠ MD AND partnership_status=PARTNER AND partner_agreement_date ≠ null. MDs belong on the Tier-A form.',
+      // Phase E1 — banner copy reflects the new entity scope on the picker.
+      'Partner picker filters by clientType ≠ MD AND partnership_status=PARTNER AND partner_agreement_date ≠ null AND entity scope. MDs belong on the Tier-A form. Phase E1: the picker only surfaces partners whose BDM coverage reaches the working entity, so switching entities re-scopes the dropdown.',
       'Hospital is REQUIRED. Auto-fills from the partner\'s hospitals[] when there\'s exactly one; pickable when multiple. Add hospital affiliations on the VIP Client profile.',
       'Choose calculation_mode: EXCLUDE_MD_COVERED (default — base = Σ collected lines NOT covered by MD Tier-A) OR TOTAL_COLLECTION (base = full net_of_vat regardless of MD overlap).',
       'Multiple non-MD partners at the same hospital each earn full % independently per their own mode. No winner-take-all.',
       'Auto-fill at Collection entry: if BDM doesn\'t set partner_tags[].rebate_pct, the matrix fills it from the most-recently-active rule for that (partner, hospital). Manual override is preserved.',
       'All accruals route to PRF/CALF (single-flow), bir_flag=INTERNAL even after disbursement to the partner — internal cost allocation, never on BIR P&L.',
+      // Phase E1 — referential consistency message so the admin understands the new 400 reason.
+      'Phase E1 entity-consistency gate: a rule cannot be saved if the chosen partner has no BDM coverage in the working entity. Resolve by assigning a BDM (whose entity_ids include this entity) on the VIP Client profile, or switching entities first.',
     ],
     next: [
       { label: 'MD Rebate Matrix', path: '/erp/rebate-matrix' },

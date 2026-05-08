@@ -12770,3 +12770,32 @@ Flip include_comm_log=false via Control Center         → comm_log_count drops 
 3. Tooltip on the badge: `"N chat screenshot(s) credited toward..."`
 4. md_count reflects deduped count
 5. 0 console errors
+
+---
+
+## Phase E1 — Rebate Matrix Entity-Consistency Check (May 8, 2026)
+
+**Cross-link to CRM doc:** Phase E1 lives in [docs/PHASE-TASKS-CRM.md](docs/PHASE-TASKS-CRM.md) § Phase E1 because the canonical change is on the `Doctor` model (CRM-side). This entry only captures the ERP-surface impact.
+
+**Why it matters for ERP:** the rebate matrix is at `/erp/rebate-matrix` + `/erp/non-md-rebate-matrix` + `/erp/capitation-rules`. All three accept a `partner_id` / `doctor_id` reference, then stamp `entity_id` from `req.entityId`. Without a referential consistency check at create-time, an admin in entity A could pick a partner whose only BDM coverage is in entity B → rule saved with the right `entity_id` but the rebate engine never fires (Collection.entity_id ↔ rule.entity_id matches, but partner.entity_ids does not include rule.entity_id → ghost rule).
+
+**What changed in ERP:**
+
+- New shared helper [backend/erp/utils/rebatePartnerEntityScope.js](backend/erp/utils/rebatePartnerEntityScope.js) → `assertPartnerInEntity(partnerId, entityId)`. Returns void on success; throws structured `ValidationError` with `code` ∈ {`PARTNER_NOT_FOUND`, `PARTNER_MERGED`, `PARTNER_NO_ENTITY_COVERAGE`, `PARTNER_ENTITY_MISMATCH`}.
+- Wired into `create` of [nonMdPartnerRebateRuleController.js](backend/erp/controllers/nonMdPartnerRebateRuleController.js), [mdProductRebateController.js](backend/erp/controllers/mdProductRebateController.js), [mdCapitationRuleController.js](backend/erp/controllers/mdCapitationRuleController.js).
+- Both matrix pages now read `workingEntityId` via [useWorkingEntity](frontend/src/hooks/useWorkingEntity.js) and forward `entity_id` to `doctorService.getAll`. Picker re-fetches on entity switch.
+- Banners on both `/erp/rebate-matrix` and `/erp/non-md-rebate-matrix` updated with the new entity-scope copy + the `PARTNER_ENTITY_MISMATCH` 400-fix step.
+
+**Healthcheck:** [backend/scripts/healthcheckDoctorEntityScope.js](backend/scripts/healthcheckDoctorEntityScope.js) — 24/24 static gates including 4 ERP-controller-specific gates.
+
+**Subscription posture:** subscription-neutral. `entity_ids` is the canonical Year-2 SaaS tenant key; the helper plus the auto-derivation pre-save hook are the foundation.
+
+**API smoke (recommended):** as president, attempt to POST `/api/erp/rebate-rules/non-md` with `partner_id` of a doctor whose `entity_ids` does not include the working entity → expect 400 + `code: 'PARTNER_ENTITY_MISMATCH'` + `details.partner_entity_ids` + `details.requested_entity_id`.
+
+**UI smoke (Playwright as president):**
+
+1. Set working entity to A → `/erp/non-md-rebate-matrix` → list shows entity-A rules only.
+2. Click "+ Add Rule" → partner dropdown only contains non-MD partners covered in entity A.
+3. Switch entity to B via entity switcher → list re-fetches, shows entity-B rules; modal partner dropdown re-fetches too.
+4. With a doctor seeded in entity A only, attempt a rule against them while working in entity B → modal shows `Partner ... is not covered in the target entity. Their BDMs cover entities [...]; rule entity_id=...`.
+5. 0 console errors throughout.

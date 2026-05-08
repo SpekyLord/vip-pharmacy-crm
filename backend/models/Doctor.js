@@ -121,6 +121,30 @@ const doctorSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
     },
+    // Phase E1 (May 2026) — Multi-tenant entity scoping for VIP Clients (SaaS-readiness).
+    //
+    // `entity_ids[]` is the union of every BDM-in-`assignedTo`'s effective working
+    // set (`User.entity_ids` if present, falling back to `[User.entity_id]` for
+    // legacy single-entity users). Auto-maintained by pre-save / pre-findOneAndUpdate
+    // hooks below — DO NOT write directly from controllers; mutate `assignedTo` and
+    // let the hook recompute. Admin entity-direct override is captured in Phase E2
+    // (out of scope today: today there is no use case where a doctor's reachable
+    // entities should diverge from its assignees' entities).
+    //
+    // Used by:
+    //   * getAllDoctors `?entity_id=` filter (Rule #21 — privileged opt-in;
+    //     non-privileged users always scoped to working entity by tenantFilter).
+    //   * Rebate matrix referential-consistency check at create
+    //     (rule.entity_id MUST be one of partner.entity_ids).
+    //   * Year-2 SaaS spin-out tenant isolation (Rule #0d) — this is the canonical
+    //     scope key once the multi-subscriber bundle ships.
+    //
+    // Empty array means "unassigned" (no BDM coverage). Admin can still see these
+    // via cross-entity opt-in; BDMs do not see them under any condition.
+    entity_ids: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Entity',
+    }],
     notes: {
       type: String,
       maxlength: [1000, 'Notes cannot exceed 1000 characters'],
@@ -372,6 +396,12 @@ doctorSchema.index({ mergedAt: 1 });
 // partnership_status; BDM-self pipeline filters by both assignedTo + status.
 doctorSchema.index({ partnership_status: 1, isActive: 1 });
 doctorSchema.index({ assignedTo: 1, partnership_status: 1, isActive: 1 });
+// Phase E1 (May 2026) — entity scoping (SaaS-readiness).
+// Plain index supports `find({ entity_ids: workingEntityId })` — the rebate
+// picker hot path. The compound index covers the typical picker query
+// (entity scope + active partners + hospital affiliation count gate).
+doctorSchema.index({ entity_ids: 1 });
+doctorSchema.index({ entity_ids: 1, partnership_status: 1, isActive: 1 });
 // Sparse partial index — only documents that have a string PRC# get indexed.
 // VIP-1.B may flip to unique after admin dedups duplicates via the merge tool.
 doctorSchema.index(
@@ -493,6 +523,46 @@ doctorSchema.pre('save', async function (next) {
     this.primaryAssignee = null;
   }
 
+  // Phase E1 — derive entity_ids from current assignees' effective working set.
+  // Triggered when assignedTo was modified OR when entity_ids is empty/missing
+  // on a doc that already has assignees (heals legacy rows on first save without
+  // forcing a one-shot migration on every read). Reads live User docs to pick up
+  // any FRA-driven entity additions; tolerant to assignees missing entity_ids
+  // (legacy single-entity users) by falling back to entity_id.
+  const assigneeIds = Array.isArray(this.assignedTo)
+    ? this.assignedTo.map((u) => (u && u._id ? u._id : u)).filter(Boolean)
+    : [];
+  const entityIdsModified = this.isModified('entity_ids');
+  const entityIdsEmpty = !Array.isArray(this.entity_ids) || this.entity_ids.length === 0;
+  const shouldDeriveEntityIds = this.isModified('assignedTo') || (assigneeIds.length > 0 && entityIdsEmpty && !entityIdsModified);
+  if (shouldDeriveEntityIds) {
+    if (assigneeIds.length === 0) {
+      this.entity_ids = [];
+    } else {
+      try {
+        const User = mongoose.model('User');
+        const users = await User.find({ _id: { $in: assigneeIds } })
+          .select('entity_id entity_ids')
+          .lean();
+        const entitySet = new Set();
+        for (const u of users) {
+          if (Array.isArray(u.entity_ids) && u.entity_ids.length > 0) {
+            for (const eid of u.entity_ids) entitySet.add(String(eid));
+          } else if (u.entity_id) {
+            entitySet.add(String(u.entity_id));
+          }
+        }
+        this.entity_ids = Array.from(entitySet).map((s) => new mongoose.Types.ObjectId(s));
+      } catch (err) {
+        // Don't block the save on a User-fetch hiccup — leave entity_ids untouched
+        // and let the periodic healthcheck flag the row. Hard-failing here would
+        // back-pressure unrelated CRM writes whenever Mongo blips.
+        // eslint-disable-next-line no-console
+        console.warn(`[Doctor.pre-save] entity_ids derivation skipped for ${this._id}: ${err.message}`);
+      }
+    }
+  }
+
   const nameModified = this.isModified('firstName') || this.isModified('lastName');
   if (!nameModified) return next();
   try {
@@ -519,30 +589,116 @@ doctorSchema.pre('save', async function (next) {
 // incoming `$set` (or top-level) firstName/lastName; if either present, recompute clean
 // parts + canonical key into the same update operator. Does NOT apply cleanName rules
 // here (the UI-level input is trusted for casing on update — same as Customer/Hospital).
-doctorSchema.pre('findOneAndUpdate', function (next) {
-  const update = this.getUpdate() || {};
-  const $set = update.$set || {};
-  const firstName = $set.firstName !== undefined ? $set.firstName : update.firstName;
-  const lastName = $set.lastName !== undefined ? $set.lastName : update.lastName;
-  if (firstName === undefined && lastName === undefined) return next();
+//
+// Phase E1 (May 2026) — also recompute entity_ids when assignedTo changes via any
+// operator ($set / $addToSet / $pull). Mirrors the pre-save derivation: union of
+// assignees' User.entity_ids (or [User.entity_id] fallback for legacy users).
+// Without this, $addToSet on assignedTo (used by the join-coverage flow in
+// messageInboxController) would silently leave entity_ids stale, hiding the
+// doctor from the new entity's picker.
+doctorSchema.pre('findOneAndUpdate', async function (next) {
+  try {
+    const update = this.getUpdate() || {};
+    const $set = update.$set || {};
+    const $addToSet = update.$addToSet || {};
+    const $pull = update.$pull || {};
 
-  // Need both parts to build the key. If only one is in the update, fetch the other from
-  // the existing doc so the canonical key never goes stale.
-  const target = firstName !== undefined && lastName !== undefined
-    ? Promise.resolve({ firstName, lastName })
-    : this.model.findOne(this.getFilter()).select('firstName lastName').lean().then(doc => ({
-        firstName: firstName !== undefined ? firstName : doc?.firstName,
-        lastName: lastName !== undefined ? lastName : doc?.lastName,
-      }));
+    // ── Canonical-name key (Phase A.5) ──────────────────────────────────────
+    const firstName = $set.firstName !== undefined ? $set.firstName : update.firstName;
+    const lastName = $set.lastName !== undefined ? $set.lastName : update.lastName;
+    const nameInUpdate = firstName !== undefined || lastName !== undefined;
 
-  target.then(({ firstName: fn, lastName: ln }) => {
-    const last = (ln || '').toLowerCase().replace(/\s+/g, ' ').trim();
-    const first = (fn || '').toLowerCase().replace(/\s+/g, ' ').trim();
-    const clean = `${last}|${first}`;
-    if (update.$set) update.$set.vip_client_name_clean = clean;
-    else update.vip_client_name_clean = clean;
+    // ── Entity scoping (Phase E1) ────────────────────────────────────────────
+    const assignedToInSet = $set.assignedTo !== undefined || update.assignedTo !== undefined;
+    const assignedToInAddToSet = $addToSet.assignedTo !== undefined;
+    const assignedToInPull = $pull.assignedTo !== undefined;
+    const assignedToTouched = assignedToInSet || assignedToInAddToSet || assignedToInPull;
+    // Skip entity-derivation if caller is explicitly setting entity_ids (e.g.
+    // backfill migration --apply path). The migration owns the field directly.
+    const entityIdsExplicit = $set.entity_ids !== undefined || update.entity_ids !== undefined;
+
+    if (!nameInUpdate && !assignedToTouched) return next();
+
+    // Fetch the current doc only if we need it (name half-update or assignee
+    // operator-update). Single read regardless of how many fields we recompute.
+    const needsCurrentDoc = (nameInUpdate && (firstName === undefined || lastName === undefined))
+      || (assignedToTouched && !assignedToInSet);
+    const currentDoc = needsCurrentDoc
+      ? await this.model.findOne(this.getFilter()).select('firstName lastName assignedTo').lean()
+      : null;
+
+    // Recompute canonical-name key.
+    if (nameInUpdate) {
+      const fn = firstName !== undefined ? firstName : currentDoc?.firstName;
+      const ln = lastName !== undefined ? lastName : currentDoc?.lastName;
+      const last = (ln || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      const first = (fn || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      const clean = `${last}|${first}`;
+      if (update.$set) update.$set.vip_client_name_clean = clean;
+      else update.vip_client_name_clean = clean;
+    }
+
+    // Recompute entity_ids.
+    if (assignedToTouched && !entityIdsExplicit) {
+      // Determine final assignee set after the operator applies.
+      let finalAssignees;
+      if (assignedToInSet) {
+        const raw = $set.assignedTo !== undefined ? $set.assignedTo : update.assignedTo;
+        finalAssignees = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+      } else {
+        const existing = Array.isArray(currentDoc?.assignedTo) ? currentDoc.assignedTo : [];
+        let next = existing.map((u) => (u && u._id ? u._id : u)).filter(Boolean).map(String);
+        if (assignedToInAddToSet) {
+          const raw = $addToSet.assignedTo;
+          // Mongo allows scalar OR { $each: [...] }. Both produce additions.
+          const adds = (raw && typeof raw === 'object' && Array.isArray(raw.$each))
+            ? raw.$each
+            : (Array.isArray(raw) ? raw : [raw]);
+          for (const a of adds) {
+            const s = a && a._id ? String(a._id) : String(a);
+            if (s && !next.includes(s)) next.push(s);
+          }
+        }
+        if (assignedToInPull) {
+          const raw = $pull.assignedTo;
+          const removes = Array.isArray(raw) ? raw.map(String)
+            : (raw && typeof raw === 'object' && raw.$in)
+              ? raw.$in.map(String)
+              : [String(raw)];
+          next = next.filter((s) => !removes.includes(s));
+        }
+        finalAssignees = next.map((s) => new mongoose.Types.ObjectId(s));
+      }
+
+      // Fetch the assignees' effective entity sets and union them.
+      const assigneeIds = finalAssignees
+        .map((u) => (u && u._id ? u._id : u))
+        .filter(Boolean);
+      let derived = [];
+      if (assigneeIds.length > 0) {
+        const User = mongoose.model('User');
+        const users = await User.find({ _id: { $in: assigneeIds } })
+          .select('entity_id entity_ids')
+          .lean();
+        const entitySet = new Set();
+        for (const u of users) {
+          if (Array.isArray(u.entity_ids) && u.entity_ids.length > 0) {
+            for (const eid of u.entity_ids) entitySet.add(String(eid));
+          } else if (u.entity_id) {
+            entitySet.add(String(u.entity_id));
+          }
+        }
+        derived = Array.from(entitySet).map((s) => new mongoose.Types.ObjectId(s));
+      }
+
+      if (update.$set) update.$set.entity_ids = derived;
+      else update.entity_ids = derived;
+    }
+
     next();
-  }).catch(next);
+  } catch (err) {
+    next(err);
+  }
 });
 
 // Pre-delete hook to cascade delete related ProductAssignments

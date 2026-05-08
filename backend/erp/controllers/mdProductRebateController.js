@@ -14,6 +14,10 @@ const Doctor = require('../../models/Doctor');
 const { catchAsync, ForbiddenError } = require('../../middleware/errorHandler');
 const { isAdminLike } = require('../../constants/roles');
 const { userHasRebateRole } = require('../../utils/rebateCommissionAccess');
+// Phase E1 (May 2026) — referential consistency check on rebate-rule create.
+// Same shared helper used by NonMdPartnerRebateRuleController. See that
+// controller's import comment for the full motivation.
+const { assertPartnerInEntity } = require('../utils/rebatePartnerEntityScope');
 
 async function requireManage(req) {
   if (!isAdminLike(req.user?.role)) {
@@ -101,6 +105,22 @@ const create = catchAsync(async (req, res) => {
   // Force entity_id from req scope (privileged callers may pass it explicitly)
   const entity_id = (req.isPresident || req.isAdmin || req.isFinance) && body.entity_id
     ? body.entity_id : req.entityId;
+
+  // Phase E1 — referential consistency check (partner ↔ entity).
+  // Note: MdProductRebate uses `doctor_id` (not `partner_id`) for the partner
+  // ref; we pass it through the same helper. The helper resolves to a Doctor
+  // row regardless of field name on the rule.
+  try {
+    await assertPartnerInEntity(body.doctor_id, entity_id);
+  } catch (err) {
+    return res.status(400).json({
+      success: false,
+      message: err.message,
+      code: err.code || 'PARTNER_ENTITY_VALIDATION_FAILED',
+      details: err.details,
+    });
+  }
+
   try {
     const row = await MdProductRebate.create({
       ...body,
