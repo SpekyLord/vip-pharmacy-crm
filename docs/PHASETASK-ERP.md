@@ -16,6 +16,61 @@
 
 ---
 
+## PHASE 32R-Validate-Privileged-Snapshot — Sales Validate Insufficient-Stock Phantom ✅ SHIPPED (May 7, 2026)
+
+**Goal:** Fix "Cannot validate sales transaction — Insufficient stock for product Philvan|1 g: available 0, requested 18" reported with screenshot when president clicked Validate on `/erp/sales`. Sister-regression to Phase 32R-Transfer-Stock-Scope.
+
+**Root cause:**
+
+[backend/erp/middleware/tenantFilter.js#L28](../backend/erp/middleware/tenantFilter.js#L28) stamps `req.bdmId = req.user._id` on EVERY authenticated user — including president (who owns no `InventoryLedger` rows). [salesController.validateSales](../backend/erp/controllers/salesController.js) line 737 then resolved snapshot scope as:
+
+```js
+const bdmId = (req.isPresident || req.isAdmin || req.isFinance) && !firstWarehouseId ? null : req.bdmId;
+```
+
+→ For privileged caller WITH `warehouse_id` on the row, `bdmId = req.bdmId = president's _id`.
+
+Pre-Phase 32R-Transfer-Stock-Scope, [fifoEngine.buildStockMatch](../backend/erp/services/fifoEngine.js) used XOR (warehouse_id wins, bdm_id silently dropped), so the call accidentally returned the right warehouse-scoped slice. Phase 32R switched to AND, which intersected the president's own user._id with the warehouse → empty snapshot → every line item flagged Insufficient Stock. **Submit-time consume (lines 168 + 1120) reads `row.bdm_id` (the row owner's BDM, not the calling user) so submit was unaffected — only validate had the regression.**
+
+**The fix:**
+
+[salesController.validateSales:731-756](../backend/erp/controllers/salesController.js#L731-L756) — for privileged callers (president/admin/finance), unconditionally drop bdm_id scoping:
+
+```js
+const isPrivilegedCaller = req.isPresident || req.isAdmin || req.isFinance;
+const bdmId = isPrivilegedCaller ? null : req.bdmId;
+```
+
+The warehouse_id (when present on the row) remains the canonical inventory scope; warehouse-less validates fall through to entity-wide stock (the documented behavior). Non-privileged BDMs (contractors) continue scoping by `req.bdmId` = own `_id` (which equals the row's `bdm_id`).
+
+**Subscription readiness:** zero new lookup categories. Reuses `req.isPresident` / `req.isAdmin` / `req.isFinance` flags already set by the existing `tenantFilter` middleware. Future role additions (e.g. CFO, Controller) inherit the same gate by being added to `isPresidentLike` in [backend/constants/roles.js](../backend/constants/roles.js).
+
+**Cascading downstream sanity verified:**
+- `consumeFIFO` / `consumeSpecificBatch` (submit) — untouched. Row-owner `bdm_id` semantics preserved at lines 168 and 1120.
+- `creditNoteController.js` imports `buildStockSnapshot` but never calls it — no behavioral change.
+- `fifoEngine.buildStockMatch` AND-mode (Phase 32R-Transfer-Stock-Scope) preserved — fix runs ABOVE that helper.
+- BDM (contractor) validate path unchanged — `req.bdmId = own _id` already matches `row.bdm_id` for self-owned sales rows.
+- Phase 32R-Transfer-Stock-Scope healthcheck: 40/40 PASS unchanged.
+
+**Verification:**
+- Targeted assertion: 8/8 PASS (privileged-snapshot fix, submit untouched, fifoEngine intersection unchanged).
+- Vite build: ✓ green.
+- Live API + Playwright UI smoke deferred: backend dev process was stopped between fix and smoke; user restarts and validates a sale row as president to confirm `Insufficient Stock` is gone.
+
+**Files modified (1 + docs):** [backend/erp/controllers/salesController.js](../backend/erp/controllers/salesController.js#L731-L756). Plus this PHASETASK-ERP.md section + CLAUDE-ERP.md banner refresh to v9.3.
+
+**Status / Commit recipe:**
+- Working tree includes 1 modified file + 2 doc updates. UNCOMMITTED on `dev`. erp-remote no-push policy in force.
+- DO NOT `git add .` — also bundles unrelated CRM Phase A.5.3 / A.5.6 follow-up work from earlier today. Explicit list:
+  ```
+  git add backend/erp/controllers/salesController.js \
+          CLAUDE-ERP.md \
+          docs/PHASETASK-ERP.md
+  ```
+  Then `git commit -m "fix(erp): Phase 32R-Validate-Privileged-Snapshot — drop bdm_id scope on validate snapshot for privileged callers (closes phantom Insufficient Stock after AND switch)"`.
+
+---
+
 ## PHASE 32R-Transfer-Stock-Scope — IST/ICT Product Dropdown ∩ Source Warehouse ✅ SHIPPED + RATIFIED (May 7, 2026)
 
 **Goal:** Fix "Internal Stock Reassignment product dropdown is empty even after picking Source Custodian + Source Warehouse" reported with screenshot. Pick the same fix for the Inter-Company Transfer modal (same class of bug, surfaced if the user had reached it).

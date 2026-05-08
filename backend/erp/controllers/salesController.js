@@ -728,17 +728,69 @@ const validateSales = catchAsync(async (req, res) => {
   const discountCfg = await getDiscountConfig(req.entityId);
   const bypassDiscountCap = canBypassDiscountCap(req);
 
-  // Build fresh stock snapshot from InventoryLedger
-  // Phase 17: If rows have warehouse_id, scope snapshot to that warehouse.
-  // For now, all rows for a BDM share one warehouse, so first row's warehouse is used.
-  const firstWarehouseId = rows[0]?.warehouse_id;
-  const snapOpts = firstWarehouseId ? { warehouseId: firstWarehouseId.toString() } : undefined;
-  // President/admin/finance without a warehouse scope → query all entity stock
-  const bdmId = (req.isPresident || req.isAdmin || req.isFinance) && !firstWarehouseId ? null : req.bdmId;
-  const { productTotals } = await buildStockSnapshot(req.entityId, bdmId, snapOpts);
+  // Build fresh stock snapshot from InventoryLedger — per-(bdm_id, warehouse_id) group.
+  //
+  // Phase 32R-Sales-Validate-Proxy-Scope (May 08 2026): the prior implementation
+  // built ONE snapshot for the entire batch using rows[0].warehouse_id and a
+  // single bdm_id derived from the requester. Two coupled bugs converged after
+  // Phase 32R-Transfer-Stock-Scope (May 07 2026) flipped buildStockMatch from
+  // XOR to AND:
+  //
+  //   (A) Proxy entries (recorded_on_behalf_of set) — req.bdmId is the proxy/
+  //       data-entry user, NOT the row owner whose inventory is debited. AND
+  //       mode intersects (proxy_bdm ∩ warehouse) → empty → "available 0,
+  //       requested N" even when the OWNER has stock at the warehouse. This
+  //       blocked Validate on every Proxied row in /erp/sales (the symptom the
+  //       president hit on doc 4806 today).
+  //
+  //   (B) Privileged-caller fallback (May 07 same-day patch) dropped bdm_id to
+  //       null for president/admin/finance. That widened validate to "all
+  //       stock at this warehouse" but submit (line ~1146) keeps using
+  //       row.bdm_id — so a privileged user could pass Validate against
+  //       another BDM's stock at a shared warehouse, then hit
+  //       INSUFFICIENT_STOCK at Submit time with no advance warning.
+  //
+  // Fix: build per-(effectiveBdmId, warehouseId) snapshots keyed off ROW
+  // attributes, exactly mirroring submitSales's contract at line ~1146-1147:
+  //
+  //     effectiveBdmId = (privileged && !row.warehouse_id) ? null : row.bdm_id
+  //
+  // Per-group deducted tracker prevents one row's allocation from bleeding
+  // into another group's pool (different BDMs at different warehouses are
+  // separate inventory). Snapshot cache means N rows from the same group
+  // produce ONE aggregation, not N — perf-equivalent to the prior single-pool
+  // approach for the common case (single-BDM, single-warehouse batch).
+  //
+  // Subscription-readiness preserved: zero new lookups. The privileged-role
+  // set still comes from req.isPresident / req.isAdmin / req.isFinance flags
+  // stamped by tenantFilter (lookup-driven via PROXY_ENTRY_ROLES + role
+  // baselines). Submit-side already harmonized; this commit closes the
+  // validate-side gap.
+  const snapshotCache = new Map();   // key "bdmId|warehouseId" → productTotals Map
+  const deductedCache = new Map();   // key "bdmId|warehouseId" → Map(productId → qty)
+  const isPrivilegedCaller = req.isPresident || req.isAdmin || req.isFinance;
 
-  // In-memory deduction tracker (prevents double-allocation across rows)
-  const deducted = new Map(); // productId → qty deducted so far
+  const getStockGroupForRow = async (row) => {
+    const wh = row.warehouse_id ? row.warehouse_id.toString() : '';
+    const ownerBdm = row.bdm_id ? row.bdm_id.toString() : null;
+    // Mirrors submit-side line ~1146-1147 verbatim:
+    //   privileged AND no warehouse → entity-wide (bdmId=null, no warehouse filter)
+    //   otherwise                   → row.bdm_id ∩ row.warehouse_id (when set)
+    const effectiveBdmId = (isPrivilegedCaller && !row.warehouse_id) ? null : ownerBdm;
+    const cacheKey = `${effectiveBdmId || ''}|${wh}`;
+    if (!snapshotCache.has(cacheKey)) {
+      const opts = row.warehouse_id ? { warehouseId: wh } : undefined;
+      const { productTotals } = await buildStockSnapshot(req.entityId, effectiveBdmId, opts);
+      snapshotCache.set(cacheKey, productTotals);
+      deductedCache.set(cacheKey, new Map());
+    }
+    return {
+      productTotals: snapshotCache.get(cacheKey),
+      deducted: deductedCache.get(cacheKey),
+      effectiveBdmId,
+      warehouseId: wh
+    };
+  };
 
   const errors = [];
   let validCount = 0;
@@ -894,34 +946,51 @@ const validateSales = catchAsync(async (req, res) => {
           if (item.fifo_override && !item.override_reason) rowErrors.push(`FIFO override reason is required for ${item.item_key || 'product'}. Choose: Hospital Policy, QA Replacement, Damaged Batch, or Batch Recall.`);
         }
       }
-    } else for (const item of row.line_items) {
-      if (!item.product_id) {
-        rowErrors.push('Product is required for each line item');
-        continue;
-      }
-      if (!item.qty || item.qty <= 0) {
-        rowErrors.push(`Quantity must be greater than 0 for ${item.item_key || 'product'}`);
-        continue;
-      }
-      if (!item.unit_price || item.unit_price <= 0) {
-        rowErrors.push(`Unit price must be greater than 0 for ${item.item_key || 'product'}`);
-      }
+    } else {
+      // Per-(bdm_id, warehouse_id) snapshot for THIS row. Mirrors submit-side
+      // contract — proxy entries query the OWNER's stock, not the requester's.
+      const stockGroup = await getStockGroupForRow(row);
+      for (const item of row.line_items) {
+        if (!item.product_id) {
+          rowErrors.push('Product is required for each line item');
+          continue;
+        }
+        if (!item.qty || item.qty <= 0) {
+          rowErrors.push(`Quantity must be greater than 0 for ${item.item_key || 'product'}`);
+          continue;
+        }
+        if (!item.unit_price || item.unit_price <= 0) {
+          rowErrors.push(`Unit price must be greater than 0 for ${item.item_key || 'product'}`);
+        }
 
-      // FIFO override requires a reason from the allowed list
-      if (item.fifo_override && !item.override_reason) {
-        rowErrors.push(`FIFO override reason is required for ${item.item_key || 'product'}. Choose: Hospital Policy, QA Replacement, Damaged Batch, or Batch Recall.`);
-      }
+        // FIFO override requires a reason from the allowed list
+        if (item.fifo_override && !item.override_reason) {
+          rowErrors.push(`FIFO override reason is required for ${item.item_key || 'product'}. Choose: Hospital Policy, QA Replacement, Damaged Batch, or Batch Recall.`);
+        }
 
-      const pid = item.product_id.toString();
-      const available = (productTotals.get(pid) || 0) - (deducted.get(pid) || 0);
+        const pid = item.product_id.toString();
+        const available = (stockGroup.productTotals.get(pid) || 0) - (stockGroup.deducted.get(pid) || 0);
 
-      if (item.qty > available) {
-        rowErrors.push(
-          `Insufficient stock for product ${item.item_key || pid}: available ${available}, requested ${item.qty}`
-        );
-      } else {
-        // Deduct from snapshot for subsequent rows
-        deducted.set(pid, (deducted.get(pid) || 0) + item.qty);
+        if (item.qty > available) {
+          // Sharper diagnostic so admins can self-diagnose data-quality cases
+          // (e.g. row's warehouse_id points to a warehouse where the owner has
+          // no stock, but stock exists at a different warehouse). The scope
+          // suffix is omitted when both fields are absent so the simple-case
+          // wording is unchanged.
+          const scopeBits = [];
+          if (stockGroup.warehouseId) scopeBits.push(`warehouse ${stockGroup.warehouseId}`);
+          if (stockGroup.effectiveBdmId) scopeBits.push(`BDM ${stockGroup.effectiveBdmId}`);
+          const scopeSuffix = scopeBits.length ? ` (scope: ${scopeBits.join(' ∩ ')})` : '';
+          rowErrors.push(
+            `Insufficient stock for product ${item.item_key || pid}: available ${available}, requested ${item.qty}${scopeSuffix}`
+          );
+        } else {
+          // Deduct from per-group snapshot so subsequent rows in the same
+          // (bdm, warehouse) pool see the reduced figure. Different groups
+          // (different owner or warehouse) keep separate pools — correct, since
+          // they read separate InventoryLedger rows.
+          stockGroup.deducted.set(pid, (stockGroup.deducted.get(pid) || 0) + item.qty);
+        }
       }
     }
 
