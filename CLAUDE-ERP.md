@@ -260,6 +260,96 @@ When the consultant delivers the gap list, the concrete work gets its own Phase 
 
 ---
 
+## Phase R-Storefront Phase 1 — Manual MD Rebate + BDM Commission on Storefront Cash Sales (May 8, 2026)
+
+> **Status**: SHIPPED (this session, uncommitted on dev). Healthcheck **36/36 PASS** — `node backend/scripts/healthcheckStorefrontRebateWiring.js`. Vite ✓ 14.24s.
+>
+> **Why now**: User direction May 8, 2026 — *"this is for store front that needs a paper trail not for BIR purposes. the most important thing rebate for the MD for the customer, commission for BDM even the payment is CASH or Petty Cash."* Storefront cash sales (`CASH_RECEIPT` + `SERVICE_INVOICE` routed through `petty_cash_fund`) bypass AR — `arEngine.js:16` excludes `petty_cash_fund_id != null` — so the existing Collection-side rebate engine never fires for them. Walk-in customers aren't tied to a specific MD, so the matrix-walking `rebateAccrualEngine` (dormant pending VIP-1.D) can't auto-attribute. Manual proxy-entry fallback closes the gap.
+
+### Routing summary (the gap this fixes)
+
+| `sale_type` | `petty_cash_fund_id` | Hits AR? | Settled by Collection? | Pre-Phase R-Storefront rebate? | After Phase 1? |
+|---|---|---|---|---|---|
+| `CSI` | n/a | yes | yes | ✅ via Collection bridge | unchanged |
+| `SERVICE_INVOICE` | null (credit) | yes | yes | ✅ via Collection bridge | unchanged |
+| `SERVICE_INVOICE` | set (cash to fund) | **no** | no | ✗ | ✅ via manual proxy entry |
+| `CASH_RECEIPT` | null | yes | yes | ✅ via Collection bridge (atypical) | unchanged |
+| `CASH_RECEIPT` | set (cash to fund) | **no** | no | ✗ | ✅ via manual proxy entry |
+
+### What changed
+
+**Schema (`SalesLine`, additive — no breaking changes)**
+
+| Field | Type | Notes |
+|---|---|---|
+| `lineItemSchema.partner_tags[]` | `[partnerTagSchema]` | Per-line MD/partner attribution. Each tag: `{ doctor_id, doctor_name, role, rebate_pct, rebate_amount, calculation_mode='STOREFRONT_LINE_NET' }`. Used for CSI/CASH_RECEIPT (line-bearing sales). |
+| `salesLineSchema.partner_tags[]` | `[partnerTagSchema]` | Top-level — used only by `SERVICE_INVOICE` (no line items). |
+| `commission_pct` | Number, default 0 | BDM commission rate (top-level, matches Collection `settled_csis[].commission_rate` pattern). |
+| `commission_amount` | Number, default 0 | Computed in pre-save = `total_net_of_vat × commission_pct/100`. |
+| `total_partner_rebates` | Number, default 0 | Sum across all `line_items[].partner_tags[].rebate_amount` + top-level (SERVICE_INVOICE). |
+| `partner_rebate_entry_mode` | enum `[MANUAL_PROXY, null]`, default null | Stamped to `MANUAL_PROXY` when proxy attaches attribution. |
+| `proxy_rebate_entered_by` | ObjectId ref User | Audit. |
+| `proxy_rebate_entered_at` | Date | Audit. |
+| `proxy_rebate_edit_history` | Mixed[] | Append-only — every edit pushes `{ user_id, user_role, user_name, at, action: 'CREATE'|'UPDATE', pre_snapshot }`. |
+
+**Pre-save calc (`SalesLine.js`)**
+
+- Reads `Settings.MAX_MD_REBATE_PCT` (default 25, lookup-driven via Settings singleton — same source as `MdProductRebate` gate-3).
+- `SERVICE_INVOICE` branch: top-level `partner_tags[].rebate_amount = total_net_of_vat × rebate_pct/100`. `commission_amount = total_net_of_vat × commission_pct/100`.
+- Line-bearing branch (`CSI` / `CASH_RECEIPT`): per-line `partner_tags[].rebate_amount = line.net_of_vat × rebate_pct/100`. Sum to `total_partner_rebates`. Commission unchanged (top-level on sale).
+- Defense-in-depth clamp: any `rebate_pct > MAX_MD_REBATE_PCT` is silently clamped (the proxy-entry endpoint validates first with a clear 422 error; clamp catches direct-save bypasses).
+
+**Lookups (Rule #3 — subscribers tune via Control Center → Lookup Tables)**
+
+| Category | Code | Default | Purpose |
+|---|---|---|---|
+| `RolePerms` | `SALES__PROXY_REBATE_ENTRY` | metadata `{ module: sales, key: proxy_rebate_entry, sort_order: 7 }` | Sub-perm definition. Tick on Access Template to grant. |
+| `PROXY_ENTRY_ROLES` | `SALES_REBATE_ENTRY` | `roles: [admin, finance, president]` | Role allowlist for proxy attribution. President bypass automatic. Add `staff` to delegate to back-office BDM. |
+| `VALID_OWNER_ROLES` | `SALES_REBATE_ENTRY` | `roles: [staff]` | Owner-role allowlist. |
+| `STOREFRONT_REBATE_SCOPE` | `DEFAULT` | `{ sale_types: ['CASH_RECEIPT', 'SERVICE_INVOICE'], require_petty_cash_fund: true }` | Predicate. Endpoint refuses when `sale.sale_type ∉ sale_types` or `require_petty_cash_fund=true && !sale.petty_cash_fund_id`. Anti-double-count vs Collection bridge. |
+
+**Endpoint (`POST /api/erp/sales/:id/storefront-rebate-attribution`)**
+
+- Defined in `salesController.attachStorefrontRebate` ([backend/erp/controllers/salesController.js](backend/erp/controllers/salesController.js)).
+- Mounted in [backend/erp/routes/salesRoutes.js](backend/erp/routes/salesRoutes.js).
+- Body: `{ commission_pct, partner_tags?, line_items?: [{ _id, partner_tags }] }` — `partner_tags` for SERVICE_INVOICE, `line_items[].partner_tags` for CASH_RECEIPT.
+- Permission gate: `canProxyEntry(req, 'sales', { subKey: 'proxy_rebate_entry', lookupCode: 'SALES_REBATE_ENTRY' })` + `req.isPresident || req.isAdmin || req.isFinance`. Server returns 403 if denied.
+- Predicate gate: reads `STOREFRONT_REBATE_SCOPE.DEFAULT`, returns `STOREFRONT_REBATE_NOT_APPLICABLE` (422) for unsupported `sale_type` or `STOREFRONT_REBATE_REQUIRES_PETTY_CASH_FUND` (422) when fund is missing.
+- Status gate: rejects rows with `deletion_event_id` set or `status='DELETION_REQUESTED'`. POSTED is allowed (editable post-POSTED per user direction).
+- Validation: `rebate_pct ≤ MAX_MD_REBATE_PCT` (clear 422), `doctor_id` resolves to existing Doctor (clear 400). Denormalizes `doctor_name + role` for display.
+- Audit: stamps `partner_rebate_entry_mode='MANUAL_PROXY'` + `proxy_rebate_entered_by/at`, appends pre-snapshot to `proxy_rebate_edit_history`, writes `ErpAuditLog` row (`log_type='SALES_REBATE_ATTRIBUTION'`) for system-wide audit + Activity Monitor.
+
+**Frontend ([frontend/src/erp/components/StorefrontRebatePanel.jsx](frontend/src/erp/components/StorefrontRebatePanel.jsx))**
+
+- Mirrors the green panel from `CollectionSession.jsx` — Commission % dropdown (sourced from `Settings.COMMISSION_RATES`, same as Collection) + per-line OR top-level partner-tag picker (sourced from `Settings.PARTNER_REBATE_RATES`).
+- Wired into [SalesList.jsx](frontend/src/erp/pages/SalesList.jsx) detail modal as a "🩺 Attach MD Rebate / BDM Commission" button beneath the Received CSI block.
+- Renders only when `sale.sale_type ∈ ['CASH_RECEIPT', 'SERVICE_INVOICE']` AND `sale.petty_cash_fund_id` AND `!sale.deletion_event_id` AND `sale.status !== 'DELETION_REQUESTED'` AND user is admin-tier (server enforces the real gate on save).
+- CRM doctors loaded via `doctorService.getByBdm(sale.bdm_id)` — narrows the picker to MDs assigned to the BDM who closed the sale.
+
+**WorkflowGuide ([sales-list step](frontend/src/erp/components/WorkflowGuide.jsx))**
+
+New step explaining the storefront rebate flow + when it kicks in vs Collection-side bridge.
+
+### Out of scope this phase (Phase R-Storefront-2 — handoff for next session)
+
+- **`autoPrfRoutingForSale.js`** — POSTED → `RebatePayout(ACCRUING)` + `PrfCalf` + `CommissionPayout` (mirrors `autoPrfRouting.js` for Collections). Without it, `total_partner_rebates` and `commission_amount` are captured on the sale but never flow to a payment-instruction artifact. Phase R1 single-flow lock (Apr 29 2026) routes everything to `PrfCalf` — the storefront equivalent runs at period close, not real-time, because storefront cash already moved.
+- **Period-lock awareness** — Phase 1 endpoint has no period-lock check (data capture only, no JE side effect). Phase 2 routing engine must defer or reject `PrfCalf` writes for closed periods.
+- **SalesEntry-form integration** — Phase 1 only wires the post-POSTED edit drawer in SalesList modal. SalesEntry (entry-time) does not yet expose the panel; entry-time attribution can be added in Phase 2 when the data shape is proven.
+- **Playwright UI smoke + API smoke** — backend + Vite are green this phase, but live UI smoke against `/erp/sales` modal + API smoke (create CASH_RECEIPT → POST → attach rebate → read back) deferred to Phase 2 for cleaner ratification.
+
+### Files touched
+
+- [backend/erp/models/SalesLine.js](backend/erp/models/SalesLine.js) — partnerTagSchema + per-line + top-level partner_tags + commission/rebate audit fields + pre-save calc.
+- [backend/erp/controllers/salesController.js](backend/erp/controllers/salesController.js) — `attachStorefrontRebate` controller + `Doctor` import + `canProxyEntry` import.
+- [backend/erp/controllers/lookupGenericController.js](backend/erp/controllers/lookupGenericController.js) — `RolePerms.SALES__PROXY_REBATE_ENTRY` + `PROXY_ENTRY_ROLES.SALES_REBATE_ENTRY` + `VALID_OWNER_ROLES.SALES_REBATE_ENTRY` + `STOREFRONT_REBATE_SCOPE.DEFAULT`.
+- [backend/erp/routes/salesRoutes.js](backend/erp/routes/salesRoutes.js) — `POST /:id/storefront-rebate-attribution` mount.
+- [backend/scripts/healthcheckStorefrontRebateWiring.js](backend/scripts/healthcheckStorefrontRebateWiring.js) — 36-gate audit-grade healthcheck.
+- [frontend/src/erp/components/StorefrontRebatePanel.jsx](frontend/src/erp/components/StorefrontRebatePanel.jsx) — NEW component.
+- [frontend/src/erp/pages/SalesList.jsx](frontend/src/erp/pages/SalesList.jsx) — modal wiring + `showStorefrontRebate` state.
+- [frontend/src/erp/components/WorkflowGuide.jsx](frontend/src/erp/components/WorkflowGuide.jsx) — new sales-list step.
+
+---
+
 ## Phase A.4 — AR/AP Sub-Ledger Recon + JE-Asymmetry Repair (May 06, 2026)
 
 > **Status**: SHIPPED (this commit). Healthcheck **78/78 PASS** — `node backend/scripts/healthcheckArApRecon.js`.

@@ -25,6 +25,10 @@ import ConfirmModal from '../components/ConfirmModal';
 // office decides at attach-time). maxSelect=1 because each sale row owns
 // exactly one received-CSI slot — multi-pick would overwrite.
 import PendingCapturesPicker from '../components/PendingCapturesPicker';
+// Phase R-Storefront (May 8 2026) — manual MD rebate + BDM commission
+// attribution panel for storefront cash sales (CASH_RECEIPT + SERVICE_INVOICE
+// routed through petty_cash_fund). Opens in the detail modal post-POSTED.
+import StorefrontRebatePanel from '../components/StorefrontRebatePanel';
 
 import SelectField from '../../components/common/Select';
 import WorkflowGuide from '../components/WorkflowGuide';
@@ -246,6 +250,11 @@ export default function SalesList() {
   const [csiSearch, setCsiSearch] = useState('');
   const debouncedCsiSearch = useDebounce(csiSearch, 300);
   const [selectedSale, setSelectedSale] = useState(null);
+  // Phase R-Storefront — toggle the MD rebate / commission attribution panel
+  // inside the detail modal. Visible only when sale qualifies (CASH_RECEIPT
+  // or SERVICE_INVOICE routed through petty_cash_fund) and user is admin/
+  // finance/president (server enforces canProxyEntry on save).
+  const [showStorefrontRebate, setShowStorefrontRebate] = useState(false);
   const [loading, setLoading] = useState(false);
   const [reverseTarget, setReverseTarget] = useState(null);
   // Row id of the sale currently targeted by the Attach Received CSI modal.
@@ -785,11 +794,19 @@ export default function SalesList() {
 
           {/* Detail Modal */}
           {selectedSale && (
-            <div className="detail-modal" onClick={() => setSelectedSale(null)}>
+            <div className="detail-modal" onClick={() => { setSelectedSale(null); setShowStorefrontRebate(false); }}>
               <div className="detail-panel" onClick={e => e.stopPropagation()}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <h2>CSI# {selectedSale.doc_ref}</h2>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <button
+                      className="btn btn-sm"
+                      style={{ background: '#475569', color: '#fff' }}
+                      title="Open printable sales receipt in a new tab"
+                      onClick={() => window.open(`/api/erp/print/receipt/${selectedSale._id}`, '_blank')}
+                    >
+                      🖨 Print Receipt
+                    </button>
                     {(selectedSale.status === 'DRAFT' || selectedSale.status === 'ERROR') && (
                       <button
                         className="btn btn-sm"
@@ -798,13 +815,14 @@ export default function SalesList() {
                         onClick={() => {
                           const id = selectedSale._id;
                           setSelectedSale(null);
+                          setShowStorefrontRebate(false);
                           navigate(`/erp/sales/entry?edit=${id}`);
                         }}
                       >
                         Edit
                       </button>
                     )}
-                    <button className="btn" onClick={() => setSelectedSale(null)} style={{ background: 'none', fontSize: 20, padding: 4 }}>&times;</button>
+                    <button className="btn" onClick={() => { setSelectedSale(null); setShowStorefrontRebate(false); }} style={{ background: 'none', fontSize: 20, padding: 4 }}>&times;</button>
                   </div>
                 </div>
                 <p><strong>Hospital/Customer:</strong> {toTitleCase(selectedSale.hospital_id?.hospital_name) || selectedSale.customer_id?.customer_name || '-'}</p>
@@ -868,6 +886,41 @@ export default function SalesList() {
                   )}
                 </div>
 
+                {/* Phase R-Storefront (May 8 2026) — Manual MD rebate + BDM
+                    commission attribution. Visible only for storefront cash
+                    sales (CASH_RECEIPT / SERVICE_INVOICE routed through petty
+                    cash) and only to privileged users. Server enforces the
+                    proxy_rebate_entry sub-perm + STOREFRONT_REBATE_SCOPE
+                    predicate on save — the button just gates rendering. */}
+                {(['CASH_RECEIPT', 'SERVICE_INVOICE'].includes(selectedSale.sale_type)
+                  && !!selectedSale.petty_cash_fund_id
+                  && !selectedSale.deletion_event_id
+                  && selectedSale.status !== 'DELETION_REQUESTED'
+                  && isAdmin) && (
+                  <div style={{ marginTop: 12 }}>
+                    {!showStorefrontRebate ? (
+                      <button
+                        className="btn btn-sm"
+                        style={{ background: '#16a34a', color: '#fff' }}
+                        onClick={() => setShowStorefrontRebate(true)}
+                      >
+                        🩺 {selectedSale.partner_rebate_entry_mode === 'MANUAL_PROXY'
+                          ? `Edit MD Rebate / Commission (₱${(selectedSale.total_partner_rebates || 0).toFixed(2)} rebate · ${selectedSale.commission_pct || 0}% comm)`
+                          : 'Attach MD Rebate / BDM Commission'}
+                      </button>
+                    ) : (
+                      <StorefrontRebatePanel
+                        sale={selectedSale}
+                        onSaved={(updatedSale) => {
+                          setSelectedSale(updatedSale);
+                          setShowStorefrontRebate(false);
+                        }}
+                        onClose={() => setShowStorefrontRebate(false)}
+                      />
+                    )}
+                  </div>
+                )}
+
                 <div style={{ marginTop: 12 }}>
                   <RejectionBanner
                     row={selectedSale}
@@ -876,6 +929,7 @@ export default function SalesList() {
                     docLabel={selectedSale.invoice_number || selectedSale.csi_no}
                     onResubmit={(row) => {
                       setSelectedSale(null);
+                      setShowStorefrontRebate(false);
                       navigate(`/erp/sales/entry?edit=${row._id}`);
                     }}
                   />
