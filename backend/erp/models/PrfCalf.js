@@ -77,6 +77,11 @@ const prfCalfSchema = new mongoose.Schema({
   // Rebate details
   rebate_amount: { type: Number, default: 0 },                 // total rebate to pay this partner
   linked_collection_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Collection' },
+  // Phase R-Storefront Phase 2 (May 8 2026) — symmetry with linked_collection_id
+  // for storefront cash sales routed via autoPrfRoutingForSale. Storefront
+  // PRFs have linked_collection_id=null and linked_sales_line_id set instead.
+  // Reverse-lookups: "all PRFs for this sale" hits this index directly.
+  linked_sales_line_id: { type: mongoose.Schema.Types.ObjectId, ref: 'SalesLine' },
 
   // ═══════════════════════════════════════════
   // CALF fields — company fund advance + liquidation
@@ -210,6 +215,9 @@ prfCalfSchema.index({ entity_id: 1, bdm_id: 1, doc_type: 1, period: 1 });
 prfCalfSchema.index({ entity_id: 1, bdm_id: 1, status: 1 });
 prfCalfSchema.index({ doc_type: 1, status: 1 });
 prfCalfSchema.index({ linked_collection_id: 1 });
+// Phase R-Storefront Phase 2 — sparse so collection-sourced PRFs (the bulk)
+// don't bloat the index. Reverse-lookup "all PRFs for this storefront sale".
+prfCalfSchema.index({ linked_sales_line_id: 1 }, { sparse: true });
 // Phase A.4 — list-page badge filter for FAILED JE rows. Sparse so legacy rows
 // with je_status=null don't bloat the index.
 prfCalfSchema.index(
@@ -221,6 +229,12 @@ prfCalfSchema.index(
 prfCalfSchema.index(
   { entity_id: 1, doc_type: 1, period: 1, 'metadata.source_collection_id': 1, 'metadata.payee_id': 1 },
   { sparse: true, name: 'autoPrfRouting_idem' }
+);
+// Phase R-Storefront Phase 2 — autoPrfRoutingForSale idempotency. Same shape
+// but keyed on metadata.source_sales_line_id (storefront cash sale source).
+prfCalfSchema.index(
+  { entity_id: 1, doc_type: 1, period: 1, 'metadata.source_sales_line_id': 1, 'metadata.payee_id': 1 },
+  { sparse: true, name: 'autoPrfRoutingForSale_idem' }
 );
 
 module.exports = mongoose.model('PrfCalf', prfCalfSchema);

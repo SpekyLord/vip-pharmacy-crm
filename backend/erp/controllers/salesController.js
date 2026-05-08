@@ -268,6 +268,43 @@ const postSaleRow = async (row, userId, opts = {}) => {
       }
 
       // ───────────────────────────────────────────────────────────────────
+      // Phase R-Storefront Phase 2 (May 8 2026) — Auto-route storefront cash
+      // attribution → RebatePayout(ACCRUING) + CommissionPayout(ACCRUING) +
+      // DRAFT PRFs. Same atomicity contract as Collection.routePrfsForCollection
+      // (Phase VIP-1.B): if routing fails, the entire sale post rolls back —
+      // FIFO + JE + petty cash deposit + rebate audit ledger stay in lockstep.
+      // Predicate matches the lookup-driven STOREFRONT_REBATE_SCOPE.DEFAULT
+      // (CASH_RECEIPT/SERVICE_INVOICE routed through petty_cash_fund). Sales
+      // without attribution data still post, just with empty routing output.
+      // ───────────────────────────────────────────────────────────────────
+      if (
+        ['CASH_RECEIPT', 'SERVICE_INVOICE'].includes(saleType)
+        && row.petty_cash_fund_id
+      ) {
+        try {
+          const { routePrfsForSale } = require('../services/autoPrfRoutingForSale');
+          const routed = await routePrfsForSale({
+            salesLineId: row._id,
+            userId,
+            session,
+          });
+          if (routed.payeesProcessed > 0 || routed.commissionPayouts > 0) {
+            console.log(
+              `[autoPrfRoutingForSale] ${saleType} ${row.invoice_number || row.doc_ref || row._id}: ` +
+              `${routed.prfsCreated} new PRFs, ${routed.prfsExisted} existing, ` +
+              `${routed.rebatePayouts} rebate rows, ${routed.commissionPayouts} commission rows, ` +
+              `${routed.payeesProcessed} MD payees`
+            );
+          }
+        } catch (routeErr) {
+          // Storefront rebate routing failures abort the whole post — same
+          // posture as Collection. Subscribers can revisit after fixing the
+          // attribution and re-submitting the sale via the Approval Hub.
+          throw new Error(`autoPrfRoutingForSale failed for ${saleType} ${row.invoice_number || row.doc_ref || row._id}: ${routeErr.message}`);
+        }
+      }
+
+      // ───────────────────────────────────────────────────────────────────
       // Phase CSI-X1 — Hospital PO line decrement
       // ───────────────────────────────────────────────────────────────────
       // When the CSI is linked to a HospitalPO, walk line_items and
