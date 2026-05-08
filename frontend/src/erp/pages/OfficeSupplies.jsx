@@ -56,8 +56,14 @@ const mobileCSS = `
 `;
 
 // ---------- Item Modal ----------
-function ItemModal({ open, onClose, onSave, editItem, categories }) {
-  const [form, setForm] = useState({ item_name: '', item_code: '', category: 'PAPER', qty_on_hand: 0, reorder_level: 5, unit: 'pc', last_purchase_price: 0 });
+// `defaultCategory` matches the active category tab so a user who clicks "+ Add Item"
+// while filtered to e.g. INK_TONER doesn't accidentally save under PAPER and then
+// see "No items found" — the silent-misfile bug Gregg hit on May 8 2026.
+function ItemModal({ open, onClose, onSave, editItem, categories, defaultCategory }) {
+  const fallbackCategory = defaultCategory && defaultCategory !== 'ALL'
+    ? defaultCategory
+    : (categories.find(c => c !== 'ALL') || 'OTHER');
+  const [form, setForm] = useState({ item_name: '', item_code: '', category: fallbackCategory, qty_on_hand: 0, reorder_level: 5, unit: 'pc', last_purchase_price: 0 });
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -65,16 +71,16 @@ function ItemModal({ open, onClose, onSave, editItem, categories }) {
       setForm({
         item_name: editItem.item_name || '',
         item_code: editItem.item_code || '',
-        category: editItem.category || 'PAPER',
+        category: editItem.category || fallbackCategory,
         qty_on_hand: editItem.qty_on_hand || 0,
         reorder_level: editItem.reorder_level || 5,
         unit: editItem.unit || 'pc',
         last_purchase_price: editItem.last_purchase_price || 0
       });
     } else {
-      setForm({ item_name: '', item_code: '', category: 'PAPER', qty_on_hand: 0, reorder_level: 5, unit: 'pc', last_purchase_price: 0 });
+      setForm({ item_name: '', item_code: '', category: fallbackCategory, qty_on_hand: 0, reorder_level: 5, unit: 'pc', last_purchase_price: 0 });
     }
-  }, [editItem, open]);
+  }, [editItem, open, fallbackCategory]);
 
   const handleChange = (e) => setForm(f => ({ ...f, [e.target.name]: e.target.value }));
 
@@ -538,7 +544,7 @@ export default function OfficeSupplies() {
         </div>
       )}
 
-      <ItemModal open={showItemModal} onClose={() => { setShowItemModal(false); setEditItem(null); }} onSave={handleSaveItem} editItem={editItem} categories={CATEGORIES} />
+      <ItemModal open={showItemModal} onClose={() => { setShowItemModal(false); setEditItem(null); }} onSave={handleSaveItem} editItem={editItem} categories={CATEGORIES} defaultCategory={activeCategory} />
       <TxnModal open={showTxnModal} onClose={() => setShowTxnModal(false)} onSave={handleRecordTxn} supplies={supplies} TXN_TYPES={TXN_TYPES} />
       {reverseTarget && (
         <PresidentReverseModal
