@@ -257,6 +257,7 @@ When the consultant delivers the gap list, the concrete work gets its own Phase 
 | G1.3 | Employee Payslip `deduction_lines[]` Parity — shared sub-schema + Personal Gas for logbook-eligible employees + `/payroll/:id/breakdown` + lazy backfill for historical payslips | ✅ |
 | G1.4 | Employee DeductionSchedule wiring (INSTALLMENT N/M on Payslip) + Finance per-line add/verify/correct/reject UI + IncomeReport shared-schema convergence | ✅ |
 | S2 | Staff role rename: `employee`/`contractor`/`bdm` → `staff` (User.role + Lookup.metadata.roles). Migration script two-phase atomic. OwnerPicker filter made lookup-driven (Rule #3). ROLES.CONTRACTOR kept as deprecated alias during transition. | ✅ |
+| E1 | Doctor entity scoping: `Doctor.entity_ids[]` (auto-derived from assignees), referential consistency check on rebate-rule create (`assertPartnerInEntity`), entity-aware partner picker on `/erp/rebate-matrix` + `/erp/non-md-rebate-matrix`, [healthcheckDoctorEntityScope.js](backend/scripts/healthcheckDoctorEntityScope.js). Closes the Non-MD partner-picker entity leak ("Angelyn Tingocia surfaced regardless of working entity") + same latent bug on the MD picker. Migration `--apply` pending. | ✅ |
 
 ---
 

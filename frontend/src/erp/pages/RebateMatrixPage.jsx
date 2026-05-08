@@ -36,6 +36,12 @@ import doctorService from '../../services/doctorService';
 import useProducts from '../hooks/useProducts';
 import rebateCommissionService from '../../erp/services/rebateCommissionService';
 import api from '../../services/api';
+// Phase E1 (May 2026) — entity scoping on the MD partner picker. Although MD
+// partners are sparse on this cluster today (per CLAUDE.md note 22, prod has
+// 0 PARTNER MDs as of Apr 2026), the Doctor.find call had no entity scope and
+// would leak the moment a second-entity PARTNER MD existed. Matches the
+// NonMdRebateMatrixPage wiring.
+import useWorkingEntity from '../../hooks/useWorkingEntity';
 
 // Phase R1: ERP ProductMaster shape (brand_name + generic_name + dosage_strength)
 // per Rule #4 (full identifier, never just brand_name).
@@ -65,6 +71,8 @@ export default function RebateMatrixPage() {
   const [partnerDoctors, setPartnerDoctors] = useState([]);
   const [hospitals, setHospitals] = useState([]);
   const { products } = useProducts();
+  // Phase E1 — working-entity context for picker scoping + re-fetch on switch.
+  const { workingEntityId } = useWorkingEntity();
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -79,23 +87,26 @@ export default function RebateMatrixPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterActive]);
+    // Phase E1 — re-fetch on entity switch.
+  }, [filterActive, workingEntityId]);
 
-  // Phase R1: only MDs (clientType='MD') with PARTNER + agreement_date.
-  // Pharmacists, purchasers, administrators belong on the Non-MD form.
+  // Phase R1 + E1: only MDs (clientType='MD') with PARTNER + agreement_date,
+  // scoped to the working entity.
   const loadPartners = useCallback(async () => {
     try {
-      const res = await doctorService.getAll({ partnership_status: 'PARTNER', limit: 500 });
+      const params = { partnership_status: 'PARTNER', limit: 500 };
+      if (workingEntityId) params.entity_id = workingEntityId;
+      const res = await doctorService.getAll(params);
       const list = (res?.data || []).filter(d => isMd(d) && d.partner_agreement_date);
       setPartnerDoctors(list);
     } catch (err) {
       console.warn('Failed to load PARTNER MDs:', err.message);
       setPartnerDoctors([]);
     }
-  }, []);
+  }, [workingEntityId]);
 
-  // Phase R1: pre-load hospitals so the MD's hospitals[] array can be
-  // resolved to readable names in the dropdown.
+  // Phase R1 + E1: pre-load hospitals so the MD's hospitals[] array can be
+  // resolved to readable names. Re-fetch on entity switch.
   const loadHospitals = useCallback(async () => {
     try {
       const res = await api.get('/erp/hospitals', { params: { limit: 500 } });
@@ -104,7 +115,7 @@ export default function RebateMatrixPage() {
       console.warn('Failed to load hospitals:', err.message);
       setHospitals([]);
     }
-  }, []);
+  }, [workingEntityId]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadPartners(); }, [loadPartners]);

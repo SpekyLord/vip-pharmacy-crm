@@ -2009,3 +2009,87 @@ Re-uses `VIP_CLIENT_LIFECYCLE_ROLES.JOIN_COVERAGE_AUTO` + `JOIN_COVERAGE_APPROVA
 - Approval-mode "approve from inbox" inline button (admin currently grants by opening /admin/doctors → edit chip picker → save).
 
 Plan: `~/.claude/plans/phase-a5-canonical-vip-client.md` updated.
+
+---
+
+## Phase E1 — Doctor entity scoping (SaaS-readiness)  ✅ SHIPPED May 8 2026 (pending migration --apply + UI smoke)
+
+### Why
+
+Cross-entity entity leak observed by user on `/erp/non-md-rebate-matrix`: the partner picker showed PARTNER doctors regardless of working entity, because the underlying `Doctor.find` call had no entity filter for admin-like roles. Same latent leak existed on `/erp/rebate-matrix` (sparse MD PARTNER dataset hid it). Closes a hard SaaS-tenant-isolation gap before Year-2 spin-out (Rule #0d).
+
+### What shipped
+
+#### 1. `Doctor.entity_ids[]` field + auto-derivation  ([backend/models/Doctor.js](backend/models/Doctor.js))
+
+- New `entity_ids: [{ type: ObjectId, ref: 'Entity' }]` array — the canonical per-tenant scope key.
+- Pre-save hook: derives `entity_ids` from `assignedTo` BDMs as the union of their `User.entity_ids` (or `[User.entity_id]` fallback for legacy single-entity users). Triggers when `assignedTo` is modified OR when `entity_ids` is empty/missing on a doc that already has assignees (heals legacy rows on first save without forcing a one-shot migration). Tolerates User-fetch hiccups by leaving `entity_ids` untouched + `console.warn`-ing (the periodic healthcheck flags drift).
+- Pre-findOneAndUpdate hook: handles `$set` / `$addToSet` / `$pull` operators. Fetches the existing doc once, simulates the operator, recomputes the union. The `$addToSet` path is the one used by [messageInboxController.executeAction](backend/controllers/messageInboxController.js) join-coverage flow — without this hook that flow would silently leave `entity_ids` stale.
+- Two indexes: plain `{entity_ids: 1}` and compound `{entity_ids: 1, partnership_status: 1, isActive: 1}` (rebate-picker hot path).
+
+#### 2. Backfill migration  ([backend/scripts/migrateDoctorEntityIds.js](backend/scripts/migrateDoctorEntityIds.js))
+
+- Modes: dry-run (default) / `--apply` / `--include-merged` / `--limit=N`.
+- Reads via raw collection (bypasses schema casting); writes via raw `updateOne($set: { entity_ids })` (skips pre-save hook re-derivation since the script computes the same union).
+- Idempotent — `setsEqual` skip-on-no-op comparator.
+- Reports per-entity distribution + flags assignees missing entity coverage so the operator can sanity-check before flipping `--apply`.
+
+#### 3. Read-path filter on getAllDoctors  ([backend/controllers/doctorController.js](backend/controllers/doctorController.js))
+
+- Privileged callers (admin / finance / president) honour `?entity_id=<workingEntityId>` → `filter.entity_ids = ObjectId(X)`.
+- Privileged callers WITHOUT `?entity_id=` → no entity filter (Rule #21 — explicit opt-in, no silent self-ID fallback).
+- Non-privileged callers (BDMs) — no change. The existing `assignedTo: user._id` filter stays the source of truth so multi-entity BDMs don't lose access to their own assignees after entity-switch.
+- Invalid `entity_id` query value → 400 (rejects rather than silently dropping the filter — drift hygiene per Rule #21).
+- **Proxy hand-off note** (codified in the comment): when proxy mode is wired into `getAllDoctors` later, entity scope must follow the *proxy target's* entity, not the proxy user's. Mirrors Phase 32R-Transfer-Stock-Scope precedent in inventory queries.
+
+#### 4. Referential consistency on rebate-rule create
+
+Shared helper [backend/erp/utils/rebatePartnerEntityScope.js](backend/erp/utils/rebatePartnerEntityScope.js) → `assertPartnerInEntity(partnerId, entityId)`. Throws structured `ValidationError` with `code` ∈ {`PARTNER_NOT_FOUND`, `PARTNER_MERGED`, `PARTNER_NO_ENTITY_COVERAGE`, `PARTNER_ENTITY_MISMATCH`}. Wired into:
+
+- [nonMdPartnerRebateRuleController.create](backend/erp/controllers/nonMdPartnerRebateRuleController.js)
+- [mdProductRebateController.create](backend/erp/controllers/mdProductRebateController.js)
+- [mdCapitationRuleController.create](backend/erp/controllers/mdCapitationRuleController.js)
+
+Closes the ghost-rule footgun (admin in entity A picks a partner whose only BDM works in entity B → rule saved with right `entity_id` but rebate engine never fires because partner ↔ entity mismatch).
+
+#### 5. Frontend wiring + entity-aware refetch
+
+- Both [NonMdRebateMatrixPage.jsx](frontend/src/erp/pages/NonMdRebateMatrixPage.jsx) and [RebateMatrixPage.jsx](frontend/src/erp/pages/RebateMatrixPage.jsx) read `workingEntityId` via [useWorkingEntity](frontend/src/hooks/useWorkingEntity.js).
+- Picker calls forward `entity_id: workingEntityId` to `doctorService.getAll(...)`.
+- `load`, `loadPartners`, `loadHospitals` all gain `workingEntityId` in their `useCallback`/`useEffect` dep arrays → automatic refetch on entity switch.
+- [PageGuide](frontend/src/components/common/PageGuide.jsx) banners on both pages updated: new step 2 mentions entity scope; new closing step explains the `PARTNER_ENTITY_MISMATCH` 400 that admins may now hit.
+
+#### 6. Healthcheck  ([backend/scripts/healthcheckDoctorEntityScope.js](backend/scripts/healthcheckDoctorEntityScope.js))
+
+- 24/24 static gates pass (schema, hooks, migration, controller, rebate controllers, frontend pages, banner copy).
+- `--data` mode: connects to live cluster; verifies indexes are physically present, every non-merged doctor has an `entity_ids` field, and a 25-doctor sample matches the derived union (drift detection).
+
+### Subscription posture
+
+- `entity_ids` is the canonical scope key for Year-2 multi-tenant SaaS. Subscriber tenants narrow the field from "subsidiary entity" to "tenant slice" without code changes.
+- Lookup-driven role gates already exist (`REBATE_ROLES`, `MD_PARTNER_ROLES`) — Phase E1 doesn't introduce new lookup categories.
+- Hospitals are intentionally NOT entity-scoped (per [hospitalController.js:11](backend/erp/controllers/hospitalController.js) "globally shared" comment). This is a known SaaS gap deferred to Phase E2.
+
+### Out of scope (deferred to follow-on phases)
+
+- **Phase E2** — Hospital entity scoping (currently `entity_id` exists on the Hospital model but isn't used as a filter). Required before Year-2 SaaS spin-out.
+- **Phase E3** — Audit other 97 `Doctor.find` callsites across 43 files (visit / schedule / commLog / etc.) and apply selective entity scoping where appropriate. Today only `getAllDoctors` is wired.
+- **Phase E4** — Proxy-aware Doctor picker (BDM filing on behalf of another BDM in another entity). Pattern after Phase 32R-Transfer-Stock-Scope.
+- BDM-path entity scoping (currently unchanged — multi-entity BDM coverage preserved via `assignedTo: user._id`).
+
+### Pending operator steps
+
+```bash
+# Step 1 — dry-run from project root (parent worktree, where backend/.env lives)
+node .worktrees/phase-e1-doctor-entity-scope/backend/scripts/migrateDoctorEntityIds.js
+
+# Step 2 — review per-entity distribution; if it matches expectations, apply
+node .worktrees/phase-e1-doctor-entity-scope/backend/scripts/migrateDoctorEntityIds.js --apply
+
+# Step 3 — data-mode healthcheck
+node .worktrees/phase-e1-doctor-entity-scope/backend/scripts/healthcheckDoctorEntityScope.js --data
+
+# Step 4 — Playwright UI smoke as president on /erp/non-md-rebate-matrix
+#   - switch entities; partner picker re-fetches and shows different sets
+#   - try to add a rule with an entity-mismatched partner → 400 PARTNER_ENTITY_MISMATCH
+```

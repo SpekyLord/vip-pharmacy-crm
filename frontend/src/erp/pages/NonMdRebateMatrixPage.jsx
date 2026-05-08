@@ -33,6 +33,12 @@ import doctorService from '../../services/doctorService';
 import rebateCommissionService from '../../erp/services/rebateCommissionService';
 import api from '../../services/api';
 import { useLookupOptions } from '../hooks/useLookups';
+// Phase E1 (May 2026) — entity scoping on the partner picker. Without this hook
+// the partner dropdown leaked PARTNER doctors across every entity in the cluster
+// (Doctor.find had no entity filter for admin-like roles, see CLAUDE.md Phase E1
+// notes). We forward `workingEntityId` to `doctorService.getAll` and re-run the
+// fetch on every entity switch so a multi-entity admin sees the right set.
+import useWorkingEntity from '../../hooks/useWorkingEntity';
 
 const fmtPct = (n) => `${(Number(n || 0)).toFixed(2)}%`;
 
@@ -60,6 +66,13 @@ export default function NonMdRebateMatrixPage() {
   // useLookupOptions hook. Mirrors RebateMatrixPage / DoctorManagement / ClientAddModal pattern.
   // Adds 5-min entity-aware cache + auto-busts on entity switch — SaaS-tenant safe (Rule #0d).
   const { options: calcModes } = useLookupOptions('NONMD_REBATE_CALC_MODE');
+  // Phase E1 — working-entity context. The list re-fetches on switch (the
+  // backend list controller filters by req.entityId via tenantFilter; a switch
+  // changes X-Entity-Id, so the response shape changes too). The picker
+  // additionally forwards `entity_id` as a query param so the privileged
+  // doctor-fetch in getAllDoctors applies the entity_ids ceiling (Rule #21
+  // — privileged opt-in via explicit query param).
+  const { workingEntityId } = useWorkingEntity();
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
@@ -75,27 +88,36 @@ export default function NonMdRebateMatrixPage() {
       setRows(res?.data || []);
     } catch (e) { setErr(e?.response?.data?.message || e.message); }
     finally { setLoading(false); }
-  }, [filterActive]);
+    // Phase E1 — workingEntityId is a load dependency: switching entities must
+    // refetch even though the X-Entity-Id header change happens automatically,
+    // because React doesn't otherwise know the data is stale.
+  }, [filterActive, workingEntityId]);
 
   useEffect(() => { load(); }, [load]);
 
-  // Phase R1: only NON-MDs (clientType != 'MD') with PARTNER + agreement_date.
-  // MDs go on the Tier-A form. Partner discriminator mirrors the schema.
+  // Phase R1 + E1: only NON-MDs (clientType != 'MD') with PARTNER + agreement_date,
+  // scoped to the working entity (Phase E1) so the picker doesn't surface
+  // doctors covered only in sibling entities.
   useEffect(() => {
-    doctorService.getAll({ partnership_status: 'PARTNER', limit: 500 })
+    const params = { partnership_status: 'PARTNER', limit: 500 };
+    if (workingEntityId) params.entity_id = workingEntityId;
+    doctorService.getAll(params)
       .then(r => {
         const list = (r?.data || []).filter(d => !isMd(d) && d.partner_agreement_date);
         setPartners(list);
       })
       .catch(() => setPartners([]));
-  }, []);
+  }, [workingEntityId]);
 
-  // Hospitals fetch (calc-mode lookup is now handled by useLookupOptions hook above).
+  // Hospitals fetch — also entity-aware (the backend hospitalController scopes
+  // by warehouse_ids ↔ entity for non-admin; admin still sees all but the
+  // dependency makes the list a stable function of working-entity, which keeps
+  // the partner.hospitals[] join consistent after a switch).
   useEffect(() => {
     api.get('/erp/hospitals', { params: { limit: 500 } })
       .then(r => setHospitals(r?.data?.data || r?.data || []))
       .catch(() => setHospitals([]));
-  }, []);
+  }, [workingEntityId]);
 
   const labelForCalcMode = useCallback((code) => {
     const found = calcModes.find(m => m.code === code);

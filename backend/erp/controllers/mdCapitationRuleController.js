@@ -20,6 +20,11 @@ const { catchAsync, ForbiddenError } = require('../../middleware/errorHandler');
 const { isAdminLike } = require('../../constants/roles');
 const { userHasRebateRole } = require('../../utils/rebateCommissionAccess');
 const { getActiveTierAProductIds } = require('../services/matrixWalker');
+// Phase E1 (May 2026) — same referential consistency check used by MD + Non-MD
+// rebate controllers. Without this an admin in entity A could save a capitation
+// rule against an MD whose only BDM coverage is in entity B (ghost rule that
+// never accrues).
+const { assertPartnerInEntity } = require('../utils/rebatePartnerEntityScope');
 
 async function requireManage(req) {
   if (!isAdminLike(req.user?.role)) {
@@ -112,6 +117,20 @@ const create = catchAsync(async (req, res) => {
   const body = req.body || {};
   const entity_id = (req.isPresident || req.isAdmin || req.isFinance) && body.entity_id
     ? body.entity_id : req.entityId;
+
+  // Phase E1 — referential consistency: doctor's entity_ids must contain
+  // the rule's entity_id. Same shape used by MdProductRebate + NonMd controllers.
+  try {
+    await assertPartnerInEntity(body.doctor_id, entity_id);
+  } catch (err) {
+    return res.status(400).json({
+      success: false,
+      message: err.message,
+      code: err.code || 'PARTNER_ENTITY_VALIDATION_FAILED',
+      details: err.details,
+    });
+  }
+
   try {
     const row = await MdCapitationRule.create({ ...body, entity_id, created_by: req.user._id });
     res.status(201).json({ success: true, data: row });
