@@ -22,6 +22,7 @@ const ErpAuditLog = require('../models/ErpAuditLog');
 const XLSX = require('xlsx');
 const crypto = require('crypto');
 const { notifyDocumentPosted } = require('../services/erpNotificationService');
+const { widenFilterForProxy, assertResourceReadAccess, canProxyEntry } = require('../utils/resolveOwnerScope');
 
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -137,7 +138,15 @@ const updatePO = catchAsync(async (req, res) => {
 });
 
 const getPOs = catchAsync(async (req, res) => {
-  const filter = { ...req.tenantFilter };
+  // Phase 15.3-fix-3 (May 08 2026) — read-scope gate via PROXY_ENTRY_ROLES.PURCHASING.
+  // For staff with `purchasing.proxy_entry` sub-permission AND a role in the
+  // PROXY_ENTRY_ROLES.PURCHASING lookup, drop the bdm_id constraint so the list
+  // matches what the print endpoint already permits via assertResourceReadAccess.
+  // For staff WITHOUT proxy, the bdm_id constraint stays — they still see only
+  // their own POs (current behavior). Admin/finance/president are unaffected
+  // (their tenantFilter never had bdm_id to drop).
+  const scope = await widenFilterForProxy(req, 'purchasing', { subKey: 'proxy_entry' });
+  const filter = { ...scope };
   if (req.query.status) {
     const statuses = req.query.status.split(',').map(s => s.trim()).filter(Boolean);
     filter.status = statuses.length === 1 ? statuses[0] : { $in: statuses };
@@ -164,11 +173,26 @@ const getPOs = catchAsync(async (req, res) => {
     PurchaseOrder.countDocuments(filter)
   ]);
 
-  res.json({ success: true, data, pagination: { page, limit, total, pages: Math.ceil(total / limit) } });
+  // Surface the active read-scope so the frontend can render an honest banner
+  // (no silent broadening). 'ENTITY' = sees all POs in working entity (admin /
+  // finance / president / proxy-eligible staff). 'OWN' = sees only own POs.
+  const proxyDecision = await canProxyEntry(req, 'purchasing', { subKey: 'proxy_entry' });
+  const scopeMode = (req.isAdmin || req.isFinance || req.isPresident || proxyDecision.canProxy) ? 'ENTITY' : 'OWN';
+  res.json({
+    success: true,
+    data,
+    pagination: { page, limit, total, pages: Math.ceil(total / limit) },
+    meta: { scope: scopeMode, can_proxy: proxyDecision.canProxy }
+  });
 });
 
 const getPOById = catchAsync(async (req, res) => {
-  const po = await PurchaseOrder.findOne({ _id: req.params.id, ...req.tenantFilter })
+  // Phase 15.3-fix-3 (May 08 2026) — resource-first read with assertResourceReadAccess.
+  // Matches the print endpoint pattern (printController.getPurchaseOrderHtml). A
+  // staff with PROXY_ENTRY_ROLES.PURCHASING + purchasing.proxy_entry sub-perm
+  // can drill into any PO at their working entity; otherwise ownership-bound.
+  // eslint-disable-next-line vip-tenant/require-entity-filter -- resource-first read; entity gate enforced by assertResourceReadAccess on po.entity_id
+  const po = await PurchaseOrder.findById(req.params.id)
     .populate('vendor_id', 'vendor_name vendor_code tin address payment_terms_days vat_status')
     .populate('warehouse_id', 'warehouse_code warehouse_name location contact_person contact_phone')
     .populate('approved_by', 'firstName lastName')
@@ -177,13 +201,20 @@ const getPOById = catchAsync(async (req, res) => {
     .lean();
   if (!po) return res.status(404).json({ success: false, message: 'Purchase order not found' });
 
+  await assertResourceReadAccess(req, { entity_id: po.entity_id, bdm_id: po.bdm_id }, {
+    moduleKey: 'purchasing',
+    subKey: 'proxy_entry',
+    resourceLabel: 'purchase order',
+  });
+
   // Cross-document references: linked supplier invoices and GRNs
+  // (entity scope reuses po.entity_id — same-entity-safe by construction)
   const GrnEntry = require('../models/GrnEntry');
   const [linked_invoices, linked_grns] = await Promise.all([
-    SupplierInvoice.find({ po_id: po._id, entity_id: req.entityId })
+    SupplierInvoice.find({ po_id: po._id, entity_id: po.entity_id })
       .select('invoice_ref invoice_date status total_amount match_status payment_status')
       .lean(),
-    GrnEntry.find({ po_id: po._id, entity_id: req.entityId })
+    GrnEntry.find({ po_id: po._id, entity_id: po.entity_id })
       .select('grn_date status line_items reviewed_at reviewed_by')
       .populate('reviewed_by', 'name')
       .lean()
@@ -616,7 +647,10 @@ const paymentHistory = catchAsync(async (req, res) => {
 
 // ═══ Export Purchase Orders (Excel) ═══
 const exportPOs = catchAsync(async (req, res) => {
-  const filter = { ...req.tenantFilter };
+  // Phase 15.3-fix-3 — same widening as getPOs so the export matches what the
+  // user sees on the list (no silent broadening / narrowing across the two).
+  const scope = await widenFilterForProxy(req, 'purchasing', { subKey: 'proxy_entry' });
+  const filter = { ...scope };
   if (req.query.warehouse_id) filter.warehouse_id = req.query.warehouse_id;
   const pos = await PurchaseOrder.find(filter)
     .populate('vendor_id', 'vendor_name vendor_code')

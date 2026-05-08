@@ -87,6 +87,9 @@ export default function PurchaseOrders() {
   const [pos, setPOs] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0 });
+  // Phase 15.3-fix-3 — server-reported read scope so the banner reflects what
+  // the backend actually applied (avoids "I see 0 POs but I think I should see N").
+  const [scopeMeta, setScopeMeta] = useState({ scope: null, can_proxy: false });
   const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
   const [vendorFilter, setVendorFilter] = useState('');
@@ -172,6 +175,7 @@ export default function PurchaseOrders() {
       const res = await api.listPOs(params);
       setPOs(res?.data || []);
       setPagination(res?.pagination || { page, limit: 20, total: 0 });
+      setScopeMeta(res?.meta || { scope: null, can_proxy: false });
     } catch (err) { showError(err, 'Could not load purchase orders'); }
     setLoading(false);
   }, [statusFilter, warehouseId, vendorFilter, dateFrom, dateTo]); // eslint-disable-line react-hooks/exhaustive-deps
