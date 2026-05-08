@@ -1191,6 +1191,20 @@ export default function SalesEntry() {
           {/* Phase 18: Service Invoice Form (no line items — description + total) */}
           {saleType === 'SERVICE_INVOICE' && (
             <div className="service-form">
+              {/* Phase R-Storefront Phase 2 (May 8 2026) — info note for storefront
+                  cash flows. The MD rebate / BDM commission attribution UI lives
+                  on the Sales List modal (post-POSTED) so the sale already has
+                  an _id and POSTED status when admin attaches MDs after the
+                  walk-in MD is identified. Real-time routing on POST + period-
+                  close sweep ensure PRFs are generated either way. */}
+              {serviceForm.payment_mode === 'CASH' && serviceForm.petty_cash_fund_id && (
+                <div style={{
+                  background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 6,
+                  padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#14532d'
+                }}>
+                  🩺 <strong>Storefront cash sale</strong> — to attribute MD rebate or BDM commission, save and post this Service Invoice first, then click the row in <strong>Sales List</strong> → <strong>🩺 Attach MD Rebate / BDM Commission</strong>. Editable post-POSTED.
+                </div>
+              )}
               <div className="service-grid">
                 <div>
                   <label>Customer / Hospital</label>
@@ -1363,6 +1377,21 @@ export default function SalesEntry() {
                 <option value="">No fund (AR only)</option>
                 {pettyCashFunds.map(f => <option key={f._id} value={f._id}>{f.fund_code} — {f.fund_name}</option>)}
               </SelectField>
+            </div>
+          )}
+
+          {/* Phase R-Storefront Phase 2 (May 8 2026) — info note for storefront
+              cash sales (CASH_RECEIPT routed through petty_cash_fund). Per-line
+              MD attribution + BDM commission % live on Sales List → row click →
+              "🩺 Attach MD Rebate / BDM Commission" so admin can attach MDs
+              after the walk-in MD is identified, without blocking the sale.
+              Real-time routing on POST + period-close sweep keep PRFs in sync. */}
+          {saleType === 'CASH_RECEIPT' && cashReceiptFundId && (
+            <div style={{
+              background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 6,
+              padding: '8px 12px', marginBottom: 12, fontSize: 12, color: '#14532d'
+            }}>
+              🩺 <strong>Storefront cash sale</strong> — to attribute MD rebate (per line) or BDM commission, save and post these rows first, then click the row in <strong>Sales List</strong> → <strong>🩺 Attach MD Rebate / BDM Commission</strong>. Editable post-POSTED.
             </div>
           )}
 

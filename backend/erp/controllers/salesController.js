@@ -143,6 +143,33 @@ const postSaleRow = async (row, userId, opts = {}) => {
             }, { session });
           }
         }
+
+        // Phase R-Storefront Phase 2 — SERVICE_INVOICE storefront rebate routing.
+        // Mirrors the CASH_RECEIPT routing block below; SERVICE_INVOICE early-
+        // returns from postSaleRow so we attach routing inside this branch too.
+        // OPENING_AR (also reaches here when source==='OPENING_AR') is skipped —
+        // historical pre-cutover rows never carry storefront attribution.
+        if (saleType === 'SERVICE_INVOICE' && row.petty_cash_fund_id) {
+          try {
+            const { routePrfsForSale } = require('../services/autoPrfRoutingForSale');
+            const routed = await routePrfsForSale({
+              salesLineId: row._id,
+              userId,
+              session,
+            });
+            if (routed.payeesProcessed > 0 || routed.commissionPayouts > 0) {
+              console.log(
+                `[autoPrfRoutingForSale] ${saleType} ${row.invoice_number || row.doc_ref || row._id}: ` +
+                `${routed.prfsCreated} new PRFs, ${routed.prfsExisted} existing, ` +
+                `${routed.rebatePayouts} rebate rows, ${routed.commissionPayouts} commission rows, ` +
+                `${routed.payeesProcessed} MD payees`
+              );
+            }
+          } catch (routeErr) {
+            throw new Error(`autoPrfRoutingForSale failed for ${saleType} ${row.invoice_number || row.doc_ref || row._id}: ${routeErr.message}`);
+          }
+        }
+
         return;
       }
 
@@ -1293,6 +1320,38 @@ const submitSales = catchAsync(async (req, res) => {
             await createAndPostJournal(row.entity_id, cogsData, { session });
           }
         }
+
+        // Phase R-Storefront Phase 2 — Auto-route storefront cash attribution
+        // → RebatePayout(ACCRUING) + CommissionPayout(ACCRUING) + DRAFT PRFs.
+        // Same atomicity as Collection.routePrfsForCollection (Phase VIP-1.B):
+        // failure aborts the whole batch — FIFO + JE + petty cash + rebate audit
+        // ledger stay in lockstep. Predicate matches lookup-driven
+        // STOREFRONT_REBATE_SCOPE.DEFAULT (CASH_RECEIPT/SERVICE_INVOICE routed
+        // through petty_cash_fund). Sales without partner_tags/commission still
+        // post; routing emits zero rows for them.
+        if (
+          ['CASH_RECEIPT', 'SERVICE_INVOICE'].includes(saleType)
+          && row.petty_cash_fund_id
+        ) {
+          try {
+            const { routePrfsForSale } = require('../services/autoPrfRoutingForSale');
+            const routed = await routePrfsForSale({
+              salesLineId: row._id,
+              userId: req.user._id,
+              session,
+            });
+            if (routed.payeesProcessed > 0 || routed.commissionPayouts > 0) {
+              console.log(
+                `[autoPrfRoutingForSale] (submit) ${saleType} ${row.invoice_number || row.doc_ref || row._id}: ` +
+                `${routed.prfsCreated} new PRFs, ${routed.prfsExisted} existing, ` +
+                `${routed.rebatePayouts} rebate rows, ${routed.commissionPayouts} commission rows, ` +
+                `${routed.payeesProcessed} MD payees`
+              );
+            }
+          } catch (routeErr) {
+            throw new Error(`autoPrfRoutingForSale failed for ${saleType} ${row.invoice_number || row.doc_ref || row._id}: ${routeErr.message}`);
+          }
+        }
       }
     });
 
@@ -2298,6 +2357,43 @@ const attachStorefrontRebate = catchAsync(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Cannot edit attribution on a row pending deletion approval' });
   }
 
+  // 3b. Phase R-Storefront Phase 2 — Period-lock guard. Phase 2 routes
+  //     POSTED storefront attributions to RebatePayout/CommissionPayout +
+  //     DRAFT PRFs (autoPrfRoutingForSale). Writing those into a closed
+  //     period would leak past close, so block edits to closed-period
+  //     storefront sales unless caller has accounting.reverse_posted (matches
+  //     Collection reopen pattern, RR 2-2014 audit-trail compliant).
+  //     Bypass: caller is president (pres always passes lookup gates) OR
+  //     caller has the reverse_posted sub-perm explicitly.
+  const { checkPeriodOpen, dateToPeriod } = require('../utils/periodLock');
+  const periodOfSale = dateToPeriod(sale.csi_date);
+  try {
+    await checkPeriodOpen(sale.entity_id, periodOfSale, { source: sale.source });
+  } catch (err) {
+    // Allow privileged reopen-style override: president (always), OR a caller
+    // with the accounting.reverse_posted sub-perm explicitly granted (same
+    // sub-perm Collection.reopen / president-reverse uses).
+    const subPerms = req.user?.erp_access?.sub_permissions || {};
+    const canBypass = req.isPresident || subPerms.accounting?.reverse_posted === true;
+    if (!canBypass) {
+      return res.status(err.statusCode || 403).json({
+        success: false,
+        code: 'PERIOD_LOCKED',
+        message: `${err.message} (Phase R-Storefront Phase 2: storefront attribution writes a PRF into the period of csi_date — closed periods need accounting.reverse_posted to bypass.)`
+      });
+    }
+    // Privileged bypass — log to audit so the override is auditable.
+    await ErpAuditLog.logChange({
+      entity_id: sale.entity_id,
+      bdm_id: sale.bdm_id,
+      log_type: 'PERIOD_LOCK_BYPASS',
+      target_ref: sale._id.toString(),
+      target_model: 'SalesLine',
+      changed_by: req.user._id,
+      note: `Storefront rebate attribution edit on locked period ${periodOfSale} — bypassed by ${req.user.role}`
+    }).catch(() => {});
+  }
+
   // 4. Predicate — STOREFRONT_REBATE_SCOPE.DEFAULT (lookup-driven, 60s cache TTL
   // not yet wired since this is per-request and storefront sales are not
   // high-volume). Without this gate, attaching attribution to a CSI on credit
@@ -2432,31 +2528,139 @@ const attachStorefrontRebate = catchAsync(async (req, res) => {
     pre_snapshot: preSnapshot,
   });
 
-  // 11. Save — pre-save hook recomputes commission_amount, per-line
-  //     rebate_amount, and total_partner_rebates from the updated inputs.
-  await sale.save();
+  // 11. Save + route inside a single Mongo transaction. If autoPrfRoutingForSale
+  //     fails, the attribution edit also rolls back — the audit ledger and
+  //     the PRF stay in lockstep (mirrors Collection POST atomicity contract).
+  //     For DRAFT sales the routing is a no-op (skipped on status check) — the
+  //     real POST-time routing in submitSales/postSaleRow will pick it up.
+  const session = await mongoose.startSession();
+  let routingResult = { rebatePayouts: 0, commissionPayouts: 0, prfsCreated: 0, prfsExisted: 0, payeesProcessed: 0, skipped: null };
+  try {
+    await session.withTransaction(async () => {
+      await sale.save({ session });
 
-  // 12. ErpAuditLog row for system-wide audit + Activity Monitor surfacing.
-  await ErpAuditLog.logChange({
-    entity_id: sale.entity_id,
-    bdm_id: sale.bdm_id,
-    log_type: 'SALES_REBATE_ATTRIBUTION',
-    target_ref: sale._id.toString(),
-    target_model: 'SalesLine',
-    field_changed: 'partner_tags + commission_pct',
-    old_value: JSON.stringify({
-      commission_pct: preSnapshot.commission_pct,
-      total_partner_rebates: preSnapshot.total_partner_rebates,
-    }),
-    new_value: JSON.stringify({
-      commission_pct: sale.commission_pct,
-      total_partner_rebates: sale.total_partner_rebates,
-    }),
-    changed_by: req.user._id,
-    note: `Storefront rebate attribution ${hadPriorAttribution ? 'updated' : 'created'} on ${sale.sale_type} ${sale.invoice_number || sale.doc_ref}: commission ${sale.commission_pct}% = ₱${sale.commission_amount}, partner rebates ₱${sale.total_partner_rebates}`,
+      // 12. ErpAuditLog row inside the txn so audit + save + routing roll
+      //     back together on routing failure. logChange() is `this.create(data)`
+      //     and doesn't accept a session option, so go through Model.create()
+      //     directly with the {session} option.
+      await ErpAuditLog.create([{
+        entity_id: sale.entity_id,
+        bdm_id: sale.bdm_id,
+        log_type: 'SALES_REBATE_ATTRIBUTION',
+        target_ref: sale._id.toString(),
+        target_model: 'SalesLine',
+        field_changed: 'partner_tags + commission_pct',
+        old_value: JSON.stringify({
+          commission_pct: preSnapshot.commission_pct,
+          total_partner_rebates: preSnapshot.total_partner_rebates,
+        }),
+        new_value: JSON.stringify({
+          commission_pct: sale.commission_pct,
+          total_partner_rebates: sale.total_partner_rebates,
+        }),
+        changed_by: req.user._id,
+        note: `Storefront rebate attribution ${hadPriorAttribution ? 'updated' : 'created'} on ${sale.sale_type} ${sale.invoice_number || sale.doc_ref}: commission ${sale.commission_pct}% = ₱${sale.commission_amount}, partner rebates ₱${sale.total_partner_rebates}`,
+      }], { session });
+
+      // 13. Phase R-Storefront Phase 2 — Route to PrfCalf + RebatePayout +
+      //     CommissionPayout. Only fires on POSTED sales (DRAFT routing is
+      //     deferred to submit-time). Idempotent — on edits, existing PRFs/
+      //     payouts are reused via metadata.source_sales_line_id. The Phase 1
+      //     pre-save hook recomputes commission_amount and total_partner_rebates
+      //     so the routed PRF reflects the latest inputs.
+      if (sale.status === 'POSTED') {
+        const { routePrfsForSale } = require('../services/autoPrfRoutingForSale');
+        routingResult = await routePrfsForSale({
+          salesLineId: sale._id,
+          userId: req.user._id,
+          session,
+        });
+      }
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  res.json({
+    success: true,
+    data: sale,
+    routing: routingResult,
   });
+});
 
-  res.json({ success: true, data: sale });
+/**
+ * Phase R-Storefront Phase 2 (May 8 2026) — Period-close batch sweep.
+ *
+ * Belt-and-suspenders pair to the real-time route inside postSaleRow/submitSales.
+ * Catches storefront sales whose attribution was attached or edited AFTER the
+ * initial POST (the editable-post-POSTED path) — admin runs this manually
+ * before period close to ensure all storefront rebate accruals + DRAFT PRFs
+ * are in place.
+ *
+ * Idempotent — re-running emits zero new rows on a clean period.
+ *
+ * Permission: president OR admin/finance with sales.proxy_rebate_entry sub-perm.
+ *   The same gate as attachStorefrontRebate — anyone authorized to attach
+ *   attribution is also authorized to run the batch sweep.
+ *
+ * Body: { period: "YYYY-MM" }
+ *
+ * Period-lock guard: rejects sweeps on a CLOSED/LOCKED period (autoPrfRoutingForSale
+ * throws PERIOD_LOCKED). Admin must reopen the period first or run the sweep
+ * BEFORE close. President can pre-emptively run a final sweep before locking.
+ */
+const storefrontRebateSweepHandler = catchAsync(async (req, res) => {
+  const { period } = req.body || {};
+  if (!period || !/^\d{4}-\d{2}$/.test(period)) {
+    return res.status(400).json({
+      success: false,
+      message: 'period (YYYY-MM) required'
+    });
+  }
+
+  // Permission gate — same as attachStorefrontRebate.
+  const { canProxy } = await canProxyEntry(req, 'sales', {
+    subKey: 'proxy_rebate_entry',
+    lookupCode: 'SALES_REBATE_ENTRY',
+  });
+  const privileged = req.isPresident || req.isAdmin || req.isFinance || canProxy;
+  if (!privileged) {
+    return res.status(403).json({
+      success: false,
+      message: 'Storefront rebate sweep denied. Ask admin to grant sales.proxy_rebate_entry sub-permission and add your role to PROXY_ENTRY_ROLES.SALES_REBATE_ENTRY.'
+    });
+  }
+
+  const { storefrontRebateSweep } = require('../services/autoPrfRoutingForSale');
+  try {
+    const result = await storefrontRebateSweep({
+      entityId: req.entityId,
+      period,
+      userId: req.user._id,
+    });
+
+    // Audit row — admin sweep runs are audit-worthy even if they emit zero rows.
+    await ErpAuditLog.logChange({
+      entity_id: req.entityId,
+      bdm_id: req.user._id,
+      log_type: 'STOREFRONT_REBATE_SWEEP',
+      target_ref: period,
+      target_model: 'Period',
+      changed_by: req.user._id,
+      note: `Storefront rebate sweep for ${period}: scanned ${result.scanned} sales, routed ${result.routed}, skipped ${result.skipped}`
+    }).catch(err => console.error('[storefrontRebateSweep] audit failed (non-fatal):', err.message));
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    if (err.code === 'PERIOD_LOCKED') {
+      return res.status(err.status || 400).json({
+        success: false,
+        code: 'PERIOD_LOCKED',
+        message: err.message,
+      });
+    }
+    throw err;
+  }
 });
 
 module.exports = {
@@ -2479,4 +2683,6 @@ module.exports = {
   getDraftsPendingCsi,
   // Phase R-Storefront — manual MD rebate + BDM commission attribution
   attachStorefrontRebate,
+  // Phase R-Storefront Phase 2 — period-close batch sweep
+  storefrontRebateSweepHandler,
 };

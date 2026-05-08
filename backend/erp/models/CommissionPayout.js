@@ -156,6 +156,11 @@ const commissionPayoutSchema = new mongoose.Schema(
 );
 
 // Idempotency: same (collection|order, line, payee, period) cannot accrue twice.
+//
+// IMPORTANT (May 8 2026 fix — Phase R-Storefront Phase 2 surfaced): Mongo Atlas
+// rejects `$ne` in partial filter expressions. Same fix as RebatePayout —
+// using `$in` of allowed statuses gets the index created and idempotency
+// actually enforced on the live cluster.
 commissionPayoutSchema.index(
   {
     entity_id: 1,
@@ -168,7 +173,7 @@ commissionPayoutSchema.index(
   },
   {
     unique: true,
-    partialFilterExpression: { status: { $ne: 'VOIDED' } },
+    partialFilterExpression: { status: { $in: ['ACCRUING', 'READY_TO_PAY', 'PAID'] } },
   }
 );
 

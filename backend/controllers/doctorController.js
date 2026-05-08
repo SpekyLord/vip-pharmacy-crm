@@ -201,6 +201,46 @@ const getAllDoctors = catchAsync(async (req, res) => {
   const regionFilter = getRegionFilter(req.user);
   const filter = { isActive: true, ...regionFilter };
 
+  // ── Phase E1 (May 2026) — entity scoping (SaaS-readiness) ────────────────
+  //
+  // Privileged callers (admin/finance/president) can pass `?entity_id=X` to
+  // narrow the partner picker to ONE entity. This is the opt-in scope per
+  // Rule #21: absent the param, the privileged caller sees everything (no
+  // silent self-ID fallback). The rebate matrix pages on the frontend forward
+  // the working entity from EntityContext as `?entity_id=<workingEntityId>`
+  // so the picker doesn't leak doctors from sibling entities (the entity-leak
+  // bug Phase E1 was created to fix).
+  //
+  // For BDMs (non-privileged) the existing assignedTo: user._id filter via
+  // getRegionFilter is the source of truth — entity_ids is NOT layered on top
+  // because a multi-entity BDM may legitimately be the assignee of a doctor
+  // whose entity_ids does not include their currently-active working entity
+  // (e.g. they were assigned the doctor when working in entity B, then
+  // entity-switched to A but still need read access). Imposing entity_ids on
+  // the BDM path would silently hide their own assignments.
+  //
+  // Proxy hand-off note: when a future phase wires proxy mode into
+  // getAllDoctors (BDM filing on behalf of another BDM), the entity scope
+  // must follow the PROXY TARGET's entity (not the proxy user's), mirroring
+  // the Phase 32R-Transfer-Stock-Scope pattern in inventory queries. This
+  // controller does not have proxy support today, so the gate below stays
+  // privileged-only.
+  if (req.query.entity_id && (req.isPresident || req.isAdmin || req.isFinance)) {
+    if (mongoose.Types.ObjectId.isValid(req.query.entity_id)) {
+      filter.entity_ids = new mongoose.Types.ObjectId(req.query.entity_id);
+    } else {
+      // Reject invalid input rather than silently dropping the filter — drift
+      // would let the picker leak by accident. Mirrors Rule #21 hygiene.
+      return res.status(400).json({
+        success: false,
+        message: 'entity_id must be a valid ObjectId',
+      });
+    }
+  }
+  // Phase E1 — `entity_ids` filter is intentionally never applied automatically
+  // for non-privileged callers; the existing role-based access filter is
+  // sufficient and avoids breaking multi-entity BDM coverage.
+
   // Filter by visit frequency
   if (req.query.visitFrequency && [2, 4].includes(parseInt(req.query.visitFrequency))) {
     filter.visitFrequency = parseInt(req.query.visitFrequency);

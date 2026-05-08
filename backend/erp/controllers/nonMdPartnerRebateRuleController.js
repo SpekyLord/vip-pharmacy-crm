@@ -18,6 +18,10 @@ const Doctor = require('../../models/Doctor');
 const { catchAsync, ForbiddenError } = require('../../middleware/errorHandler');
 const { isAdminLike } = require('../../constants/roles');
 const { userHasRebateRole } = require('../../utils/rebateCommissionAccess');
+// Phase E1 (May 2026) — referential consistency check: partner.entity_ids must
+// contain rule.entity_id. Closes the cross-entity ghost-rule footgun (admin
+// in entity A picks a partner only covered in entity B → rule never fires).
+const { assertPartnerInEntity } = require('../utils/rebatePartnerEntityScope');
 
 async function requireManage(req) {
   if (!isAdminLike(req.user?.role)) {
@@ -88,6 +92,27 @@ const create = catchAsync(async (req, res) => {
   const body = req.body || {};
   const entity_id = (req.isPresident || req.isAdmin || req.isFinance) && body.entity_id
     ? body.entity_id : req.entityId;
+
+  // Phase E1 — referential consistency check (partner ↔ entity).
+  // Throws ValidationError with structured `code` so the frontend modal can
+  // surface a precise error message ("This partner has no BDM coverage in
+  // your working entity"). Skipping the check would let an admin in entity
+  // A save a rule against a partner whose only BDM works in entity B — the
+  // rule would be saved with the right entity_id but the rebate engine
+  // would never fire (Collection.entity_id ↔ rule.entity_id matches but
+  // partner.entity_ids does not include rule.entity_id, so this is a
+  // ghost rule that wastes admin time and is hard to diagnose later).
+  try {
+    await assertPartnerInEntity(body.partner_id, entity_id);
+  } catch (err) {
+    return res.status(400).json({
+      success: false,
+      message: err.message,
+      code: err.code || 'PARTNER_ENTITY_VALIDATION_FAILED',
+      details: err.details,
+    });
+  }
+
   try {
     const row = await NonMdPartnerRebateRule.create({ ...body, entity_id, created_by: req.user._id });
     res.status(201).json({ success: true, data: row });

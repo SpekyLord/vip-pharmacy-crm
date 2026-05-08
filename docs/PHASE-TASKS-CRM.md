@@ -2009,3 +2009,131 @@ Re-uses `VIP_CLIENT_LIFECYCLE_ROLES.JOIN_COVERAGE_AUTO` + `JOIN_COVERAGE_APPROVA
 - Approval-mode "approve from inbox" inline button (admin currently grants by opening /admin/doctors → edit chip picker → save).
 
 Plan: `~/.claude/plans/phase-a5-canonical-vip-client.md` updated.
+
+---
+
+## Phase E1 — Doctor entity scoping (SaaS-readiness)  ✅ SHIPPED May 8 2026 (pending migration --apply + UI smoke)
+
+### Why
+
+Cross-entity entity leak observed by user on `/erp/non-md-rebate-matrix`: the partner picker showed PARTNER doctors regardless of working entity, because the underlying `Doctor.find` call had no entity filter for admin-like roles. Same latent leak existed on `/erp/rebate-matrix` (sparse MD PARTNER dataset hid it). Closes a hard SaaS-tenant-isolation gap before Year-2 spin-out (Rule #0d).
+
+### What shipped
+
+#### 1. `Doctor.entity_ids[]` field + auto-derivation  ([backend/models/Doctor.js](backend/models/Doctor.js))
+
+- New `entity_ids: [{ type: ObjectId, ref: 'Entity' }]` array — the canonical per-tenant scope key.
+- Pre-save hook: derives `entity_ids` from `assignedTo` BDMs as the union of their `User.entity_ids` (or `[User.entity_id]` fallback for legacy single-entity users). Triggers when `assignedTo` is modified OR when `entity_ids` is empty/missing on a doc that already has assignees (heals legacy rows on first save without forcing a one-shot migration). Tolerates User-fetch hiccups by leaving `entity_ids` untouched + `console.warn`-ing (the periodic healthcheck flags drift).
+- Pre-findOneAndUpdate hook: handles `$set` / `$addToSet` / `$pull` operators. Fetches the existing doc once, simulates the operator, recomputes the union. The `$addToSet` path is the one used by [messageInboxController.executeAction](backend/controllers/messageInboxController.js) join-coverage flow — without this hook that flow would silently leave `entity_ids` stale.
+- Two indexes: plain `{entity_ids: 1}` and compound `{entity_ids: 1, partnership_status: 1, isActive: 1}` (rebate-picker hot path).
+
+#### 2. Backfill migration  ([backend/scripts/migrateDoctorEntityIds.js](backend/scripts/migrateDoctorEntityIds.js))
+
+- Modes: dry-run (default) / `--apply` / `--include-merged` / `--limit=N`.
+- Reads via raw collection (bypasses schema casting); writes via raw `updateOne($set: { entity_ids })` (skips pre-save hook re-derivation since the script computes the same union).
+- Idempotent — `setsEqual` skip-on-no-op comparator.
+- Reports per-entity distribution + flags assignees missing entity coverage so the operator can sanity-check before flipping `--apply`.
+
+#### 3. Read-path filter on getAllDoctors  ([backend/controllers/doctorController.js](backend/controllers/doctorController.js))
+
+- Privileged callers (admin / finance / president) honour `?entity_id=<workingEntityId>` → `filter.entity_ids = ObjectId(X)`.
+- Privileged callers WITHOUT `?entity_id=` → no entity filter (Rule #21 — explicit opt-in, no silent self-ID fallback).
+- Non-privileged callers (BDMs) — no change. The existing `assignedTo: user._id` filter stays the source of truth so multi-entity BDMs don't lose access to their own assignees after entity-switch.
+- Invalid `entity_id` query value → 400 (rejects rather than silently dropping the filter — drift hygiene per Rule #21).
+- **Proxy hand-off note** (codified in the comment): when proxy mode is wired into `getAllDoctors` later, entity scope must follow the *proxy target's* entity, not the proxy user's. Mirrors Phase 32R-Transfer-Stock-Scope precedent in inventory queries.
+
+#### 4. Referential consistency on rebate-rule create
+
+Shared helper [backend/erp/utils/rebatePartnerEntityScope.js](backend/erp/utils/rebatePartnerEntityScope.js) → `assertPartnerInEntity(partnerId, entityId)`. Throws structured `ValidationError` with `code` ∈ {`PARTNER_NOT_FOUND`, `PARTNER_MERGED`, `PARTNER_NO_ENTITY_COVERAGE`, `PARTNER_ENTITY_MISMATCH`}. Wired into:
+
+- [nonMdPartnerRebateRuleController.create](backend/erp/controllers/nonMdPartnerRebateRuleController.js)
+- [mdProductRebateController.create](backend/erp/controllers/mdProductRebateController.js)
+- [mdCapitationRuleController.create](backend/erp/controllers/mdCapitationRuleController.js)
+
+Closes the ghost-rule footgun (admin in entity A picks a partner whose only BDM works in entity B → rule saved with right `entity_id` but rebate engine never fires because partner ↔ entity mismatch).
+
+#### 5. Frontend wiring + entity-aware refetch
+
+- Both [NonMdRebateMatrixPage.jsx](frontend/src/erp/pages/NonMdRebateMatrixPage.jsx) and [RebateMatrixPage.jsx](frontend/src/erp/pages/RebateMatrixPage.jsx) read `workingEntityId` via [useWorkingEntity](frontend/src/hooks/useWorkingEntity.js).
+- Picker calls forward `entity_id: workingEntityId` to `doctorService.getAll(...)`.
+- `load`, `loadPartners`, `loadHospitals` all gain `workingEntityId` in their `useCallback`/`useEffect` dep arrays → automatic refetch on entity switch.
+- [PageGuide](frontend/src/components/common/PageGuide.jsx) banners on both pages updated: new step 2 mentions entity scope; new closing step explains the `PARTNER_ENTITY_MISMATCH` 400 that admins may now hit.
+
+#### 6. Healthcheck  ([backend/scripts/healthcheckDoctorEntityScope.js](backend/scripts/healthcheckDoctorEntityScope.js))
+
+- 24/24 static gates pass (schema, hooks, migration, controller, rebate controllers, frontend pages, banner copy).
+- `--data` mode: connects to live cluster; verifies indexes are physically present, every non-merged doctor has an `entity_ids` field, and a 25-doctor sample matches the derived union (drift detection).
+
+### Subscription posture
+
+- `entity_ids` is the canonical scope key for Year-2 multi-tenant SaaS. Subscriber tenants narrow the field from "subsidiary entity" to "tenant slice" without code changes.
+- Lookup-driven role gates already exist (`REBATE_ROLES`, `MD_PARTNER_ROLES`) — Phase E1 doesn't introduce new lookup categories.
+- Hospitals are intentionally globally shared as a master-data record — see "Phase E2 — REJECTED" below for the reasoning.
+
+### Phase E2 — REJECTED (decided May 8 2026)
+
+**E2 was originally scoped as "Hospital entity scoping."** That framing is wrong and has been rejected. Hospitals stay globally shared because:
+
+1. Regulatory identity is universal — one hospital has one FDA LTO, one TIN, one address. Splitting it per-subsidiary creates duplicate records that break BIR 2550Q consolidation, RA 9994 SC/PWD reporting (which references the hospital, not the seller), and any cross-entity reconciliation.
+2. All VIP subsidiaries (and future SaaS subscribers) are pharma B2B selling into the same hospital network. Forking the master data tenants the *sales relationship*, not the *hospital* — the wrong layer.
+3. Per-BDM hospital visibility is already entity-correct via [hospitalAccess.js `buildHospitalAccessFilter`](backend/erp/utils/hospitalAccess.js) (BDMs scope by `warehouse_ids ↔ entity`; admins intentionally see all because they coordinate across subsidiaries).
+
+**Same logic applies to Customer.** Pharma B2B customers (mostly hospitals + a few wholesale buyers) are shared master data. The only customer-scoping concern is **e-commerce B2C** at vippharmacy.online (Phase M3 — direct-consumer storefront) and SaaS subscriber storefronts (Phase M4) — those tenant-scope at a different layer (consumer accounts, not the master Customer record).
+
+**If per-tenant Hospital enrichment is ever needed** (e.g. each tenant's private notes / their own purchaser contact / their own MOA — distinct from the shared Hospital fields), the right pattern is a sub-document keyed by `tenant_id` on the existing Hospital, NOT a fork of the record. Capture as a future micro-phase only when a concrete need surfaces.
+
+### Phase E3 — Deferred (sweep ~5–15 admin-enumerator callsites)
+
+Audit + selectively scope the admin-facing Doctor enumerators (programController, supportTypeController, messageTemplateController, productAssignmentController, scorecardController, cockpitService — anything that lists Doctors for an admin to choose from). The other ~80 of the 97 callsites are either direct `findById` (already correct), BDM-scoped (already correct), or admin-cross-entity-by-design (merge service, reports, GDPR scripts). Estimated ~1 day when undertaken. Trigger: another user-reported leak OR before Year-2 SaaS spin-out, whichever comes first.
+
+### Phase E4 — Deferred (proxy-aware Doctor picker)
+
+BDM filing the rebate matrix on behalf of another BDM in another entity. Pattern after Phase 32R-Transfer-Stock-Scope inventory queries. Implementation is small (~½ day) but premature today — proxy mode is not on the rebate matrix surface in the next 30 days. The placeholder design is codified in the [getAllDoctors](backend/controllers/doctorController.js) comment so the next implementer doesn't have to re-derive it.
+
+### Phase TX — Territory Exclusivity (NEW — deferred, separate phase)
+
+**Concept:** when entity A (e.g. MG and CO) sells product P in territory T, entity B (e.g. VIP) cannot sell product P in territory T. This is a *business rule* layered on top of products, NOT entity scoping of master data.
+
+**New model — `ProductTerritoryAssignment`:**
+- `product_id` ref ProductMaster
+- `entity_id` ref Entity — who holds the rights
+- `territory_scope: { granularity: 'PROVINCE'|'LOCALITY'|'HOSPITAL'|'WAREHOUSE', province?, locality?, hospital_id?, warehouse_id? }`
+- `exclusivity_type: 'EXCLUSIVE' | 'PRIORITY' | 'NON_EXCLUSIVE'`
+- `effective_from / effective_to / agreement_doc_url / is_active`
+
+**Enforcement points:**
+1. `SalesEntry` create / submit — validate `(product_id, sale.hospital_id.locality, sale.entity_id)` is authorized. Reject `TERRITORY_VIOLATION` if another entity holds EXCLUSIVE.
+2. Inter-Entity Stock Transfer — block transferring product P to a warehouse in a territory reserved to another entity for P.
+3. Storefront listing sync (Phase M3) — only list product P on the active subsidiary's storefront in territories where they have rights.
+4. CRM Visit logging — soft warning (informational, not blocking) when a BDM logs a visit to discuss product P with an MD whose hospital is in another entity's reserved territory.
+5. Rebate matrix create — additional `assertProductTerritoryAuthorized` check parallel to Phase E1's `assertPartnerInEntity`.
+
+**UX surface:**
+- New admin page `/erp/territory-assignments` (matrix, lookup-driven `TERRITORY_GRANULARITY`, `EXCLUSIVITY_TYPES`, `TERRITORY_VIOLATION_ROLES`).
+- WorkflowGuide banner explaining EXCLUSIVE / PRIORITY / NON_EXCLUSIVE semantics.
+- Override path via Phase 29-style approval gate (admin/president can approve a one-off override with audit log entry — covers BDM transitions, joint visits, regulatory emergencies).
+
+**Effort estimate:** 3–5 days. New model + 5 enforcement points + admin page + banner + healthcheck + migration to seed initial assignments from current sales history.
+
+**SaaS readiness:** generalizes to subscriber-vs-subscriber and subscriber-vs-VIP territory exclusivity. `entity_id` becomes `tenant_id` without schema change.
+
+### Other Phase E1 follow-on notes
+
+- BDM-path entity scoping (currently unchanged — multi-entity BDM coverage preserved via `assignedTo: user._id`). Intentional, not a bug.
+
+### Pending operator steps
+
+```bash
+# Step 1 — dry-run from project root (parent worktree, where backend/.env lives)
+node .worktrees/phase-e1-doctor-entity-scope/backend/scripts/migrateDoctorEntityIds.js
+
+# Step 2 — review per-entity distribution; if it matches expectations, apply
+node .worktrees/phase-e1-doctor-entity-scope/backend/scripts/migrateDoctorEntityIds.js --apply
+
+# Step 3 — data-mode healthcheck
+node .worktrees/phase-e1-doctor-entity-scope/backend/scripts/healthcheckDoctorEntityScope.js --data
+
+# Step 4 — Playwright UI smoke as president on /erp/non-md-rebate-matrix
+#   - switch entities; partner picker re-fetches and shows different sets
+#   - try to add a rule with an entity-mismatched partner → 400 PARTNER_ENTITY_MISMATCH
+```
