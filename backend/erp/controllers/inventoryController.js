@@ -40,12 +40,13 @@ const getMyStock = catchAsync(async (req, res) => {
   // batches in /my-stock. Operating on those batches still requires the
   // matching capability-specific gate in the downstream route.
   const privileged = req.isAdmin || req.isFinance || req.isPresident;
-  const [{ canProxy: hasGrn }, { canProxy: hasBatch }, { canProxy: hasPc }] = await Promise.all([
+  const [{ canProxy: hasGrn }, { canProxy: hasBatch }, { canProxy: hasPc }, { canProxy: hasIst }] = await Promise.all([
     canProxyEntry(req, 'inventory', { subKey: 'grn_proxy_entry' }),
     canProxyEntry(req, 'inventory', { subKey: 'batch_metadata_proxy' }),
     canProxyEntry(req, 'inventory', { subKey: 'physical_count_proxy' }),
+    canProxyEntry(req, 'inventory', { subKey: 'internal_transfer_proxy' }),
   ]);
-  const hasProxy = hasGrn || hasBatch || hasPc;
+  const hasProxy = hasGrn || hasBatch || hasPc || hasIst;
   const widenScope = privileged || hasProxy;
   const bdmId = widenScope ? (req.query.bdm_id || null) : req.bdmId;
 
@@ -167,14 +168,30 @@ const getMyStock = catchAsync(async (req, res) => {
 /**
  * GET /batches/:productId — Available batches for a product
  * Sorted by expiry ASC (FIFO order). BDM-scoped.
+ *
+ * Phase 32R-Batch-Proxy-Scope (May 08 2026): scope-widening mirrors
+ * getMyStock so IST/IC proxy users see source-BDM batches. Without this,
+ * the IST modal's product dropdown (powered by getMyStock + proxy widening)
+ * shows stock that the batch dropdown (powered by getBatches without
+ * widening) treats as unowned → empty batch picker, transfer blocked.
+ * Honors any of: grn_proxy_entry, batch_metadata_proxy, physical_count_proxy,
+ * internal_transfer_proxy.
  */
 const getBatches = catchAsync(async (req, res) => {
-  const bdmId = (req.isAdmin || req.isFinance || req.isPresident)
-    ? (req.query.bdm_id || null)
-    : req.bdmId;
+  const privileged = req.isAdmin || req.isFinance || req.isPresident;
+  const [{ canProxy: hasGrn }, { canProxy: hasBatch }, { canProxy: hasPc }, { canProxy: hasIst }] = await Promise.all([
+    canProxyEntry(req, 'inventory', { subKey: 'grn_proxy_entry' }),
+    canProxyEntry(req, 'inventory', { subKey: 'batch_metadata_proxy' }),
+    canProxyEntry(req, 'inventory', { subKey: 'physical_count_proxy' }),
+    canProxyEntry(req, 'inventory', { subKey: 'internal_transfer_proxy' }),
+  ]);
+  const hasProxy = hasGrn || hasBatch || hasPc || hasIst;
+  const widenScope = privileged || hasProxy;
+  const bdmId = widenScope ? (req.query.bdm_id || null) : req.bdmId;
 
-  // Allow privileged users to query a different entity's stock (for IC transfers)
-  const entityId = (req.isAdmin || req.isFinance || req.isPresident) && req.query.entity_id
+  // Allow privileged users to query a different entity's stock (for IC transfers).
+  // Cross-entity scope stays admin/finance/president-only — proxy widens BDM scope only.
+  const entityId = privileged && req.query.entity_id
     ? req.query.entity_id
     : req.entityId;
 
