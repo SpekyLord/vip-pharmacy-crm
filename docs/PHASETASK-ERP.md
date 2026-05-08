@@ -12582,3 +12582,125 @@ Apr 29 Playwright UI smoke surfaced two 404s on every `/erp/non-md-rebate-matrix
 - modified: [frontend/src/erp/components/DocumentDetailPanel.jsx](frontend/src/erp/components/DocumentDetailPanel.jsx) — violet pill on INVENTORY + UNDERTAKING; structured Linked Undertaking badge on INVENTORY; truncated chip removed.
 - modified: [frontend/src/erp/components/WorkflowGuide.jsx](frontend/src/erp/components/WorkflowGuide.jsx) — `approval-manager` guide tip.
 - new: [backend/erp/scripts/healthcheckApprovalHubVisualParity.js](backend/erp/scripts/healthcheckApprovalHubVisualParity.js) — 16-check regression contract.
+
+## Phase SMER-CL — CommLog Per-Diem Inclusion (May 07 2026)
+
+**Status:** SHIPPED LOCALLY (uncommitted at the time of writing). Healthcheck **51/51 PASS** ([healthcheckSmerCrmBridgeUnion.js](backend/scripts/healthcheckSmerCrmBridgeUnion.js) — extended from 32 to 51 gates).
+
+### Goal
+
+BDMs putting in real outreach effort via Messenger / Viber / WhatsApp / Email / Google Chat earned **zero** SMER per-diem credit, despite uploading manual screenshot proof on `/bdm/comm-log`. The bridge counted only `Visit` (VIP Doctor) and `ClientVisit` (EXTRA Client) per Manila day — `CommunicationLog` was intentionally excluded. Phase O's `SCREENSHOT_DETECTED` 422 redirect (May 05) routes screenshot-based evidence here, so the existing Phase O guard creates the very gap this phase closes.
+
+Goal: count manual-source `CommunicationLog` rows toward the daily MD threshold when admin opts in, with the trust model **"admin is in the BDM group chats — fraud bounded by Messenger spot-check, not by hardcoded caps."**
+
+### Trust model (load-bearing — locked May 07 2026 by user direction)
+
+- **Admin (Gregg) is a member of the BDM group chats** BDMs use to coordinate with VIP Clients
+- BDMs cannot fabricate group-chat screenshots — admin sees the same chat in real-time
+- Audit is implicit; verification is one Messenger scroll away
+- **The screenshot itself is the per-diem credit handle** — no separate audit-clarity contract (the original handoff plan over-engineered this; user simplified to "I only need the screen shot upload in comm log for the per diem eligibility")
+- **No new schema fields** on `CommunicationLog`. The existing `photos` array (≥1 enforced for `source='manual'` at the model level), `doctor`/`client` FK, `direction`, and `contactedAt` are sufficient
+- **No daily cap by default** — admin spot-check is the guard; subscribers can opt into a cap via `comm_log_daily_cap` if they don't have admin-in-chat trust
+
+### Decisions (LOCKED via AskUserQuestion May 07 2026)
+
+| Question | Answer |
+|---|---|
+| MD attribution | 1 CommLog row = 1 MD credit (existing `doctor`/`client` FK) |
+| Per-day cap | None by default; lookup-tunable via `comm_log_daily_cap` |
+| Dedup with same-day Visit (same MD) | Yes, dedup at merge via `Set<string>` on `_id.toString()` (1 not 2) |
+| Late-log cutoff | Inherit Phase O's 14-day rule: `(createdAt - photos[0].capturedAt) ≤ 14d` |
+| Default lookup posture | VIP `BDM`/`ECOMMERCE_BDM`: **`include_comm_log=true`**. SaaS `DELIVERY_DRIVER` template: `false` |
+| Source filter | `comm_log_allowed_sources=['manual']` — `api`/`invite_reply`/`opt_out`/`system` excluded |
+| Direction filter | `comm_log_require_outbound=false` — group chats bidirectional |
+
+### Lookup contract (Rule #3) — extended `PERDIEM_RATES.<role>.metadata`
+
+Four NEW keys alongside the existing `include_extra_calls` (May 05 2026 / Phase G1.7):
+
+```jsonc
+{
+  "code": "BDM",
+  "metadata": {
+    "rate_php": 800,
+    "include_extra_calls": true,                  // existing — May 05
+    "include_comm_log": true,                     // NEW — VIP default ON; SaaS default OFF
+    "comm_log_daily_cap": null,                   // NEW — null = no cap (admin spot-check is the guard)
+    "comm_log_require_outbound": false,           // NEW — group chats bidirectional
+    "comm_log_allowed_sources": ["manual"]        // NEW — exclude api/invite_reply/opt_out/system
+  }
+}
+```
+
+Subscribers tune any of the four via Control Center → Lookup Tables → `PERDIEM_RATES.<role>` without code deploy. `insert_only_metadata: true` on the seed entry → admin edits survive future re-seeds.
+
+### Bridge change ([backend/erp/services/smerCrmBridge.js](backend/erp/services/smerCrmBridge.js))
+
+1. **NEW import**: `CommunicationLog` from `../../models/CommunicationLog`.
+2. **NEW helper `aggregateCommLogDaily(userObjectId, dateRange, opts)`** — mirrors `aggregateDailyByCollection` shape but:
+   - Groups by `contactedAt` (NOT `visitDate`)
+   - Returns separate `ids_doctor` / `ids_client` arrays (CommLog references either)
+   - Eligibility: `source ∈ allowedSources`, optional `direction='outbound'`, `photos.0` exists, AND `(createdAt - photos[0].capturedAt) ≤ 14d` (Phase O inheritance via `$expr`)
+3. **`getDailyMdCounts` extended** — third parallel aggregation in the existing `Promise.all`. Master-record fetch (Doctor/Client) extends to include CommLog IDs in the same round trip. **Merge replaced with `Set<string>`** so cross-stream dedup (Visit + CommLog same-MD same-day → 1) is structural, not best-effort.
+4. **Per-day output gains** `comm_log_count` (chat-only post-dedup contribution — drives the `💬 N chats` UI badge), `visit_count` (VIP+EXTRA post-dedup), and `comm_log_excluded` (only set when daily cap was applied).
+
+### Caller plumbing ([backend/erp/controllers/expenseController.js](backend/erp/controllers/expenseController.js))
+
+`getSmerCrmMdCounts` reads `perdiemConfig.{include_comm_log, comm_log_daily_cap, comm_log_require_outbound, comm_log_allowed_sources}` and forwards via `opts`. Response surfaces `include_comm_log` flag + per-entry `comm_log_count` + cycle-level `total_comm_log_count`.
+
+### UI ([frontend/src/erp/pages/Smer.jsx](frontend/src/erp/pages/Smer.jsx))
+
+Per-day row (desktop + mobile) renders a blue **`💬 N chats`** badge below `md_count` when `comm_log_count > 0`. Mirrors the existing `_flaggedExcluded` row-level pattern. Tooltip: "N chat screenshot(s) credited toward this day's MD count (Phase SMER-CL — manual-source CommLog rows)."
+
+### Banners (Rule #1)
+
+- **WorkflowGuide → SMER tip**: extended with the Phase SMER-CL paragraph (lookup-driven, dedup, 14d inheritance, no cap by default).
+- **PageGuide → `'communication-log'` tip**: extended with "manual-source screenshots count toward your daily SMER MD per-diem when admin enables `include_comm_log`. Admin can see every chat group you screenshot."
+
+### Files touched
+
+| File | Lines | Change |
+|---|---|---|
+| [backend/erp/controllers/lookupGenericController.js](backend/erp/controllers/lookupGenericController.js) | ~25 | Extend `PERDIEM_RATES` BDM/ECOMMERCE_BDM/DELIVERY_DRIVER seeds with 4 new metadata keys |
+| [backend/erp/services/perdiemCalc.js](backend/erp/services/perdiemCalc.js) | ~12 | `resolvePerdiemConfig` surfaces 4 new keys with safe defaults |
+| [backend/erp/services/smerCrmBridge.js](backend/erp/services/smerCrmBridge.js) | ~140 | `CommunicationLog` import + `aggregateCommLogDaily` helper + Set-based merge |
+| [backend/erp/controllers/expenseController.js](backend/erp/controllers/expenseController.js) | ~18 | Forward 4 opts + surface response fields |
+| [frontend/src/erp/pages/Smer.jsx](frontend/src/erp/pages/Smer.jsx) | ~30 | `_commLogCount` plumbing + 2 badge sites (desktop + mobile) |
+| [frontend/src/erp/components/WorkflowGuide.jsx](frontend/src/erp/components/WorkflowGuide.jsx) | +1 sentence | SMER tip |
+| [frontend/src/components/common/PageGuide.jsx](frontend/src/components/common/PageGuide.jsx) | +1 sentence | `communication-log` tip |
+| [backend/scripts/healthcheckSmerCrmBridgeUnion.js](backend/scripts/healthcheckSmerCrmBridgeUnion.js) | ~80 | 19 new gates (sections 12) — total 51 gates |
+| [docs/PHASETASK-ERP.md](docs/PHASETASK-ERP.md) | this section | |
+| [CLAUDE.md](CLAUDE.md) | note 13f | |
+
+**Total: ~10 files, ~310 lines.** Zero schema migrations, zero new endpoints, zero new lookup categories (extends existing `PERDIEM_RATES`).
+
+### Out of scope (deliberately NOT building — superseded by user direction May 07 2026)
+
+The original `handoff_smer_bridge_commlog_inclusion_planned_may07_2026.md` proposed an "audit clarity contract" with 4 new schema fields (`chatGroupName`, `screenshotUrl`, `mdMentioned`, `chatGroupSnapshotAt`), a multi-MD chip picker on the BDM form, a Group Chat Audit drilldown column on admin SMER view, and a `commlog_perdiem_credited` self-DM audit trail. **All cut** per user direction "I only need the screen shot upload in comm log for the per diem eligibility." If admin spot-checking proves insufficient over time, these can be added in a future Phase SMER-CL.2.
+
+### Verification
+
+**Healthcheck**: `node backend/scripts/healthcheckSmerCrmBridgeUnion.js` → exit 0, **51/51 PASS** (existing 32 + 19 new SMER-CL gates).
+
+**API smoke (as president via dev cluster):**
+
+```
+POST /api/communication-logs body { doctor:<X>, channel:'MESSENGER', source:'manual', photos:[<screenshot>] }
+  → 201, photos[0].capturedAt close to now
+GET /api/expenses/smer/crm-md-counts?period=2026-05&cycle=C1&bdm_id=<Mae>
+  → response.include_comm_log === true
+  → daily_entries[?date=today].comm_log_count >= 1
+Same-day Visit(Doctor X) + manual CommLog(Doctor X)  → md_count = 1 (dedup)
+Same-day Visit(Doctor X) + manual CommLog(Doctor Y)  → md_count = 2
+CommLog with photos[0].capturedAt 30d old             → does NOT count (Phase O 14d cutoff)
+source='api' instead of 'manual'                      → does NOT count
+Flip include_comm_log=false via Control Center         → comm_log_count drops to 0 next pull
+```
+
+**UI smoke (Playwright as Mae Navarro):**
+
+1. Navigate `/erp/smer` → New SMER for current period+cycle → Pull from CRM
+2. Days with manual CommLogs render the blue `💬 N chats` badge below `md_count` input
+3. Tooltip on the badge: `"N chat screenshot(s) credited toward..."`
+4. md_count reflects deduped count
+5. 0 console errors
