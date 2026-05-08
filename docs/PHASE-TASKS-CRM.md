@@ -2068,14 +2068,58 @@ Closes the ghost-rule footgun (admin in entity A picks a partner whose only BDM 
 
 - `entity_ids` is the canonical scope key for Year-2 multi-tenant SaaS. Subscriber tenants narrow the field from "subsidiary entity" to "tenant slice" without code changes.
 - Lookup-driven role gates already exist (`REBATE_ROLES`, `MD_PARTNER_ROLES`) — Phase E1 doesn't introduce new lookup categories.
-- Hospitals are intentionally NOT entity-scoped (per [hospitalController.js:11](backend/erp/controllers/hospitalController.js) "globally shared" comment). This is a known SaaS gap deferred to Phase E2.
+- Hospitals are intentionally globally shared as a master-data record — see "Phase E2 — REJECTED" below for the reasoning.
 
-### Out of scope (deferred to follow-on phases)
+### Phase E2 — REJECTED (decided May 8 2026)
 
-- **Phase E2** — Hospital entity scoping (currently `entity_id` exists on the Hospital model but isn't used as a filter). Required before Year-2 SaaS spin-out.
-- **Phase E3** — Audit other 97 `Doctor.find` callsites across 43 files (visit / schedule / commLog / etc.) and apply selective entity scoping where appropriate. Today only `getAllDoctors` is wired.
-- **Phase E4** — Proxy-aware Doctor picker (BDM filing on behalf of another BDM in another entity). Pattern after Phase 32R-Transfer-Stock-Scope.
-- BDM-path entity scoping (currently unchanged — multi-entity BDM coverage preserved via `assignedTo: user._id`).
+**E2 was originally scoped as "Hospital entity scoping."** That framing is wrong and has been rejected. Hospitals stay globally shared because:
+
+1. Regulatory identity is universal — one hospital has one FDA LTO, one TIN, one address. Splitting it per-subsidiary creates duplicate records that break BIR 2550Q consolidation, RA 9994 SC/PWD reporting (which references the hospital, not the seller), and any cross-entity reconciliation.
+2. All VIP subsidiaries (and future SaaS subscribers) are pharma B2B selling into the same hospital network. Forking the master data tenants the *sales relationship*, not the *hospital* — the wrong layer.
+3. Per-BDM hospital visibility is already entity-correct via [hospitalAccess.js `buildHospitalAccessFilter`](backend/erp/utils/hospitalAccess.js) (BDMs scope by `warehouse_ids ↔ entity`; admins intentionally see all because they coordinate across subsidiaries).
+
+**Same logic applies to Customer.** Pharma B2B customers (mostly hospitals + a few wholesale buyers) are shared master data. The only customer-scoping concern is **e-commerce B2C** at vippharmacy.online (Phase M3 — direct-consumer storefront) and SaaS subscriber storefronts (Phase M4) — those tenant-scope at a different layer (consumer accounts, not the master Customer record).
+
+**If per-tenant Hospital enrichment is ever needed** (e.g. each tenant's private notes / their own purchaser contact / their own MOA — distinct from the shared Hospital fields), the right pattern is a sub-document keyed by `tenant_id` on the existing Hospital, NOT a fork of the record. Capture as a future micro-phase only when a concrete need surfaces.
+
+### Phase E3 — Deferred (sweep ~5–15 admin-enumerator callsites)
+
+Audit + selectively scope the admin-facing Doctor enumerators (programController, supportTypeController, messageTemplateController, productAssignmentController, scorecardController, cockpitService — anything that lists Doctors for an admin to choose from). The other ~80 of the 97 callsites are either direct `findById` (already correct), BDM-scoped (already correct), or admin-cross-entity-by-design (merge service, reports, GDPR scripts). Estimated ~1 day when undertaken. Trigger: another user-reported leak OR before Year-2 SaaS spin-out, whichever comes first.
+
+### Phase E4 — Deferred (proxy-aware Doctor picker)
+
+BDM filing the rebate matrix on behalf of another BDM in another entity. Pattern after Phase 32R-Transfer-Stock-Scope inventory queries. Implementation is small (~½ day) but premature today — proxy mode is not on the rebate matrix surface in the next 30 days. The placeholder design is codified in the [getAllDoctors](backend/controllers/doctorController.js) comment so the next implementer doesn't have to re-derive it.
+
+### Phase TX — Territory Exclusivity (NEW — deferred, separate phase)
+
+**Concept:** when entity A (e.g. MG and CO) sells product P in territory T, entity B (e.g. VIP) cannot sell product P in territory T. This is a *business rule* layered on top of products, NOT entity scoping of master data.
+
+**New model — `ProductTerritoryAssignment`:**
+- `product_id` ref ProductMaster
+- `entity_id` ref Entity — who holds the rights
+- `territory_scope: { granularity: 'PROVINCE'|'LOCALITY'|'HOSPITAL'|'WAREHOUSE', province?, locality?, hospital_id?, warehouse_id? }`
+- `exclusivity_type: 'EXCLUSIVE' | 'PRIORITY' | 'NON_EXCLUSIVE'`
+- `effective_from / effective_to / agreement_doc_url / is_active`
+
+**Enforcement points:**
+1. `SalesEntry` create / submit — validate `(product_id, sale.hospital_id.locality, sale.entity_id)` is authorized. Reject `TERRITORY_VIOLATION` if another entity holds EXCLUSIVE.
+2. Inter-Entity Stock Transfer — block transferring product P to a warehouse in a territory reserved to another entity for P.
+3. Storefront listing sync (Phase M3) — only list product P on the active subsidiary's storefront in territories where they have rights.
+4. CRM Visit logging — soft warning (informational, not blocking) when a BDM logs a visit to discuss product P with an MD whose hospital is in another entity's reserved territory.
+5. Rebate matrix create — additional `assertProductTerritoryAuthorized` check parallel to Phase E1's `assertPartnerInEntity`.
+
+**UX surface:**
+- New admin page `/erp/territory-assignments` (matrix, lookup-driven `TERRITORY_GRANULARITY`, `EXCLUSIVITY_TYPES`, `TERRITORY_VIOLATION_ROLES`).
+- WorkflowGuide banner explaining EXCLUSIVE / PRIORITY / NON_EXCLUSIVE semantics.
+- Override path via Phase 29-style approval gate (admin/president can approve a one-off override with audit log entry — covers BDM transitions, joint visits, regulatory emergencies).
+
+**Effort estimate:** 3–5 days. New model + 5 enforcement points + admin page + banner + healthcheck + migration to seed initial assignments from current sales history.
+
+**SaaS readiness:** generalizes to subscriber-vs-subscriber and subscriber-vs-VIP territory exclusivity. `entity_id` becomes `tenant_id` without schema change.
+
+### Other Phase E1 follow-on notes
+
+- BDM-path entity scoping (currently unchanged — multi-entity BDM coverage preserved via `assignedTo: user._id`). Intentional, not a bug.
 
 ### Pending operator steps
 
