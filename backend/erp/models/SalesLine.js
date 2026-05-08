@@ -1,6 +1,21 @@
 const mongoose = require('mongoose');
 const { cleanBatchNo, normalizeUnit, normalizeDocRef } = require('../utils/normalize');
 
+// Phase R-Storefront — manual-only MD/partner rebate tag for storefront cash
+// sales (CASH_RECEIPT + SERVICE_INVOICE routed through petty cash). No matrix
+// auto-walk (storefront walk-ins are not MD-attributed). Proxy enters MD +
+// rebate %; pre-save computes rebate_amount against line.net_of_vat (per-line)
+// or total_net_of_vat (SERVICE_INVOICE). Mirrors Collection.partnerTagSchema
+// shape so downstream PRF routing can treat both sources identically.
+const partnerTagSchema = new mongoose.Schema({
+  doctor_id: { type: mongoose.Schema.Types.ObjectId, ref: 'Doctor' },
+  doctor_name: { type: String, trim: true },
+  role: { type: String, trim: true }, // denormalized partner role (IM, TDh, ACCOUNTING, etc.) for display
+  rebate_pct: { type: Number, default: 0, min: 0 },
+  rebate_amount: { type: Number, default: 0 },
+  calculation_mode: { type: String, default: 'STOREFRONT_LINE_NET' }
+}, { _id: false });
+
 const lineItemSchema = new mongoose.Schema({
   product_id: {
     type: mongoose.Schema.Types.ObjectId,
@@ -40,7 +55,12 @@ const lineItemSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'HospitalPOLine',
     default: null
-  }
+  },
+  // Phase R-Storefront — per-line MD/partner rebate tags (manual proxy entry).
+  // Used for CSI/CASH_RECEIPT line items where each line can be attributed to
+  // a different MD with a different rebate %. SERVICE_INVOICE has no line
+  // items — uses the top-level salesLineSchema.partner_tags instead.
+  partner_tags: [partnerTagSchema]
 }, { _id: true });
 
 const salesLineSchema = new mongoose.Schema({
@@ -145,6 +165,40 @@ const salesLineSchema = new mongoose.Schema({
   // Sales (VAT Inclusive) → Less: Discount → Net" without recomputing.
   total_gross_before_discount: { type: Number, default: 0 },
 
+  // Phase R-Storefront — Manual MD rebate + BDM commission for storefront cash
+  // sales (CASH_RECEIPT + SERVICE_INVOICE routed through petty cash fund).
+  // The Collection-side rebate engine never fires for these because they
+  // bypass AR (see arEngine.js exclusion of petty_cash_fund_id != null), so
+  // proxy/admin attaches MDs and commission % manually after sale POSTED.
+  //
+  // partner_tags below is for SERVICE_INVOICE only (no line_items). For
+  // CSI/CASH_RECEIPT with line_items, the per-line partner_tags on
+  // lineItemSchema is the source of truth.
+  partner_tags: [partnerTagSchema],
+  // BDM commission rate. Sourced from the same dropdown as Collection
+  // (StaffCommissionRule per BDM, or the lookup-driven standard rate set).
+  commission_pct: { type: Number, default: 0, min: 0 },
+  // Computed in pre-save: total_net_of_vat × commission_pct / 100.
+  commission_amount: { type: Number, default: 0 },
+  // Sum across all line_items[].partner_tags[].rebate_amount + top-level
+  // partner_tags[].rebate_amount (SERVICE_INVOICE). Computed in pre-save.
+  total_partner_rebates: { type: Number, default: 0 },
+  // Audit — who entered/edited the manual rebate-and-commission attribution
+  // and when. partner_rebate_entry_mode is 'MANUAL_PROXY' for any sale where
+  // these fields were touched (vs null for sales with no rebate/commission).
+  // Editable post-POSTED per user direction May 08 2026 — once posted, it's
+  // already paid; admin attaches MDs after the fact.
+  partner_rebate_entry_mode: {
+    type: String,
+    enum: ['MANUAL_PROXY', null],
+    default: null
+  },
+  proxy_rebate_entered_by: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  proxy_rebate_entered_at: { type: Date, default: null },
+  // Append-only audit trail of every edit to commission_pct / partner_tags.
+  // Each entry: { user_id, at, action: 'CREATE'|'UPDATE', snapshot: {...} }.
+  proxy_rebate_edit_history: [{ type: mongoose.Schema.Types.Mixed }],
+
   // Phase A.4 — AR sub-ledger materialized fields.
   // outstanding_amount = invoice_total − Σ Collection.settled_csis hits − Σ CWT
   // applied to this CSI (CWT closes AR via journalFromCWT). Maintained by
@@ -246,6 +300,13 @@ salesLineSchema.pre('save', async function () {
   const Settings = require('./Settings');
   const VAT_RATE = await Settings.getVatRate();
 
+  // Phase R-Storefront — MAX_MD_REBATE_PCT cap (lookup-driven, default 25).
+  // Defense-in-depth: the proxy-entry controller validates user input first
+  // with a clear error; this clamp is the safety net if any upstream caller
+  // bypasses controller validation. Mirrors MdProductRebate gate-3 ceiling.
+  const settingsDoc = await Settings.getSettings();
+  const MAX_REBATE_PCT = Number(settingsDoc?.MAX_MD_REBATE_PCT ?? 25);
+
   // SERVICE_INVOICE: preserve user-entered invoice_total (no line items to compute from)
   if (this.sale_type === 'SERVICE_INVOICE') {
     const gross = this.invoice_total || 0;
@@ -253,6 +314,21 @@ salesLineSchema.pre('save', async function () {
       this.total_vat = Math.round(gross * (VAT_RATE / (1 + VAT_RATE)) * 100) / 100;
       this.total_net_of_vat = Math.round((gross - this.total_vat) * 100) / 100;
     }
+    // Phase R-Storefront — top-level partner_tags rebate (SERVICE_INVOICE only,
+    // no line_items). Each tag's rebate_amount = total_net_of_vat × rebate_pct/100.
+    let totalRebates = 0;
+    for (const tag of this.partner_tags || []) {
+      const pct = Math.max(0, Math.min(MAX_REBATE_PCT, Number(tag.rebate_pct) || 0));
+      tag.rebate_pct = pct;
+      tag.rebate_amount = Math.round((this.total_net_of_vat || 0) * (pct / 100) * 100) / 100;
+      totalRebates += tag.rebate_amount;
+    }
+    this.total_partner_rebates = Math.round(totalRebates * 100) / 100;
+    // Commission against total_net_of_vat (commission_pct is on the sale,
+    // not per-tag — same pattern as Collection settled_csis[].commission_rate).
+    const commissionPct = Math.max(0, Number(this.commission_pct) || 0);
+    this.commission_pct = commissionPct;
+    this.commission_amount = Math.round((this.total_net_of_vat || 0) * (commissionPct / 100) * 100) / 100;
     return;
   }
 
@@ -261,6 +337,7 @@ salesLineSchema.pre('save', async function () {
   let totalNetOfVat = 0;
   let totalDiscount = 0;
   let totalGrossBeforeDiscount = 0;
+  let totalPartnerRebates = 0; // Phase R-Storefront — sum across all line_items[].partner_tags[]
 
   for (const item of this.line_items) {
     // Normalize batch and unit
@@ -304,6 +381,18 @@ salesLineSchema.pre('save', async function () {
     totalNetOfVat += item.net_of_vat;
     totalDiscount += item.line_discount_amount;
     totalGrossBeforeDiscount += item.line_gross_amount;
+
+    // Phase R-Storefront — per-line MD/partner rebate compute. Per-line is a
+    // user-locked decision (May 08 2026) so the same sale can attribute
+    // different products to different MDs at different rates. Base is the
+    // post-discount net_of_vat (BIR-consistent — discount shrinks the rebate
+    // base too, mirrors VAT treatment in RR 16-2005).
+    for (const tag of item.partner_tags || []) {
+      const pct = Math.max(0, Math.min(MAX_REBATE_PCT, Number(tag.rebate_pct) || 0));
+      tag.rebate_pct = pct;
+      tag.rebate_amount = Math.round((item.net_of_vat || 0) * (pct / 100) * 100) / 100;
+      totalPartnerRebates += tag.rebate_amount;
+    }
   }
 
   this.invoice_total = Math.round(invoiceTotal * 100) / 100;
@@ -311,6 +400,14 @@ salesLineSchema.pre('save', async function () {
   this.total_net_of_vat = Math.round(totalNetOfVat * 100) / 100;
   this.total_discount = Math.round(totalDiscount * 100) / 100;
   this.total_gross_before_discount = Math.round(totalGrossBeforeDiscount * 100) / 100;
+  this.total_partner_rebates = Math.round(totalPartnerRebates * 100) / 100;
+  // Phase R-Storefront — BDM commission against post-discount net_of_vat.
+  // Same base as Collection settled_csis[].commission_rate. commission_pct is
+  // a top-level field on the sale (not per-line) — matches Collection pattern
+  // and the COMMISSION % dropdown in the green panel from the screenshot.
+  const commissionPct = Math.max(0, Number(this.commission_pct) || 0);
+  this.commission_pct = commissionPct;
+  this.commission_amount = Math.round(this.total_net_of_vat * (commissionPct / 100) * 100) / 100;
 
   // Phase A.4 — initialize outstanding_amount on first POST. arAgingService
   // owns subsequent maintenance on Collection POST/void/reopen — DO NOT

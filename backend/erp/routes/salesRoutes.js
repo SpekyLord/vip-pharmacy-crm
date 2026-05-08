@@ -26,6 +26,15 @@ router.get('/drafts/pending-csi', c.getDraftsPendingCsi);
 router.get('/drafts/calibration-grid', c.getCsiCalibrationGrid);
 router.get('/:id/csi-draft', c.generateCsiDraft);
 
+// Phase R-Storefront (May 8 2026) — manual MD rebate + BDM commission
+// attribution on storefront cash sales (CASH_RECEIPT + SERVICE_INVOICE
+// routed through petty_cash_fund). Editable post-POSTED — once posted,
+// the sale was paid; admin attaches MDs after the fact. No period-lock
+// here (data capture only, no JE side effect at this phase).
+// Permission: PROXY_ENTRY_ROLES.SALES_REBATE_ENTRY + sales.proxy_rebate_entry
+// sub-perm. Predicate: STOREFRONT_REBATE_SCOPE.DEFAULT lookup.
+router.post('/:id/storefront-rebate-attribution', c.attachStorefrontRebate);
+
 router.post('/:id/request-deletion', c.requestDeletion);
 // Phase 3c — legacy approve-deletion path (President Reverse preferred). Tier 2 lookup-only.
 router.post('/:id/approve-deletion', erpSubAccessCheck('accounting', 'approve_deletion'), c.approveDeletion);

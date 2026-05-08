@@ -11,9 +11,14 @@
  *   VOIDED          — cancelled (Collection reopened, reversed, etc.)
  *
  * source_kind drives which source-doc populate path applies:
- *   TIER_A_PRODUCT  — MdProductRebate matched on Collection CSI line
- *   TIER_B_CAPITATION — MdCapitationRule matched on storefront Order
- *   NON_MD          — NonMdPartnerRebateRule matched on Collection CSI
+ *   TIER_A_PRODUCT     — MdProductRebate matched on Collection CSI line
+ *   TIER_B_CAPITATION  — MdCapitationRule matched on storefront Order
+ *   NON_MD             — NonMdPartnerRebateRule matched on Collection CSI
+ *   STOREFRONT_MANUAL  — Phase R-Storefront Phase 2 (May 8 2026). Walk-in cash
+ *                        sale with manual MD attribution by admin/proxy. Source
+ *                        doc is SalesLine (CASH_RECEIPT/SERVICE_INVOICE routed
+ *                        through petty_cash_fund), not Collection. No matrix
+ *                        rule matched — proxy-entered rebate %.
  *
  * The accrual ledger replaces the implicit pre-VIP-1.B state where
  * Collection.partner_tags[].rebate_amount was the only artifact and PRFs were
@@ -69,8 +74,8 @@ const rebatePayoutSchema = new mongoose.Schema(
     source_kind: {
       type: String,
       enum: {
-        values: ['TIER_A_PRODUCT', 'TIER_B_CAPITATION', 'NON_MD'],
-        message: 'source_kind must be TIER_A_PRODUCT, TIER_B_CAPITATION, or NON_MD',
+        values: ['TIER_A_PRODUCT', 'TIER_B_CAPITATION', 'NON_MD', 'STOREFRONT_MANUAL'],
+        message: 'source_kind must be TIER_A_PRODUCT, TIER_B_CAPITATION, NON_MD, or STOREFRONT_MANUAL',
       },
       required: [true, 'source_kind is required'],
       index: true,

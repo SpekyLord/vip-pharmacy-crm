@@ -662,6 +662,19 @@ const SEED_DEFAULTS = {
     // entity. See backend/erp/utils/resolveOwnerScope.js + Phase G4.5a in PHASETASK-ERP.
     { code: 'SALES__PROXY_ENTRY', label: 'Record CSI on behalf of another BDM', metadata: { module: 'sales', key: 'proxy_entry', sort_order: 5 } },
     { code: 'SALES__OPENING_AR_PROXY', label: 'Record Opening AR on behalf of another BDM', metadata: { module: 'sales', key: 'opening_ar_proxy', sort_order: 6 } },
+    // Phase R-Storefront (May 2026) — Manual MD rebate + BDM commission
+    // attribution on storefront cash sales (CASH_RECEIPT + SERVICE_INVOICE
+    // routed through petty_cash_fund). Collection-side rebate engine never
+    // fires for these (arEngine.js excludes petty_cash_fund_id != null), so
+    // proxy attaches MDs and commission % manually after sale POSTED.
+    // Editable post-POSTED per user direction May 08 2026 — once posted, it's
+    // already paid; admin attaches MDs after the fact. Paired with
+    // PROXY_ENTRY_ROLES.SALES_REBATE_ENTRY lookup (default admin/finance/
+    // president). Separate from sales.proxy_entry because: (a) it's allowed
+    // post-POSTED whereas proxy_entry locks at submit, (b) different role set
+    // — bookkeeper / back-office may attach attribution without doing the
+    // sale itself.
+    { code: 'SALES__PROXY_REBATE_ENTRY', label: 'Attach MD rebate / BDM commission % on storefront cash sale (post-POSTED)', metadata: { module: 'sales', key: 'proxy_rebate_entry', sort_order: 7 } },
     // Messaging (Phase G9.R8 — Apr 2026)
     // Gates the admin Inbox Retention Settings page + the Run-Now / Preview
     // retention endpoints. Lookup-driven so subscribers can delegate storage
@@ -2951,6 +2964,15 @@ const SEED_DEFAULTS = {
     // 'staff' here surfaces a working dropdown without widening people-module
     // access. Pairs with VALID_OWNER_ROLES.CSI_BOOKLETS (assignees stay BDM-shaped).
     { code: 'CSI_BOOKLETS', label: 'CSI Booklet allocation (assign number range to a BDM)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 15 } },
+    // Phase R-Storefront (May 8 2026) — Manual MD rebate / commission attribution
+    // on storefront cash sales (CASH_RECEIPT + SERVICE_INVOICE routed through
+    // petty cash). Distinct from SALES (which gates entry-time CSI proxy):
+    // (a) editable post-POSTED — paid sale already moved cash, attribution can
+    // be added after the fact; (b) bookkeeper / back-office may attach MDs
+    // without doing the sale itself, so subscribers commonly add 'staff' here
+    // even when SALES stays narrow. Pairs with VALID_OWNER_ROLES.SALES (owner
+    // is the BDM who closed the sale). President always bypasses.
+    { code: 'SALES_REBATE_ENTRY', label: 'Storefront rebate / commission attribution (post-POSTED, manual)', insert_only_metadata: true, metadata: { roles: ['admin', 'finance', 'president'], sort_order: 16 } },
   ],
   // Phase G4.5a follow-up — which roles are valid OWNERS of a proxied record
   // per module. Defaults to BDM-shaped roles (['staff']); admin/
@@ -3000,6 +3022,12 @@ const SEED_DEFAULTS = {
     // finance / president be the assignee orphans the per-BDM availability
     // roster (no /my-csi tab for non-BDMs) and breaks the auto-mark-used join.
     { code: 'CSI_BOOKLETS', label: 'Valid proxy targets — CSI Booklet allocation (assignees)', insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 13 } },
+    // Phase R-Storefront (May 8 2026) — owner of a storefront sale is the
+    // BDM/cashier who closed it. Mirrors VALID_OWNER_ROLES.SALES; separate row
+    // because a subscriber may delegate post-POSTED rebate attribution to a
+    // narrower role set (e.g. let only branch-manager-shaped staff own the
+    // record rather than every BDM).
+    { code: 'SALES_REBATE_ENTRY', label: 'Valid proxy targets — Storefront rebate / commission attribution', insert_only_metadata: true, metadata: { roles: ['staff'], sort_order: 14 } },
   ],
   // Phase G4.5bb (Apr 29, 2026) — per-clerk Payslip deduction-write roster.
   //
@@ -3023,6 +3051,27 @@ const SEED_DEFAULTS = {
   // auto_ack_hours = when to auto-acknowledge stale BDM reviews.
   PROXY_SLA_THRESHOLDS: [
     { code: 'DEFAULT', label: 'Default Proxy SLA Thresholds', metadata: { pending_alert_hours: 24, auto_ack_hours: 72, description: 'Hours before SLA alert (pending) and auto-acknowledgment (review)' }, insert_only_metadata: true },
+  ],
+  // Phase R-Storefront (May 8 2026) — Predicate config for the storefront
+  // rebate fallback. The /erp/sales rebate-attribution endpoint applies ONLY
+  // to sales matching this predicate, so CSI-on-credit and SERVICE_INVOICE-on-
+  // credit (which already settle through Collection's rebate engine) are not
+  // double-counted by this fallback. Subscribers tune via Control Center —
+  // e.g., a SaaS pharmacy that wants ALL CASH_RECEIPT and SERVICE_INVOICE
+  // sales to fall through this path can flip require_petty_cash_fund=false.
+  // `insert_only_metadata: true` — admin edits survive auto-seeds.
+  STOREFRONT_REBATE_SCOPE: [
+    {
+      code: 'DEFAULT',
+      label: 'When to apply the storefront rebate / commission fallback',
+      insert_only_metadata: true,
+      metadata: {
+        sale_types: ['CASH_RECEIPT', 'SERVICE_INVOICE'],
+        require_petty_cash_fund: true,
+        sort_order: 1,
+        description: 'Endpoint accepts attribution only when sale_type ∈ sale_types AND (require_petty_cash_fund=false OR petty_cash_fund_id != null). CSI sales never qualify (settled through Collection bridge). Toggle require_petty_cash_fund to false to also include credit-paid CASH_RECEIPT/SERVICE_INVOICE — duplicates rebate from Collection bridge if any, so leave true unless you have a specific reason.'
+      }
+    },
   ],
   // Phase G6 (Apr 26, 2026) — Cross-entity read allowlist per master-data
   // module. President-likes default to scope-by-selector (entity dropdown);

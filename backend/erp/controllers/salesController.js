@@ -28,7 +28,9 @@ const Lookup = require('../models/Lookup');
 // Phase G4.5a — proxy entry (record on behalf of another BDM)
 // `assertResourceReadAccess` (Phase 15.3-fix May 07 2026) is the resource-first
 // access gate used by `window.open()` flows that lose X-Entity-Id (CSI Draft).
-const { resolveOwnerForWrite, widenFilterForProxy, assertResourceReadAccess } = require('../utils/resolveOwnerScope');
+const { resolveOwnerForWrite, widenFilterForProxy, assertResourceReadAccess, canProxyEntry } = require('../utils/resolveOwnerScope');
+// Phase R-Storefront — Doctor model used for partner-tag denorm + validation
+const Doctor = require('../../models/Doctor');
 // Phase R2 — Sales Discount lookup-driven cap
 const { getDiscountConfig, canBypassDiscountCap } = require('../../utils/salesDiscountConfig');
 
@@ -262,6 +264,43 @@ const postSaleRow = async (row, userId, opts = {}) => {
         if (cogsData) {
           cogsData.source_event_id = eventId;
           await createAndPostJournal(row.entity_id, cogsData, { session });
+        }
+      }
+
+      // ───────────────────────────────────────────────────────────────────
+      // Phase R-Storefront Phase 2 (May 8 2026) — Auto-route storefront cash
+      // attribution → RebatePayout(ACCRUING) + CommissionPayout(ACCRUING) +
+      // DRAFT PRFs. Same atomicity contract as Collection.routePrfsForCollection
+      // (Phase VIP-1.B): if routing fails, the entire sale post rolls back —
+      // FIFO + JE + petty cash deposit + rebate audit ledger stay in lockstep.
+      // Predicate matches the lookup-driven STOREFRONT_REBATE_SCOPE.DEFAULT
+      // (CASH_RECEIPT/SERVICE_INVOICE routed through petty_cash_fund). Sales
+      // without attribution data still post, just with empty routing output.
+      // ───────────────────────────────────────────────────────────────────
+      if (
+        ['CASH_RECEIPT', 'SERVICE_INVOICE'].includes(saleType)
+        && row.petty_cash_fund_id
+      ) {
+        try {
+          const { routePrfsForSale } = require('../services/autoPrfRoutingForSale');
+          const routed = await routePrfsForSale({
+            salesLineId: row._id,
+            userId,
+            session,
+          });
+          if (routed.payeesProcessed > 0 || routed.commissionPayouts > 0) {
+            console.log(
+              `[autoPrfRoutingForSale] ${saleType} ${row.invoice_number || row.doc_ref || row._id}: ` +
+              `${routed.prfsCreated} new PRFs, ${routed.prfsExisted} existing, ` +
+              `${routed.rebatePayouts} rebate rows, ${routed.commissionPayouts} commission rows, ` +
+              `${routed.payeesProcessed} MD payees`
+            );
+          }
+        } catch (routeErr) {
+          // Storefront rebate routing failures abort the whole post — same
+          // posture as Collection. Subscribers can revisit after fixing the
+          // attribution and re-submitting the sale via the Approval Hub.
+          throw new Error(`autoPrfRoutingForSale failed for ${saleType} ${row.invoice_number || row.doc_ref || row._id}: ${routeErr.message}`);
         }
       }
 
@@ -2178,6 +2217,248 @@ const getDraftsPendingCsi = catchAsync(async (req, res) => {
   });
 });
 
+// ═══════════════════════════════════════════════════════════
+// PHASE R-STOREFRONT — MD Rebate + BDM Commission Attribution
+// (May 8 2026 — manual proxy entry on storefront cash sales)
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Attach MD rebate / BDM commission % to a storefront cash sale.
+ *
+ * Storefront cash sales (CASH_RECEIPT + SERVICE_INVOICE routed through
+ * petty_cash_fund) bypass AR — see arEngine.js:16 — so the Collection-side
+ * rebate engine never fires for them. This endpoint is the manual fallback:
+ * proxy/admin attaches MD partners + rebate % per line item (or top-level
+ * for SERVICE_INVOICE which has no line items) and BDM commission % per
+ * sale, mirroring the green panel from /erp/collection.
+ *
+ * Editable post-POSTED per user direction May 08 2026 — once posted, the
+ * sale is paid; admin attributes attribution after the fact when the MD
+ * is identified. No period-lock check at this phase: this is data capture
+ * only, no JE side effect. Phase R-Storefront-2 will route POSTED rebates
+ * to PrfCalf via a period-aware batch (autoPrfRoutingForSale), at which
+ * point period-lock guards on the routing engine, not this endpoint.
+ *
+ * Access (lookup-driven, Rule #3):
+ *   - PROXY_ENTRY_ROLES.SALES_REBATE_ENTRY (default admin/finance/president)
+ *   - sub-perm sales.proxy_rebate_entry on the caller's Access Template
+ *   - President/CEO: president always passes; CEO denied (view-only).
+ *
+ * Predicate (lookup-driven via STOREFRONT_REBATE_SCOPE.DEFAULT):
+ *   - sale.sale_type ∈ metadata.sale_types (default ['CASH_RECEIPT', 'SERVICE_INVOICE'])
+ *   - if metadata.require_petty_cash_fund (default true):
+ *       sale.petty_cash_fund_id must be set
+ *   These guard against double-counting rebate from Collection-side bridge
+ *   (which already handles credit-paid CSI/SERVICE_INVOICE).
+ *
+ * Body:
+ *   {
+ *     commission_pct: Number,                // BDM commission % (top-level)
+ *     partner_tags: [{ doctor_id, rebate_pct }],   // SERVICE_INVOICE only (no line_items)
+ *     line_items: [{ _id, partner_tags: [{ doctor_id, rebate_pct }] }]  // CASH_RECEIPT
+ *   }
+ *
+ * Validation:
+ *   - rebate_pct ≤ Settings.MAX_MD_REBATE_PCT (default 25, lookup-driven)
+ *   - doctor_id resolves to existing Doctor; doctor_name + role denormalized
+ *   - status not in {DELETION_REQUESTED}; deletion_event_id not set
+ *
+ * Audit:
+ *   - partner_rebate_entry_mode = 'MANUAL_PROXY'
+ *   - proxy_rebate_entered_by, proxy_rebate_entered_at stamped
+ *   - proxy_rebate_edit_history append with pre-edit snapshot
+ *   - ErpAuditLog row (log_type SALES_REBATE_ATTRIBUTION) for system audit
+ */
+const attachStorefrontRebate = catchAsync(async (req, res) => {
+  const { commission_pct, partner_tags, line_items: bodyLineItems } = req.body || {};
+
+  // 1. Find sale (entity-scoped via tenantFilter — this is a JSON POST, X-Entity-Id is intact)
+  const sale = await SalesLine.findOne({ _id: req.params.id, ...req.tenantFilter });
+  if (!sale) return res.status(404).json({ success: false, message: 'Sale not found' });
+
+  // 2. Permission gate — proxy entry sub-perm + lookup-driven role allowlist.
+  // President bypass implicit in canProxyEntry.
+  const { canProxy } = await canProxyEntry(req, 'sales', {
+    subKey: 'proxy_rebate_entry',
+    lookupCode: 'SALES_REBATE_ENTRY',
+  });
+  const privileged = req.isPresident || req.isAdmin || req.isFinance || canProxy;
+  if (!privileged) {
+    return res.status(403).json({
+      success: false,
+      message: 'Storefront rebate attribution denied. Ask admin to grant sales.proxy_rebate_entry sub-permission and add your role to PROXY_ENTRY_ROLES.SALES_REBATE_ENTRY.'
+    });
+  }
+
+  // 3. Status gate — reversed/deletion-requested rows are out of scope.
+  if (sale.deletion_event_id) {
+    return res.status(400).json({ success: false, message: 'Sale has been reversed — cannot edit attribution' });
+  }
+  if (sale.status === 'DELETION_REQUESTED') {
+    return res.status(400).json({ success: false, message: 'Cannot edit attribution on a row pending deletion approval' });
+  }
+
+  // 4. Predicate — STOREFRONT_REBATE_SCOPE.DEFAULT (lookup-driven, 60s cache TTL
+  // not yet wired since this is per-request and storefront sales are not
+  // high-volume). Without this gate, attaching attribution to a CSI on credit
+  // would double-count when Collection later settles it via the bridge.
+  const scopeLookup = await Lookup.findOne({
+    entity_id: sale.entity_id,
+    category: 'STOREFRONT_REBATE_SCOPE',
+    code: 'DEFAULT',
+    is_active: true,
+  }).lean();
+  const allowedTypes = scopeLookup?.metadata?.sale_types || ['CASH_RECEIPT', 'SERVICE_INVOICE'];
+  const requireFund = scopeLookup?.metadata?.require_petty_cash_fund !== false; // default true
+  if (!allowedTypes.includes(sale.sale_type)) {
+    return res.status(422).json({
+      success: false,
+      code: 'STOREFRONT_REBATE_NOT_APPLICABLE',
+      message: `Storefront rebate attribution is not enabled for sale_type=${sale.sale_type}. Allowed types (lookup STOREFRONT_REBATE_SCOPE.DEFAULT.metadata.sale_types): ${allowedTypes.join(', ')}. CSI sales settle through Collection's rebate bridge.`
+    });
+  }
+  if (requireFund && !sale.petty_cash_fund_id) {
+    return res.status(422).json({
+      success: false,
+      code: 'STOREFRONT_REBATE_REQUIRES_PETTY_CASH_FUND',
+      message: 'This sale is not routed through a petty cash fund — it will settle through Collection. Use the Collection-side rebate flow instead, or admin can flip STOREFRONT_REBATE_SCOPE.DEFAULT.metadata.require_petty_cash_fund to false in Control Center to opt-in (NOT recommended — duplicates rebate from Collection bridge).'
+    });
+  }
+
+  // 5. Read MAX_MD_REBATE_PCT for clear validation error.
+  const Settings = require('../models/Settings');
+  const settingsDoc = await Settings.getSettings();
+  const MAX_REBATE_PCT = Number(settingsDoc?.MAX_MD_REBATE_PCT ?? 25);
+
+  // 6. Validate + denorm partner_tags (helper used for both top-level and per-line).
+  const validateAndDenorm = async (tags, where) => {
+    if (!Array.isArray(tags)) return [];
+    for (const t of tags) {
+      if (!t.doctor_id) {
+        const e = new Error(`Partner tag in ${where} requires doctor_id`);
+        e.statusCode = 400;
+        throw e;
+      }
+      const pct = Number(t.rebate_pct);
+      if (!Number.isFinite(pct) || pct < 0) {
+        const e = new Error(`Partner tag rebate_pct must be a non-negative number in ${where}`);
+        e.statusCode = 400;
+        throw e;
+      }
+      if (pct > MAX_REBATE_PCT) {
+        const e = new Error(`Partner tag rebate_pct ${pct}% exceeds MAX_MD_REBATE_PCT (${MAX_REBATE_PCT}%) in ${where}. Adjust the rebate or have admin raise the ceiling via Control Center → ERP Settings → MAX_MD_REBATE_PCT.`);
+        e.statusCode = 422;
+        throw e;
+      }
+    }
+    if (!tags.length) return [];
+    const ids = [...new Set(tags.map(t => String(t.doctor_id)))];
+    const docs = await Doctor.find({ _id: { $in: ids } }).select('firstName lastName role').lean();
+    const docMap = new Map(docs.map(d => [String(d._id), d]));
+    // Reject any doctor_id that didn't resolve — prevents typo'd refs from
+    // landing in partner_tags and breaking the rebate roll-up downstream.
+    for (const t of tags) {
+      if (!docMap.has(String(t.doctor_id))) {
+        const e = new Error(`Partner doctor_id ${t.doctor_id} not found in ${where}`);
+        e.statusCode = 400;
+        throw e;
+      }
+    }
+    return tags.map(t => {
+      const d = docMap.get(String(t.doctor_id));
+      const fullName = `${d.firstName || ''} ${d.lastName || ''}`.trim() || (t.doctor_name || '');
+      return {
+        doctor_id: t.doctor_id,
+        doctor_name: fullName,
+        role: d.role || t.role || '',
+        rebate_pct: Number(t.rebate_pct) || 0,
+        calculation_mode: 'STOREFRONT_LINE_NET',
+        // rebate_amount is computed by pre-save against the line/sale net_of_vat
+      };
+    });
+  };
+
+  // 7. Snapshot pre-edit state for the audit history.
+  const preSnapshot = {
+    commission_pct: sale.commission_pct,
+    commission_amount: sale.commission_amount,
+    partner_tags: JSON.parse(JSON.stringify(sale.partner_tags || [])),
+    line_items_partner_tags: (sale.line_items || []).map(li => ({
+      _id: String(li._id),
+      partner_tags: JSON.parse(JSON.stringify(li.partner_tags || []))
+    })),
+    total_partner_rebates: sale.total_partner_rebates,
+  };
+
+  // 8. Apply commission_pct (top-level on sale).
+  if (commission_pct !== undefined && commission_pct !== null) {
+    const pct = Math.max(0, Number(commission_pct) || 0);
+    sale.commission_pct = pct;
+  }
+
+  // 9. Apply partner_tags. SERVICE_INVOICE has no line items — top-level
+  //    partner_tags are the only seat. CASH_RECEIPT (and any other line-bearing
+  //    sale_type) uses per-line partner_tags only.
+  if (sale.sale_type === 'SERVICE_INVOICE') {
+    if (Array.isArray(partner_tags)) {
+      sale.partner_tags = await validateAndDenorm(partner_tags, 'SERVICE_INVOICE attribution');
+    }
+  } else {
+    if (Array.isArray(bodyLineItems)) {
+      const lineMap = new Map(bodyLineItems.map(li => [String(li._id), li]));
+      for (const item of sale.line_items) {
+        const incoming = lineMap.get(String(item._id));
+        if (incoming && Array.isArray(incoming.partner_tags)) {
+          item.partner_tags = await validateAndDenorm(incoming.partner_tags, `line ${item._id}`);
+        }
+      }
+    }
+  }
+
+  // 10. Stamp audit fields.
+  sale.partner_rebate_entry_mode = 'MANUAL_PROXY';
+  sale.proxy_rebate_entered_by = req.user._id;
+  sale.proxy_rebate_entered_at = new Date();
+  sale.proxy_rebate_edit_history = sale.proxy_rebate_edit_history || [];
+  const hadPriorAttribution = preSnapshot.partner_tags.length
+    || preSnapshot.line_items_partner_tags.some(li => li.partner_tags.length)
+    || preSnapshot.commission_pct > 0;
+  sale.proxy_rebate_edit_history.push({
+    user_id: req.user._id,
+    user_role: req.user.role,
+    user_name: req.user.name,
+    at: new Date(),
+    action: hadPriorAttribution ? 'UPDATE' : 'CREATE',
+    pre_snapshot: preSnapshot,
+  });
+
+  // 11. Save — pre-save hook recomputes commission_amount, per-line
+  //     rebate_amount, and total_partner_rebates from the updated inputs.
+  await sale.save();
+
+  // 12. ErpAuditLog row for system-wide audit + Activity Monitor surfacing.
+  await ErpAuditLog.logChange({
+    entity_id: sale.entity_id,
+    bdm_id: sale.bdm_id,
+    log_type: 'SALES_REBATE_ATTRIBUTION',
+    target_ref: sale._id.toString(),
+    target_model: 'SalesLine',
+    field_changed: 'partner_tags + commission_pct',
+    old_value: JSON.stringify({
+      commission_pct: preSnapshot.commission_pct,
+      total_partner_rebates: preSnapshot.total_partner_rebates,
+    }),
+    new_value: JSON.stringify({
+      commission_pct: sale.commission_pct,
+      total_partner_rebates: sale.total_partner_rebates,
+    }),
+    changed_by: req.user._id,
+    note: `Storefront rebate attribution ${hadPriorAttribution ? 'updated' : 'created'} on ${sale.sale_type} ${sale.invoice_number || sale.doc_ref}: commission ${sale.commission_pct}% = ₱${sale.commission_amount}, partner rebates ₱${sale.total_partner_rebates}`,
+  });
+
+  res.json({ success: true, data: sale });
+});
+
 module.exports = {
   createSale,
   updateSale,
@@ -2196,4 +2477,6 @@ module.exports = {
   generateCsiDraft,
   getCsiCalibrationGrid,
   getDraftsPendingCsi,
+  // Phase R-Storefront — manual MD rebate + BDM commission attribution
+  attachStorefrontRebate,
 };

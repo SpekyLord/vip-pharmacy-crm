@@ -11,6 +11,12 @@
  *   STOREFRONT_ECOMM       — ECOMM_REP commission from storefront Order.paid
  *   STOREFRONT_AREA_BDM    — AREA_BDM commission from storefront Order, resolved
  *                            by Order.shipping_address.province ↔ Territory
+ *   STOREFRONT_BDM         — Phase R-Storefront Phase 2 (May 8 2026). BDM
+ *                            commission on a storefront cash sale (CASH_RECEIPT
+ *                            or SERVICE_INVOICE routed through petty_cash_fund).
+ *                            Source doc is SalesLine, not Collection — bypasses
+ *                            AR. Manually proxy-attributed (commission_pct on
+ *                            sale stamped by admin/finance/president).
  *
  * BIR_FLAG semantics (CRITICAL distinction from RebatePayout):
  *   Commissions ARE BIR-deductible expense (employee/contractor compensation).
@@ -61,8 +67,8 @@ const commissionPayoutSchema = new mongoose.Schema(
     source_kind: {
       type: String,
       enum: {
-        values: ['ERP_COLLECTION', 'STOREFRONT_ECOMM', 'STOREFRONT_AREA_BDM'],
-        message: 'source_kind must be ERP_COLLECTION, STOREFRONT_ECOMM, or STOREFRONT_AREA_BDM',
+        values: ['ERP_COLLECTION', 'STOREFRONT_ECOMM', 'STOREFRONT_AREA_BDM', 'STOREFRONT_BDM'],
+        message: 'source_kind must be ERP_COLLECTION, STOREFRONT_ECOMM, STOREFRONT_AREA_BDM, or STOREFRONT_BDM',
       },
       required: [true, 'source_kind is required'],
       index: true,
